@@ -9,9 +9,9 @@ use super::{
     ThreadEvent,
 };
 use crate::plugins::{
-    AnalyzerPlugin, CompressorPluginParams, EqPluginParams, GainPluginParams, GatePluginParams,
-    LimiterPluginParams, LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext,
-    UpmixerPluginParams,
+    AnalyzerPlugin, CompressorPluginParams, CrossoverPluginParams, DelayPluginParams,
+    EqPluginParams, GainPluginParams, GatePluginParams, LimiterPluginParams,
+    LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext, UpmixerPluginParams,
 };
 
 use std::collections::HashMap;
@@ -551,8 +551,9 @@ fn create_plugin(
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
     use crate::plugins::{
-        CompressorPlugin, EqPlugin, GainPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin,
-        LoudnessCompensationPlugin, MatrixPlugin, UpmixerPlugin,
+        CompressorPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, GainPlugin, GatePlugin,
+        InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
+        UpmixerPlugin,
     };
 
     match plugin_type {
@@ -612,6 +613,14 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "delay" => {
+            let params: DelayPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse delay plugin parameters: {}", e))?;
+
+            let plugin = DelayPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         "loudness_compensation" => {
             let params: LoudnessCompensationPluginParams =
                 serde_json::from_value(parameters.clone()).map_err(|e| {
@@ -667,6 +676,14 @@ fn create_plugin(
             };
 
             Ok(Box::new(plugin))
+        }
+
+        "crossover" => {
+            let params: CrossoverPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse crossover plugin parameters: {}", e))?;
+
+            let plugin = CrossoverPlugin::from_params(channels, &params)?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         other => Err(format!("Unknown plugin type: {}", other)),

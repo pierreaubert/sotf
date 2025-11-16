@@ -26,6 +26,8 @@ mod host;
 mod parameters;
 mod plugin;
 mod plugin_compressor;
+mod plugin_crossover;
+mod plugin_delay;
 mod plugin_eq;
 mod plugin_gain;
 mod plugin_gate;
@@ -41,6 +43,8 @@ pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
+pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
+pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GatePlugin, GatePluginParams};
