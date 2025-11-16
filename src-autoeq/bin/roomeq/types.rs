@@ -90,6 +90,7 @@ impl MeasurementRef {
         }
     }
 
+    #[allow(dead_code)]
     pub fn name(&self) -> Option<&str> {
         match self {
             MeasurementRef::Path(_) => None,
@@ -247,4 +248,76 @@ pub struct OptimizationMetadata {
 
     /// Timestamp
     pub timestamp: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_measurement_ref_path() {
+        let path_ref = MeasurementRef::Path(PathBuf::from("test.csv"));
+        assert_eq!(path_ref.path(), &PathBuf::from("test.csv"));
+        assert_eq!(path_ref.name(), None);
+
+        let named_ref = MeasurementRef::Named {
+            path: PathBuf::from("named.csv"),
+            name: Some("Test Measurement".to_string()),
+        };
+        assert_eq!(named_ref.path(), &PathBuf::from("named.csv"));
+        assert_eq!(named_ref.name(), Some("Test Measurement"));
+    }
+
+    #[test]
+    fn test_room_config_serialization() {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            SpeakerConfig::Single(MeasurementRef::Path(PathBuf::from("left.csv"))),
+        );
+
+        let config = RoomConfig {
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            optimizer: OptimizerConfig::default(),
+        };
+
+        // Should serialize and deserialize
+        let json = serde_json::to_string(&config).expect("Failed to serialize");
+        let _deserialized: RoomConfig =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+    }
+
+    #[test]
+    fn test_speaker_group_serialization() {
+        let group = SpeakerGroup {
+            name: "2-Way Speaker".to_string(),
+            measurements: vec![
+                MeasurementRef::Path(PathBuf::from("woofer.csv")),
+                MeasurementRef::Path(PathBuf::from("tweeter.csv")),
+            ],
+            crossover: Some("default_lr24".to_string()),
+        };
+
+        let json = serde_json::to_string(&group).expect("Failed to serialize");
+        let _deserialized: SpeakerGroup =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+    }
+
+    #[test]
+    fn test_crossover_config_serialization() {
+        let crossover = CrossoverConfig {
+            crossover_type: "LR24".to_string(),
+            frequency: Some(2500.0),
+            frequency_range: None,
+        };
+
+        let json = serde_json::to_string(&crossover).expect("Failed to serialize");
+        let deserialized: CrossoverConfig =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(deserialized.crossover_type, "LR24");
+        assert_eq!(deserialized.frequency, Some(2500.0));
+    }
 }

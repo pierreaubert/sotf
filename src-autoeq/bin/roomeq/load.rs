@@ -1,6 +1,6 @@
 //! Measurement loading utilities for room EQ
 
-use super::types::{MeasurementRef, SpeakerConfig};
+use super::types::MeasurementRef;
 use autoeq::read::read_curve_from_csv;
 use autoeq::Curve;
 use std::error::Error;
@@ -11,35 +11,36 @@ pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn E
     read_curve_from_csv(path)
 }
 
-/// Load all measurements for a speaker configuration
-pub fn load_speaker_measurements(
-    speaker_config: &SpeakerConfig,
-) -> Result<Vec<Curve>, Box<dyn Error>> {
-    match speaker_config {
-        SpeakerConfig::Single(measurement) => {
-            let curve = load_measurement(measurement)?;
-            Ok(vec![curve])
-        }
-        SpeakerConfig::Group(group) => {
-            let mut curves = Vec::new();
-            for measurement in &group.measurements {
-                let curve = load_measurement(measurement)?;
-                curves.push(curve);
-            }
-            Ok(curves)
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_load_measurement_path_ref() {
+        let measurement = MeasurementRef::Path(PathBuf::from("tests/data/roomeq/test_speaker_left.csv"));
+        let result = load_measurement(&measurement);
+        assert!(result.is_ok(), "Should load test measurement");
+
+        let curve = result.unwrap();
+        assert!(!curve.freq.is_empty(), "Frequency data should not be empty");
+        assert_eq!(curve.freq.len(), curve.spl.len(), "Frequency and SPL should have same length");
     }
-}
 
-/// Check if a speaker config is a group (multi-driver)
-pub fn is_group(speaker_config: &SpeakerConfig) -> bool {
-    matches!(speaker_config, SpeakerConfig::Group(_))
-}
+    #[test]
+    fn test_load_measurement_named_ref() {
+        let measurement = MeasurementRef::Named {
+            path: PathBuf::from("tests/data/roomeq/test_speaker_right.csv"),
+            name: Some("Right Speaker".to_string()),
+        };
+        let result = load_measurement(&measurement);
+        assert!(result.is_ok(), "Should load named measurement");
+    }
 
-/// Get the crossover reference for a speaker group
-pub fn get_crossover_ref(speaker_config: &SpeakerConfig) -> Option<&str> {
-    match speaker_config {
-        SpeakerConfig::Group(group) => group.crossover.as_deref(),
-        _ => None,
+    #[test]
+    fn test_load_measurement_nonexistent() {
+        let measurement = MeasurementRef::Path(PathBuf::from("nonexistent_file.csv"));
+        let result = load_measurement(&measurement);
+        assert!(result.is_err(), "Should fail for nonexistent file");
     }
 }

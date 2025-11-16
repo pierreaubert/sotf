@@ -185,3 +185,25 @@ pub fn optimize_crossover(
 
     Ok((gains, xover_freqs, combined_curve))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_crossover_type() {
+        assert!(matches!(
+            parse_crossover_type("lr24"),
+            Ok(CrossoverType::LinkwitzRiley4)
+        ));
+        assert!(matches!(
+            parse_crossover_type("LR4"),
+            Ok(CrossoverType::LinkwitzRiley4)
+        ));
+        assert!(matches!(
+            parse_crossover_type("butterworth2"),
+            Ok(CrossoverType::Butterworth2)
+        ));
+        assert!(parse_crossover_type("invalid").is_err());
+    }
+}

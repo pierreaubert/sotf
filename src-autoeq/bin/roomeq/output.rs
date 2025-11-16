@@ -42,6 +42,7 @@ pub fn create_eq_plugin(filters: &[Biquad]) -> PluginConfigWrapper {
 }
 
 /// Create a crossover plugin configuration
+#[allow(dead_code)]
 pub fn create_crossover_plugin(
     crossover_type: &str,
     frequency: f64,

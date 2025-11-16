@@ -95,3 +95,6 @@ path = "bin/roomeq.rs"
 [lib]
 name = "autoeq"
 path = "src/lib.rs"
+
+[dev-dependencies]
+tempfile = "3.13"
