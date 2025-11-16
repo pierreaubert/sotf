@@ -551,8 +551,9 @@ fn create_plugin(
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
     use crate::plugins::{
-        CompressorPlugin, EqPlugin, GainPlugin, GatePlugin, InPlacePluginAdapter, LimiterPlugin,
-        LoudnessCompensationPlugin, MatrixPlugin, UpmixerPlugin,
+        BinauralDecoderPlugin, CompressorPlugin, EqPlugin, GainPlugin, GatePlugin,
+        InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
+        UpmixerPlugin,
     };
 
     match plugin_type {
@@ -666,6 +667,16 @@ fn create_plugin(
                 );
             };
 
+            Ok(Box::new(plugin))
+        }
+
+        "binaural_decoder" => {
+            use crate::plugins::BinauralDecoderParams;
+
+            let params: BinauralDecoderParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse binaural decoder parameters: {}", e))?;
+
+            let plugin = BinauralDecoderPlugin::from_params(params);
             Ok(Box::new(plugin))
         }
 
