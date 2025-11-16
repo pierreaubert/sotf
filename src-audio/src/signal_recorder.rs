@@ -289,12 +289,21 @@ pub fn record_and_analyze(
             .unwrap_or_else(|_| "Unknown".to_string())
     );
 
-    // Query the input device to determine hardware channel count
-    let input_device_config = input_device
-        .default_input_config()
-        .map_err(|e| format!("Failed to get input config: {}", e))?;
+    // Get the maximum number of input channels supported by the device
+    // (not just the default, which might be less than the hardware capability)
+    let hardware_input_channels = input_device
+        .supported_input_configs()
+        .map_err(|e| format!("Failed to get supported input configs: {}", e))?
+        .map(|config| config.channels() as usize)
+        .max()
+        .unwrap_or_else(|| {
+            // Fallback to default config if we can't query supported configs
+            input_device
+                .default_input_config()
+                .map(|cfg| cfg.channels() as usize)
+                .unwrap_or(2) // Ultimate fallback to stereo
+        });
 
-    let hardware_input_channels = input_device_config.channels() as usize;
     eprintln!(
         "[record_and_analyze] Hardware input channels: {}",
         hardware_input_channels
@@ -387,11 +396,21 @@ pub fn record_and_analyze(
             .unwrap_or_else(|_| "Unknown".to_string())
     );
 
-    let output_config = output_device
-        .default_output_config()
-        .map_err(|e| format!("Failed to get output config: {}", e))?;
+    // Get the maximum number of output channels supported by the device
+    // (not just the default, which might be less than the hardware capability)
+    let hardware_channels = output_device
+        .supported_output_configs()
+        .map_err(|e| format!("Failed to get supported output configs: {}", e))?
+        .map(|config| config.channels() as usize)
+        .max()
+        .unwrap_or_else(|| {
+            // Fallback to default config if we can't query supported configs
+            output_device
+                .default_output_config()
+                .map(|cfg| cfg.channels() as usize)
+                .unwrap_or(2) // Ultimate fallback to stereo
+        });
 
-    let hardware_channels = output_config.channels() as usize;
     eprintln!(
         "[record_and_analyze] Hardware output channels: {}",
         hardware_channels
@@ -605,32 +624,59 @@ fn find_device_by_name(
 
     let device_type = if is_input { "input" } else { "output" };
 
-    let devices = if is_input {
+    // Enumerate devices once and collect into a vector
+    let devices_vec: Vec<_> = if is_input {
         host.input_devices()
             .map_err(|e| format!("Failed to enumerate input devices: {}", e))?
+            .collect()
     } else {
         host.output_devices()
             .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
+            .collect()
     };
 
-    // Search for device with matching name (case-insensitive)
-    let target_name = device_name.to_lowercase();
-    for device in devices {
-        if let Ok(name) = device.name()
-            && name.to_lowercase() == target_name
-        {
-            eprintln!(
-                "[find_device_by_name] Found {} device: {}",
-                device_type, name
-            );
-            return Ok(device);
+    // Search for device with matching name (case-insensitive pattern match)
+    // Supports partial matching: e.g., "Fireface" will match "Fireface UFX+ (24006088)"
+    let target_pattern = device_name.to_lowercase();
+
+    // First pass: try exact match
+
+    for device in &devices_vec {
+        if let Ok(name) = device.name() {
+            if name.to_lowercase() == target_pattern {
+                eprintln!(
+                    "[find_device_by_name] Found {} device (exact match): {}",
+                    device_type, name
+                );
+                return Ok(device.clone());
+            }
         }
     }
 
-    // Device not found - provide helpful error message
+    // Second pass: try partial match (contains)
+    for device in &devices_vec {
+        if let Ok(name) = device.name() {
+            if name.to_lowercase().contains(&target_pattern) {
+                eprintln!(
+                    "[find_device_by_name] Found {} device (partial match): {} (matched by '{}')",
+                    device_type, name, device_name
+                );
+                return Ok(device.clone());
+            }
+        }
+    }
+
+    // Device not found - provide helpful error message with available devices
+    let available_devices: Vec<String> = devices_vec
+        .iter()
+        .filter_map(|d| d.name().ok())
+        .collect();
+
     Err(format!(
-        "Audio device '{}' not found. Use --list-devices to see available {} devices.",
-        device_name, device_type
+        "Audio device '{}' not found. Use --list-devices to see available {} devices.\nAvailable devices: {}",
+        device_name,
+        device_type,
+        available_devices.join(", ")
     ))
 }
 
@@ -1082,6 +1128,7 @@ mod tests {
                     csv_path,    // output_csv_path
                     1_u16,       // output_channel
                     1_u16,       // input_channel
+                    None,        // device_name
                 );
             }
         };

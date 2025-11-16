@@ -184,15 +184,33 @@ fn run_playback_thread(
         // Try to find device by name
         eprintln!("[Playback Thread] Looking for device: '{}'", device_name);
 
-        let found_device = host
+        // Case-insensitive pattern matching with exact match priority
+        let target_pattern = device_name.to_lowercase();
+        let devices: Vec<_> = host
             .output_devices()
             .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
+            .collect();
+
+        // First try exact match
+        let found_device = devices
+            .iter()
             .find(|d| {
                 if let Ok(name) = d.name() {
-                    name.contains(&device_name)
+                    name.to_lowercase() == target_pattern
                 } else {
                     false
                 }
+            })
+            .cloned()
+            // Then try partial match
+            .or_else(|| {
+                devices.iter().find(|d| {
+                    if let Ok(name) = d.name() {
+                        name.to_lowercase().contains(&target_pattern)
+                    } else {
+                        false
+                    }
+                }).cloned()
             });
 
         match found_device {

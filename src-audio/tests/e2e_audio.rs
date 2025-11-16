@@ -113,6 +113,7 @@ fn test_loopback_tone() {
         &csv_file,
         config.send_channel,
         config.record_channel,
+        None,
     )
     .expect("Failed to record and analyze");
 
@@ -223,7 +224,7 @@ fn test_loopback_sweep_accuracy() {
         &csv_file,
         config.send_channel,
         config.record_channel,
-        /* Option<&str> */
+        None,
     )
     .expect("Failed to record and analyze");
 
@@ -347,6 +348,7 @@ fn test_loopback_pink_noise() {
         &csv_file,
         config.send_channel,
         config.record_channel,
+        None,
     )
     .expect("Failed to record and analyze");
 

@@ -261,10 +261,15 @@ pub fn record_signal(
         return Err("hwaudio-send-to must specify at least 1 channel".to_string());
     }
 
-    // Validate that the number of send and record channels match
-    if send_to_channels.len() != record_from_channels.len() {
+    // Validate channel configuration:
+    // - Either the number of send and record channels must match (1:1 mapping)
+    // - Or there must be exactly 1 record channel (record same channel for all outputs)
+    if send_to_channels.len() != record_from_channels.len() && record_from_channels.len() != 1 {
         return Err(format!(
-            "Number of send-to channels ({}) must equal number of record-from channels ({})",
+            "Invalid channel configuration: {} send-to channels, {} record-from channels.\n\
+             Must be either:\n\
+             - Equal number of channels (e.g., --hwaudio-send-to 0,1 --hwaudio-record-from 0,1)\n\
+             - Single record channel (e.g., --hwaudio-send-to 0,1 --hwaudio-record-from 0)",
             send_to_channels.len(),
             record_from_channels.len()
         ));
@@ -318,8 +323,17 @@ pub fn record_signal(
         println!("  Audio device: [DEFAULT]");
     }
     println!("  Channel pairs (send → record):");
-    for (&send_ch, &record_ch) in send_to_channels.iter().zip(record_from_channels.iter()) {
-        println!("    hw output {} → hw input {}", send_ch, record_ch);
+    // If there's only one record channel, it's used for all send channels
+    if record_from_channels.len() == 1 {
+        let record_ch = record_from_channels[0];
+        for &send_ch in &send_to_channels {
+            println!("    hw output {} → hw input {}", send_ch, record_ch);
+        }
+    } else {
+        // 1:1 mapping
+        for (&send_ch, &record_ch) in send_to_channels.iter().zip(record_from_channels.iter()) {
+            println!("    hw output {} → hw input {}", send_ch, record_ch);
+        }
     }
     println!(
         "  Total recordings: {} (one mono file per pair)",
@@ -350,13 +364,14 @@ pub fn record_signal(
         prepared_signal.len()
     );
 
-    // Perform recording for each send/record channel pair (one-to-one mapping)
-    // Each send channel is paired with exactly one record channel
-    for (idx, (&send_ch, &record_ch)) in send_to_channels
-        .iter()
-        .zip(record_from_channels.iter())
-        .enumerate()
-    {
+    // Perform recording for each send/record channel pair
+    // If there's only one record channel, it's reused for all send channels
+    for (idx, &send_ch) in send_to_channels.iter().enumerate() {
+        let record_ch = if record_from_channels.len() == 1 {
+            record_from_channels[0]
+        } else {
+            record_from_channels[idx]
+        };
         println!(
             "\n[{}/{}] Playing to hw channel {}, recording from hw channel {}...",
             idx + 3,

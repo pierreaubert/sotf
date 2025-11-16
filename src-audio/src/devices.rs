@@ -160,7 +160,10 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                                 available_sample_rates.last().unwrap()
                             )
                         };
-                        format!("{} ch, {} (current: {} Hz)", cfg.channels, rate_range, cfg.sample_rate)
+                        format!(
+                            "{} ch, {} (current: {} Hz)",
+                            cfg.channels, rate_range, cfg.sample_rate
+                        )
                     } else {
                         "unknown".to_string()
                     };
@@ -308,7 +311,10 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                                 available_sample_rates.last().unwrap()
                             )
                         };
-                        format!("{} ch, {} (current: {} Hz)", cfg.channels, rate_range, cfg.sample_rate)
+                        format!(
+                            "{} ch, {} (current: {} Hz)",
+                            cfg.channels, rate_range, cfg.sample_rate
+                        )
                     } else {
                         "unknown".to_string()
                     };
