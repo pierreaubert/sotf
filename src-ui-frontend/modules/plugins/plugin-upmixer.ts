@@ -5,6 +5,12 @@ import { BasePlugin } from "./plugin-base";
 import { PluginMenubar } from "./plugin-menubar";
 import { LevelMeter } from "./level-meter";
 import type { PluginMetadata, LevelMeterData } from "./plugin-types";
+import {
+  SPEAKER_CONFIGS,
+  getAvailableConfigs,
+  getSpeakerConfig,
+  type SpeakerConfig,
+} from "./speaker-configs";
 
 /**
  * Channel groups for mute/solo control
@@ -18,14 +24,14 @@ interface ChannelGroup {
 
 /**
  * Upmixer Plugin
- * Converts stereo (2ch) to 5.0 surround (L, R, C, LFE, SL, SR)
+ * Converts stereo (2ch) to multi-channel surround with configurable speaker layouts
  */
 export class UpmixerPlugin extends BasePlugin {
   public readonly metadata: PluginMetadata = {
     id: "upmixer-plugin",
     name: "SotF: Upmixer",
     category: "spatial",
-    version: "1.0.0",
+    version: "2.0.0",
     hasBuiltInLevelMeters: true,
   };
 
@@ -36,16 +42,13 @@ export class UpmixerPlugin extends BasePlugin {
 
   // UI elements
   private parametersContainer: HTMLElement | null = null;
+  private configSelectorContainer: HTMLElement | null = null;
   private muteButtons: Map<string, HTMLButtonElement> = new Map();
   private soloButtons: Map<string, HTMLButtonElement> = new Map();
 
-  // Channel groups (for mute/solo)
-  private channelGroups: ChannelGroup[] = [
-    { name: "L+R", channels: [0, 1], muted: false, solo: false },
-    { name: "C", channels: [2], muted: false, solo: false },
-    { name: "LFE", channels: [3], muted: false, solo: false },
-    { name: "SL+SR", channels: [4, 5], muted: false, solo: false },
-  ];
+  // Speaker configuration
+  private currentConfig: SpeakerConfig = SPEAKER_CONFIGS["5.1"];
+  private channelGroups: ChannelGroup[] = [];
 
   // Parameters
   private centerLevel: number = -3.0; // Center channel level (dB)
@@ -69,14 +72,69 @@ export class UpmixerPlugin extends BasePlugin {
   private sliders: HTMLInputElement[] = [];
 
   /**
+   * Initialize channel groups based on current speaker configuration
+   */
+  private initializeChannelGroups(): void {
+    // Group speakers by their position characteristics
+    const groups: Map<string, number[]> = new Map();
+
+    for (const speaker of this.currentConfig.speakers) {
+      if (speaker.isLFE) {
+        groups.set("LFE", [speaker.channel]);
+        continue;
+      }
+
+      // Group by position
+      if (speaker.elevation > 0) {
+        // Height channels
+        const key = "Height";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(speaker.channel);
+      } else if (Math.abs(speaker.azimuth) <= 45) {
+        // Front channels
+        const key = "Front";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(speaker.channel);
+      } else if (Math.abs(speaker.azimuth) >= 135) {
+        // Back channels
+        const key = "Back";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(speaker.channel);
+      } else {
+        // Side/Wide channels
+        const key = "Side";
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(speaker.channel);
+      }
+    }
+
+    // Convert to channel groups
+    this.channelGroups = Array.from(groups.entries()).map(([name, channels]) => ({
+      name,
+      channels,
+      muted: false,
+      solo: false,
+    }));
+  }
+
+  /**
    * Render the plugin UI
    */
   render(standalone: boolean): void {
     if (!this.container) return;
 
+    // Initialize channel groups if not done
+    if (this.channelGroups.length === 0) {
+      this.initializeChannelGroups();
+    }
+
     this.container.innerHTML = `
-      <div class="upmixer-plugin ${standalone ? "standalone" : "embedded"} has-background-dark p-4" style="max-height: 650px;">
+      <div class="upmixer-plugin ${standalone ? "standalone" : "embedded"} has-background-dark p-4" style="max-height: 700px;">
         ${standalone ? '<div class="upmixer-menubar-container"></div>' : ""}
+
+        <!-- Configuration Selector -->
+        <div class="upmixer-config-selector mb-3"></div>
+
         <div class="columns is-mobile">
           <!-- Input Meters Column -->
           <div class="column is-narrow">
@@ -100,8 +158,10 @@ export class UpmixerPlugin extends BasePlugin {
           <!-- Output Meters Column -->
           <div class="column is-narrow">
             <div class="box has-background-dark">
-              <div class="has-text-centered has-text-weight-semibold mb-2 has-text-light is-size-7">Output</div>
-              <canvas class="upmixer-output-meters" width="120" height="250"></canvas>
+              <div class="has-text-centered has-text-weight-semibold mb-2 has-text-light is-size-7">
+                Output (${this.currentConfig.name})
+              </div>
+              <canvas class="upmixer-output-meters" width="${this.currentConfig.totalChannels * 20}" height="250"></canvas>
               <div class="meter-labels-output mt-2"></div>
               <!-- Mute/Solo Controls -->
               <div class="upmixer-controls">
@@ -127,6 +187,12 @@ export class UpmixerPlugin extends BasePlugin {
     this.parametersContainer = this.container.querySelector(
       ".upmixer-parameters",
     ) as HTMLElement;
+    this.configSelectorContainer = this.container.querySelector(
+      ".upmixer-config-selector",
+    ) as HTMLElement;
+
+    // Render config selector
+    this.renderConfigSelector();
 
     // Initialize meters
     const inputCanvas = this.container.querySelector(
@@ -146,8 +212,8 @@ export class UpmixerPlugin extends BasePlugin {
     if (outputCanvas) {
       this.outputMeter = new LevelMeter({
         canvas: outputCanvas,
-        channels: 6,
-        channelLabels: ["L", "R", "C", "LFE", "SL", "SR"],
+        channels: this.currentConfig.totalChannels,
+        channelLabels: this.currentConfig.speakers.map((s) => s.label),
       });
     }
 
@@ -157,6 +223,70 @@ export class UpmixerPlugin extends BasePlugin {
 
     // Setup UI enhancements after render
     setTimeout(() => this.postRender(), 100);
+  }
+
+  /**
+   * Render speaker configuration selector
+   */
+  private renderConfigSelector(): void {
+    if (!this.configSelectorContainer) return;
+
+    const availableConfigs = getAvailableConfigs();
+
+    this.configSelectorContainer.innerHTML = `
+      <div class="field">
+        <label class="label has-text-light is-size-7">Speaker Configuration</label>
+        <div class="control">
+          <div class="select is-small is-fullwidth is-dark">
+            <select class="config-select has-background-dark has-text-light">
+              ${availableConfigs
+                .map(
+                  (id) => `
+                <option value="${id}" ${id === this.currentConfig.id ? "selected" : ""}>
+                  ${SPEAKER_CONFIGS[id].name} - ${SPEAKER_CONFIGS[id].description}
+                </option>
+              `,
+                )
+                .join("")}
+            </select>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Attach event listener
+    const selectElement = this.configSelectorContainer.querySelector(
+      ".config-select",
+    ) as HTMLSelectElement;
+    if (selectElement) {
+      selectElement.addEventListener("change", (e) => {
+        const newConfigId = (e.target as HTMLSelectElement).value;
+        this.changeConfiguration(newConfigId);
+      });
+    }
+  }
+
+  /**
+   * Change speaker configuration
+   */
+  private changeConfiguration(configId: string): void {
+    const newConfig = getSpeakerConfig(configId);
+    if (!newConfig) {
+      console.error(`Invalid config ID: ${configId}`);
+      return;
+    }
+
+    this.currentConfig = newConfig;
+    this.initializeChannelGroups();
+
+    // Notify backend of configuration change
+    this.emit("configurationChange", {
+      config: this.currentConfig.id,
+      channels: this.currentConfig.totalChannels,
+    });
+
+    // Re-render the plugin
+    this.render(this.container?.querySelector(".standalone") !== null);
   }
 
   /**
@@ -185,7 +315,7 @@ export class UpmixerPlugin extends BasePlugin {
     if (!meterCanvas) return;
 
     const canvasWidth = meterCanvas.getBoundingClientRect().width;
-    const numChannels = 6;
+    const numChannels = this.currentConfig.totalChannels;
     const meterWidth = canvasWidth / numChannels;
 
     // Replace output meter labels with Bulma tags
@@ -195,21 +325,19 @@ export class UpmixerPlugin extends BasePlugin {
     if (meterLabelsOutput) {
       meterLabelsOutput.innerHTML = "";
       meterLabelsOutput.className =
-        "meter-labels-output is-flex is-justify-content-flex-start";
+        "meter-labels-output is-flex is-justify-content-flex-start is-flex-wrap-wrap";
 
-      // Channel groups: [L+R] [C] [LFE] [SL+SR]
-      const labelGroups = [
-        { label: "L+R", channels: 2, color: "is-info" },
-        { label: "C", channels: 1, color: "is-success" },
-        { label: "LFE", channels: 1, color: "is-warning" },
-        { label: "SL+SR", channels: 2, color: "is-danger" },
-      ];
+      // Create label for each speaker
+      const colors = ["is-info", "is-success", "is-warning", "is-danger", "is-primary", "is-link"];
 
-      labelGroups.forEach((group) => {
+      this.currentConfig.speakers.forEach((speaker, idx) => {
         const tag = document.createElement("span");
-        tag.className = `tag is-small ${group.color} upmixer-channel-tag`;
-        tag.textContent = group.label;
-        tag.style.width = meterWidth * group.channels + "px";
+        const colorIdx = speaker.isLFE ? 2 : Math.floor(idx / 2) % colors.length;
+        tag.className = `tag is-small ${colors[colorIdx]} upmixer-channel-tag`;
+        tag.textContent = speaker.label;
+        tag.style.width = meterWidth + "px";
+        tag.style.fontSize = "0.65rem";
+        tag.title = speaker.name;
         meterLabelsOutput.appendChild(tag);
       });
     }
@@ -225,23 +353,24 @@ export class UpmixerPlugin extends BasePlugin {
       controlsContainer.innerHTML = "";
       controlsContainer.className = "is-flex is-flex-direction-column mt-2";
 
-      // Channel groups matching labels
-      const channelGroups = [
-        { channels: 2, color: "is-info", indices: [0] }, // L+R
-        { channels: 1, color: "is-success", indices: [1] }, // C
-        { channels: 1, color: "is-warning", indices: [2] }, // LFE
-        { channels: 2, color: "is-danger", indices: [3] }, // SL+SR
-      ];
+      // Map channel groups to visual groups
+      const colors = ["is-info", "is-success", "is-warning", "is-danger", "is-primary", "is-link"];
+      const visualGroups = this.channelGroups.map((group, idx) => ({
+        channels: group.channels.length,
+        color: group.name === "LFE" ? "is-warning" : colors[idx % colors.length],
+        indices: [idx],
+        name: group.name,
+      }));
 
       // Create mute row
       const muteRow = document.createElement("div");
-      muteRow.className = "is-flex is-justify-content-flex-start mt-1";
+      muteRow.className = "is-flex is-justify-content-flex-start mt-1 is-flex-wrap-wrap";
 
-      channelGroups.forEach((group) => {
+      visualGroups.forEach((group) => {
         const container = document.createElement("div");
         container.className =
           "is-flex is-justify-content-center upmixer-button-container";
-        container.style.width = meterWidth * group.channels + "px";
+        container.style.minWidth = "40px";
 
         group.indices.forEach((idx) => {
           if (controlGroups[idx]) {
@@ -251,6 +380,7 @@ export class UpmixerPlugin extends BasePlugin {
             if (muteBtn) {
               muteBtn.className = `tag is-small ${group.color} mute-btn is-clickable has-text-white`;
               muteBtn.textContent = "M";
+              muteBtn.title = `Mute ${group.name}`;
               muteBtn.dataset.groupIndex = idx.toString();
               container.appendChild(muteBtn);
             }
@@ -262,13 +392,13 @@ export class UpmixerPlugin extends BasePlugin {
 
       // Create solo row
       const soloRow = document.createElement("div");
-      soloRow.className = "is-flex is-justify-content-flex-start mt-1";
+      soloRow.className = "is-flex is-justify-content-flex-start mt-1 is-flex-wrap-wrap";
 
-      channelGroups.forEach((group) => {
+      visualGroups.forEach((group) => {
         const container = document.createElement("div");
         container.className =
           "is-flex is-justify-content-center upmixer-button-container";
-        container.style.width = meterWidth * group.channels + "px";
+        container.style.minWidth = "40px";
 
         group.indices.forEach((idx) => {
           if (controlGroups[idx]) {
@@ -278,6 +408,7 @@ export class UpmixerPlugin extends BasePlugin {
             if (soloBtn) {
               soloBtn.className = `tag is-small ${group.color} solo-btn is-clickable has-text-white`;
               soloBtn.textContent = "S";
+              soloBtn.title = `Solo ${group.name}`;
               soloBtn.dataset.groupIndex = idx.toString();
               container.appendChild(soloBtn);
             }
@@ -666,6 +797,20 @@ export class UpmixerPlugin extends BasePlugin {
    */
   getChannelGroups(): ChannelGroup[] {
     return [...this.channelGroups];
+  }
+
+  /**
+   * Get current speaker configuration
+   */
+  getCurrentConfiguration(): SpeakerConfig {
+    return this.currentConfig;
+  }
+
+  /**
+   * Set speaker configuration
+   */
+  setConfiguration(configId: string): void {
+    this.changeConfiguration(configId);
   }
 
   /**
