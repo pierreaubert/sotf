@@ -8,7 +8,8 @@ members = [
     "src-env",
     "src-audio",
     "src-tauri",
-    "src-hal"
+    "src-hal",
+    "src-convexhull3d"
 ]
 resolver = "3"
 
