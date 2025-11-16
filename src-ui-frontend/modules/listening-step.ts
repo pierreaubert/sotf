@@ -141,13 +141,17 @@ export class ListeningStep {
    */
   private attachEventListeners(): void {
     // Continue button
-    const continueBtn = this.container.querySelector("#continue_to_save_btn") as HTMLButtonElement;
+    const continueBtn = this.container.querySelector(
+      "#continue_to_save_btn",
+    ) as HTMLButtonElement;
     if (continueBtn) {
       continueBtn.addEventListener("click", () => this.handleContinue());
     }
 
     // Back button
-    const backBtn = this.container.querySelector("#back_to_optimize_btn") as HTMLButtonElement;
+    const backBtn = this.container.querySelector(
+      "#back_to_optimize_btn",
+    ) as HTMLButtonElement;
     if (backBtn) {
       backBtn.addEventListener("click", () => {
         // Navigate back via window.demo if available
@@ -158,7 +162,9 @@ export class ListeningStep {
     }
 
     // Checklist items - enable continue button when all checked
-    const checkboxes = this.container.querySelectorAll('.checklist-item input[type="checkbox"]');
+    const checkboxes = this.container.querySelectorAll(
+      '.checklist-item input[type="checkbox"]',
+    );
     checkboxes.forEach((checkbox) => {
       checkbox.addEventListener("change", () => this.updateContinueButton());
     });
@@ -168,10 +174,16 @@ export class ListeningStep {
    * Update continue button state based on checklist
    */
   private updateContinueButton(): void {
-    const checkboxes = this.container.querySelectorAll('.checklist-item input[type="checkbox"]');
-    const allChecked = Array.from(checkboxes).every((cb) => (cb as HTMLInputElement).checked);
+    const checkboxes = this.container.querySelectorAll(
+      '.checklist-item input[type="checkbox"]',
+    );
+    const allChecked = Array.from(checkboxes).every(
+      (cb) => (cb as HTMLInputElement).checked,
+    );
 
-    const continueBtn = this.container.querySelector("#continue_to_save_btn") as HTMLButtonElement;
+    const continueBtn = this.container.querySelector(
+      "#continue_to_save_btn",
+    ) as HTMLButtonElement;
     if (continueBtn) {
       if (allChecked) {
         continueBtn.classList.add("ready");

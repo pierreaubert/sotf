@@ -93,7 +93,7 @@ export class SpectrumAnalyzerComponent {
       attrHeight: this.canvas.height,
       finalWidth: width,
       finalHeight: height,
-      dpr
+      dpr,
     });
 
     this.canvas.width = width * dpr;
@@ -227,7 +227,12 @@ export class SpectrumAnalyzerComponent {
     const height = this.canvas.height / dpr;
 
     if (width === 0 || height === 0) {
-      console.warn("[Spectrum] Canvas has zero size, skipping render", { width, height, canvasWidth: this.canvas.width, canvasHeight: this.canvas.height });
+      console.warn("[Spectrum] Canvas has zero size, skipping render", {
+        width,
+        height,
+        canvasWidth: this.canvas.width,
+        canvasHeight: this.canvas.height,
+      });
       return;
     }
 

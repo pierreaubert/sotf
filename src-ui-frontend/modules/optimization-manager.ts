@@ -229,10 +229,17 @@ export class OptimizationManager {
       console.log("[OPTIMIZATION] 📥 Backend returned result");
 
       if (result.success) {
-        console.log("[OPTIMIZATION] ✅ Backend returned success, processing result...");
+        console.log(
+          "[OPTIMIZATION] ✅ Backend returned success, processing result...",
+        );
         console.log("[OPTIMIZATION] Result data:", {
           has_filter_params: !!result.filter_params,
-          has_scores: !!(result.preference_score_before !== undefined && result.preference_score_after !== undefined && result.preference_score_before !== null && result.preference_score_after !== null),
+          has_scores: !!(
+            result.preference_score_before !== undefined &&
+            result.preference_score_after !== undefined &&
+            result.preference_score_before !== null &&
+            result.preference_score_after !== null
+          ),
           has_filter_response: !!result.filter_response,
           has_spin_details: !!result.spin_details,
           has_filter_plots: !!result.filter_plots,
@@ -249,11 +256,15 @@ export class OptimizationManager {
         }
 
         if (this.onOptimizationComplete) {
-          console.log("[OPTIMIZATION] 🔔 Invoking onOptimizationComplete callback...");
+          console.log(
+            "[OPTIMIZATION] 🔔 Invoking onOptimizationComplete callback...",
+          );
           this.onOptimizationComplete(result);
           console.log("[OPTIMIZATION] ✅ Callback invoked successfully");
         } else {
-          console.error("[OPTIMIZATION] ❌ No onOptimizationComplete callback registered!");
+          console.error(
+            "[OPTIMIZATION] ❌ No onOptimizationComplete callback registered!",
+          );
         }
       } else {
         const error = result.error_message || "Unknown optimization error";
@@ -403,7 +414,10 @@ export class OptimizationManager {
 
       // Load target curve data from CSV file
       if (headphoneTarget) {
-        console.log("[OPTIMIZATION] Loading headphone target:", headphoneTarget);
+        console.log(
+          "[OPTIMIZATION] Loading headphone target:",
+          headphoneTarget,
+        );
         const targetData = await this.loadHeadphoneTarget(headphoneTarget);
         if (targetData) {
           console.log("[OPTIMIZATION] Target data loaded:", {

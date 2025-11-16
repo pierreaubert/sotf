@@ -2970,12 +2970,12 @@ input[type="checkbox"] {
   .step3-two-column-layout {
     grid-template-columns: 1fr;
   }
-  
+
   .step3-actions {
     flex-direction: column;
     justify-content: stretch;
   }
-  
+
   .step3-actions button {
     width: 100%;
   }
@@ -3454,7 +3454,8 @@ input[type="checkbox"] {
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {

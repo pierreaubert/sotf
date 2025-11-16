@@ -1,9 +1,9 @@
 // All Plugins Host
 // Preconfigured plugin host with EQ by default and all plugins accepted
 
-import { PluginHost, type HostConfig, type HostCallbacks } from './host';
-import { EQPlugin } from './plugin-eq';
-import type { IPlugin } from './plugin-types';
+import { PluginHost, type HostConfig, type HostCallbacks } from "./host";
+import { EQPlugin } from "./plugin-eq";
+import type { IPlugin } from "./plugin-types";
 
 /**
  * All Plugins Host
@@ -17,18 +17,18 @@ export class HostAll {
   constructor(container: HTMLElement, callbacks: HostCallbacks = {}) {
     // Configure host with all features and all plugins allowed
     const config: HostConfig = {
-      name: 'Audio Processor',
-      allowedPlugins: [],           // Empty = all plugins allowed
-      maxPlugins: Infinity,         // No limit on number of plugins
-      showLevelMeters: true,        // Show level meters
-      showLUFS: true,               // Show LUFS meter
-      showVolumeControl: true,      // Show volume control
-      showHelpBar: true,            // Show help bar with shortcuts
+      name: "Audio Processor",
+      allowedPlugins: [], // Empty = all plugins allowed
+      maxPlugins: Infinity, // No limit on number of plugins
+      showLevelMeters: true, // Show level meters
+      showLUFS: true, // Show LUFS meter
+      showVolumeControl: true, // Show volume control
+      showHelpBar: true, // Show help bar with shortcuts
       menubarConfig: {
         showName: true,
         showPresets: true,
-        showMatrix: true,           // Show matrix routing
-        showMuteSolo: true,         // Show mute/solo controls
+        showMatrix: true, // Show matrix routing
+        showMuteSolo: true, // Show mute/solo controls
       },
     };
 

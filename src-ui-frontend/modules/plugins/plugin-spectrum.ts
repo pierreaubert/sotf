@@ -1,10 +1,13 @@
 // Spectrum Analyzer Plugin
 // Wraps the existing spectrum analyzer as a plugin
 
-import { BasePlugin } from './plugin-base';
-import { PluginMenubar } from './plugin-menubar';
-import { SpectrumAnalyzerComponent, type SpectrumDisplayConfig } from '../audio-player/spectrum-analyzer';
-import type { PluginMetadata } from './plugin-types';
+import { BasePlugin } from "./plugin-base";
+import { PluginMenubar } from "./plugin-menubar";
+import {
+  SpectrumAnalyzerComponent,
+  type SpectrumDisplayConfig,
+} from "../audio-player/spectrum-analyzer";
+import type { PluginMetadata } from "./plugin-types";
 
 /**
  * Spectrum Analyzer Plugin
@@ -12,10 +15,10 @@ import type { PluginMetadata } from './plugin-types';
  */
 export class SpectrumPlugin extends BasePlugin {
   public readonly metadata: PluginMetadata = {
-    id: 'spectrum-plugin',
-    name: 'SotF: Spectrum',
-    category: 'analyzer',
-    version: '1.0.0',
+    id: "spectrum-plugin",
+    name: "SotF: Spectrum",
+    category: "analyzer",
+    version: "1.0.0",
   };
 
   // UI components
@@ -30,15 +33,15 @@ export class SpectrumPlugin extends BasePlugin {
   private maxFreq: number = 20000;
   private dbRange: number = 60;
   private pollInterval: number = 100;
-  private colorScheme: 'light' | 'dark' = 'dark';
+  private colorScheme: "light" | "dark" = "dark";
 
   // Parameter metadata for keyboard control
-  protected parameterOrder = ['minFreq', 'maxFreq', 'dbRange', 'pollInterval'];
+  protected parameterOrder = ["minFreq", "maxFreq", "dbRange", "pollInterval"];
   protected parameterLabels = {
-    minFreq: 'Min Frequency',
-    maxFreq: 'Max Frequency',
-    dbRange: 'dB Range',
-    pollInterval: 'Update Rate',
+    minFreq: "Min Frequency",
+    maxFreq: "Max Frequency",
+    dbRange: "dB Range",
+    pollInterval: "Update Rate",
   };
   private parameterRanges = {
     minFreq: { min: 10, max: 200, step: 10 },
@@ -50,9 +53,14 @@ export class SpectrumPlugin extends BasePlugin {
   /**
    * Render a single parameter slider with labels
    */
-  private renderParameter(paramName: string, index: number, unit: string): string {
+  private renderParameter(
+    paramName: string,
+    index: number,
+    unit: string,
+  ): string {
     const value = (this as any)[paramName];
-    const range = this.parameterRanges[paramName as keyof typeof this.parameterRanges];
+    const range =
+      this.parameterRanges[paramName as keyof typeof this.parameterRanges];
 
     // Get formatted label with keyboard shortcut
     const formattedLabel = this.getFormattedLabel(paramName);
@@ -64,7 +72,7 @@ export class SpectrumPlugin extends BasePlugin {
     // Generate 6 legend values from max to min
     const legendValues = [];
     for (let i = 0; i < 6; i++) {
-      const legendValue = range.max - (i * (range.max - range.min) / 5);
+      const legendValue = range.max - (i * (range.max - range.min)) / 5;
       const formatted = legendValue.toString();
       legendValues.push(formatted);
     }
@@ -77,7 +85,7 @@ export class SpectrumPlugin extends BasePlugin {
           <div class="is-flex is-align-items-center">
             <!-- Legend on the left -->
             <div class="is-flex is-flex-direction-column is-justify-content-space-between mr-2 has-text-grey-light is-size-7" style="height: 400px; text-align: right;">
-              ${legendValues.map(v => `<span>${v}</span>`).join('')}
+              ${legendValues.map((v) => `<span>${v}</span>`).join("")}
             </div>
             <!-- Slider -->
             <input type="range" class="param-slider" data-param="${paramName}"
@@ -96,8 +104,8 @@ export class SpectrumPlugin extends BasePlugin {
     if (!this.container) return;
 
     this.container.innerHTML = `
-      <div class="is-flex is-flex-direction-column spectrum-plugin ${standalone ? 'standalone' : 'embedded'}" style="height: 100%; min-height: 0; background: #1a1a1a;">
-        ${standalone ? '<div class="spectrum-menubar-container"></div>' : ''}
+      <div class="is-flex is-flex-direction-column spectrum-plugin ${standalone ? "standalone" : "embedded"}" style="height: 100%; min-height: 0; background: #1a1a1a;">
+        ${standalone ? '<div class="spectrum-menubar-container"></div>' : ""}
         <div class="is-flex is-flex-direction-column is-flex-grow-1" style="min-height: 0; overflow: hidden; padding: 0; margin: 0;">
           <!-- Bulma Columns -->
           <div class="columns is-gapless" style="height: 100%;">
@@ -106,10 +114,10 @@ export class SpectrumPlugin extends BasePlugin {
               <div class="box is-flex is-flex-direction-column" style="background: #2a2a2a; border: none; border-right: 1px solid #404040; border-radius: 0; height: 100%; margin: 0;">
                 <h4 class="title is-6 has-text-light">Spectrum Settings</h4>
                 <div style="overflow-y: auto;">
-                  ${this.renderParameter('minFreq', 0, 'Hz')}
-                  ${this.renderParameter('maxFreq', 1, 'Hz')}
-                  ${this.renderParameter('dbRange', 2, 'dB')}
-                  ${this.renderParameter('pollInterval', 3, 'ms')}
+                  ${this.renderParameter("minFreq", 0, "Hz")}
+                  ${this.renderParameter("maxFreq", 1, "Hz")}
+                  ${this.renderParameter("dbRange", 2, "dB")}
+                  ${this.renderParameter("pollInterval", 3, "ms")}
                 </div>
 
                 <!-- Control Buttons -->
@@ -139,7 +147,9 @@ export class SpectrumPlugin extends BasePlugin {
 
     // Initialize menubar if standalone
     if (standalone) {
-      const menubarContainer = this.container.querySelector('.spectrum-menubar-container') as HTMLElement;
+      const menubarContainer = this.container.querySelector(
+        ".spectrum-menubar-container",
+      ) as HTMLElement;
       if (menubarContainer) {
         this.menubar = new PluginMenubar(menubarContainer, this.metadata.name, {
           showPresets: false,
@@ -150,7 +160,9 @@ export class SpectrumPlugin extends BasePlugin {
     }
 
     // Cache elements
-    this.spectrumCanvas = this.container.querySelector('.spectrum-canvas') as HTMLCanvasElement;
+    this.spectrumCanvas = this.container.querySelector(
+      ".spectrum-canvas",
+    ) as HTMLCanvasElement;
 
     // Initialize spectrum analyzer
     if (this.spectrumCanvas) {
@@ -176,29 +188,38 @@ export class SpectrumPlugin extends BasePlugin {
    */
   private attachEventListeners(): void {
     // Parameter sliders
-    const sliders = this.container?.querySelectorAll('.param-slider') || [];
+    const sliders = this.container?.querySelectorAll(".param-slider") || [];
     sliders.forEach((slider) => {
-      slider.addEventListener('input', (e) => {
+      slider.addEventListener("input", (e) => {
         this.handleSliderChange(e as Event);
       });
     });
 
     // Parameter field click to select
-    const fields = this.container?.querySelectorAll('.parameter-field') || [];
+    const fields = this.container?.querySelectorAll(".parameter-field") || [];
     fields.forEach((field) => {
-      field.addEventListener('click', (e) => {
-        const index = parseInt((field as HTMLElement).dataset.index || '-1', 10);
+      field.addEventListener("click", (e) => {
+        const index = parseInt(
+          (field as HTMLElement).dataset.index || "-1",
+          10,
+        );
         this.selectParameter(index);
       });
     });
 
     // Control buttons
-    const startBtn = this.container?.querySelector('.start-btn') as HTMLButtonElement;
-    const stopBtn = this.container?.querySelector('.stop-btn') as HTMLButtonElement;
-    const resetBtn = this.container?.querySelector('.reset-btn') as HTMLButtonElement;
+    const startBtn = this.container?.querySelector(
+      ".start-btn",
+    ) as HTMLButtonElement;
+    const stopBtn = this.container?.querySelector(
+      ".stop-btn",
+    ) as HTMLButtonElement;
+    const resetBtn = this.container?.querySelector(
+      ".reset-btn",
+    ) as HTMLButtonElement;
 
     if (startBtn) {
-      startBtn.addEventListener('click', async () => {
+      startBtn.addEventListener("click", async () => {
         await this.start();
         startBtn.disabled = true;
         if (stopBtn) stopBtn.disabled = false;
@@ -206,7 +227,7 @@ export class SpectrumPlugin extends BasePlugin {
     }
 
     if (stopBtn) {
-      stopBtn.addEventListener('click', async () => {
+      stopBtn.addEventListener("click", async () => {
         await this.stop();
         if (startBtn) startBtn.disabled = false;
         stopBtn.disabled = true;
@@ -214,7 +235,7 @@ export class SpectrumPlugin extends BasePlugin {
     }
 
     if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
+      resetBtn.addEventListener("click", () => {
         this.recreateAnalyzer();
       });
     }
@@ -234,7 +255,7 @@ export class SpectrumPlugin extends BasePlugin {
     this.updateParameterDisplay(param, value);
 
     // Recreate spectrum analyzer with new settings
-    if (param !== 'pollInterval') {
+    if (param !== "pollInterval") {
       this.recreateAnalyzer();
     }
 
@@ -246,22 +267,24 @@ export class SpectrumPlugin extends BasePlugin {
    * Update parameter display
    */
   private updateParameterDisplay(param: string, value: number): void {
-    const field = this.container?.querySelector(`.parameter-field[data-param="${param}"]`);
+    const field = this.container?.querySelector(
+      `.parameter-field[data-param="${param}"]`,
+    );
     if (!field) return;
 
-    const label = field.querySelector('.param-value');
+    const label = field.querySelector(".param-value");
     if (label) {
-      let unit = 'Hz';
-      if (param === 'pollInterval') {
-        unit = 'ms';
-      } else if (param === 'dbRange') {
-        unit = 'dB';
+      let unit = "Hz";
+      if (param === "pollInterval") {
+        unit = "ms";
+      } else if (param === "dbRange") {
+        unit = "dB";
       }
       label.textContent = `${value} ${unit}`;
     }
 
     // Update slider value
-    const slider = field.querySelector('.param-slider') as HTMLInputElement;
+    const slider = field.querySelector(".param-slider") as HTMLInputElement;
     if (slider) {
       slider.value = value.toString();
     }
@@ -274,16 +297,16 @@ export class SpectrumPlugin extends BasePlugin {
     super.selectParameter(index);
 
     // Update visual highlighting
-    const fields = this.container?.querySelectorAll('.parameter-field') || [];
+    const fields = this.container?.querySelectorAll(".parameter-field") || [];
     fields.forEach((field, idx) => {
-      const slider = field.querySelector('.param-slider') as HTMLElement;
+      const slider = field.querySelector(".param-slider") as HTMLElement;
       if (slider) {
         if (idx === index) {
-          slider.style.accentColor = '#22c55e'; // Green
-          field.classList.add('is-selected');
+          slider.style.accentColor = "#22c55e"; // Green
+          field.classList.add("is-selected");
         } else {
-          slider.style.accentColor = '';
-          field.classList.remove('is-selected');
+          slider.style.accentColor = "";
+          field.classList.remove("is-selected");
         }
       }
     });
@@ -295,12 +318,12 @@ export class SpectrumPlugin extends BasePlugin {
   protected clearParameterSelection(): void {
     super.clearParameterSelection();
 
-    const fields = this.container?.querySelectorAll('.parameter-field') || [];
+    const fields = this.container?.querySelectorAll(".parameter-field") || [];
     fields.forEach((field) => {
-      const slider = field.querySelector('.param-slider') as HTMLElement;
+      const slider = field.querySelector(".param-slider") as HTMLElement;
       if (slider) {
-        slider.style.accentColor = '';
-        field.classList.remove('is-selected');
+        slider.style.accentColor = "";
+        field.classList.remove("is-selected");
       }
     });
   }
@@ -312,11 +335,15 @@ export class SpectrumPlugin extends BasePlugin {
     if (this.selectedParameterIndex < 0) return;
 
     const paramName = this.parameterOrder[this.selectedParameterIndex];
-    const range = this.parameterRanges[paramName as keyof typeof this.parameterRanges];
+    const range =
+      this.parameterRanges[paramName as keyof typeof this.parameterRanges];
     const currentValue = (this as any)[paramName];
 
     const step = delta > 0 ? range.step : -range.step;
-    const newValue = Math.max(range.min, Math.min(range.max, currentValue + step));
+    const newValue = Math.max(
+      range.min,
+      Math.min(range.max, currentValue + step),
+    );
 
     // Update parameter
     (this as any)[paramName] = newValue;
@@ -325,7 +352,7 @@ export class SpectrumPlugin extends BasePlugin {
     this.updateParameterDisplay(paramName, newValue);
 
     // Recreate analyzer if needed
-    if (paramName !== 'pollInterval') {
+    if (paramName !== "pollInterval") {
       this.recreateAnalyzer();
     }
 
@@ -359,7 +386,9 @@ export class SpectrumPlugin extends BasePlugin {
       this.spectrumAnalyzer = new SpectrumAnalyzerComponent(config);
 
       // Restart if was active
-      const stopBtn = this.container?.querySelector('.stop-btn') as HTMLButtonElement;
+      const stopBtn = this.container?.querySelector(
+        ".stop-btn",
+      ) as HTMLButtonElement;
       if (stopBtn && !stopBtn.disabled) {
         this.start();
       }
@@ -373,9 +402,9 @@ export class SpectrumPlugin extends BasePlugin {
     if (this.spectrumAnalyzer) {
       try {
         await this.spectrumAnalyzer.start();
-        this.emit('started', {});
+        this.emit("started", {});
       } catch (error) {
-        console.error('[SpectrumPlugin] Failed to start:', error);
+        console.error("[SpectrumPlugin] Failed to start:", error);
         throw error;
       }
     }
@@ -388,9 +417,9 @@ export class SpectrumPlugin extends BasePlugin {
     if (this.spectrumAnalyzer) {
       try {
         await this.spectrumAnalyzer.stop();
-        this.emit('stopped', {});
+        this.emit("stopped", {});
       } catch (error) {
-        console.error('[SpectrumPlugin] Failed to stop:', error);
+        console.error("[SpectrumPlugin] Failed to stop:", error);
       }
     }
   }
@@ -425,17 +454,20 @@ export class SpectrumPlugin extends BasePlugin {
   /**
    * Set parameters
    */
-  setParameters(params: Partial<{
-    minFreq: number;
-    maxFreq: number;
-    dbRange: number;
-    pollInterval: number;
-    colorScheme: 'light' | 'dark';
-  }>): void {
+  setParameters(
+    params: Partial<{
+      minFreq: number;
+      maxFreq: number;
+      dbRange: number;
+      pollInterval: number;
+      colorScheme: "light" | "dark";
+    }>,
+  ): void {
     if (params.minFreq !== undefined) this.minFreq = params.minFreq;
     if (params.maxFreq !== undefined) this.maxFreq = params.maxFreq;
     if (params.dbRange !== undefined) this.dbRange = params.dbRange;
-    if (params.pollInterval !== undefined) this.pollInterval = params.pollInterval;
+    if (params.pollInterval !== undefined)
+      this.pollInterval = params.pollInterval;
     if (params.colorScheme !== undefined) this.colorScheme = params.colorScheme;
 
     // Recreate analyzer with new settings
@@ -458,10 +490,10 @@ export class SpectrumPlugin extends BasePlugin {
    */
   getShortcuts() {
     return [
-      { key: '1-4', description: 'Select parameter' },
-      { key: 'Tab', description: 'Next parameter' },
-      { key: 'Esc', description: 'Clear selection' },
-      { key: 'Shift+↑↓', description: 'Adjust value' },
+      { key: "1-4", description: "Select parameter" },
+      { key: "Tab", description: "Next parameter" },
+      { key: "Esc", description: "Clear selection" },
+      { key: "Shift+↑↓", description: "Adjust value" },
     ];
   }
 

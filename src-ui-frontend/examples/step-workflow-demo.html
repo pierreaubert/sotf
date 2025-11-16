@@ -11,7 +11,8 @@
         margin: 0;
         padding: 0;
         height: 100%;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           "Helvetica Neue", Arial, sans-serif;
         overflow: hidden;
       }
@@ -145,9 +146,24 @@
 
       // Initialize steps configuration
       const steps = [
-        { id: 1, label: "Choose Use Case", shortLabel: "Use Case", enabled: true },
-        { id: 2, label: "Data Acquisition", shortLabel: "Data", enabled: false },
-        { id: 3, label: "Optimization", shortLabel: "Optimize", enabled: false },
+        {
+          id: 1,
+          label: "Choose Use Case",
+          shortLabel: "Use Case",
+          enabled: true,
+        },
+        {
+          id: 2,
+          label: "Data Acquisition",
+          shortLabel: "Data",
+          enabled: false,
+        },
+        {
+          id: 3,
+          label: "Optimization",
+          shortLabel: "Optimize",
+          enabled: false,
+        },
         { id: 4, label: "Listening", shortLabel: "Listen", enabled: false },
         { id: 5, label: "Saving", shortLabel: "Save", enabled: false },
       ];
@@ -208,7 +224,11 @@
 
           // Optionally auto-advance to next step after selection
           setTimeout(() => {
-            if (confirm(`Use case "${useCase}" selected!\n\nWould you like to proceed to Data Acquisition?`)) {
+            if (
+              confirm(
+                `Use case "${useCase}" selected!\n\nWould you like to proceed to Data Acquisition?`,
+              )
+            ) {
               navigator.goToStep(2);
             }
           }, 300);
@@ -242,7 +262,11 @@
 
           // Ask if user wants to proceed
           setTimeout(() => {
-            if (confirm("Optimization complete!\n\nWould you like to proceed to test your EQ?")) {
+            if (
+              confirm(
+                "Optimization complete!\n\nWould you like to proceed to test your EQ?",
+              )
+            ) {
               navigator.goToStep(4);
             }
           }, 500);

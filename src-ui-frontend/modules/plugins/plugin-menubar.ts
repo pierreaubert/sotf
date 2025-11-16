@@ -1,7 +1,11 @@
 // Plugin Menubar Component
 // Shared menubar for plugins: Name, Presets, Matrix, Mute/Solo
 
-import type { MenubarConfig, MenubarButton, PluginPreset } from './plugin-types';
+import type {
+  MenubarConfig,
+  MenubarButton,
+  PluginPreset,
+} from "./plugin-types";
 
 export interface PluginMenubarCallbacks {
   onPresetLoad?: (preset: PluginPreset) => void;
@@ -38,7 +42,7 @@ export class PluginMenubar {
     container: HTMLElement,
     pluginName: string,
     config: MenubarConfig = {},
-    callbacks: PluginMenubarCallbacks = {}
+    callbacks: PluginMenubarCallbacks = {},
   ) {
     this.container = container;
     this.pluginName = pluginName;
@@ -61,7 +65,7 @@ export class PluginMenubar {
     this.container.innerHTML = `
       <nav class="level is-mobile p-3 has-background-dark" style="border-bottom: 1px solid #404040;">
         <div class="level-left">
-          ${this.config.showName ? `<div class="level-item"><p class="has-text-weight-semibold has-text-light">${this.pluginName}</p></div>` : ''}
+          ${this.config.showName ? `<div class="level-item"><p class="has-text-weight-semibold has-text-light">${this.pluginName}</p></div>` : ""}
         </div>
         <div class="level-right">
           ${this.renderPresets()}
@@ -80,14 +84,14 @@ export class PluginMenubar {
    * Render presets dropdown
    */
   private renderPresets(): string {
-    if (!this.config.showPresets) return '';
+    if (!this.config.showPresets) return "";
 
     return `
       <div class="level-item">
         <div class="dropdown menubar-presets">
           <div class="dropdown-trigger">
             <button class="button is-small is-dark preset-button" aria-haspopup="true" aria-controls="dropdown-menu" title="Presets">
-              <span>${this.currentPresetName || 'Presets'}</span>
+              <span>${this.currentPresetName || "Presets"}</span>
               <span class="icon is-small">
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
                   <path d="M6 8L2 4h8z"/>
@@ -113,7 +117,7 @@ export class PluginMenubar {
    * Render matrix button
    */
   private renderMatrix(): string {
-    if (!this.config.showMatrix) return '';
+    if (!this.config.showMatrix) return "";
 
     return `
       <div class="level-item">
@@ -136,13 +140,13 @@ export class PluginMenubar {
    * Render mute/solo buttons
    */
   private renderMuteSolo(): string {
-    if (!this.config.showMuteSolo) return '';
+    if (!this.config.showMuteSolo) return "";
 
     return `
       <div class="level-item">
         <div class="buttons has-addons">
-          <button class="button is-small ${this.muted ? 'is-danger' : 'is-dark'} mute-button" title="Mute">M</button>
-          <button class="button is-small ${this.solo ? 'is-warning' : 'is-dark'} solo-button" title="Solo">S</button>
+          <button class="button is-small ${this.muted ? "is-danger" : "is-dark"} mute-button" title="Mute">M</button>
+          <button class="button is-small ${this.solo ? "is-warning" : "is-dark"} solo-button" title="Solo">S</button>
         </div>
       </div>
     `;
@@ -154,7 +158,7 @@ export class PluginMenubar {
   private renderBypass(): string {
     return `
       <div class="level-item">
-        <button class="button is-small ${this.bypassed ? 'is-info' : 'is-dark'} bypass-button" title="Bypass">
+        <button class="button is-small ${this.bypassed ? "is-info" : "is-dark"} bypass-button" title="Bypass">
           <span class="icon is-small">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
               <circle cx="8" cy="8" r="6"/>
@@ -170,17 +174,17 @@ export class PluginMenubar {
    * Render custom buttons
    */
   private renderCustomButtons(): string {
-    return this.config.customButtons!
-      .map(
+    return this.config
+      .customButtons!.map(
         (btn) => `
         <div class="level-item">
           <button class="button is-small is-dark custom-button" data-button-id="${btn.id}" title="${btn.label}">
             ${btn.icon || btn.label}
           </button>
         </div>
-      `
+      `,
       )
-      .join('');
+      .join("");
   }
 
   /**
@@ -188,15 +192,22 @@ export class PluginMenubar {
    */
   private attachEventListeners(): void {
     // Preset dropdown (Bulma dropdown)
-    const presetDropdownContainer = this.container.querySelector('.menubar-presets') as HTMLElement;
-    const presetButton = this.container.querySelector('.preset-button') as HTMLButtonElement;
-    const presetDropdownMenu = this.container.querySelector('.dropdown-menu') as HTMLElement;
+    const presetDropdownContainer = this.container.querySelector(
+      ".menubar-presets",
+    ) as HTMLElement;
+    const presetButton = this.container.querySelector(
+      ".preset-button",
+    ) as HTMLButtonElement;
+    const presetDropdownMenu = this.container.querySelector(
+      ".dropdown-menu",
+    ) as HTMLElement;
     if (presetButton && presetDropdownContainer && presetDropdownMenu) {
-      presetButton.addEventListener('click', (e) => {
+      presetButton.addEventListener("click", (e) => {
         e.stopPropagation();
-        presetDropdownContainer.classList.toggle('is-active');
-        const isActive = presetDropdownContainer.classList.contains('is-active');
-        presetDropdownMenu.style.display = isActive ? 'block' : 'none';
+        presetDropdownContainer.classList.toggle("is-active");
+        const isActive =
+          presetDropdownContainer.classList.contains("is-active");
+        presetDropdownMenu.style.display = isActive ? "block" : "none";
         if (isActive) {
           this.updatePresetList();
         }
@@ -204,10 +215,12 @@ export class PluginMenubar {
     }
 
     // Preset save button
-    const presetSaveBtn = this.container.querySelector('.preset-save-btn') as HTMLButtonElement;
+    const presetSaveBtn = this.container.querySelector(
+      ".preset-save-btn",
+    ) as HTMLButtonElement;
     if (presetSaveBtn) {
-      presetSaveBtn.addEventListener('click', () => {
-        const name = prompt('Enter preset name:');
+      presetSaveBtn.addEventListener("click", () => {
+        const name = prompt("Enter preset name:");
         if (name && this.callbacks.onPresetSave) {
           this.callbacks.onPresetSave(name);
         }
@@ -215,9 +228,11 @@ export class PluginMenubar {
     }
 
     // Matrix button
-    const matrixButton = this.container.querySelector('.matrix-button') as HTMLButtonElement;
+    const matrixButton = this.container.querySelector(
+      ".matrix-button",
+    ) as HTMLButtonElement;
     if (matrixButton) {
-      matrixButton.addEventListener('click', () => {
+      matrixButton.addEventListener("click", () => {
         if (this.callbacks.onMatrix) {
           this.callbacks.onMatrix();
         }
@@ -225,12 +240,14 @@ export class PluginMenubar {
     }
 
     // Mute button
-    this.muteButton = this.container.querySelector('.mute-button') as HTMLButtonElement;
+    this.muteButton = this.container.querySelector(
+      ".mute-button",
+    ) as HTMLButtonElement;
     if (this.muteButton) {
-      this.muteButton.addEventListener('click', () => {
+      this.muteButton.addEventListener("click", () => {
         this.muted = !this.muted;
-        this.muteButton!.classList.remove('is-dark', 'is-danger');
-        this.muteButton!.classList.add(this.muted ? 'is-danger' : 'is-dark');
+        this.muteButton!.classList.remove("is-dark", "is-danger");
+        this.muteButton!.classList.add(this.muted ? "is-danger" : "is-dark");
         if (this.callbacks.onMute) {
           this.callbacks.onMute(this.muted);
         }
@@ -238,12 +255,14 @@ export class PluginMenubar {
     }
 
     // Solo button
-    this.soloButton = this.container.querySelector('.solo-button') as HTMLButtonElement;
+    this.soloButton = this.container.querySelector(
+      ".solo-button",
+    ) as HTMLButtonElement;
     if (this.soloButton) {
-      this.soloButton.addEventListener('click', () => {
+      this.soloButton.addEventListener("click", () => {
         this.solo = !this.solo;
-        this.soloButton!.classList.remove('is-dark', 'is-warning');
-        this.soloButton!.classList.add(this.solo ? 'is-warning' : 'is-dark');
+        this.soloButton!.classList.remove("is-dark", "is-warning");
+        this.soloButton!.classList.add(this.solo ? "is-warning" : "is-dark");
         if (this.callbacks.onSolo) {
           this.callbacks.onSolo(this.solo);
         }
@@ -251,12 +270,14 @@ export class PluginMenubar {
     }
 
     // Bypass button
-    this.bypassButton = this.container.querySelector('.bypass-button') as HTMLButtonElement;
+    this.bypassButton = this.container.querySelector(
+      ".bypass-button",
+    ) as HTMLButtonElement;
     if (this.bypassButton) {
-      this.bypassButton.addEventListener('click', () => {
+      this.bypassButton.addEventListener("click", () => {
         this.bypassed = !this.bypassed;
-        this.bypassButton!.classList.remove('is-dark', 'is-info');
-        this.bypassButton!.classList.add(this.bypassed ? 'is-info' : 'is-dark');
+        this.bypassButton!.classList.remove("is-dark", "is-info");
+        this.bypassButton!.classList.add(this.bypassed ? "is-info" : "is-dark");
         if (this.callbacks.onBypass) {
           this.callbacks.onBypass(this.bypassed);
         }
@@ -264,20 +285,26 @@ export class PluginMenubar {
     }
 
     // Custom buttons
-    const customButtons = this.container.querySelectorAll('.custom-button');
+    const customButtons = this.container.querySelectorAll(".custom-button");
     customButtons.forEach((btn) => {
       const buttonId = (btn as HTMLElement).dataset.buttonId!;
-      const customButton = this.config.customButtons!.find((b) => b.id === buttonId);
+      const customButton = this.config.customButtons!.find(
+        (b) => b.id === buttonId,
+      );
       if (customButton) {
-        btn.addEventListener('click', () => customButton.onClick());
+        btn.addEventListener("click", () => customButton.onClick());
       }
     });
 
     // Close dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-      if (presetDropdownContainer && presetDropdownMenu && !this.container.contains(e.target as Node)) {
-        presetDropdownContainer.classList.remove('is-active');
-        presetDropdownMenu.style.display = 'none';
+    document.addEventListener("click", (e) => {
+      if (
+        presetDropdownContainer &&
+        presetDropdownMenu &&
+        !this.container.contains(e.target as Node)
+      ) {
+        presetDropdownContainer.classList.remove("is-active");
+        presetDropdownMenu.style.display = "none";
       }
     });
   }
@@ -286,28 +313,31 @@ export class PluginMenubar {
    * Update preset list
    */
   private updatePresetList(): void {
-    const presetList = this.container.querySelector('.preset-list') as HTMLElement;
+    const presetList = this.container.querySelector(
+      ".preset-list",
+    ) as HTMLElement;
     if (!presetList) return;
 
     if (this.presets.length === 0) {
-      presetList.innerHTML = '<div class="dropdown-item has-text-grey">No presets available</div>';
+      presetList.innerHTML =
+        '<div class="dropdown-item has-text-grey">No presets available</div>';
       return;
     }
 
     presetList.innerHTML = this.presets
       .map(
         (preset) => `
-        <a class="dropdown-item ${preset.name === this.currentPresetName ? 'is-active' : ''}" data-preset-name="${preset.name}">
+        <a class="dropdown-item ${preset.name === this.currentPresetName ? "is-active" : ""}" data-preset-name="${preset.name}">
           ${preset.name}
         </a>
-      `
+      `,
       )
-      .join('');
+      .join("");
 
     // Attach click handlers
-    const presetItems = presetList.querySelectorAll('.dropdown-item');
+    const presetItems = presetList.querySelectorAll(".dropdown-item");
     presetItems.forEach((item) => {
-      item.addEventListener('click', () => {
+      item.addEventListener("click", () => {
         const presetName = (item as HTMLElement).dataset.presetName!;
         const preset = this.presets.find((p) => p.name === presetName);
         if (preset && this.callbacks.onPresetLoad) {
@@ -339,9 +369,11 @@ export class PluginMenubar {
    */
   setCurrentPreset(name: string | null): void {
     this.currentPresetName = name;
-    const presetButton = this.container.querySelector('.preset-button span') as HTMLSpanElement;
+    const presetButton = this.container.querySelector(
+      ".preset-button span",
+    ) as HTMLSpanElement;
     if (presetButton) {
-      presetButton.textContent = name || 'Presets';
+      presetButton.textContent = name || "Presets";
     }
     this.updatePresetList();
   }
@@ -352,7 +384,7 @@ export class PluginMenubar {
   setMuted(muted: boolean): void {
     this.muted = muted;
     if (this.muteButton) {
-      this.muteButton.classList.toggle('active', muted);
+      this.muteButton.classList.toggle("active", muted);
     }
   }
 
@@ -362,7 +394,7 @@ export class PluginMenubar {
   setSolo(solo: boolean): void {
     this.solo = solo;
     if (this.soloButton) {
-      this.soloButton.classList.toggle('active', solo);
+      this.soloButton.classList.toggle("active", solo);
     }
   }
 
@@ -372,7 +404,7 @@ export class PluginMenubar {
   setBypassed(bypassed: boolean): void {
     this.bypassed = bypassed;
     if (this.bypassButton) {
-      this.bypassButton.classList.toggle('active', bypassed);
+      this.bypassButton.classList.toggle("active", bypassed);
     }
   }
 
@@ -380,6 +412,6 @@ export class PluginMenubar {
    * Destroy the menubar
    */
   destroy(): void {
-    this.container.innerHTML = '';
+    this.container.innerHTML = "";
   }
 }

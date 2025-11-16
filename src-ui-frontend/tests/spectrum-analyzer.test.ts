@@ -299,7 +299,9 @@ describe("SpectrumAnalyzerComponent", () => {
 
       // Ratio should be close regardless of canvas width (within 2%)
       // Small differences due to fixed padding at different canvas sizes
-      expect(Math.abs(widthRatioSmall - widthRatioLarge) / widthRatioLarge).toBeLessThan(0.02);
+      expect(
+        Math.abs(widthRatioSmall - widthRatioLarge) / widthRatioLarge,
+      ).toBeLessThan(0.02);
     });
 
     it("should scale bars proportionally with canvas height", () => {
@@ -349,10 +351,11 @@ describe("SpectrumAnalyzerComponent", () => {
 
       // Generate logarithmically spaced frequencies
       for (let i = 0; i < 100; i++) {
-        const logFreq = Math.log10(20) + (Math.log10(20000) - Math.log10(20)) * (i / 99);
+        const logFreq =
+          Math.log10(20) + (Math.log10(20000) - Math.log10(20)) * (i / 99);
         frequencies.push(Math.pow(10, logFreq));
         // Simulate varying magnitudes
-        magnitudes.push(-60 + (60 * i / 99));
+        magnitudes.push(-60 + (60 * i) / 99);
       }
 
       const mockSpectrum: SpectrumInfo = {
@@ -370,9 +373,14 @@ describe("SpectrumAnalyzerComponent", () => {
       const spectrum = component.getSpectrum();
       expect(spectrum).toBeDefined();
       expect(spectrum?.frequencies[0]).toBeCloseTo(20, 0);
-      expect(spectrum?.frequencies[spectrum.frequencies.length - 1]).toBeCloseTo(20000, 0);
+      expect(
+        spectrum?.frequencies[spectrum.frequencies.length - 1],
+      ).toBeCloseTo(20000, 0);
       expect(spectrum?.magnitudes[0]).toBeCloseTo(-60, 0);
-      expect(spectrum?.magnitudes[spectrum.magnitudes.length - 1]).toBeCloseTo(0, 0);
+      expect(spectrum?.magnitudes[spectrum.magnitudes.length - 1]).toBeCloseTo(
+        0,
+        0,
+      );
 
       // Should render without throwing
       expect(() => {

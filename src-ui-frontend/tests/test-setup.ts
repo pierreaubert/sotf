@@ -68,7 +68,7 @@ Object.defineProperty(window, "performance", {
 });
 
 // Mock DragEvent for drag-and-drop tests
-if (typeof DragEvent === 'undefined') {
+if (typeof DragEvent === "undefined") {
   global.DragEvent = class DragEvent extends Event {
     dataTransfer: any;
     constructor(type: string, eventInitDict?: any) {
@@ -128,7 +128,7 @@ const mockCanvasContext = {
 
 HTMLCanvasElement.prototype.getContext = vi.fn(function (
   this: HTMLCanvasElement,
-  contextType: string
+  contextType: string,
 ) {
   if (contextType === "2d") {
     mockCanvasContext.canvas = this;
@@ -139,7 +139,7 @@ HTMLCanvasElement.prototype.getContext = vi.fn(function (
 
 // Mock getBoundingClientRect for canvas elements
 HTMLCanvasElement.prototype.getBoundingClientRect = vi.fn(function (
-  this: HTMLCanvasElement
+  this: HTMLCanvasElement,
 ) {
   return {
     width: this.width || 800,

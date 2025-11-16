@@ -132,6 +132,7 @@ export class AudioPlayer {
 
   // Spectrum analyzer component
   private spectrumAnalyzer: SpectrumAnalyzerComponent | null = null;
+  private spectrumStopTimer: number | null = null;
 
   // Event handlers
   private resizeHandler: (() => void) | null = null;
@@ -242,7 +243,10 @@ export class AudioPlayer {
       // Restart spectrum analyzer if it's not already running
       if (this.spectrumAnalyzer && !this.spectrumAnalyzer.isActive()) {
         this.spectrumAnalyzer.start().catch((err) => {
-          console.error("[AudioPlayer] Failed to start spectrum analyzer:", err);
+          console.error(
+            "[AudioPlayer] Failed to start spectrum analyzer:",
+            err,
+          );
         });
       }
     } else if (state === "paused") {
@@ -307,15 +311,21 @@ export class AudioPlayer {
 <div class="audio-player">
 
   <!-- Section: Playback Options -->
-  ${this.config.enableEQ ? `
+  ${
+    this.config.enableEQ
+      ? `
   <div class="playback-options-section-inline">
     <h4>Playback Options</h4>
     <div class="playback-options-container"></div>
   </div>
-  ` : ''}
+  `
+      : ""
+  }
 
   <!-- Section: Filter Configuration -->
-  ${this.config.enableEQ ? `
+  ${
+    this.config.enableEQ
+      ? `
   <div class="filter-config-section-inline" style="margin: 16px 0; border: 1px solid var(--border-color, #ddd); border-radius: 8px; overflow: hidden;">
     <h4 class="filter-config-header" style="margin: 0; padding: 12px; background: var(--bg-secondary, #f5f5f5); cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between;">
       <span>Filter Configuration</span>
@@ -323,7 +333,9 @@ export class AudioPlayer {
     </h4>
     <div class="eq-table-container" style="display: none; padding: 12px;"></div>
   </div>
-  ` : ''}
+  `
+      : ""
+  }
 
   <!-- Section: Host Info -->
   <div class="host-info-section-inline" style="margin: 16px 0; padding: 12px; background: var(--bg-secondary, #f5f5f5); border-radius: 8px;">
@@ -400,7 +412,9 @@ export class AudioPlayer {
     </div>
 
     <!-- Block: Mini EQ -->
-    ${this.config.enableEQ ? `
+    ${
+      this.config.enableEQ
+        ? `
     <div class="audio-eq-controls" style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
       <label style="font-weight: 500; font-size: 0.9em;">EQ</label>
       <div class="eq-control-section">
@@ -419,7 +433,9 @@ export class AudioPlayer {
         </div>
       </div>
     </div>
-    ` : ''}
+    `
+        : ""
+    }
 
     <!-- Block: Audio Metrics -->
     <div class="audio-metrics-block" style="display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;">
@@ -482,7 +498,9 @@ export class AudioPlayer {
 
     // Cache host info elements
     this.hostInfoFormat = this.container.querySelector(".host-info-format");
-    this.hostInfoSampleRate = this.container.querySelector(".host-info-sample-rate");
+    this.hostInfoSampleRate = this.container.querySelector(
+      ".host-info-sample-rate",
+    );
     this.hostInfoChannels = this.container.querySelector(".host-info-channels");
     this.hostInfoBits = this.container.querySelector(".host-info-bits");
 
@@ -604,18 +622,26 @@ export class AudioPlayer {
     }
 
     // Filter configuration collapsible toggle
-    const filterConfigHeader = this.container.querySelector(".filter-config-header");
-    const filterConfigToggle = this.container.querySelector(".filter-config-toggle");
-    const eqTableContainer = this.container.querySelector(".eq-table-container");
+    const filterConfigHeader = this.container.querySelector(
+      ".filter-config-header",
+    );
+    const filterConfigToggle = this.container.querySelector(
+      ".filter-config-toggle",
+    );
+    const eqTableContainer = this.container.querySelector(
+      ".eq-table-container",
+    );
 
     if (filterConfigHeader && filterConfigToggle && eqTableContainer) {
       filterConfigHeader.addEventListener("click", () => {
-        const isCollapsed = (eqTableContainer as HTMLElement).style.display === "none";
+        const isCollapsed =
+          (eqTableContainer as HTMLElement).style.display === "none";
 
         if (isCollapsed) {
           // Expand
           (eqTableContainer as HTMLElement).style.display = "block";
-          (filterConfigToggle as HTMLElement).style.transform = "rotate(180deg)";
+          (filterConfigToggle as HTMLElement).style.transform =
+            "rotate(180deg)";
         } else {
           // Collapse
           (eqTableContainer as HTMLElement).style.display = "none";
@@ -708,7 +734,12 @@ export class AudioPlayer {
       this.hostInfoSampleRate.textContent = `${(info.sample_rate / 1000).toFixed(1)} kHz`;
     }
     if (this.hostInfoChannels) {
-      const channelLabel = info.channels === 1 ? "Mono" : info.channels === 2 ? "Stereo" : `${info.channels}ch`;
+      const channelLabel =
+        info.channels === 1
+          ? "Mono"
+          : info.channels === 2
+            ? "Stereo"
+            : `${info.channels}ch`;
       this.hostInfoChannels.textContent = channelLabel;
     }
     if (this.hostInfoBits) {
@@ -804,9 +835,19 @@ export class AudioPlayer {
       this.isAudioPaused = true;
       this.audioPauseTime = Date.now();
 
-      // Stop spectrum analyzer
+      // Stop spectrum analyzer after 3 seconds
       if (this.spectrumAnalyzer) {
-        await this.spectrumAnalyzer.stop();
+        // Clear any existing timer
+        if (this.spectrumStopTimer !== null) {
+          clearTimeout(this.spectrumStopTimer);
+        }
+        // Set timer to stop spectrum analyzer after 3 seconds
+        this.spectrumStopTimer = window.setTimeout(async () => {
+          if (this.spectrumAnalyzer && this.isAudioPaused) {
+            await this.spectrumAnalyzer.stop();
+          }
+          this.spectrumStopTimer = null;
+        }, 3000);
       }
 
       // Stop loudness monitoring
@@ -829,7 +870,13 @@ export class AudioPlayer {
       this.isAudioPlaying = false;
       this.isAudioPaused = false;
 
-      // Stop spectrum analyzer
+      // Clear spectrum stop timer if it exists
+      if (this.spectrumStopTimer !== null) {
+        clearTimeout(this.spectrumStopTimer);
+        this.spectrumStopTimer = null;
+      }
+
+      // Stop spectrum analyzer immediately
       if (this.spectrumAnalyzer) {
         await this.spectrumAnalyzer.stop();
       }
@@ -860,6 +907,12 @@ export class AudioPlayer {
 
   async resume(): Promise<void> {
     try {
+      // Clear spectrum stop timer if it exists (user resumed before 3 seconds elapsed)
+      if (this.spectrumStopTimer !== null) {
+        clearTimeout(this.spectrumStopTimer);
+        this.spectrumStopTimer = null;
+      }
+
       await this.streamingManager.resume();
       this.isAudioPlaying = true;
       this.isAudioPaused = false;
@@ -1106,6 +1159,12 @@ export class AudioPlayer {
   destroy(): void {
     // Stop audio
     this.stop();
+
+    // Clear spectrum stop timer if it exists
+    if (this.spectrumStopTimer !== null) {
+      clearTimeout(this.spectrumStopTimer);
+      this.spectrumStopTimer = null;
+    }
 
     // Destroy VisualEQConfig
     if (this.visualEQConfig) {

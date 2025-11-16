@@ -4,7 +4,12 @@
 /**
  * Plugin categories
  */
-export type PluginCategory = 'eq' | 'dynamics' | 'spatial' | 'analyzer' | 'utility';
+export type PluginCategory =
+  | "eq"
+  | "dynamics"
+  | "spatial"
+  | "analyzer"
+  | "utility";
 
 /**
  * Plugin metadata
@@ -15,7 +20,7 @@ export interface PluginMetadata {
   category: PluginCategory;
   version: string;
   icon?: string;
-  hasBuiltInLevelMeters?: boolean;  // True if plugin displays its own level meters
+  hasBuiltInLevelMeters?: boolean; // True if plugin displays its own level meters
 }
 
 /**
@@ -69,8 +74,8 @@ export interface IPlugin {
  */
 export interface PluginConfig {
   // Display settings
-  standalone?: boolean;        // Whether plugin has its own menubar
-  showMenubar?: boolean;       // Show/hide menubar
+  standalone?: boolean; // Whether plugin has its own menubar
+  showMenubar?: boolean; // Show/hide menubar
 
   // Initial state
   initialState?: Partial<PluginState>;
@@ -81,18 +86,18 @@ export interface PluginConfig {
   onBypass?: (bypassed: boolean) => void;
 
   // Host integration
-  hostId?: string;             // Parent host ID if embedded
+  hostId?: string; // Parent host ID if embedded
 }
 
 /**
  * Plugin event types
  */
 export enum PluginEvent {
-  StateChanged = 'stateChanged',
-  PresetChanged = 'presetChanged',
-  Bypassed = 'bypassed',
-  ParameterChanged = 'parameterChanged',
-  Resize = 'resize',
+  StateChanged = "stateChanged",
+  PresetChanged = "presetChanged",
+  Bypassed = "bypassed",
+  ParameterChanged = "parameterChanged",
+  Resize = "resize",
 }
 
 /**
@@ -120,18 +125,18 @@ export interface MenubarButton {
  * Level meter data
  */
 export interface LevelMeterData {
-  channels: number[];          // RMS levels in dB (one per channel)
-  peaks: number[];             // Peak levels in dB (one per channel)
-  clipping: boolean[];         // Clipping indicator per channel
+  channels: number[]; // RMS levels in dB (one per channel)
+  peaks: number[]; // Peak levels in dB (one per channel)
+  clipping: boolean[]; // Clipping indicator per channel
 }
 
 /**
  * LUFS meter data
  */
 export interface LUFSMeterData {
-  momentary: number;           // Momentary loudness (LUFS)
-  shortTerm: number;           // Short-term loudness (LUFS)
-  integrated: number;          // Integrated loudness (LUFS)
+  momentary: number; // Momentary loudness (LUFS)
+  shortTerm: number; // Short-term loudness (LUFS)
+  integrated: number; // Integrated loudness (LUFS)
 }
 
 /**

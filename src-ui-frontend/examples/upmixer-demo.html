@@ -1,11 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Upmixer Demo</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
-    <link rel="stylesheet" href="./demo.css">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
+    />
+    <link rel="stylesheet" href="./demo.css" />
   </head>
   <body>
     <div class="demo-container">
@@ -15,16 +18,20 @@
         <p>
           <strong>Upmixer</strong> converts stereo audio (2 channels) into
           surround sound (5.0 channels: L, R, C, SL, SR). It uses FFT-based
-          spatial processing to extract center and surround information from
-          the stereo signal.
+          spatial processing to extract center and surround information from the
+          stereo signal.
         </p>
         <p>
-          This demo shows the upmixer plugin hosted in a simple plugin host
-          with level meters, LUFS monitoring, and volume control.
+          This demo shows the upmixer plugin hosted in a simple plugin host with
+          level meters, LUFS monitoring, and volume control.
         </p>
       </div>
 
-      <div id="upmixer-container" class="box has-background-dark" style="min-height: 600px;">
+      <div
+        id="upmixer-container"
+        class="box has-background-dark"
+        style="min-height: 600px"
+      >
         <!-- Upmixer host will be rendered here -->
       </div>
 
@@ -39,9 +46,14 @@
         </ul>
         <h3>Parameters</h3>
         <ul>
-          <li><strong>Center Width:</strong> Amount of center channel extraction</li>
+          <li>
+            <strong>Center Width:</strong> Amount of center channel extraction
+          </li>
           <li><strong>Surround Level:</strong> Level of surround channels</li>
-          <li><strong>LFE Crossover:</strong> Low frequency cutoff for subwoofer (if enabled)</li>
+          <li>
+            <strong>LFE Crossover:</strong> Low frequency cutoff for subwoofer
+            (if enabled)
+          </li>
         </ul>
         <h3>Use Cases</h3>
         <ul>
@@ -62,8 +74,8 @@
 
       // Configure host
       const hostConfig = {
-        name: 'Upmixer Demo',
-        allowedPlugins: ['spatial'],
+        name: "Upmixer Demo",
+        allowedPlugins: ["spatial"],
         maxPlugins: 1,
         showLevelMeters: true,
         showLUFS: true,
@@ -83,7 +95,7 @@
         },
         onParameterChange: (plugin, parameter, value) => {
           console.log(
-            `Parameter changed: ${parameter.name} = ${value} in ${plugin.getName()}`
+            `Parameter changed: ${parameter.name} = ${value} in ${plugin.getName()}`,
           );
         },
       });
@@ -95,13 +107,13 @@
 
       // Create shortcuts modal
       const shortcutsModal = new ShortcutsModal({
-        pluginName: 'Upmixer',
+        pluginName: "Upmixer",
         pluginShortcuts: upmixer.getShortcuts(),
         hostShortcuts: [
-          { key: '↑', description: 'Increase volume' },
-          { key: '↓', description: 'Decrease volume' },
-          { key: '?', description: 'Show keyboard shortcuts' },
-        ]
+          { key: "↑", description: "Increase volume" },
+          { key: "↓", description: "Decrease volume" },
+          { key: "?", description: "Show keyboard shortcuts" },
+        ],
       });
 
       // Add modal to DOM
@@ -109,8 +121,8 @@
       document.body.appendChild(modalElement);
 
       // ? key to show shortcuts modal
-      document.addEventListener('keydown', (e) => {
-        if (e.key === '?' && !shortcutsModal.isVisible()) {
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "?" && !shortcutsModal.isVisible()) {
           e.preventDefault();
           shortcutsModal.show();
         }
@@ -118,8 +130,13 @@
 
       // Log info
       console.log("Upmixer demo initialized");
-      console.log("Plugins:", host.getPlugins().map(p => p.metadata.name));
-      console.log("Note: Upmixer converts 2ch stereo to 5ch surround (L, R, C, LFE, SL, SR)");
+      console.log(
+        "Plugins:",
+        host.getPlugins().map((p) => p.metadata.name),
+      );
+      console.log(
+        "Note: Upmixer converts 2ch stereo to 5ch surround (L, R, C, LFE, SL, SR)",
+      );
     </script>
   </body>
 </html>

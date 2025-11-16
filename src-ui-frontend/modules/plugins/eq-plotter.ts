@@ -1,8 +1,8 @@
 // EQ Plot Generation using Plotly and browser-based biquad filters
 
-import Plotly from 'plotly.js-basic-dist-min';
-import { BiquadFilter, type FilterType } from './biquad-filter';
-import type { FilterParam } from './plugin-eq';
+import Plotly from "plotly.js-basic-dist-min";
+import { BiquadFilter, type FilterType } from "./biquad-filter";
+import type { FilterParam } from "./plugin-eq";
 
 export interface EQPlotConfig {
   minFreq?: number;
@@ -28,7 +28,7 @@ const DEFAULT_CONFIG: Required<EQPlotConfig> = {
 export function generateEQPlot(
   container: HTMLElement,
   filters: FilterParam[],
-  config: EQPlotConfig = {}
+  config: EQPlotConfig = {},
 ): void {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
@@ -36,7 +36,7 @@ export function generateEQPlot(
   const frequencies = BiquadFilter.generateLogFrequencies(
     cfg.minFreq,
     cfg.maxFreq,
-    cfg.numPoints
+    cfg.numPoints,
   );
 
   // Create biquad filters for enabled filters
@@ -51,7 +51,7 @@ export function generateEQPlot(
       filter.frequency,
       cfg.sampleRate,
       filter.q,
-      filter.gain
+      filter.gain,
     );
 
     biquadFilters.push(biquad);
@@ -79,17 +79,18 @@ export function generateEQPlot(
       traces.push({
         x: frequencies,
         y: individualResponses[idx],
-        type: 'scatter',
-        mode: 'lines',
+        type: "scatter",
+        mode: "lines",
         name: filterLabel,
         line: {
           width: 2,
         },
         opacity: 0.5,
-        hovertemplate: `<b>${filterLabel}</b><br>` +
-          'Frequency: %{x:.0f} Hz<br>' +
-          'Gain: %{y:.2f} dB<br>' +
-          '<extra></extra>',
+        hovertemplate:
+          `<b>${filterLabel}</b><br>` +
+          "Frequency: %{x:.0f} Hz<br>" +
+          "Gain: %{y:.2f} dB<br>" +
+          "<extra></extra>",
       } as Plotly.Data);
     });
   }
@@ -99,18 +100,19 @@ export function generateEQPlot(
     traces.push({
       x: frequencies,
       y: combinedResponse,
-      type: 'scatter',
-      mode: 'lines',
-      name: 'Combined Response',
+      type: "scatter",
+      mode: "lines",
+      name: "Combined Response",
       line: {
         width: 3,
-        color: '#00bfff',
-        dash: 'dash',
+        color: "#00bfff",
+        dash: "dash",
       },
-      hovertemplate: '<b>Combined Response</b><br>' +
-        'Frequency: %{x:.0f} Hz<br>' +
-        'Gain: %{y:.2f} dB<br>' +
-        '<extra></extra>',
+      hovertemplate:
+        "<b>Combined Response</b><br>" +
+        "Frequency: %{x:.0f} Hz<br>" +
+        "Gain: %{y:.2f} dB<br>" +
+        "<extra></extra>",
     } as Plotly.Data);
   }
 
@@ -121,27 +123,27 @@ export function generateEQPlot(
       font: { size: 14 },
     } as any,
     xaxis: {
-      title: { text: 'Frequency (Hz)' } as any,
-      type: 'log',
+      title: { text: "Frequency (Hz)" } as any,
+      type: "log",
       range: [Math.log10(cfg.minFreq), Math.log10(cfg.maxFreq)],
-      gridcolor: 'rgba(128, 128, 128, 0.2)',
+      gridcolor: "rgba(128, 128, 128, 0.2)",
       showgrid: true,
     },
     yaxis: {
-      title: { text: 'Magnitude (dB)' } as any,
-      gridcolor: 'rgba(128, 128, 128, 0.2)',
+      title: { text: "Magnitude (dB)" } as any,
+      gridcolor: "rgba(128, 128, 128, 0.2)",
       showgrid: true,
       zeroline: true,
-      zerolinecolor: 'rgba(255, 255, 255, 0.3)',
+      zerolinecolor: "rgba(255, 255, 255, 0.3)",
       zerolinewidth: 2,
     },
     height: cfg.height,
     margin: { t: 60, r: 20, b: 60, l: 60 },
-    paper_bgcolor: 'rgba(26, 26, 26, 1)',
-    plot_bgcolor: 'rgba(26, 26, 26, 1)',
-    font: { color: '#ffffff' },
+    paper_bgcolor: "rgba(26, 26, 26, 1)",
+    plot_bgcolor: "rgba(26, 26, 26, 1)",
+    font: { color: "#ffffff" },
     showlegend: false,
-    hovermode: 'closest',
+    hovermode: "closest",
   };
 
   // Plot config
@@ -149,7 +151,7 @@ export function generateEQPlot(
     responsive: true,
     displayModeBar: true,
     displaylogo: false,
-    modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+    modeBarButtonsToRemove: ["lasso2d", "select2d"],
     modeBarButtonsToAdd: [],
   };
 
@@ -170,22 +172,22 @@ function getFilterLabel(biquad: BiquadFilter, index: number): string {
  */
 function getFilterTypeShort(type: FilterType): string {
   switch (type) {
-    case 'Peak':
-      return 'PK';
-    case 'Lowshelf':
-      return 'LS';
-    case 'Highshelf':
-      return 'HS';
-    case 'Lowpass':
-      return 'LP';
-    case 'Highpass':
-      return 'HP';
-    case 'Bandpass':
-      return 'BP';
-    case 'Notch':
-      return 'NO';
+    case "Peak":
+      return "PK";
+    case "Lowshelf":
+      return "LS";
+    case "Highshelf":
+      return "HS";
+    case "Lowpass":
+      return "LP";
+    case "Highpass":
+      return "HP";
+    case "Bandpass":
+      return "BP";
+    case "Notch":
+      return "NO";
     default:
-      return 'F';
+      return "F";
   }
 }
 
@@ -195,7 +197,7 @@ function getFilterTypeShort(type: FilterType): string {
 export function updateEQPlot(
   container: HTMLElement,
   filters: FilterParam[],
-  config: EQPlotConfig = {}
+  config: EQPlotConfig = {},
 ): void {
   // For now, just regenerate the plot
   // Can be optimized later with Plotly.react() for performance
@@ -208,17 +210,17 @@ export function updateEQPlot(
 export function addPlotClickHandler(
   container: HTMLElement,
   filters: FilterParam[],
-  onFilterSelect: (filterIndex: number) => void
+  onFilterSelect: (filterIndex: number) => void,
 ): void {
   // Use Plotly's event system
-  (container as any).on('plotly_click', (data: any) => {
+  (container as any).on("plotly_click", (data: any) => {
     if (!data.points || data.points.length === 0) return;
 
     const point = data.points[0];
     const curveNumber = point.curveNumber;
 
     // Last curve is combined response, before that are individual filters
-    const enabledFilters = filters.filter(f => f.enabled);
+    const enabledFilters = filters.filter((f) => f.enabled);
     if (curveNumber < enabledFilters.length) {
       // Map back to original filter index
       let enabledIdx = 0;

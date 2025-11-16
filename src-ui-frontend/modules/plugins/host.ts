@@ -1,20 +1,26 @@
 // Plugin Host Component
 // Container for managing multiple plugins with menubar, hosting bar, and display box
 
-import { PluginMenubar, type PluginMenubarCallbacks } from './plugin-menubar';
-import { LevelMeter } from './level-meter';
-import type { IPlugin, MenubarConfig, LevelMeterData, LUFSMeterData, ShortcutItem } from './plugin-types';
+import { PluginMenubar, type PluginMenubarCallbacks } from "./plugin-menubar";
+import { LevelMeter } from "./level-meter";
+import type {
+  IPlugin,
+  MenubarConfig,
+  LevelMeterData,
+  LUFSMeterData,
+  ShortcutItem,
+} from "./plugin-types";
 
 export interface HostConfig {
   name: string;
-  allowedPlugins?: string[];     // List of allowed plugin types
-  maxPlugins?: number;            // Maximum number of plugins (default: unlimited)
-  showLevelMeters?: boolean;      // Show level meters in right panel
-  showLUFS?: boolean;             // Show LUFS meter
-  showVolumeControl?: boolean;    // Show volume control
-  showHelpBar?: boolean;          // Show help bar with shortcuts
+  allowedPlugins?: string[]; // List of allowed plugin types
+  maxPlugins?: number; // Maximum number of plugins (default: unlimited)
+  showLevelMeters?: boolean; // Show level meters in right panel
+  showLUFS?: boolean; // Show LUFS meter
+  showVolumeControl?: boolean; // Show volume control
+  showHelpBar?: boolean; // Show help bar with shortcuts
   menubarConfig?: MenubarConfig;
-  accentColor?: string;           // Accent color for UI (default: 'is-success' - green)
+  accentColor?: string; // Accent color for UI (default: 'is-success' - green)
 }
 
 export interface HostCallbacks {
@@ -51,14 +57,18 @@ export class PluginHost {
   private selectedPlugin: IPlugin | null = null;
   private volume: number = 1.0;
   private muted: boolean = false;
-  private monitoringMode: 'input' | 'output' = 'output';
+  private monitoringMode: "input" | "output" = "output";
   private helpBarVisible: boolean = true;
 
   // Drag-and-drop state
   private draggedPlugin: IPlugin | null = null;
   private draggedIndex: number = -1;
 
-  constructor(container: HTMLElement, config: HostConfig, callbacks: HostCallbacks = {}) {
+  constructor(
+    container: HTMLElement,
+    config: HostConfig,
+    callbacks: HostCallbacks = {},
+  ) {
     this.container = container;
     this.config = {
       allowedPlugins: config.allowedPlugins ?? [],
@@ -68,7 +78,7 @@ export class PluginHost {
       showVolumeControl: config.showVolumeControl ?? true,
       showHelpBar: config.showHelpBar ?? true,
       menubarConfig: config.menubarConfig ?? {},
-      accentColor: config.accentColor ?? 'is-success',
+      accentColor: config.accentColor ?? "is-success",
       ...config,
     };
     this.callbacks = callbacks;
@@ -124,7 +134,7 @@ export class PluginHost {
         </div>
 
         <!-- Help Bar -->
-        ${this.config.showHelpBar ? this.renderHelpBar() : ''}
+        ${this.config.showHelpBar ? this.renderHelpBar() : ""}
 
       </div>
     `;
@@ -139,7 +149,8 @@ export class PluginHost {
    * Always use vertical layout for controls
    */
   private renderRightPanel(): string {
-    const pluginHasMeters = this.selectedPlugin?.metadata.hasBuiltInLevelMeters ?? false;
+    const pluginHasMeters =
+      this.selectedPlugin?.metadata.hasBuiltInLevelMeters ?? false;
 
     if (pluginHasMeters) {
       // Vertical layout: LUFS, Input/Output toggle, Volume stacked (no host meters)
@@ -147,8 +158,8 @@ export class PluginHost {
     } else {
       // Vertical layout: meters at top, then LUFS, Input/Output toggle, Volume stacked
       return `
-        ${this.config.showLevelMeters ? this.renderLevelMeters() : ''}
-        ${this.config.showLUFS || this.config.showLevelMeters || this.config.showVolumeControl ? this.renderCompactControlsVertical() : ''}
+        ${this.config.showLevelMeters ? this.renderLevelMeters() : ""}
+        ${this.config.showLUFS || this.config.showLevelMeters || this.config.showVolumeControl ? this.renderCompactControlsVertical() : ""}
       `;
     }
   }
@@ -159,9 +170,9 @@ export class PluginHost {
   private renderCompactControlsRow(): string {
     return `
       <div class="is-flex is-align-items-stretch" >
-        ${this.config.showLUFS ? this.renderLUFSMeter() : ''}
-        ${this.config.showLevelMeters ? this.renderMonitoringToggle() : ''}
-        ${this.config.showVolumeControl ? this.renderVolumeControl() : ''}
+        ${this.config.showLUFS ? this.renderLUFSMeter() : ""}
+        ${this.config.showLevelMeters ? this.renderMonitoringToggle() : ""}
+        ${this.config.showVolumeControl ? this.renderVolumeControl() : ""}
       </div>
     `;
   }
@@ -173,9 +184,9 @@ export class PluginHost {
   private renderCompactControlsVertical(): string {
     return `
       <div class="is-flex is-flex-direction-column" >
-        ${this.config.showLUFS ? this.renderLUFSMeterVertical() : ''}
-        ${this.config.showLevelMeters ? this.renderMonitoringToggleVertical() : ''}
-        ${this.config.showVolumeControl ? this.renderVolumeControl('vertical') : ''}
+        ${this.config.showLUFS ? this.renderLUFSMeterVertical() : ""}
+        ${this.config.showLevelMeters ? this.renderMonitoringToggleVertical() : ""}
+        ${this.config.showVolumeControl ? this.renderVolumeControl("vertical") : ""}
       </div>
     `;
   }
@@ -189,10 +200,10 @@ export class PluginHost {
       <div class="is-flex is-flex-direction-column is-align-items-center">
         <div class="has-text-centered has-text-weight-semibold is-size-7 mb-1 has-text-light">Monitor</div>
         <div class="buttons has-addons">
-          <button class="button is-small ${this.monitoringMode === 'input' ? `${accentColor} is-selected` : ''}" data-mode="input" title="Monitor Input">
+          <button class="button is-small ${this.monitoringMode === "input" ? `${accentColor} is-selected` : ""}" data-mode="input" title="Monitor Input">
             In
           </button>
-          <button class="button is-small ${this.monitoringMode === 'output' ? `${accentColor} is-selected` : ''}" data-mode="output" title="Monitor Output">
+          <button class="button is-small ${this.monitoringMode === "output" ? `${accentColor} is-selected` : ""}" data-mode="output" title="Monitor Output">
             Out
           </button>
         </div>
@@ -205,7 +216,7 @@ export class PluginHost {
    */
   private renderLUFSMeter(): string {
     // Map button color classes to text color classes
-    const textColorClass = this.config.accentColor!.replace('is-', 'has-text-');
+    const textColorClass = this.config.accentColor!.replace("is-", "has-text-");
 
     return `
       <div class="box p-2 has-background-dark">
@@ -236,7 +247,8 @@ export class PluginHost {
     // Calculate width: each channel gets 20px + 10px spacing
     const channelWidth = 30;
     const spacing = 10;
-    const canvasWidth = (outputChannels * channelWidth) + ((outputChannels + 1) * spacing);
+    const canvasWidth =
+      outputChannels * channelWidth + (outputChannels + 1) * spacing;
     const canvasHeight = 240;
 
     return `
@@ -249,22 +261,25 @@ export class PluginHost {
   /**
    * Render volume control knob
    */
-  private renderVolumeControl(layout: 'compact' | 'vertical' = 'compact'): string {
+  private renderVolumeControl(
+    layout: "compact" | "vertical" = "compact",
+  ): string {
     const volumePercent = Math.round(this.volume * 100);
-    const knobClass = layout === 'compact' ? 'volume-knob' : 'volume-knob-vertical';
+    const knobClass =
+      layout === "compact" ? "volume-knob" : "volume-knob-vertical";
     // Map Bulma color classes to hex colors for SVG stroke
     const accentColorMap: Record<string, string> = {
-      'is-success': '#48c78e',
-      'is-info': '#3273dc',
-      'is-primary': '#00d1b2',
-      'is-warning': '#ffdd57',
-      'is-danger': '#f14668',
+      "is-success": "#48c78e",
+      "is-info": "#3273dc",
+      "is-primary": "#00d1b2",
+      "is-warning": "#ffdd57",
+      "is-danger": "#f14668",
     };
-    const strokeColor = accentColorMap[this.config.accentColor!] || '#48c78e';
+    const strokeColor = accentColorMap[this.config.accentColor!] || "#48c78e";
 
     return `
       <div class="box p-2 has-background-dark">
-        <div class="has-text-weight-semibold ${layout === 'compact' ? 'is-size-7 mb-1' : 'mb-2'} has-text-centered has-text-light">Volume</div>
+        <div class="has-text-weight-semibold ${layout === "compact" ? "is-size-7 mb-1" : "mb-2"} has-text-centered has-text-light">Volume</div>
         <div class="is-flex is-justify-content-center">
           <div class="${knobClass}" data-volume="${volumePercent}" style="cursor: pointer; position: relative; width: 80px; height: 80px;">
             <svg class="volume-knob-svg" viewBox="0 0 100 100" style="width: 100%; height: 100%;">
@@ -285,7 +300,7 @@ export class PluginHost {
    */
   private renderLUFSMeterVertical(): string {
     // Map button color classes to text color classes
-    const textColorClass = this.config.accentColor!.replace('is-', 'has-text-');
+    const textColorClass = this.config.accentColor!.replace("is-", "has-text-");
 
     return `
       <div class="box p-3 has-background-dark">
@@ -317,10 +332,10 @@ export class PluginHost {
       <div class="field is-flex is-flex-direction-column is-align-items-center">
         <label class="label is-small has-text-light has-text-centered">Monitor</label>
         <div class="buttons has-addons">
-          <button class="button is-small ${this.monitoringMode === 'input' ? `${accentColor} is-selected` : ''}" data-mode="input" title="Monitor Input">
+          <button class="button is-small ${this.monitoringMode === "input" ? `${accentColor} is-selected` : ""}" data-mode="input" title="Monitor Input">
             Input
           </button>
-          <button class="button is-small ${this.monitoringMode === 'output' ? `${accentColor} is-selected` : ''}" data-mode="output" title="Monitor Output">
+          <button class="button is-small ${this.monitoringMode === "output" ? `${accentColor} is-selected` : ""}" data-mode="output" title="Monitor Output">
             Output
           </button>
         </div>
@@ -328,22 +343,25 @@ export class PluginHost {
     `;
   }
 
-
   /**
    * Render help bar with shortcuts using Bulma tags
    */
   private renderHelpBar(): string {
-    if (!this.helpBarVisible) return '';
+    if (!this.helpBarVisible) return "";
 
     const shortcuts = this.getShortcuts();
-    const shortcutItems = shortcuts.map(({ key, description }) => `
+    const shortcutItems = shortcuts
+      .map(
+        ({ key, description }) => `
       <div class="control">
         <div class="tags has-addons">
           <span class="tag is-info">${this.escapeHtml(key)}</span>
           <span class="tag is-dark">${this.escapeHtml(description)}</span>
         </div>
       </div>
-    `).join('');
+    `,
+      )
+      .join("");
 
     return `
       <div class="notification is-dark p-3" style="position: relative; border-top: 1px solid #404040; margin: 0; border-radius: 0;">
@@ -359,12 +377,13 @@ export class PluginHost {
    * Get shortcuts for current context
    */
   private getShortcuts(): ShortcutItem[] {
-    const shortcuts: ShortcutItem[] = [
-      { key: '?', description: 'Help' },
-    ];
+    const shortcuts: ShortcutItem[] = [{ key: "?", description: "Help" }];
 
     // Add plugin-specific shortcuts first if a plugin is selected
-    if (this.selectedPlugin && typeof this.selectedPlugin.getShortcuts === 'function') {
+    if (
+      this.selectedPlugin &&
+      typeof this.selectedPlugin.getShortcuts === "function"
+    ) {
       const pluginShortcuts = this.selectedPlugin.getShortcuts();
       shortcuts.push(...pluginShortcuts);
     }
@@ -372,16 +391,16 @@ export class PluginHost {
     // Add monitoring shortcuts if meters are shown
     if (this.config.showLevelMeters) {
       shortcuts.push(
-        { key: '<', description: 'Monitor input' },
-        { key: '>', description: 'Monitor output' }
+        { key: "<", description: "Monitor input" },
+        { key: ">", description: "Monitor output" },
       );
     }
 
     // Add volume shortcuts if volume control is shown
     if (this.config.showVolumeControl) {
       shortcuts.push(
-        { key: '↑', description: 'Volume up' },
-        { key: '↓', description: 'Volume down' }
+        { key: "↑", description: "Volume up" },
+        { key: "↓", description: "Volume down" },
       );
     }
 
@@ -395,17 +414,21 @@ export class PluginHost {
     if (!this.config.showHelpBar || !this.helpBar) return;
 
     const shortcuts = this.getShortcuts();
-    const shortcutsContainer = this.helpBar.querySelector('.field.is-grouped');
+    const shortcutsContainer = this.helpBar.querySelector(".field.is-grouped");
 
     if (shortcutsContainer) {
-      const shortcutItems = shortcuts.map(({ key, description }) => `
+      const shortcutItems = shortcuts
+        .map(
+          ({ key, description }) => `
         <div class="control">
           <div class="tags has-addons">
             <span class="tag is-dark">${this.escapeHtml(key)}</span>
             <span class="tag is-light">${this.escapeHtml(description)}</span>
           </div>
         </div>
-      `).join('');
+      `,
+        )
+        .join("");
 
       shortcutsContainer.innerHTML = shortcutItems;
     }
@@ -415,7 +438,7 @@ export class PluginHost {
    * Escape HTML to prevent XSS
    */
   private escapeHtml(text: string): string {
-    const div = document.createElement('div');
+    const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   }
@@ -424,12 +447,12 @@ export class PluginHost {
    * Cache DOM elements
    */
   private cacheElements(): void {
-    this.hostingBar = this.container.querySelector('.hosting-bar');
-    this.helpBar = this.container.querySelector('.notification');
-    this.displayBox = this.container.querySelector('.display-box');
-    this.displayLeft = this.container.querySelector('.display-left');
-    this.displayRight = this.container.querySelector('.display-right');
-    this.pluginSlotsContainer = this.container.querySelector('.plugin-slots');
+    this.hostingBar = this.container.querySelector(".hosting-bar");
+    this.helpBar = this.container.querySelector(".notification");
+    this.displayBox = this.container.querySelector(".display-box");
+    this.displayLeft = this.container.querySelector(".display-left");
+    this.displayRight = this.container.querySelector(".display-right");
+    this.pluginSlotsContainer = this.container.querySelector(".plugin-slots");
   }
 
   /**
@@ -437,18 +460,27 @@ export class PluginHost {
    */
   private initializeComponents(): void {
     // Initialize menubar
-    const menubarContainer = this.container.querySelector('.host-menubar') as HTMLElement;
+    const menubarContainer = this.container.querySelector(
+      ".host-menubar",
+    ) as HTMLElement;
     if (menubarContainer) {
       const menubarCallbacks: PluginMenubarCallbacks = {
         onMatrix: () => this.showMatrixDialog(),
         onMute: (muted) => this.setMuted(muted),
       };
-      this.menubar = new PluginMenubar(menubarContainer, this.config.name, this.config.menubarConfig, menubarCallbacks);
+      this.menubar = new PluginMenubar(
+        menubarContainer,
+        this.config.name,
+        this.config.menubarConfig,
+        menubarCallbacks,
+      );
     }
 
     // Initialize level meters
     if (this.config.showLevelMeters) {
-      const canvas = this.container.querySelector('.level-meters-canvas') as HTMLCanvasElement;
+      const canvas = this.container.querySelector(
+        ".level-meters-canvas",
+      ) as HTMLCanvasElement;
       if (canvas) {
         // Make canvas responsive to container size
         // Use setTimeout to ensure container has rendered and has dimensions
@@ -471,7 +503,8 @@ export class PluginHost {
 
         // Get initial channel configuration based on plugin chain
         const { inputChannels, outputChannels } = this.getChannelCounts();
-        const channels = this.monitoringMode === 'input' ? inputChannels : outputChannels;
+        const channels =
+          this.monitoringMode === "input" ? inputChannels : outputChannels;
         const labels = this.generateChannelLabels(channels);
 
         this.levelMeter = new LevelMeter({
@@ -488,25 +521,29 @@ export class PluginHost {
    */
   private attachEventListeners(): void {
     // Add plugin button
-    const addButton = this.container.querySelector('.add-plugin-btn') as HTMLButtonElement;
+    const addButton = this.container.querySelector(
+      ".add-plugin-btn",
+    ) as HTMLButtonElement;
     if (addButton) {
-      addButton.addEventListener('click', () => {
+      addButton.addEventListener("click", () => {
         this.showPluginSelector();
       });
     }
 
     // Help bar close button
     if (this.helpBar) {
-      const closeButton = this.helpBar.querySelector('.help-close') as HTMLButtonElement;
+      const closeButton = this.helpBar.querySelector(
+        ".help-close",
+      ) as HTMLButtonElement;
       if (closeButton) {
-        closeButton.addEventListener('click', () => this.toggleHelpBar());
+        closeButton.addEventListener("click", () => this.toggleHelpBar());
       }
     }
 
     this.attachRightPanelEventListeners();
 
     // Keyboard shortcuts
-    document.addEventListener('keydown', this.handleKeydown);
+    document.addEventListener("keydown", this.handleKeydown);
   }
 
   /**
@@ -514,16 +551,18 @@ export class PluginHost {
    */
   private attachRightPanelEventListeners(): void {
     // Volume knob - both compact and vertical versions
-    const volumeKnobs = this.container.querySelectorAll('.volume-knob, .volume-knob-vertical');
+    const volumeKnobs = this.container.querySelectorAll(
+      ".volume-knob, .volume-knob-vertical",
+    );
     volumeKnobs.forEach((volumeKnob) => {
-      volumeKnob.addEventListener('wheel', (e) => {
+      volumeKnob.addEventListener("wheel", (e) => {
         e.preventDefault();
         const delta = -Math.sign((e as WheelEvent).deltaY) * 0.05;
         this.setVolume(Math.max(0, Math.min(1, this.volume + delta)));
       });
 
       // Click to adjust
-      volumeKnob.addEventListener('click', (e) => {
+      volumeKnob.addEventListener("click", (e) => {
         const rect = (volumeKnob as HTMLElement).getBoundingClientRect();
         const centerY = rect.top + rect.height / 2;
         const clickY = (e as MouseEvent).clientY;
@@ -533,10 +572,13 @@ export class PluginHost {
     });
 
     // Monitoring toggle buttons - Bulma buttons with data-mode attribute
-    const monitoringButtons = this.container.querySelectorAll('button[data-mode]');
+    const monitoringButtons =
+      this.container.querySelectorAll("button[data-mode]");
     monitoringButtons.forEach((button) => {
-      button.addEventListener('click', (e) => {
-        const mode = (e.target as HTMLElement).dataset.mode as 'input' | 'output';
+      button.addEventListener("click", (e) => {
+        const mode = (e.target as HTMLElement).dataset.mode as
+          | "input"
+          | "output";
         this.setMonitoringMode(mode);
       });
     });
@@ -547,10 +589,13 @@ export class PluginHost {
    */
   private reinitializeRightPanelComponents(): void {
     // Reinitialize level meters if they're shown
-    const pluginHasMeters = this.selectedPlugin?.metadata.hasBuiltInLevelMeters ?? false;
+    const pluginHasMeters =
+      this.selectedPlugin?.metadata.hasBuiltInLevelMeters ?? false;
 
     if (!pluginHasMeters && this.config.showLevelMeters) {
-      const canvas = this.container.querySelector('.level-meters-canvas') as HTMLCanvasElement;
+      const canvas = this.container.querySelector(
+        ".level-meters-canvas",
+      ) as HTMLCanvasElement;
       if (canvas) {
         // Destroy old level meter
         if (this.levelMeter) {
@@ -570,7 +615,8 @@ export class PluginHost {
 
             // Get channel configuration based on plugin chain
             const { inputChannels, outputChannels } = this.getChannelCounts();
-            const channels = this.monitoringMode === 'input' ? inputChannels : outputChannels;
+            const channels =
+              this.monitoringMode === "input" ? inputChannels : outputChannels;
             const labels = this.generateChannelLabels(channels);
 
             this.levelMeter = new LevelMeter({
@@ -593,37 +639,41 @@ export class PluginHost {
   private handleKeydown = (e: KeyboardEvent): void => {
     // Check if target is an input element
     const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+    if (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT"
+    ) {
       return;
     }
 
     switch (e.key) {
-      case '<':
-      case 'ArrowLeft':
+      case "<":
+      case "ArrowLeft":
         e.preventDefault();
-        this.setMonitoringMode('input');
+        this.setMonitoringMode("input");
         break;
-      case '>':
-      case 'ArrowRight':
+      case ">":
+      case "ArrowRight":
         e.preventDefault();
-        this.setMonitoringMode('output');
+        this.setMonitoringMode("output");
         break;
 
       // Volume controls
-      case '+':
-      case 'ArrowUp':
-      case 'AudioVolumeUp':
+      case "+":
+      case "ArrowUp":
+      case "AudioVolumeUp":
         e.preventDefault();
         this.setVolume(Math.min(1, this.volume + 0.05));
         break;
-      case '-':
-      case 'ArrowDown':
-      case 'AudioVolumeDown':
+      case "-":
+      case "ArrowDown":
+      case "AudioVolumeDown":
         e.preventDefault();
         this.setVolume(Math.max(0, this.volume - 0.05));
         break;
     }
-  }
+  };
 
   /**
    * Add a plugin
@@ -631,7 +681,7 @@ export class PluginHost {
   addPlugin(plugin: IPlugin): void {
     // Check if we can add more plugins
     if (this.plugins.length >= this.config.maxPlugins!) {
-      console.warn('[PluginHost] Maximum number of plugins reached');
+      console.warn("[PluginHost] Maximum number of plugins reached");
       return;
     }
 
@@ -640,7 +690,10 @@ export class PluginHost {
       this.config.allowedPlugins!.length > 0 &&
       !this.config.allowedPlugins!.includes(plugin.metadata.category)
     ) {
-      console.warn('[PluginHost] Plugin type not allowed:', plugin.metadata.category);
+      console.warn(
+        "[PluginHost] Plugin type not allowed:",
+        plugin.metadata.category,
+      );
       return;
     }
 
@@ -702,9 +755,15 @@ export class PluginHost {
     // Render plugin in display area
     if (this.displayLeft) {
       if (plugin) {
-        this.displayLeft.innerHTML = '<div class="active-plugin-container"></div>';
-        const pluginContainer = this.displayLeft.querySelector('.active-plugin-container') as HTMLElement;
-        plugin.initialize(pluginContainer, { standalone: false, showMenubar: false });
+        this.displayLeft.innerHTML =
+          '<div class="active-plugin-container"></div>';
+        const pluginContainer = this.displayLeft.querySelector(
+          ".active-plugin-container",
+        ) as HTMLElement;
+        plugin.initialize(pluginContainer, {
+          standalone: false,
+          showMenubar: false,
+        });
       } else {
         this.displayLeft.innerHTML = `
           <div class="is-flex is-flex-direction-column is-align-items-center is-justify-content-center has-text-grey" >
@@ -739,12 +798,12 @@ export class PluginHost {
    */
   private renderPluginSlot(plugin: IPlugin): void {
     if (!this.pluginSlotsContainer) {
-      console.error('[PluginHost] pluginSlotsContainer is null!');
+      console.error("[PluginHost] pluginSlotsContainer is null!");
       return;
     }
 
-    const slot = document.createElement('button');
-    slot.className = 'button is-small';
+    const slot = document.createElement("button");
+    slot.className = "button is-small";
     slot.dataset.pluginId = plugin.metadata.id;
     slot.draggable = true;
     slot.title = plugin.metadata.name;
@@ -759,26 +818,26 @@ export class PluginHost {
     `;
 
     // Click to select
-    slot.addEventListener('click', (e) => {
-      if (!(e.target as HTMLElement).closest('.plugin-slot-remove')) {
+    slot.addEventListener("click", (e) => {
+      if (!(e.target as HTMLElement).closest(".plugin-slot-remove")) {
         this.selectPlugin(plugin);
       }
     });
 
     // Remove button
-    const removeBtn = slot.querySelector('.plugin-slot-remove') as HTMLElement;
-    removeBtn.addEventListener('click', (e) => {
+    const removeBtn = slot.querySelector(".plugin-slot-remove") as HTMLElement;
+    removeBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       this.removePlugin(plugin);
     });
 
     // Drag-and-drop event listeners
-    slot.addEventListener('dragstart', (e) => this.handleDragStart(e, plugin));
-    slot.addEventListener('dragend', (e) => this.handleDragEnd(e));
-    slot.addEventListener('dragover', (e) => this.handleDragOver(e));
-    slot.addEventListener('drop', (e) => this.handleDrop(e, plugin));
-    slot.addEventListener('dragenter', (e) => this.handleDragEnter(e));
-    slot.addEventListener('dragleave', (e) => this.handleDragLeave(e));
+    slot.addEventListener("dragstart", (e) => this.handleDragStart(e, plugin));
+    slot.addEventListener("dragend", (e) => this.handleDragEnd(e));
+    slot.addEventListener("dragover", (e) => this.handleDragOver(e));
+    slot.addEventListener("drop", (e) => this.handleDrop(e, plugin));
+    slot.addEventListener("dragenter", (e) => this.handleDragEnter(e));
+    slot.addEventListener("dragleave", (e) => this.handleDragLeave(e));
 
     this.pluginSlotsContainer.appendChild(slot);
   }
@@ -789,7 +848,7 @@ export class PluginHost {
   private renderAllPluginSlots(): void {
     if (!this.pluginSlotsContainer) return;
 
-    this.pluginSlotsContainer.innerHTML = '';
+    this.pluginSlotsContainer.innerHTML = "";
     this.plugins.forEach((plugin) => this.renderPluginSlot(plugin));
     this.updateSlotSelection();
   }
@@ -798,20 +857,28 @@ export class PluginHost {
    * Update slot selection highlighting
    */
   private updateSlotSelection(): void {
-    const slots = this.container.querySelectorAll('.buttons > button');
+    const slots = this.container.querySelectorAll(".buttons > button");
     const accentColor = this.config.accentColor!;
 
     slots.forEach((slot) => {
       const pluginId = (slot as HTMLElement).dataset.pluginId;
-      const isSelected = !!(this.selectedPlugin && this.selectedPlugin.metadata.id === pluginId);
+      const isSelected = !!(
+        this.selectedPlugin && this.selectedPlugin.metadata.id === pluginId
+      );
 
       // Remove all possible color classes
-      slot.classList.remove('is-info', 'is-success', 'is-primary', 'is-warning', 'is-danger');
+      slot.classList.remove(
+        "is-info",
+        "is-success",
+        "is-primary",
+        "is-warning",
+        "is-danger",
+      );
 
       if (isSelected) {
         slot.classList.add(accentColor);
       }
-      slot.classList.toggle('is-selected', isSelected);
+      slot.classList.toggle("is-selected", isSelected);
     });
   }
 
@@ -819,25 +886,57 @@ export class PluginHost {
    * Show plugin selector dialog
    */
   private showPluginSelector(): void {
-
     // Available plugins
     const availablePlugins = [
-      { id: 'eq', name: 'EQ', category: 'eq', description: 'Parametric Equalizer', icon: '🎚️' },
-      { id: 'compressor', name: 'Compressor', category: 'dynamics', description: 'Dynamic Range Compressor', icon: '🔊' },
-      { id: 'limiter', name: 'Limiter', category: 'dynamics', description: 'Peak Limiter', icon: '🛡️' },
-      { id: 'upmixer', name: 'Upmixer', category: 'spatial', description: 'Stereo to 5.1 Upmixer', icon: '🔉' },
-      { id: 'spectrum', name: 'Spectrum', category: 'analyzer', description: 'Frequency Spectrum Analyzer', icon: '📊' },
+      {
+        id: "eq",
+        name: "EQ",
+        category: "eq",
+        description: "Parametric Equalizer",
+        icon: "🎚️",
+      },
+      {
+        id: "compressor",
+        name: "Compressor",
+        category: "dynamics",
+        description: "Dynamic Range Compressor",
+        icon: "🔊",
+      },
+      {
+        id: "limiter",
+        name: "Limiter",
+        category: "dynamics",
+        description: "Peak Limiter",
+        icon: "🛡️",
+      },
+      {
+        id: "upmixer",
+        name: "Upmixer",
+        category: "spatial",
+        description: "Stereo to 5.1 Upmixer",
+        icon: "🔉",
+      },
+      {
+        id: "spectrum",
+        name: "Spectrum",
+        category: "analyzer",
+        description: "Frequency Spectrum Analyzer",
+        icon: "📊",
+      },
     ];
 
     // Filter by allowed plugins if specified
-    const plugins = this.config.allowedPlugins!.length > 0
-      ? availablePlugins.filter(p => this.config.allowedPlugins!.includes(p.category))
-      : availablePlugins;
+    const plugins =
+      this.config.allowedPlugins!.length > 0
+        ? availablePlugins.filter((p) =>
+            this.config.allowedPlugins!.includes(p.category),
+          )
+        : availablePlugins;
 
     // Create Bulma modal
-    const dialog = document.createElement('div');
-    dialog.className = 'modal is-active';
-    dialog.style.zIndex = '9999';
+    const dialog = document.createElement("div");
+    dialog.className = "modal is-active";
+    dialog.style.zIndex = "9999";
     dialog.innerHTML = `
       <div class="modal-background"></div>
       <div class="modal-card">
@@ -847,7 +946,9 @@ export class PluginHost {
         </header>
         <section class="modal-card-body">
           <div class="columns is-multiline">
-            ${plugins.map(plugin => `
+            ${plugins
+              .map(
+                (plugin) => `
               <div class="column is-half">
                 <button class="button is-fullwidth is-justify-content-flex-start plugin-selector-item" data-plugin-id="${plugin.id}" style="height: auto; padding: 1rem;">
                   <span class="icon is-large mr-3">${plugin.icon}</span>
@@ -857,7 +958,9 @@ export class PluginHost {
                   </div>
                 </button>
               </div>
-            `).join('')}
+            `,
+              )
+              .join("")}
           </div>
         </section>
       </div>
@@ -871,17 +974,19 @@ export class PluginHost {
     };
 
     // Close button
-    const closeBtn = dialog.querySelector('.plugin-selector-close') as HTMLButtonElement;
-    closeBtn.addEventListener('click', closeDialog);
+    const closeBtn = dialog.querySelector(
+      ".plugin-selector-close",
+    ) as HTMLButtonElement;
+    closeBtn.addEventListener("click", closeDialog);
 
     // Modal background click to close
-    const modalBg = dialog.querySelector('.modal-background') as HTMLElement;
-    modalBg.addEventListener('click', closeDialog);
+    const modalBg = dialog.querySelector(".modal-background") as HTMLElement;
+    modalBg.addEventListener("click", closeDialog);
 
     // Plugin selection
-    const pluginItems = dialog.querySelectorAll('.plugin-selector-item');
-    pluginItems.forEach(item => {
-      item.addEventListener('click', () => {
+    const pluginItems = dialog.querySelectorAll(".plugin-selector-item");
+    pluginItems.forEach((item) => {
+      item.addEventListener("click", () => {
         const pluginId = (item as HTMLElement).dataset.pluginId!;
         this.createPluginById(pluginId);
         closeDialog();
@@ -894,43 +999,56 @@ export class PluginHost {
    */
   private createPluginById(pluginId: string): void {
     // Dynamically import and create plugin based on ID
-    if (pluginId === 'eq') {
-      import('./plugin-eq').then(({ EQPlugin }) => {
-        const plugin = new EQPlugin();
-        this.addPlugin(plugin);
-      }).catch(err => {
-        console.error('[PluginHost] Failed to import EQ plugin:', err);
-      });
-    } else if (pluginId === 'compressor') {
-      import('./plugin-compressor').then(({ CompressorPlugin }) => {
-        const plugin = new CompressorPlugin();
-        this.addPlugin(plugin);
-      }).catch(err => {
-        console.error('[PluginHost] Failed to import Compressor plugin:', err);
-      });
-    } else if (pluginId === 'limiter') {
-      import('./plugin-limiter').then(({ LimiterPlugin }) => {
-        const plugin = new LimiterPlugin();
-        this.addPlugin(plugin);
-      }).catch(err => {
-        console.error('[PluginHost] Failed to import Limiter plugin:', err);
-      });
-    } else if (pluginId === 'upmixer') {
-      import('./plugin-upmixer').then(({ UpmixerPlugin }) => {
-        const plugin = new UpmixerPlugin();
-        this.addPlugin(plugin);
-      }).catch(err => {
-        console.error('[PluginHost] Failed to import Upmixer plugin:', err);
-      });
-    } else if (pluginId === 'spectrum') {
-      import('./plugin-spectrum').then(({ SpectrumPlugin }) => {
-        const plugin = new SpectrumPlugin();
-        this.addPlugin(plugin);
-      }).catch(err => {
-        console.error('[PluginHost] Failed to import Spectrum plugin:', err);
-      });
+    if (pluginId === "eq") {
+      import("./plugin-eq")
+        .then(({ EQPlugin }) => {
+          const plugin = new EQPlugin();
+          this.addPlugin(plugin);
+        })
+        .catch((err) => {
+          console.error("[PluginHost] Failed to import EQ plugin:", err);
+        });
+    } else if (pluginId === "compressor") {
+      import("./plugin-compressor")
+        .then(({ CompressorPlugin }) => {
+          const plugin = new CompressorPlugin();
+          this.addPlugin(plugin);
+        })
+        .catch((err) => {
+          console.error(
+            "[PluginHost] Failed to import Compressor plugin:",
+            err,
+          );
+        });
+    } else if (pluginId === "limiter") {
+      import("./plugin-limiter")
+        .then(({ LimiterPlugin }) => {
+          const plugin = new LimiterPlugin();
+          this.addPlugin(plugin);
+        })
+        .catch((err) => {
+          console.error("[PluginHost] Failed to import Limiter plugin:", err);
+        });
+    } else if (pluginId === "upmixer") {
+      import("./plugin-upmixer")
+        .then(({ UpmixerPlugin }) => {
+          const plugin = new UpmixerPlugin();
+          this.addPlugin(plugin);
+        })
+        .catch((err) => {
+          console.error("[PluginHost] Failed to import Upmixer plugin:", err);
+        });
+    } else if (pluginId === "spectrum") {
+      import("./plugin-spectrum")
+        .then(({ SpectrumPlugin }) => {
+          const plugin = new SpectrumPlugin();
+          this.addPlugin(plugin);
+        })
+        .catch((err) => {
+          console.error("[PluginHost] Failed to import Spectrum plugin:", err);
+        });
     } else {
-      console.error('[PluginHost] Unknown plugin ID:', pluginId);
+      console.error("[PluginHost] Unknown plugin ID:", pluginId);
     }
   }
 
@@ -939,7 +1057,7 @@ export class PluginHost {
    */
   private showMatrixDialog(): void {
     // TODO: Implement matrix routing dialog
-    console.log('[PluginHost] Show matrix dialog');
+    console.log("[PluginHost] Show matrix dialog");
   }
 
   /**
@@ -955,9 +1073,15 @@ export class PluginHost {
    * Update LUFS values
    */
   updateLUFS(data: LUFSMeterData): void {
-    const momentaryEl = this.container.querySelector('[data-lufs="momentary"]') as HTMLElement;
-    const shortTermEl = this.container.querySelector('[data-lufs="shortTerm"]') as HTMLElement;
-    const integratedEl = this.container.querySelector('[data-lufs="integrated"]') as HTMLElement;
+    const momentaryEl = this.container.querySelector(
+      '[data-lufs="momentary"]',
+    ) as HTMLElement;
+    const shortTermEl = this.container.querySelector(
+      '[data-lufs="shortTerm"]',
+    ) as HTMLElement;
+    const integratedEl = this.container.querySelector(
+      '[data-lufs="integrated"]',
+    ) as HTMLElement;
 
     if (momentaryEl) momentaryEl.textContent = data.momentary.toFixed(1);
     if (shortTermEl) shortTermEl.textContent = data.shortTerm.toFixed(1);
@@ -971,24 +1095,36 @@ export class PluginHost {
     this.volume = Math.max(0, Math.min(1, volume));
 
     // Update UI - both compact and vertical versions
-    const volumeValueSvg = this.container.querySelectorAll('.volume-value-svg');
-    const volumeValueVertical = this.container.querySelector('.volume-value-vertical') as HTMLElement;
-    const volumeKnobCompact = this.container.querySelector('.volume-knob') as HTMLElement;
-    const volumeKnobVertical = this.container.querySelector('.volume-knob-vertical') as HTMLElement;
-    const volumeFills = this.container.querySelectorAll('.volume-fill');
+    const volumeValueSvg = this.container.querySelectorAll(".volume-value-svg");
+    const volumeValueVertical = this.container.querySelector(
+      ".volume-value-vertical",
+    ) as HTMLElement;
+    const volumeKnobCompact = this.container.querySelector(
+      ".volume-knob",
+    ) as HTMLElement;
+    const volumeKnobVertical = this.container.querySelector(
+      ".volume-knob-vertical",
+    ) as HTMLElement;
+    const volumeFills = this.container.querySelectorAll(".volume-fill");
 
     const volumePercent = Math.round(this.volume * 100);
 
     volumeValueSvg.forEach((el) => {
       el.textContent = String(volumePercent);
     });
-    if (volumeValueVertical) volumeValueVertical.textContent = String(volumePercent);
-    if (volumeKnobCompact) volumeKnobCompact.dataset.volume = String(volumePercent);
-    if (volumeKnobVertical) volumeKnobVertical.dataset.volume = String(volumePercent);
+    if (volumeValueVertical)
+      volumeValueVertical.textContent = String(volumePercent);
+    if (volumeKnobCompact)
+      volumeKnobCompact.dataset.volume = String(volumePercent);
+    if (volumeKnobVertical)
+      volumeKnobVertical.dataset.volume = String(volumePercent);
 
     volumeFills.forEach((volumeFill) => {
       const circumference = 251.2;
-      volumeFill.setAttribute('stroke-dasharray', `${(volumePercent / 100) * circumference} ${circumference}`);
+      volumeFill.setAttribute(
+        "stroke-dasharray",
+        `${(volumePercent / 100) * circumference} ${circumference}`,
+      );
     });
 
     // Callback
@@ -1031,11 +1167,11 @@ export class PluginHost {
   /**
    * Set monitoring mode (input/output)
    */
-  setMonitoringMode(mode: 'input' | 'output'): void {
+  setMonitoringMode(mode: "input" | "output"): void {
     this.monitoringMode = mode;
 
     // Update button states - Bulma buttons with accent color and is-selected classes
-    const buttons = this.container.querySelectorAll('button[data-mode]');
+    const buttons = this.container.querySelectorAll("button[data-mode]");
     const accentColor = this.config.accentColor!;
 
     buttons.forEach((button) => {
@@ -1043,18 +1179,24 @@ export class PluginHost {
       const isActive = btnMode === mode;
 
       // Remove all possible color classes
-      button.classList.remove('is-info', 'is-success', 'is-primary', 'is-warning', 'is-danger');
+      button.classList.remove(
+        "is-info",
+        "is-success",
+        "is-primary",
+        "is-warning",
+        "is-danger",
+      );
 
       if (isActive) {
         button.classList.add(accentColor);
       }
-      button.classList.toggle('is-selected', isActive);
+      button.classList.toggle("is-selected", isActive);
     });
 
     // Reconfigure level meters with appropriate channel count
     this.updateLevelMeterChannels();
 
-    console.log('[PluginHost] Monitoring mode:', mode);
+    console.log("[PluginHost] Monitoring mode:", mode);
   }
 
   /**
@@ -1064,7 +1206,8 @@ export class PluginHost {
     if (!this.levelMeter) return;
 
     const { inputChannels, outputChannels } = this.getChannelCounts();
-    const channels = this.monitoringMode === 'input' ? inputChannels : outputChannels;
+    const channels =
+      this.monitoringMode === "input" ? inputChannels : outputChannels;
     const labels = this.generateChannelLabels(channels);
 
     this.levelMeter.reconfigure(channels, labels);
@@ -1073,14 +1216,19 @@ export class PluginHost {
   /**
    * Get input and output channel counts based on plugin chain
    */
-  private getChannelCounts(): { inputChannels: number; outputChannels: number } {
+  private getChannelCounts(): {
+    inputChannels: number;
+    outputChannels: number;
+  } {
     // Default: start with 2 channels (stereo input)
     let inputChannels = 2;
     let outputChannels = 2;
 
     // If we have plugins, check if any change channel count
     // For now, check if there's an upmixer plugin
-    const hasUpmixer = this.plugins.some(p => p.metadata.category === 'spatial');
+    const hasUpmixer = this.plugins.some(
+      (p) => p.metadata.category === "spatial",
+    );
 
     if (hasUpmixer) {
       // Upmixer: 2ch input -> 5ch or 6ch output
@@ -1100,17 +1248,50 @@ export class PluginHost {
    */
   private generateChannelLabels(count: number): string[] {
     if (count === 2) {
-      return ['L', 'R'];
-    } else if (count === 6) { // 5.1
-      return ['L', 'R', 'C', 'LFE', 'SL', 'SR'];
-    } else if (count === 8) { // 7.1
-      return ['L', 'R', 'C', 'LFE', 'SL', 'SR', 'SBL', 'SBR'];
-    } else if (count === 12) { // 5.1.4
-      return ['L', 'R', 'C', 'LFE', 'SL', 'SR', 'TFL', 'TFR', 'TBL', 'TBR'];
-    } else if (count === 14) { // 9.1.4
-      return ['L', 'R', 'C', 'LFE', 'SL', 'SR', 'SBL', 'SBR', 'TFL', 'TFR', 'TBL', 'TBR'];
-    } else if (count === 16) { // 9.1.6
-      return ['L', 'R', 'C', 'LFE', 'SL', 'SR', 'SBL', 'SBR', 'TFL', 'TFR', 'TC', 'TBL', 'TBR', 'TBC'];
+      return ["L", "R"];
+    } else if (count === 6) {
+      // 5.1
+      return ["L", "R", "C", "LFE", "SL", "SR"];
+    } else if (count === 8) {
+      // 7.1
+      return ["L", "R", "C", "LFE", "SL", "SR", "SBL", "SBR"];
+    } else if (count === 12) {
+      // 5.1.4
+      return ["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR", "TBL", "TBR"];
+    } else if (count === 14) {
+      // 9.1.4
+      return [
+        "L",
+        "R",
+        "C",
+        "LFE",
+        "SL",
+        "SR",
+        "SBL",
+        "SBR",
+        "TFL",
+        "TFR",
+        "TBL",
+        "TBR",
+      ];
+    } else if (count === 16) {
+      // 9.1.6
+      return [
+        "L",
+        "R",
+        "C",
+        "LFE",
+        "SL",
+        "SR",
+        "SBL",
+        "SBR",
+        "TFL",
+        "TFR",
+        "TC",
+        "TBL",
+        "TBR",
+        "TBC",
+      ];
     } else {
       return Array.from({ length: count }, (_, i) => `${i + 1}`);
     }
@@ -1124,9 +1305,9 @@ export class PluginHost {
 
     if (this.helpBar) {
       if (this.helpBarVisible) {
-        this.helpBar.style.display = 'flex';
+        this.helpBar.style.display = "flex";
       } else {
-        this.helpBar.style.display = 'none';
+        this.helpBar.style.display = "none";
       }
     }
   }
@@ -1137,7 +1318,7 @@ export class PluginHost {
   showHelpBar(): void {
     this.helpBarVisible = true;
     if (this.helpBar) {
-      this.helpBar.style.display = 'flex';
+      this.helpBar.style.display = "flex";
     }
   }
 
@@ -1147,7 +1328,7 @@ export class PluginHost {
   hideHelpBar(): void {
     this.helpBarVisible = false;
     if (this.helpBar) {
-      this.helpBar.style.display = 'none';
+      this.helpBar.style.display = "none";
     }
   }
 
@@ -1159,11 +1340,11 @@ export class PluginHost {
     this.draggedIndex = this.plugins.indexOf(plugin);
 
     const target = e.currentTarget as HTMLElement;
-    target.classList.add('is-ghost');
+    target.classList.add("is-ghost");
 
     if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/html', target.innerHTML);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/html", target.innerHTML);
     }
   }
 
@@ -1172,11 +1353,11 @@ export class PluginHost {
    */
   private handleDragEnd(e: DragEvent): void {
     const target = e.currentTarget as HTMLElement;
-    target.classList.remove('is-ghost');
+    target.classList.remove("is-ghost");
 
     // Remove drag-over classes from all slots
-    const slots = this.container.querySelectorAll('.buttons > button');
-    slots.forEach(slot => slot.classList.remove('is-hovered'));
+    const slots = this.container.querySelectorAll(".buttons > button");
+    slots.forEach((slot) => slot.classList.remove("is-hovered"));
 
     this.draggedPlugin = null;
     this.draggedIndex = -1;
@@ -1188,7 +1369,7 @@ export class PluginHost {
   private handleDragOver(e: DragEvent): void {
     e.preventDefault();
     if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = "move";
     }
   }
 
@@ -1197,7 +1378,7 @@ export class PluginHost {
    */
   private handleDragEnter(e: DragEvent): void {
     const target = e.currentTarget as HTMLElement;
-    target.classList.add('is-hovered');
+    target.classList.add("is-hovered");
   }
 
   /**
@@ -1205,7 +1386,7 @@ export class PluginHost {
    */
   private handleDragLeave(e: DragEvent): void {
     const target = e.currentTarget as HTMLElement;
-    target.classList.remove('is-hovered');
+    target.classList.remove("is-hovered");
   }
 
   /**
@@ -1216,7 +1397,7 @@ export class PluginHost {
     e.stopPropagation();
 
     const target = e.currentTarget as HTMLElement;
-    target.classList.remove('is-hovered');
+    target.classList.remove("is-hovered");
 
     if (!this.draggedPlugin || this.draggedPlugin === targetPlugin) {
       return;
@@ -1244,7 +1425,10 @@ export class PluginHost {
       this.callbacks.onPluginReorder([...this.plugins]);
     }
 
-    console.log('[PluginHost] Plugin reordered:', this.plugins.map(p => p.metadata.name));
+    console.log(
+      "[PluginHost] Plugin reordered:",
+      this.plugins.map((p) => p.metadata.name),
+    );
   }
 
   /**
@@ -1252,7 +1436,7 @@ export class PluginHost {
    */
   destroy(): void {
     // Remove keyboard listener
-    document.removeEventListener('keydown', this.handleKeydown);
+    document.removeEventListener("keydown", this.handleKeydown);
 
     // Destroy all plugins
     this.plugins.forEach((plugin) => plugin.destroy());
@@ -1270,7 +1454,7 @@ export class PluginHost {
     }
 
     // Clear container
-    this.container.innerHTML = '';
-    this.container.classList.remove('is-flex', 'is-flex-direction-column');
+    this.container.innerHTML = "";
+    this.container.classList.remove("is-flex", "is-flex-direction-column");
   }
 }

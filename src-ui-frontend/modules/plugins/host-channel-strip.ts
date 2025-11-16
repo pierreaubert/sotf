@@ -1,11 +1,11 @@
 // Channel Strip
 // Preconfigured plugin host with: EQ → Compressor → Limiter
 
-import { PluginHost, type HostConfig, type HostCallbacks } from './host';
-import { EQPlugin } from './plugin-eq';
-import { CompressorPlugin } from './plugin-compressor';
-import { LimiterPlugin } from './plugin-limiter';
-import type { IPlugin } from './plugin-types';
+import { PluginHost, type HostConfig, type HostCallbacks } from "./host";
+import { EQPlugin } from "./plugin-eq";
+import { CompressorPlugin } from "./plugin-compressor";
+import { LimiterPlugin } from "./plugin-limiter";
+import type { IPlugin } from "./plugin-types";
 
 /**
  * Channel Strip
@@ -21,9 +21,9 @@ export class ChannelStrip {
   constructor(container: HTMLElement, callbacks: HostCallbacks = {}) {
     // Configure host with fixed plugin chain
     const config: HostConfig = {
-      name: 'Channel Strip',
-      allowedPlugins: ['eq', 'dynamics'],  // Only EQ and dynamics plugins
-      maxPlugins: 3,                        // Fixed: EQ, Compressor, Limiter
+      name: "Channel Strip",
+      allowedPlugins: ["eq", "dynamics"], // Only EQ and dynamics plugins
+      maxPlugins: 3, // Fixed: EQ, Compressor, Limiter
       showLevelMeters: true,
       showLUFS: true,
       showVolumeControl: true,

@@ -46,6 +46,9 @@ impl MicrophoneCompensation {
         let duration = signal.len() as f32 / sample_rate as f32;
         let mut compensated = Vec::with_capacity(signal.len());
 
+        // Debug: print some sample points
+        let debug_points = [0, signal.len() / 4, signal.len() / 2, 3 * signal.len() / 4];
+
         for (i, &sample) in signal.iter().enumerate() {
             let t = i as f32 / sample_rate as f32;
 
@@ -62,22 +65,46 @@ impl MicrophoneCompensation {
             // Convert dB to linear gain
             let gain = 10_f32.powf(gain_db / 20.0);
 
+            // Debug output for sample points
+            if debug_points.contains(&i) {
+                eprintln!(
+                    "[apply_to_sweep] t={:.3}s, freq={:.1}Hz, comp_db={:.2}dB, gain_db={:.2}dB, gain={:.3}x",
+                    t, freq, comp_db, gain_db, gain
+                );
+            }
+
             compensated.push(sample * gain);
         }
 
+        eprintln!("[apply_to_sweep] Processed {} samples, duration={:.2}s", signal.len(), duration);
         compensated
     }
 
-    /// Load microphone compensation from a CSV file
+    /// Load microphone compensation from a CSV or TXT file
     ///
-    /// File format: frequency_hz,spl_db (with or without header)
+    /// File format:
+    /// - CSV: frequency_hz,spl_db (with or without header, comma-separated)
+    /// - TXT: freq spl (space/tab-separated, no header assumed)
     pub fn from_file(path: &Path) -> Result<Self, String> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
 
+        eprintln!("[MicrophoneCompensation] Loading from {:?}", path);
+
         let file = File::open(path)
             .map_err(|e| format!("Failed to open compensation file {:?}: {}", path, e))?;
         let reader = BufReader::new(file);
+
+        // Determine if this is a .txt file (no header expected)
+        let is_txt_file = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase() == "txt")
+            .unwrap_or(false);
+
+        if is_txt_file {
+            eprintln!("[MicrophoneCompensation] Detected .txt file - assuming space/tab-separated without header");
+        }
 
         let mut frequencies = Vec::new();
         let mut spl_db = Vec::new();
@@ -86,16 +113,53 @@ impl MicrophoneCompensation {
             let line = line.map_err(|e| format!("Failed to read line {}: {}", line_num + 1, e))?;
             let line = line.trim();
 
-            // Skip empty lines and header
-            if line.is_empty() || line.starts_with("frequency") || line.starts_with('#') {
+            // Skip empty lines and comments
+            if line.is_empty() || line.starts_with('#') {
                 continue;
             }
 
-            let parts: Vec<&str> = line.split(',').collect();
+            // For CSV files, skip header line
+            if !is_txt_file && line.starts_with("frequency") {
+                continue;
+            }
+
+            // For TXT files, skip lines that don't start with a number
+            if is_txt_file {
+                let first_char = line.chars().next().unwrap_or(' ');
+                if !first_char.is_ascii_digit() && first_char != '-' && first_char != '+' {
+                    eprintln!("[MicrophoneCompensation] Skipping non-numeric line {}: '{}'", line_num + 1, line);
+                    continue;
+                }
+            }
+
+            // Parse based on file type with auto-detection for TXT
+            let parts: Vec<&str> = if is_txt_file {
+                // TXT: Try to auto-detect separator
+                // First, try comma (in case it's mislabeled CSV)
+                let comma_parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+                if comma_parts.len() >= 2 && comma_parts[0].parse::<f32>().is_ok() && comma_parts[1].parse::<f32>().is_ok() {
+                    comma_parts
+                } else {
+                    // Try tab
+                    let tab_parts: Vec<&str> = line.split('\t').map(|s| s.trim()).collect();
+                    if tab_parts.len() >= 2 && tab_parts[0].parse::<f32>().is_ok() && tab_parts[1].parse::<f32>().is_ok() {
+                        tab_parts
+                    } else {
+                        // Fall back to whitespace
+                        line.split_whitespace().collect()
+                    }
+                }
+            } else {
+                // CSV: comma separated
+                line.split(',').collect()
+            };
+
             if parts.len() < 2 {
+                let separator = if is_txt_file { "separator (comma/tab/space)" } else { "comma" };
                 return Err(format!(
-                    "Invalid format at line {}: expected 'frequency,spl' but got '{}'",
+                    "Invalid format at line {}: expected {} with 2+ values but got '{}'",
                     line_num + 1,
+                    separator,
                     line
                 ));
             }
@@ -128,6 +192,18 @@ impl MicrophoneCompensation {
                 ));
             }
         }
+
+        eprintln!(
+            "[MicrophoneCompensation] Loaded {} calibration points: {:.1} Hz - {:.1} Hz",
+            frequencies.len(),
+            frequencies[0],
+            frequencies[frequencies.len() - 1]
+        );
+        eprintln!(
+            "[MicrophoneCompensation] SPL range: {:.2} dB to {:.2} dB",
+            spl_db.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
+            spl_db.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))
+        );
 
         Ok(Self { frequencies, spl_db })
     }
@@ -1007,7 +1083,7 @@ mod tests {
         use tempfile::NamedTempFile;
 
         // Create a temporary CSV file
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut temp_file = NamedTempFile::with_suffix(".csv").unwrap();
         writeln!(temp_file, "frequency_hz,spl_db").unwrap();
         writeln!(temp_file, "100,0.0").unwrap();
         writeln!(temp_file, "1000,2.0").unwrap();
@@ -1027,6 +1103,119 @@ mod tests {
         assert_eq!(comp.spl_db[0], 0.0);
         assert_eq!(comp.spl_db[1], 2.0);
         assert_eq!(comp.spl_db[2], -1.0);
+    }
+
+    #[test]
+    fn test_microphone_compensation_from_txt() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary TXT file (space-separated, no header)
+        let mut temp_file = NamedTempFile::with_suffix(".txt").unwrap();
+        writeln!(temp_file, "100 0.0").unwrap();
+        writeln!(temp_file, "1000 2.0").unwrap();
+        writeln!(temp_file, "10000 -1.0").unwrap();
+        temp_file.flush().unwrap();
+
+        // Load compensation
+        let comp = MicrophoneCompensation::from_file(temp_file.path())
+            .expect("Failed to load compensation from TXT");
+
+        // Verify data
+        assert_eq!(comp.frequencies.len(), 3);
+        assert_eq!(comp.spl_db.len(), 3);
+        assert_eq!(comp.frequencies[0], 100.0);
+        assert_eq!(comp.frequencies[1], 1000.0);
+        assert_eq!(comp.frequencies[2], 10000.0);
+        assert_eq!(comp.spl_db[0], 0.0);
+        assert_eq!(comp.spl_db[1], 2.0);
+        assert_eq!(comp.spl_db[2], -1.0);
+    }
+
+    #[test]
+    fn test_microphone_compensation_txt_with_tabs() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create TXT file with tabs
+        let mut temp_file = NamedTempFile::with_suffix(".txt").unwrap();
+        writeln!(temp_file, "100\t0.0").unwrap();
+        writeln!(temp_file, "1000\t2.0").unwrap();
+        temp_file.flush().unwrap();
+
+        // Should successfully parse
+        let comp = MicrophoneCompensation::from_file(temp_file.path())
+            .expect("Failed to load compensation with tabs");
+
+        assert_eq!(comp.frequencies.len(), 2);
+        assert_eq!(comp.frequencies[0], 100.0);
+        assert_eq!(comp.frequencies[1], 1000.0);
+    }
+
+    #[test]
+    fn test_microphone_compensation_txt_skip_non_numeric() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create TXT file with header and comments that should be skipped
+        let mut temp_file = NamedTempFile::with_suffix(".txt").unwrap();
+        writeln!(temp_file, "Frequency SPL").unwrap(); // Non-numeric, skip
+        writeln!(temp_file, "# Comment line").unwrap(); // Comment, skip
+        writeln!(temp_file, "100 0.0").unwrap();
+        writeln!(temp_file, "Some notes here").unwrap(); // Non-numeric, skip
+        writeln!(temp_file, "1000 2.0").unwrap();
+        writeln!(temp_file, "").unwrap(); // Empty, skip
+        writeln!(temp_file, "10000 -1.0").unwrap();
+        temp_file.flush().unwrap();
+
+        // Should parse only the 3 numeric lines
+        let comp = MicrophoneCompensation::from_file(temp_file.path())
+            .expect("Failed to load compensation with non-numeric lines");
+
+        assert_eq!(comp.frequencies.len(), 3);
+        assert_eq!(comp.frequencies[0], 100.0);
+        assert_eq!(comp.frequencies[1], 1000.0);
+        assert_eq!(comp.frequencies[2], 10000.0);
+    }
+
+    #[test]
+    fn test_microphone_compensation_txt_auto_detect_separator() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test auto-detection of comma separator in .txt file
+        let mut temp_file = NamedTempFile::with_suffix(".txt").unwrap();
+        writeln!(temp_file, "100,0.0").unwrap();
+        writeln!(temp_file, "1000,2.0").unwrap();
+        temp_file.flush().unwrap();
+
+        let comp = MicrophoneCompensation::from_file(temp_file.path())
+            .expect("Failed to auto-detect comma separator");
+
+        assert_eq!(comp.frequencies.len(), 2);
+        assert_eq!(comp.frequencies[0], 100.0);
+        assert_eq!(comp.spl_db[0], 0.0);
+    }
+
+    #[test]
+    fn test_microphone_compensation_txt_mixed_separators() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Test file with different separators on different lines
+        let mut temp_file = NamedTempFile::with_suffix(".txt").unwrap();
+        writeln!(temp_file, "100,0.0").unwrap(); // Comma
+        writeln!(temp_file, "1000\t2.0").unwrap(); // Tab
+        writeln!(temp_file, "10000 -1.0").unwrap(); // Space
+        temp_file.flush().unwrap();
+
+        let comp = MicrophoneCompensation::from_file(temp_file.path())
+            .expect("Failed to parse mixed separators");
+
+        assert_eq!(comp.frequencies.len(), 3);
+        assert_eq!(comp.frequencies[0], 100.0);
+        assert_eq!(comp.frequencies[1], 1000.0);
+        assert_eq!(comp.frequencies[2], 10000.0);
     }
 
     #[test]

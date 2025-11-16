@@ -1,10 +1,13 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>All Plugins Host Demo</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
+    />
   </head>
   <body>
     <div class="demo-container-wide">
@@ -14,14 +17,17 @@
         <!-- HostAll will be rendered here -->
       </div>
 
-      <div class="notification is-dark" style="margin-top: 30px;">
+      <div class="notification is-dark" style="margin-top: 30px">
         <p>
-          <strong>HostAll</strong> is a flexible plugin host that comes preconfigured with
-          an EQ plugin but accepts all plugin types. You can add any combination of:
+          <strong>HostAll</strong> is a flexible plugin host that comes
+          preconfigured with an EQ plugin but accepts all plugin types. You can
+          add any combination of:
         </p>
         <div class="content">
           <ul>
-            <li><strong>EQ</strong> - Parametric equalizer (included by default)</li>
+            <li>
+              <strong>EQ</strong> - Parametric equalizer (included by default)
+            </li>
             <li><strong>Compressor</strong> - Dynamic range compression</li>
             <li><strong>Limiter</strong> - Peak limiting</li>
             <li><strong>Upmixer</strong> - Stereo to surround upmixing</li>
@@ -39,12 +45,23 @@
           <h3 class="title is-4">Features</h3>
           <div class="content">
             <ul>
-              <li><strong>Plugin Chain:</strong> Add multiple plugins in series</li>
-              <li><strong>Level Meters:</strong> Real-time input/output monitoring</li>
-              <li><strong>LUFS Metering:</strong> Loudness monitoring (M/S/I)</li>
+              <li>
+                <strong>Plugin Chain:</strong> Add multiple plugins in series
+              </li>
+              <li>
+                <strong>Level Meters:</strong> Real-time input/output monitoring
+              </li>
+              <li>
+                <strong>LUFS Metering:</strong> Loudness monitoring (M/S/I)
+              </li>
               <li><strong>Volume Control:</strong> Master output volume</li>
-              <li><strong>Help Bar:</strong> Context-aware keyboard shortcuts</li>
-              <li><strong>Plugin Selector:</strong> Click [+] button to add plugins</li>
+              <li>
+                <strong>Help Bar:</strong> Context-aware keyboard shortcuts
+              </li>
+              <li>
+                <strong>Plugin Selector:</strong> Click [+] button to add
+                plugins
+              </li>
             </ul>
           </div>
 
@@ -52,8 +69,12 @@
           <div class="content">
             <ul>
               <li><span class="tag is-dark">?</span> - Show help</li>
-              <li><span class="tag is-dark">&lt;</span> - Monitor input levels</li>
-              <li><span class="tag is-dark">&gt;</span> - Monitor output levels</li>
+              <li>
+                <span class="tag is-dark">&lt;</span> - Monitor input levels
+              </li>
+              <li>
+                <span class="tag is-dark">&gt;</span> - Monitor output levels
+              </li>
               <li><span class="tag is-dark">↑</span> - Increase volume</li>
               <li><span class="tag is-dark">↓</span> - Decrease volume</li>
             </ul>
@@ -62,23 +83,44 @@
           <h3 class="title is-4">Keyboard Shortcuts (EQ Plugin)</h3>
           <div class="content">
             <ul>
-              <li><span class="tag is-dark">1-9</span> - Select filter by number</li>
-              <li><span class="tag is-dark">Tab</span> - Cycle through filters</li>
+              <li>
+                <span class="tag is-dark">1-9</span> - Select filter by number
+              </li>
+              <li>
+                <span class="tag is-dark">Tab</span> - Cycle through filters
+              </li>
               <li><span class="tag is-dark">+</span> - Add new filter</li>
-              <li><span class="tag is-dark">-</span> - Remove selected filter</li>
-              <li><span class="tag is-dark">Esc</span> - Clear filter selection</li>
+              <li>
+                <span class="tag is-dark">-</span> - Remove selected filter
+              </li>
+              <li>
+                <span class="tag is-dark">Esc</span> - Clear filter selection
+              </li>
             </ul>
           </div>
 
           <h3 class="title is-4">How to Use</h3>
           <div class="content">
             <ol>
-              <li>The EQ plugin is loaded by default - click on it to see its controls</li>
-              <li>Click the <span class="tag is-dark">[+]</span> button in the hosting bar to add more plugins</li>
+              <li>
+                The EQ plugin is loaded by default - click on it to see its
+                controls
+              </li>
+              <li>
+                Click the <span class="tag is-dark">[+]</span> button in the
+                hosting bar to add more plugins
+              </li>
               <li>Click on any plugin slot to view and edit its parameters</li>
-              <li>Use the monitoring toggle (<span class="tag is-dark">&lt;</span> / <span class="tag is-dark">&gt;</span>) to switch between input and output meters</li>
+              <li>
+                Use the monitoring toggle (<span class="tag is-dark">&lt;</span>
+                / <span class="tag is-dark">&gt;</span>) to switch between input
+                and output meters
+              </li>
               <li>Adjust master volume using the knob or arrow keys</li>
-              <li>Remove plugins by clicking the <span class="tag is-dark">×</span> on their slot</li>
+              <li>
+                Remove plugins by clicking the
+                <span class="tag is-dark">×</span> on their slot
+              </li>
             </ol>
           </div>
         </div>
@@ -100,17 +142,29 @@
           console.log("[HostAll] Plugin removed:", plugin.metadata.name);
         },
         onPluginSelect: (plugin) => {
-          console.log("[HostAll] Plugin selected:", plugin?.metadata.name ?? "none");
+          console.log(
+            "[HostAll] Plugin selected:",
+            plugin?.metadata.name ?? "none",
+          );
         },
         onVolumeChange: (volume) => {
-          console.log("[HostAll] Volume changed:", Math.round(volume * 100) + "%");
+          console.log(
+            "[HostAll] Volume changed:",
+            Math.round(volume * 100) + "%",
+          );
         },
       });
 
       // Log initialization
       console.log("HostAll initialized");
-      console.log("Initial plugins:", hostAll.getPlugins().map(p => p.metadata.name));
-      console.log("Selected plugin:", hostAll.getSelectedPlugin()?.metadata.name);
+      console.log(
+        "Initial plugins:",
+        hostAll.getPlugins().map((p) => p.metadata.name),
+      );
+      console.log(
+        "Selected plugin:",
+        hostAll.getSelectedPlugin()?.metadata.name,
+      );
 
       // Make host available globally for debugging
       window.hostAll = hostAll;

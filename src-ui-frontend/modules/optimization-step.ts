@@ -280,7 +280,7 @@ export class OptimizationStep {
    */
   private generateOptions(
     options: Record<string, string>,
-    defaultValue?: string
+    defaultValue?: string,
   ): string {
     return Object.entries(options)
       .map(([value, label]) => {
@@ -337,7 +337,8 @@ export class OptimizationStep {
   private generateStrategyOptions(): string {
     return Object.entries(DE_STRATEGY_OPTIONS)
       .map(([value, label]) => {
-        const recommended = value === "currenttobest1bin" ? " (Recommended)" : "";
+        const recommended =
+          value === "currenttobest1bin" ? " (Recommended)" : "";
         const selected = value === "currenttobest1bin" ? " selected" : "";
         return `<option value="${value}"${selected}>${label}${recommended}</option>`;
       })
@@ -349,8 +350,12 @@ export class OptimizationStep {
    */
   private attachEventListeners(): void {
     // Refinement checkbox
-    const refineCheckbox = this.container.querySelector("#opt_refine") as HTMLInputElement;
-    const localAlgoSelect = this.container.querySelector("#opt_local_algo") as HTMLSelectElement;
+    const refineCheckbox = this.container.querySelector(
+      "#opt_refine",
+    ) as HTMLInputElement;
+    const localAlgoSelect = this.container.querySelector(
+      "#opt_local_algo",
+    ) as HTMLSelectElement;
 
     if (refineCheckbox && localAlgoSelect) {
       refineCheckbox.addEventListener("change", () => {
@@ -359,8 +364,12 @@ export class OptimizationStep {
     }
 
     // Smoothing checkbox
-    const smoothCheckbox = this.container.querySelector("#opt_smooth") as HTMLInputElement;
-    const smoothNInput = this.container.querySelector("#opt_smooth_n") as HTMLInputElement;
+    const smoothCheckbox = this.container.querySelector(
+      "#opt_smooth",
+    ) as HTMLInputElement;
+    const smoothNInput = this.container.querySelector(
+      "#opt_smooth_n",
+    ) as HTMLInputElement;
 
     if (smoothCheckbox && smoothNInput) {
       smoothCheckbox.addEventListener("change", () => {
@@ -369,13 +378,17 @@ export class OptimizationStep {
     }
 
     // Run optimization button
-    const runBtn = this.container.querySelector("#run_optimization_btn") as HTMLButtonElement;
+    const runBtn = this.container.querySelector(
+      "#run_optimization_btn",
+    ) as HTMLButtonElement;
     if (runBtn) {
       runBtn.addEventListener("click", () => this.handleRunOptimization());
     }
 
     // Reset button
-    const resetBtn = this.container.querySelector("#reset_form_btn") as HTMLButtonElement;
+    const resetBtn = this.container.querySelector(
+      "#reset_form_btn",
+    ) as HTMLButtonElement;
     if (resetBtn) {
       resetBtn.addEventListener("click", () => this.resetToDefaults());
     }
@@ -401,10 +414,18 @@ export class OptimizationStep {
    * Show mock optimization results (for demo)
    */
   private showMockResults(): void {
-    const resultsDiv = this.container.querySelector("#optimization_results") as HTMLElement;
-    const scoreBefore = this.container.querySelector("#score_before") as HTMLElement;
-    const scoreAfter = this.container.querySelector("#score_after") as HTMLElement;
-    const scoreImprovement = this.container.querySelector("#score_improvement") as HTMLElement;
+    const resultsDiv = this.container.querySelector(
+      "#optimization_results",
+    ) as HTMLElement;
+    const scoreBefore = this.container.querySelector(
+      "#score_before",
+    ) as HTMLElement;
+    const scoreAfter = this.container.querySelector(
+      "#score_after",
+    ) as HTMLElement;
+    const scoreImprovement = this.container.querySelector(
+      "#score_improvement",
+    ) as HTMLElement;
 
     if (resultsDiv && scoreBefore && scoreAfter && scoreImprovement) {
       scoreBefore.textContent = "3.45";
@@ -423,23 +444,46 @@ export class OptimizationStep {
    */
   private resetToDefaults(): void {
     // Reset all inputs to defaults
-    (this.container.querySelector("#opt_num_filters") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.num_filters);
-    (this.container.querySelector("#opt_sample_rate") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.sample_rate);
-    (this.container.querySelector("#opt_min_db") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.min_db);
-    (this.container.querySelector("#opt_max_db") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.max_db);
-    (this.container.querySelector("#opt_min_q") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.min_q);
-    (this.container.querySelector("#opt_max_q") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.max_q);
-    (this.container.querySelector("#opt_min_freq") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.min_freq);
-    (this.container.querySelector("#opt_max_freq") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.max_freq);
-    (this.container.querySelector("#opt_min_spacing_oct") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.min_spacing_oct);
-    (this.container.querySelector("#opt_spacing_weight") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.spacing_weight);
-    (this.container.querySelector("#opt_population") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.population);
-    (this.container.querySelector("#opt_maxeval") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.maxeval);
-    (this.container.querySelector("#opt_de_f") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.de_f);
-    (this.container.querySelector("#opt_de_cr") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.de_cr);
-    (this.container.querySelector("#opt_tolerance") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.tolerance);
-    (this.container.querySelector("#opt_abs_tolerance") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.abs_tolerance);
-    (this.container.querySelector("#opt_smooth_n") as HTMLInputElement).value = String(OPTIMIZATION_DEFAULTS.smooth_n);
+    (
+      this.container.querySelector("#opt_num_filters") as HTMLInputElement
+    ).value = String(OPTIMIZATION_DEFAULTS.num_filters);
+    (
+      this.container.querySelector("#opt_sample_rate") as HTMLInputElement
+    ).value = String(OPTIMIZATION_DEFAULTS.sample_rate);
+    (this.container.querySelector("#opt_min_db") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.min_db);
+    (this.container.querySelector("#opt_max_db") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.max_db);
+    (this.container.querySelector("#opt_min_q") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.min_q);
+    (this.container.querySelector("#opt_max_q") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.max_q);
+    (this.container.querySelector("#opt_min_freq") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.min_freq);
+    (this.container.querySelector("#opt_max_freq") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.max_freq);
+    (
+      this.container.querySelector("#opt_min_spacing_oct") as HTMLInputElement
+    ).value = String(OPTIMIZATION_DEFAULTS.min_spacing_oct);
+    (
+      this.container.querySelector("#opt_spacing_weight") as HTMLInputElement
+    ).value = String(OPTIMIZATION_DEFAULTS.spacing_weight);
+    (
+      this.container.querySelector("#opt_population") as HTMLInputElement
+    ).value = String(OPTIMIZATION_DEFAULTS.population);
+    (this.container.querySelector("#opt_maxeval") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.maxeval);
+    (this.container.querySelector("#opt_de_f") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.de_f);
+    (this.container.querySelector("#opt_de_cr") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.de_cr);
+    (this.container.querySelector("#opt_tolerance") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.tolerance);
+    (
+      this.container.querySelector("#opt_abs_tolerance") as HTMLInputElement
+    ).value = String(OPTIMIZATION_DEFAULTS.abs_tolerance);
+    (this.container.querySelector("#opt_smooth_n") as HTMLInputElement).value =
+      String(OPTIMIZATION_DEFAULTS.smooth_n);
 
     console.log("✅ Reset to default values");
   }
@@ -456,7 +500,10 @@ export class OptimizationStep {
       const element = input as HTMLInputElement | HTMLSelectElement;
       if (element.name) {
         if (element.type === "checkbox") {
-          formData.append(element.name, (element as HTMLInputElement).checked ? "true" : "false");
+          formData.append(
+            element.name,
+            (element as HTMLInputElement).checked ? "true" : "false",
+          );
         } else {
           formData.append(element.name, element.value);
         }

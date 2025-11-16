@@ -1,7 +1,7 @@
 // Tauri backend integration for audio capture
 // Provides TypeScript interfaces for Tauri audio commands
 
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
 
 export interface AudioConfig {
   sample_rate: number;
@@ -25,7 +25,7 @@ export interface AudioDevices {
 
 export interface RecordingProgress {
   channel: number;
-  state: 'playing' | 'recording' | 'analyzing' | 'done';
+  state: "playing" | "recording" | "analyzing" | "done";
   progress: number; // 0.0 to 1.0
 }
 
@@ -42,7 +42,9 @@ export interface RecordingResult {
  * Get all available audio devices (input and output)
  */
 export async function getAudioDevices(): Promise<AudioDevices> {
-  const devices = await invoke<{ [key: string]: AudioDevice[] }>('get_audio_devices');
+  const devices = await invoke<{ [key: string]: AudioDevice[] }>(
+    "get_audio_devices",
+  );
   return {
     input: devices.input || [],
     output: devices.output || [],
@@ -54,16 +56,16 @@ export async function getAudioDevices(): Promise<AudioDevices> {
  */
 export async function getDeviceProperties(
   deviceName: string,
-  isInput: boolean
+  isInput: boolean,
 ): Promise<AudioConfig | null> {
   try {
-    const props = await invoke<any>('get_device_properties', {
+    const props = await invoke<any>("get_device_properties", {
       deviceName,
       isInput,
     });
     return props;
   } catch (error) {
-    console.error('Failed to get device properties:', error);
+    console.error("Failed to get device properties:", error);
     return null;
   }
 }
@@ -74,9 +76,9 @@ export async function getDeviceProperties(
 export async function setAudioDevice(
   deviceName: string,
   isInput: boolean,
-  config: AudioConfig
+  config: AudioConfig,
 ): Promise<string> {
-  return await invoke<string>('set_audio_device', {
+  return await invoke<string>("set_audio_device", {
     deviceName,
     isInput,
     config,
@@ -98,14 +100,14 @@ export async function recordChannel(
   inputDevice: string,
   outputChannel: number,
   inputChannel: number,
-  signalType: 'sweep' | 'white' | 'pink',
+  signalType: "sweep" | "white" | "pink",
   duration: number, // in seconds
   sampleRate: number,
   outputPath: string, // base path for output files
-  onProgress?: (progress: RecordingProgress) => void
+  onProgress?: (progress: RecordingProgress) => void,
 ): Promise<RecordingResult> {
   // Note: This command needs to be implemented in Tauri backend
-  return await invoke<RecordingResult>('record_channel', {
+  return await invoke<RecordingResult>("record_channel", {
     outputDevice,
     inputDevice,
     outputChannel,
@@ -124,11 +126,11 @@ export async function recordAllChannels(
   outputDevice: string,
   inputDevice: string,
   channelCount: number,
-  signalType: 'sweep' | 'white' | 'pink',
+  signalType: "sweep" | "white" | "pink",
   duration: number,
   sampleRate: number,
   outputPath: string,
-  onProgress?: (channelIndex: number, progress: RecordingProgress) => void
+  onProgress?: (channelIndex: number, progress: RecordingProgress) => void,
 ): Promise<RecordingResult[]> {
   const results: RecordingResult[] = [];
 
@@ -147,13 +149,13 @@ export async function recordAllChannels(
           if (onProgress) {
             onProgress(i, progress);
           }
-        }
+        },
       );
       results.push(result);
 
       // Wait 1 second between channels
       if (i < channelCount - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     } catch (error) {
       console.error(`Failed to record channel ${i}:`, error);
@@ -168,13 +170,13 @@ export async function recordAllChannels(
  * Generate a test signal and save to file
  */
 export async function generateTestSignal(
-  signalType: 'sweep' | 'white' | 'pink',
+  signalType: "sweep" | "white" | "pink",
   duration: number,
   sampleRate: number,
   amplitude: number,
-  outputPath: string
+  outputPath: string,
 ): Promise<string> {
-  return await invoke<string>('generate_test_signal', {
+  return await invoke<string>("generate_test_signal", {
     signalType,
     duration,
     sampleRate,
@@ -188,13 +190,13 @@ export async function generateTestSignal(
  */
 export async function analyzeRecording(
   wavPath: string,
-  csvPath: string
+  csvPath: string,
 ): Promise<{
   frequencies: number[];
   magnitude_db: number[];
   phase_deg: number[];
 }> {
-  return await invoke('analyze_recording', {
+  return await invoke("analyze_recording", {
     wavPath,
     csvPath,
   });
@@ -205,9 +207,9 @@ export async function analyzeRecording(
  */
 export async function saveCaptureConfig(
   config: any,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
-  await invoke('save_capture_config', {
+  await invoke("save_capture_config", {
     config: JSON.stringify(config),
     filePath,
   });
@@ -216,10 +218,8 @@ export async function saveCaptureConfig(
 /**
  * Load capture configuration from JSON file
  */
-export async function loadCaptureConfig(
-  filePath: string
-): Promise<any> {
-  const configJson = await invoke<string>('load_capture_config', {
+export async function loadCaptureConfig(filePath: string): Promise<any> {
+  const configJson = await invoke<string>("load_capture_config", {
     filePath,
   });
   return JSON.parse(configJson);
@@ -230,9 +230,9 @@ export async function loadCaptureConfig(
  */
 export async function saveRecordings(
   recordings: RecordingResult[],
-  outputPath: string
+  outputPath: string,
 ): Promise<string> {
-  return await invoke<string>('save_recordings_zip', {
+  return await invoke<string>("save_recordings_zip", {
     recordings,
     outputPath,
   });
@@ -242,9 +242,9 @@ export async function saveRecordings(
  * Load recordings from a ZIP file
  */
 export async function loadRecordings(
-  zipPath: string
+  zipPath: string,
 ): Promise<RecordingResult[]> {
-  return await invoke<RecordingResult[]>('load_recordings_zip', {
+  return await invoke<RecordingResult[]>("load_recordings_zip", {
     zipPath,
   });
 }

@@ -129,7 +129,9 @@ export class CaptureModalManager {
 
   private initializeElements(): void {
     // Panel container (can be either capture_panel or capture_modal for backward compatibility)
-    this.capturePanel = document.getElementById("capture_panel") || document.getElementById("capture_modal");
+    this.capturePanel =
+      document.getElementById("capture_panel") ||
+      document.getElementById("capture_modal");
     this.captureModalGraph = document.getElementById(
       "capture_modal_graph",
     ) as HTMLCanvasElement;

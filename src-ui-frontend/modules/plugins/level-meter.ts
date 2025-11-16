@@ -1,16 +1,16 @@
 // Level Meter Component
 // Reusable vertical level meter with peak hold
 
-import type { LevelMeterData } from './plugin-types';
+import type { LevelMeterData } from "./plugin-types";
 
 export interface LevelMeterConfig {
   canvas: HTMLCanvasElement;
-  channels: number;              // Number of channels to display
-  channelLabels?: string[];      // Optional labels for each channel
-  minDb?: number;                // Minimum dB value (default: -60)
-  maxDb?: number;                // Maximum dB value (default: 0)
-  peakHoldTime?: number;         // Peak hold time in ms (default: 1000)
-  colorScheme?: 'light' | 'dark'; // Color scheme (default: 'dark')
+  channels: number; // Number of channels to display
+  channelLabels?: string[]; // Optional labels for each channel
+  minDb?: number; // Minimum dB value (default: -60)
+  maxDb?: number; // Maximum dB value (default: 0)
+  peakHoldTime?: number; // Peak hold time in ms (default: 1000)
+  colorScheme?: "light" | "dark"; // Color scheme (default: 'dark')
 }
 
 /**
@@ -33,27 +33,31 @@ export class LevelMeter {
 
   constructor(config: LevelMeterConfig) {
     this.canvas = config.canvas;
-    this.ctx = this.canvas.getContext('2d');
+    this.ctx = this.canvas.getContext("2d");
 
     // Initialize config with defaults
     this.config = {
       canvas: config.canvas,
       channels: config.channels,
-      channelLabels: config.channelLabels ?? Array.from({ length: config.channels }, (_, i) => `${i + 1}`),
+      channelLabels:
+        config.channelLabels ??
+        Array.from({ length: config.channels }, (_, i) => `${i + 1}`),
       minDb: config.minDb ?? -60,
       maxDb: config.maxDb ?? 0,
       peakHoldTime: config.peakHoldTime ?? 1000,
-      colorScheme: config.colorScheme ?? 'dark',
+      colorScheme: config.colorScheme ?? "dark",
     };
 
     // Initialize arrays
-    this.currentLevels = new Array(this.config.channels).fill(this.config.minDb);
+    this.currentLevels = new Array(this.config.channels).fill(
+      this.config.minDb,
+    );
     this.currentPeaks = new Array(this.config.channels).fill(this.config.minDb);
     this.peakHolds = new Array(this.config.channels).fill(this.config.minDb);
     this.peakHoldTimers = new Array(this.config.channels).fill(0);
 
     if (!this.ctx) {
-      console.warn('[LevelMeter] Failed to get 2D context');
+      console.warn("[LevelMeter] Failed to get 2D context");
       return;
     }
 
@@ -76,7 +80,7 @@ export class LevelMeter {
     this.canvas.width = width * dpr;
     this.canvas.height = height * dpr;
 
-    this.ctx = this.canvas.getContext('2d');
+    this.ctx = this.canvas.getContext("2d");
     if (this.ctx) {
       this.ctx.scale(dpr, dpr);
     }
@@ -88,7 +92,11 @@ export class LevelMeter {
   update(data: LevelMeterData): void {
     const now = Date.now();
 
-    for (let i = 0; i < Math.min(data.channels.length, this.config.channels); i++) {
+    for (
+      let i = 0;
+      i < Math.min(data.channels.length, this.config.channels);
+      i++
+    ) {
       // Update RMS level
       this.currentLevels[i] = data.channels[i];
 
@@ -110,7 +118,7 @@ export class LevelMeter {
         // Slowly decay peak hold
         this.peakHolds[i] = Math.max(
           this.config.minDb,
-          this.peakHolds[i] - 0.5
+          this.peakHolds[i] - 0.5,
         );
       }
     }
@@ -140,7 +148,7 @@ export class LevelMeter {
     const height = this.canvas.height / dpr;
 
     // Clear canvas
-    const bgColor = this.config.colorScheme === 'dark' ? '#1a1a1a' : '#f8f9fa';
+    const bgColor = this.config.colorScheme === "dark" ? "#1a1a1a" : "#f8f9fa";
     this.ctx.fillStyle = bgColor;
     this.ctx.fillRect(0, 0, width, height);
 
@@ -148,7 +156,8 @@ export class LevelMeter {
     const labelHeight = 20;
     const meterHeight = height - labelHeight;
     const meterWidth = Math.max(10, (width - 10) / this.config.channels - 5);
-    const spacing = (width - meterWidth * this.config.channels) / (this.config.channels + 1);
+    const spacing =
+      (width - meterWidth * this.config.channels) / (this.config.channels + 1);
 
     // Draw each channel
     for (let i = 0; i < this.config.channels; i++) {
@@ -161,11 +170,18 @@ export class LevelMeter {
   /**
    * Draw a single channel meter
    */
-  private drawChannel(x: number, y: number, width: number, height: number, channelIndex: number): void {
+  private drawChannel(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    channelIndex: number,
+  ): void {
     if (!this.ctx) return;
 
     // Draw background
-    this.ctx.fillStyle = this.config.colorScheme === 'dark' ? '#2a2a2a' : '#e0e0e0';
+    this.ctx.fillStyle =
+      this.config.colorScheme === "dark" ? "#2a2a2a" : "#e0e0e0";
     this.ctx.fillRect(x, y, width, height);
 
     // Draw scale markers
@@ -203,7 +219,8 @@ export class LevelMeter {
     if (!this.ctx) return;
 
     const markers = [0, -6, -12, -18, -24, -30, -40, -50];
-    const lineColor = this.config.colorScheme === 'dark' ? '#404040' : '#b0b0b0';
+    const lineColor =
+      this.config.colorScheme === "dark" ? "#404040" : "#b0b0b0";
 
     this.ctx.strokeStyle = lineColor;
     this.ctx.lineWidth = 1;
@@ -222,16 +239,24 @@ export class LevelMeter {
   /**
    * Draw channel label
    */
-  private drawLabel(x: number, y: number, width: number, height: number, channelIndex: number): void {
+  private drawLabel(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    channelIndex: number,
+  ): void {
     if (!this.ctx) return;
 
-    const label = this.config.channelLabels[channelIndex] || `${channelIndex + 1}`;
-    const textColor = this.config.colorScheme === 'dark' ? '#ffffff' : '#000000';
+    const label =
+      this.config.channelLabels[channelIndex] || `${channelIndex + 1}`;
+    const textColor =
+      this.config.colorScheme === "dark" ? "#ffffff" : "#000000";
 
     this.ctx.fillStyle = textColor;
-    this.ctx.font = '11px sans-serif';
-    this.ctx.textAlign = 'center';
-    this.ctx.textBaseline = 'middle';
+    this.ctx.font = "11px sans-serif";
+    this.ctx.textAlign = "center";
+    this.ctx.textBaseline = "middle";
     this.ctx.fillText(label, x + width / 2, y + height / 2);
   }
 
@@ -239,8 +264,12 @@ export class LevelMeter {
    * Convert dB to pixel height
    */
   private dbToHeight(db: number, totalHeight: number): number {
-    const clamped = Math.max(this.config.minDb, Math.min(this.config.maxDb, db));
-    const normalized = (clamped - this.config.minDb) / (this.config.maxDb - this.config.minDb);
+    const clamped = Math.max(
+      this.config.minDb,
+      Math.min(this.config.maxDb, db),
+    );
+    const normalized =
+      (clamped - this.config.minDb) / (this.config.maxDb - this.config.minDb);
     return normalized * totalHeight;
   }
 
@@ -249,15 +278,15 @@ export class LevelMeter {
    */
   private getLevelColor(db: number): string {
     if (db > -3) {
-      return '#ef4444'; // Red (clipping)
+      return "#ef4444"; // Red (clipping)
     } else if (db > -6) {
-      return '#f59e0b'; // Orange (hot)
+      return "#f59e0b"; // Orange (hot)
     } else if (db > -12) {
-      return '#eab308'; // Yellow (warm)
+      return "#eab308"; // Yellow (warm)
     } else if (db > -24) {
-      return '#84cc16'; // Green (good)
+      return "#84cc16"; // Green (good)
     } else {
-      return '#22c55e'; // Light green (quiet)
+      return "#22c55e"; // Light green (quiet)
     }
   }
 
@@ -274,7 +303,8 @@ export class LevelMeter {
    */
   reconfigure(channels: number, channelLabels?: string[]): void {
     this.config.channels = channels;
-    this.config.channelLabels = channelLabels ?? Array.from({ length: channels }, (_, i) => `${i + 1}`);
+    this.config.channelLabels =
+      channelLabels ?? Array.from({ length: channels }, (_, i) => `${i + 1}`);
 
     // Reinitialize arrays
     this.currentLevels = new Array(channels).fill(this.config.minDb);
@@ -282,7 +312,12 @@ export class LevelMeter {
     this.peakHolds = new Array(channels).fill(this.config.minDb);
     this.peakHoldTimers = new Array(channels).fill(0);
 
-    console.log('[LevelMeter] Reconfigured to', channels, 'channels:', channelLabels);
+    console.log(
+      "[LevelMeter] Reconfigured to",
+      channels,
+      "channels:",
+      channelLabels,
+    );
 
     // Trigger re-render
     this.render();

@@ -1,13 +1,20 @@
 // Capture Configuration Panel (Step 1)
 // Device selection, channel routing, and microphone calibration
 
-console.log('[MODULE] capture-config-panel.ts loading...');
+console.log("[MODULE] capture-config-panel.ts loading...");
 
-import { getAudioDevices, getDeviceProperties, saveCaptureConfig, loadCaptureConfig, type AudioDevice, type AudioConfig } from './capture-tauri';
-import { save, open } from '@tauri-apps/plugin-dialog';
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import {
+  getAudioDevices,
+  getDeviceProperties,
+  saveCaptureConfig,
+  loadCaptureConfig,
+  type AudioDevice,
+  type AudioConfig,
+} from "./capture-tauri";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
 
-console.log('[MODULE] capture-config-panel.ts imports complete');
+console.log("[MODULE] capture-config-panel.ts imports complete");
 
 export interface ChannelGroup {
   id: string;
@@ -57,14 +64,14 @@ export class CaptureConfigPanel extends HTMLElement {
   }
 
   async connectedCallback() {
-    console.log('[CaptureConfigPanel] connectedCallback called');
+    console.log("[CaptureConfigPanel] connectedCallback called");
     if (!this.hasRendered) {
-      console.log('[CaptureConfigPanel] Rendering for first time');
+      console.log("[CaptureConfigPanel] Rendering for first time");
       this.render();
       this.hasRendered = true;
       this.attachEventListeners();
       await this.loadDevices();
-      console.log('[CaptureConfigPanel] Initialization complete');
+      console.log("[CaptureConfigPanel] Initialization complete");
     }
   }
 
@@ -74,12 +81,14 @@ export class CaptureConfigPanel extends HTMLElement {
       this.playbackDevices = devices.output;
       this.recordingDevices = devices.input;
 
-      this.populateDeviceSelect('playback_device', this.playbackDevices);
-      this.populateDeviceSelect('recording_device', this.recordingDevices);
+      this.populateDeviceSelect("playback_device", this.playbackDevices);
+      this.populateDeviceSelect("recording_device", this.recordingDevices);
 
-      console.log(`Loaded ${this.playbackDevices.length} playback devices and ${this.recordingDevices.length} recording devices`);
+      console.log(
+        `Loaded ${this.playbackDevices.length} playback devices and ${this.recordingDevices.length} recording devices`,
+      );
     } catch (error) {
-      console.error('Failed to load audio devices:', error);
+      console.error("Failed to load audio devices:", error);
     }
   }
 
@@ -88,19 +97,19 @@ export class CaptureConfigPanel extends HTMLElement {
     if (!select) return;
 
     // Clear existing options
-    select.innerHTML = '';
+    select.innerHTML = "";
 
     if (devices.length === 0) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'No devices found';
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No devices found";
       select.appendChild(option);
       return;
     }
 
     // Add devices
     devices.forEach((device) => {
-      const option = document.createElement('option');
+      const option = document.createElement("option");
       option.value = device.name;
       option.textContent = device.name;
       if (device.is_default) {
@@ -110,11 +119,13 @@ export class CaptureConfigPanel extends HTMLElement {
     });
 
     // Trigger change event to update device info
-    select.dispatchEvent(new Event('change'));
+    select.dispatchEvent(new Event("change"));
   }
 
   private render(): void {
-    console.log('[CaptureConfigPanel] render() called - about to set innerHTML');
+    console.log(
+      "[CaptureConfigPanel] render() called - about to set innerHTML",
+    );
     this.innerHTML = `
       <div class="capture-config-panel">
         <div class="capture-config-header">
@@ -249,37 +260,47 @@ export class CaptureConfigPanel extends HTMLElement {
 
   private attachEventListeners(): void {
     // Playback device change
-    const playbackDevice = this.querySelector('#playback_device') as HTMLSelectElement;
-    playbackDevice?.addEventListener('change', () => {
-      this.updateDeviceInfo('playback', playbackDevice.value);
+    const playbackDevice = this.querySelector(
+      "#playback_device",
+    ) as HTMLSelectElement;
+    playbackDevice?.addEventListener("change", () => {
+      this.updateDeviceInfo("playback", playbackDevice.value);
     });
 
     // Recording device change
-    const recordingDevice = this.querySelector('#recording_device') as HTMLSelectElement;
-    recordingDevice?.addEventListener('change', () => {
-      this.updateDeviceInfo('recording', recordingDevice.value);
+    const recordingDevice = this.querySelector(
+      "#recording_device",
+    ) as HTMLSelectElement;
+    recordingDevice?.addEventListener("change", () => {
+      this.updateDeviceInfo("recording", recordingDevice.value);
     });
 
     // Playback channel count change
-    const playbackChannelCount = this.querySelector('#playback_channel_count') as HTMLInputElement;
-    playbackChannelCount?.addEventListener('change', () => {
+    const playbackChannelCount = this.querySelector(
+      "#playback_channel_count",
+    ) as HTMLInputElement;
+    playbackChannelCount?.addEventListener("change", () => {
       this.updatePlaybackChannelMapping(parseInt(playbackChannelCount.value));
     });
 
     // Recording channel count change
-    const recordingChannelCount = this.querySelector('#recording_channel_count') as HTMLInputElement;
-    recordingChannelCount?.addEventListener('change', () => {
+    const recordingChannelCount = this.querySelector(
+      "#recording_channel_count",
+    ) as HTMLInputElement;
+    recordingChannelCount?.addEventListener("change", () => {
       this.updateRecordingChannelMapping(parseInt(recordingChannelCount.value));
     });
 
     // Calibration file browse
-    const calibrationBrowseBtn = this.querySelector('#calibration_browse_btn');
-    const calibrationFileInput = this.querySelector('#calibration_file_input') as HTMLInputElement;
-    calibrationBrowseBtn?.addEventListener('click', () => {
+    const calibrationBrowseBtn = this.querySelector("#calibration_browse_btn");
+    const calibrationFileInput = this.querySelector(
+      "#calibration_file_input",
+    ) as HTMLInputElement;
+    calibrationBrowseBtn?.addEventListener("click", () => {
       calibrationFileInput?.click();
     });
 
-    calibrationFileInput?.addEventListener('change', () => {
+    calibrationFileInput?.addEventListener("change", () => {
       if (calibrationFileInput.files && calibrationFileInput.files.length > 0) {
         const file = calibrationFileInput.files[0];
         this.setCalibrationFile(file.name);
@@ -287,24 +308,24 @@ export class CaptureConfigPanel extends HTMLElement {
     });
 
     // Calibration clear
-    const calibrationClearBtn = this.querySelector('#calibration_clear_btn');
-    calibrationClearBtn?.addEventListener('click', () => {
+    const calibrationClearBtn = this.querySelector("#calibration_clear_btn");
+    calibrationClearBtn?.addEventListener("click", () => {
       this.clearCalibrationFile();
     });
 
     // Config actions
-    const configLoadBtn = this.querySelector('#config_load_btn');
-    configLoadBtn?.addEventListener('click', () => {
+    const configLoadBtn = this.querySelector("#config_load_btn");
+    configLoadBtn?.addEventListener("click", () => {
       this.loadConfig();
     });
 
-    const configSaveBtn = this.querySelector('#config_save_btn');
-    configSaveBtn?.addEventListener('click', () => {
+    const configSaveBtn = this.querySelector("#config_save_btn");
+    configSaveBtn?.addEventListener("click", () => {
       this.saveConfig();
     });
 
-    const configNextBtn = this.querySelector('#config_next_btn');
-    configNextBtn?.addEventListener('click', () => {
+    const configNextBtn = this.querySelector("#config_next_btn");
+    configNextBtn?.addEventListener("click", () => {
       this.onNext();
     });
 
@@ -313,16 +334,20 @@ export class CaptureConfigPanel extends HTMLElement {
     this.updateRecordingChannelMapping(2);
   }
 
-  private async updateDeviceInfo(type: 'playback' | 'recording', deviceName: string): Promise<void> {
-    const devices = type === 'playback' ? this.playbackDevices : this.recordingDevices;
-    const device = devices.find(d => d.name === deviceName);
+  private async updateDeviceInfo(
+    type: "playback" | "recording",
+    deviceName: string,
+  ): Promise<void> {
+    const devices =
+      type === "playback" ? this.playbackDevices : this.recordingDevices;
+    const device = devices.find((d) => d.name === deviceName);
 
     if (!device || !device.default_config) {
       return;
     }
 
     const config = device.default_config;
-    const prefix = type === 'playback' ? 'playback' : 'recording';
+    const prefix = type === "playback" ? "playback" : "recording";
 
     // Update badges
     const channelsBadge = this.querySelector(`#${prefix}_channels_badge`);
@@ -340,27 +365,31 @@ export class CaptureConfigPanel extends HTMLElement {
 
     if (bitDepthBadge) {
       // Extract bit depth from sample format
-      let bitDepth = '?';
-      if (config.sample_format === 'f32') {
-        bitDepth = '32';
-      } else if (config.sample_format === 'i16' || config.sample_format === 'u16') {
-        bitDepth = '16';
+      let bitDepth = "?";
+      if (config.sample_format === "f32") {
+        bitDepth = "32";
+      } else if (
+        config.sample_format === "i16" ||
+        config.sample_format === "u16"
+      ) {
+        bitDepth = "16";
       }
       bitDepthBadge.textContent = `${bitDepth} bit`;
     }
   }
 
   private updatePlaybackChannelMapping(channelCount: number): void {
-    const container = this.querySelector('#playback_channel_mapping');
+    const container = this.querySelector("#playback_channel_mapping");
     if (!container) return;
 
-    container.innerHTML = '';
+    container.innerHTML = "";
 
     for (let i = 0; i < channelCount; i++) {
-      const row = document.createElement('div');
-      row.className = 'capture-channel-row';
+      const row = document.createElement("div");
+      row.className = "capture-channel-row";
 
-      const defaultGroup = i < DEFAULT_CHANNEL_GROUPS.length ? DEFAULT_CHANNEL_GROUPS[i] : null;
+      const defaultGroup =
+        i < DEFAULT_CHANNEL_GROUPS.length ? DEFAULT_CHANNEL_GROUPS[i] : null;
 
       row.innerHTML = `
         <span class="capture-channel-label">Channel ${i + 1}:</span>
@@ -377,11 +406,13 @@ export class CaptureConfigPanel extends HTMLElement {
         </label>
         <select class="capture-group-select" data-channel="${i}">
           <option value="">No group</option>
-          ${DEFAULT_CHANNEL_GROUPS.map(g => `
-            <option value="${g.id}" ${defaultGroup?.id === g.id ? 'selected' : ''}>
+          ${DEFAULT_CHANNEL_GROUPS.map(
+            (g) => `
+            <option value="${g.id}" ${defaultGroup?.id === g.id ? "selected" : ""}>
               ${g.name}
             </option>
-          `).join('')}
+          `,
+          ).join("")}
         </select>
       `;
 
@@ -390,14 +421,14 @@ export class CaptureConfigPanel extends HTMLElement {
   }
 
   private updateRecordingChannelMapping(channelCount: number): void {
-    const container = this.querySelector('#recording_channel_mapping');
+    const container = this.querySelector("#recording_channel_mapping");
     if (!container) return;
 
-    container.innerHTML = '';
+    container.innerHTML = "";
 
     for (let i = 0; i < channelCount; i++) {
-      const row = document.createElement('div');
-      row.className = 'capture-channel-row';
+      const row = document.createElement("div");
+      row.className = "capture-channel-row";
 
       row.innerHTML = `
         <span class="capture-channel-label">Channel ${i + 1}:</span>
@@ -419,34 +450,44 @@ export class CaptureConfigPanel extends HTMLElement {
   }
 
   private setCalibrationFile(fileName: string): void {
-    const pathInput = this.querySelector('#calibration_file_path') as HTMLInputElement;
-    const clearBtn = this.querySelector('#calibration_clear_btn') as HTMLButtonElement;
+    const pathInput = this.querySelector(
+      "#calibration_file_path",
+    ) as HTMLInputElement;
+    const clearBtn = this.querySelector(
+      "#calibration_clear_btn",
+    ) as HTMLButtonElement;
 
     if (pathInput) {
       pathInput.value = fileName;
     }
 
     if (clearBtn) {
-      clearBtn.style.display = 'inline-block';
+      clearBtn.style.display = "inline-block";
     }
   }
 
   private clearCalibrationFile(): void {
-    const pathInput = this.querySelector('#calibration_file_path') as HTMLInputElement;
-    const fileInput = this.querySelector('#calibration_file_input') as HTMLInputElement;
-    const clearBtn = this.querySelector('#calibration_clear_btn') as HTMLButtonElement;
+    const pathInput = this.querySelector(
+      "#calibration_file_path",
+    ) as HTMLInputElement;
+    const fileInput = this.querySelector(
+      "#calibration_file_input",
+    ) as HTMLInputElement;
+    const clearBtn = this.querySelector(
+      "#calibration_clear_btn",
+    ) as HTMLButtonElement;
 
     if (pathInput) {
-      pathInput.value = '';
-      pathInput.placeholder = 'No calibration file loaded';
+      pathInput.value = "";
+      pathInput.placeholder = "No calibration file loaded";
     }
 
     if (fileInput) {
-      fileInput.value = '';
+      fileInput.value = "";
     }
 
     if (clearBtn) {
-      clearBtn.style.display = 'none';
+      clearBtn.style.display = "none";
     }
   }
 
@@ -454,11 +495,13 @@ export class CaptureConfigPanel extends HTMLElement {
     try {
       // Open file dialog
       const filePath = await open({
-        title: 'Load Capture Configuration',
-        filters: [{
-          name: 'JSON',
-          extensions: ['json']
-        }],
+        title: "Load Capture Configuration",
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"],
+          },
+        ],
       });
 
       if (!filePath) return;
@@ -470,9 +513,9 @@ export class CaptureConfigPanel extends HTMLElement {
       // Apply config to UI
       this.setConfig(config);
 
-      console.log('Config loaded successfully');
+      console.log("Config loaded successfully");
     } catch (error) {
-      console.error('Failed to load config:', error);
+      console.error("Failed to load config:", error);
       alert(`Failed to load configuration: ${error}`);
     }
   }
@@ -484,12 +527,14 @@ export class CaptureConfigPanel extends HTMLElement {
 
       // Open save dialog
       const filePath = await save({
-        title: 'Save Capture Configuration',
-        filters: [{
-          name: 'JSON',
-          extensions: ['json']
-        }],
-        defaultPath: 'capture-config.json',
+        title: "Save Capture Configuration",
+        filters: [
+          {
+            name: "JSON",
+            extensions: ["json"],
+          },
+        ],
+        defaultPath: "capture-config.json",
       });
 
       if (!filePath) return;
@@ -497,19 +542,19 @@ export class CaptureConfigPanel extends HTMLElement {
       // Save config
       await writeTextFile(filePath, JSON.stringify(config, null, 2));
 
-      console.log('Config saved successfully');
+      console.log("Config saved successfully");
     } catch (error) {
-      console.error('Failed to save config:', error);
+      console.error("Failed to save config:", error);
       alert(`Failed to save configuration: ${error}`);
     }
   }
 
   private onNext(): void {
     // Emit event to move to next step
-    const event = new CustomEvent('captureConfigComplete', {
+    const event = new CustomEvent("captureConfigComplete", {
       bubbles: true,
       composed: true,
-      detail: { config: this.getConfig() }
+      detail: { config: this.getConfig() },
     });
     this.dispatchEvent(event);
   }
@@ -517,31 +562,39 @@ export class CaptureConfigPanel extends HTMLElement {
   public getConfig(): CaptureConfig {
     // Gather all configuration data
     const playbackChannelCount = parseInt(
-      (this.querySelector('#playback_channel_count') as HTMLInputElement)?.value || '2'
+      (this.querySelector("#playback_channel_count") as HTMLInputElement)
+        ?.value || "2",
     );
     const recordingChannelCount = parseInt(
-      (this.querySelector('#recording_channel_count') as HTMLInputElement)?.value || '2'
+      (this.querySelector("#recording_channel_count") as HTMLInputElement)
+        ?.value || "2",
     );
 
     // Gather playback channel groups
     const channelGroups: ChannelGroup[] = [];
-    const playbackMapping = this.querySelectorAll('#playback_channel_mapping .capture-channel-row');
+    const playbackMapping = this.querySelectorAll(
+      "#playback_channel_mapping .capture-channel-row",
+    );
 
     playbackMapping.forEach((row, idx) => {
-      const groupSelect = row.querySelector('.capture-group-select') as HTMLSelectElement;
+      const groupSelect = row.querySelector(
+        ".capture-group-select",
+      ) as HTMLSelectElement;
       const groupId = groupSelect?.value;
 
       if (groupId) {
-        const existingGroup = channelGroups.find(g => g.id === groupId);
+        const existingGroup = channelGroups.find((g) => g.id === groupId);
         if (existingGroup) {
           existingGroup.channels.push(idx);
         } else {
-          const groupInfo = DEFAULT_CHANNEL_GROUPS.find(g => g.id === groupId);
+          const groupInfo = DEFAULT_CHANNEL_GROUPS.find(
+            (g) => g.id === groupId,
+          );
           if (groupInfo) {
             channelGroups.push({
               id: groupId,
               name: groupInfo.name,
-              channels: [idx]
+              channels: [idx],
             });
           }
         }
@@ -550,32 +603,44 @@ export class CaptureConfigPanel extends HTMLElement {
 
     // Gather recording channel mapping
     const channelMapping: number[] = [];
-    const recordingMappingRows = this.querySelectorAll('#recording_channel_mapping .capture-interface-input');
+    const recordingMappingRows = this.querySelectorAll(
+      "#recording_channel_mapping .capture-interface-input",
+    );
     recordingMappingRows.forEach((input) => {
       const interfaceChannel = parseInt((input as HTMLInputElement).value);
       channelMapping.push(interfaceChannel - 1); // Convert to 0-indexed
     });
 
-    const calibrationPath = (this.querySelector('#calibration_file_path') as HTMLInputElement)?.value || undefined;
+    const calibrationPath =
+      (this.querySelector("#calibration_file_path") as HTMLInputElement)
+        ?.value || undefined;
 
     return {
       playback: {
-        deviceId: (this.querySelector('#playback_device') as HTMLSelectElement)?.value || '',
-        deviceName: (this.querySelector('#playback_device') as HTMLSelectElement)?.selectedOptions[0]?.text || '',
+        deviceId:
+          (this.querySelector("#playback_device") as HTMLSelectElement)
+            ?.value || "",
+        deviceName:
+          (this.querySelector("#playback_device") as HTMLSelectElement)
+            ?.selectedOptions[0]?.text || "",
         channels: playbackChannelCount,
         sampleRate: 48000, // TODO: Get from device info
         bitDepth: 24, // TODO: Get from device info
-        channelGroups
+        channelGroups,
       },
       recording: {
-        deviceId: (this.querySelector('#recording_device') as HTMLSelectElement)?.value || '',
-        deviceName: (this.querySelector('#recording_device') as HTMLSelectElement)?.selectedOptions[0]?.text || '',
+        deviceId:
+          (this.querySelector("#recording_device") as HTMLSelectElement)
+            ?.value || "",
+        deviceName:
+          (this.querySelector("#recording_device") as HTMLSelectElement)
+            ?.selectedOptions[0]?.text || "",
         channels: recordingChannelCount,
         sampleRate: 48000, // TODO: Get from device info
         bitDepth: 24, // TODO: Get from device info
-        channelMapping
+        channelMapping,
       },
-      microphoneCalibration: calibrationPath
+      microphoneCalibration: calibrationPath,
     };
   }
 
@@ -583,31 +648,39 @@ export class CaptureConfigPanel extends HTMLElement {
     this.config = config;
 
     // Set playback device
-    const playbackSelect = this.querySelector('#playback_device') as HTMLSelectElement;
+    const playbackSelect = this.querySelector(
+      "#playback_device",
+    ) as HTMLSelectElement;
     if (playbackSelect && config.playback.deviceName) {
       playbackSelect.value = config.playback.deviceName;
-      playbackSelect.dispatchEvent(new Event('change'));
+      playbackSelect.dispatchEvent(new Event("change"));
     }
 
     // Set recording device
-    const recordingSelect = this.querySelector('#recording_device') as HTMLSelectElement;
+    const recordingSelect = this.querySelector(
+      "#recording_device",
+    ) as HTMLSelectElement;
     if (recordingSelect && config.recording.deviceName) {
       recordingSelect.value = config.recording.deviceName;
-      recordingSelect.dispatchEvent(new Event('change'));
+      recordingSelect.dispatchEvent(new Event("change"));
     }
 
     // Set playback channel count
-    const playbackChannelCount = this.querySelector('#playback_channel_count') as HTMLInputElement;
+    const playbackChannelCount = this.querySelector(
+      "#playback_channel_count",
+    ) as HTMLInputElement;
     if (playbackChannelCount) {
       playbackChannelCount.value = config.playback.channels.toString();
-      playbackChannelCount.dispatchEvent(new Event('change'));
+      playbackChannelCount.dispatchEvent(new Event("change"));
     }
 
     // Set recording channel count
-    const recordingChannelCount = this.querySelector('#recording_channel_count') as HTMLInputElement;
+    const recordingChannelCount = this.querySelector(
+      "#recording_channel_count",
+    ) as HTMLInputElement;
     if (recordingChannelCount) {
       recordingChannelCount.value = config.recording.channels.toString();
-      recordingChannelCount.dispatchEvent(new Event('change'));
+      recordingChannelCount.dispatchEvent(new Event("change"));
     }
 
     // Set calibration file
@@ -620,10 +693,10 @@ export class CaptureConfigPanel extends HTMLElement {
 }
 
 // Register the custom element
-console.log('[MODULE] Registering capture-config-panel custom element...');
-if (!customElements.get('capture-config-panel')) {
-  customElements.define('capture-config-panel', CaptureConfigPanel);
-  console.log('[MODULE] capture-config-panel registered successfully');
+console.log("[MODULE] Registering capture-config-panel custom element...");
+if (!customElements.get("capture-config-panel")) {
+  customElements.define("capture-config-panel", CaptureConfigPanel);
+  console.log("[MODULE] capture-config-panel registered successfully");
 } else {
-  console.log('[MODULE] capture-config-panel already registered');
+  console.log("[MODULE] capture-config-panel already registered");
 }

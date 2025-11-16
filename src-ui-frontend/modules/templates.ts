@@ -582,4 +582,3 @@ export function generateOptimizationModal(): string {
     </div>
 </div>`;
 }
-

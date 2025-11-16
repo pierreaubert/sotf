@@ -57,10 +57,7 @@ export class StepContainer {
     const stepElements = this.container.querySelectorAll("[data-step]");
 
     stepElements.forEach((element) => {
-      const stepId = parseInt(
-        (element as HTMLElement).dataset.step || "0",
-        10,
-      );
+      const stepId = parseInt((element as HTMLElement).dataset.step || "0", 10);
       if (stepId > 0) {
         const stepElement = element as HTMLElement;
         stepElement.classList.add("step-content-item");
@@ -106,7 +103,10 @@ export class StepContainer {
   /**
    * Navigate to a specific step
    */
-  public async goToStep(stepId: number, animate: boolean = true): Promise<boolean> {
+  public async goToStep(
+    stepId: number,
+    animate: boolean = true,
+  ): Promise<boolean> {
     // Prevent navigation during transition
     if (this.isTransitioning) {
       return false;
