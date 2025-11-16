@@ -245,6 +245,7 @@ pub fn record_and_analyze(
     output_channel: u16,
     input_channel: u16,
     device_name: Option<&str>,
+    microphone_compensation_path: Option<&str>,
 ) -> Result<(), String> {
     use crate::AudioStreamingManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -462,8 +463,8 @@ pub fn record_and_analyze(
     eprintln!("[record_and_analyze] Playback started, waiting for completion...");
 
     // Wait for playback to complete
-    // Use a generous timeout to ensure we capture the entire signal
-    let total_wait = Duration::from_secs_f64(expected_duration * 2.0 + 2.0);
+    // Maximum timeout: expected duration + 3 seconds for buffer/latency
+    let total_wait = Duration::from_secs_f64(expected_duration + 3.0);
     let check_interval = Duration::from_millis(50);
     let mut elapsed = Duration::ZERO;
     let mut last_sample_count = 0;
@@ -488,9 +489,9 @@ pub fn record_and_analyze(
         // Check if recording has stopped growing (playback finished)
         if current_sample_count == last_sample_count && current_sample_count > 0 {
             stable_count += 1;
-            // If sample count hasn't changed for 500ms, assume playback is done
-            if stable_count >= 10 {
-                // 10 * 50ms = 500ms
+            // If sample count hasn't changed for 150ms, assume playback is done
+            if stable_count >= 3 {
+                // 3 * 50ms = 150ms
                 eprintln!("[record_and_analyze] Recording stable, playback likely complete");
                 break;
             }
@@ -509,8 +510,8 @@ pub fn record_and_analyze(
         }
     }
 
-    // Add a small buffer after playback finishes
-    sleep(Duration::from_millis(200));
+    // Add a small buffer after playback finishes to capture any tail
+    sleep(Duration::from_millis(100));
 
     // Stop playback
     manager
@@ -566,10 +567,22 @@ pub fn record_and_analyze(
         ));
     }
 
+    // Load microphone compensation if provided
+    let compensation = if let Some(comp_path) = microphone_compensation_path {
+        eprintln!(
+            "[record_and_analyze] Loading microphone compensation from {:?}",
+            comp_path
+        );
+        use crate::signal_analysis::MicrophoneCompensation;
+        Some(MicrophoneCompensation::from_file(Path::new(comp_path))?)
+    } else {
+        None
+    };
+
     // Analyze the recording
     eprintln!("[record_and_analyze] Analyzing recording...");
     let analysis = analyze_recording(recorded_wav_path, reference_signal, sample_rate)?;
-    write_analysis_csv(&analysis, output_csv_path)?;
+    write_analysis_csv(&analysis, output_csv_path, compensation.as_ref())?;
     eprintln!(
         "[record_and_analyze] Wrote analysis to {:?}",
         output_csv_path
@@ -1129,6 +1142,7 @@ mod tests {
                     1_u16,       // output_channel
                     1_u16,       // input_channel
                     None,        // device_name
+                    None,        // microphone_compensation_path
                 );
             }
         };

@@ -4,11 +4,169 @@
 //! - Frequency spectrum (magnitude in dBFS)
 //! - Phase spectrum (compensated for latency)
 //! - Latency estimation via cross-correlation
+//! - Microphone compensation for calibrated measurements
 
 use hound::WavReader;
 use rustfft::{FftPlanner, num_complex::Complex};
 use std::f32::consts::PI;
 use std::path::Path;
+
+/// Microphone compensation data (frequency response correction)
+#[derive(Debug, Clone)]
+pub struct MicrophoneCompensation {
+    /// Frequency points in Hz
+    pub frequencies: Vec<f32>,
+    /// SPL deviation in dB (positive = mic is louder, negative = mic is quieter)
+    pub spl_db: Vec<f32>,
+}
+
+impl MicrophoneCompensation {
+    /// Apply pre-compensation to a sweep signal
+    ///
+    /// For log sweeps, this modulates the amplitude based on the instantaneous frequency
+    /// to pre-compensate for the microphone's response.
+    ///
+    /// # Arguments
+    /// * `signal` - The sweep signal to compensate
+    /// * `start_freq` - Start frequency of the sweep in Hz
+    /// * `end_freq` - End frequency of the sweep in Hz
+    /// * `sample_rate` - Sample rate in Hz
+    /// * `inverse` - If true, applies inverse compensation (boost where mic is weak)
+    ///
+    /// # Returns
+    /// Pre-compensated signal
+    pub fn apply_to_sweep(
+        &self,
+        signal: &[f32],
+        start_freq: f32,
+        end_freq: f32,
+        sample_rate: u32,
+        inverse: bool,
+    ) -> Vec<f32> {
+        let duration = signal.len() as f32 / sample_rate as f32;
+        let mut compensated = Vec::with_capacity(signal.len());
+
+        for (i, &sample) in signal.iter().enumerate() {
+            let t = i as f32 / sample_rate as f32;
+
+            // Compute instantaneous frequency for log sweep
+            // f(t) = f0 * exp(t * ln(f1/f0) / T)
+            let freq = start_freq * ((t * (end_freq / start_freq).ln()) / duration).exp();
+
+            // Get compensation at this frequency (in dB)
+            let comp_db = self.interpolate_at(freq);
+
+            // Apply inverse or direct compensation
+            let gain_db = if inverse { -comp_db } else { comp_db };
+
+            // Convert dB to linear gain
+            let gain = 10_f32.powf(gain_db / 20.0);
+
+            compensated.push(sample * gain);
+        }
+
+        compensated
+    }
+
+    /// Load microphone compensation from a CSV file
+    ///
+    /// File format: frequency_hz,spl_db (with or without header)
+    pub fn from_file(path: &Path) -> Result<Self, String> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+
+        let file = File::open(path)
+            .map_err(|e| format!("Failed to open compensation file {:?}: {}", path, e))?;
+        let reader = BufReader::new(file);
+
+        let mut frequencies = Vec::new();
+        let mut spl_db = Vec::new();
+
+        for (line_num, line) in reader.lines().enumerate() {
+            let line = line.map_err(|e| format!("Failed to read line {}: {}", line_num + 1, e))?;
+            let line = line.trim();
+
+            // Skip empty lines and header
+            if line.is_empty() || line.starts_with("frequency") || line.starts_with('#') {
+                continue;
+            }
+
+            let parts: Vec<&str> = line.split(',').collect();
+            if parts.len() < 2 {
+                return Err(format!(
+                    "Invalid format at line {}: expected 'frequency,spl' but got '{}'",
+                    line_num + 1,
+                    line
+                ));
+            }
+
+            let freq: f32 = parts[0]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Invalid frequency at line {}: {}", line_num + 1, e))?;
+            let spl: f32 = parts[1]
+                .trim()
+                .parse()
+                .map_err(|e| format!("Invalid SPL at line {}: {}", line_num + 1, e))?;
+
+            frequencies.push(freq);
+            spl_db.push(spl);
+        }
+
+        if frequencies.is_empty() {
+            return Err(format!("No compensation data found in {:?}", path));
+        }
+
+        // Validate that frequencies are sorted
+        for i in 1..frequencies.len() {
+            if frequencies[i] <= frequencies[i - 1] {
+                return Err(format!(
+                    "Frequencies must be strictly increasing: found {} after {} at line {}",
+                    frequencies[i],
+                    frequencies[i - 1],
+                    i + 1
+                ));
+            }
+        }
+
+        Ok(Self { frequencies, spl_db })
+    }
+
+    /// Interpolate compensation value at a given frequency
+    ///
+    /// Uses linear interpolation in dB domain.
+    /// Returns 0.0 for frequencies outside the calibration range.
+    pub fn interpolate_at(&self, freq: f32) -> f32 {
+        if freq < self.frequencies[0] || freq > self.frequencies[self.frequencies.len() - 1] {
+            // Outside calibration range - no compensation
+            return 0.0;
+        }
+
+        // Find the two nearest points
+        let idx = match self.frequencies.binary_search_by(|f| {
+            f.partial_cmp(&freq).unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            Ok(i) => return self.spl_db[i], // Exact match
+            Err(i) => i,
+        };
+
+        if idx == 0 {
+            return self.spl_db[0];
+        }
+        if idx >= self.frequencies.len() {
+            return self.spl_db[self.frequencies.len() - 1];
+        }
+
+        // Linear interpolation
+        let f0 = self.frequencies[idx - 1];
+        let f1 = self.frequencies[idx];
+        let s0 = self.spl_db[idx - 1];
+        let s1 = self.spl_db[idx];
+
+        let t = (freq - f0) / (f1 - f0);
+        s0 + t * (s1 - s0)
+    }
+}
 
 /// Result of FFT analysis
 #[derive(Debug, Clone)]
@@ -287,12 +445,20 @@ pub fn analyze_recording(
     })
 }
 
-/// Write analysis results to CSV file
+/// Write analysis results to CSV file with optional microphone compensation
 ///
 /// # Arguments
 /// * `result` - Analysis result
 /// * `output_path` - Path to output CSV file
-pub fn write_analysis_csv(result: &AnalysisResult, output_path: &Path) -> Result<(), String> {
+/// * `compensation` - Optional microphone compensation to apply (inverse)
+///
+/// When compensation is provided, the inverse is applied: the microphone's
+/// SPL deviation is subtracted from the measured SPL to get the true SPL.
+pub fn write_analysis_csv(
+    result: &AnalysisResult,
+    output_path: &Path,
+    compensation: Option<&MicrophoneCompensation>,
+) -> Result<(), String> {
     use std::fs::File;
     use std::io::Write;
 
@@ -301,6 +467,13 @@ pub fn write_analysis_csv(result: &AnalysisResult, output_path: &Path) -> Result
         result.frequencies.len(),
         output_path
     );
+
+    if let Some(comp) = compensation {
+        println!(
+            "[write_analysis_csv] Applying inverse microphone compensation ({} calibration points)",
+            comp.frequencies.len()
+        );
+    }
 
     if result.frequencies.is_empty() {
         return Err("Cannot write CSV: Analysis result has no frequency points!".to_string());
@@ -313,12 +486,22 @@ pub fn write_analysis_csv(result: &AnalysisResult, output_path: &Path) -> Result
     writeln!(file, "frequency_hz,spl_db,phase_deg")
         .map_err(|e| format!("Failed to write header: {}", e))?;
 
-    // Write data
+    // Write data with compensation applied
     for i in 0..result.frequencies.len() {
+        let freq = result.frequencies[i];
+        let mut spl = result.spl_db[i];
+
+        // Apply inverse compensation: subtract microphone deviation
+        // If mic reads +2dB at this frequency, the true level is 2dB lower
+        if let Some(comp) = compensation {
+            let mic_deviation = comp.interpolate_at(freq);
+            spl -= mic_deviation;
+        }
+
         writeln!(
             file,
             "{:.6},{:.3},{:.6}",
-            result.frequencies[i], result.spl_db[i], result.phase_deg[i]
+            freq, spl, result.phase_deg[i]
         )
         .map_err(|e| format!("Failed to write data: {}", e))?;
     }
@@ -816,5 +999,225 @@ mod tests {
         let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let lag = estimate_lag(&signal, &signal);
         assert_eq!(lag, 0, "Identical signals should have zero lag");
+    }
+
+    #[test]
+    fn test_microphone_compensation_from_csv() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary CSV file
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "frequency_hz,spl_db").unwrap();
+        writeln!(temp_file, "100,0.0").unwrap();
+        writeln!(temp_file, "1000,2.0").unwrap();
+        writeln!(temp_file, "10000,-1.0").unwrap();
+        temp_file.flush().unwrap();
+
+        // Load compensation
+        let comp = MicrophoneCompensation::from_file(temp_file.path())
+            .expect("Failed to load compensation");
+
+        // Verify data
+        assert_eq!(comp.frequencies.len(), 3);
+        assert_eq!(comp.spl_db.len(), 3);
+        assert_eq!(comp.frequencies[0], 100.0);
+        assert_eq!(comp.frequencies[1], 1000.0);
+        assert_eq!(comp.frequencies[2], 10000.0);
+        assert_eq!(comp.spl_db[0], 0.0);
+        assert_eq!(comp.spl_db[1], 2.0);
+        assert_eq!(comp.spl_db[2], -1.0);
+    }
+
+    #[test]
+    fn test_microphone_compensation_interpolation() {
+        // Create compensation data: +2dB at 1000 Hz, 0dB at 100 Hz and 10000 Hz
+        let comp = MicrophoneCompensation {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            spl_db: vec![0.0, 2.0, 0.0],
+        };
+
+        // Test exact matches
+        assert_eq!(comp.interpolate_at(100.0), 0.0);
+        assert_eq!(comp.interpolate_at(1000.0), 2.0);
+        assert_eq!(comp.interpolate_at(10000.0), 0.0);
+
+        // Test interpolation
+        let mid_point = comp.interpolate_at(550.0); // Halfway between 100 and 1000 in linear scale
+        assert!(mid_point > 0.5 && mid_point < 1.5, "Expected interpolated value around 1.0, got {}", mid_point);
+
+        // Test out-of-range (should return 0)
+        assert_eq!(comp.interpolate_at(50.0), 0.0); // Below range
+        assert_eq!(comp.interpolate_at(20000.0), 0.0); // Above range
+    }
+
+    #[test]
+    fn test_microphone_compensation_csv_with_comments() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create CSV with comments and header
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "# This is a comment").unwrap();
+        writeln!(temp_file, "frequency_hz,spl_db").unwrap();
+        writeln!(temp_file, "# Another comment").unwrap();
+        writeln!(temp_file, "100,1.0").unwrap();
+        writeln!(temp_file, "").unwrap(); // Empty line
+        writeln!(temp_file, "1000,2.0").unwrap();
+        temp_file.flush().unwrap();
+
+        // Should successfully parse
+        let comp = MicrophoneCompensation::from_file(temp_file.path())
+            .expect("Failed to load compensation with comments");
+
+        assert_eq!(comp.frequencies.len(), 2);
+        assert_eq!(comp.frequencies[0], 100.0);
+        assert_eq!(comp.frequencies[1], 1000.0);
+    }
+
+    #[test]
+    fn test_microphone_compensation_unsorted_frequencies() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create CSV with unsorted frequencies
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "frequency_hz,spl_db").unwrap();
+        writeln!(temp_file, "1000,2.0").unwrap();
+        writeln!(temp_file, "100,1.0").unwrap(); // Out of order!
+        temp_file.flush().unwrap();
+
+        // Should fail with error about sorting
+        let result = MicrophoneCompensation::from_file(temp_file.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("strictly increasing"));
+    }
+
+    #[test]
+    fn test_write_analysis_csv_with_compensation() {
+        use tempfile::NamedTempFile;
+
+        // Create test analysis result
+        let result = AnalysisResult {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            spl_db: vec![-10.0, -20.0, -30.0], // Measured values
+            phase_deg: vec![0.0, 45.0, -90.0],
+            estimated_lag_samples: 0,
+        };
+
+        // Create compensation: mic reads +2dB louder at 1000 Hz
+        let compensation = MicrophoneCompensation {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            spl_db: vec![0.0, 2.0, 0.0],
+        };
+
+        // Write CSV with compensation
+        let temp_file = NamedTempFile::new().unwrap();
+        write_analysis_csv(&result, temp_file.path(), Some(&compensation))
+            .expect("Failed to write CSV");
+
+        // Read back and verify
+        let content = std::fs::read_to_string(temp_file.path()).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Should have header + 3 data rows
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0], "frequency_hz,spl_db,phase_deg");
+
+        // Parse second line (1000 Hz): measured -20.0, mic deviation +2.0, true level = -20 - 2 = -22
+        let parts: Vec<&str> = lines[2].split(',').collect();
+        let compensated_spl: f32 = parts[1].parse().unwrap();
+        assert!((compensated_spl - (-22.0)).abs() < 0.01, "Expected -22.0, got {}", compensated_spl);
+    }
+
+    #[test]
+    fn test_write_analysis_csv_without_compensation() {
+        use tempfile::NamedTempFile;
+
+        // Create test analysis result
+        let result = AnalysisResult {
+            frequencies: vec![1000.0],
+            spl_db: vec![-20.0],
+            phase_deg: vec![45.0],
+            estimated_lag_samples: 0,
+        };
+
+        // Write CSV without compensation
+        let temp_file = NamedTempFile::new().unwrap();
+        write_analysis_csv(&result, temp_file.path(), None).expect("Failed to write CSV");
+
+        // Read back and verify
+        let content = std::fs::read_to_string(temp_file.path()).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Should have header + 1 data row
+        assert_eq!(lines.len(), 2);
+
+        // Parse data line - should match original
+        let parts: Vec<&str> = lines[1].split(',').collect();
+        let spl: f32 = parts[1].parse().unwrap();
+        assert!((spl - (-20.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_apply_sweep_precompensation() {
+        use crate::signals;
+
+        // Create compensation: +6dB at 1000 Hz, 0dB elsewhere
+        let compensation = MicrophoneCompensation {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            spl_db: vec![0.0, 6.0, 0.0],
+        };
+
+        // Generate a constant-amplitude sweep
+        let sample_rate = 48000;
+        let duration = 0.1; // Short for testing
+        let sweep = signals::gen_log_sweep(100.0, 10000.0, 0.5, sample_rate, duration);
+
+        // Apply inverse pre-compensation
+        let compensated = compensation.apply_to_sweep(&sweep, 100.0, 10000.0, sample_rate, true);
+
+        // Check that signal length is preserved
+        assert_eq!(compensated.len(), sweep.len());
+
+        // At 1000 Hz (roughly middle of the sweep), the signal should be attenuated by -6dB
+        // to compensate for the mic's +6dB boost
+        // Find approximate middle sample
+        let mid_idx = sweep.len() / 2;
+
+        // The compensated signal should have ~0.5x amplitude (≈ -6dB) compared to original
+        let original_amp = sweep[mid_idx].abs();
+        let compensated_amp = compensated[mid_idx].abs();
+
+        // -6dB = 20*log10(0.5) ≈ 0.501 linear ratio
+        let expected_ratio = 10_f32.powf(-6.0 / 20.0); // ≈ 0.501
+        let actual_ratio = compensated_amp / original_amp;
+
+        // Allow 10% tolerance due to sweep not being exactly at 1000 Hz at midpoint
+        assert!(
+            (actual_ratio - expected_ratio).abs() / expected_ratio < 0.1,
+            "Expected ratio ~{:.3}, got {:.3}",
+            expected_ratio,
+            actual_ratio
+        );
+    }
+
+    #[test]
+    fn test_apply_sweep_precompensation_direct() {
+        // Test direct compensation (not inverse)
+        let compensation = MicrophoneCompensation {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            spl_db: vec![0.0, -3.0, 0.0],
+        };
+
+        let sample_rate = 48000;
+        let sweep = vec![0.5; 4800]; // Constant signal for simplicity
+
+        // Apply direct compensation (boost by -3dB means attenuate by 3dB)
+        let compensated = compensation.apply_to_sweep(&sweep, 100.0, 10000.0, sample_rate, false);
+
+        // Around 1000 Hz, signal should be attenuated
+        let mid_idx = sweep.len() / 2;
+        assert!(compensated[mid_idx] < sweep[mid_idx]);
     }
 }
