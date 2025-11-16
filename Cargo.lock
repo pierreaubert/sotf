@@ -342,6 +342,7 @@ dependencies = [
  "serde_json",
  "signal-hook-tokio",
  "strsim",
+ "tempfile",
  "tokio",
  "urlencoding",
 ]

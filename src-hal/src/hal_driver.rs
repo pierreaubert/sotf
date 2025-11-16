@@ -337,7 +337,7 @@ impl HALDriver {
             kAudioObjectPropertyOwner |
             kAudioObjectPropertyName |
             kAudioObjectPropertyManufacturer => true,
-            
+
             // Device-specific properties
             kAudioDevicePropertyDeviceUID |
             kAudioDevicePropertyModelUID |
@@ -365,7 +365,7 @@ impl HALDriver {
             kAudioDevicePropertyIOProcStreamUsage => {
                 matches!(obj_type, ObjectType::Device)
             }
-            
+
             // Stream-specific properties
             kAudioStreamPropertyDirection |
             kAudioStreamPropertyTerminalType |
@@ -377,7 +377,7 @@ impl HALDriver {
             kAudioStreamPropertyAvailablePhysicalFormats => {
                 matches!(obj_type, ObjectType::InputStream | ObjectType::OutputStream)
             }
-            
+
             _ => false,
         }
     }

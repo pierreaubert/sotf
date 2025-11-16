@@ -57,8 +57,8 @@ pub use plugin_matrix::MatrixPlugin;
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
 pub use speaker_config::{
-    calculate_panning_gain, get_available_configs, get_speaker_config, SpeakerConfig,
-    SpeakerPosition,
+    SpeakerConfig, SpeakerPosition, calculate_panning_gain, get_available_configs,
+    get_speaker_config,
 };
 
 #[allow(unused_imports)]

@@ -114,11 +114,15 @@ This crate builds a HAL (Audio Driver on MacOS) such that you can redirect all y
 
 This crate allows you to configure the above driver and is conveniently available from the menubar.
 
-### src-ui-frontend
+### src-convexhull3d
 
-The UI frontend :) Nothing special here, just a boring UI.
+This crate computes a convex hull in 3d. This will be used (possibly) for HRTF optimisation.
 
 ### src-tauri
 
-The Tauri backend for the frontend. Noting special here, just a wrapper around src-ui-backend.
+The Tauri backend for the frontend. Noting special here, just a wrapper around src-audio and src-autoeq.
+
+### src-ui-frontend
+
+The UI frontend :) Nothing special here, just a boring UI.
 

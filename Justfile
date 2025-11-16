@@ -45,7 +45,7 @@ fmt-ts:
 
 alias build := prod
 
-prod: prod-workspace prod-autoeq prod-sotf-audio prod-generate-audio-tests
+prod: prod-workspace prod-autoeq prod-sotf-player prod-sotf-recorder prod-generate-audio-tests prod-roomeq
 	cargo build --release --bin plot_functions
 	cargo build --release --bin download
 	cargo build --release --bin benchmark_autoeq_speaker
@@ -62,8 +62,14 @@ prod-workspace:
 prod-autoeq:
 	cargo build --release --bin autoeq
 
-prod-sotf-audio:
-	cargo build --release --bin sotf_audio
+prod-roomeq:
+	cargo build --release --bin roomeq
+
+prod-sotf-player:
+	cargo build --release --bin sotf_player
+
+prod-sotf-recorder:
+	cargo build --release --bin sotf_recorder
 
 # ----------------------------------------------------------------------
 # BENCH
@@ -131,7 +137,7 @@ demo: headphone_loss_demo plot_functions
 
 headphone_loss_demo:
 	cargo run --release --example headphone_loss_demo -- \
-	--spl "./data_tests/headphone/asr/bowerwilkins_p7/Bowers & Wilkins P7.csv" \
+	--spl "./data_tests/headphones/asr/bowerwilkins_p7/Bowers & Wilkins P7.csv" \
 	--target "./data_tests/targets/harman-over-ear-2018.csv"
 
 plot_functions:
@@ -333,20 +339,20 @@ qa-beyerdynamic-dt1990pro: qa-beyerdynamic-dt1990pro-flat qa-beyerdynamic-dt1990
 
 qa-beyerdynamic-dt1990pro-score:
 	./target/release/autoeq -n 5 \
-	--curve ./data_tests/headphone/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
+	--curve ./data_tests/headphones/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv --loss headphone-score  \
 	--qa 3.0
 
 qa-beyerdynamic-dt1990pro-score2:
 	./target/release/autoeq -n 7 \
-	--curve ./data_tests/headphone/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
+	--curve ./data_tests/headphones/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--loss headphone-score	--max-db 6 --max-q 6 --algo mh:rga --maxeval 20000 --min-freq=20 --max-freq 10000 --peq-model hp-pk-lp --min-q 0.6 --min-db 0.25 \
 	--qa 1.5
 
 qa-beyerdynamic-dt1990pro-flat:
 	./target/release/autoeq -n 5 \
-	--curve ./data_tests/headphone/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
+	--curve ./data_tests/headphones/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--loss headphone-flat  --max-db 6 --max-q 6 --maxeval 20000 --algo mh:pso --min-freq=20 --max-freq 10000 --peq-model pk \
 	--qa 0.5
@@ -355,7 +361,7 @@ qa-edifierw830nb: qa-edifierw830nb-autoeqde qa-edifierw830nb-mhrga qa-edifierw83
 
 qa-edifierw830nb-autoeqde:
 	./target/release/autoeq -n 9 \
-	--curve data_tests/headphone/asr/edifierw830nb/Edifier\ W830NB.csv \
+	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
 	--loss headphone-score --min-spacing-oct 0.08 \
@@ -364,7 +370,7 @@ qa-edifierw830nb-autoeqde:
 
 qa-edifierw830nb-mhrga:
 	./target/release/autoeq -n 5 \
-	--curve data_tests/headphone/asr/edifierw830nb/Edifier\ W830NB.csv \
+	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
 	--loss headphone-score \
@@ -373,7 +379,7 @@ qa-edifierw830nb-mhrga:
 
 qa-edifierw830nb-mhfirefly:
 	./target/release/autoeq -n 5 \
-	--curve data_tests/headphone/asr/edifierw830nb/Edifier\ W830NB.csv \
+	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
 	--loss headphone-score \

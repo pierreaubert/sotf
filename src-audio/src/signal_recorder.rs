@@ -680,10 +680,7 @@ fn find_device_by_name(
     }
 
     // Device not found - provide helpful error message with available devices
-    let available_devices: Vec<String> = devices_vec
-        .iter()
-        .filter_map(|d| d.name().ok())
-        .collect();
+    let available_devices: Vec<String> = devices_vec.iter().filter_map(|d| d.name().ok()).collect();
 
     Err(format!(
         "Audio device '{}' not found. Use --list-devices to see available {} devices.\nAvailable devices: {}",

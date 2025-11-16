@@ -288,7 +288,8 @@ impl InPlacePlugin for DelayPlugin {
                     input_sample + delayed_sample * self.feedback;
 
                 // Advance write position (circular buffer)
-                self.write_positions[ch] = (self.write_positions[ch] + 1) % self.delay_buffers[ch].len();
+                self.write_positions[ch] =
+                    (self.write_positions[ch] + 1) % self.delay_buffers[ch].len();
 
                 // Mix dry and wet signals
                 buffer[sample_idx] = input_sample * (1.0 - self.mix) + delayed_sample * self.mix;
@@ -367,26 +368,17 @@ mod tests {
 
         // Set via parameter system
         plugin
-            .set_parameter(
-                ParameterId::from("delay_ms"),
-                ParameterValue::Float(250.0),
-            )
+            .set_parameter(ParameterId::from("delay_ms"), ParameterValue::Float(250.0))
             .unwrap();
         assert_eq!(plugin.delay_ms(), 250.0);
 
         plugin
-            .set_parameter(
-                ParameterId::from("feedback"),
-                ParameterValue::Float(0.6),
-            )
+            .set_parameter(ParameterId::from("feedback"), ParameterValue::Float(0.6))
             .unwrap();
         assert_eq!(plugin.feedback(), 0.6);
 
         plugin
-            .set_parameter(
-                ParameterId::from("mix"),
-                ParameterValue::Float(0.8),
-            )
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.8))
             .unwrap();
         assert_eq!(plugin.mix(), 0.8);
     }

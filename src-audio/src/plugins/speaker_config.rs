@@ -817,7 +817,9 @@ pub fn get_speaker_config(id: &str) -> Option<&'static SpeakerConfig> {
 
 /// Get all available configuration IDs
 pub fn get_available_configs() -> &'static [&'static str] {
-    &["5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"]
+    &[
+        "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
+    ]
 }
 
 // ============================================================================

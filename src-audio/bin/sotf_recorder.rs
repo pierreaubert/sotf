@@ -448,9 +448,9 @@ pub fn record_signal(
             &prepared_signal, // Use the prepared mono signal for analysis
             sample_rate,
             &csv_path,
-            send_ch,                          // Output channel
-            record_ch,                        // Input channel
-            device.as_deref(),                // Optional device name
+            send_ch,                            // Output channel
+            record_ch,                          // Input channel
+            device.as_deref(),                  // Optional device name
             microphone_compensation.as_deref(), // Optional microphone compensation file
         )?;
 

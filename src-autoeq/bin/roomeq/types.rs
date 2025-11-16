@@ -171,16 +171,36 @@ pub struct OptimizerConfig {
 }
 
 // Default values for OptimizerConfig
-fn default_loss_type() -> String { "flat".to_string() }
-fn default_algorithm() -> String { "cobyla".to_string() }
-fn default_num_filters() -> usize { 10 }
-fn default_min_q() -> f64 { 0.5 }
-fn default_max_q() -> f64 { 10.0 }
-fn default_min_db() -> f64 { -12.0 }
-fn default_max_db() -> f64 { 12.0 }
-fn default_min_freq() -> f64 { 20.0 }
-fn default_max_freq() -> f64 { 20000.0 }
-fn default_max_iter() -> usize { 10000 }
+fn default_loss_type() -> String {
+    "flat".to_string()
+}
+fn default_algorithm() -> String {
+    "cobyla".to_string()
+}
+fn default_num_filters() -> usize {
+    10
+}
+fn default_min_q() -> f64 {
+    0.5
+}
+fn default_max_q() -> f64 {
+    10.0
+}
+fn default_min_db() -> f64 {
+    -12.0
+}
+fn default_max_db() -> f64 {
+    12.0
+}
+fn default_min_freq() -> f64 {
+    20.0
+}
+fn default_max_freq() -> f64 {
+    20000.0
+}
+fn default_max_iter() -> usize {
+    10000
+}
 
 impl Default for OptimizerConfig {
     fn default() -> Self {
@@ -285,8 +305,7 @@ mod tests {
 
         // Should serialize and deserialize
         let json = serde_json::to_string(&config).expect("Failed to serialize");
-        let _deserialized: RoomConfig =
-            serde_json::from_str(&json).expect("Failed to deserialize");
+        let _deserialized: RoomConfig = serde_json::from_str(&json).expect("Failed to deserialize");
     }
 
     #[test]

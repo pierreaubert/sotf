@@ -1,9 +1,9 @@
 //! Crossover optimization for multi-driver groups
 
+use autoeq::Curve;
 use autoeq::cli::{Args, PeqModel};
 use autoeq::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use autoeq::workflow::setup_drivers_objective_data;
-use autoeq::Curve;
 use std::error::Error;
 
 /// Parse crossover type from string
@@ -47,7 +47,10 @@ pub fn optimize_crossover(
     let drivers_data = DriversLossData::new(driver_measurements, crossover_type);
     let n_drivers = drivers_data.drivers.len();
 
-    eprintln!("  Optimizing crossover for {} drivers ({:?})", n_drivers, crossover_type);
+    eprintln!(
+        "  Optimizing crossover for {} drivers ({:?})",
+        n_drivers, crossover_type
+    );
 
     // Create Args structure for optimization
     let args = Args {
@@ -132,7 +135,10 @@ pub fn optimize_crossover(
     let objective_data = setup_drivers_objective_data(&args, drivers_data);
 
     // Get bounds
-    let (lower_bounds, upper_bounds) = autoeq::workflow::setup_drivers_bounds(&args, objective_data.drivers_data.as_ref().unwrap());
+    let (lower_bounds, upper_bounds) = autoeq::workflow::setup_drivers_bounds(
+        &args,
+        objective_data.drivers_data.as_ref().unwrap(),
+    );
 
     // Generate initial guess
     let mut x = autoeq::workflow::drivers_initial_guess(&lower_bounds, &upper_bounds, n_drivers);
@@ -150,7 +156,10 @@ pub fn optimize_crossover(
     let (_converged_msg, final_loss) = match opt_result {
         Ok((msg, loss)) => (msg, loss),
         Err((msg, loss)) => {
-            eprintln!("  Warning: crossover optimization did not fully converge: {}", msg);
+            eprintln!(
+                "  Warning: crossover optimization did not fully converge: {}",
+                msg
+            );
             (msg, loss)
         }
     };
@@ -172,14 +181,25 @@ pub fn optimize_crossover(
     );
 
     let combined_curve = Curve {
-        freq: objective_data.drivers_data.as_ref().unwrap().freq_grid.clone(),
+        freq: objective_data
+            .drivers_data
+            .as_ref()
+            .unwrap()
+            .freq_grid
+            .clone(),
         spl: combined_response,
     };
 
     eprintln!(
         "  Crossover optimization: gains={:?}, freqs={:?}, final loss={:.6}",
-        gains.iter().map(|g| format!("{:+.2}", g)).collect::<Vec<_>>(),
-        xover_freqs.iter().map(|f| format!("{:.0}", f)).collect::<Vec<_>>(),
+        gains
+            .iter()
+            .map(|g| format!("{:+.2}", g))
+            .collect::<Vec<_>>(),
+        xover_freqs
+            .iter()
+            .map(|f| format!("{:.0}", f))
+            .collect::<Vec<_>>(),
         final_loss
     );
 

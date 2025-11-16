@@ -29,8 +29,8 @@ fn test_roomeq_stereo_config() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let output_path = temp_dir.path().join("output.json");
 
-    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/data/roomeq/test_config_stereo.json");
+    let config_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data/roomeq/test_config_stereo.json");
 
     // Run roomeq binary
     let output = Command::new(get_roomeq_binary())
@@ -54,16 +54,16 @@ fn test_roomeq_stereo_config() {
     assert!(output_path.exists(), "Output file was not created");
 
     // Parse and validate output
-    let json_str = fs::read_to_string(&output_path)
-        .expect("Failed to read output file");
-    let json: serde_json::Value = serde_json::from_str(&json_str)
-        .expect("Failed to parse output JSON");
+    let json_str = fs::read_to_string(&output_path).expect("Failed to read output file");
+    let json: serde_json::Value =
+        serde_json::from_str(&json_str).expect("Failed to parse output JSON");
 
     // Verify structure
     assert!(json.get("channels").is_some(), "Missing 'channels' field");
     assert!(json.get("metadata").is_some(), "Missing 'metadata' field");
 
-    let channels = json["channels"].as_object()
+    let channels = json["channels"]
+        .as_object()
         .expect("channels should be an object");
 
     // Should have left and right channels
@@ -72,10 +72,14 @@ fn test_roomeq_stereo_config() {
 
     // Validate left channel has plugins
     let left_channel = &channels["left"];
-    assert!(left_channel.get("channel").is_some(), "Missing channel name");
+    assert!(
+        left_channel.get("channel").is_some(),
+        "Missing channel name"
+    );
     assert!(left_channel.get("plugins").is_some(), "Missing plugins");
 
-    let plugins = left_channel["plugins"].as_array()
+    let plugins = left_channel["plugins"]
+        .as_array()
         .expect("plugins should be an array");
 
     // Should have at least an EQ plugin
@@ -122,30 +126,38 @@ fn test_roomeq_multidriver_config() {
     assert!(output_path.exists(), "Output file was not created");
 
     // Parse and validate output
-    let json_str = fs::read_to_string(&output_path)
-        .expect("Failed to read output file");
-    let json: serde_json::Value = serde_json::from_str(&json_str)
-        .expect("Failed to parse output JSON");
+    let json_str = fs::read_to_string(&output_path).expect("Failed to read output file");
+    let json: serde_json::Value =
+        serde_json::from_str(&json_str).expect("Failed to parse output JSON");
 
     // Verify structure
-    let channels = json["channels"].as_object()
+    let channels = json["channels"]
+        .as_object()
         .expect("channels should be an object");
 
     // Should have left channel
     assert!(channels.contains_key("left"), "Missing 'left' channel");
 
     let left_channel = &channels["left"];
-    let plugins = left_channel["plugins"].as_array()
+    let plugins = left_channel["plugins"]
+        .as_array()
         .expect("plugins should be an array");
 
     // Should have plugins (gain + EQ at minimum)
     assert!(!plugins.is_empty(), "No plugins in multi-driver DSP chain");
 
     // Verify we can parse the optimizer metadata
-    let metadata = json["metadata"].as_object()
+    let metadata = json["metadata"]
+        .as_object()
         .expect("metadata should be an object");
-    assert!(metadata.contains_key("algorithm"), "Missing algorithm in metadata");
-    assert!(metadata.contains_key("iterations"), "Missing iterations in metadata");
+    assert!(
+        metadata.contains_key("algorithm"),
+        "Missing algorithm in metadata"
+    );
+    assert!(
+        metadata.contains_key("iterations"),
+        "Missing iterations in metadata"
+    );
 }
 
 #[test]
@@ -155,8 +167,7 @@ fn test_roomeq_invalid_config() {
     let config_path = temp_dir.path().join("invalid_config.json");
 
     // Create invalid config
-    fs::write(&config_path, r#"{"invalid": "config"}"#)
-        .expect("Failed to write invalid config");
+    fs::write(&config_path, r#"{"invalid": "config"}"#).expect("Failed to write invalid config");
 
     // Run roomeq binary - should fail
     let output = Command::new(get_roomeq_binary())
@@ -168,7 +179,10 @@ fn test_roomeq_invalid_config() {
         .expect("Failed to execute roomeq");
 
     // Should fail
-    assert!(!output.status.success(), "roomeq should fail with invalid config");
+    assert!(
+        !output.status.success(),
+        "roomeq should fail with invalid config"
+    );
 }
 
 #[test]
@@ -209,7 +223,10 @@ fn test_roomeq_missing_measurement() {
         .expect("Failed to execute roomeq");
 
     // Should fail
-    assert!(!output.status.success(), "roomeq should fail with missing measurement file");
+    assert!(
+        !output.status.success(),
+        "roomeq should fail with missing measurement file"
+    );
 }
 
 #[test]
@@ -223,7 +240,16 @@ fn test_roomeq_help() {
     assert!(output.status.success(), "roomeq --help should succeed");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Automatic equalization"), "Help text should contain description");
-    assert!(stdout.contains("--config"), "Help text should mention --config");
-    assert!(stdout.contains("--output"), "Help text should mention --output");
+    assert!(
+        stdout.contains("Automatic equalization"),
+        "Help text should contain description"
+    );
+    assert!(
+        stdout.contains("--config"),
+        "Help text should mention --config"
+    );
+    assert!(
+        stdout.contains("--output"),
+        "Help text should mention --output"
+    );
 }

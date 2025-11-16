@@ -17,7 +17,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::speaker_config::{calculate_panning_gain, get_speaker_config, SpeakerConfig};
+use super::speaker_config::{SpeakerConfig, calculate_panning_gain, get_speaker_config};
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
 use serde::{Deserialize, Serialize};
@@ -264,14 +264,13 @@ impl UpmixerPlugin {
         let hop_size = fft_size / 2;
 
         // Get speaker configuration
-        let speaker_config =
-            get_speaker_config(speaker_config_id).unwrap_or_else(|| {
-                eprintln!(
-                    "Invalid speaker config '{}', falling back to 5.1",
-                    speaker_config_id
-                );
-                get_speaker_config("5.1").unwrap()
-            });
+        let speaker_config = get_speaker_config(speaker_config_id).unwrap_or_else(|| {
+            eprintln!(
+                "Invalid speaker config '{}', falling back to 5.1",
+                speaker_config_id
+            );
+            get_speaker_config("5.1").unwrap()
+        });
 
         let num_output_channels = speaker_config.total_channels;
 
@@ -288,8 +287,10 @@ impl UpmixerPlugin {
                 panning_gains_left.push(0.5);
                 panning_gains_right.push(0.5);
             } else {
-                let left_gain = calculate_panning_gain(left_azimuth, 0.0, speaker.azimuth, speaker.elevation);
-                let right_gain = calculate_panning_gain(right_azimuth, 0.0, speaker.azimuth, speaker.elevation);
+                let left_gain =
+                    calculate_panning_gain(left_azimuth, 0.0, speaker.azimuth, speaker.elevation);
+                let right_gain =
+                    calculate_panning_gain(right_azimuth, 0.0, speaker.azimuth, speaker.elevation);
                 panning_gains_left.push(left_gain);
                 panning_gains_right.push(right_gain);
             }
@@ -440,12 +441,10 @@ impl UpmixerPlugin {
                 self.panning_gains_left.push(0.5);
                 self.panning_gains_right.push(0.5);
             } else {
-                let left_gain = calculate_panning_gain(
-                    left_azimuth, 0.0, speaker.azimuth, speaker.elevation
-                );
-                let right_gain = calculate_panning_gain(
-                    right_azimuth, 0.0, speaker.azimuth, speaker.elevation
-                );
+                let left_gain =
+                    calculate_panning_gain(left_azimuth, 0.0, speaker.azimuth, speaker.elevation);
+                let right_gain =
+                    calculate_panning_gain(right_azimuth, 0.0, speaker.azimuth, speaker.elevation);
                 self.panning_gains_left.push(left_gain);
                 self.panning_gains_right.push(right_gain);
             }
@@ -565,7 +564,8 @@ impl UpmixerPlugin {
                 for i in 0..self.fft_size {
                     self.time_out_channels[ch_idx][i] = self.lfe[i] * self.lfe_gain;
                 }
-                self.fft_inverse.process(&mut self.time_out_channels[ch_idx]);
+                self.fft_inverse
+                    .process(&mut self.time_out_channels[ch_idx]);
             } else {
                 // Regular speaker: pan direct and ambient components using VBAP
                 let panning_gain_left = self.panning_gains_left[ch_idx];
@@ -593,23 +593,22 @@ impl UpmixerPlugin {
                 // Build frequency-domain signal for this speaker
                 for i in 0..self.fft_size {
                     // Pan direct component (front soundstage)
-                    let direct_component =
-                        self.direct_left[i] * panning_gain_left +
-                        self.direct_right[i] * panning_gain_right;
+                    let direct_component = self.direct_left[i] * panning_gain_left
+                        + self.direct_right[i] * panning_gain_right;
 
                     // Pan ambient component (surround/reverb)
-                    let ambient_component =
-                        self.ambient_left[i] * panning_gain_left +
-                        self.ambient_right[i] * panning_gain_right;
+                    let ambient_component = self.ambient_left[i] * panning_gain_left
+                        + self.ambient_right[i] * panning_gain_right;
 
                     // Combine with gain parameters
-                    self.time_out_channels[ch_idx][i] =
-                        (direct_component * direct_gain +
-                         ambient_component * ambient_gain) * height_mult;
+                    self.time_out_channels[ch_idx][i] = (direct_component * direct_gain
+                        + ambient_component * ambient_gain)
+                        * height_mult;
                 }
 
                 // Inverse FFT for this channel
-                self.fft_inverse.process(&mut self.time_out_channels[ch_idx]);
+                self.fft_inverse
+                    .process(&mut self.time_out_channels[ch_idx]);
             }
         }
 
@@ -906,7 +905,8 @@ impl Plugin for UpmixerPlugin {
                 // Copy samples to output
                 for i in 0..frames_to_drain {
                     for ch in 0..self.num_output_channels {
-                        output[output_pos + i * self.num_output_channels + ch] = self.output_accumulator[ch][i];
+                        output[output_pos + i * self.num_output_channels + ch] =
+                            self.output_accumulator[ch][i];
                     }
                 }
                 output_pos += frames_to_drain * self.num_output_channels;
@@ -1085,7 +1085,8 @@ impl Plugin for UpmixerPlugin {
 
             for i in 0..frames_to_drain {
                 for ch in 0..self.num_output_channels {
-                    output[output_pos + i * self.num_output_channels + ch] = self.output_accumulator[ch][i];
+                    output[output_pos + i * self.num_output_channels + ch] =
+                        self.output_accumulator[ch][i];
                 }
             }
             output_pos += frames_to_drain * self.num_output_channels;
@@ -1154,7 +1155,8 @@ mod tests {
 
     #[test]
     fn test_upmixer_parameters() {
-        let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
 
         // Test setting parameters
         plugin
@@ -1172,7 +1174,8 @@ mod tests {
 
     #[test]
     fn test_upmixer_processing() {
-        let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
         plugin.initialize(44100).unwrap();
 
         // Create test input: 2048 stereo samples (4096 samples total)
@@ -1215,7 +1218,8 @@ mod tests {
     #[test]
     fn test_upmixer_zero_gains() {
         // Test that with all gains at 0, output is silence (critical for crackling fix)
-        let mut plugin = UpmixerPlugin::new(2048, "5.1", 0.0, 0.0, 0.0, 120.0, 0.5, 250.0, 1.0, 0.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 0.0, 0.0, 0.0, 120.0, 0.5, 250.0, 1.0, 0.0);
         plugin.initialize(44100).unwrap();
 
         // Create test input with signal
@@ -1246,7 +1250,8 @@ mod tests {
     #[test]
     fn test_upmixer_config_change() {
         // Test changing speaker configuration dynamically
-        let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
         assert_eq!(plugin.output_channels(), 6);
         assert_eq!(plugin.speaker_config.id, "5.1");
 
@@ -1264,16 +1269,14 @@ mod tests {
     #[test]
     fn test_upmixer_height_gain() {
         // Test height gain parameter
-        let mut plugin = UpmixerPlugin::new(2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 0.5, 1.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 0.5, 1.0);
         assert_eq!(plugin.height_gain, 0.5);
         assert_eq!(plugin.output_channels(), 10); // 5.1.4 has 10 channels
 
         // Change height gain via parameter
         plugin
-            .set_parameter(
-                ParameterId::from("height_gain"),
-                ParameterValue::Float(1.5),
-            )
+            .set_parameter(ParameterId::from("height_gain"), ParameterValue::Float(1.5))
             .unwrap();
         assert_eq!(plugin.height_gain, 1.5);
     }
@@ -1281,7 +1284,8 @@ mod tests {
     #[test]
     fn test_upmixer_full_5ch() {
         // Test full 5.1 upmixing with direct/ambient decomposition
-        let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.0, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.0, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
         plugin.initialize(44100).unwrap();
 
         // Create test input with distinct left and right signals at frequencies above bandpass_hz (250 Hz)
@@ -1346,7 +1350,8 @@ mod tests {
         // Test with various buffer sizes
         for buffer_size in [256, 512, 1024] {
             println!("\n=== Testing buffer size {} ===", buffer_size);
-            let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            let mut plugin =
+                UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
             plugin.initialize(44100).unwrap();
 
             // Generate continuous 440Hz sine wave, process in chunks
@@ -1398,7 +1403,8 @@ mod tests {
     fn test_energy_preservation() {
         // INVARIANT: Total output energy across all 5 channels should roughly equal input energy
         // (accounting for latency and windowing losses)
-        let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
         plugin.initialize(44100).unwrap();
 
         let buffer_size = 1024;
@@ -1456,7 +1462,8 @@ mod tests {
     #[test]
     fn test_no_gaps() {
         // INVARIANT: Every output buffer should have SOME non-zero samples after initial latency
-        let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
         plugin.initialize(44100).unwrap();
 
         let buffer_size = 512;

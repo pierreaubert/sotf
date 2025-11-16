@@ -76,7 +76,11 @@ impl MicrophoneCompensation {
             compensated.push(sample * gain);
         }
 
-        eprintln!("[apply_to_sweep] Processed {} samples, duration={:.2}s", signal.len(), duration);
+        eprintln!(
+            "[apply_to_sweep] Processed {} samples, duration={:.2}s",
+            signal.len(),
+            duration
+        );
         compensated
     }
 
@@ -103,7 +107,9 @@ impl MicrophoneCompensation {
             .unwrap_or(false);
 
         if is_txt_file {
-            eprintln!("[MicrophoneCompensation] Detected .txt file - assuming space/tab-separated without header");
+            eprintln!(
+                "[MicrophoneCompensation] Detected .txt file - assuming space/tab-separated without header"
+            );
         }
 
         let mut frequencies = Vec::new();
@@ -127,7 +133,11 @@ impl MicrophoneCompensation {
             if is_txt_file {
                 let first_char = line.chars().next().unwrap_or(' ');
                 if !first_char.is_ascii_digit() && first_char != '-' && first_char != '+' {
-                    eprintln!("[MicrophoneCompensation] Skipping non-numeric line {}: '{}'", line_num + 1, line);
+                    eprintln!(
+                        "[MicrophoneCompensation] Skipping non-numeric line {}: '{}'",
+                        line_num + 1,
+                        line
+                    );
                     continue;
                 }
             }
@@ -137,12 +147,18 @@ impl MicrophoneCompensation {
                 // TXT: Try to auto-detect separator
                 // First, try comma (in case it's mislabeled CSV)
                 let comma_parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-                if comma_parts.len() >= 2 && comma_parts[0].parse::<f32>().is_ok() && comma_parts[1].parse::<f32>().is_ok() {
+                if comma_parts.len() >= 2
+                    && comma_parts[0].parse::<f32>().is_ok()
+                    && comma_parts[1].parse::<f32>().is_ok()
+                {
                     comma_parts
                 } else {
                     // Try tab
                     let tab_parts: Vec<&str> = line.split('\t').map(|s| s.trim()).collect();
-                    if tab_parts.len() >= 2 && tab_parts[0].parse::<f32>().is_ok() && tab_parts[1].parse::<f32>().is_ok() {
+                    if tab_parts.len() >= 2
+                        && tab_parts[0].parse::<f32>().is_ok()
+                        && tab_parts[1].parse::<f32>().is_ok()
+                    {
                         tab_parts
                     } else {
                         // Fall back to whitespace
@@ -155,7 +171,11 @@ impl MicrophoneCompensation {
             };
 
             if parts.len() < 2 {
-                let separator = if is_txt_file { "separator (comma/tab/space)" } else { "comma" };
+                let separator = if is_txt_file {
+                    "separator (comma/tab/space)"
+                } else {
+                    "comma"
+                };
                 return Err(format!(
                     "Invalid format at line {}: expected {} with 2+ values but got '{}'",
                     line_num + 1,
@@ -205,7 +225,10 @@ impl MicrophoneCompensation {
             spl_db.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))
         );
 
-        Ok(Self { frequencies, spl_db })
+        Ok(Self {
+            frequencies,
+            spl_db,
+        })
     }
 
     /// Interpolate compensation value at a given frequency
@@ -219,9 +242,10 @@ impl MicrophoneCompensation {
         }
 
         // Find the two nearest points
-        let idx = match self.frequencies.binary_search_by(|f| {
-            f.partial_cmp(&freq).unwrap_or(std::cmp::Ordering::Equal)
-        }) {
+        let idx = match self
+            .frequencies
+            .binary_search_by(|f| f.partial_cmp(&freq).unwrap_or(std::cmp::Ordering::Equal))
+        {
             Ok(i) => return self.spl_db[i], // Exact match
             Err(i) => i,
         };
@@ -574,12 +598,8 @@ pub fn write_analysis_csv(
             spl -= mic_deviation;
         }
 
-        writeln!(
-            file,
-            "{:.6},{:.3},{:.6}",
-            freq, spl, result.phase_deg[i]
-        )
-        .map_err(|e| format!("Failed to write data: {}", e))?;
+        writeln!(file, "{:.6},{:.3},{:.6}", freq, spl, result.phase_deg[i])
+            .map_err(|e| format!("Failed to write data: {}", e))?;
     }
 
     println!(
@@ -1233,7 +1253,11 @@ mod tests {
 
         // Test interpolation
         let mid_point = comp.interpolate_at(550.0); // Halfway between 100 and 1000 in linear scale
-        assert!(mid_point > 0.5 && mid_point < 1.5, "Expected interpolated value around 1.0, got {}", mid_point);
+        assert!(
+            mid_point > 0.5 && mid_point < 1.5,
+            "Expected interpolated value around 1.0, got {}",
+            mid_point
+        );
 
         // Test out-of-range (should return 0)
         assert_eq!(comp.interpolate_at(50.0), 0.0); // Below range
@@ -1316,7 +1340,11 @@ mod tests {
         // Parse second line (1000 Hz): measured -20.0, mic deviation +2.0, true level = -20 - 2 = -22
         let parts: Vec<&str> = lines[2].split(',').collect();
         let compensated_spl: f32 = parts[1].parse().unwrap();
-        assert!((compensated_spl - (-22.0)).abs() < 0.01, "Expected -22.0, got {}", compensated_spl);
+        assert!(
+            (compensated_spl - (-22.0)).abs() < 0.01,
+            "Expected -22.0, got {}",
+            compensated_spl
+        );
     }
 
     #[test]

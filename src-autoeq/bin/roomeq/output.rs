@@ -28,10 +28,7 @@ pub fn create_gain_plugin(gain_db: f64) -> PluginConfigWrapper {
 
 /// Create an EQ plugin configuration from Biquad filters
 pub fn create_eq_plugin(filters: &[Biquad]) -> PluginConfigWrapper {
-    let filter_configs: Vec<serde_json::Value> = filters
-        .iter()
-        .map(biquad_to_json)
-        .collect();
+    let filter_configs: Vec<serde_json::Value> = filters.iter().map(biquad_to_json).collect();
 
     PluginConfigWrapper {
         plugin_type: "eq".to_string(),
@@ -94,10 +91,7 @@ pub fn create_dsp_chain_output(
     channels: HashMap<String, ChannelDspChain>,
     metadata: Option<OptimizationMetadata>,
 ) -> DspChainOutput {
-    DspChainOutput {
-        channels,
-        metadata,
-    }
+    DspChainOutput { channels, metadata }
 }
 
 /// Save DSP chain to JSON file

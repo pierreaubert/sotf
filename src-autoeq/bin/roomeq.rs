@@ -21,20 +21,20 @@ use std::error::Error;
 use std::path::PathBuf;
 
 // Include roomeq modules
-#[path = "roomeq/types.rs"]
-mod types;
-#[path = "roomeq/load.rs"]
-mod load;
-#[path = "roomeq/level_norm.rs"]
-mod level_norm;
 #[path = "roomeq/crossover_optim.rs"]
 mod crossover_optim;
 #[path = "roomeq/eq_optim.rs"]
 mod eq_optim;
+#[path = "roomeq/level_norm.rs"]
+mod level_norm;
+#[path = "roomeq/load.rs"]
+mod load;
 #[path = "roomeq/output.rs"]
 mod output;
+#[path = "roomeq/types.rs"]
+mod types;
 
-use types::{RoomConfig, SpeakerConfig, ChannelDspChain, OptimizationMetadata};
+use types::{ChannelDspChain, OptimizationMetadata, RoomConfig, SpeakerConfig};
 
 /// Room EQ - Optimize multi-channel speaker systems
 #[derive(Parser, Debug)]
@@ -95,7 +95,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let dsp_output = output::create_dsp_chain_output(
         channel_chains,
         Some(OptimizationMetadata {
-            pre_score: 0.0,  // TODO: Compute actual scores
+            pre_score: 0.0, // TODO: Compute actual scores
             post_score: 0.0,
             algorithm: room_config.optimizer.algorithm.clone(),
             iterations: room_config.optimizer.max_iter,
@@ -149,7 +149,11 @@ fn process_single_speaker(
     let curve = load::load_measurement(measurement)?;
 
     if verbose {
-        println!("  Loaded measurement: {} Hz - {} Hz", curve.freq[0], curve.freq[curve.freq.len() - 1]);
+        println!(
+            "  Loaded measurement: {} Hz - {} Hz",
+            curve.freq[0],
+            curve.freq[curve.freq.len() - 1]
+        );
     }
 
     // Optimize EQ
@@ -210,11 +214,15 @@ fn process_speaker_group(
     )?;
 
     if verbose {
-        println!("  Optimized crossover: freqs={:?}, gains={:?}", crossover_freqs, gains);
+        println!(
+            "  Optimized crossover: freqs={:?}, gains={:?}",
+            crossover_freqs, gains
+        );
     }
 
     // Optimize EQ on the combined response
-    let eq_filters = eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, sample_rate)?;
+    let eq_filters =
+        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, sample_rate)?;
 
     if verbose {
         println!("  Optimized {} EQ filters", eq_filters.len());

@@ -86,7 +86,10 @@ impl CrossoverPlugin {
     }
 
     /// Create a new crossover plugin from configuration parameters
-    pub fn from_params(num_channels: usize, params: &CrossoverPluginParams) -> Result<Self, String> {
+    pub fn from_params(
+        num_channels: usize,
+        params: &CrossoverPluginParams,
+    ) -> Result<Self, String> {
         Self::new(
             num_channels,
             &params.crossover_type,
@@ -145,7 +148,11 @@ impl InPlacePlugin for CrossoverPlugin {
             description: format!(
                 "Multi-way crossover filter at {} Hz ({})",
                 self.frequency,
-                if self.is_highpass { "highpass" } else { "lowpass" }
+                if self.is_highpass {
+                    "highpass"
+                } else {
+                    "lowpass"
+                }
             ),
         }
     }
@@ -187,13 +194,7 @@ impl InPlacePlugin for CrossoverPlugin {
                     BiquadFilterType::Lowpass
                 };
                 let q = 1.0 / std::f64::consts::SQRT_2;
-                *filter = Biquad::new(
-                    filter_type,
-                    self.frequency,
-                    self.sample_rate as f64,
-                    q,
-                    0.0,
-                );
+                *filter = Biquad::new(filter_type, self.frequency, self.sample_rate as f64, q, 0.0);
             }
         }
     }

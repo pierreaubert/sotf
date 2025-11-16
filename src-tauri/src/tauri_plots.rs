@@ -1,7 +1,8 @@
 use autoeq::{
-    Curve, LossType, cli::Args as AutoEQArgs, plot_filters, plot_spin, plot_spin_details,
-    plot_spin_tonal,
+    Curve, LossType,
+    cli::Args as AutoEQArgs,
     iir::{Biquad, BiquadFilterType},
+    plot_filters, plot_spin, plot_spin_details, plot_spin_tonal,
 };
 use ndarray::Array1;
 use plotly::Plot;
@@ -421,7 +422,10 @@ pub async fn generate_peq_plots(params: PlotPeqParams) -> Result<PeqPlotResult, 
         combined_response = &combined_response + &filter_response;
 
         // Create plot data for this individual filter
-        use plotly::{Layout, Scatter, common::{Mode, Title}};
+        use plotly::{
+            Layout, Scatter,
+            common::{Mode, Title},
+        };
 
         let trace = Scatter::new(plot_freqs.clone(), filter_response.to_vec())
             .mode(Mode::Lines)
@@ -445,12 +449,9 @@ pub async fn generate_peq_plots(params: PlotPeqParams) -> Result<PeqPlotResult, 
                 plotly::layout::Axis::new()
                     .title(Title::from("Frequency (Hz)"))
                     .type_(plotly::layout::AxisType::Log)
-                    .range(vec![1.3, 4.3]) // log10(20) ≈ 1.3, log10(20000) ≈ 4.3
+                    .range(vec![1.3, 4.3]), // log10(20) ≈ 1.3, log10(20000) ≈ 4.3
             )
-            .y_axis(
-                plotly::layout::Axis::new()
-                    .title(Title::from("Magnitude (dB)"))
-            );
+            .y_axis(plotly::layout::Axis::new().title(Title::from("Magnitude (dB)")));
 
         let mut plot = Plot::new();
         plot.add_trace(trace);
@@ -460,7 +461,10 @@ pub async fn generate_peq_plots(params: PlotPeqParams) -> Result<PeqPlotResult, 
     }
 
     // Create aggregate plot with all filters
-    use plotly::{Layout, Scatter, common::{Mode, Title}};
+    use plotly::{
+        Layout, Scatter,
+        common::{Mode, Title},
+    };
 
     let mut aggregate_plot = Plot::new();
 
@@ -496,12 +500,9 @@ pub async fn generate_peq_plots(params: PlotPeqParams) -> Result<PeqPlotResult, 
             plotly::layout::Axis::new()
                 .title(Title::from("Frequency (Hz)"))
                 .type_(plotly::layout::AxisType::Log)
-                .range(vec![1.3, 4.3])
+                .range(vec![1.3, 4.3]),
         )
-        .y_axis(
-            plotly::layout::Axis::new()
-                .title(Title::from("Magnitude (dB)"))
-        );
+        .y_axis(plotly::layout::Axis::new().title(Title::from("Magnitude (dB)")));
 
     aggregate_plot.set_layout(aggregate_layout);
 
