@@ -1,12 +1,10 @@
-# convexhull3d: N-Dimensional Convex Hull and Computational Geometry
+# convexhull3d: 3D Convex Hull and Computational Geometry
 
-A Rust implementation of the Quickhull algorithm for computing convex hulls in arbitrary dimensions, plus Delaunay triangulation. Based on the [convhull_3d C library](https://github.com/leomccormack/convhull_3d) and inspired by the [MATLAB Computational Geometry Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/48509-computational-geometry-toolbox).
+A Rust implementation of the Quickhull algorithm for computing convex hulls in 3D space. Based on the [convhull_3d C library](https://github.com/leomccormack/convhull_3d) and inspired by the [MATLAB Computational Geometry Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/48509-computational-geometry-toolbox).
 
 ## Features
 
 - **3D Convex Hull Computation**: Optimized Quickhull algorithm (Barber et al., 1996)
-- **N-D Convex Hull**: Generalized algorithm supporting 1D through 10D spaces
-- **Delaunay Triangulation**: Via paraboloid lifting technique
 - **Geometric Properties**: Calculate volume and surface area of convex hulls
 - **Export Capabilities**:
   - OBJ format for 3D modeling software
@@ -82,67 +80,6 @@ let octahedron = testdata::octahedron_vertices();
 let icosahedron = testdata::icosahedron_vertices();
 ```
 
-### N-Dimensional Convex Hull
-
-The library supports convex hulls in arbitrary dimensions (1D through 10D):
-
-```rust
-use convexhull3d::{ConvexHullND, PointND};
-
-// 2D square
-let points_2d = vec![
-    PointND::new(vec![0.0, 0.0]),
-    PointND::new(vec![1.0, 0.0]),
-    PointND::new(vec![1.0, 1.0]),
-    PointND::new(vec![0.0, 1.0]),
-];
-
-let hull_2d = ConvexHullND::build(&points_2d).unwrap();
-println!("2D hull: {} facets (edges)", hull_2d.num_facets());
-
-// 4D hypercube
-let mut points_4d = Vec::new();
-for i in 0..16 {
-    let x = if i & 1 != 0 { 1.0 } else { 0.0 };
-    let y = if i & 2 != 0 { 1.0 } else { 0.0 };
-    let z = if i & 4 != 0 { 1.0 } else { 0.0 };
-    let w = if i & 8 != 0 { 1.0 } else { 0.0 };
-    points_4d.push(PointND::new(vec![x, y, z, w]));
-}
-
-let hull_4d = ConvexHullND::build(&points_4d).unwrap();
-println!("4D hypercube: {} facets (tetrahedra)", hull_4d.num_facets());
-```
-
-### Delaunay Triangulation
-
-Compute Delaunay triangulations via paraboloid lifting:
-
-```rust
-use convexhull3d::{DelaunayMesh, PointND, circumcenter};
-
-// 2D Delaunay triangulation
-let points = vec![
-    PointND::new(vec![0.0, 0.0]),
-    PointND::new(vec![1.0, 0.0]),
-    PointND::new(vec![1.0, 1.0]),
-    PointND::new(vec![0.0, 1.0]),
-    PointND::new(vec![0.5, 0.5]),
-];
-
-let mesh = DelaunayMesh::build(&points).unwrap();
-println!("Delaunay mesh: {} simplices", mesh.num_simplices());
-
-// Compute circumcenter of a simplex
-if let Some(simplex) = mesh.simplices().first() {
-    if let Some(center) = circumcenter(simplex, mesh.points()) {
-        println!("Circumcenter: {:?}", center);
-    }
-}
-```
-
-**Note**: The Delaunay implementation is currently a prototype and may need refinement for production use.
-
 ## Algorithm
 
 The implementation uses the **Quickhull algorithm** for 3D convex hull computation:
@@ -208,8 +145,6 @@ This Rust implementation provides similar functionality to the [convhull_3d C li
 |---------|-----------------|---------------------|
 | Algorithm | Quickhull | Quickhull |
 | 3D Convex Hull | ✓ | ✓ |
-| N-D Convex Hull | ✓ (up to 5D) | ✓ (up to 10D) |
-| Delaunay Triangulation | ✓ | ✓ (prototype) |
 | OBJ Export | ✓ | ✓ |
 | MATLAB Export | ✓ | - |
 | HTML Visualization | - | ✓ |
@@ -231,25 +166,11 @@ This Rust implementation provides similar functionality to the [convhull_3d C li
 - **`Face`**: Triangle defined by 3 vertex indices
 - **`ConvexHull3D`**: Result of 3D convex hull computation
 
-### N-D Types
-
-- **`PointND`**: N-dimensional point with arbitrary coordinates
-- **`SimplexND`**: N-dimensional simplex (facet) defined by vertex indices
-- **`ConvexHullND`**: Result of N-dimensional convex hull computation
-- **`DelaunayMesh`**: Result of Delaunay triangulation
-
 ### Main Functions
 
-**3D Functions:**
 - **`ConvexHull3D::build(&[Vertex])`**: Build 3D convex hull from vertices
 - **`export_obj(&ConvexHull3D, path)`**: Export to OBJ format
 - **`export_html(&ConvexHull3D, path, title)`**: Export to interactive HTML
-
-**N-D Functions:**
-- **`ConvexHullND::build(&[PointND])`**: Build N-D convex hull from points
-- **`DelaunayMesh::build(&[PointND])`**: Build Delaunay triangulation
-- **`delaunay_nd(&[PointND])`**: Standalone Delaunay triangulation function
-- **`circumcenter(&SimplexND, &[PointND])`**: Compute circumcenter of a simplex
 
 ### Test Data Generation
 

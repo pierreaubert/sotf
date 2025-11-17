@@ -4,7 +4,7 @@
 //! - Barber, C.B., Dobkin, D.P., and Huhdanpaa, H.T., "The Quickhull algorithm
 //!   for convex hulls," ACM Trans. on Mathematical Software, 22(4):469-483, 1996.
 
-use crate::geometry::{are_coplanar, find_extreme_points, tetrahedron_volume};
+use crate::geometry::{are_coplanar, find_extreme_points};
 use crate::types::{ConvexHull3D, Face, Vertex};
 use crate::{ConvexHullError, Result, EPSILON};
 use std::collections::{HashMap, HashSet};
@@ -85,13 +85,6 @@ impl Edge {
             Self { v0: v1, v1: v0 }
         }
     }
-
-    fn reversed(&self) -> Self {
-        Self {
-            v0: self.v1,
-            v1: self.v0,
-        }
-    }
 }
 
 /// Build a convex hull using the Quickhull algorithm
@@ -102,6 +95,16 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
 
     // Find initial simplex (tetrahedron)
     let initial_simplex = find_initial_simplex(vertices)?;
+
+    // Compute the centroid of the initial simplex - this is guaranteed to be inside the hull
+    let simplex_centroid = Vertex {
+        x: (vertices[initial_simplex[0]].x + vertices[initial_simplex[1]].x +
+            vertices[initial_simplex[2]].x + vertices[initial_simplex[3]].x) / 4.0,
+        y: (vertices[initial_simplex[0]].y + vertices[initial_simplex[1]].y +
+            vertices[initial_simplex[2]].y + vertices[initial_simplex[3]].y) / 4.0,
+        z: (vertices[initial_simplex[0]].z + vertices[initial_simplex[1]].z +
+            vertices[initial_simplex[2]].z + vertices[initial_simplex[3]].z) / 4.0,
+    };
 
     // Build initial hull from simplex
     let mut hull_faces = create_initial_hull(&initial_simplex, vertices);
@@ -186,16 +189,26 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
         // Create new faces from horizon edges to the new point
         let mut new_faces = Vec::new();
         for edge in horizon {
-            // Ensure proper orientation by checking against existing hull
-            let new_face = HullFace::new(edge.v0, edge.v1, point_idx, vertices);
+            // Create face from horizon edge + new point
+            // Try both orientations and check which one has outward-pointing normal
+            let face1 = HullFace::new(edge.v0, edge.v1, point_idx, vertices);
+            let face2 = HullFace::new(edge.v1, edge.v0, point_idx, vertices);
 
-            // Verify the face is oriented correctly (normal points outward)
-            if is_face_oriented_correctly(&new_face, vertices, &hull_faces) {
-                new_faces.push(new_face);
+            // Check orientation using a point we know is inside the hull
+            // (the centroid of the initial simplex)
+            // The correct face should have its normal pointing AWAY from interior points
+
+            // Check which orientation has normal pointing away from interior
+            let v0 = &vertices[face1.vertices[0]];
+            let to_interior1 = simplex_centroid.sub(v0);
+            let dot1 = face1.normal.dot(&to_interior1);
+
+            // If dot product is negative, normal points away from interior (correct)
+            // If dot product is positive, normal points toward interior (incorrect)
+            if dot1 < 0.0 {
+                new_faces.push(face1);
             } else {
-                // Reverse the face orientation
-                let reversed_face = HullFace::new(edge.v1, edge.v0, point_idx, vertices);
-                new_faces.push(reversed_face);
+                new_faces.push(face2);
             }
         }
 
@@ -382,41 +395,47 @@ fn find_face_with_furthest_point(
 
 /// Find the horizon edges from a set of visible faces
 fn find_horizon(hull_faces: &[HullFace], visible_faces: &[usize]) -> Vec<Edge> {
-    // Collect all edges from visible faces
-    let mut edge_counts: HashMap<Edge, usize> = HashMap::new();
+    // Collect oriented edges and track which face they came from
+    let mut edge_to_faces: HashMap<Edge, Vec<usize>> = HashMap::new(); // normalized edge -> [face_idx]
 
     for &face_idx in visible_faces {
         let face = &hull_faces[face_idx];
-        let edges = [
-            Edge::new(face.vertices[0], face.vertices[1]),
-            Edge::new(face.vertices[1], face.vertices[2]),
-            Edge::new(face.vertices[2], face.vertices[0]),
+        let oriented_edges = [
+            (face.vertices[0], face.vertices[1]),
+            (face.vertices[1], face.vertices[2]),
+            (face.vertices[2], face.vertices[0]),
         ];
 
-        for edge in edges {
-            *edge_counts.entry(edge).or_insert(0) += 1;
+        for (v0, v1) in oriented_edges {
+            let normalized = Edge::new(v0, v1);
+            edge_to_faces.entry(normalized)
+                .or_insert_with(Vec::new)
+                .push(face_idx);
         }
     }
 
-    // Horizon edges appear exactly once (they're on the boundary)
+    // Horizon edges are shared by exactly one visible face and one (or more) non-visible faces
+    // Since we only look at visible faces, they appear exactly once in our collection
     let mut horizon = Vec::new();
-    for (edge, &count) in &edge_counts {
-        if count == 1 {
-            // Find the visible face that contains this edge to get proper orientation
-            for &face_idx in visible_faces {
-                let face = &hull_faces[face_idx];
-                let face_edges = [
-                    (face.vertices[0], face.vertices[1]),
-                    (face.vertices[1], face.vertices[2]),
-                    (face.vertices[2], face.vertices[0]),
-                ];
+    for (normalized_edge, face_list) in edge_to_faces {
+        if face_list.len() == 1 {
+            // This is a horizon edge
+            let face_idx = face_list[0];
+            let face = &hull_faces[face_idx];
 
-                for (v0, v1) in face_edges {
-                    if Edge::new(v0, v1) == *edge {
-                        // Use the orientation from the visible face
-                        horizon.push(Edge { v0, v1 });
-                        break;
-                    }
+            // Find the actual oriented edge as it appears in the visible face
+            let oriented_edges = [
+                (face.vertices[0], face.vertices[1]),
+                (face.vertices[1], face.vertices[2]),
+                (face.vertices[2], face.vertices[0]),
+            ];
+
+            for (v0, v1) in oriented_edges {
+                if Edge::new(v0, v1) == normalized_edge {
+                    // Found the edge - use its orientation from the visible face
+                    // We keep the same orientation as in the visible face
+                    horizon.push(Edge { v0, v1 });
+                    break;
                 }
             }
         }
@@ -425,26 +444,6 @@ fn find_horizon(hull_faces: &[HullFace], visible_faces: &[usize]) -> Vec<Edge> {
     horizon
 }
 
-/// Check if a face is oriented correctly (normal points outward)
-fn is_face_oriented_correctly(
-    face: &HullFace,
-    vertices: &[Vertex],
-    existing_faces: &[HullFace],
-) -> bool {
-    if existing_faces.is_empty() {
-        return true;
-    }
-
-    // Check if the normal points away from existing hull
-    let face_centroid = face.centroid;
-
-    // Find a point on the existing hull
-    let hull_point = &vertices[existing_faces[0].vertices[0]];
-
-    // Normal should point away from the hull
-    let to_face = face_centroid.sub(hull_point);
-    face.normal.dot(&to_face) > 0.0
-}
 
 #[cfg(test)]
 mod tests {
