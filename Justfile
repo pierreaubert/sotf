@@ -71,6 +71,18 @@ prod-sotf-player:
 prod-sotf-recorder:
 	cargo build --release --bin sotf_recorder
 
+prod-hal:
+	cargo build --release -p soft_hal
+
+prod-configbar:
+	./src-configbar/scripts/build.sh
+	./src-configbar/scripts/create_icon.sh
+
+prod-macos: prod-hal prod-configbar
+
+prod-head-scanner:
+	cargo build --release -p head-scanner
+
 # ----------------------------------------------------------------------
 # BENCH
 # ----------------------------------------------------------------------
@@ -279,7 +291,10 @@ install-ubuntu-common:
 			 patchelf \
 			 libopenblas-dev \
 			 gfortran \
-			 libasound2-dev
+			 libasound2-dev \
+			 libnetcdf-dev \
+			 libopencv-dev \
+			 libclang-dev
 
 install-ubuntu-x86-driver :
 		sudo apt install -y \
