@@ -2,6 +2,7 @@ mod app;
 mod events;
 mod library;
 mod player;
+mod plugins;
 mod ui;
 
 use app::App;
@@ -94,7 +95,7 @@ async fn run_app<B: ratatui::backend::Backend>(
             match event {
                 AppEvent::Key(key) => {
                     if let Some(cmd) = handle_key_event(app, key) {
-                        handle_player_command(player, cmd).await?;
+                        handle_player_command(player, app, cmd).await?;
                     }
                 }
                 AppEvent::Tick => {
@@ -140,11 +141,17 @@ async fn run_app<B: ratatui::backend::Backend>(
 
 async fn handle_player_command(
     player: &Player,
+    app: &App,
     cmd: PlayerCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
         PlayerCommand::Play(path) => {
-            player.load_and_play(path).await?;
+            // Get plugin configs and output channels
+            let sample_rate = 48000.0; // Default sample rate
+            let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
+            let output_channels = app.plugin_chain.output_channels();
+
+            player.load_and_play(path, plugins, output_channels).await?;
         }
         PlayerCommand::Pause => {
             player.pause().await?;
@@ -157,6 +164,12 @@ async fn handle_player_command(
         }
         PlayerCommand::SetVolume(volume) => {
             player.set_volume(volume).await?;
+        }
+        PlayerCommand::UpdatePlugins => {
+            // Update plugins in real-time
+            let sample_rate = 48000.0;
+            let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
+            player.update_plugins(plugins).await?;
         }
     }
     Ok(())

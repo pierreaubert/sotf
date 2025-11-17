@@ -1,3 +1,4 @@
+use sotf_audio::engine::PluginConfig;
 use sotf_audio::manager::AudioStreamingManager;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -14,7 +15,12 @@ impl Player {
         }
     }
 
-    pub async fn load_and_play(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn load_and_play(
+        &self,
+        path: PathBuf,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut manager = self.manager.lock().await;
 
         // Stop current playback if any
@@ -23,12 +29,18 @@ impl Player {
         // Load the new file
         manager.load_file(&path).await?;
 
-        // Start playback with default settings (no plugins, stereo output)
-        let plugins = vec![];
-        let output_channels = 2;
-
+        // Start playback with plugins
         manager.start_playback(None, plugins, output_channels).await?;
 
+        Ok(())
+    }
+
+    pub async fn update_plugins(
+        &self,
+        plugins: Vec<PluginConfig>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let manager = self.manager.lock().await;
+        manager.update_plugins(plugins).await?;
         Ok(())
     }
 

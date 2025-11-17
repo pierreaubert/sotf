@@ -1,4 +1,5 @@
 use crate::library::{Album, MusicLibrary, Track};
+use crate::plugins::{PluginChain, PluginType};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6,6 +7,7 @@ pub enum Screen {
     Library,
     DirectoryManager,
     Queue,
+    Plugins,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +58,12 @@ pub struct App {
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
+    pub selected_plugin_index: usize,
     pub album_list_offset: usize,
+
+    // Plugin system
+    pub plugin_chain: PluginChain,
+    pub needs_plugin_update: bool,
 
     // Playback state
     pub is_playing: bool,
@@ -81,7 +88,10 @@ impl App {
             selected_album_index: 0,
             selected_directory_index: 0,
             selected_queue_index: 0,
+            selected_plugin_index: 0,
             album_list_offset: 0,
+            plugin_chain: PluginChain::new(),
+            needs_plugin_update: false,
             is_playing: false,
             current_queue_index: None,
             volume: 1.0,
@@ -247,6 +257,58 @@ impl App {
 
     pub fn decrease_volume(&mut self) {
         self.volume = (self.volume - 0.05).max(0.0);
+    }
+
+    // Plugin management
+    pub fn add_plugin(&mut self, plugin_type: &PluginType) {
+        self.plugin_chain.add_plugin(plugin_type);
+        self.needs_plugin_update = true;
+    }
+
+    pub fn remove_plugin(&mut self, index: usize) {
+        self.plugin_chain.remove_plugin(index);
+        if self.selected_plugin_index >= self.plugin_chain.len() && self.selected_plugin_index > 0 {
+            self.selected_plugin_index = self.plugin_chain.len() - 1;
+        }
+        self.needs_plugin_update = true;
+    }
+
+    pub fn toggle_plugin(&mut self, index: usize) {
+        self.plugin_chain.toggle_plugin(index);
+        self.needs_plugin_update = true;
+    }
+
+    pub fn move_plugin_up(&mut self, index: usize) {
+        if index > 0 {
+            self.plugin_chain.move_plugin(index, index - 1);
+            self.selected_plugin_index = index - 1;
+            self.needs_plugin_update = true;
+        }
+    }
+
+    pub fn move_plugin_down(&mut self, index: usize) {
+        if index < self.plugin_chain.len() - 1 {
+            self.plugin_chain.move_plugin(index, index + 1);
+            self.selected_plugin_index = index + 1;
+            self.needs_plugin_update = true;
+        }
+    }
+
+    pub fn select_next_plugin(&mut self) {
+        if !self.plugin_chain.is_empty() {
+            self.selected_plugin_index =
+                (self.selected_plugin_index + 1) % self.plugin_chain.len();
+        }
+    }
+
+    pub fn select_previous_plugin(&mut self) {
+        if !self.plugin_chain.is_empty() {
+            if self.selected_plugin_index == 0 {
+                self.selected_plugin_index = self.plugin_chain.len() - 1;
+            } else {
+                self.selected_plugin_index -= 1;
+            }
+        }
     }
 }
 

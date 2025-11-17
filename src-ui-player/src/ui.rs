@@ -1,4 +1,5 @@
 use crate::app::{App, InputMode, Screen};
+use crate::plugins::PluginType;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -25,6 +26,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::Library => draw_library_screen(f, chunks[1], app),
         Screen::DirectoryManager => draw_directory_manager(f, chunks[1], app),
         Screen::Queue => draw_queue_screen(f, chunks[1], app),
+        Screen::Plugins => draw_plugins_screen(f, chunks[1], app),
     }
 
     // Status bar
@@ -36,6 +38,7 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
         Screen::Library => "SOTF Music Player - Library",
         Screen::DirectoryManager => "SOTF Music Player - Directories",
         Screen::Queue => "SOTF Music Player - Queue",
+        Screen::Plugins => "SOTF Music Player - Audio Plugins",
     };
 
     let title = Paragraph::new(title_text)
@@ -225,6 +228,96 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(list, area);
 }
 
+fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(70), // Plugin list
+            Constraint::Percentage(30), // Available plugins
+        ])
+        .split(area);
+
+    // Plugin chain list
+    draw_plugin_chain(f, chunks[0], app);
+
+    // Available plugins list
+    draw_available_plugins(f, chunks[1], app);
+}
+
+fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
+    let items: Vec<ListItem> = app
+        .plugin_chain
+        .plugins()
+        .iter()
+        .enumerate()
+        .map(|(i, plugin)| {
+            let enabled_marker = if plugin.enabled { "●" } else { "○" };
+            let content = format!(
+                "{} {} - {}",
+                enabled_marker,
+                i + 1,
+                plugin.plugin_type().name()
+            );
+
+            let style = if i == app.selected_plugin_index {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else if plugin.enabled {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
+            ListItem::new(content).style(style)
+        })
+        .collect();
+
+    let title = if app.plugin_chain.is_empty() {
+        "Plugin Chain (empty)".to_string()
+    } else {
+        format!(
+            "Plugin Chain ({}) - Output: {}ch",
+            app.plugin_chain.len(),
+            app.plugin_chain.output_channels()
+        )
+    };
+
+    let help_text = if app.plugin_chain.is_empty() {
+        " | Press 'a' to add plugins from the right panel"
+    } else {
+        " | 't'=toggle, 'd'=remove, '↑/↓'=move, 'a'=add plugin"
+    };
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("{}{}", title, help_text)),
+    );
+
+    f.render_widget(list, area);
+}
+
+fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
+    let plugins = PluginType::all();
+    let items: Vec<ListItem> = plugins
+        .iter()
+        .map(|plugin_type| {
+            let content = format!("{}\n  {}", plugin_type.name(), plugin_type.description());
+            ListItem::new(content).style(Style::default().fg(Color::Cyan))
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Available Plugins - Press 'a' to add"),
+    );
+
+    f.render_widget(list, area);
+}
+
 fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     let mut status_spans = vec![
         Span::raw(" "),
@@ -251,6 +344,14 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 
+    if !app.plugin_chain.is_empty() {
+        status_spans.push(Span::styled(
+            format!("Plugins: {} ", app.plugin_chain.len()),
+            Style::default().fg(Color::Magenta),
+        ));
+        status_spans.push(Span::raw("| "));
+    }
+
     status_spans.push(Span::raw("Keys: "));
     status_spans.push(Span::styled("1", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Library "));
@@ -258,6 +359,8 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     status_spans.push(Span::raw("=Directories "));
     status_spans.push(Span::styled("3", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Queue "));
+    status_spans.push(Span::styled("4", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::raw("=Plugins "));
     status_spans.push(Span::styled("ESC", Style::default().fg(Color::Red)));
     status_spans.push(Span::raw("=Quit "));
 

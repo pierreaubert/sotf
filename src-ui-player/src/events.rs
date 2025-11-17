@@ -1,4 +1,5 @@
 use crate::app::{App, InputMode, Screen};
+use crate::plugins::PluginType;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::time::Duration;
 
@@ -49,12 +50,17 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.current_screen = Screen::Queue;
             None
         }
+        KeyCode::Char('4') => {
+            app.current_screen = Screen::Plugins;
+            None
+        }
 
         // Screen-specific controls
         _ => match app.current_screen {
             Screen::Library => handle_library_keys(app, key),
             Screen::DirectoryManager => handle_directory_keys(app, key),
             Screen::Queue => handle_queue_keys(app, key),
+            Screen::Plugins => handle_plugins_keys(app, key),
         },
     }
 }
@@ -228,6 +234,72 @@ fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
     }
 }
 
+fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_plugin();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_plugin();
+            None
+        }
+        KeyCode::Char('a') => {
+            // Add a plugin - cycle through available types for simplicity
+            // In a more complex UI, this could open a selection dialog
+            let plugin_types = PluginType::all();
+            // For now, add EQ by default, user can modify this behavior
+            if let Some(first_type) = plugin_types.first() {
+                app.add_plugin(first_type);
+            }
+            None
+        }
+        KeyCode::Char('t') => {
+            // Toggle plugin enabled/disabled
+            app.toggle_plugin(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            app.remove_plugin(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('u') => {
+            app.move_plugin_up(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('D') => {
+            app.move_plugin_down(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('1') => {
+            // Quick add EQ
+            app.add_plugin(&PluginType::EQ);
+            None
+        }
+        KeyCode::Char('2') => {
+            // Quick add Upmixer
+            app.add_plugin(&PluginType::Upmixer);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('3') => {
+            // Quick add Compressor
+            app.add_plugin(&PluginType::Compressor);
+            None
+        }
+        KeyCode::Char('5') => {
+            // Quick add Limiter
+            app.add_plugin(&PluginType::Limiter);
+            None
+        }
+        KeyCode::Char('6') => {
+            // Quick add Loudness Compensation
+            app.add_plugin(&PluginType::LoudnessCompensation);
+            None
+        }
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum PlayerCommand {
     Play(std::path::PathBuf),
@@ -235,4 +307,5 @@ pub enum PlayerCommand {
     Resume,
     Stop,
     SetVolume(f32),
+    UpdatePlugins,
 }
