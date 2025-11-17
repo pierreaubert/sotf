@@ -68,6 +68,8 @@ pub struct LoudnessData {
     pub shortterm_lufs: f64,
     /// Current sample peak (0.0 to 1.0+)
     pub peak: f64,
+    /// Per-channel peaks (0.0 to 1.0+)
+    pub channel_peaks: Vec<f64>,
 }
 
 /// Spectrum analyzer data

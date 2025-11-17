@@ -356,6 +356,7 @@ impl AudioStreamingManager {
                             momentary_lufs: loudness_data.momentary_lufs,
                             shortterm_lufs: loudness_data.shortterm_lufs,
                             peak: loudness_data.peak,
+                            channel_peaks: loudness_data.channel_peaks.clone(),
                         })
                 }
                 Err(_) => None,

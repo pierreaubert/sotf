@@ -30,6 +30,9 @@ pub struct LoudnessInfo {
 
     /// Current sample peak across all channels (0.0 to 1.0+)
     pub peak: f64,
+
+    /// Per-channel peaks (0.0 to 1.0+)
+    pub channel_peaks: Vec<f64>,
 }
 
 impl Default for LoudnessInfo {
@@ -38,6 +41,7 @@ impl Default for LoudnessInfo {
             momentary_lufs: f64::NEG_INFINITY,
             shortterm_lufs: f64::NEG_INFINITY,
             peak: 0.0,
+            channel_peaks: Vec::new(),
         }
     }
 }
@@ -91,11 +95,15 @@ impl LoudnessMonitor {
 
         let shortterm_lufs = ebur.loudness_shortterm().unwrap_or(f64::NEG_INFINITY);
 
-        // Get peak across all channels
+        // Get peak across all channels and per-channel peaks
         let mut peak = 0.0f64;
+        let mut channel_peaks = Vec::with_capacity(self.channels as usize);
         for ch in 0..self.channels {
             if let Ok(ch_peak) = ebur.sample_peak(ch) {
                 peak = peak.max(ch_peak);
+                channel_peaks.push(ch_peak);
+            } else {
+                channel_peaks.push(0.0);
             }
         }
 
@@ -105,6 +113,7 @@ impl LoudnessMonitor {
             info.momentary_lufs = momentary_lufs;
             info.shortterm_lufs = shortterm_lufs;
             info.peak = peak;
+            info.channel_peaks = channel_peaks;
         }
 
         Ok(())
@@ -188,6 +197,7 @@ impl LoudnessMonitorPlugin {
             momentary_lufs: info.momentary_lufs,
             shortterm_lufs: info.shortterm_lufs,
             peak: info.peak,
+            channel_peaks: info.channel_peaks.clone(),
         }
     }
 }
