@@ -3,7 +3,11 @@
 //! This module provides test datasets similar to those used in the C++ convhull_3d library.
 
 use crate::types::Vertex;
+use crate::ConvexHullError;
 use rand::Rng;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 /// Generate random points on a sphere
 pub fn random_sphere_points(n: usize, radius: f64) -> Vec<Vertex> {
@@ -126,6 +130,46 @@ pub fn octahedron_vertices() -> Vec<Vertex> {
         Vertex::new(0.0, 0.0, 1.0),
         Vertex::new(0.0, 0.0, -1.0),
     ]
+}
+
+/// Load vertices from a Wavefront OBJ file
+///
+/// Parses OBJ files and extracts vertex coordinates (lines starting with "v").
+/// Ignores faces, normals, texture coordinates, and other OBJ features.
+pub fn load_obj_vertices<P: AsRef<Path>>(path: P) -> Result<Vec<Vertex>, ConvexHullError> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+    let mut vertices = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        let line = line.trim();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Parse vertex lines (format: "v x y z")
+        if line.starts_with("v ") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 {
+                if let (Ok(x), Ok(y), Ok(z)) = (
+                    parts[1].parse::<f64>(),
+                    parts[2].parse::<f64>(),
+                    parts[3].parse::<f64>(),
+                ) {
+                    vertices.push(Vertex::new(x, y, z));
+                }
+            }
+        }
+    }
+
+    if vertices.is_empty() {
+        Err(ConvexHullError::InsufficientVertices)
+    } else {
+        Ok(vertices)
+    }
 }
 
 #[cfg(test)]

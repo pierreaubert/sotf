@@ -1,12 +1,11 @@
 //! N-dimensional Quickhull algorithm implementation
 
 use crate::nd_types::{ConvexHullND, PointND, SimplexND};
-use crate::{ConvexHullError, Result};
+use crate::{ConvexHullError, Result, EPSILON};
 use std::collections::{HashMap, HashSet};
 
 const MAX_DIMENSIONS: usize = 10;
 const MAX_ITERATIONS: usize = 1000000;
-const EPSILON: f64 = 1e-10;
 
 /// Internal representation of a facet during hull construction
 #[derive(Debug, Clone)]
@@ -294,9 +293,9 @@ fn find_hull_2d(
         // For upper hull going left→right: positive cross product means above the line
         // For lower hull going right→left: positive cross product means below the line
         // So we use the same sign check for both!
-        let qualifies = sign > EPSILON;
+        let is_on_correct_side = sign > EPSILON;
 
-        if qualifies {
+        if is_on_correct_side {
             let dist = point_line_distance_2d(&points[start], &points[end], point);
             if dist > max_dist {
                 max_dist = dist;

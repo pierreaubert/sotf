@@ -154,7 +154,6 @@ fn test_4d_hypercube() {
 // Note: These are currently prototype implementations and may need refinement
 
 #[test]
-#[ignore = "Delaunay implementation needs refinement"]
 fn test_delaunay_2d_triangle() {
     let points = vec![
         PointND::new(vec![0.0, 0.0]),
@@ -170,7 +169,6 @@ fn test_delaunay_2d_triangle() {
 }
 
 #[test]
-#[ignore = "Delaunay implementation needs refinement"]
 fn test_delaunay_2d_square() {
     let points = vec![
         PointND::new(vec![0.0, 0.0]),
@@ -187,7 +185,6 @@ fn test_delaunay_2d_square() {
 }
 
 #[test]
-#[ignore = "Delaunay implementation needs refinement"]
 fn test_delaunay_2d_random_points() {
     // Create a grid of points
     let mut points = Vec::new();
@@ -205,7 +202,6 @@ fn test_delaunay_2d_random_points() {
 }
 
 #[test]
-#[ignore = "Delaunay implementation needs refinement"]
 fn test_delaunay_3d_tetrahedron() {
     let points = vec![
         PointND::new(vec![0.0, 0.0, 0.0]),
@@ -341,7 +337,6 @@ fn test_nd_summary() {
 }
 
 #[test]
-#[ignore = "Delaunay implementation needs refinement"]
 fn test_delaunay_summary() {
     println!("\n========================================");
     println!("DELAUNAY TRIANGULATION TEST SUITE");

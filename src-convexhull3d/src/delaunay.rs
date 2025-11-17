@@ -5,7 +5,7 @@
 
 use crate::nd_types::{DelaunayMesh, PointND, SimplexND};
 use crate::quickhull_nd::quickhull_nd;
-use crate::Result;
+use crate::{Result, EPSILON};
 
 /// Compute the Delaunay triangulation of a set of points
 ///
@@ -119,8 +119,6 @@ fn compute_facet_normal_delaunay(facet: &SimplexND, points: &[PointND]) -> Vec<f
 /// affinely independent (i.e., no point lies in the affine hull of the others).
 /// This is equivalent to checking that the volume is non-zero.
 fn are_affinely_independent(points: &[PointND]) -> bool {
-    const EPSILON: f64 = 1e-10;
-
     if points.is_empty() {
         return false;
     }
@@ -133,37 +131,52 @@ fn are_affinely_independent(points: &[PointND]) -> bool {
     }
 
     // Build matrix from edge vectors
+    // We need dim vectors of length dim to form a square matrix
     let base = &points[0];
-    let mut matrix: Vec<Vec<f64>> = Vec::new();
+    let mut matrix: Vec<Vec<f64>> = Vec::with_capacity(dim);
 
-    for i in 1..points.len() {
+    // More explicit: iterate exactly dim times (points 1 through dim)
+    assert_eq!(points.len(), dim + 1);
+    for i in 1..=dim {
         let edge = points[i].sub(base);
+        assert_eq!(edge.coords.len(), dim, "Edge vector must have dimension {}", dim);
+        // Clone is necessary here since Gaussian elimination requires a mutable copy
+        // For typical dimensions (2-4), this is negligible overhead
         matrix.push(edge.coords.clone());
     }
 
+    // Verify we have a square matrix
+    assert_eq!(matrix.len(), dim, "Matrix must have {} rows", dim);
+
     // Compute determinant to check if vectors are linearly independent
-    // For now, use a simple Gaussian elimination approach
     let det = compute_determinant_gauss(&matrix);
 
     det.abs() > EPSILON
 }
 
-/// Compute determinant using Gaussian elimination
+/// Compute determinant using Gaussian elimination with partial pivoting
 fn compute_determinant_gauss(matrix: &[Vec<f64>]) -> f64 {
+    // Validate input
     if matrix.is_empty() || matrix[0].is_empty() {
         return 0.0;
     }
 
     let n = matrix.len();
 
+    // Validate that matrix is square
+    if matrix.iter().any(|row| row.len() != n) {
+        log::warn!("Non-square matrix passed to compute_determinant_gauss");
+        return 0.0; // Non-square matrix has no determinant
+    }
+
     // Create a copy to work with
     let mut m: Vec<Vec<f64>> = matrix.iter().map(|row| row.clone()).collect();
 
     let mut det = 1.0;
 
-    // Forward elimination
+    // Forward elimination with partial pivoting
     for i in 0..n {
-        // Find pivot
+        // Find pivot (row with largest absolute value in column i)
         let mut max_row = i;
         for k in (i + 1)..n {
             if m[k][i].abs() > m[max_row][i].abs() {
@@ -177,8 +190,8 @@ fn compute_determinant_gauss(matrix: &[Vec<f64>]) -> f64 {
             det = -det;
         }
 
-        // Check for singular matrix
-        if m[i][i].abs() < 1e-10 {
+        // Check for singular matrix (use global EPSILON)
+        if m[i][i].abs() < EPSILON {
             return 0.0;
         }
 
@@ -232,7 +245,7 @@ fn circumcenter_2d(simplex: &SimplexND, points: &[PointND]) -> Option<PointND> {
 
     let d = 2.0 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
 
-    if d.abs() < 1e-10 {
+    if d.abs() < EPSILON {
         return None;
     }
 
@@ -333,6 +346,57 @@ mod tests {
             // Circumcenter of right triangle is at midpoint of hypotenuse
             assert!((center.coords[0] - 0.5).abs() < 1e-6);
             assert!((center.coords[1] - 0.5).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_delaunay_3d_tetrahedron() {
+        // Valid tetrahedron (4 points in 3D forming a non-degenerate simplex)
+        let points = vec![
+            PointND::new(vec![0.0, 0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0, 0.0]),
+            PointND::new(vec![0.0, 1.0, 0.0]),
+            PointND::new(vec![0.0, 0.0, 1.0]),
+        ];
+
+        let mesh = delaunay_nd(&points).unwrap();
+        assert_eq!(mesh.dim(), 3);
+        assert_eq!(mesh.num_simplices(), 1);
+    }
+
+    #[test]
+    fn test_delaunay_3d_degenerate_coplanar() {
+        // Four coplanar points (all in the z=0 plane) - should be rejected
+        let points = vec![
+            PointND::new(vec![0.0, 0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0, 0.0]),
+            PointND::new(vec![0.0, 1.0, 0.0]),
+            PointND::new(vec![1.0, 1.0, 0.0]),
+        ];
+
+        let result = delaunay_nd(&points);
+        assert!(result.is_err());
+        match result {
+            Err(crate::ConvexHullError::DegenerateConfiguration) => (),
+            _ => panic!("Expected DegenerateConfiguration error for coplanar 3D points"),
+        }
+    }
+
+    #[test]
+    fn test_delaunay_3d_collinear() {
+        // Four collinear points in 3D - should be rejected
+        let points = vec![
+            PointND::new(vec![0.0, 0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0, 0.0]),
+            PointND::new(vec![2.0, 0.0, 0.0]),
+            PointND::new(vec![3.0, 0.0, 0.0]),
+        ];
+
+        let result = delaunay_nd(&points);
+        assert!(result.is_err());
+        match result {
+            Err(crate::ConvexHullError::DegenerateConfiguration) => (),
+            _ => panic!("Expected DegenerateConfiguration error for collinear 3D points"),
         }
     }
 }

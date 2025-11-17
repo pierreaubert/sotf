@@ -6,11 +6,10 @@
 
 use crate::geometry::{are_coplanar, find_extreme_points, tetrahedron_volume};
 use crate::types::{ConvexHull3D, Face, Vertex};
-use crate::{ConvexHullError, Result};
+use crate::{ConvexHullError, Result, EPSILON};
 use std::collections::{HashMap, HashSet};
 
 const MAX_ITERATIONS: usize = 100000;
-const EPSILON: f64 = 1e-10;
 
 /// Internal representation of a face during hull construction
 #[derive(Debug, Clone)]
@@ -114,14 +113,16 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
     }
 
     // Assign all remaining points to faces
-    for (i, vertex) in vertices.iter().enumerate() {
-        if processed.contains(&i) {
-            continue;
-        }
+    // Process in single pass: for each face, collect all its visible points
+    let unprocessed_points: Vec<usize> = (0..vertices.len())
+        .filter(|i| !processed.contains(i))
+        .collect();
 
+    for point_idx in unprocessed_points {
+        let vertex = &vertices[point_idx];
         for face in &mut hull_faces {
             if face.is_visible_from(vertex, vertices) {
-                face.assign_point(i);
+                face.assign_point(point_idx);
                 break;
             }
         }
@@ -132,7 +133,14 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
     loop {
         iterations += 1;
         if iterations > MAX_ITERATIONS {
+            log::error!("Max iterations exceeded after {} iterations with {} faces", iterations, hull_faces.len());
             return Err(ConvexHullError::MaxIterationsExceeded);
+        }
+
+        if iterations % 100 == 0 {
+            let total_outside_points: usize = hull_faces.iter().map(|f| f.outside_points.len()).sum();
+            log::debug!("Iteration {}: {} faces, {} outside points remaining",
+                iterations, hull_faces.len(), total_outside_points);
         }
 
         // Find face with furthest outside point
@@ -194,14 +202,19 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
         // Reassign orphaned points to new faces
         for point_idx in orphaned_points {
             let point = vertices[point_idx];
+            let mut assigned = false;
+
+            // First try new faces (most likely to be visible)
             for face in &mut new_faces {
                 if face.is_visible_from(&point, vertices) {
                     face.assign_point(point_idx);
+                    assigned = true;
                     break;
                 }
             }
+
             // If not visible from any new face, try existing faces
-            if !new_faces.iter().any(|f| f.is_visible_from(&point, vertices)) {
+            if !assigned {
                 for face in &mut hull_faces {
                     if face.is_visible_from(&point, vertices) {
                         face.assign_point(point_idx);

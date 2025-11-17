@@ -33,8 +33,10 @@ fn run_test_with_visualization(
     assert!(surface_area > 0.0, "Surface area must be positive");
 
     // Create output directory
-    let output_dir = "target/convexhull_test_output";
-    fs::create_dir_all(output_dir).unwrap();
+    let output_dir = std::env::var("AUTOEQ_DIR")
+        .unwrap_or_else(|_| ".".to_string());
+    let output_dir = format!("{}/data_generated/convexhull3d", output_dir);
+    fs::create_dir_all(&output_dir).unwrap();
 
     // Export OBJ
     let obj_path = format!("{}/convhull_{}.obj", output_dir, name);
@@ -212,4 +214,115 @@ fn test_all_tests_summary() {
     println!("========================================");
 
     assert_eq!(success_count, total_count, "All tests should pass");
+}
+
+#[test]
+fn test_process_all_obj_files() {
+    println!("\n========================================");
+    println!("PROCESSING ALL OBJ TEST FILES");
+    println!("========================================");
+
+    // Get the data directory path
+    let data_dir = std::env::var("AUTOEQ_DIR")
+        .unwrap_or_else(|_| ".".to_string());
+    let obj_dir = format!("{}/data_tests/convexhull3d/obj_files", data_dir);
+
+    // Maximum vertices to process (set to None to process all, or Some(n) to limit)
+    // For testing, we limit to 5000 vertices to avoid extremely long computation times
+    let max_vertices: Option<usize> = std::env::var("MAX_VERTICES")
+        .ok()
+        .and_then(|s| s.parse().ok());
+
+    // Get all OBJ files
+    let mut obj_files = fs::read_dir(&obj_dir)
+        .expect("Failed to read obj_files directory")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry.path().extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext == "obj")
+                .unwrap_or(false)
+        })
+        .collect::<Vec<_>>();
+
+    // Sort by filename for deterministic processing
+    obj_files.sort_by_key(|e| e.file_name());
+
+    println!("Found {} OBJ files to process", obj_files.len());
+    if let Some(max) = max_vertices {
+        println!("Vertex limit: {} (set MAX_VERTICES env var to change)\n", max);
+    } else {
+        println!("No vertex limit (this may take a very long time for large models)\n");
+    }
+
+    let mut success_count = 0;
+    let mut skipped_count = 0;
+    let mut total_count = 0;
+
+    for entry in obj_files {
+        let path = entry.path();
+        let filename = path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+
+        total_count += 1;
+        print!("Processing {:<20} ... ", filename);
+
+        match testdata::load_obj_vertices(&path) {
+            Ok(vertices) => {
+                let vertex_count = vertices.len();
+
+                // Check if we should skip due to vertex count
+                if let Some(max) = max_vertices {
+                    if vertex_count > max {
+                        println!("{} vertices (SKIPPED - too many vertices)", vertex_count);
+                        skipped_count += 1;
+                        continue;
+                    }
+                }
+
+                match ConvexHull3D::build(&vertices) {
+                    Ok(hull) => {
+                        let num_faces = hull.num_faces();
+                        let _num_vertices = hull.num_vertices();
+                        let volume = hull.volume();
+                        let surface_area = hull.surface_area();
+
+                        println!("{} vertices → {} faces (V={:.2}, SA={:.2})",
+                            vertex_count, num_faces, volume, surface_area);
+
+                        // Export results
+                        let output_dir = format!("{}/data_generated/convexhull3d", data_dir);
+                        fs::create_dir_all(&output_dir).unwrap();
+
+                        let obj_path = format!("{}/convhull_{}.obj", output_dir, filename);
+                        let html_path = format!("{}/convhull_{}.html", output_dir, filename);
+                        let title = format!("Convex Hull: {}", filename);
+
+                        if let Err(e) = export_obj(&hull, &obj_path) {
+                            println!("  ⚠ Failed to export OBJ: {}", e);
+                        }
+
+                        if let Err(e) = export_html(&hull, &html_path, &title) {
+                            println!("  ⚠ Failed to export HTML: {}", e);
+                        }
+
+                        success_count += 1;
+                    }
+                    Err(e) => {
+                        println!("{} vertices ✗ Hull computation failed: {}", vertex_count, e);
+                    }
+                }
+            }
+            Err(e) => {
+                println!("✗ Failed to load: {}", e);
+            }
+        }
+    }
+
+    println!("\n========================================");
+    println!("Success: {} | Skipped: {} | Total: {}", success_count, skipped_count, total_count);
+    println!("========================================");
+
+    assert!(success_count > 0, "At least some OBJ files should process successfully");
 }

@@ -187,6 +187,7 @@ impl ConvexHull3D {
 
     /// Build a convex hull from vertices using the Quickhull algorithm
     pub fn build(vertices: &[Vertex]) -> crate::Result<Self> {
+        // Use the 3D-specific quickhull implementation
         crate::quickhull::quickhull_3d(vertices)
     }
 

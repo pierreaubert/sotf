@@ -11,7 +11,7 @@ members = [
     "src-iir",
     "src-tauri",
     "src-testfunctions",
-    "src-ui-player"
+    "src-tui-player"
 ]
 resolver = "3"
 

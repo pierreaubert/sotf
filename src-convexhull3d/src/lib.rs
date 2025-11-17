@@ -90,3 +90,10 @@ pub enum ConvexHullError {
 }
 
 pub type Result<T> = std::result::Result<T, ConvexHullError>;
+
+/// Numerical tolerance for floating-point comparisons
+/// Used throughout the library for:
+/// - Distance calculations
+/// - Determinant checks
+/// - Degeneracy detection
+pub(crate) const EPSILON: f64 = 1e-10;
