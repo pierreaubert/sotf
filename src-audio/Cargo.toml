@@ -31,6 +31,8 @@ path = "bin/sotf_daemon.rs"
 [dependencies]
 tokio = { workspace = true }
 ndarray = { workspace = true }
+notify = { workspace = true }
+netcdf = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 cpal = { workspace = true }
@@ -61,8 +63,6 @@ symphonia-format-isomp4 ={ workspace = true }
 ebur128 = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
-notify = { workspace = true }
-netcdf = "0.11"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

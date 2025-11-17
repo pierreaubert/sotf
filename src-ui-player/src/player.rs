@@ -24,13 +24,13 @@ impl Player {
         let mut manager = self.manager.lock().await;
 
         // Stop current playback if any
-        manager.stop_playback().await?;
+        manager.stop()?;
 
         // Load the new file
-        manager.load_file(&path).await?;
+        manager.load_file(&path)?;
 
         // Start playback with plugins
-        manager.start_playback(None, plugins, output_channels).await?;
+        manager.start_playback(None, plugins, output_channels)?;
 
         Ok(())
     }
@@ -40,42 +40,43 @@ impl Player {
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let manager = self.manager.lock().await;
-        manager.update_plugins(plugins).await?;
+        manager.update_plugin_chain(plugins)?;
         Ok(())
     }
 
     pub async fn pause(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut manager = self.manager.lock().await;
-        manager.pause().await?;
+        let manager = self.manager.lock().await;
+        manager.pause()?;
         Ok(())
     }
 
     pub async fn resume(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut manager = self.manager.lock().await;
-        manager.resume().await?;
+        let manager = self.manager.lock().await;
+        manager.resume()?;
         Ok(())
     }
 
     pub async fn stop(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut manager = self.manager.lock().await;
-        manager.stop_playback().await?;
+        manager.stop()?;
         Ok(())
     }
 
     pub async fn set_volume(&self, volume: f32) -> Result<(), Box<dyn std::error::Error>> {
-        let mut manager = self.manager.lock().await;
-        manager.set_volume(volume).await?;
+        let manager = self.manager.lock().await;
+        manager.set_volume(volume)?;
         Ok(())
     }
 
     pub async fn get_position(&self) -> Result<f64, Box<dyn std::error::Error>> {
         let manager = self.manager.lock().await;
-        Ok(manager.get_position().await)
+        Ok(manager.get_position())
     }
 
     pub async fn is_playing(&self) -> Result<bool, Box<dyn std::error::Error>> {
         let manager = self.manager.lock().await;
-        Ok(manager.is_playing().await)
+        let state = manager.get_state();
+        Ok(matches!(state, sotf_audio::manager::StreamingState::Playing))
     }
 }
 

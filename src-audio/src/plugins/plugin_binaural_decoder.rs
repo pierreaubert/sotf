@@ -621,8 +621,14 @@ impl Plugin for BinauralDecoderPlugin {
                 }
 
                 // Process block
-                self.temp_output_block.fill(0.0);
-                self.process_fft_block(&self.temp_input_block, &mut self.temp_output_block);
+                // Use std::mem::take to temporarily move buffers out to avoid borrow conflict
+                let input_block = std::mem::take(&mut self.temp_input_block);
+                let mut output_block = std::mem::take(&mut self.temp_output_block);
+                output_block.fill(0.0);
+                self.process_fft_block(&input_block, &mut output_block);
+                // Move buffers back
+                self.temp_input_block = input_block;
+                self.temp_output_block = output_block;
 
                 // Accumulate output (overlap-add)
                 for i in 0..self.fft_size {

@@ -170,7 +170,7 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     let format_opts = FormatOptions::default();
     let metadata_opts = MetadataOptions::default();
 
-    let probed = symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts)?;
+    let mut probed = symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts)?;
 
     let mut metadata = TrackMetadata::default();
 

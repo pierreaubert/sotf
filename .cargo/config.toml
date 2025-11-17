@@ -11,7 +11,9 @@ rustflags = [
   "-C", 'target-cpu=native',
   "-C", 'target-feature=+neon',
   "-C", "link-arg=-mmacosx-version-min=15.0",
-  "-C", "link-arg=-framework", "-C", "link-arg=Accelerate"
+  "-C", "link-arg=-framework",
+  "-C", "link-arg=Accelerate",
+  "-C", "link-arg=-L /opt/homebrew/Cellar/llvm/21.1.5/lib"
 ]
 
 # macOS Intel - using Accelerate framework, untested

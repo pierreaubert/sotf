@@ -93,6 +93,7 @@ pub async fn record_channel(
         output_channel as u16,
         input_channel as u16,
         Some(&output_device),
+        None, // microphone_compensation_path
     )
     .map_err(|e| format!("Recording failed: {}", e))?;
 

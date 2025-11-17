@@ -242,7 +242,7 @@ install-macos: install-macos-brew install-rustup
 	brew install chromedriver
 	xattr -d com.apple.quarantine $(which chromedriver)
 	# optimisation library
-	brew install nlopt cmake
+	brew install nlopt cmake netcdf opencv
 
 
 # ----------------------------------------------------------------------

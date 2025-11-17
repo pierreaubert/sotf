@@ -9,9 +9,10 @@ use super::{
     ThreadEvent,
 };
 use crate::plugins::{
-    AnalyzerPlugin, CompressorPluginParams, CrossoverPluginParams, DelayPluginParams,
-    EqPluginParams, GainPluginParams, GatePluginParams, LimiterPluginParams,
-    LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext, UpmixerPluginParams,
+    AnalyzerPlugin, CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams,
+    DelayPlugin, DelayPluginParams, EqPluginParams, GainPluginParams, GatePluginParams,
+    LimiterPluginParams, LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext,
+    UpmixerPluginParams,
 };
 
 use std::collections::HashMap;
@@ -686,7 +687,8 @@ fn create_plugin(
 
             let plugin = BinauralDecoderPlugin::from_params(params);
             Ok(Box::new(plugin))
-          
+	}
+
         "crossover" => {
             let params: CrossoverPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse crossover plugin parameters: {}", e))?;

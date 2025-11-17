@@ -163,7 +163,7 @@ impl SofaFile {
             .ok_or("Missing variable 'Data.IR'")?;
 
         let ir_data: Vec<f32> = ir_var
-            .values(None, None)
+            .get_values(..)
             .map_err(|e| format!("Failed to read IR data: {}", e))?;
 
         eprintln!(
@@ -274,8 +274,8 @@ impl SofaFile {
 
                 // Handle different attribute value types
                 match value {
-                    netcdf::AttrValue::Str(s) => Ok(s),
-                    netcdf::AttrValue::Uchar(v) => {
+                    netcdf::AttributeValue::Str(s) => Ok(s),
+                    netcdf::AttributeValue::Uchars(v) => {
                         // Sometimes strings are stored as byte arrays
                         String::from_utf8(v)
                             .map_err(|e| format!("Invalid UTF-8 in attribute '{}': {}", name, e))
@@ -292,7 +292,7 @@ impl SofaFile {
         // Try Data.SamplingRate variable first
         if let Some(var) = file.variable("Data.SamplingRate") {
             let values: Vec<f32> = var
-                .values(None, None)
+                .get_values(..)
                 .map_err(|e| format!("Failed to read Data.SamplingRate: {}", e))?;
             if !values.is_empty() {
                 return Ok(values[0]);
@@ -307,9 +307,12 @@ impl SofaFile {
                     .map_err(|e| format!("Failed to read Data.SamplingRate attribute: {}", e))?;
 
                 match value {
-                    netcdf::AttrValue::Double(v) if !v.is_empty() => Ok(v[0] as f32),
-                    netcdf::AttrValue::Float(v) if !v.is_empty() => Ok(v[0]),
-                    netcdf::AttrValue::Int(v) if !v.is_empty() => Ok(v[0] as f32),
+                    netcdf::AttributeValue::Doubles(v) if !v.is_empty() => Ok(v[0] as f32),
+                    netcdf::AttributeValue::Double(v) => Ok(v as f32),
+                    netcdf::AttributeValue::Floats(v) if !v.is_empty() => Ok(v[0]),
+                    netcdf::AttributeValue::Float(v) => Ok(v),
+                    netcdf::AttributeValue::Ints(v) if !v.is_empty() => Ok(v[0] as f32),
+                    netcdf::AttributeValue::Int(v) => Ok(v as f32),
                     _ => Err("Data.SamplingRate attribute has unexpected type".to_string()),
                 }
             }
@@ -328,7 +331,7 @@ impl SofaFile {
             .ok_or("Missing variable 'SourcePosition'")?;
 
         let pos_data: Vec<f32> = pos_var
-            .values(None, None)
+            .get_values(..)
             .map_err(|e| format!("Failed to read SourcePosition: {}", e))?;
 
         if pos_data.len() != num_measurements * 3 {
@@ -344,10 +347,10 @@ impl SofaFile {
             Some(attr) => {
                 let value = attr.value().ok();
                 match value {
-                    Some(netcdf::AttrValue::Str(s)) if s.contains("spherical") => {
+                    Some(netcdf::AttributeValue::Str(s)) if s.contains("spherical") => {
                         CoordinateSystem::Spherical
                     }
-                    Some(netcdf::AttrValue::Str(s)) if s.contains("cartesian") => {
+                    Some(netcdf::AttributeValue::Str(s)) if s.contains("cartesian") => {
                         CoordinateSystem::Cartesian
                     }
                     _ => CoordinateSystem::Spherical, // Default assumption

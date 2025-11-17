@@ -110,7 +110,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                             if !is_playing && app.current_queue_index.is_some() {
                                 // Track ended, advance to next
                                 if let Some(path) = app.next_track() {
-                                    let _ = player.load_and_play(path).await;
+                                    let sample_rate = 48000.0;
+                                    let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
+                                    let output_channels = app.plugin_chain.output_channels();
+                                    let _ = player.load_and_play(path, plugins, output_channels).await;
                                 } else {
                                     app.is_playing = false;
                                 }
