@@ -1,10 +1,10 @@
 // Limiter Plugin
 // Brick-wall limiter with true peak detection and lookahead
 
-import { BasePlugin } from './plugin-base';
-import { PluginMenubar } from './plugin-menubar';
-import type { PluginMetadata } from './plugin-types';
-import Plotly from 'plotly.js-basic-dist-min';
+import { BasePlugin } from "./plugin-base";
+import { PluginMenubar } from "./plugin-menubar";
+import type { PluginMetadata } from "./plugin-types";
+import Plotly from "plotly.js-basic-dist-min";
 
 /**
  * Limiter Plugin
@@ -12,10 +12,10 @@ import Plotly from 'plotly.js-basic-dist-min';
  */
 export class LimiterPlugin extends BasePlugin {
   public readonly metadata: PluginMetadata = {
-    id: 'limiter-plugin',
-    name: 'SotF: Limiter',
-    category: 'dynamics',
-    version: '1.0.0',
+    id: "limiter-plugin",
+    name: "SotF: Limiter",
+    category: "dynamics",
+    version: "1.0.0",
   };
 
   // UI components
@@ -29,16 +29,16 @@ export class LimiterPlugin extends BasePlugin {
   private plotContainer: HTMLElement | null = null;
 
   // Parameters
-  private ceiling: number = -0.1;         // dB (max output level)
-  private release: number = 100.0;        // ms
-  private lookahead: number = 5.0;        // ms
+  private ceiling: number = -0.1; // dB (max output level)
+  private release: number = 100.0; // ms
+  private lookahead: number = 5.0; // ms
 
   // Parameter metadata for keyboard control
-  protected parameterOrder = ['ceiling', 'release', 'lookahead'];
+  protected parameterOrder = ["ceiling", "release", "lookahead"];
   protected parameterLabels = {
-    ceiling: 'Ceiling',
-    release: 'Release',
-    lookahead: 'Lookahead',
+    ceiling: "Ceiling",
+    release: "Release",
+    lookahead: "Lookahead",
   };
   private parameterRanges = {
     ceiling: { min: -12, max: 0, step: 0.1 },
@@ -48,8 +48,8 @@ export class LimiterPlugin extends BasePlugin {
 
   // State
   private currentGainReduction: number = 0.0; // dB (negative)
-  private currentPeak: number = -Infinity;    // dB
-  private peakHold: number = -Infinity;       // dB
+  private currentPeak: number = -Infinity; // dB
+  private peakHold: number = -Infinity; // dB
   private peakHoldTimer: number = 0;
   private clipping: boolean = false;
   private animationFrameId: number | null = null;
@@ -57,22 +57,27 @@ export class LimiterPlugin extends BasePlugin {
   /**
    * Render a single parameter slider with labels
    */
-  private renderParameter(paramName: string, index: number, unit: string): string {
+  private renderParameter(
+    paramName: string,
+    index: number,
+    unit: string,
+  ): string {
     const value = (this as any)[paramName];
-    const range = this.parameterRanges[paramName as keyof typeof this.parameterRanges];
+    const range =
+      this.parameterRanges[paramName as keyof typeof this.parameterRanges];
 
     // Get formatted label with keyboard shortcut
     const formattedLabel = this.getFormattedLabel(paramName);
 
     // Format value display
-    let displayValue = value.toFixed(paramName === 'ceiling' ? 2 : 1);
+    let displayValue = value.toFixed(paramName === "ceiling" ? 2 : 1);
     displayValue = `${displayValue} ${unit}`;
 
     // Generate 6 legend values from max to min
     const legendValues = [];
     for (let i = 0; i < 6; i++) {
-      const legendValue = range.max - (i * (range.max - range.min) / 5);
-      const formatted = legendValue.toFixed(paramName === 'ceiling' ? 2 : 1);
+      const legendValue = range.max - (i * (range.max - range.min)) / 5;
+      const formatted = legendValue.toFixed(paramName === "ceiling" ? 2 : 1);
       legendValues.push(formatted);
     }
 
@@ -84,7 +89,7 @@ export class LimiterPlugin extends BasePlugin {
           <div class="is-flex is-align-items-center">
             <!-- Legend on the left -->
               <div class="is-flex is-flex-direction-column is-justify-content-space-between mr-2 has-text-grey-light is-size-7" style="height: 250px; text-align: right;">
-              ${legendValues.map(v => `<span>${v}</span>`).join('')}
+              ${legendValues.map((v) => `<span>${v}</span>`).join("")}
             </div>
             <!-- Slider -->
             <input type="range" class="param-slider" data-param="${paramName}"
@@ -103,8 +108,8 @@ export class LimiterPlugin extends BasePlugin {
     if (!this.container) return;
 
     this.container.innerHTML = `
-      <div class="is-flex is-flex-direction-column limiter-plugin ${standalone ? 'standalone' : 'embedded'}" style="max-height: 500px; max-width: 1000px; min-height: 0; background: #1a1a1a;">
-        ${standalone ? '<div class="limiter-menubar-container"></div>' : ''}
+      <div class="is-flex is-flex-direction-column limiter-plugin ${standalone ? "standalone" : "embedded"}" style="max-height: 500px; max-width: 1000px; min-height: 0; background: #1a1a1a;">
+        ${standalone ? '<div class="limiter-menubar-container"></div>' : ""}
         <div class="is-flex is-flex-direction-column is-flex-grow-1" style="min-height: 0; overflow: hidden; padding: 0; margin: 0;">
           <!-- Row 1: Parameters and Transfer Curve -->
           <div class="columns is-gapless" style="flex: 1; min-height: 0;">
@@ -114,13 +119,13 @@ export class LimiterPlugin extends BasePlugin {
                 <h4 class="title is-6 has-text-light">Limiter Settings</h4>
                 <div class="columns is-gapless">
                   <div class="column is-4">
-                    ${this.renderParameter('ceiling', 0, 'dB')}
+                    ${this.renderParameter("ceiling", 0, "dB")}
                   </div>
                   <div class="column is-4">
-                    ${this.renderParameter('release', 1, 'ms')}
+                    ${this.renderParameter("release", 1, "ms")}
                   </div>
                   <div class="column is-4">
-                    ${this.renderParameter('lookahead', 2, 'ms')}
+                    ${this.renderParameter("lookahead", 2, "ms")}
                   </div>
                 </div>
               </div>
@@ -155,7 +160,7 @@ export class LimiterPlugin extends BasePlugin {
                   <div class="is-flex-grow-1">
                     <canvas class="peak-meter-canvas" width="400" height="20"></canvas>
                   </div>
-                  <span class="tag is-success is-small ml-3 peak-value">${this.currentPeak === -Infinity ? '-∞' : this.currentPeak.toFixed(1)} dB</span>
+                  <span class="tag is-success is-small ml-3 peak-value">${this.currentPeak === -Infinity ? "-∞" : this.currentPeak.toFixed(1)} dB</span>
                 </div>
               </div>
             </div>
@@ -166,18 +171,26 @@ export class LimiterPlugin extends BasePlugin {
 
     // Initialize menubar if standalone
     if (standalone) {
-      const menubarContainer = this.container.querySelector('.limiter-menubar-container') as HTMLElement;
+      const menubarContainer = this.container.querySelector(
+        ".limiter-menubar-container",
+      ) as HTMLElement;
       if (menubarContainer) {
         this.menubar = new PluginMenubar(menubarContainer, this.metadata.name);
       }
     }
 
     // Cache elements
-    this.grMeterCanvas = this.container.querySelector('.gr-meter-canvas') as HTMLCanvasElement;
-    this.grMeterCtx = this.grMeterCanvas?.getContext('2d') || null;
-    this.peakMeterCanvas = this.container.querySelector('.peak-meter-canvas') as HTMLCanvasElement;
-    this.peakMeterCtx = this.peakMeterCanvas?.getContext('2d') || null;
-    this.plotContainer = this.container.querySelector(`#limiter-plot-${this.metadata.id}`) as HTMLElement;
+    this.grMeterCanvas = this.container.querySelector(
+      ".gr-meter-canvas",
+    ) as HTMLCanvasElement;
+    this.grMeterCtx = this.grMeterCanvas?.getContext("2d") || null;
+    this.peakMeterCanvas = this.container.querySelector(
+      ".peak-meter-canvas",
+    ) as HTMLCanvasElement;
+    this.peakMeterCtx = this.peakMeterCanvas?.getContext("2d") || null;
+    this.plotContainer = this.container.querySelector(
+      `#limiter-plot-${this.metadata.id}`,
+    ) as HTMLElement;
 
     // Setup canvases
     this.setupMeterCanvas(this.grMeterCanvas, 240, 40);
@@ -193,7 +206,11 @@ export class LimiterPlugin extends BasePlugin {
   /**
    * Setup meter canvas
    */
-  private setupMeterCanvas(canvas: HTMLCanvasElement | null, width: number, height: number): void {
+  private setupMeterCanvas(
+    canvas: HTMLCanvasElement | null,
+    width: number,
+    height: number,
+  ): void {
     if (!canvas) return;
 
     const dpr = window.devicePixelRatio || 1;
@@ -201,7 +218,7 @@ export class LimiterPlugin extends BasePlugin {
     canvas.width = width * dpr;
     canvas.height = height * dpr;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.scale(dpr, dpr);
     }
@@ -243,28 +260,29 @@ export class LimiterPlugin extends BasePlugin {
       {
         x: inputDb,
         y: referenceDb,
-        type: 'scatter',
-        mode: 'lines',
-        name: '1:1 Reference',
+        type: "scatter",
+        mode: "lines",
+        name: "1:1 Reference",
         line: {
-          color: 'rgba(255, 255, 255, 0.3)',
+          color: "rgba(255, 255, 255, 0.3)",
           width: 1,
-          dash: 'dot',
+          dash: "dot",
         },
-        hoverinfo: 'skip',
+        hoverinfo: "skip",
       } as Plotly.Data,
       // Limiter curve
       {
         x: inputDb,
         y: outputDb,
-        type: 'scatter',
-        mode: 'lines',
-        name: 'Limiter Curve',
+        type: "scatter",
+        mode: "lines",
+        name: "Limiter Curve",
         line: {
-          color: '#ef4444',
+          color: "#ef4444",
           width: 3,
         },
-        hovertemplate: 'Input: %{x:.1f} dB<br>Output: %{y:.1f} dB<extra></extra>',
+        hovertemplate:
+          "Input: %{x:.1f} dB<br>Output: %{y:.1f} dB<extra></extra>",
       } as Plotly.Data,
     ];
 
@@ -274,45 +292,45 @@ export class LimiterPlugin extends BasePlugin {
       {
         x: [-12, 0],
         y: [this.ceiling, this.ceiling],
-        type: 'scatter',
-        mode: 'lines',
-        name: 'Ceiling',
+        type: "scatter",
+        mode: "lines",
+        name: "Ceiling",
         line: {
-          color: 'rgba(239, 68, 68, 0.6)',
+          color: "rgba(239, 68, 68, 0.6)",
           width: 2,
-          dash: 'dash',
+          dash: "dash",
         },
-        hoverinfo: 'skip',
-      } as Plotly.Data
+        hoverinfo: "skip",
+      } as Plotly.Data,
     );
 
     // Layout configuration
     const layout: Partial<Plotly.Layout> = {
       title: {
-        text: '',
+        text: "",
       },
       width: 480,
       height: 320,
       xaxis: {
-        title: { text: 'Input (dB)', font: { size: 10 } },
-        gridcolor: 'rgba(255, 255, 255, 0.1)',
-        zerolinecolor: 'rgba(255, 255, 255, 0.2)',
+        title: { text: "Input (dB)", font: { size: 10 } },
+        gridcolor: "rgba(255, 255, 255, 0.1)",
+        zerolinecolor: "rgba(255, 255, 255, 0.2)",
         range: [-12, 0],
         dtick: 2,
         tickfont: { size: 9 },
       },
       yaxis: {
-        title: { text: 'Output (dB)', font: { size: 10 } },
-        gridcolor: 'rgba(255, 255, 255, 0.1)',
-        zerolinecolor: 'rgba(255, 255, 255, 0.2)',
+        title: { text: "Output (dB)", font: { size: 10 } },
+        gridcolor: "rgba(255, 255, 255, 0.1)",
+        zerolinecolor: "rgba(255, 255, 255, 0.2)",
         range: [-12, 0],
         dtick: 2,
         tickfont: { size: 9 },
       },
-      plot_bgcolor: '#1a1a1a',
-      paper_bgcolor: '#1a1a1a',
+      plot_bgcolor: "#1a1a1a",
+      paper_bgcolor: "#1a1a1a",
       font: {
-        color: '#ffffff',
+        color: "#ffffff",
         size: 9,
       },
       margin: {
@@ -325,12 +343,12 @@ export class LimiterPlugin extends BasePlugin {
       legend: {
         x: 0.02,
         y: 0.98,
-        bgcolor: 'rgba(42, 42, 42, 0.8)',
-        bordercolor: 'rgba(64, 64, 64, 0.8)',
+        bgcolor: "rgba(42, 42, 42, 0.8)",
+        bordercolor: "rgba(64, 64, 64, 0.8)",
         borderwidth: 1,
         font: { size: 9 },
       },
-      hovermode: 'closest',
+      hovermode: "closest",
     };
 
     // Config
@@ -348,18 +366,21 @@ export class LimiterPlugin extends BasePlugin {
    */
   private attachEventListeners(): void {
     // Slider input events
-    const sliders = this.container?.querySelectorAll('.param-slider') || [];
+    const sliders = this.container?.querySelectorAll(".param-slider") || [];
     sliders.forEach((slider) => {
-      slider.addEventListener('input', (e) => {
+      slider.addEventListener("input", (e) => {
         this.handleSliderChange(e as Event);
       });
     });
 
     // Parameter field click to select
-    const fields = this.container?.querySelectorAll('.parameter-field') || [];
+    const fields = this.container?.querySelectorAll(".parameter-field") || [];
     fields.forEach((field) => {
-      field.addEventListener('click', (e) => {
-        const index = parseInt((field as HTMLElement).dataset.index || '-1', 10);
+      field.addEventListener("click", (e) => {
+        const index = parseInt(
+          (field as HTMLElement).dataset.index || "-1",
+          10,
+        );
         this.selectParameter(index);
       });
     });
@@ -389,18 +410,20 @@ export class LimiterPlugin extends BasePlugin {
    * Update parameter display
    */
   private updateParameterDisplay(param: string, value: number): void {
-    const field = this.container?.querySelector(`.parameter-field[data-param="${param}"]`);
+    const field = this.container?.querySelector(
+      `.parameter-field[data-param="${param}"]`,
+    );
     if (!field) return;
 
-    const label = field.querySelector('.param-value');
+    const label = field.querySelector(".param-value");
     if (label) {
-      const precision = param === 'ceiling' ? 2 : 1;
-      const unit = param === 'ceiling' ? 'dB' : 'ms';
+      const precision = param === "ceiling" ? 2 : 1;
+      const unit = param === "ceiling" ? "dB" : "ms";
       label.textContent = `${value.toFixed(precision)} ${unit}`;
     }
 
     // Update slider value
-    const slider = field.querySelector('.param-slider') as HTMLInputElement;
+    const slider = field.querySelector(".param-slider") as HTMLInputElement;
     if (slider) {
       slider.value = value.toString();
     }
@@ -413,16 +436,16 @@ export class LimiterPlugin extends BasePlugin {
     super.selectParameter(index);
 
     // Update visual highlighting
-    const fields = this.container?.querySelectorAll('.parameter-field') || [];
+    const fields = this.container?.querySelectorAll(".parameter-field") || [];
     fields.forEach((field, idx) => {
-      const slider = field.querySelector('.param-slider') as HTMLElement;
+      const slider = field.querySelector(".param-slider") as HTMLElement;
       if (slider) {
         if (idx === index) {
-          slider.style.accentColor = '#22c55e'; // Green
-          field.classList.add('is-selected');
+          slider.style.accentColor = "#22c55e"; // Green
+          field.classList.add("is-selected");
         } else {
-          slider.style.accentColor = '';
-          field.classList.remove('is-selected');
+          slider.style.accentColor = "";
+          field.classList.remove("is-selected");
         }
       }
     });
@@ -434,12 +457,12 @@ export class LimiterPlugin extends BasePlugin {
   protected clearParameterSelection(): void {
     super.clearParameterSelection();
 
-    const fields = this.container?.querySelectorAll('.parameter-field') || [];
+    const fields = this.container?.querySelectorAll(".parameter-field") || [];
     fields.forEach((field) => {
-      const slider = field.querySelector('.param-slider') as HTMLElement;
+      const slider = field.querySelector(".param-slider") as HTMLElement;
       if (slider) {
-        slider.style.accentColor = '';
-        field.classList.remove('is-selected');
+        slider.style.accentColor = "";
+        field.classList.remove("is-selected");
       }
     });
   }
@@ -451,11 +474,15 @@ export class LimiterPlugin extends BasePlugin {
     if (this.selectedParameterIndex < 0) return;
 
     const paramName = this.parameterOrder[this.selectedParameterIndex];
-    const range = this.parameterRanges[paramName as keyof typeof this.parameterRanges];
+    const range =
+      this.parameterRanges[paramName as keyof typeof this.parameterRanges];
     const currentValue = (this as any)[paramName];
 
     const step = delta > 0 ? range.step : -range.step;
-    const newValue = Math.max(range.min, Math.min(range.max, currentValue + step));
+    const newValue = Math.max(
+      range.min,
+      Math.min(range.max, currentValue + step),
+    );
 
     // Update parameter
     (this as any)[paramName] = newValue;
@@ -500,7 +527,8 @@ export class LimiterPlugin extends BasePlugin {
 
     // Update peak hold decay
     const now = Date.now();
-    if (now - this.peakHoldTimer > 2000) { // 2 second hold
+    if (now - this.peakHoldTimer > 2000) {
+      // 2 second hold
       this.peakHold = Math.max(-Infinity, this.peakHold - 0.5);
     }
   }
@@ -516,7 +544,7 @@ export class LimiterPlugin extends BasePlugin {
     const height = this.grMeterCanvas.height / dpr;
 
     // Clear
-    this.grMeterCtx.fillStyle = '#2a2a2a';
+    this.grMeterCtx.fillStyle = "#2a2a2a";
     this.grMeterCtx.fillRect(0, 0, width, height);
 
     // Draw horizontal gain reduction bar
@@ -524,18 +552,23 @@ export class LimiterPlugin extends BasePlugin {
       const grWidth = (Math.abs(this.currentGainReduction) / 30) * (width - 20);
 
       // Gradient from green to red (left to right)
-      const gradient = this.grMeterCtx.createLinearGradient(10, 0, width - 10, 0);
-      gradient.addColorStop(0, '#22c55e');
-      gradient.addColorStop(0.3, '#eab308');
-      gradient.addColorStop(0.6, '#f59e0b');
-      gradient.addColorStop(1, '#ef4444');
+      const gradient = this.grMeterCtx.createLinearGradient(
+        10,
+        0,
+        width - 10,
+        0,
+      );
+      gradient.addColorStop(0, "#22c55e");
+      gradient.addColorStop(0.3, "#eab308");
+      gradient.addColorStop(0.6, "#f59e0b");
+      gradient.addColorStop(1, "#ef4444");
 
       this.grMeterCtx.fillStyle = gradient;
       this.grMeterCtx.fillRect(10, 2, grWidth, height - 4);
     }
 
     // Update numeric display
-    const grValue = this.container?.querySelector('.gr-value') as HTMLElement;
+    const grValue = this.container?.querySelector(".gr-value") as HTMLElement;
     if (grValue) {
       grValue.textContent = `${Math.abs(this.currentGainReduction).toFixed(1)} dB`;
     }
@@ -552,30 +585,35 @@ export class LimiterPlugin extends BasePlugin {
     const height = this.peakMeterCanvas.height / dpr;
 
     // Clear
-    this.peakMeterCtx.fillStyle = '#2a2a2a';
+    this.peakMeterCtx.fillStyle = "#2a2a2a";
     this.peakMeterCtx.fillRect(0, 0, width, height);
 
     // Draw horizontal peak bar (-12 to 0 dB)
     if (this.currentPeak > -Infinity) {
-      const peakNorm = Math.max(0, Math.min(1, (this.currentPeak - (-12)) / 12));
+      const peakNorm = Math.max(0, Math.min(1, (this.currentPeak - -12) / 12));
       const peakWidth = peakNorm * (width - 20);
 
       // Gradient from green to red (left to right)
-      const gradient = this.peakMeterCtx.createLinearGradient(10, 0, width - 10, 0);
-      gradient.addColorStop(0, '#22c55e');
-      gradient.addColorStop(0.6, '#eab308');
-      gradient.addColorStop(0.85, '#f59e0b');
-      gradient.addColorStop(1, '#ef4444');
+      const gradient = this.peakMeterCtx.createLinearGradient(
+        10,
+        0,
+        width - 10,
+        0,
+      );
+      gradient.addColorStop(0, "#22c55e");
+      gradient.addColorStop(0.6, "#eab308");
+      gradient.addColorStop(0.85, "#f59e0b");
+      gradient.addColorStop(1, "#ef4444");
 
       this.peakMeterCtx.fillStyle = gradient;
       this.peakMeterCtx.fillRect(10, 2, peakWidth, height - 4);
     }
 
     // Draw ceiling line (vertical)
-    const ceilingNorm = Math.max(0, Math.min(1, (this.ceiling - (-12)) / 12));
+    const ceilingNorm = Math.max(0, Math.min(1, (this.ceiling - -12) / 12));
     const ceilingX = 10 + ceilingNorm * (width - 20);
 
-    this.peakMeterCtx.strokeStyle = '#ef4444';
+    this.peakMeterCtx.strokeStyle = "#ef4444";
     this.peakMeterCtx.lineWidth = 2;
     this.peakMeterCtx.setLineDash([4, 4]);
     this.peakMeterCtx.beginPath();
@@ -585,26 +623,36 @@ export class LimiterPlugin extends BasePlugin {
     this.peakMeterCtx.setLineDash([]);
 
     // Update numeric display
-    const peakValue = this.container?.querySelector('.peak-value') as HTMLElement;
+    const peakValue = this.container?.querySelector(
+      ".peak-value",
+    ) as HTMLElement;
     if (peakValue) {
-      peakValue.textContent = this.currentPeak === -Infinity ? '-∞' : `${this.currentPeak.toFixed(1)} dB`;
+      peakValue.textContent =
+        this.currentPeak === -Infinity
+          ? "-∞"
+          : `${this.currentPeak.toFixed(1)} dB`;
     }
   }
 
   /**
    * Draw meter scale
    */
-  private drawMeterScale(ctx: CanvasRenderingContext2D, width: number, height: number, range: number, minDb: number = 0): void {
-    ctx.strokeStyle = '#404040';
+  private drawMeterScale(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    range: number,
+    minDb: number = 0,
+  ): void {
+    ctx.strokeStyle = "#404040";
     ctx.lineWidth = 1;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    ctx.font = '8px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.font = "8px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
 
-    const markers = range === 20
-      ? [0, -3, -6, -10, -15, -20]
-      : [0, -3, -6, -9, -12];
+    const markers =
+      range === 20 ? [0, -3, -6, -10, -15, -20] : [0, -3, -6, -9, -12];
 
     markers.forEach((db) => {
       const norm = (db - minDb) / range;
@@ -633,9 +681,12 @@ export class LimiterPlugin extends BasePlugin {
     }
 
     // Update peak hold display
-    const peakHoldValue = this.container?.querySelector('.peak-hold-value') as HTMLElement;
+    const peakHoldValue = this.container?.querySelector(
+      ".peak-hold-value",
+    ) as HTMLElement;
     if (peakHoldValue) {
-      peakHoldValue.textContent = this.peakHold === -Infinity ? '-∞' : `${this.peakHold.toFixed(2)} dB`;
+      peakHoldValue.textContent =
+        this.peakHold === -Infinity ? "-∞" : `${this.peakHold.toFixed(2)} dB`;
     }
 
     // Check for clipping
@@ -643,17 +694,19 @@ export class LimiterPlugin extends BasePlugin {
     this.clipping = peakDb > this.ceiling;
 
     if (this.clipping !== wasClipping) {
-      const clippingIndicator = this.container?.querySelector('.clipping-indicator');
+      const clippingIndicator = this.container?.querySelector(
+        ".clipping-indicator",
+      );
 
       if (this.clipping) {
         if (clippingIndicator) {
-          clippingIndicator.textContent = 'YES';
-          (clippingIndicator as HTMLElement).style.color = '#ef4444';
+          clippingIndicator.textContent = "YES";
+          (clippingIndicator as HTMLElement).style.color = "#ef4444";
         }
       } else {
         if (clippingIndicator) {
-          clippingIndicator.textContent = 'NO';
-          (clippingIndicator as HTMLElement).style.color = '#22c55e';
+          clippingIndicator.textContent = "NO";
+          (clippingIndicator as HTMLElement).style.color = "#22c55e";
         }
       }
     }
@@ -681,11 +734,13 @@ export class LimiterPlugin extends BasePlugin {
   /**
    * Set parameters
    */
-  setParameters(params: Partial<{
-    ceiling: number;
-    release: number;
-    lookahead: number;
-  }>): void {
+  setParameters(
+    params: Partial<{
+      ceiling: number;
+      release: number;
+      lookahead: number;
+    }>,
+  ): void {
     if (params.ceiling !== undefined) this.ceiling = params.ceiling;
     if (params.release !== undefined) this.release = params.release;
     if (params.lookahead !== undefined) this.lookahead = params.lookahead;
@@ -714,9 +769,9 @@ export class LimiterPlugin extends BasePlugin {
    */
   getShortcuts() {
     return [
-      { key: '1-3', description: 'Select parameter' },
-      { key: 'Esc', description: 'Clear selection' },
-      { key: 'Shift+←→', description: 'Adjust value' },
+      { key: "1-3", description: "Select parameter" },
+      { key: "Esc", description: "Clear selection" },
+      { key: "Shift+←→", description: "Adjust value" },
     ];
   }
 

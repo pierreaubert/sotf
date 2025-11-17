@@ -6,9 +6,9 @@ import type {
   PluginMetadata,
   PluginState,
   PluginConfig,
-} from './plugin-types';
+} from "./plugin-types";
 
-import { PluginEvent } from './plugin-types';
+import { PluginEvent } from "./plugin-types";
 
 /**
  * Base plugin class
@@ -30,7 +30,8 @@ export abstract class BasePlugin implements IPlugin {
   };
 
   // Event listeners
-  private eventListeners: Map<string, Set<(...args: any[]) => void>> = new Map();
+  private eventListeners: Map<string, Set<(...args: any[]) => void>> =
+    new Map();
 
   // Keyboard control
   protected selectedParameterIndex: number = -1;
@@ -65,12 +66,12 @@ export abstract class BasePlugin implements IPlugin {
   destroy(): void {
     // Remove keyboard handler
     if (this.keyboardHandler) {
-      document.removeEventListener('keydown', this.keyboardHandler);
+      document.removeEventListener("keydown", this.keyboardHandler);
       this.keyboardHandler = null;
     }
 
     if (this.container) {
-      this.container.innerHTML = '';
+      this.container.innerHTML = "";
       this.container = null;
     }
     this.eventListeners.clear();
@@ -99,7 +100,10 @@ export abstract class BasePlugin implements IPlugin {
     this.emit(PluginEvent.StateChanged as string, this.state, oldState);
 
     // Handle specific state changes
-    if (newState.bypassed !== undefined && newState.bypassed !== oldState.bypassed) {
+    if (
+      newState.bypassed !== undefined &&
+      newState.bypassed !== oldState.bypassed
+    ) {
       this.handleBypassChange(newState.bypassed);
     }
 
@@ -126,7 +130,10 @@ export abstract class BasePlugin implements IPlugin {
   /**
    * Handle parameter change
    */
-  protected handleParameterChange(newParams: Record<string, any>, oldParams: Record<string, any>): void {
+  protected handleParameterChange(
+    newParams: Record<string, any>,
+    oldParams: Record<string, any>,
+  ): void {
     // Find changed parameters
     const changed: Record<string, { old: any; new: any }> = {};
     for (const key in newParams) {
@@ -170,7 +177,10 @@ export abstract class BasePlugin implements IPlugin {
         try {
           callback(...args);
         } catch (error) {
-          console.error(`[Plugin ${this.metadata.name}] Error in event listener for ${event}:`, error);
+          console.error(
+            `[Plugin ${this.metadata.name}] Error in event listener for ${event}:`,
+            error,
+          );
         }
       });
     }
@@ -237,7 +247,7 @@ export abstract class BasePlugin implements IPlugin {
       for (let i = 0; i < label.length; i++) {
         const char = label[i].toLowerCase();
         // Only use letters a-z
-        if (char >= 'a' && char <= 'z' && !usedKeys.has(char)) {
+        if (char >= "a" && char <= "z" && !usedKeys.has(char)) {
           assignedKey = char;
           usedKeys.add(char);
           break;
@@ -266,9 +276,13 @@ export abstract class BasePlugin implements IPlugin {
     if (keyIndex === -1) return label;
 
     // Insert brackets around the key character
-    return label.substring(0, keyIndex) +
-           '[' + label[keyIndex] + ']' +
-           label.substring(keyIndex + 1);
+    return (
+      label.substring(0, keyIndex) +
+      "[" +
+      label[keyIndex] +
+      "]" +
+      label.substring(keyIndex + 1)
+    );
   }
 
   /**
@@ -288,13 +302,22 @@ export abstract class BasePlugin implements IPlugin {
     this.keyboardHandler = (e: KeyboardEvent) => {
       // Ignore if typing in input
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT"
+      ) {
         return;
       }
 
       // Letter keys - select parameter by assigned letter
       const lowerKey = e.key.toLowerCase();
-      if (lowerKey.length === 1 && lowerKey >= 'a' && lowerKey <= 'z' && this.keyToParamIndex[lowerKey] !== undefined) {
+      if (
+        lowerKey.length === 1 &&
+        lowerKey >= "a" &&
+        lowerKey <= "z" &&
+        this.keyToParamIndex[lowerKey] !== undefined
+      ) {
         e.preventDefault();
         this.selectParameter(this.keyToParamIndex[lowerKey]);
         return;
@@ -309,50 +332,60 @@ export abstract class BasePlugin implements IPlugin {
       }
 
       // Tab - cycle to next parameter
-      if (e.key === 'Tab' && !e.shiftKey) {
+      if (e.key === "Tab" && !e.shiftKey) {
         e.preventDefault();
         if (this.parameterOrder.length > 0) {
-          const nextIndex = (this.selectedParameterIndex + 1) % this.parameterOrder.length;
+          const nextIndex =
+            (this.selectedParameterIndex + 1) % this.parameterOrder.length;
           this.selectParameter(nextIndex);
         }
         return;
       }
 
       // Shift+Tab - cycle to previous parameter
-      if (e.key === 'Tab' && e.shiftKey) {
+      if (e.key === "Tab" && e.shiftKey) {
         e.preventDefault();
         if (this.parameterOrder.length > 0) {
-          const prevIndex = this.selectedParameterIndex <= 0
-            ? this.parameterOrder.length - 1
-            : this.selectedParameterIndex - 1;
+          const prevIndex =
+            this.selectedParameterIndex <= 0
+              ? this.parameterOrder.length - 1
+              : this.selectedParameterIndex - 1;
           this.selectParameter(prevIndex);
         }
         return;
       }
 
       // Esc - clear selection
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         this.clearParameterSelection();
         return;
       }
 
       // Shift+Up - increase selected parameter
-      if (e.key === 'ArrowUp' && e.shiftKey && this.selectedParameterIndex >= 0) {
+      if (
+        e.key === "ArrowUp" &&
+        e.shiftKey &&
+        this.selectedParameterIndex >= 0
+      ) {
         e.preventDefault();
         this.adjustSelectedParameter(1);
         return;
       }
 
       // Shift+Down - decrease selected parameter
-      if (e.key === 'ArrowDown' && e.shiftKey && this.selectedParameterIndex >= 0) {
+      if (
+        e.key === "ArrowDown" &&
+        e.shiftKey &&
+        this.selectedParameterIndex >= 0
+      ) {
         e.preventDefault();
         this.adjustSelectedParameter(-1);
         return;
       }
     };
 
-    document.addEventListener('keydown', this.keyboardHandler);
+    document.addEventListener("keydown", this.keyboardHandler);
   }
 
   /**

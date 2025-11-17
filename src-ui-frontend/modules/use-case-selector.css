@@ -34,7 +34,9 @@
 
 .use-case-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.15), 0 0px 0 1px rgba(10, 10, 10, 0.02);
+  box-shadow:
+    0 0.5em 1em -0.125em rgba(10, 10, 10, 0.15),
+    0 0px 0 1px rgba(10, 10, 10, 0.02);
   border-color: hsl(217, 71%, 53%);
 }
 
@@ -49,7 +51,9 @@
     hsl(0, 0%, 100%) 0%,
     hsla(217, 71%, 53%, 0.08) 100%
   );
-  box-shadow: 0 0.5em 1em -0.125em hsla(217, 71%, 53%, 0.3), 0 0px 0 1px hsla(217, 71%, 53%, 0.02);
+  box-shadow:
+    0 0.5em 1em -0.125em hsla(217, 71%, 53%, 0.3),
+    0 0px 0 1px hsla(217, 71%, 53%, 0.02);
 }
 
 .use-case-card.is-primary .use-case-card-icon {
@@ -57,7 +61,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 hsla(217, 71%, 53%, 0.7);
   }

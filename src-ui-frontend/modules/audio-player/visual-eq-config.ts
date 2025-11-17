@@ -129,7 +129,10 @@ export class VisualEQConfig {
     );
     this.eqTableContainer = this.container.querySelector(".eq-table-container");
 
-    console.log("[EQ Debug] Playback options container:", this.playbackOptionsContainer);
+    console.log(
+      "[EQ Debug] Playback options container:",
+      this.playbackOptionsContainer,
+    );
     console.log("[EQ Debug] EQ table container:", this.eqTableContainer);
   }
 

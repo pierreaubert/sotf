@@ -29,8 +29,8 @@ export class ShortcutsModal {
    * Create and return the modal HTML element
    */
   createModal(): HTMLElement {
-    const modal = document.createElement('div');
-    modal.className = 'modal shortcuts-modal';
+    const modal = document.createElement("div");
+    modal.className = "modal shortcuts-modal";
     modal.innerHTML = this.generateModalHTML();
     this.modalElement = modal;
     this.attachEventListeners();
@@ -41,9 +41,11 @@ export class ShortcutsModal {
    * Generate modal HTML using Bulma tags
    */
   private generateModalHTML(): string {
-    const pluginName = this.config.pluginName || 'Plugin';
-    const hasPluginShortcuts = this.config.pluginShortcuts && this.config.pluginShortcuts.length > 0;
-    const hasHostShortcuts = this.config.hostShortcuts && this.config.hostShortcuts.length > 0;
+    const pluginName = this.config.pluginName || "Plugin";
+    const hasPluginShortcuts =
+      this.config.pluginShortcuts && this.config.pluginShortcuts.length > 0;
+    const hasHostShortcuts =
+      this.config.hostShortcuts && this.config.hostShortcuts.length > 0;
 
     return `
       <div class="modal-background"></div>
@@ -54,33 +56,49 @@ export class ShortcutsModal {
         </header>
         <section class="modal-card-body">
           <div class="content">
-            ${hasPluginShortcuts ? `
+            ${
+              hasPluginShortcuts
+                ? `
               <h5 class="title is-5">${pluginName} Shortcuts</h5>
               <div class="field is-grouped is-grouped-multiline mb-5">
-                ${this.config.pluginShortcuts!.map(shortcut => `
+                ${this.config
+                  .pluginShortcuts!.map(
+                    (shortcut) => `
                   <div class="control">
                     <div class="tags has-addons">
                       <span class="tag is-dark">${this.escapeHtml(shortcut.key)}</span>
                       <span class="tag is-light">${this.escapeHtml(shortcut.description)}</span>
                     </div>
                   </div>
-                `).join('')}
+                `,
+                  )
+                  .join("")}
               </div>
-            ` : ''}
+            `
+                : ""
+            }
 
-            ${hasHostShortcuts ? `
+            ${
+              hasHostShortcuts
+                ? `
               <h5 class="title is-5">Host Shortcuts</h5>
               <div class="field is-grouped is-grouped-multiline">
-                ${this.config.hostShortcuts!.map(shortcut => `
+                ${this.config
+                  .hostShortcuts!.map(
+                    (shortcut) => `
                   <div class="control">
                     <div class="tags has-addons">
                       <span class="tag is-dark">${this.escapeHtml(shortcut.key)}</span>
                       <span class="tag is-light">${this.escapeHtml(shortcut.description)}</span>
                     </div>
                   </div>
-                `).join('')}
+                `,
+                  )
+                  .join("")}
               </div>
-            ` : ''}
+            `
+                : ""
+            }
           </div>
         </section>
         <footer class="modal-card-foot">
@@ -97,29 +115,29 @@ export class ShortcutsModal {
     if (!this.modalElement) return;
 
     // Close button
-    const closeBtn = this.modalElement.querySelector('.shortcuts-modal-close');
+    const closeBtn = this.modalElement.querySelector(".shortcuts-modal-close");
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => this.hide());
+      closeBtn.addEventListener("click", () => this.hide());
     }
 
     // Background click
-    const background = this.modalElement.querySelector('.modal-background');
+    const background = this.modalElement.querySelector(".modal-background");
     if (background) {
-      background.addEventListener('click', () => this.hide());
+      background.addEventListener("click", () => this.hide());
     }
 
     // Keyboard handlers
     this.handleKeydown = this.handleKeydown.bind(this);
-    document.addEventListener('keydown', this.handleKeydown);
+    document.addEventListener("keydown", this.handleKeydown);
   }
 
   /**
    * Handle keyboard events
    */
   private handleKeydown(e: KeyboardEvent): void {
-    if (!this.modalElement?.classList.contains('is-active')) return;
+    if (!this.modalElement?.classList.contains("is-active")) return;
 
-    if (e.key === 'Escape' || e.key === 'Enter') {
+    if (e.key === "Escape" || e.key === "Enter") {
       e.preventDefault();
       this.hide();
     }
@@ -130,7 +148,7 @@ export class ShortcutsModal {
    */
   show(): void {
     if (this.modalElement) {
-      this.modalElement.classList.add('is-active');
+      this.modalElement.classList.add("is-active");
     }
   }
 
@@ -139,7 +157,7 @@ export class ShortcutsModal {
    */
   hide(): void {
     if (this.modalElement) {
-      this.modalElement.classList.remove('is-active');
+      this.modalElement.classList.remove("is-active");
       if (this.onCloseCallback) {
         this.onCloseCallback();
       }
@@ -150,7 +168,7 @@ export class ShortcutsModal {
    * Check if modal is currently shown
    */
   isVisible(): boolean {
-    return this.modalElement?.classList.contains('is-active') ?? false;
+    return this.modalElement?.classList.contains("is-active") ?? false;
   }
 
   /**
@@ -179,7 +197,7 @@ export class ShortcutsModal {
    * Destroy the modal and clean up
    */
   destroy(): void {
-    document.removeEventListener('keydown', this.handleKeydown);
+    document.removeEventListener("keydown", this.handleKeydown);
     if (this.modalElement) {
       this.modalElement.remove();
       this.modalElement = null;
@@ -190,7 +208,7 @@ export class ShortcutsModal {
    * Escape HTML to prevent XSS
    */
   private escapeHtml(text: string): string {
-    const div = document.createElement('div');
+    const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   }

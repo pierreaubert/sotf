@@ -1,0 +1,18 @@
+{
+  "speakers": {
+    "left": "src-autoeq/tests/data/roomeq/test_speaker_left.csv",
+    "right": "src-autoeq/tests/data/roomeq/test_speaker_right.csv"
+  },
+  "optimizer": {
+    "num_filters": 3,
+    "algorithm": "nlopt:cobyla",
+    "max_iter": 100,
+    "min_freq": 20.0,
+    "max_freq": 20000.0,
+    "min_q": 0.5,
+    "max_q": 10.0,
+    "min_db": -12.0,
+    "max_db": 12.0,
+    "loss_type": "flat"
+  }
+}

@@ -88,6 +88,13 @@ path = "bin/autoeq_benchmark_speaker.rs"
 name = "download"
 path = "bin/autoeq_download_speaker.rs"
 
+[[bin]]
+name = "roomeq"
+path = "bin/roomeq.rs"
+
 [lib]
 name = "autoeq"
 path = "src/lib.rs"
+
+[dev-dependencies]
+tempfile = "3.13"

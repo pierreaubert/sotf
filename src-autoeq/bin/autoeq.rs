@@ -22,19 +22,19 @@ use std::error::Error;
 use std::path::PathBuf;
 
 // Include split modules
-#[path = "src/load.rs"]
+#[path = "autoeq/load.rs"]
 mod load;
-#[path = "src/postscore.rs"]
+#[path = "autoeq/postscore.rs"]
 mod postscore;
-#[path = "src/prescore.rs"]
+#[path = "autoeq/prescore.rs"]
 mod prescore;
-#[path = "src/qa.rs"]
+#[path = "autoeq/qa.rs"]
 mod qa;
-#[path = "src/runopt.rs"]
+#[path = "autoeq/runopt.rs"]
 mod runopt;
-#[path = "src/save.rs"]
+#[path = "autoeq/save.rs"]
 mod save;
-#[path = "src/spacing.rs"]
+#[path = "autoeq/spacing.rs"]
 mod spacing;
 
 /// Conditional println macro that only prints when not in QA mode

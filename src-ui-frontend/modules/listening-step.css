@@ -213,7 +213,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 0 rgba(87, 242, 135, 0.4);
   }
   50% {
@@ -238,7 +239,11 @@
 
 /* Tips Section */
 .listening-tips {
-  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-accent) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    var(--bg-accent) 100%
+  );
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   padding: var(--spacing-xl);

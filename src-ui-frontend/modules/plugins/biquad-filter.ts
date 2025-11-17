@@ -2,13 +2,13 @@
 // Based on audio EQ cookbook: https://webaudio.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
 
 export type FilterType =
-  | 'Peak'
-  | 'Lowshelf'
-  | 'Highshelf'
-  | 'Lowpass'
-  | 'Highpass'
-  | 'Bandpass'
-  | 'Notch';
+  | "Peak"
+  | "Lowshelf"
+  | "Highshelf"
+  | "Lowpass"
+  | "Highpass"
+  | "Bandpass"
+  | "Notch";
 
 export interface BiquadCoefficients {
   b0: number;
@@ -32,7 +32,7 @@ export class BiquadFilter {
     frequency: number,
     sampleRate: number,
     q: number,
-    gainDb: number
+    gainDb: number,
   ) {
     this.filterType = filterType;
     this.frequency = frequency;
@@ -52,10 +52,15 @@ export class BiquadFilter {
     const alpha = sinW0 / (2 * this.q);
     const A = Math.pow(10, this.gainDb / 40); // sqrt of gain in linear scale
 
-    let b0 = 0, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;
+    let b0 = 0,
+      b1 = 0,
+      b2 = 0,
+      a0 = 1,
+      a1 = 0,
+      a2 = 0;
 
     switch (this.filterType) {
-      case 'Peak': {
+      case "Peak": {
         b0 = 1 + alpha * A;
         b1 = -2 * cosW0;
         b2 = 1 - alpha * A;
@@ -65,29 +70,29 @@ export class BiquadFilter {
         break;
       }
 
-      case 'Lowshelf': {
+      case "Lowshelf": {
         const sqrtA = Math.sqrt(A);
-        b0 = A * ((A + 1) - (A - 1) * cosW0 + 2 * sqrtA * alpha);
-        b1 = 2 * A * ((A - 1) - (A + 1) * cosW0);
-        b2 = A * ((A + 1) - (A - 1) * cosW0 - 2 * sqrtA * alpha);
-        a0 = (A + 1) + (A - 1) * cosW0 + 2 * sqrtA * alpha;
-        a1 = -2 * ((A - 1) + (A + 1) * cosW0);
-        a2 = (A + 1) + (A - 1) * cosW0 - 2 * sqrtA * alpha;
+        b0 = A * (A + 1 - (A - 1) * cosW0 + 2 * sqrtA * alpha);
+        b1 = 2 * A * (A - 1 - (A + 1) * cosW0);
+        b2 = A * (A + 1 - (A - 1) * cosW0 - 2 * sqrtA * alpha);
+        a0 = A + 1 + (A - 1) * cosW0 + 2 * sqrtA * alpha;
+        a1 = -2 * (A - 1 + (A + 1) * cosW0);
+        a2 = A + 1 + (A - 1) * cosW0 - 2 * sqrtA * alpha;
         break;
       }
 
-      case 'Highshelf': {
+      case "Highshelf": {
         const sqrtA = Math.sqrt(A);
-        b0 = A * ((A + 1) + (A - 1) * cosW0 + 2 * sqrtA * alpha);
-        b1 = -2 * A * ((A - 1) + (A + 1) * cosW0);
-        b2 = A * ((A + 1) + (A - 1) * cosW0 - 2 * sqrtA * alpha);
-        a0 = (A + 1) - (A - 1) * cosW0 + 2 * sqrtA * alpha;
-        a1 = 2 * ((A - 1) - (A + 1) * cosW0);
-        a2 = (A + 1) - (A - 1) * cosW0 - 2 * sqrtA * alpha;
+        b0 = A * (A + 1 + (A - 1) * cosW0 + 2 * sqrtA * alpha);
+        b1 = -2 * A * (A - 1 + (A + 1) * cosW0);
+        b2 = A * (A + 1 + (A - 1) * cosW0 - 2 * sqrtA * alpha);
+        a0 = A + 1 - (A - 1) * cosW0 + 2 * sqrtA * alpha;
+        a1 = 2 * (A - 1 - (A + 1) * cosW0);
+        a2 = A + 1 - (A - 1) * cosW0 - 2 * sqrtA * alpha;
         break;
       }
 
-      case 'Lowpass': {
+      case "Lowpass": {
         b0 = (1 - cosW0) / 2;
         b1 = 1 - cosW0;
         b2 = (1 - cosW0) / 2;
@@ -97,7 +102,7 @@ export class BiquadFilter {
         break;
       }
 
-      case 'Highpass': {
+      case "Highpass": {
         b0 = (1 + cosW0) / 2;
         b1 = -(1 + cosW0);
         b2 = (1 + cosW0) / 2;
@@ -107,7 +112,7 @@ export class BiquadFilter {
         break;
       }
 
-      case 'Bandpass': {
+      case "Bandpass": {
         b0 = alpha;
         b1 = 0;
         b2 = -alpha;
@@ -117,7 +122,7 @@ export class BiquadFilter {
         break;
       }
 
-      case 'Notch': {
+      case "Notch": {
         b0 = 1;
         b1 = -2 * cosW0;
         b2 = 1;
@@ -166,7 +171,11 @@ export class BiquadFilter {
   /**
    * Generate logarithmically spaced frequencies
    */
-  static generateLogFrequencies(minFreq: number, maxFreq: number, numPoints: number): number[] {
+  static generateLogFrequencies(
+    minFreq: number,
+    maxFreq: number,
+    numPoints: number,
+  ): number[] {
     const logMin = Math.log10(minFreq);
     const logMax = Math.log10(maxFreq);
     const frequencies: number[] = [];

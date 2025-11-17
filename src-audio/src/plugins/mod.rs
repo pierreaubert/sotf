@@ -26,6 +26,8 @@ mod host;
 mod parameters;
 mod plugin;
 mod plugin_compressor;
+mod plugin_crossover;
+mod plugin_delay;
 mod plugin_eq;
 mod plugin_gain;
 mod plugin_gate;
@@ -35,6 +37,7 @@ mod plugin_matrix;
 mod plugin_resampler;
 mod plugin_upmixer;
 mod plugin_binaural_decoder;
+mod speaker_config;
 
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
 pub use host::{PluginHost, SharedPluginHost};
@@ -42,6 +45,8 @@ pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
+pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
+pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GatePlugin, GatePluginParams};
@@ -53,6 +58,10 @@ pub use plugin_matrix::MatrixPlugin;
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
 pub use plugin_binaural_decoder::{BinauralDecoderPlugin, BinauralDecoderParams};
+pub use speaker_config::{
+    SpeakerConfig, SpeakerPosition, calculate_panning_gain, get_available_configs,
+    get_speaker_config,
+};
 
 #[allow(unused_imports)]
 pub(crate) use analyzer_loudness_monitor::LoudnessMonitor;

@@ -1,8 +1,8 @@
 // Capture Plot Module
 // Handles frequency response plotting for capture recordings
 
-import Plotly from 'plotly.js-basic-dist-min';
-import type { RecordingResult } from './capture-tauri';
+import Plotly from "plotly.js-basic-dist-min";
+import type { RecordingResult } from "./capture-tauri";
 
 export interface PlotConfig {
   showPhase: boolean;
@@ -30,7 +30,7 @@ const DEFAULT_CONFIG: PlotConfig = {
 export function plotFrequencyResponse(
   container: HTMLElement,
   results: RecordingResult[],
-  config: Partial<PlotConfig> = {}
+  config: Partial<PlotConfig> = {},
 ): void {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
@@ -39,12 +39,12 @@ export function plotFrequencyResponse(
     x: result.frequencies,
     y: result.magnitude_db,
     name: `Channel ${result.channel + 1} (Mag)`,
-    type: 'scatter' as const,
-    mode: 'lines' as const,
+    type: "scatter" as const,
+    mode: "lines" as const,
     line: {
       width: 2,
     },
-    yaxis: 'y1',
+    yaxis: "y1",
   }));
 
   // Create phase traces if enabled
@@ -53,13 +53,13 @@ export function plotFrequencyResponse(
         x: result.frequencies,
         y: result.phase_deg,
         name: `Channel ${result.channel + 1} (Phase)`,
-        type: 'scatter' as const,
-        mode: 'lines' as const,
+        type: "scatter" as const,
+        mode: "lines" as const,
         line: {
           width: 1,
-          dash: 'dot' as const,
+          dash: "dot" as const,
         },
-        yaxis: 'y2',
+        yaxis: "y2",
       }))
     : [];
 
@@ -67,40 +67,51 @@ export function plotFrequencyResponse(
 
   const layout: Partial<Plotly.Layout> = {
     title: {
-      text: 'Frequency Response (20 Hz - 20 kHz)',
+      text: "Frequency Response (20 Hz - 20 kHz)",
     },
     showlegend: true,
     legend: {
       x: 1.05,
       y: 1,
-      xanchor: 'left',
+      xanchor: "left",
     },
     xaxis: {
       title: {
-        text: 'Frequency (Hz)',
+        text: "Frequency (Hz)",
       },
-      type: 'log',
+      type: "log",
       range: [Math.log10(cfg.minFreq), Math.log10(cfg.maxFreq)],
       tickvals: [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000],
-      ticktext: ['20', '50', '100', '200', '500', '1k', '2k', '5k', '10k', '20k'],
-      gridcolor: '#e0e0e0',
+      ticktext: [
+        "20",
+        "50",
+        "100",
+        "200",
+        "500",
+        "1k",
+        "2k",
+        "5k",
+        "10k",
+        "20k",
+      ],
+      gridcolor: "#e0e0e0",
     },
     yaxis: {
       title: {
-        text: 'Magnitude (dB)',
+        text: "Magnitude (dB)",
       },
       range: [cfg.minDb, cfg.maxDb],
-      gridcolor: '#e0e0e0',
+      gridcolor: "#e0e0e0",
     },
     ...(cfg.showPhase && {
       yaxis2: {
         title: {
-          text: 'Phase (degrees)',
+          text: "Phase (degrees)",
         },
-        overlaying: 'y',
-        side: 'right',
+        overlaying: "y",
+        side: "right",
         range: [cfg.minPhase, cfg.maxPhase],
-        gridcolor: '#f0f0f0',
+        gridcolor: "#f0f0f0",
       },
     }),
     margin: {
@@ -109,15 +120,15 @@ export function plotFrequencyResponse(
       t: 40,
       b: 60,
     },
-    plot_bgcolor: '#fafafa',
-    paper_bgcolor: '#ffffff',
-    hovermode: 'x unified',
+    plot_bgcolor: "#fafafa",
+    paper_bgcolor: "#ffffff",
+    hovermode: "x unified",
   };
 
   const plotConfig: Partial<Plotly.Config> = {
     responsive: true,
     displayModeBar: true,
-    modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+    modeBarButtonsToRemove: ["lasso2d", "select2d"],
     displaylogo: false,
   };
 
@@ -130,7 +141,7 @@ export function plotFrequencyResponse(
 export function updatePlot(
   container: HTMLElement,
   results: RecordingResult[],
-  config: Partial<PlotConfig> = {}
+  config: Partial<PlotConfig> = {},
 ): void {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 

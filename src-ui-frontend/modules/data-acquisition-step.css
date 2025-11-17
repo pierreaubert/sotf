@@ -115,7 +115,11 @@
 
 .tab-label.active {
   border-color: var(--button-primary);
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-accent) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-primary) 0%,
+    var(--bg-accent) 100%
+  );
   box-shadow: 0 2px 8px rgba(0, 123, 255, 0.2);
 }
 

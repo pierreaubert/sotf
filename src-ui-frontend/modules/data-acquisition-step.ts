@@ -217,14 +217,14 @@ export class DataAcquisitionStep {
    * Attach event listeners
    */
   private attachEventListeners(): void {
-    console.log('[DataAcquisitionStep] attachEventListeners called');
+    console.log("[DataAcquisitionStep] attachEventListeners called");
 
     // Tab switching
-    const tabLabels = this.container.querySelectorAll('.tab-label');
-    console.log('[DataAcquisitionStep] Found', tabLabels.length, 'tab labels');
+    const tabLabels = this.container.querySelectorAll(".tab-label");
+    console.log("[DataAcquisitionStep] Found", tabLabels.length, "tab labels");
 
     tabLabels.forEach((label) => {
-      label.addEventListener('click', () => {
+      label.addEventListener("click", () => {
         const tab = (label as HTMLElement).dataset.tab as DataSource;
         this.switchTab(tab);
       });
@@ -232,9 +232,9 @@ export class DataAcquisitionStep {
 
     // Initialize capture panels immediately so they're ready
     // This ensures they exist even if the user navigates to capture tab first
-    console.log('[DataAcquisitionStep] About to call renderCapturePanel');
+    console.log("[DataAcquisitionStep] About to call renderCapturePanel");
     this.renderCapturePanel();
-    console.log('[DataAcquisitionStep] renderCapturePanel returned');
+    console.log("[DataAcquisitionStep] renderCapturePanel returned");
   }
 
   /**
@@ -244,38 +244,38 @@ export class DataAcquisitionStep {
     this.currentSource = source;
 
     // Update tab labels
-    const tabLabels = this.container.querySelectorAll('.tab-label');
+    const tabLabels = this.container.querySelectorAll(".tab-label");
     tabLabels.forEach((label) => {
       if ((label as HTMLElement).dataset.tab === source) {
-        label.classList.add('active');
+        label.classList.add("active");
       } else {
-        label.classList.remove('active');
+        label.classList.remove("active");
       }
     });
 
     // Update tab content
-    const tabContents = this.container.querySelectorAll('.tab-content');
+    const tabContents = this.container.querySelectorAll(".tab-content");
     tabContents.forEach((content) => {
-      content.classList.remove('active');
+      content.classList.remove("active");
     });
     const activeContent = this.container.querySelector(`#${source}_inputs`);
     if (activeContent) {
-      activeContent.classList.add('active');
+      activeContent.classList.add("active");
     }
 
     // If switching to capture tab, render the capture panel
-    if (source === 'capture') {
+    if (source === "capture") {
       this.renderCapturePanel();
     }
 
     // Update info cards
-    const infoCards = this.container.querySelectorAll('.info-card');
+    const infoCards = this.container.querySelectorAll(".info-card");
     infoCards.forEach((card) => {
-      (card as HTMLElement).style.display = 'none';
+      (card as HTMLElement).style.display = "none";
     });
     const activeInfo = this.container.querySelector(`#${source}_info`);
     if (activeInfo) {
-      (activeInfo as HTMLElement).style.display = 'block';
+      (activeInfo as HTMLElement).style.display = "block";
     }
 
     // Call callback
@@ -289,63 +289,106 @@ export class DataAcquisitionStep {
    * Creates both config and recording panels for the two-step workflow
    */
   private renderCapturePanel(): void {
-    console.log('[DataAcquisitionStep] renderCapturePanel called');
+    console.log("[DataAcquisitionStep] renderCapturePanel called");
 
     // Render config panel (Step 1)
-    const configContainer = this.container.querySelector('#capture_config_step');
-    console.log('[DataAcquisitionStep] configContainer found:', !!configContainer);
+    const configContainer = this.container.querySelector(
+      "#capture_config_step",
+    );
+    console.log(
+      "[DataAcquisitionStep] configContainer found:",
+      !!configContainer,
+    );
 
     if (configContainer) {
-      const existingPanel = configContainer.querySelector('capture-config-panel');
-      console.log('[DataAcquisitionStep] existing config panel:', !!existingPanel);
+      const existingPanel = configContainer.querySelector(
+        "capture-config-panel",
+      );
+      console.log(
+        "[DataAcquisitionStep] existing config panel:",
+        !!existingPanel,
+      );
 
       if (!existingPanel) {
-        console.log('[DataAcquisitionStep] Creating capture-config-panel element');
-        const configPanel = document.createElement('capture-config-panel');
+        console.log(
+          "[DataAcquisitionStep] Creating capture-config-panel element",
+        );
+        const configPanel = document.createElement("capture-config-panel");
         configContainer.appendChild(configPanel);
-        console.log('[DataAcquisitionStep] capture-config-panel appended to DOM');
+        console.log(
+          "[DataAcquisitionStep] capture-config-panel appended to DOM",
+        );
 
         // Listen for config completion
-        configPanel.addEventListener('captureConfigComplete', ((event: CustomEvent) => {
-          console.log('[DataAcquisitionStep] Config complete:', event.detail);
-          this.switchCaptureStep('recording', event.detail.config);
+        configPanel.addEventListener("captureConfigComplete", ((
+          event: CustomEvent,
+        ) => {
+          console.log("[DataAcquisitionStep] Config complete:", event.detail);
+          this.switchCaptureStep("recording", event.detail.config);
         }) as EventListener);
       }
     } else {
-      console.error('[DataAcquisitionStep] ERROR: Could not find #capture_config_step container!');
+      console.error(
+        "[DataAcquisitionStep] ERROR: Could not find #capture_config_step container!",
+      );
     }
 
     // Render recording panel (Step 2)
-    const recordingContainer = this.container.querySelector('#capture_recording_step');
-    console.log('[DataAcquisitionStep] recordingContainer found:', !!recordingContainer);
+    const recordingContainer = this.container.querySelector(
+      "#capture_recording_step",
+    );
+    console.log(
+      "[DataAcquisitionStep] recordingContainer found:",
+      !!recordingContainer,
+    );
 
     if (recordingContainer) {
-      const existingPanel = recordingContainer.querySelector('capture-recording-panel');
-      console.log('[DataAcquisitionStep] existing recording panel:', !!existingPanel);
+      const existingPanel = recordingContainer.querySelector(
+        "capture-recording-panel",
+      );
+      console.log(
+        "[DataAcquisitionStep] existing recording panel:",
+        !!existingPanel,
+      );
 
       if (!existingPanel) {
-        console.log('[DataAcquisitionStep] Creating capture-recording-panel element');
-        const recordingPanel = document.createElement('capture-recording-panel');
+        console.log(
+          "[DataAcquisitionStep] Creating capture-recording-panel element",
+        );
+        const recordingPanel = document.createElement(
+          "capture-recording-panel",
+        );
         recordingContainer.appendChild(recordingPanel);
-        console.log('[DataAcquisitionStep] capture-recording-panel appended to DOM');
+        console.log(
+          "[DataAcquisitionStep] capture-recording-panel appended to DOM",
+        );
 
         // Listen for recording completion
-        recordingPanel.addEventListener('captureRecordingComplete', ((event: CustomEvent) => {
-          console.log('[DataAcquisitionStep] Recording complete:', event.detail);
+        recordingPanel.addEventListener("captureRecordingComplete", ((
+          event: CustomEvent,
+        ) => {
+          console.log(
+            "[DataAcquisitionStep] Recording complete:",
+            event.detail,
+          );
           // Notify parent that data is ready
           if (this.config.onDataReady) {
-            this.config.onDataReady('capture');
+            this.config.onDataReady("capture");
           }
         }) as EventListener);
 
         // Listen for previous button click - go back to config step
-        recordingPanel.addEventListener('captureNavigatePrevious', () => {
-          console.log('[DataAcquisitionStep] Navigate to previous capture step');
-          this.switchCaptureStep('config');
+        recordingPanel.addEventListener("captureNavigatePrevious", () => {
+          console.log(
+            "[DataAcquisitionStep] Navigate to previous capture step",
+          );
+          this.switchCaptureStep("config");
         });
       }
     } else {
-      console.error('[DataAcquisitionStep] ERROR: Could not find #capture_recording_step container!');
+      console.error(
+        "[DataAcquisitionStep] ERROR: Could not find #capture_recording_step container!",
+      );
     }
   }
 
@@ -356,25 +399,29 @@ export class DataAcquisitionStep {
     this.currentCaptureStep = step;
 
     // Hide all steps
-    const steps = this.container.querySelectorAll('.capture-step');
-    steps.forEach(s => s.classList.remove('active'));
+    const steps = this.container.querySelectorAll(".capture-step");
+    steps.forEach((s) => s.classList.remove("active"));
 
     // Show the target step
     const targetStep = this.container.querySelector(`[data-step="${step}"]`);
     if (targetStep) {
-      targetStep.classList.add('active');
+      targetStep.classList.add("active");
     }
 
     // If switching to recording step, pass config to recording panel
-    if (step === 'recording' && config) {
-      const recordingPanel = this.container.querySelector('capture-recording-panel') as any;
+    if (step === "recording" && config) {
+      const recordingPanel = this.container.querySelector(
+        "capture-recording-panel",
+      ) as any;
       if (recordingPanel) {
         // Set the full config
         recordingPanel.setConfig(config);
 
         // Extract channel names from groups
         if (config.playback?.channelGroups) {
-          const channelNames = config.playback.channelGroups.map((g: any) => g.name);
+          const channelNames = config.playback.channelGroups.map(
+            (g: any) => g.name,
+          );
           recordingPanel.setChannels(config.playback.channels, channelNames);
         }
       }

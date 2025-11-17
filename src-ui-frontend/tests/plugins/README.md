@@ -5,6 +5,7 @@ Comprehensive test suite for the plugin system to catch regressions and ensure s
 ## Test Coverage
 
 ### 1. BasePlugin Tests (`plugin-base.test.ts`)
+
 Tests the core plugin base class functionality:
 
 - **Initialization**: Container setup, config application, keyboard control setup
@@ -24,6 +25,7 @@ Tests the core plugin base class functionality:
 **Status**: ✅ All passing
 
 ### 2. PluginHost Tests (`plugin-host.test.ts`)
+
 Tests the plugin host container functionality:
 
 - **Initialization**: Default and custom configurations
@@ -45,12 +47,14 @@ Tests the plugin host container functionality:
 **Status**: ⚠️ 8 tests failing (DOM interaction edge cases)
 
 **Known Issues**:
+
 - Drag-and-drop simulation needs enhancement
 - Help bar element queries need adjustment
 - Modal dialog cleanup timing issues
 - Keyboard event propagation in test environment
 
 ### 3. Plugin Integration Tests (`plugin-integration.test.ts`)
+
 End-to-end integration tests covering:
 
 - **Complete Plugin Lifecycle**: Add → Select → Configure → Remove
@@ -86,11 +90,13 @@ End-to-end integration tests covering:
 ## Test Execution
 
 ### Run All Plugin Tests
+
 ```bash
 npm run test -- tests/plugins/
 ```
 
 ### Run Specific Test File
+
 ```bash
 npm run test -- tests/plugins/plugin-base.test.ts
 npm run test -- tests/plugins/plugin-host.test.ts
@@ -98,11 +104,13 @@ npm run test -- tests/plugins/plugin-integration.test.ts
 ```
 
 ### Run with Verbose Output
+
 ```bash
 npm run test -- --reporter=verbose tests/plugins/
 ```
 
 ### Run with Coverage
+
 ```bash
 npm run test:coverage -- tests/plugins/
 ```
@@ -122,17 +130,20 @@ This test suite is designed to catch regressions in:
 ## Test Strategy
 
 ### Unit Tests
+
 - Focus on individual plugin and host functionality
 - Mock dependencies (canvas, Plotly, Tauri)
 - Test isolated behaviors
 
 ### Integration Tests
+
 - Test real plugin instances (EQ, Compressor, Limiter, Upmixer, Spectrum)
 - Verify inter-plugin communication
 - Test complete user workflows
 - Catch regressions in end-to-end scenarios
 
 ### Regression Tests
+
 - Specific tests for previously reported bugs:
   - Plugins not appearing in bar after adding
   - Drag-and-drop not working
@@ -158,7 +169,9 @@ This test suite is designed to catch regressions in:
 **Errors**: 2 (Plotly async errors, non-blocking)
 
 ### Failing Tests
+
 All 8 failing tests are in `plugin-host.test.ts` and relate to:
+
 - DOM event simulation (drag-and-drop)
 - Element query timing (help bar, modal)
 - Keyboard event propagation
@@ -204,21 +217,25 @@ When adding new plugins or features:
 ## Debugging Tests
 
 ### View Detailed Errors
+
 ```bash
 npm run test -- tests/plugins/ --reporter=verbose
 ```
 
 ### Run Single Test
+
 ```bash
 npm run test -- tests/plugins/plugin-base.test.ts -t "should assign unique keys"
 ```
 
 ### Watch Mode
+
 ```bash
 npm run test:watch -- tests/plugins/
 ```
 
 ### Debug in VS Code
+
 Add breakpoint and use "JavaScript Debug Terminal"
 
 ## Test Maintenance

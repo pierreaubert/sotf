@@ -1,9 +1,9 @@
 // Basic EQ Host
 // Preconfigured plugin host with just an EQ
 
-import { PluginHost, type HostConfig, type HostCallbacks } from './host';
-import { EQPlugin } from './plugin-eq';
-import type { IPlugin } from './plugin-types';
+import { PluginHost, type HostConfig, type HostCallbacks } from "./host";
+import { EQPlugin } from "./plugin-eq";
+import type { IPlugin } from "./plugin-types";
 
 /**
  * Basic EQ Host
@@ -16,17 +16,17 @@ export class BasicEQ {
   constructor(container: HTMLElement, callbacks: HostCallbacks = {}) {
     // Configure host with minimal UI for just EQ
     const config: HostConfig = {
-      name: 'Basic EQ',
-      allowedPlugins: ['eq'],     // Only EQ plugin
-      maxPlugins: 1,              // Fixed: just EQ
-      showLevelMeters: true,      // Show level meters
-      showLUFS: true,             // Show LUFS meter
-      showVolumeControl: true,    // Show volume control
+      name: "Basic EQ",
+      allowedPlugins: ["eq"], // Only EQ plugin
+      maxPlugins: 1, // Fixed: just EQ
+      showLevelMeters: true, // Show level meters
+      showLUFS: true, // Show LUFS meter
+      showVolumeControl: true, // Show volume control
       menubarConfig: {
         showName: true,
         showPresets: true,
-        showMatrix: true,         // Show matrix routing
-        showMuteSolo: true,       // Show mute/solo controls
+        showMatrix: true, // Show matrix routing
+        showMuteSolo: true, // Show mute/solo controls
       },
     };
 

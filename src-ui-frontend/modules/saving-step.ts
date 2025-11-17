@@ -1,7 +1,12 @@
 // Saving Step Component
 // Export EQ settings and measurement data
 
-export type ExportFormat = "apo" | "aupreset" | "rme-channel" | "rme-room" | "csv";
+export type ExportFormat =
+  | "apo"
+  | "aupreset"
+  | "rme-channel"
+  | "rme-room"
+  | "csv";
 
 export interface SavingStepConfig {
   onStartNew?: () => void;
@@ -234,46 +239,50 @@ export class SavingStep {
    */
   private attachEventListeners(): void {
     // Export buttons
-    const exportBtns = this.container.querySelectorAll('.export-btn[data-format]');
+    const exportBtns = this.container.querySelectorAll(
+      ".export-btn[data-format]",
+    );
     exportBtns.forEach((btn) => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener("click", () => {
         const format = (btn as HTMLElement).dataset.format as ExportFormat;
         this.handleExport(format);
       });
     });
 
     // Download all button
-    const downloadAllBtn = this.container.querySelector('#download_all_btn');
+    const downloadAllBtn = this.container.querySelector("#download_all_btn");
     if (downloadAllBtn) {
-      downloadAllBtn.addEventListener('click', () => this.handleDownloadAll());
+      downloadAllBtn.addEventListener("click", () => this.handleDownloadAll());
     }
 
     // Additional options
-    const saveProjectBtn = this.container.querySelector('#save_project_btn');
+    const saveProjectBtn = this.container.querySelector("#save_project_btn");
     if (saveProjectBtn) {
-      saveProjectBtn.addEventListener('click', () => this.handleSaveProject());
+      saveProjectBtn.addEventListener("click", () => this.handleSaveProject());
     }
 
-    const shareResultsBtn = this.container.querySelector('#share_results_btn');
+    const shareResultsBtn = this.container.querySelector("#share_results_btn");
     if (shareResultsBtn) {
-      shareResultsBtn.addEventListener('click', () => this.handleShareResults());
+      shareResultsBtn.addEventListener("click", () =>
+        this.handleShareResults(),
+      );
     }
 
-    const printReportBtn = this.container.querySelector('#print_report_btn');
+    const printReportBtn = this.container.querySelector("#print_report_btn");
     if (printReportBtn) {
-      printReportBtn.addEventListener('click', () => this.handlePrintReport());
+      printReportBtn.addEventListener("click", () => this.handlePrintReport());
     }
 
     // Start new button
-    const startNewBtn = this.container.querySelector('#start_new_btn');
+    const startNewBtn = this.container.querySelector("#start_new_btn");
     if (startNewBtn) {
-      startNewBtn.addEventListener('click', () => this.handleStartNew());
+      startNewBtn.addEventListener("click", () => this.handleStartNew());
     }
 
     // Back button
-    const backBtn = this.container.querySelector('#back_to_listening_btn');
+    const backBtn = this.container.querySelector("#back_to_listening_btn");
     if (backBtn) {
-      backBtn.addEventListener('click', () => {
+      backBtn.addEventListener("click", () => {
         if ((window as any).demo?.navigator) {
           (window as any).demo.navigator.goToStep(4);
         }
@@ -291,15 +300,17 @@ export class SavingStep {
     this.exportedFormats.add(format);
 
     // Update UI
-    const card = this.container.querySelector(`.export-card[data-format="${format}"]`);
+    const card = this.container.querySelector(
+      `.export-card[data-format="${format}"]`,
+    );
     if (card) {
-      const btn = card.querySelector('.export-btn') as HTMLButtonElement;
-      const status = card.querySelector('.export-status') as HTMLElement;
+      const btn = card.querySelector(".export-btn") as HTMLButtonElement;
+      const status = card.querySelector(".export-status") as HTMLElement;
 
       if (btn && status) {
-        btn.style.display = 'none';
-        status.style.display = 'inline-block';
-        card.classList.add('exported');
+        btn.style.display = "none";
+        status.style.display = "inline-block";
+        card.classList.add("exported");
       }
     }
 
@@ -311,11 +322,17 @@ export class SavingStep {
    * Handle download all formats
    */
   private handleDownloadAll(): void {
-    console.log('📦 Downloading all formats...');
+    console.log("📦 Downloading all formats...");
 
     // Export all formats
-    const formats: ExportFormat[] = ['apo', 'aupreset', 'rme-channel', 'rme-room', 'csv'];
-    formats.forEach(format => {
+    const formats: ExportFormat[] = [
+      "apo",
+      "aupreset",
+      "rme-channel",
+      "rme-room",
+      "csv",
+    ];
+    formats.forEach((format) => {
       if (!this.exportedFormats.has(format)) {
         this.handleExport(format);
       }
@@ -323,8 +340,8 @@ export class SavingStep {
 
     // Mock ZIP download
     setTimeout(() => {
-      this.mockDownload('eq_optimized_all.zip');
-      alert('✅ All formats exported successfully!');
+      this.mockDownload("eq_optimized_all.zip");
+      alert("✅ All formats exported successfully!");
     }, 500);
   }
 
@@ -332,21 +349,23 @@ export class SavingStep {
    * Handle save project
    */
   private handleSaveProject(): void {
-    console.log('💾 Saving project...');
-    this.mockDownload('eq_project.json');
-    alert('✅ Project saved! You can load it later to continue working.');
+    console.log("💾 Saving project...");
+    this.mockDownload("eq_project.json");
+    alert("✅ Project saved! You can load it later to continue working.");
   }
 
   /**
    * Handle share results
    */
   private handleShareResults(): void {
-    console.log('🔗 Generating share link...');
-    const mockLink = 'https://autoeq.app/share/abc123def456';
+    console.log("🔗 Generating share link...");
+    const mockLink = "https://autoeq.app/share/abc123def456";
 
     // Mock copy to clipboard
     setTimeout(() => {
-      alert(`🔗 Share link copied to clipboard!\n\n${mockLink}\n\nAnyone with this link can view your optimization results.`);
+      alert(
+        `🔗 Share link copied to clipboard!\n\n${mockLink}\n\nAnyone with this link can view your optimization results.`,
+      );
     }, 300);
   }
 
@@ -354,9 +373,9 @@ export class SavingStep {
    * Handle print report
    */
   private handlePrintReport(): void {
-    console.log('🖨️ Generating PDF report...');
+    console.log("🖨️ Generating PDF report...");
     setTimeout(() => {
-      this.mockDownload('eq_optimization_report.pdf');
+      this.mockDownload("eq_optimization_report.pdf");
     }, 500);
   }
 
@@ -364,8 +383,12 @@ export class SavingStep {
    * Handle start new optimization
    */
   private handleStartNew(): void {
-    if (confirm('Start a new optimization?\n\nThis will reset the current workflow.')) {
-      console.log('🔄 Starting new optimization...');
+    if (
+      confirm(
+        "Start a new optimization?\n\nThis will reset the current workflow.",
+      )
+    ) {
+      console.log("🔄 Starting new optimization...");
 
       if (this.config.onStartNew) {
         this.config.onStartNew();
@@ -378,11 +401,11 @@ export class SavingStep {
    */
   private getFileExtension(format: ExportFormat): string {
     const extensions: Record<ExportFormat, string> = {
-      'apo': 'txt',
-      'aupreset': 'aupreset',
-      'rme-channel': 'txt',
-      'rme-room': 'txt',
-      'csv': 'csv',
+      apo: "txt",
+      aupreset: "aupreset",
+      "rme-channel": "txt",
+      "rme-room": "txt",
+      csv: "csv",
     };
     return extensions[format];
   }

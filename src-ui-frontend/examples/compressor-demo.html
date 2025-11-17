@@ -1,11 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Compressor Demo</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
-    <link rel="stylesheet" href="./demo.css">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
+    />
+    <link rel="stylesheet" href="./demo.css" />
   </head>
   <body>
     <div class="demo-container">
@@ -31,11 +34,20 @@
       <div class="info">
         <h3>Parameters</h3>
         <ul>
-          <li><strong>Threshold:</strong> Level above which compression starts (dB)</li>
-          <li><strong>Ratio:</strong> Amount of compression applied (e.g., 4:1)</li>
+          <li>
+            <strong>Threshold:</strong> Level above which compression starts
+            (dB)
+          </li>
+          <li>
+            <strong>Ratio:</strong> Amount of compression applied (e.g., 4:1)
+          </li>
           <li><strong>Attack:</strong> How quickly compression engages (ms)</li>
-          <li><strong>Release:</strong> How quickly compression disengages (ms)</li>
-          <li><strong>Knee:</strong> Smoothness of the compression curve (dB)</li>
+          <li>
+            <strong>Release:</strong> How quickly compression disengages (ms)
+          </li>
+          <li>
+            <strong>Knee:</strong> Smoothness of the compression curve (dB)
+          </li>
           <li><strong>Makeup Gain:</strong> Output gain compensation (dB)</li>
         </ul>
       </div>
@@ -50,8 +62,8 @@
 
       // Configure host
       const hostConfig = {
-        name: 'Compressor Demo',
-        allowedPlugins: ['dynamics'],  // Compressor plugin has category 'dynamics'
+        name: "Compressor Demo",
+        allowedPlugins: ["dynamics"], // Compressor plugin has category 'dynamics'
         maxPlugins: 1,
         showLevelMeters: true,
         showLUFS: true,
@@ -71,7 +83,7 @@
         },
         onParameterChange: (plugin, parameter, value) => {
           console.log(
-            `Parameter changed: ${parameter.name} = ${value} in ${plugin.getName()}`
+            `Parameter changed: ${parameter.name} = ${value} in ${plugin.getName()}`,
           );
         },
       });
@@ -83,7 +95,10 @@
 
       // Log info
       console.log("Compressor demo initialized");
-      console.log("Plugins:", host.getPlugins().map(p => p.metadata.name));
+      console.log(
+        "Plugins:",
+        host.getPlugins().map((p) => p.metadata.name),
+      );
     </script>
   </body>
 </html>

@@ -1,0 +1,22 @@
+{
+  "speakers": {
+    "left": {
+      "path": "measurements/left_speaker.csv"
+    },
+    "right": {
+      "path": "measurements/right_speaker.csv"
+    }
+  },
+  "optimizer": {
+    "loss_type": "flat",
+    "algorithm": "cobyla",
+    "num_filters": 10,
+    "min_q": 0.5,
+    "max_q": 10.0,
+    "min_db": -12.0,
+    "max_db": 12.0,
+    "min_freq": 20.0,
+    "max_freq": 20000.0,
+    "max_iter": 10000
+  }
+}

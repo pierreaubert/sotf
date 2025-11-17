@@ -204,13 +204,16 @@ fn run_playback_thread(
             .cloned()
             // Then try partial match
             .or_else(|| {
-                devices.iter().find(|d| {
-                    if let Ok(name) = d.name() {
-                        name.to_lowercase().contains(&target_pattern)
-                    } else {
-                        false
-                    }
-                }).cloned()
+                devices
+                    .iter()
+                    .find(|d| {
+                        if let Ok(name) = d.name() {
+                            name.to_lowercase().contains(&target_pattern)
+                        } else {
+                            false
+                        }
+                    })
+                    .cloned()
             });
 
         match found_device {

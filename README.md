@@ -70,6 +70,42 @@ A small set of functions and constants used by the other crates but you are unli
 
 This backend take care of all the Audio activities (from recording to playing). It also provides support for IIR filters, SPL computations etc
 
+#### Microphone Compensation
+
+When recording measurements with `sotf_recorder`, you can compensate for your microphone's non-flat frequency response using `--microphone-compensation`:
+
+```bash
+./target/release/sotf_recorder \
+  --signal sweep \
+  --duration 10 \
+  --microphone-compensation mic_calibration.txt
+```
+
+**Supported formats:**
+- **CSV** (`.csv`): Comma-separated with optional header
+  ```csv
+  frequency_hz,spl_db
+  1000,3.0
+  8000,2.0
+  ```
+- **TXT** (`.txt`): Auto-detects separator (comma, tab, or space)
+  ```
+  1000 3.0
+  8000,2.0
+  ```
+
+**TXT format features:**
+- **Auto-detects separator** per line: comma, tab, or space
+- **Skips non-numeric lines** (headers, notes, etc.)
+- **Ignores comments** starting with `#`
+- **Handles mixed formats** in the same file
+
+**How it works:**
+1. **Pre-compensation (sweeps)**: The playback signal is shaped to cancel the mic's response
+2. **Post-compensation (all signals)**: The CSV output is corrected after recording
+
+See example files: `mic_calibration_example.csv` and `mic_calibration_example.txt`
+
 ### src-hal
 
 This crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
@@ -78,11 +114,15 @@ This crate builds a HAL (Audio Driver on MacOS) such that you can redirect all y
 
 This crate allows you to configure the above driver and is conveniently available from the menubar.
 
-### src-ui-frontend
+### src-convexhull3d
 
-The UI frontend :) Nothing special here, just a boring UI.
+This crate computes a convex hull in 3d. This will be used (possibly) for HRTF optimisation.
 
 ### src-tauri
 
-The Tauri backend for the frontend. Noting special here, just a wrapper around src-ui-backend.
+The Tauri backend for the frontend. Noting special here, just a wrapper around src-audio and src-autoeq.
+
+### src-ui-frontend
+
+The UI frontend :) Nothing special here, just a boring UI.
 

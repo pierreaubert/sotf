@@ -74,6 +74,11 @@ struct Cli {
     /// Second amplitude (0.0-1.0, for two-tone signal)
     #[arg(long)]
     amp2: Option<f32>,
+
+    /// Microphone compensation file (freq/SPL pairs in CSV format)
+    /// When provided, inverse compensation is applied to the CSV output
+    #[arg(long)]
+    microphone_compensation: Option<String>,
 }
 
 fn main() {
@@ -120,6 +125,7 @@ fn main() {
         cli.amp,
         cli.amp1,
         cli.amp2,
+        cli.microphone_compensation,
     ) {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -234,6 +240,7 @@ pub fn record_signal(
     amp: Option<f32>,
     amp1: Option<f32>,
     amp2: Option<f32>,
+    microphone_compensation: Option<String>,
 ) -> Result<(), String> {
     use sotf_audio::signal_recorder::*;
 
@@ -347,7 +354,7 @@ pub fn record_signal(
     // Generate the base signal
     let total_recordings = send_to_channels.len(); // One recording per send/record pair
     println!("[1/{}] Generating signal...", total_recordings + 2);
-    let base_signal = generate_signal(signal_type, &params, duration, sample_rate)?;
+    let mut base_signal = generate_signal(signal_type, &params, duration, sample_rate)?;
 
     // Validate that the signal is mono (Vec<f32> represents mono)
     // All our signal generation functions return mono signals
@@ -355,6 +362,39 @@ pub fn record_signal(
         "  ✓ Generated mono signal with {} samples",
         base_signal.len()
     );
+
+    // Apply pre-compensation if provided (for sweeps only)
+    if let Some(ref comp_path) = microphone_compensation {
+        use sotf_audio::signal_analysis::MicrophoneCompensation;
+        use std::path::Path;
+
+        println!("\n  Loading microphone compensation for playback pre-compensation...");
+        let compensation = MicrophoneCompensation::from_file(Path::new(comp_path))?;
+
+        // Only apply to sweeps - other signal types don't have well-defined instantaneous frequency
+        if signal_type == SignalType::Sweep {
+            let start_freq = start_freq.unwrap_or(5.0);
+            let end_freq = end_freq.unwrap_or(22000.0);
+
+            println!(
+                "  Applying inverse microphone compensation to sweep ({} Hz - {} Hz)...",
+                start_freq, end_freq
+            );
+            println!("  This pre-compensates the playback signal so the microphone records flat");
+
+            // Apply inverse compensation: boost where mic is weak, cut where mic is loud
+            base_signal =
+                compensation.apply_to_sweep(&base_signal, start_freq, end_freq, sample_rate, true);
+
+            println!("  ✓ Applied pre-compensation to playback signal");
+        } else {
+            println!(
+                "  Note: Pre-compensation only supported for sweep signals (got {})",
+                signal_type.as_str()
+            );
+            println!("  Post-compensation will still be applied to CSV output");
+        }
+    }
 
     // Prepare mono signal with fades and padding
     println!("\n[2/{}] Preparing mono signal...", total_recordings + 2);
@@ -408,9 +448,10 @@ pub fn record_signal(
             &prepared_signal, // Use the prepared mono signal for analysis
             sample_rate,
             &csv_path,
-            send_ch,           // Output channel
-            record_ch,         // Input channel
-            device.as_deref(), // Optional device name
+            send_ch,                            // Output channel
+            record_ch,                          // Input channel
+            device.as_deref(),                  // Optional device name
+            microphone_compensation.as_deref(), // Optional microphone compensation file
         )?;
 
         println!("  ✓ Recording complete");

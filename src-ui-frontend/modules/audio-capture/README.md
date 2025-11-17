@@ -35,7 +35,7 @@ The capture panel is embedded directly in the Data Acquisition step:
 import "@audio-capture/capture-panel";
 
 // Render the component
-const capturePanel = document.createElement('capture-panel');
+const capturePanel = document.createElement("capture-panel");
 container.appendChild(capturePanel);
 ```
 
@@ -57,7 +57,9 @@ export function generateCaptureModal(): string {
 ## Components
 
 ### capture-panel.ts
+
 Custom element that renders the complete capture interface including:
+
 - Input/output device selectors
 - Volume controls
 - Calibration file loader
@@ -67,7 +69,9 @@ Custom element that renders the complete capture interface including:
 - Control buttons (Start, Stop, Export)
 
 ### capture-modal-manager.ts
+
 Manages the capture panel functionality:
+
 - Device enumeration
 - Audio recording
 - Signal playback
@@ -79,6 +83,7 @@ Manages the capture panel functionality:
 ## Migration Notes
 
 ### Before (String Templates)
+
 ```typescript
 // templates.ts
 export function generateCapturePanel(): string {
@@ -90,15 +95,18 @@ container.innerHTML = generateCapturePanel();
 ```
 
 ### After (Web Component)
+
 ```typescript
 // capture-panel.ts
 export class CapturePanel extends HTMLElement {
-  render() { /* HTML template */ }
+  render() {
+    /* HTML template */
+  }
 }
 
 // Usage
 import "@audio-capture/capture-panel";
-const panel = document.createElement('capture-panel');
+const panel = document.createElement("capture-panel");
 container.appendChild(panel);
 ```
 
@@ -123,6 +131,7 @@ container.appendChild(panel);
 ## Styling
 
 All styles are defined in `styles.css` and `audio-capture/styles.css`:
+
 - `.capture-panel` - Main container
 - `.capture-panel-body` - Content area
 - `.capture-controls-block` - Control groups

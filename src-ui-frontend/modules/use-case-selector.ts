@@ -1,7 +1,12 @@
 // Use Case Selector Component
 // Large icon-based selector for choosing the optimization workflow
 
-export type UseCase = "file" | "speaker" | "headphone" | "capture" | "play-music";
+export type UseCase =
+  | "file"
+  | "speaker"
+  | "headphone"
+  | "capture"
+  | "play-music";
 
 export interface UseCaseOption {
   id: UseCase;
@@ -24,14 +29,16 @@ export class UseCaseSelector {
     {
       id: "play-music",
       title: "Play Music",
-      description: "Jump straight to the audio player to test and listen to music",
+      description:
+        "Jump straight to the audio player to test and listen to music",
       icon: `<circle cx="12" cy="12" r="10"></circle>
              <polygon points="10 8 16 12 10 16 10 8"></polygon>`,
     },
     {
       id: "speaker",
       title: "Speaker",
-      description: "Optimize speakers using online measurements from spinorama.org",
+      description:
+        "Optimize speakers using online measurements from spinorama.org",
       icon: `<rect width="16" height="20" x="4" y="2" rx="2"></rect>
              <path d="M12 6h.01"></path>
              <circle cx="12" cy="14" r="4"></circle>
@@ -47,7 +54,8 @@ export class UseCaseSelector {
     {
       id: "capture",
       title: "Microphone Capture",
-      description: "Measure your device live using a microphone and test signals",
+      description:
+        "Measure your device live using a microphone and test signals",
       icon: `<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
              <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
              <line x1="12" y1="19" x2="12" y2="23"></line>
@@ -152,7 +160,10 @@ export class UseCaseSelector {
 
       // Add keyboard support
       card.addEventListener("keypress", (e) => {
-        if ((e as KeyboardEvent).key === "Enter" || (e as KeyboardEvent).key === " ") {
+        if (
+          (e as KeyboardEvent).key === "Enter" ||
+          (e as KeyboardEvent).key === " "
+        ) {
           const useCaseId = (card as HTMLElement).dataset.useCase as UseCase;
           this.selectUseCase(useCaseId);
         }

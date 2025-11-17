@@ -1,0 +1,29 @@
+# Example microphone calibration file for sotf_recorder
+# Format: frequency_hz,spl_db
+# SPL deviation: positive = mic reads louder than actual, negative = mic reads quieter
+#
+# This file represents the microphone's frequency response deviation from flat.
+# When used with --microphone-compensation, the inverse is applied to measurements:
+#   true_spl = measured_spl - mic_deviation
+#
+# Example data: a microphone with typical response characteristics
+# - Slight roll-off below 100 Hz (-2 dB at 20 Hz)
+# - Flat from 100-5000 Hz
+# - Presence peak at 8 kHz (+3 dB)
+# - Roll-off above 15 kHz
+frequency_hz,spl_db
+20,-2.0
+50,-1.0
+100,0.0
+200,0.0
+500,0.0
+1000,0.0
+2000,0.0
+4000,0.0
+5000,0.5
+6000,1.0
+8000,3.0
+10000,2.0
+12000,1.0
+15000,0.0
+20000,-1.0

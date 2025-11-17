@@ -1,11 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Channel Strip Demo</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
-    <link rel="stylesheet" href="./demo.css">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
+    />
+    <link rel="stylesheet" href="./demo.css" />
   </head>
   <body>
     <div class="demo-container-wide">
@@ -14,9 +17,10 @@
       <div class="description">
         <p>
           <strong>ChannelStrip</strong> is a preconfigured plugin host that
-          contains a complete audio processing chain: <strong>EQ → Compressor → Limiter</strong>.
-          This is a standard setup used in professional audio production for vocals,
-          instruments, and mastering.
+          contains a complete audio processing chain:
+          <strong>EQ → Compressor → Limiter</strong>. This is a standard setup
+          used in professional audio production for vocals, instruments, and
+          mastering.
         </p>
         <div class="plugin-chain">
           <div class="plugin-box">EQ</div>
@@ -76,23 +80,43 @@ limiter.setRelease(50);</code></pre>
 
         <h3>Features</h3>
         <ul>
-          <li><strong>EQ</strong>: Parametric equalizer with visual frequency response</li>
-          <li><strong>Compressor</strong>: Dynamic range compression with threshold, ratio, attack, and release controls</li>
+          <li>
+            <strong>EQ</strong>: Parametric equalizer with visual frequency
+            response
+          </li>
+          <li>
+            <strong>Compressor</strong>: Dynamic range compression with
+            threshold, ratio, attack, and release controls
+          </li>
           <li><strong>Limiter</strong>: Peak limiting to prevent clipping</li>
-          <li><strong>Level Meters</strong>: Input/Output monitoring with 6-channel support</li>
-          <li><strong>LUFS Metering</strong>: Momentary, short-term, and integrated loudness</li>
+          <li>
+            <strong>Level Meters</strong>: Input/Output monitoring with
+            6-channel support
+          </li>
+          <li>
+            <strong>LUFS Metering</strong>: Momentary, short-term, and
+            integrated loudness
+          </li>
           <li><strong>Volume Control</strong>: Master output level</li>
-          <li><strong>Presets</strong>: Save and load complete channel strip configurations</li>
+          <li>
+            <strong>Presets</strong>: Save and load complete channel strip
+            configurations
+          </li>
         </ul>
 
         <h3>Plugin Order</h3>
-        <p>
-          The plugins are arranged in the standard mastering order:
-        </p>
+        <p>The plugins are arranged in the standard mastering order:</p>
         <ol>
-          <li><strong>EQ</strong> – Shape the frequency response before dynamics processing</li>
-          <li><strong>Compressor</strong> – Control dynamic range and add punch</li>
-          <li><strong>Limiter</strong> – Catch peaks and maximize loudness safely</li>
+          <li>
+            <strong>EQ</strong> – Shape the frequency response before dynamics
+            processing
+          </li>
+          <li>
+            <strong>Compressor</strong> – Control dynamic range and add punch
+          </li>
+          <li>
+            <strong>Limiter</strong> – Catch peaks and maximize loudness safely
+          </li>
         </ol>
       </div>
     </div>
@@ -170,8 +194,18 @@ limiter.setRelease(50);</code></pre>
       // limiter.setRelease(100);
 
       // Log info
-      console.log("ChannelStrip initialized with", channelStrip.getPlugins().length, "plugins");
-      console.log("Plugin chain:", channelStrip.getPlugins().map(p => p.metadata.name).join(" → "));
+      console.log(
+        "ChannelStrip initialized with",
+        channelStrip.getPlugins().length,
+        "plugins",
+      );
+      console.log(
+        "Plugin chain:",
+        channelStrip
+          .getPlugins()
+          .map((p) => p.metadata.name)
+          .join(" → "),
+      );
     </script>
   </body>
 </html>

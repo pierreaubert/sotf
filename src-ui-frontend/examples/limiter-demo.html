@@ -1,11 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Limiter Demo</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css">
-    <link rel="stylesheet" href="./demo.css">
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css"
+    />
+    <link rel="stylesheet" href="./demo.css" />
   </head>
   <body>
     <div class="demo-container">
@@ -19,8 +22,8 @@
           the output stays within safe levels.
         </p>
         <p>
-          This demo shows the limiter plugin hosted in a simple plugin host
-          with level meters, LUFS monitoring, and volume control.
+          This demo shows the limiter plugin hosted in a simple plugin host with
+          level meters, LUFS monitoring, and volume control.
         </p>
       </div>
 
@@ -32,9 +35,14 @@
         <h3>Parameters</h3>
         <ul>
           <li><strong>Threshold:</strong> Maximum output level (dB)</li>
-          <li><strong>Release:</strong> How quickly the limiter recovers (ms)</li>
+          <li>
+            <strong>Release:</strong> How quickly the limiter recovers (ms)
+          </li>
           <li><strong>Ceiling:</strong> Absolute maximum output level (dB)</li>
-          <li><strong>Attack:</strong> Look-ahead time for transparent limiting (ms)</li>
+          <li>
+            <strong>Attack:</strong> Look-ahead time for transparent limiting
+            (ms)
+          </li>
         </ul>
         <h3>Use Cases</h3>
         <ul>
@@ -54,8 +62,8 @@
 
       // Configure host
       const hostConfig = {
-        name: 'Limiter Demo',
-        allowedPlugins: ['dynamics'],  // Limiter plugin has category 'dynamics'
+        name: "Limiter Demo",
+        allowedPlugins: ["dynamics"], // Limiter plugin has category 'dynamics'
         maxPlugins: 1,
         showLevelMeters: true,
         showLUFS: true,
@@ -75,7 +83,7 @@
         },
         onParameterChange: (plugin, parameter, value) => {
           console.log(
-            `Parameter changed: ${parameter.name} = ${value} in ${plugin.getName()}`
+            `Parameter changed: ${parameter.name} = ${value} in ${plugin.getName()}`,
           );
         },
       });
@@ -87,7 +95,10 @@
 
       // Log info
       console.log("Limiter demo initialized");
-      console.log("Plugins:", host.getPlugins().map(p => p.metadata.name));
+      console.log(
+        "Plugins:",
+        host.getPlugins().map((p) => p.metadata.name),
+      );
     </script>
   </body>
 </html>

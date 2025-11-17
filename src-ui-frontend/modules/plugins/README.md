@@ -11,7 +11,9 @@ The plugin system provides a flexible architecture for creating and managing aud
 ### Core Components
 
 #### 1. **Type System** (`plugin-types.ts`)
+
 Defines interfaces and types for the entire plugin system:
+
 - `IPlugin`: Base interface all plugins implement
 - `PluginMetadata`: Plugin identification and info
 - `PluginState`: Plugin state management
@@ -19,13 +21,16 @@ Defines interfaces and types for the entire plugin system:
 - `LevelMeterData`, `LUFSMeterData`: Metering data structures
 
 #### 2. **Base Plugin** (`plugin-base.ts`)
+
 Abstract base class providing common functionality:
+
 - State management
 - Event system (on/off/emit)
 - Parameter handling
 - Bypass/enable control
 
 Plugins extend `BasePlugin` and implement:
+
 ```typescript
 render(standalone: boolean): void
 ```
@@ -33,12 +38,14 @@ render(standalone: boolean): void
 #### 3. **Reusable Components**
 
 **LevelMeter** (`level-meter.ts`)
+
 - Vertical level meter with peak hold
 - Configurable channels, labels, dB range
 - Gradient coloring (green → yellow → red)
 - Used by Host and Upmixer
 
 **PluginMenubar** (`plugin-menubar.ts`)
+
 - Shared menubar across all plugins
 - Features:
   - Name display
@@ -51,9 +58,11 @@ render(standalone: boolean): void
 ### Plugin Host System
 
 #### **PluginHost** (`host.ts`)
+
 Container for managing multiple plugins:
 
 **Structure:**
+
 ```
 ┌─────────────────────────────────────────────┐
 │ Menubar (Name, Presets, Matrix, M/S)       │
@@ -70,6 +79,7 @@ Container for managing multiple plugins:
 ```
 
 **Features:**
+
 - Plugin slot management (add/remove)
 - Active plugin selection and display
 - LUFS metering (Momentary, Short-term, Integrated)
@@ -78,6 +88,7 @@ Container for managing multiple plugins:
 - Preset system integration
 
 **Usage:**
+
 ```typescript
 import { PluginHost } from './plugins';
 
@@ -103,12 +114,15 @@ host.updateLUFS({ momentary: -12.3, shortTerm: -14.5, integrated: -16.2 });
 ```
 
 #### **ChannelStrip** (`host-channel-strip.ts`)
+
 Preconfigured host with fixed plugin chain:
+
 - EQ → Compressor → Limiter
 - Fixed 3-plugin configuration
 - Optimized for channel processing workflow
 
 **Usage:**
+
 ```typescript
 import { ChannelStrip } from './plugins';
 
@@ -123,9 +137,11 @@ eqPlugin.setFilters([...]);
 ### Available Plugins
 
 #### 1. **EQ Plugin** (`plugin-eq.ts`)
+
 Visual parametric equalizer with interactive frequency response.
 
 **Features:**
+
 - Visual frequency response graph (20Hz - 20kHz)
 - Interactive filter handles (drag to adjust)
 - Filter table for precise editing
@@ -142,11 +158,12 @@ Visual parametric equalizer with interactive frequency response.
 - Real-time response computation via Tauri backend
 
 **Usage:**
+
 ```typescript
-import { EQPlugin } from './plugins';
+import { EQPlugin } from "./plugins";
 
 const eq = new EQPlugin();
-const container = document.getElementById('eq-container')!;
+const container = document.getElementById("eq-container")!;
 
 // Standalone mode (with menubar)
 eq.initialize(container, { standalone: true });
@@ -156,29 +173,38 @@ eq.initialize(container, { standalone: false });
 
 // Set filters
 eq.setFilters([
-  { filter_type: 'Peak', frequency: 100, q: 1.0, gain: 3.0, enabled: true },
-  { filter_type: 'Highshelf', frequency: 10000, q: 0.7, gain: -2.0, enabled: true },
+  { filter_type: "Peak", frequency: 100, q: 1.0, gain: 3.0, enabled: true },
+  {
+    filter_type: "Highshelf",
+    frequency: 10000,
+    q: 0.7,
+    gain: -2.0,
+    enabled: true,
+  },
 ]);
 
 // Get filters
 const filters = eq.getFilters();
 
 // Listen to changes
-eq.on('parameterChanged', (changes) => {
-  console.log('Parameters changed:', changes);
+eq.on("parameterChanged", (changes) => {
+  console.log("Parameters changed:", changes);
 });
 ```
 
 **Graph Interaction:**
+
 - **Click & drag handles**: Adjust frequency (horizontal) and gain (vertical)
 - **Q bar width**: Visual indication of filter bandwidth
 - **Selected filter**: Highlighted in green with selection ring
 - **Table editing**: Precise numeric input for all parameters
 
 #### 2. **Upmixer Plugin** (`plugin-upmixer.ts`)
+
 Stereo (2ch) to 5.0 surround upmixer with level metering.
 
 **Layout:**
+
 ```
 ┌──────┬────────────────────┬────────────────────────┐
 │ L  R │                    │ L  R  C  LFE  SL  SR  │
@@ -192,6 +218,7 @@ Stereo (2ch) to 5.0 surround upmixer with level metering.
 ```
 
 **Features:**
+
 - Input meters: L, R (stereo input)
 - Output meters: L, R, C, LFE, SL, SR (5.1 output)
 - Channel groups with mute/solo:
@@ -206,6 +233,7 @@ Stereo (2ch) to 5.0 surround upmixer with level metering.
   - Crossfeed Amount (0-100%)
 
 **Usage:**
+
 ```typescript
 import { UpmixerPlugin } from './plugins';
 
@@ -234,6 +262,7 @@ upmixer.on('groupMuteChange', ({ group, muted }) => {
 ```
 
 **Mute/Solo Behavior:**
+
 - **Mute**: Silences the channel group
 - **Solo**: Only this group plays (others are implicitly muted)
 - Solo takes precedence over mute
@@ -261,6 +290,7 @@ src-ui-frontend/styles/
 ## Styling
 
 All plugin components are styled in `styles/plugins.css` with:
+
 - Dark theme optimized (respects CSS variables)
 - Consistent spacing and typography
 - Responsive design
@@ -268,8 +298,9 @@ All plugin components are styled in `styles/plugins.css` with:
 - Smooth transitions
 
 Import in your main CSS or component:
+
 ```css
-@import './plugins.css';
+@import "./plugins.css";
 ```
 
 ## Future Extensions
@@ -312,16 +343,17 @@ Import in your main CSS or component:
 ### Creating a New Plugin
 
 1. **Define Plugin Class**
+
 ```typescript
-import { BasePlugin } from './plugin-base';
-import type { PluginMetadata } from './plugin-types';
+import { BasePlugin } from "./plugin-base";
+import type { PluginMetadata } from "./plugin-types";
 
 export class MyPlugin extends BasePlugin {
   public readonly metadata: PluginMetadata = {
-    id: 'my-plugin',
-    name: 'My Plugin',
-    category: 'utility',
-    version: '1.0.0',
+    id: "my-plugin",
+    name: "My Plugin",
+    category: "utility",
+    version: "1.0.0",
   };
 
   render(standalone: boolean): void {
@@ -331,6 +363,7 @@ export class MyPlugin extends BasePlugin {
 ```
 
 2. **Implement Render Method**
+
 ```typescript
 render(standalone: boolean): void {
   if (!this.container) return;
@@ -354,22 +387,25 @@ render(standalone: boolean): void {
 ```
 
 3. **Handle Parameters**
+
 ```typescript
 // Update parameter
-this.updateParameter('paramName', value);
+this.updateParameter("paramName", value);
 
 // Listen to changes
-this.on('parameterChanged', (changes) => {
+this.on("parameterChanged", (changes) => {
   // React to changes
 });
 ```
 
 4. **Export in index.ts**
+
 ```typescript
-export { MyPlugin } from './plugin-my';
+export { MyPlugin } from "./plugin-my";
 ```
 
 5. **Add Styling in plugins.css**
+
 ```css
 .my-plugin {
   /* Plugin styles */
@@ -379,6 +415,7 @@ export { MyPlugin } from './plugin-my';
 ## Integration Examples
 
 ### Standalone Plugin
+
 ```typescript
 import { EQPlugin } from './plugins';
 
@@ -397,11 +434,12 @@ eq.initialize(container, {
 ```
 
 ### Plugin in Host
+
 ```typescript
-import { PluginHost, EQPlugin, UpmixerPlugin } from './plugins';
+import { PluginHost, EQPlugin, UpmixerPlugin } from "./plugins";
 
 const host = new PluginHost(container, {
-  name: 'Master Bus',
+  name: "Master Bus",
   showLevelMeters: true,
   showLUFS: true,
 });
@@ -415,6 +453,7 @@ host.selectPlugin(eq);
 ```
 
 ### Channel Strip (Preconfigured)
+
 ```typescript
 import { ChannelStrip } from './plugins';
 
