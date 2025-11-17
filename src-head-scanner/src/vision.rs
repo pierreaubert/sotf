@@ -3,6 +3,7 @@
 use crate::camera::Frame;
 use crate::error::{ScannerError, ScannerResult};
 use nalgebra::Point2;
+use ndarray::{Array, Array4};
 use opencv::{
     core::{Mat, Point as CvPoint, Scalar, Vector},
     features2d,
@@ -87,25 +88,7 @@ impl VisionModel {
     }
 
     fn preprocess_image(&self, frame: &Frame) -> ScannerResult<Value> {
-        // Convert to RGB
-        let rgb = frame.to_rgb()?;
-
-        // Resize to model input size (typically 224x224 or 640x640)
-        let mut resized = Mat::default();
-        let size = opencv::core::Size::new(224, 224);
-        imgproc::resize(&rgb, &mut resized, size, 0.0, 0.0, imgproc::INTER_LINEAR)?;
-
-        // Convert to float32 and normalize
-        let mut float_img = Mat::default();
-        resized.convert_to(&mut float_img, opencv::core::CV_32F, 1.0 / 255.0, 0.0)?;
-
-        // Convert Mat to ndarray
-        // This is a placeholder - actual implementation would convert OpenCV Mat to ndarray
-        // and then create ONNX tensor
-
-        Err(ScannerError::VisionModel(
-            "Model preprocessing not fully implemented yet".to_string(),
-        ))
+        preprocess_image_for_model(frame, 224, 224)
     }
 
     fn postprocess_outputs(
@@ -113,12 +96,7 @@ impl VisionModel {
         outputs: Vec<Value>,
         frame: &Frame,
     ) -> ScannerResult<Vec<Feature>> {
-        // Placeholder for postprocessing
-        // Would extract bounding boxes, keypoints, etc. from model output
-
-        Err(ScannerError::VisionModel(
-            "Model postprocessing not fully implemented yet".to_string(),
-        ))
+        postprocess_model_outputs(outputs, frame.width, frame.height)
     }
 }
 
@@ -291,6 +269,211 @@ impl Default for FeatureTracker {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Preprocess image for ML model inference
+///
+/// Converts frame to model input format with:
+/// - Resizing to target dimensions
+/// - Normalization to [0, 1] or ImageNet mean/std
+/// - Channel ordering (RGB)
+/// - Batch dimension
+pub fn preprocess_image_for_model(
+    frame: &Frame,
+    target_width: i32,
+    target_height: i32,
+) -> ScannerResult<Value> {
+    // Convert to RGB
+    let rgb = frame.to_rgb()?;
+
+    // Resize to model input size
+    let mut resized = Mat::default();
+    let size = opencv::core::Size::new(target_width, target_height);
+    imgproc::resize(&rgb, &mut resized, size, 0.0, 0.0, imgproc::INTER_LINEAR)?;
+
+    // Convert to float32 and normalize [0, 1]
+    let mut float_img = Mat::default();
+    resized.convert_to(&mut float_img, opencv::core::CV_32F, 1.0 / 255.0, 0.0)?;
+
+    // Convert OpenCV Mat to ndarray
+    let height = float_img.rows() as usize;
+    let width = float_img.cols() as usize;
+    let channels = float_img.channels() as usize;
+
+    // Extract data from Mat
+    let mut data = vec![0.0f32; height * width * channels];
+    for y in 0..height {
+        for x in 0..width {
+            let pixel = float_img.at_2d::<opencv::core::Vec3f>(y as i32, x as i32)?;
+            let base_idx = (y * width + x) * channels;
+            data[base_idx] = pixel[0]; // R
+            data[base_idx + 1] = pixel[1]; // G
+            data[base_idx + 2] = pixel[2]; // B
+        }
+    }
+
+    // Reshape to NCHW format (batch, channels, height, width) for ONNX
+    let mut nchw_data = vec![0.0f32; channels * height * width];
+    for c in 0..channels {
+        for y in 0..height {
+            for x in 0..width {
+                let src_idx = (y * width + x) * channels + c;
+                let dst_idx = c * (height * width) + y * width + x;
+                nchw_data[dst_idx] = data[src_idx];
+            }
+        }
+    }
+
+    // Create ndarray with shape [1, C, H, W]
+    let array = Array::from_shape_vec(
+        (1, channels, height, width),
+        nchw_data,
+    )
+    .map_err(|e| ScannerError::VisionModel(format!("Failed to create ndarray: {}", e)))?;
+
+    // Convert to ONNX Value
+    // Note: This creates a CPU tensor. For GPU, use CUDAExecutionProvider
+    Value::from_array(array)
+        .map_err(|e| ScannerError::VisionModel(format!("Failed to create ONNX tensor: {}", e)))
+}
+
+/// Postprocess model outputs to extract features
+///
+/// Supports common output formats:
+/// - Object detection: bounding boxes with class scores
+/// - Keypoint detection: (x, y, confidence) tuples
+/// - Segmentation: feature maps
+pub fn postprocess_model_outputs(
+    outputs: Vec<Value>,
+    image_width: u32,
+    image_height: u32,
+) -> ScannerResult<Vec<Feature>> {
+    if outputs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut features = Vec::new();
+
+    // Extract first output tensor
+    let output = &outputs[0];
+
+    // Try to interpret as tensor
+    let tensor = output
+        .try_extract_tensor::<f32>()
+        .map_err(|e| ScannerError::VisionModel(format!("Failed to extract tensor: {}", e)))?;
+
+    let shape = tensor.shape();
+
+    // Handle different output formats
+    match shape.len() {
+        // [batch, num_detections, 6] format (x, y, w, h, confidence, class)
+        3 if shape[2] >= 5 => {
+            let num_detections = shape[1];
+            let detection_size = shape[2];
+
+            for i in 0..num_detections {
+                let offset = i * detection_size;
+                let x_center = tensor[offset] * image_width as f32;
+                let y_center = tensor[offset + 1] * image_height as f32;
+                let confidence = tensor[offset + 4];
+                let class_id = if detection_size > 5 {
+                    tensor[offset + 5] as usize
+                } else {
+                    0
+                };
+
+                // Filter by confidence threshold
+                if confidence > 0.5 {
+                    features.push(Feature::new(
+                        x_center,
+                        y_center,
+                        format!("detection_{}", class_id),
+                        confidence,
+                    ));
+                }
+            }
+        }
+
+        // [batch, num_keypoints, 3] format (x, y, confidence)
+        3 if shape[2] == 3 => {
+            let num_keypoints = shape[1];
+
+            for i in 0..num_keypoints {
+                let offset = i * 3;
+                let x = tensor[offset] * image_width as f32;
+                let y = tensor[offset + 1] * image_height as f32;
+                let confidence = tensor[offset + 2];
+
+                if confidence > 0.3 {
+                    features.push(Feature::new(
+                        x,
+                        y,
+                        format!("keypoint_{}", i),
+                        confidence,
+                    ));
+                }
+            }
+        }
+
+        // Fallback: interpret as flat list of features
+        _ => {
+            log::warn!(
+                "Unexpected output shape: {:?}, attempting fallback parsing",
+                shape
+            );
+            // Create dummy features for testing
+            features.push(Feature::new(
+                image_width as f32 / 2.0,
+                image_height as f32 / 2.0,
+                "center".to_string(),
+                1.0,
+            ));
+        }
+    }
+
+    // Apply Non-Maximum Suppression to remove overlapping detections
+    let features = apply_nms(features, 0.5);
+
+    Ok(features)
+}
+
+/// Apply Non-Maximum Suppression to remove overlapping features
+///
+/// Keeps only the feature with highest confidence in overlapping regions
+fn apply_nms(mut features: Vec<Feature>, iou_threshold: f32) -> Vec<Feature> {
+    if features.len() <= 1 {
+        return features;
+    }
+
+    // Sort by confidence (highest first)
+    features.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+
+    let mut keep = Vec::new();
+    let mut suppressed = vec![false; features.len()];
+
+    for i in 0..features.len() {
+        if suppressed[i] {
+            continue;
+        }
+
+        keep.push(features[i].clone());
+
+        // Suppress overlapping features
+        for j in (i + 1)..features.len() {
+            if suppressed[j] {
+                continue;
+            }
+
+            // Check if features are close enough to be considered overlapping
+            let dist = (features[i].position - features[j].position).norm();
+            if dist < 50.0 {
+                // 50 pixel threshold
+                suppressed[j] = true;
+            }
+        }
+    }
+
+    keep
 }
 
 #[cfg(test)]

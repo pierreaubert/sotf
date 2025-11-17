@@ -7,7 +7,7 @@ members = [
     "src-de",
     "src-env",
     "src-hal",
-#    "src-head-scanner",
+    "src-head-scanner",
     "src-iir",
     "src-tauri",
     "src-testfunctions",

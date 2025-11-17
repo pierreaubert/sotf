@@ -20,6 +20,9 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 parking_lot = { workspace = true }
 
+# Internal dependencies
+convexhull3d = { path = "../src-convexhull3d" }
+
 # Computer vision and image processing
 opencv = { version = "0.92", default-features = false, features = [
     "videoio",
@@ -53,3 +56,7 @@ env_logger = "0.11"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[[bench]]
+name = "performance"
+harness = false
