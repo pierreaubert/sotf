@@ -113,8 +113,9 @@ impl SofaFile {
     /// * `Ok(SofaFile)` - Successfully loaded SOFA data
     /// * `Err(String)` - Error message if loading failed
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, String> {
-        let file = netcdf::open(path.as_ref())
-            .map_err(|e| format!("Failed to open SOFA file: {}", e))?;
+        let path_ref = path.as_ref();
+        let file = netcdf::open(path_ref)
+            .map_err(|e| format!("Failed to open SOFA file '{}': {}", path_ref.display(), e))?;
 
         // Read global attributes
         let convention = Self::read_string_attr(&file, "SOFAConventions")?;

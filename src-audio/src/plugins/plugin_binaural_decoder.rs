@@ -223,6 +223,7 @@ pub struct BinauralDecoderPlugin {
 
     /// Temporary buffers (reused to avoid allocations)
     temp_input_block: Vec<f32>,
+    temp_output_block: Vec<f32>,
     temp_freq_buffer: Vec<Complex<f32>>,
     temp_time_buffer: Vec<Complex<f32>>,
     window: Vec<f32>,
@@ -290,6 +291,7 @@ impl BinauralDecoderPlugin {
             next_add_position: 0,
 
             temp_input_block: vec![0.0; fft_size],
+            temp_output_block: vec![0.0; fft_size * 2], // Stereo output
             temp_freq_buffer: vec![Complex::new(0.0, 0.0); fft_size],
             temp_time_buffer: vec![Complex::new(0.0, 0.0); fft_size],
             window,
@@ -430,6 +432,10 @@ impl BinauralDecoderPlugin {
         // Process each input channel
         for ch in 0..self.input_channels {
             // 1. Extract channel data and apply window
+            // Note: For overlap-add convolution with 50% overlap and Hann window,
+            // windowing only the input (analysis window) provides perfect reconstruction.
+            // The Hann window satisfies the Constant Overlap-Add (COLA) constraint:
+            // w[n] + w[n + hop_size] = 1 for all n, ensuring no artifacts.
             for i in 0..self.fft_size {
                 let sample = input[i * self.input_channels + ch];
                 self.temp_time_buffer[i] = Complex::new(sample * self.window[i], 0.0);
@@ -510,6 +516,17 @@ impl Plugin for BinauralDecoderPlugin {
         if let Some(path) = self.sofa_path.clone() {
             self.load_sofa(path)
                 .map_err(|e| format!("Failed to load SOFA file: {}", e))?;
+
+            // Check sample rate match
+            if let Some(sofa) = &self.sofa {
+                if (sofa.sample_rate - sample_rate as f32).abs() > 1.0 {
+                    eprintln!(
+                        "[BinauralDecoder] Warning: SOFA sample rate ({} Hz) differs from engine rate ({} Hz). \
+                         This may cause incorrect spatialization. Consider resampling the SOFA file.",
+                        sofa.sample_rate, sample_rate
+                    );
+                }
+            }
         } else {
             eprintln!("[BinauralDecoder] Warning: No SOFA file specified, plugin will pass through audio");
         }
@@ -604,14 +621,14 @@ impl Plugin for BinauralDecoderPlugin {
                 }
 
                 // Process block
-                let mut output_block = vec![0.0; self.fft_size * 2];
-                self.process_fft_block(&self.temp_input_block, &mut output_block);
+                self.temp_output_block.fill(0.0);
+                self.process_fft_block(&self.temp_input_block, &mut self.temp_output_block);
 
                 // Accumulate output (overlap-add)
                 for i in 0..self.fft_size {
-                    self.output_accumulator[0][self.next_add_position + i] += output_block[i * 2];
+                    self.output_accumulator[0][self.next_add_position + i] += self.temp_output_block[i * 2];
                     self.output_accumulator[1][self.next_add_position + i] +=
-                        output_block[i * 2 + 1];
+                        self.temp_output_block[i * 2 + 1];
                 }
 
                 // Update state
