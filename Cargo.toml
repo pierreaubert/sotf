@@ -9,6 +9,7 @@ members = [
     "src-audio",
     "src-tauri",
     "src-hal",
+    "src-ui-player"
     "src-head-scanner"
     "src-convexhull3d"
 ]

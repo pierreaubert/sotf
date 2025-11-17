@@ -1,0 +1,311 @@
+use crate::app::{App, InputMode, Screen};
+use crate::plugins::PluginType;
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use std::time::Duration;
+
+pub enum AppEvent {
+    Tick,
+    Key(KeyEvent),
+    Resize,
+}
+
+pub fn handle_events(timeout: Duration) -> std::io::Result<Option<AppEvent>> {
+    if event::poll(timeout)? {
+        match event::read()? {
+            Event::Key(key) if key.kind == KeyEventKind::Press => Ok(Some(AppEvent::Key(key))),
+            Event::Resize(_, _) => Ok(Some(AppEvent::Resize)),
+            _ => Ok(None),
+        }
+    } else {
+        Ok(Some(AppEvent::Tick))
+    }
+}
+
+pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match app.input_mode {
+        InputMode::Search => handle_search_mode(app, key),
+        InputMode::AddDirectory => handle_add_directory_mode(app, key),
+        InputMode::Normal => handle_normal_mode(app, key),
+    }
+}
+
+fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        // Quit
+        KeyCode::Esc | KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.should_quit = true;
+            None
+        }
+
+        // Screen switching
+        KeyCode::Char('1') => {
+            app.current_screen = Screen::Library;
+            None
+        }
+        KeyCode::Char('2') => {
+            app.current_screen = Screen::DirectoryManager;
+            None
+        }
+        KeyCode::Char('3') => {
+            app.current_screen = Screen::Queue;
+            None
+        }
+        KeyCode::Char('4') => {
+            app.current_screen = Screen::Plugins;
+            None
+        }
+
+        // Screen-specific controls
+        _ => match app.current_screen {
+            Screen::Library => handle_library_keys(app, key),
+            Screen::DirectoryManager => handle_directory_keys(app, key),
+            Screen::Queue => handle_queue_keys(app, key),
+            Screen::Plugins => handle_plugins_keys(app, key),
+        },
+    }
+}
+
+fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Char('/') => {
+            app.input_mode = InputMode::Search;
+            None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_album();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_album();
+            None
+        }
+        KeyCode::Char('a') | KeyCode::Enter => {
+            app.add_album_to_queue();
+            None
+        }
+        KeyCode::Char('q') => {
+            app.current_screen = Screen::Queue;
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Char('a') => {
+            app.input_mode = InputMode::AddDirectory;
+            app.directory_input.clear();
+            None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_directory();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_directory();
+            None
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            app.remove_selected_directory();
+            None
+        }
+        KeyCode::Char('s') => {
+            if let Err(e) = app.scan_library() {
+                log::error!("Failed to scan library: {}", e);
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_queue_item();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_queue_item();
+            None
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            app.remove_from_queue(app.selected_queue_index);
+            None
+        }
+        KeyCode::Char('c') => {
+            app.clear_queue();
+            Some(PlayerCommand::Stop)
+        }
+        KeyCode::Char('p') => {
+            // Play from start or current position
+            if app.current_queue_index.is_none() {
+                if let Some(path) = app.start_queue() {
+                    return Some(PlayerCommand::Play(path));
+                }
+            } else {
+                app.is_playing = true;
+                return Some(PlayerCommand::Resume);
+            }
+            None
+        }
+        KeyCode::Char(' ') => {
+            // Toggle pause
+            if app.is_playing {
+                app.is_playing = false;
+                Some(PlayerCommand::Pause)
+            } else {
+                app.is_playing = true;
+                Some(PlayerCommand::Resume)
+            }
+        }
+        KeyCode::Char('n') => {
+            // Next track
+            if let Some(path) = app.next_track() {
+                Some(PlayerCommand::Play(path))
+            } else {
+                app.is_playing = false;
+                Some(PlayerCommand::Stop)
+            }
+        }
+        KeyCode::Char('+') | KeyCode::Char('=') => {
+            app.increase_volume();
+            Some(PlayerCommand::SetVolume(app.volume))
+        }
+        KeyCode::Char('-') => {
+            app.decrease_volume();
+            Some(PlayerCommand::SetVolume(app.volume))
+        }
+        _ => None,
+    }
+}
+
+fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            None
+        }
+        KeyCode::Enter => {
+            app.input_mode = InputMode::Normal;
+            app.selected_album_index = 0;
+            None
+        }
+        KeyCode::Char(c) => {
+            app.search_query.push(c);
+            app.selected_album_index = 0;
+            None
+        }
+        KeyCode::Backspace => {
+            app.search_query.pop();
+            app.selected_album_index = 0;
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.directory_input.clear();
+            None
+        }
+        KeyCode::Enter => {
+            if !app.directory_input.is_empty() {
+                let path = std::path::PathBuf::from(&app.directory_input);
+                app.add_directory(path);
+                app.directory_input.clear();
+            }
+            app.input_mode = InputMode::Normal;
+            None
+        }
+        KeyCode::Char(c) => {
+            app.directory_input.push(c);
+            None
+        }
+        KeyCode::Backspace => {
+            app.directory_input.pop();
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_plugin();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_plugin();
+            None
+        }
+        KeyCode::Char('a') => {
+            // Add a plugin - cycle through available types for simplicity
+            // In a more complex UI, this could open a selection dialog
+            let plugin_types = PluginType::all();
+            // For now, add EQ by default, user can modify this behavior
+            if let Some(first_type) = plugin_types.first() {
+                app.add_plugin(first_type);
+            }
+            None
+        }
+        KeyCode::Char('t') => {
+            // Toggle plugin enabled/disabled
+            app.toggle_plugin(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            app.remove_plugin(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('u') => {
+            app.move_plugin_up(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('D') => {
+            app.move_plugin_down(app.selected_plugin_index);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('1') => {
+            // Quick add EQ
+            app.add_plugin(&PluginType::EQ);
+            None
+        }
+        KeyCode::Char('2') => {
+            // Quick add Upmixer
+            app.add_plugin(&PluginType::Upmixer);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('3') => {
+            // Quick add Compressor
+            app.add_plugin(&PluginType::Compressor);
+            None
+        }
+        KeyCode::Char('5') => {
+            // Quick add Limiter
+            app.add_plugin(&PluginType::Limiter);
+            None
+        }
+        KeyCode::Char('6') => {
+            // Quick add Loudness Compensation
+            app.add_plugin(&PluginType::LoudnessCompensation);
+            None
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PlayerCommand {
+    Play(std::path::PathBuf),
+    Pause,
+    Resume,
+    Stop,
+    SetVolume(f32),
+    UpdatePlugins,
+}

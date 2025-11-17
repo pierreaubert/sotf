@@ -1,0 +1,49 @@
+[package]
+name = "sotf-ui-player"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "TUI music player frontend for SOTF"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# TUI framework
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Audio engine
+sotf_audio = { path = "../src-audio" }
+autoeq-iir = { path = "../src-iir" }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# File system and utilities
+walkdir = "2"
+id3 = "1.14"
+metaflac = "0.2"
+symphonia = { workspace = true }
+symphonia-core = { workspace = true }
+symphonia-metadata = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Path and config
+directories = "5.0"
+
+[[bin]]
+name = "sotf_player_tui"
+path = "src/main.rs"
