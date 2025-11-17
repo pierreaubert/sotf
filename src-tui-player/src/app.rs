@@ -10,6 +10,7 @@ pub enum Screen {
     DirectoryManager,
     Queue,
     Plugins,
+    Devices,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,6 +114,7 @@ pub struct App {
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
     pub selected_output_device_index: usize,
+    pub current_output_device_name: Option<String>,
 
     // Flags
     pub should_quit: bool,
@@ -149,6 +151,7 @@ impl App {
             loudness_info: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
+            current_output_device_name: None,
             should_quit: false,
             needs_rescan: false,
         }

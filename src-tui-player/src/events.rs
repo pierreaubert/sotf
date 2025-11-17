@@ -44,6 +44,18 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
 
+        // TAB to cycle through screens
+        KeyCode::Tab => {
+            app.current_screen = match app.current_screen {
+                Screen::Library => Screen::DirectoryManager,
+                Screen::DirectoryManager => Screen::Queue,
+                Screen::Queue => Screen::Plugins,
+                Screen::Plugins => Screen::Devices,
+                Screen::Devices => Screen::Library,
+            };
+            None
+        }
+
         // Screen switching (uppercase only to avoid conflicts with screen-specific shortcuts)
         KeyCode::Char('L') => {
             app.current_screen = Screen::Library;
@@ -59,6 +71,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Char('P') => {
             app.current_screen = Screen::Plugins;
+            None
+        }
+        KeyCode::Char('O') => {
+            app.current_screen = Screen::Devices;
             None
         }
 
@@ -90,6 +106,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             Screen::DirectoryManager => handle_directory_keys(app, key),
             Screen::Queue => handle_queue_keys(app, key),
             Screen::Plugins => handle_plugins_keys(app, key),
+            Screen::Devices => handle_devices_keys(app, key),
         },
     }
 }
@@ -482,6 +499,28 @@ fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
     }
 }
 
+fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_output_device();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_output_device();
+            None
+        }
+        KeyCode::Enter | KeyCode::Char(' ') => {
+            // Apply device change
+            if let Some(device) = app.get_selected_output_device() {
+                Some(PlayerCommand::SetOutputDevice(device.name.clone()))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum PlayerCommand {
     Play(std::path::PathBuf),
@@ -490,4 +529,5 @@ pub enum PlayerCommand {
     Stop,
     SetVolume(f32),
     UpdatePlugins,
+    SetOutputDevice(String),
 }
