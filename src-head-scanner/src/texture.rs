@@ -385,11 +385,12 @@ impl TextureMapper {
         // Convert frame to RGB if needed
         let rgb = frame.to_rgb()?;
 
-        // Sample pixel (with bounds checking)
-        let pixel = rgb.at_2d::<opencv::core::Vec3b>(
-            (y % frame.height) as i32,
-            (x % frame.width) as i32,
-        )?;
+        // Clamp coordinates to frame bounds (avoid modulo wrapping which causes artifacts)
+        let clamped_x = x.min(frame.width.saturating_sub(1)) as i32;
+        let clamped_y = y.min(frame.height.saturating_sub(1)) as i32;
+
+        // Sample pixel with clamped coordinates
+        let pixel = rgb.at_2d::<opencv::core::Vec3b>(clamped_y, clamped_x)?;
 
         Ok(Rgb([pixel[2], pixel[1], pixel[0]])) // BGR to RGB
     }

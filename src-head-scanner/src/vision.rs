@@ -110,11 +110,38 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
     let gray = frame.to_gray()?;
 
     // Load Haar cascade for face detection
-    // Note: In production, these paths should be configurable
-    let face_cascade_path = "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml";
+    // Try environment variable first, then common platform paths
+    let face_cascade_path = std::env::var("OPENCV_HAARCASCADES_PATH")
+        .ok()
+        .and_then(|base| {
+            let full_path = format!("{}/haarcascade_frontalface_default.xml", base);
+            if std::path::Path::new(&full_path).exists() {
+                Some(full_path)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            // Try common installation paths
+            let paths = [
+                "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml", // Linux (opencv4)
+                "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml",  // Linux (opencv3)
+                "/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml", // macOS (opencv4)
+                "/usr/local/share/opencv/haarcascades/haarcascade_frontalface_default.xml",  // macOS (opencv3)
+                "C:/opencv/build/etc/haarcascades/haarcascade_frontalface_default.xml", // Windows
+            ];
 
-    let mut face_cascade = objdetect::CascadeClassifier::new(face_cascade_path)
-        .map_err(|e| ScannerError::VisionModel(format!("Failed to load face cascade: {}", e)))?;
+            paths.iter()
+                .find(|&&p| std::path::Path::new(p).exists())
+                .map(|&p| p.to_string())
+        })
+        .ok_or_else(|| ScannerError::VisionModel(
+            "Could not find haarcascade_frontalface_default.xml. \
+             Set OPENCV_HAARCASCADES_PATH environment variable or install OpenCV properly.".to_string()
+        ))?;
+
+    let mut face_cascade = objdetect::CascadeClassifier::new(&face_cascade_path)
+        .map_err(|e| ScannerError::VisionModel(format!("Failed to load face cascade from '{}': {}", face_cascade_path, e)))?;
 
     if face_cascade.empty() {
         return Err(ScannerError::VisionModel(
@@ -432,7 +459,10 @@ pub fn postprocess_model_outputs(
     }
 
     // Apply Non-Maximum Suppression to remove overlapping detections
-    let features = apply_nms(features, 0.5);
+    // Use 5% of image diagonal as threshold for scale-invariance
+    let image_diagonal = ((image_width * image_width + image_height * image_height) as f32).sqrt();
+    let nms_threshold = image_diagonal * 0.05; // 5% of diagonal
+    let features = apply_nms(features, nms_threshold);
 
     Ok(features)
 }
@@ -440,7 +470,16 @@ pub fn postprocess_model_outputs(
 /// Apply Non-Maximum Suppression to remove overlapping features
 ///
 /// Keeps only the feature with highest confidence in overlapping regions
-fn apply_nms(mut features: Vec<Feature>, iou_threshold: f32) -> Vec<Feature> {
+///
+/// # Arguments
+/// * `features` - Features to filter
+/// * `distance_threshold` - Maximum distance (in pixels) for features to be considered overlapping
+///
+/// # Scale Invariance
+/// The threshold should be relative to image dimensions for scale-invariance.
+/// For a 1280x720 image, 5% of diagonal ≈ 73 pixels.
+/// For a 640x480 image, 5% of diagonal ≈ 40 pixels.
+pub fn apply_nms(mut features: Vec<Feature>, distance_threshold: f32) -> Vec<Feature> {
     if features.len() <= 1 {
         return features;
     }
@@ -466,8 +505,7 @@ fn apply_nms(mut features: Vec<Feature>, iou_threshold: f32) -> Vec<Feature> {
 
             // Check if features are close enough to be considered overlapping
             let dist = (features[i].position - features[j].position).norm();
-            if dist < 50.0 {
-                // 50 pixel threshold
+            if dist < distance_threshold {
                 suppressed[j] = true;
             }
         }
