@@ -1,0 +1,51 @@
+//! 3D Convex Hull and Computational Geometry Library
+//!
+//! This library implements the Quickhull algorithm for computing 3D convex hulls,
+//! based on the C implementation by Leo McCormack.
+//!
+//! # Example
+//! ```
+//! use convexhull3d::{ConvexHull3D, Vertex};
+//!
+//! let vertices = vec![
+//!     Vertex::new(0.0, 0.0, 0.0),
+//!     Vertex::new(1.0, 0.0, 0.0),
+//!     Vertex::new(0.0, 1.0, 0.0),
+//!     Vertex::new(0.0, 0.0, 1.0),
+//! ];
+//!
+//! let hull = ConvexHull3D::build(&vertices).unwrap();
+//! println!("Number of faces: {}", hull.num_faces());
+//! ```
+
+mod types;
+mod quickhull;
+mod geometry;
+mod export;
+
+// Make testdata publicly available for tests
+pub mod testdata;
+
+pub use types::{Vertex, Face, ConvexHull3D};
+pub use export::{export_obj, export_html};
+
+/// Error types for convex hull operations
+#[derive(Debug, thiserror::Error)]
+pub enum ConvexHullError {
+    #[error("Not enough vertices to form a hull (minimum 4 required)")]
+    InsufficientVertices,
+
+    #[error("Vertices are coplanar or collinear")]
+    DegenerateConfiguration,
+
+    #[error("Maximum iterations exceeded")]
+    MaxIterationsExceeded,
+
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("Invalid face: {0}")]
+    InvalidFace(String),
+}
+
+pub type Result<T> = std::result::Result<T, ConvexHullError>;
