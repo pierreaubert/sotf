@@ -33,7 +33,8 @@ imageproc = "0.25"
 
 # 3D geometry and mesh processing
 nalgebra = "0.33"
-ncollide3d = "0.15"
+parry3d = "0.17"  # Modern replacement for deprecated ncollide3d
+bytemuck = "1.24"  # For efficient data conversion
 
 # ML inference for vision models (ONNX Runtime)
 ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries"] }

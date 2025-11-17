@@ -10,6 +10,7 @@ use opencv::{
     prelude::*,
     videoio::{self, VideoCapture, VideoCaptureTrait},
 };
+use parking_lot::Mutex;
 
 /// A frame captured from the camera
 #[derive(Debug, Clone)]
@@ -77,14 +78,11 @@ impl Frame {
 
 /// Camera interface for capturing video frames
 pub struct Camera {
-    /// OpenCV video capture device
-    capture: VideoCapture,
+    /// OpenCV video capture device (wrapped in Mutex for interior mutability)
+    capture: Mutex<VideoCapture>,
 
     /// Device index
     device_index: u32,
-
-    /// Frame counter
-    frame_count: u64,
 
     /// Start time (for timestamps)
     start_time: std::time::Instant,
@@ -118,9 +116,8 @@ impl Camera {
         let _ = capture.set(videoio::CAP_PROP_AUTOFOCUS, 1.0);
 
         Ok(Self {
-            capture,
+            capture: Mutex::new(capture),
             device_index,
-            frame_count: 0,
             start_time: std::time::Instant::now(),
         })
     }
@@ -129,10 +126,13 @@ impl Camera {
     pub fn capture_frame(&self) -> ScannerResult<Frame> {
         let mut mat = Mat::default();
 
-        // Read frame from camera
-        self.capture
-            .read(&mut mat)
-            .map_err(|e| ScannerError::Camera(format!("Failed to read frame: {}", e)))?;
+        // Read frame from camera (requires mutable access via Mutex)
+        {
+            let mut capture_guard = self.capture.lock();
+            capture_guard
+                .read(&mut mat)
+                .map_err(|e| ScannerError::Camera(format!("Failed to read frame: {}", e)))?;
+        }
 
         if mat.empty() {
             return Err(ScannerError::Camera("Captured frame is empty".to_string()));
@@ -144,17 +144,20 @@ impl Camera {
 
     /// Get the actual frame width
     pub fn get_width(&self) -> ScannerResult<u32> {
-        Ok(self.capture.get(videoio::CAP_PROP_FRAME_WIDTH)? as u32)
+        let capture = self.capture.lock();
+        Ok(capture.get(videoio::CAP_PROP_FRAME_WIDTH)? as u32)
     }
 
     /// Get the actual frame height
     pub fn get_height(&self) -> ScannerResult<u32> {
-        Ok(self.capture.get(videoio::CAP_PROP_FRAME_HEIGHT)? as u32)
+        let capture = self.capture.lock();
+        Ok(capture.get(videoio::CAP_PROP_FRAME_HEIGHT)? as u32)
     }
 
     /// Get the actual frame rate
     pub fn get_fps(&self) -> ScannerResult<u32> {
-        Ok(self.capture.get(videoio::CAP_PROP_FPS)? as u32)
+        let capture = self.capture.lock();
+        Ok(capture.get(videoio::CAP_PROP_FPS)? as u32)
     }
 
     /// Get the device index
@@ -164,12 +167,14 @@ impl Camera {
 
     /// Check if the camera is opened
     pub fn is_opened(&self) -> bool {
-        self.capture.is_opened().unwrap_or(false)
+        let capture = self.capture.lock();
+        capture.is_opened().unwrap_or(false)
     }
 
     /// Release the camera
-    pub fn release(&mut self) -> ScannerResult<()> {
-        self.capture
+    pub fn release(&self) -> ScannerResult<()> {
+        let mut capture = self.capture.lock();
+        capture
             .release()
             .map_err(|e| ScannerError::Camera(format!("Failed to release camera: {}", e)))
     }
@@ -177,6 +182,7 @@ impl Camera {
 
 impl Drop for Camera {
     fn drop(&mut self) {
+        // Release camera resources on drop
         let _ = self.release();
     }
 }

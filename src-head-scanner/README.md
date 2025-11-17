@@ -142,11 +142,50 @@ vcpkg install opencv:x64-windows
 The crate depends on:
 - **opencv** (0.92): Computer vision algorithms
 - **nalgebra** (0.33): Linear algebra and 3D math
+- **parry3d** (0.17): 3D geometry (modern replacement for deprecated ncollide3d)
 - **ort** (2.0.0-rc.10): ONNX Runtime for ML models
 - **kiddo** (4.2): k-d tree for spatial queries
-- **ndarray**: N-dimensional arrays
+- **ndarray**: N-dimensional arrays (without BLAS to reduce system dependencies)
 - **tokio**: Async runtime
 - **serde/serde_json**: Serialization
+- **parking_lot**: Efficient synchronization primitives
+
+## ⚠️ Current Status and Limitations
+
+**This crate is in early development** and contains incomplete implementations:
+
+### Known Limitations
+
+1. **Convex Hull Algorithm**: The QuickHull implementation is simplified and may not produce correct results for complex geometries. Consider using external libraries like `delaunator` for production use.
+
+2. **Structure-from-Motion (SfM)**: The 3D reconstruction pipeline uses naive depth estimation and simplified camera pose tracking. For production-quality scanning, integrate with external SfM libraries.
+
+3. **Vision Models**: ONNX model preprocessing/postprocessing is not fully implemented. The fallback uses Haar cascades for basic face detection.
+
+4. **Security**: Path validation is implemented but should be reviewed for production use. Never use this crate with untrusted user input without additional sandboxing.
+
+5. **Testing**: Test coverage is minimal. Camera tests require hardware and are disabled by default.
+
+### Recent Fixes
+
+- ✅ Fixed camera mutable borrow issue by wrapping VideoCapture in Mutex
+- ✅ Replaced deprecated `ncollide3d` with `parry3d`
+- ✅ Implemented point deduplication using k-d tree spatial filtering
+- ✅ Added path validation to prevent path traversal attacks
+- ✅ Added model path validation with existence checks
+- ✅ Improved locking strategy with explicit lock releases
+
+### TODO
+
+- [ ] Implement proper QuickHull or use existing convex hull library
+- [ ] Add bundle adjustment for SfM accuracy
+- [ ] Implement ML model preprocessing/postprocessing
+- [ ] Add comprehensive integration tests
+- [ ] Add CI/CD pipeline with OpenCV installation
+- [ ] Implement stereo camera support for better depth
+- [ ] Add texture mapping from camera frames
+- [ ] Performance profiling and optimization
+- [ ] Add examples for common use cases
 
 ## Building
 

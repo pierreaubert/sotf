@@ -166,6 +166,21 @@ impl HeadScanner {
 
         // Initialize vision model if path provided
         if let Some(ref model_path) = self.config.model_path {
+            // Validate model path for security
+            use std::path::Path;
+            let path = Path::new(model_path);
+            if model_path.contains("..") {
+                return Err(ScannerError::InvalidConfig(
+                    "Path traversal detected in model path".to_string(),
+                ));
+            }
+            if !path.exists() {
+                return Err(ScannerError::InvalidConfig(format!(
+                    "Model file does not exist: {}",
+                    model_path
+                )));
+            }
+
             let model = vision::VisionModel::load(model_path)?;
             *self.vision_model.write() = Some(model);
         }
@@ -203,10 +218,24 @@ impl HeadScanner {
                 // Add points to the point cloud
                 if state == ScanState::Scanning {
                     let points = reconstruction::features_to_points(&features, &frame)?;
-                    self.point_cloud.write().add_points(&points);
+
+                    // Deduplicate and filter points before adding
+                    let mut point_cloud = self.point_cloud.write();
+                    let filtered_points = self.filter_new_points(&point_cloud, points);
+
+                    if !filtered_points.is_empty() {
+                        point_cloud.add_points(&filtered_points);
+
+                        // Periodically downsample to control memory usage
+                        if point_cloud.len() % 1000 == 0 {
+                            point_cloud.voxel_downsample(self.config.point_density / 100.0);
+                        }
+                    }
+
+                    drop(point_cloud); // Release lock before updating coverage
 
                     // Update coverage map
-                    self.coverage.write().update(&points);
+                    self.coverage.write().update(&filtered_points);
                 }
             }
             _ => {}
@@ -274,6 +303,44 @@ impl HeadScanner {
         *self.camera.write() = None;
         *self.state.write() = ScanState::Idle;
         Ok(())
+    }
+
+    /// Filter new points to remove duplicates and points too close to existing ones
+    ///
+    /// This prevents the point cloud from growing unbounded with redundant data
+    fn filter_new_points(&self, existing_cloud: &PointCloud, new_points: Vec<pointcloud::Point>) -> Vec<pointcloud::Point> {
+        use kiddo::KdTree;
+
+        if existing_cloud.is_empty() {
+            return new_points;
+        }
+
+        // Build k-d tree from existing points for efficient nearest neighbor search
+        let mut tree: KdTree<f32, 3> = KdTree::new();
+        for (idx, point) in existing_cloud.points().iter().enumerate() {
+            let pos = point.position;
+            tree.add(&[pos.x, pos.y, pos.z], idx);
+        }
+
+        // Minimum distance threshold (in cm) - points closer than this are considered duplicates
+        let min_distance = self.config.point_density / 20.0; // e.g., 2.5mm for 50 points/cm²
+        let min_distance_sq = min_distance * min_distance;
+
+        // Filter out points that are too close to existing points
+        let mut filtered = Vec::new();
+        for point in new_points {
+            let pos = point.position;
+
+            // Find nearest existing point
+            let nearest = tree.nearest_one(&[pos.x, pos.y, pos.z]);
+
+            // Only add if far enough from existing points
+            if nearest.distance > min_distance_sq {
+                filtered.push(point);
+            }
+        }
+
+        filtered
     }
 }
 

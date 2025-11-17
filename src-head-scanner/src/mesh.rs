@@ -7,6 +7,41 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
+use std::path::Path;
+
+/// Validate and sanitize file path to prevent path traversal attacks
+fn validate_export_path(path: &str) -> ScannerResult<()> {
+    let path_obj = Path::new(path);
+
+    // Check for path traversal attempts
+    if path.contains("..") {
+        return Err(ScannerError::InvalidConfig(
+            "Path traversal detected in export path".to_string(),
+        ));
+    }
+
+    // Check for absolute paths in untrusted contexts (optional, depends on use case)
+    // For now, we allow both relative and absolute paths
+
+    // Ensure the path is valid UTF-8
+    if path_obj.to_str().is_none() {
+        return Err(ScannerError::InvalidConfig(
+            "Invalid UTF-8 in file path".to_string(),
+        ));
+    }
+
+    // Check parent directory exists (if path has a parent)
+    if let Some(parent) = path_obj.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            return Err(ScannerError::InvalidConfig(format!(
+                "Parent directory does not exist: {:?}",
+                parent
+            )));
+        }
+    }
+
+    Ok(())
+}
 
 /// A 3D vertex with position, normal, and optional texture coordinates
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,6 +258,9 @@ impl Mesh {
 
     /// Export mesh to Wavefront OBJ format
     pub fn export_obj(&self, path: &str) -> ScannerResult<()> {
+        // Validate path for security
+        validate_export_path(path)?;
+
         let mut file = File::create(path)
             .map_err(|e| ScannerError::Io(e))?;
 
@@ -305,6 +343,9 @@ impl Mesh {
 
     /// Export mesh to PLY format
     pub fn export_ply(&self, path: &str) -> ScannerResult<()> {
+        // Validate path for security
+        validate_export_path(path)?;
+
         let mut file = File::create(path)?;
 
         let has_normals = self.vertices.iter().any(|v| v.normal.is_some());
@@ -375,6 +416,9 @@ impl Mesh {
 
     /// Export mesh to STL format (binary)
     pub fn export_stl(&self, path: &str) -> ScannerResult<()> {
+        // Validate path for security
+        validate_export_path(path)?;
+
         use byteorder::{LittleEndian, WriteBytesExt};
 
         let mut file = File::create(path)?;
