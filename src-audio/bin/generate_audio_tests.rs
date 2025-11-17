@@ -77,7 +77,7 @@ impl SignalKind {
 #[command(about = "Generate audio test files for validation", long_about = None)]
 struct Cli {
     /// Output directory
-    #[arg(long, default_value = "target/test-audio")]
+    #[arg(long, default_value = "data_generated/test-audio")]
     out_dir: PathBuf,
 
     /// Number of channels (comma-separated, mono stereo 5.1 and 9.1.6)
