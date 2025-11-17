@@ -27,6 +27,17 @@ pub fn delaunay_nd(points: &[PointND]) -> Result<DelaunayMesh> {
 
     let dim = points[0].dim();
 
+    // Special case: exactly dim+1 points forms a single simplex
+    if points.len() == dim + 1 {
+        // Validate that points are affinely independent (non-degenerate)
+        if !are_affinely_independent(points) {
+            return Err(crate::ConvexHullError::DegenerateConfiguration);
+        }
+        let indices: Vec<usize> = (0..points.len()).collect();
+        let simplex = SimplexND::new(indices);
+        return Ok(DelaunayMesh::new(points.to_vec(), vec![simplex], dim));
+    }
+
     // Lift points to paraboloid
     let lifted_points: Vec<PointND> = points
         .iter()
@@ -100,6 +111,89 @@ fn compute_facet_normal_delaunay(facet: &SimplexND, points: &[PointND]) -> Vec<f
     }
 
     normal
+}
+
+/// Check if points are affinely independent (non-degenerate)
+///
+/// For d+1 points in d dimensions to form a valid simplex, they must be
+/// affinely independent (i.e., no point lies in the affine hull of the others).
+/// This is equivalent to checking that the volume is non-zero.
+fn are_affinely_independent(points: &[PointND]) -> bool {
+    const EPSILON: f64 = 1e-10;
+
+    if points.is_empty() {
+        return false;
+    }
+
+    let dim = points[0].dim();
+
+    // Need exactly dim+1 points for a d-dimensional simplex
+    if points.len() != dim + 1 {
+        return false;
+    }
+
+    // Build matrix from edge vectors
+    let base = &points[0];
+    let mut matrix: Vec<Vec<f64>> = Vec::new();
+
+    for i in 1..points.len() {
+        let edge = points[i].sub(base);
+        matrix.push(edge.coords.clone());
+    }
+
+    // Compute determinant to check if vectors are linearly independent
+    // For now, use a simple Gaussian elimination approach
+    let det = compute_determinant_gauss(&matrix);
+
+    det.abs() > EPSILON
+}
+
+/// Compute determinant using Gaussian elimination
+fn compute_determinant_gauss(matrix: &[Vec<f64>]) -> f64 {
+    if matrix.is_empty() || matrix[0].is_empty() {
+        return 0.0;
+    }
+
+    let n = matrix.len();
+
+    // Create a copy to work with
+    let mut m: Vec<Vec<f64>> = matrix.iter().map(|row| row.clone()).collect();
+
+    let mut det = 1.0;
+
+    // Forward elimination
+    for i in 0..n {
+        // Find pivot
+        let mut max_row = i;
+        for k in (i + 1)..n {
+            if m[k][i].abs() > m[max_row][i].abs() {
+                max_row = k;
+            }
+        }
+
+        // Swap rows if needed
+        if max_row != i {
+            m.swap(i, max_row);
+            det = -det;
+        }
+
+        // Check for singular matrix
+        if m[i][i].abs() < 1e-10 {
+            return 0.0;
+        }
+
+        det *= m[i][i];
+
+        // Eliminate below
+        for k in (i + 1)..n {
+            let factor = m[k][i] / m[i][i];
+            for j in i..n {
+                m[k][j] -= factor * m[i][j];
+            }
+        }
+    }
+
+    det
 }
 
 /// Helper function to compute circumcenter of a simplex (useful for Delaunay)
@@ -179,6 +273,50 @@ mod tests {
         let mesh = delaunay_nd(&points).unwrap();
         assert_eq!(mesh.dim(), 2);
         assert!(mesh.num_simplices() > 0);
+    }
+
+    #[test]
+    fn test_delaunay_2d_degenerate_collinear() {
+        // Three collinear points should be rejected as degenerate
+        let points = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0]),
+            PointND::new(vec![2.0, 0.0]),
+        ];
+
+        let result = delaunay_nd(&points);
+        assert!(result.is_err());
+        match result {
+            Err(crate::ConvexHullError::DegenerateConfiguration) => (),
+            _ => panic!("Expected DegenerateConfiguration error"),
+        }
+    }
+
+    #[test]
+    fn test_affinely_independent() {
+        // Valid triangle
+        let valid = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0]),
+            PointND::new(vec![0.0, 1.0]),
+        ];
+        assert!(are_affinely_independent(&valid));
+
+        // Collinear points (degenerate)
+        let collinear = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0]),
+            PointND::new(vec![2.0, 0.0]),
+        ];
+        assert!(!are_affinely_independent(&collinear));
+
+        // Duplicate points (degenerate)
+        let duplicate = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0]),
+            PointND::new(vec![0.0, 0.0]),
+        ];
+        assert!(!are_affinely_independent(&duplicate));
     }
 
     #[test]
