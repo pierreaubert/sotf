@@ -2799,6 +2799,19 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
+name = "hdf5-metno-sys"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de20d5ba22c244493bdfefb91d8e9de08e3e58d96a792532da5e0df545aed279"
+dependencies = [
+ "libc",
+ "libloading 0.8.9",
+ "parking_lot",
+ "pkg-config",
+ "regex",
+ "serde",
+ "serde_derive",
+ "winreg 0.52.0",
 ]
 
 [[package]]
@@ -3841,6 +3854,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "libz-sys"
+version = "1.1.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15d118bbf3771060e7311cc7bb0545b01d08a8b4a7de949198dec1fa0ca1c0f7"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4272,6 +4297,31 @@ dependencies = [
  "quote",
  "serde",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "netcdf"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73fd417ade2678f20854a4b26a183148f39eb7f9e259645a3c620d14e69d9da9"
+dependencies = [
+ "bitflags 2.10.0",
+ "libc",
+ "ndarray",
+ "netcdf-sys",
+ "semver",
+]
+
+[[package]]
+name = "netcdf-sys"
+version = "0.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fb81047c7e146ae97620a1523e5fd136d53efb2c4aaaf34222fdacad8a5913c"
+dependencies = [
+ "hdf5-metno-sys",
+ "libz-sys",
+ "parking_lot",
+ "semver",
 ]
 
 [[package]]
@@ -6905,6 +6955,7 @@ dependencies = [
  "hound",
  "libc",
  "ndarray",
+ "netcdf",
  "notify",
  "parking_lot",
  "rand 0.9.2",
@@ -9529,6 +9580,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
 dependencies = [
  "cfg-if",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "winreg"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
+dependencies = [
+ "cfg-if",
+ "serde",
  "windows-sys 0.48.0",
 ]
 

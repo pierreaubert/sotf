@@ -21,6 +21,9 @@ pub mod signals;
 
 pub mod signal_analysis;
 
+pub mod sofa;
+pub use sofa::{HrtfData, SofaFile, SourcePosition};
+
 pub mod plugins;
 pub use plugins::{
     AnalyzerData, AnalyzerPlugin, CompressorPlugin, EqPlugin, GainPlugin, GatePlugin,
