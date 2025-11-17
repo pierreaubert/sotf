@@ -32,25 +32,29 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         // Quit
-        KeyCode::Esc | KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+        KeyCode::Esc => {
+            app.should_quit = true;
+            None
+        }
+        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.should_quit = true;
             None
         }
 
-        // Screen switching
-        KeyCode::Char('1') => {
+        // Screen switching (uppercase only to avoid conflicts with screen-specific shortcuts)
+        KeyCode::Char('L') => {
             app.current_screen = Screen::Library;
             None
         }
-        KeyCode::Char('2') => {
+        KeyCode::Char('D') => {
             app.current_screen = Screen::DirectoryManager;
             None
         }
-        KeyCode::Char('3') => {
+        KeyCode::Char('Q') => {
             app.current_screen = Screen::Queue;
             None
         }
-        KeyCode::Char('4') => {
+        KeyCode::Char('P') => {
             app.current_screen = Screen::Plugins;
             None
         }
@@ -252,7 +256,7 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             if let Some(first_type) = plugin_types.first() {
                 app.add_plugin(first_type);
             }
-            None
+            Some(PlayerCommand::UpdatePlugins)
         }
         KeyCode::Char('t') => {
             // Toggle plugin enabled/disabled
@@ -263,18 +267,18 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.remove_plugin(app.selected_plugin_index);
             Some(PlayerCommand::UpdatePlugins)
         }
-        KeyCode::Char('u') => {
+        KeyCode::Char('u') | KeyCode::Char('U') => {
             app.move_plugin_up(app.selected_plugin_index);
             Some(PlayerCommand::UpdatePlugins)
         }
-        KeyCode::Char('D') => {
+        KeyCode::Char('n') | KeyCode::Char('N') => {
             app.move_plugin_down(app.selected_plugin_index);
             Some(PlayerCommand::UpdatePlugins)
         }
         KeyCode::Char('1') => {
             // Quick add EQ
             app.add_plugin(&PluginType::EQ);
-            None
+            Some(PlayerCommand::UpdatePlugins)
         }
         KeyCode::Char('2') => {
             // Quick add Upmixer
@@ -284,17 +288,17 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('3') => {
             // Quick add Compressor
             app.add_plugin(&PluginType::Compressor);
-            None
+            Some(PlayerCommand::UpdatePlugins)
         }
         KeyCode::Char('5') => {
             // Quick add Limiter
             app.add_plugin(&PluginType::Limiter);
-            None
+            Some(PlayerCommand::UpdatePlugins)
         }
         KeyCode::Char('6') => {
             // Quick add Loudness Compensation
             app.add_plugin(&PluginType::LoudnessCompensation);
-            None
+            Some(PlayerCommand::UpdatePlugins)
         }
         _ => None,
     }

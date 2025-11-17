@@ -33,7 +33,7 @@ impl ManagerThread {
             .name("manager".to_string())
             .spawn(move || {
                 if let Err(e) = run_manager_thread(config, command_rx, response_tx, state_clone) {
-                    eprintln!("[Manager Thread] Error: {}", e);
+                    log::debug!("[Manager Thread] Error: {}", e);
                 }
             })
             .map_err(|e| format!("Failed to spawn manager thread: {}", e))?;
@@ -92,12 +92,12 @@ fn run_manager_thread(
     response_tx: Sender<ManagerResponse>,
     state: Arc<Mutex<AudioEngineState>>,
 ) -> Result<(), String> {
-    eprintln!("[Manager Thread] Starting with config: {:?}", config);
+    log::debug!("[Manager Thread] Starting with config: {:?}", config);
 
     // Create bounded queues for backpressure
     // Queue capacity based on buffer_ms to provide proper flow control
     let queue_capacity = config.queue_capacity_frames();
-    eprintln!("[Manager Thread] Queue capacity: {} frames", queue_capacity);
+    log::debug!("[Manager Thread] Queue capacity: {} frames", queue_capacity);
 
     let (decoder_tx, decoder_rx) = sync_channel(queue_capacity);
     let (processing_tx, processing_rx) = sync_channel(queue_capacity);
@@ -133,7 +133,7 @@ fn run_manager_thread(
                     super::ProcessingResponse::PluginChainUpdated {
                         output_channels: ch,
                     } => {
-                        eprintln!(
+                        log::info!(
                             "[Manager Thread] Initial plugin chain loaded, output channels: {}",
                             ch
                         );
@@ -141,11 +141,11 @@ fn run_manager_thread(
                         break;
                     }
                     super::ProcessingResponse::Error(e) => {
-                        eprintln!("[Manager Thread] Failed to initialize plugin chain: {}", e);
+                        log::debug!("[Manager Thread] Failed to initialize plugin chain: {}", e);
                         break;
                     }
                     _ => {
-                        eprintln!(
+                        log::info!(
                             "[Manager Thread] Unexpected response during plugin initialization"
                         );
                         break;
@@ -166,7 +166,7 @@ fn run_manager_thread(
         config.output_channels
     };
 
-    eprintln!(
+    log::info!(
         "[Manager Thread] Creating playback thread with {} channels",
         actual_output_channels
     );
@@ -188,11 +188,11 @@ fn run_manager_thread(
     let config_watcher = if config.watch_config {
         match ConfigWatcher::new(config.config_path.clone(), true) {
             Ok(watcher) => {
-                eprintln!("[Manager Thread] Config watcher enabled");
+                log::debug!("[Manager Thread] Config watcher enabled");
                 Some(watcher)
             }
             Err(e) => {
-                eprintln!("[Manager Thread] Failed to create config watcher: {}", e);
+                log::debug!("[Manager Thread] Failed to create config watcher: {}", e);
                 None
             }
         }
@@ -200,7 +200,7 @@ fn run_manager_thread(
         None
     };
 
-    eprintln!("[Manager Thread] All threads started");
+    log::debug!("[Manager Thread] All threads started");
 
     // Main loop
     loop {
@@ -216,12 +216,12 @@ fn run_manager_thread(
             match handle_config_event(config_event, &config, &mut processing_thread, &state) {
                 Ok(should_exit) => {
                     if should_exit {
-                        eprintln!("[Manager Thread] Shutdown requested via signal");
+                        log::debug!("[Manager Thread] Shutdown requested via signal");
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("[Manager Thread] Config event error: {}", e);
+                    log::debug!("[Manager Thread] Config event error: {}", e);
                 }
             }
         }
@@ -259,19 +259,19 @@ fn run_manager_thread(
                 // No command, continue
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                eprintln!("[Manager Thread] Command channel disconnected");
+                log::debug!("[Manager Thread] Command channel disconnected");
                 break;
             }
         }
     }
 
     // Cleanup
-    eprintln!("[Manager Thread] Shutting down threads");
+    log::debug!("[Manager Thread] Shutting down threads");
     decoder_thread.shutdown();
     processing_thread.shutdown();
     playback_thread.shutdown();
 
-    eprintln!("[Manager Thread] Stopped");
+    log::debug!("[Manager Thread] Stopped");
     Ok(())
 }
 
@@ -279,12 +279,12 @@ fn run_manager_thread(
 fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>) {
     match event {
         ThreadEvent::DecoderEndOfStream => {
-            eprintln!("[Manager] Decoder end of stream");
+            log::debug!("[Manager] Decoder end of stream");
             let mut state = state.lock().unwrap();
             state.playback_state = PlaybackState::Stopped;
         }
         ThreadEvent::DecoderError(err) => {
-            eprintln!("[Manager] Decoder error: {}", err);
+            log::debug!("[Manager] Decoder error: {}", err);
             let mut state = state.lock().unwrap();
             state.playback_state = PlaybackState::Stopped;
         }
@@ -292,14 +292,14 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
             let mut state = state.lock().unwrap();
             state.underruns += 1;
             if state.underruns % 100 == 1 {
-                eprintln!("[Manager] Playback underrun (total: {})", state.underruns);
+                log::debug!("[Manager] Playback underrun (total: {})", state.underruns);
             }
         }
         ThreadEvent::ProcessingError(err) => {
-            eprintln!("[Manager] Processing error: {}", err);
+            log::debug!("[Manager] Processing error: {}", err);
         }
         ThreadEvent::ThreadPanic(thread_name) => {
-            eprintln!("[Manager] Thread panicked: {}", thread_name);
+            log::debug!("[Manager] Thread panicked: {}", thread_name);
         }
         ThreadEvent::PositionUpdate(position) => {
             let mut state = state.lock().unwrap();
@@ -318,22 +318,22 @@ fn handle_config_event(
 ) -> Result<bool, String> {
     match event {
         ConfigEvent::ConfigChanged(_) | ConfigEvent::Reload => {
-            eprintln!("[Manager] Config reload requested");
+            log::debug!("[Manager] Config reload requested");
 
             // If we have a config path, reload from file
             if let Some(config_path) = config.config_path.as_ref() {
-                eprintln!("[Manager] Reloading config from: {:?}", config_path);
+                log::debug!("[Manager] Reloading config from: {:?}", config_path);
 
                 // Load and parse config file
                 match load_config_file(config_path) {
                     Ok(new_config) => {
-                        eprintln!("[Manager] Config loaded, updating plugin chain");
+                        log::debug!("[Manager] Config loaded, updating plugin chain");
 
                         // Update plugin chain with seamless crossfade
                         if let Err(e) = processing
                             .send_command(ProcessingCommand::UpdatePlugins(new_config.plugins))
                         {
-                            eprintln!("[Manager] Failed to update plugins: {}", e);
+                            log::debug!("[Manager] Failed to update plugins: {}", e);
                         } else {
                             // Wait for response to update channel count
                             if let Some(response) = processing.try_recv_response() {
@@ -341,7 +341,7 @@ fn handle_config_event(
                                     super::ProcessingResponse::PluginChainUpdated {
                                         output_channels,
                                     } => {
-                                        eprintln!(
+                                        log::info!(
                                             "[Manager] Plugin chain updated, output channels: {}",
                                             output_channels
                                         );
@@ -360,37 +360,37 @@ fn handle_config_event(
                                         // TODO: Update playback thread channel count
                                         // (requires playback thread reference in this function)
                                         if output_channels != old_channels {
-                                            eprintln!(
+                                            log::info!(
                                                 "[Manager] Channel count changed {}→{} (playback will need restart)",
                                                 old_channels, output_channels
                                             );
                                         }
                                     }
                                     super::ProcessingResponse::Error(e) => {
-                                        eprintln!("[Manager] Plugin update error: {}", e);
+                                        log::debug!("[Manager] Plugin update error: {}", e);
                                     }
                                     _ => {
-                                        eprintln!(
+                                        log::info!(
                                             "[Manager] Unexpected response from processing thread"
                                         );
                                     }
                                 }
                             }
-                            eprintln!("[Manager] Plugin chain updated successfully");
+                            log::debug!("[Manager] Plugin chain updated successfully");
                         }
                     }
                     Err(e) => {
-                        eprintln!("[Manager] Failed to load config: {}", e);
+                        log::debug!("[Manager] Failed to load config: {}", e);
                     }
                 }
             } else {
-                eprintln!("[Manager] No config path set, ignoring reload request");
+                log::debug!("[Manager] No config path set, ignoring reload request");
             }
 
             Ok(false)
         }
         ConfigEvent::Shutdown => {
-            eprintln!("[Manager] Shutdown signal received");
+            log::debug!("[Manager] Shutdown signal received");
 
             // Update state to Stopped so applications can detect shutdown
             {
@@ -424,7 +424,7 @@ fn handle_command(
 ) -> ManagerResponse {
     match command {
         ManagerCommand::Play(path) => {
-            eprintln!("[Manager] Play: {:?}", path);
+            log::debug!("[Manager] Play: {:?}", path);
 
             // Update state
             {
@@ -442,7 +442,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::Pause => {
-            eprintln!("[Manager] Pause");
+            log::debug!("[Manager] Pause");
 
             {
                 let mut state = state.lock().unwrap();
@@ -456,7 +456,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::Resume => {
-            eprintln!("[Manager] Resume");
+            log::debug!("[Manager] Resume");
 
             {
                 let mut state = state.lock().unwrap();
@@ -470,7 +470,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::Stop => {
-            eprintln!("[Manager] Stop");
+            log::debug!("[Manager] Stop");
 
             {
                 let mut state = state.lock().unwrap();
@@ -485,7 +485,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::Seek(position) => {
-            eprintln!("[Manager] Seek to {:.2}s", position);
+            log::debug!("[Manager] Seek to {:.2}s", position);
 
             {
                 let mut state = state.lock().unwrap();
@@ -499,7 +499,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::SetVolume(volume) => {
-            eprintln!("[Manager] Set volume: {:.2}", volume);
+            log::debug!("[Manager] Set volume: {:.2}", volume);
 
             {
                 let mut state = state.lock().unwrap();
@@ -513,7 +513,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::Mute(muted) => {
-            eprintln!("[Manager] Mute: {}", muted);
+            log::debug!("[Manager] Mute: {}", muted);
 
             {
                 let mut state = state.lock().unwrap();
@@ -527,7 +527,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::UpdatePluginChain(plugins) => {
-            eprintln!("[Manager] Update plugin chain ({} plugins)", plugins.len());
+            log::debug!("[Manager] Update plugin chain ({} plugins)", plugins.len());
 
             if let Err(e) = processing.send_command(ProcessingCommand::UpdatePlugins(plugins)) {
                 return ManagerResponse::Error(e);
@@ -537,7 +537,7 @@ fn handle_command(
             if let Some(response) = processing.try_recv_response() {
                 match response {
                     super::ProcessingResponse::PluginChainUpdated { output_channels } => {
-                        eprintln!(
+                        log::info!(
                             "[Manager] Plugin chain updated, output channels: {}",
                             output_channels
                         );
@@ -556,7 +556,7 @@ fn handle_command(
 
                         // If channel count changed, update playback thread
                         if output_channels != old_channels {
-                            eprintln!(
+                            log::info!(
                                 "[Manager] Channel count changed {}→{}, updating playback thread",
                                 old_channels, output_channels
                             );
@@ -581,7 +581,7 @@ fn handle_command(
             param_id,
             value,
         } => {
-            eprintln!(
+            log::info!(
                 "[Manager] Set plugin {} parameter {} = {}",
                 plugin_index, param_id, value
             );
@@ -597,7 +597,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::BypassProcessing(bypass) => {
-            eprintln!("[Manager] Bypass processing: {}", bypass);
+            log::debug!("[Manager] Bypass processing: {}", bypass);
 
             {
                 let mut state = state.lock().unwrap();
@@ -611,7 +611,7 @@ fn handle_command(
             ManagerResponse::Ok
         }
         ManagerCommand::AddLoudnessAnalyzer { id, channels } => {
-            eprintln!(
+            log::info!(
                 "[Manager] Add loudness analyzer: {} ({} channels)",
                 id, channels
             );
@@ -634,7 +634,7 @@ fn handle_command(
             }
         }
         ManagerCommand::AddSpectrumAnalyzer { id, channels } => {
-            eprintln!(
+            log::info!(
                 "[Manager] Add spectrum analyzer: {} ({} channels)",
                 id, channels
             );
@@ -657,7 +657,7 @@ fn handle_command(
             }
         }
         ManagerCommand::RemoveAnalyzer(id) => {
-            eprintln!("[Manager] Remove analyzer: {}", id);
+            log::debug!("[Manager] Remove analyzer: {}", id);
 
             if let Err(e) = processing.send_command(ProcessingCommand::RemoveAnalyzer(id)) {
                 return ManagerResponse::Error(e);
@@ -683,7 +683,7 @@ fn handle_command(
             ManagerResponse::Position(position)
         }
         ManagerCommand::GetAnalyzerData(analyzer_id) => {
-            eprintln!("[Manager] Get analyzer data: {}", analyzer_id);
+            log::debug!("[Manager] Get analyzer data: {}", analyzer_id);
 
             if let Err(e) = processing.send_command(ProcessingCommand::GetAnalyzerData(analyzer_id))
             {
@@ -704,12 +704,12 @@ fn handle_command(
             }
         }
         ManagerCommand::ReloadConfig => {
-            eprintln!("[Manager] Reload config (not implemented)");
+            log::debug!("[Manager] Reload config (not implemented)");
             // TODO: Reload config from file
             ManagerResponse::Ok
         }
         ManagerCommand::Shutdown => {
-            eprintln!("[Manager] Shutdown requested");
+            log::debug!("[Manager] Shutdown requested");
 
             {
                 let mut state = state.lock().unwrap();

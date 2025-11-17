@@ -254,15 +254,15 @@ pub fn record_and_analyze(
     use std::thread::sleep;
     use std::time::Duration;
 
-    eprintln!("[record_and_analyze] Starting playback and recording...");
-    eprintln!("[record_and_analyze]   Playback file: {:?}", temp_wav_path);
-    eprintln!("[record_and_analyze]   Output channel: {}", output_channel);
-    eprintln!("[record_and_analyze]   Input channel: {}", input_channel);
-    eprintln!("[record_and_analyze]   Sample rate: {}", sample_rate);
+    log::debug!("[record_and_analyze] Starting playback and recording...");
+    log::debug!("[record_and_analyze]   Playback file: {:?}", temp_wav_path);
+    log::debug!("[record_and_analyze]   Output channel: {}", output_channel);
+    log::debug!("[record_and_analyze]   Input channel: {}", input_channel);
+    log::debug!("[record_and_analyze]   Sample rate: {}", sample_rate);
 
     // Calculate expected duration
     let expected_duration = reference_signal.len() as f64 / sample_rate as f64;
-    eprintln!(
+    log::info!(
         "[record_and_analyze]   Expected duration: {:.2}s",
         expected_duration
     );
@@ -272,18 +272,18 @@ pub fn record_and_analyze(
 
     // Get input device (either by name or default)
     let input_device = if let Some(dev_name) = device_name {
-        eprintln!(
+        log::info!(
             "[record_and_analyze] Looking for input device: {}",
             dev_name
         );
         find_device_by_name(&host, dev_name, true)?
     } else {
-        eprintln!("[record_and_analyze] Using default input device");
+        log::debug!("[record_and_analyze] Using default input device");
         host.default_input_device()
             .ok_or_else(|| "No default input device available".to_string())?
     };
 
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Input device: {}",
         input_device
             .name()
@@ -305,7 +305,7 @@ pub fn record_and_analyze(
                 .unwrap_or(2) // Ultimate fallback to stereo
         });
 
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Hardware input channels: {}",
         hardware_input_channels
     );
@@ -326,7 +326,7 @@ pub fn record_and_analyze(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Recording from input channel {} (0-indexed) out of {} total channels",
         input_channel, hardware_input_channels
     );
@@ -349,7 +349,7 @@ pub fn record_and_analyze(
                     if input_channel_idx < frame.len() {
                         recorded.push(frame[input_channel_idx]);
                     } else {
-                        eprintln!(
+                        log::info!(
                             "[record_and_analyze] ERROR: Tried to access channel {} but frame has {} channels",
                             input_channel_idx,
                             frame.len()
@@ -357,7 +357,7 @@ pub fn record_and_analyze(
                     }
                 }
             },
-            |err| eprintln!("[record_and_analyze] Input stream error: {}", err),
+            |err| log::debug!("[record_and_analyze] Input stream error: {}", err),
             None,
         )
         .map_err(|e| format!("Failed to build input stream: {}", e))?;
@@ -366,7 +366,7 @@ pub fn record_and_analyze(
     input_stream
         .play()
         .map_err(|e| format!("Failed to start input stream: {}", e))?;
-    eprintln!("[record_and_analyze] Recording started");
+    log::debug!("[record_and_analyze] Recording started");
 
     // Small delay to let recording buffer fill
     sleep(Duration::from_millis(100));
@@ -379,18 +379,18 @@ pub fn record_and_analyze(
 
     // Get output device configuration to determine hardware channel count
     let output_device = if let Some(dev_name) = device_name {
-        eprintln!(
+        log::info!(
             "[record_and_analyze] Looking for output device: {}",
             dev_name
         );
         find_device_by_name(&host, dev_name, false)?
     } else {
-        eprintln!("[record_and_analyze] Using default output device");
+        log::debug!("[record_and_analyze] Using default output device");
         host.default_output_device()
             .ok_or_else(|| "No default output device available".to_string())?
     };
 
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Output device: {}",
         output_device
             .name()
@@ -412,7 +412,7 @@ pub fn record_and_analyze(
                 .unwrap_or(2) // Ultimate fallback to stereo
         });
 
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Hardware output channels: {}",
         hardware_channels
     );
@@ -428,7 +428,7 @@ pub fn record_and_analyze(
     // Create matrix plugin config to route mono signal to specific output channel
     // Use dense mapping: 1 input channel to hardware_channels output channels
     // Matrix will have all zeros except 1.0 at the target output channel
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Routing mono input (channel 0) to hardware output channel {} (0-indexed)",
         output_channel
     );
@@ -447,7 +447,7 @@ pub fn record_and_analyze(
     use crate::engine::PluginConfig;
     let plugins = vec![PluginConfig::new("matrix", matrix_params)];
 
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Matrix: 1 input -> {} outputs, channel {} active (rest silent)",
         hardware_channels, output_channel
     );
@@ -460,7 +460,7 @@ pub fn record_and_analyze(
         )
         .map_err(|e| format!("Failed to start playback: {}", e))?;
 
-    eprintln!("[record_and_analyze] Playback started, waiting for completion...");
+    log::debug!("[record_and_analyze] Playback started, waiting for completion...");
 
     // Wait for playback to complete
     // Maximum timeout: expected duration + 3 seconds for buffer/latency
@@ -480,7 +480,7 @@ pub fn record_and_analyze(
         // Print progress every second
         if elapsed.as_millis() % 1000 < check_interval.as_millis() {
             let recorded_duration = current_sample_count as f64 / sample_rate as f64;
-            eprintln!(
+            log::info!(
                 "[record_and_analyze] Recording progress: {:.2}s / {:.2}s ({} samples)",
                 recorded_duration, expected_duration, current_sample_count
             );
@@ -492,7 +492,7 @@ pub fn record_and_analyze(
             // If sample count hasn't changed for 150ms, assume playback is done
             if stable_count >= 3 {
                 // 3 * 50ms = 150ms
-                eprintln!("[record_and_analyze] Recording stable, playback likely complete");
+                log::debug!("[record_and_analyze] Recording stable, playback likely complete");
                 break;
             }
         } else {
@@ -505,7 +505,7 @@ pub fn record_and_analyze(
         let state = manager.get_state();
 
         if state == crate::StreamingState::Idle {
-            eprintln!("[record_and_analyze] Playback state changed to Idle");
+            log::debug!("[record_and_analyze] Playback state changed to Idle");
             break;
         }
     }
@@ -520,14 +520,14 @@ pub fn record_and_analyze(
 
     // Stop recording
     std::mem::drop(input_stream);
-    eprintln!("[record_and_analyze] Recording stopped");
+    log::debug!("[record_and_analyze] Recording stopped");
 
     // Small delay to ensure all buffers are flushed
     sleep(Duration::from_millis(100));
 
     // Get recorded samples
     let recorded = recorded_samples.lock().clone();
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Total recorded: {} samples ({:.2}s)",
         recorded.len(),
         recorded.len() as f64 / sample_rate as f64
@@ -538,12 +538,12 @@ pub fn record_and_analyze(
     }
 
     // Write recorded samples to WAV file as MONO (1 channel)
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Writing {} mono samples to WAV file...",
         recorded.len()
     );
     write_wav_file(recorded_wav_path, &recorded, sample_rate, 1)?;
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Wrote {} samples as MONO (1 channel) to {:?}",
         recorded.len(),
         recorded_wav_path
@@ -554,7 +554,7 @@ pub fn record_and_analyze(
     let reader = WavReader::open(recorded_wav_path)
         .map_err(|e| format!("Failed to verify WAV file: {}", e))?;
     let spec = reader.spec();
-    eprintln!(
+    log::info!(
         "[record_and_analyze] WAV file verification: {} channels, {} Hz, {} samples",
         spec.channels,
         spec.sample_rate,
@@ -569,7 +569,7 @@ pub fn record_and_analyze(
 
     // Load microphone compensation if provided
     let compensation = if let Some(comp_path) = microphone_compensation_path {
-        eprintln!(
+        log::info!(
             "[record_and_analyze] Loading microphone compensation from {:?}",
             comp_path
         );
@@ -580,10 +580,10 @@ pub fn record_and_analyze(
     };
 
     // Analyze the recording
-    eprintln!("[record_and_analyze] Analyzing recording...");
+    log::debug!("[record_and_analyze] Analyzing recording...");
     let analysis = analyze_recording(recorded_wav_path, reference_signal, sample_rate)?;
     write_analysis_csv(&analysis, output_csv_path, compensation.as_ref())?;
-    eprintln!(
+    log::info!(
         "[record_and_analyze] Wrote analysis to {:?}",
         output_csv_path
     );
@@ -657,7 +657,7 @@ fn find_device_by_name(
     for device in &devices_vec {
         if let Ok(name) = device.name() {
             if name.to_lowercase() == target_pattern {
-                eprintln!(
+                log::info!(
                     "[find_device_by_name] Found {} device (exact match): {}",
                     device_type, name
                 );
@@ -670,7 +670,7 @@ fn find_device_by_name(
     for device in &devices_vec {
         if let Ok(name) = device.name() {
             if name.to_lowercase().contains(&target_pattern) {
-                eprintln!(
+                log::info!(
                     "[find_device_by_name] Found {} device (partial match): {} (matched by '{}')",
                     device_type, name, device_name
                 );

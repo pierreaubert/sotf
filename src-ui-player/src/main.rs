@@ -14,7 +14,8 @@ use crossterm::{
 use events::{handle_events, handle_key_event, AppEvent, PlayerCommand};
 use player::Player;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::io;
+use std::fs::OpenOptions;
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -33,10 +34,20 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
+    // Initialize logging to file to avoid corrupting the TUI
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("sotf_ui_player.log")?;
+
     env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
+        .target(env_logger::Target::Pipe(Box::new(log_file)))
+        .filter_level(log::LevelFilter::Debug)
+        // Log all modules including Symphonia at debug level
+        .filter_module("symphonia_core", log::LevelFilter::Debug)
         .init();
+
+    log::info!("SOTF UI Player starting...");
 
     let args = Args::parse();
 
@@ -74,11 +85,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Stop playback
     let _ = player.stop().await;
 
-    if let Err(err) = result {
-        eprintln!("Error: {}", err);
-    }
+    log::info!("SOTF UI Player exiting...");
 
-    Ok(())
+    // Propagate any errors from the main loop
+    result
 }
 
 async fn run_app<B: ratatui::backend::Backend>(

@@ -180,7 +180,7 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
             }
         }
         Err(e) => {
-            eprintln!("[AUDIO ERROR] Failed to enumerate input devices: {}", e);
+            log::debug!("[AUDIO ERROR] Failed to enumerate input devices: {}", e);
             // Continue with empty input devices list rather than failing completely
         }
     }
@@ -331,7 +331,7 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
             }
         }
         Err(e) => {
-            eprintln!("[AUDIO ERROR] Failed to enumerate output devices: {}", e);
+            log::debug!("[AUDIO ERROR] Failed to enumerate output devices: {}", e);
             // Continue with empty output devices list rather than failing completely
         }
     }
@@ -346,7 +346,7 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
     if devices_map.get("input").map_or(true, |v| v.is_empty())
         && devices_map.get("output").map_or(true, |v| v.is_empty())
     {
-        eprintln!("[AUDIO WARNING] No audio devices found on the system");
+        log::debug!("[AUDIO WARNING] No audio devices found on the system");
     }
 
     Ok(devices_map)
@@ -422,7 +422,7 @@ pub fn set_audio_device(
     };
 
     if !config_valid {
-        eprintln!(
+        log::info!(
             "[AUDIO ERROR] Invalid configuration for device '{}': sample_rate={}, channels={}, format={}",
             device_name, config.sample_rate, config.channels, config.sample_format
         );
@@ -459,7 +459,7 @@ pub fn set_audio_device(
 /// Get the current audio configuration
 pub fn get_audio_config(audio_state: &SharedAudioState) -> Result<AudioState, String> {
     let state = audio_state.lock().map_err(|e| {
-        eprintln!("[AUDIO ERROR] Failed to lock audio state: {}", e);
+        log::debug!("[AUDIO ERROR] Failed to lock audio state: {}", e);
         format!("Failed to lock audio state: {}", e)
     })?;
     Ok(state.clone())

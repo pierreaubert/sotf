@@ -482,7 +482,7 @@ mod tests {
                     .iter()
                     .map(|&x| x.abs())
                     .fold(0.0_f32, |a, b| a.max(b));
-                println!(
+                log::info!(
                     "Checkpoint {:.1}: peak amplitude = {:.6} (target: {:.6})",
                     checkpoint, window_peak, amp
                 );
@@ -501,10 +501,10 @@ mod tests {
             .iter()
             .map(|&x| x.abs())
             .fold(0.0_f32, |a, b| a.max(b));
-        println!("Generated log sweep:");
-        println!("  Target amplitude: {:.6}", amp);
-        println!("  Actual max amplitude: {:.6}", max_amp);
-        println!("  Ratio: {:.6}", max_amp / amp);
+        log::info!("Generated log sweep:");
+        log::info!("  Target amplitude: {:.6}", amp);
+        log::info!("  Actual max amplitude: {:.6}", max_amp);
+        log::info!("  Ratio: {:.6}", max_amp / amp);
 
         // Check that we have some signal
         assert!(max_amp > 0.01, "Signal should have significant amplitude");
@@ -560,11 +560,11 @@ mod tests {
             target_peak
         );
 
-        println!("Log sweep amplitude test passed:");
-        println!("  Target amplitude: {:.6}", target_peak);
-        println!("  Min peak: {:.6}", min_peak);
-        println!("  Max peak: {:.6}", max_peak);
-        println!(
+        log::info!("Log sweep amplitude test passed:");
+        log::info!("  Target amplitude: {:.6}", target_peak);
+        log::info!("  Min peak: {:.6}", min_peak);
+        log::info!("  Max peak: {:.6}", max_peak);
+        log::info!(
             "  Variation: {:.6} ({:.2}%)",
             variation,
             100.0 * variation / target_peak

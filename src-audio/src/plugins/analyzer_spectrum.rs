@@ -453,13 +453,13 @@ mod tests {
         let data = plugin.get_data();
         let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
 
-        println!("Number of bins: {}", spectrum_data.frequencies.len());
-        println!(
+        log::info!("Number of bins: {}", spectrum_data.frequencies.len());
+        log::info!(
             "Frequency range: {:.0}Hz - {:.0}Hz",
             spectrum_data.frequencies.first().unwrap_or(&0.0),
             spectrum_data.frequencies.last().unwrap_or(&0.0)
         );
-        println!("Peak magnitude: {:.1}dB", spectrum_data.peak_magnitude);
+        log::info!("Peak magnitude: {:.1}dB", spectrum_data.peak_magnitude);
 
         // Should have some bins
         assert!(spectrum_data.frequencies.len() > 0);
@@ -510,8 +510,8 @@ mod tests {
             .min_by_key(|(_, f)| ((*f - target_freq).abs() * 1000.0) as i32)
             .unwrap();
 
-        println!("1kHz test:");
-        println!(
+        log::info!("1kHz test:");
+        log::info!(
             "  Bin {} ({:.0}Hz): {:.1}dB",
             bin_idx, spectrum_data.frequencies[bin_idx], spectrum_data.magnitudes[bin_idx]
         );
@@ -549,7 +549,7 @@ mod tests {
         let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
 
         // After reset, magnitudes should be low/silent
-        println!("After reset - Peak: {:.1}dB", spectrum_data.peak_magnitude);
+        log::info!("After reset - Peak: {:.1}dB", spectrum_data.peak_magnitude);
     }
 
     #[test]
@@ -581,7 +581,7 @@ mod tests {
         let data = plugin.get_data();
         let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
 
-        println!(
+        log::info!(
             "5-channel spectrum: peak = {:.1}dB",
             spectrum_data.peak_magnitude
         );

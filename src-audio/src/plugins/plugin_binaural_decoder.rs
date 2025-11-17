@@ -257,12 +257,12 @@ impl BinauralDecoderPlugin {
         // Determine speaker layout based on channel count
         let speaker_layout = Self::get_speaker_layout(input_channels);
 
-        eprintln!(
+        log::info!(
             "[BinauralDecoder] Created with {} input channels, FFT size {}",
             input_channels, fft_size
         );
         for speaker in &speaker_layout {
-            eprintln!(
+            log::info!(
                 "[BinauralDecoder]   Ch{}: {} at az={:.1}°, el={:.1}°",
                 speaker.channel, speaker.name, speaker.azimuth, speaker.elevation
             );
@@ -311,11 +311,11 @@ impl BinauralDecoderPlugin {
 
     /// Load SOFA file and prepare HRTFs
     pub fn load_sofa(&mut self, path: PathBuf) -> Result<(), String> {
-        eprintln!("[BinauralDecoder] Loading SOFA file: {:?}", path);
+        log::debug!("[BinauralDecoder] Loading SOFA file: {:?}", path);
 
         let sofa = SofaFile::load(&path)?;
 
-        eprintln!(
+        log::info!(
             "[BinauralDecoder] SOFA loaded: {} measurements, IR length: {}, sample rate: {} Hz",
             sofa.num_measurements, sofa.ir_length, sofa.sample_rate
         );
@@ -326,7 +326,7 @@ impl BinauralDecoderPlugin {
         self.sofa = Some(sofa);
         self.sofa_path = Some(path);
 
-        eprintln!("[BinauralDecoder] SOFA file loaded and HRTFs prepared");
+        log::debug!("[BinauralDecoder] SOFA file loaded and HRTFs prepared");
 
         Ok(())
     }
@@ -338,7 +338,7 @@ impl BinauralDecoderPlugin {
                 .get_hrtf_at_position(&speaker.to_source_position())
                 .ok_or_else(|| format!("No HRTF found for speaker {}", speaker.name))?;
 
-            eprintln!(
+            log::info!(
                 "[BinauralDecoder] Speaker {}: {} (az={:.1}°, el={:.1}°) -> HRTF at az={:.1}°, el={:.1}°",
                 i, speaker.name, speaker.azimuth, speaker.elevation,
                 hrtf.position.azimuth, hrtf.position.elevation
@@ -384,7 +384,7 @@ impl BinauralDecoderPlugin {
             6 => SpeakerLayouts::SURROUND_5_1.to_vec(),
             _ => {
                 // Default: arrange channels in a circle
-                eprintln!(
+                log::info!(
                     "[BinauralDecoder] Using default circular layout for {} channels",
                     num_channels
                 );
@@ -520,7 +520,7 @@ impl Plugin for BinauralDecoderPlugin {
             // Check sample rate match
             if let Some(sofa) = &self.sofa {
                 if (sofa.sample_rate - sample_rate as f32).abs() > 1.0 {
-                    eprintln!(
+                    log::info!(
                         "[BinauralDecoder] Warning: SOFA sample rate ({} Hz) differs from engine rate ({} Hz). \
                          This may cause incorrect spatialization. Consider resampling the SOFA file.",
                         sofa.sample_rate, sample_rate
@@ -528,7 +528,7 @@ impl Plugin for BinauralDecoderPlugin {
                 }
             }
         } else {
-            eprintln!("[BinauralDecoder] Warning: No SOFA file specified, plugin will pass through audio");
+            log::debug!("[BinauralDecoder] Warning: No SOFA file specified, plugin will pass through audio");
         }
 
         Ok(())

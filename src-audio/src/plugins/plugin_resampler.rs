@@ -302,9 +302,9 @@ mod tests {
         // Process
         resampler.process(&input, &mut output, &context).unwrap();
 
-        println!("Input frames: {}", num_frames);
-        println!("Max output frames (buffer size): {}", max_output_frames);
-        println!("Expected ratio: {:.4}", 48000.0 / 44100.0);
+        log::info!("Input frames: {}", num_frames);
+        log::info!("Max output frames (buffer size): {}", max_output_frames);
+        log::info!("Expected ratio: {:.4}", 48000.0 / 44100.0);
 
         // Check that output contains signal (actual frames may be less than max)
         // We check the first portion of the output buffer
@@ -313,7 +313,7 @@ mod tests {
         let rms: f32 =
             output[..check_samples].iter().map(|x| x * x).sum::<f32>() / check_samples as f32;
         let rms = rms.sqrt();
-        println!("Output RMS (first {} frames): {:.4}", expected_frames, rms);
+        log::info!("Output RMS (first {} frames): {:.4}", expected_frames, rms);
         assert!(rms > 0.1, "Output should contain signal");
     }
 
@@ -342,9 +342,9 @@ mod tests {
 
         resampler.process(&input, &mut output, &context).unwrap();
 
-        println!("Input frames: {}", num_frames);
-        println!("Max output frames (buffer size): {}", max_output_frames);
-        println!("Expected ratio: {:.4}", 44100.0 / 48000.0);
+        log::info!("Input frames: {}", num_frames);
+        log::info!("Max output frames (buffer size): {}", max_output_frames);
+        log::info!("Expected ratio: {:.4}", 44100.0 / 48000.0);
 
         // Check signal (actual frames may be less than max buffer)
         let expected_frames = (num_frames as f64 * 44100.0 / 48000.0) as usize;
@@ -352,7 +352,7 @@ mod tests {
         let rms: f32 =
             output[..check_samples].iter().map(|x| x * x).sum::<f32>() / check_samples as f32;
         let rms = rms.sqrt();
-        println!("Output RMS (first {} frames): {:.4}", expected_frames, rms);
+        log::info!("Output RMS (first {} frames): {:.4}", expected_frames, rms);
         assert!(rms > 0.1);
     }
 
@@ -385,7 +385,7 @@ mod tests {
 
         resampler.process(&input, &mut output, &context).unwrap();
 
-        println!(
+        log::info!(
             "5-channel resampling: {} input frames, {} max output frames",
             num_frames, max_output_frames
         );
@@ -398,7 +398,7 @@ mod tests {
             let rms: f32 =
                 channel_samples.iter().map(|x| x * x).sum::<f32>() / channel_samples.len() as f32;
             let rms = rms.sqrt();
-            println!("Channel {} RMS: {:.4}", ch, rms);
+            log::info!("Channel {} RMS: {:.4}", ch, rms);
             assert!(rms > 0.05, "Channel {} should have signal", ch);
         }
     }

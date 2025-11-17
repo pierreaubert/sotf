@@ -441,7 +441,7 @@ mod tests {
         let input_energy: f32 = input.iter().map(|x| x * x).sum();
         let output_energy: f32 = output.iter().map(|x| x * x).sum();
 
-        println!(
+        log::info!(
             "Input energy: {}, Output energy: {}, Ratio: {}",
             input_energy,
             output_energy,

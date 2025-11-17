@@ -265,7 +265,7 @@ impl UpmixerPlugin {
 
         // Get speaker configuration
         let speaker_config = get_speaker_config(speaker_config_id).unwrap_or_else(|| {
-            eprintln!(
+            log::info!(
                 "Invalid speaker config '{}', falling back to 5.1",
                 speaker_config_id
             );
@@ -847,23 +847,23 @@ impl Plugin for UpmixerPlugin {
             ));
         }
 
-        eprintln!(
+        log::info!(
             "[UPMIXER] process() called: input={} frames, output={} frames",
             context.num_frames, context.num_frames
         );
-        eprintln!(
+        log::info!(
             "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
             self.input_buffer_fill, self.output_accumulator_fill, self.next_add_position
         );
 
         // Sanity check for threading issues
         if self.next_add_position > self.fft_size * 3 {
-            eprintln!(
+            log::info!(
                 "[UPMIXER] WARNING: Corrupted state detected! next_add_pos={} exceeds buffer size {}",
                 self.next_add_position,
                 self.fft_size * 3
             );
-            eprintln!("[UPMIXER] This could indicate a threading issue. Resetting state.");
+            log::debug!("[UPMIXER] This could indicate a threading issue. Resetting state.");
             self.reset();
         }
 
@@ -878,15 +878,15 @@ impl Plugin for UpmixerPlugin {
         loop {
             iteration += 1;
             if iteration > 1000 {
-                eprintln!("[UPMIXER] ERROR: Infinite loop detected after 1000 iterations!");
-                eprintln!(
+                log::debug!("[UPMIXER] ERROR: Infinite loop detected after 1000 iterations!");
+                log::info!(
                     "[UPMIXER] State: input_pos={}/{}, output_pos={}/{}",
                     input_pos / 2,
                     input.len() / 2,
                     output_pos / self.num_output_channels,
                     output.len() / 5
                 );
-                eprintln!(
+                log::info!(
                     "[UPMIXER] input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
                     self.input_buffer_fill, self.output_accumulator_fill, self.next_add_position
                 );
@@ -897,7 +897,7 @@ impl Plugin for UpmixerPlugin {
             let frames_to_drain = self.output_accumulator_fill.min(frames_available);
 
             if frames_to_drain > 0 {
-                eprintln!(
+                log::info!(
                     "[UPMIXER] Iter {}: DRAIN {} frames (accum_fill={}, frames_avail={})",
                     iteration, frames_to_drain, self.output_accumulator_fill, frames_available
                 );
@@ -932,7 +932,7 @@ impl Plugin for UpmixerPlugin {
                     self.next_add_position = 0;
                 }
 
-                eprintln!(
+                log::info!(
                     "[UPMIXER] After drain: accum_fill={}, next_add_pos={}, output_pos={}",
                     self.output_accumulator_fill,
                     self.next_add_position,
@@ -946,7 +946,7 @@ impl Plugin for UpmixerPlugin {
             let can_process_space = self.next_add_position + self.fft_size <= self.fft_size * 3;
 
             if can_process_input && can_process_space {
-                eprintln!(
+                log::info!(
                     "[UPMIXER] Iter {}: PROCESS FFT (input_buf_fill={}/{}, next_add_pos={}, space_ok={})",
                     iteration,
                     self.input_buffer_fill / 2,
@@ -992,7 +992,7 @@ impl Plugin for UpmixerPlugin {
                     .copy_within(shift_amount..self.fft_size * 2, 0);
                 self.input_buffer_fill -= shift_amount;
 
-                eprintln!(
+                log::info!(
                     "[UPMIXER] After FFT: accum_fill={}, next_add_pos={}, input_buf_fill={}",
                     self.output_accumulator_fill,
                     self.next_add_position,
@@ -1001,7 +1001,7 @@ impl Plugin for UpmixerPlugin {
 
                 continue; // Process more blocks if possible
             } else if !can_process_input || !can_process_space {
-                eprintln!(
+                log::info!(
                     "[UPMIXER] Iter {}: SKIP FFT (can_process_input={}, can_process_space={})",
                     iteration, can_process_input, can_process_space
                 );
@@ -1012,7 +1012,7 @@ impl Plugin for UpmixerPlugin {
                 let samples_to_copy =
                     (input.len() - input_pos).min(self.fft_size * 2 - self.input_buffer_fill);
 
-                eprintln!(
+                log::info!(
                     "[UPMIXER] Iter {}: FILL {} samples (input_pos={}/{}, input_buf_fill={})",
                     iteration,
                     samples_to_copy / 2,
@@ -1027,7 +1027,7 @@ impl Plugin for UpmixerPlugin {
                 self.input_buffer_fill += samples_to_copy;
                 input_pos += samples_to_copy;
 
-                eprintln!(
+                log::info!(
                     "[UPMIXER] After fill: input_buf_fill={}, input_pos={}",
                     self.input_buffer_fill / 2,
                     input_pos / 2
@@ -1043,7 +1043,7 @@ impl Plugin for UpmixerPlugin {
             let no_data_to_drain = self.output_accumulator_fill == 0;
             let no_space_to_drain = (output.len() - output_pos) / self.num_output_channels == 0;
 
-            eprintln!(
+            log::info!(
                 "[UPMIXER] Iter {}: CHECK EXIT - no_more_input={}, cant_process={}, no_data={}, no_space={}",
                 iteration,
                 input_pos >= input.len(),
@@ -1054,19 +1054,19 @@ impl Plugin for UpmixerPlugin {
 
             // Exit if output buffer is full (most important - prevents deadlock)
             if no_space_to_drain {
-                eprintln!("[UPMIXER] EXITING LOOP: output buffer full");
+                log::debug!("[UPMIXER] EXITING LOOP: output buffer full");
                 break;
             }
 
             // Exit if no more input and can't process and nothing to drain
             if input_pos >= input.len() && cant_process && no_data_to_drain {
-                eprintln!("[UPMIXER] EXITING LOOP: no more work");
+                log::debug!("[UPMIXER] EXITING LOOP: no more work");
                 break;
             }
         }
 
-        eprintln!("[UPMIXER] Loop finished after {} iterations", iteration);
-        eprintln!(
+        log::debug!("[UPMIXER] Loop finished after {} iterations", iteration);
+        log::info!(
             "[UPMIXER] Final: output_pos={}/{}, accum_fill={}",
             output_pos / self.num_output_channels,
             output.len() / self.num_output_channels,
@@ -1078,7 +1078,7 @@ impl Plugin for UpmixerPlugin {
         let frames_to_drain = self.output_accumulator_fill.min(frames_available);
 
         if frames_to_drain > 0 {
-            eprintln!(
+            log::info!(
                 "[UPMIXER] FINAL DRAIN: {} frames (accum_fill={}, frames_avail={})",
                 frames_to_drain, self.output_accumulator_fill, frames_available
             );
@@ -1110,7 +1110,7 @@ impl Plugin for UpmixerPlugin {
                 self.next_add_position = 0;
             }
 
-            eprintln!(
+            log::info!(
                 "[UPMIXER] After final drain: accum_fill={}, next_add_pos={}, total_output={}",
                 self.output_accumulator_fill,
                 self.next_add_position,
@@ -1118,7 +1118,7 @@ impl Plugin for UpmixerPlugin {
             );
         }
 
-        eprintln!(
+        log::info!(
             "[UPMIXER] process() complete: returned {} frames\n",
             output_pos / 5
         );
@@ -1196,7 +1196,7 @@ mod tests {
 
         // Verify output is not all zeros (some processing occurred)
         let sum: f32 = output.iter().map(|x| x.abs()).sum();
-        println!("Output sum (abs): {}", sum);
+        log::info!("Output sum (abs): {}", sum);
         assert!(sum > 0.0, "Output should not be all zeros");
 
         // Check that we have output in multiple channels
@@ -1207,7 +1207,7 @@ mod tests {
                 channel_sums[ch] += output[i * num_channels + ch].abs();
             }
         }
-        println!("Channel sums: {:?}", channel_sums);
+        log::info!("Channel sums: {:?}", channel_sums);
         // At least center and front channels should have content
         assert!(
             channel_sums[0] > 0.0 || channel_sums[1] > 0.0 || channel_sums[2] > 0.0,
@@ -1239,7 +1239,7 @@ mod tests {
 
         // Verify output is all zeros (or very close to zero due to floating point)
         let max_abs = output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
-        println!("Max abs value with zero gains: {}", max_abs);
+        log::info!("Max abs value with zero gains: {}", max_abs);
         assert!(
             max_abs < 1e-6,
             "With all gains at 0, output should be silent, but max abs = {}",
@@ -1314,7 +1314,7 @@ mod tests {
             }
         }
 
-        println!("Channel energies: {:?}", channel_energies);
+        log::info!("Channel energies: {:?}", channel_energies);
 
         // Front left and right should have signal
         assert!(channel_energies[0] > 0.1, "Front left should have signal");
@@ -1349,7 +1349,7 @@ mod tests {
         // INVARIANT: Processing continuous audio in chunks should produce continuous output
         // Test with various buffer sizes
         for buffer_size in [256, 512, 1024] {
-            println!("\n=== Testing buffer size {} ===", buffer_size);
+            log::info!("\n=== Testing buffer size {} ===", buffer_size);
             let mut plugin =
                 UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
             plugin.initialize(44100).unwrap();
@@ -1384,7 +1384,7 @@ mod tests {
             // Check that we got significant output (accounting for latency)
             let total_output_samples = all_output.len() / 5;
             let non_zero_samples = all_output.iter().filter(|&&x| x.abs() > 1e-6).count();
-            println!(
+            log::info!(
                 "Buffer size {}: {} total frames, {} non-zero samples",
                 buffer_size, total_output_samples, non_zero_samples
             );
@@ -1440,7 +1440,7 @@ mod tests {
             }
         }
 
-        println!(
+        log::info!(
             "Input energy: {}, Output energy: {}, Ratio: {}",
             total_input_energy,
             total_output_energy,
@@ -1491,7 +1491,7 @@ mod tests {
 
             if iteration >= 5 && max_abs < 1e-6 {
                 gap_count += 1;
-                println!("GAP at iteration {}: max_abs = {}", iteration, max_abs);
+                log::info!("GAP at iteration {}: max_abs = {}", iteration, max_abs);
             }
         }
 

@@ -96,7 +96,7 @@ impl AudioStreamingManager {
         // Stop any current playback
         self.stop()?;
 
-        eprintln!("[AudioStreamingManager] Loading file: {:?}", path);
+        log::debug!("[AudioStreamingManager] Loading file: {:?}", path);
 
         // Probe the file to get format and spec information
         let (format, spec) = probe_file(&path)?;
@@ -110,7 +110,7 @@ impl AudioStreamingManager {
             duration_seconds,
         };
 
-        eprintln!(
+        log::info!(
             "[AudioStreamingManager] Loaded {} file: {}Hz, {}ch, {:?}s duration",
             audio_info.format,
             audio_info.spec.sample_rate,
@@ -142,7 +142,7 @@ impl AudioStreamingManager {
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
-        eprintln!("[AudioStreamingManager] Starting playback");
+        log::debug!("[AudioStreamingManager] Starting playback");
 
         // Create engine config
         let config = EngineConfig {
@@ -159,7 +159,7 @@ impl AudioStreamingManager {
             watch_config: self.watch_signals, // Enable signal watching if requested
         };
 
-        eprintln!(
+        log::info!(
             "[AudioStreamingManager] Creating engine: {}Hz, {}ch",
             config.output_sample_rate, config.output_channels
         );
@@ -177,15 +177,15 @@ impl AudioStreamingManager {
         *self.engine.lock() = Some(engine);
         self.set_state(StreamingState::Playing);
 
-        eprintln!("[AudioStreamingManager] Playback started");
+        log::debug!("[AudioStreamingManager] Playback started");
 
         // Enable any pending analyzers that were requested before engine was running
         if *self.pending_spectrum_monitoring.lock() {
-            eprintln!("[AudioStreamingManager] Enabling pending spectrum monitoring");
+            log::debug!("[AudioStreamingManager] Enabling pending spectrum monitoring");
             self.enable_spectrum_monitoring().ok();
         }
         if *self.pending_loudness_monitoring.lock() {
-            eprintln!("[AudioStreamingManager] Enabling pending loudness monitoring");
+            log::debug!("[AudioStreamingManager] Enabling pending loudness monitoring");
             self.enable_loudness_monitoring().ok();
         }
 
@@ -194,7 +194,7 @@ impl AudioStreamingManager {
 
     /// Pause streaming
     pub fn pause(&self) -> AudioDecoderResult<()> {
-        eprintln!("[AudioStreamingManager] Pausing");
+        log::debug!("[AudioStreamingManager] Pausing");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.pause().map_err(AudioDecoderError::IoError)?;
@@ -206,7 +206,7 @@ impl AudioStreamingManager {
 
     /// Resume streaming
     pub fn resume(&self) -> AudioDecoderResult<()> {
-        eprintln!("[AudioStreamingManager] Resuming");
+        log::debug!("[AudioStreamingManager] Resuming");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.resume().map_err(AudioDecoderError::IoError)?;
@@ -218,7 +218,7 @@ impl AudioStreamingManager {
 
     /// Stop streaming and cleanup
     pub fn stop(&mut self) -> AudioDecoderResult<()> {
-        eprintln!("[AudioStreamingManager] Stopping");
+        log::debug!("[AudioStreamingManager] Stopping");
 
         if let Some(mut engine) = self.engine.lock().take() {
             engine.stop().map_err(AudioDecoderError::IoError)?;
@@ -236,7 +236,7 @@ impl AudioStreamingManager {
 
     /// Seek to position in seconds
     pub fn seek(&self, seconds: f64) -> AudioDecoderResult<()> {
-        eprintln!("[AudioStreamingManager] Seeking to {:.2}s", seconds);
+        log::debug!("[AudioStreamingManager] Seeking to {:.2}s", seconds);
 
         self.set_state(StreamingState::Seeking);
 
@@ -310,22 +310,22 @@ impl AudioStreamingManager {
 
     /// Enable loudness monitoring
     pub fn enable_loudness_monitoring(&mut self) -> Result<(), String> {
-        eprintln!("[AudioStreamingManager] Enabling loudness monitoring");
+        log::debug!("[AudioStreamingManager] Enabling loudness monitoring");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             // Use the engine's output channel count (after processing/plugins)
             let channels = engine.get_state().num_channels;
-            eprintln!(
+            log::info!(
                 "[AudioStreamingManager] Adding loudness analyzer for {} channels",
                 channels
             );
             engine.add_loudness_analyzer("loudness".to_string(), channels)?;
-            eprintln!("[AudioStreamingManager] Loudness monitoring enabled");
+            log::debug!("[AudioStreamingManager] Loudness monitoring enabled");
             *self.pending_loudness_monitoring.lock() = false;
             Ok(())
         } else {
             // Engine not running yet - mark as pending and will be enabled when playback starts
-            eprintln!(
+            log::info!(
                 "[AudioStreamingManager] Engine not running yet - loudness monitoring will be enabled when playback starts"
             );
             *self.pending_loudness_monitoring.lock() = true;
@@ -335,7 +335,7 @@ impl AudioStreamingManager {
 
     /// Disable loudness monitoring
     pub fn disable_loudness_monitoring(&mut self) {
-        eprintln!("[AudioStreamingManager] Disabling loudness monitoring");
+        log::debug!("[AudioStreamingManager] Disabling loudness monitoring");
         *self.pending_loudness_monitoring.lock() = false;
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.remove_analyzer("loudness".to_string()).ok();
@@ -377,22 +377,22 @@ impl AudioStreamingManager {
 
     /// Enable spectrum monitoring
     pub fn enable_spectrum_monitoring(&mut self) -> Result<(), String> {
-        eprintln!("[AudioStreamingManager] Enabling spectrum monitoring");
+        log::debug!("[AudioStreamingManager] Enabling spectrum monitoring");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             // Use the engine's output channel count (after processing/plugins)
             let channels = engine.get_state().num_channels;
-            eprintln!(
+            log::info!(
                 "[AudioStreamingManager] Adding spectrum analyzer for {} channels",
                 channels
             );
             engine.add_spectrum_analyzer("spectrum".to_string(), channels)?;
-            eprintln!("[AudioStreamingManager] Spectrum monitoring enabled");
+            log::debug!("[AudioStreamingManager] Spectrum monitoring enabled");
             *self.pending_spectrum_monitoring.lock() = false;
             Ok(())
         } else {
             // Engine not running yet - mark as pending and will be enabled when playback starts
-            eprintln!(
+            log::info!(
                 "[AudioStreamingManager] Engine not running yet - spectrum monitoring will be enabled when playback starts"
             );
             *self.pending_spectrum_monitoring.lock() = true;
@@ -402,7 +402,7 @@ impl AudioStreamingManager {
 
     /// Disable spectrum monitoring
     pub fn disable_spectrum_monitoring(&mut self) {
-        eprintln!("[AudioStreamingManager] Disabling spectrum monitoring");
+        log::debug!("[AudioStreamingManager] Disabling spectrum monitoring");
         *self.pending_spectrum_monitoring.lock() = false;
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.remove_analyzer("spectrum".to_string()).ok();
@@ -460,14 +460,14 @@ impl AudioStreamingManager {
     /// Update plugin chain
     /// TODO: Phase 3 - Implement plugin hot-reload
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
-        eprintln!(
+        log::info!(
             "[AudioStreamingManager] Updating plugin chain with {} plugins",
             plugins.len()
         );
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.update_plugin_chain(plugins)?;
-            eprintln!("[AudioStreamingManager] Plugin chain updated successfully");
+            log::debug!("[AudioStreamingManager] Plugin chain updated successfully");
             Ok(())
         } else {
             Err("No engine running".to_string())

@@ -270,4 +270,4 @@ GPL-3.0-or-later (matching the parent project)
 
 ## Contributing
 
-This crate is part of the [autoeq/SOTF](https://github.com/pierreaubert/autoeq) project.
+This crate is part of the [SotF](https://github.com/pierreaubert/sotf) project.

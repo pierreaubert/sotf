@@ -36,7 +36,7 @@ impl DecoderThread {
                     target_sample_rate,
                     frame_size,
                 ) {
-                    eprintln!("[Decoder Thread] Error: {}", e);
+                    log::debug!("[Decoder Thread] Error: {}", e);
                 }
             })
             .map_err(|e| format!("Failed to spawn decoder thread: {}", e))?;
@@ -107,14 +107,14 @@ impl DecoderState {
         let source_sample_rate = spec.sample_rate;
         let channels = spec.channels as usize;
 
-        eprintln!(
+        log::info!(
             "[Decoder Thread] Playing: {:?} ({}Hz, {}ch)",
             path, source_sample_rate, channels
         );
 
         // Create resampler if needed
         let resampler = if source_sample_rate != target_sample_rate {
-            eprintln!(
+            log::info!(
                 "[Decoder Thread] Resampling: {}Hz -> {}Hz",
                 source_sample_rate, target_sample_rate
             );
@@ -209,14 +209,14 @@ impl DecoderState {
             }
             Ok(None) => {
                 // End of stream
-                eprintln!("[Decoder Thread] End of stream");
+                log::debug!("[Decoder Thread] End of stream");
 
                 // Flush remaining resampler buffer
                 if let Some(_resampler) = &mut self.resampler
                     && !self.resampler_buffer.is_empty()
                 {
                     // Process remaining samples (pad if needed)
-                    eprintln!(
+                    log::info!(
                         "[Decoder Thread] Flushing {} remaining samples",
                         self.resampler_buffer.len()
                     );
@@ -255,7 +255,7 @@ impl DecoderState {
                 resampler.reset();
             }
 
-            eprintln!(
+            log::info!(
                 "[Decoder Thread] Seeked to {:.2}s (frame {})",
                 position, frame_position
             );
@@ -285,7 +285,7 @@ fn run_decoder_thread(
 ) -> Result<(), String> {
     let mut state = DecoderState::new();
 
-    eprintln!(
+    log::info!(
         "[Decoder Thread] Started - target {}Hz, frame size {}",
         target_sample_rate, frame_size
     );
@@ -304,31 +304,31 @@ fn run_decoder_thread(
                 DecoderCommand::Play(path) => {
                     state.stop();
                     if let Err(e) = state.play(path, target_sample_rate, frame_size) {
-                        eprintln!("[Decoder Thread] Play failed: {}", e);
+                        log::debug!("[Decoder Thread] Play failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                     }
                 }
                 DecoderCommand::Pause => {
                     state.paused = true;
-                    eprintln!("[Decoder Thread] Paused");
+                    log::debug!("[Decoder Thread] Paused");
                 }
                 DecoderCommand::Resume => {
                     state.paused = false;
-                    eprintln!("[Decoder Thread] Resumed");
+                    log::debug!("[Decoder Thread] Resumed");
                 }
                 DecoderCommand::Seek(position) => {
                     message_tx.send(DecoderMessage::Flush).ok();
                     if let Err(e) = state.seek(position) {
-                        eprintln!("[Decoder Thread] Seek failed: {}", e);
+                        log::debug!("[Decoder Thread] Seek failed: {}", e);
                     }
                 }
                 DecoderCommand::Stop => {
                     state.stop();
                     message_tx.send(DecoderMessage::Flush).ok();
-                    eprintln!("[Decoder Thread] Stopped");
+                    log::debug!("[Decoder Thread] Stopped");
                 }
                 DecoderCommand::Shutdown => {
-                    eprintln!("[Decoder Thread] Shutting down");
+                    log::debug!("[Decoder Thread] Shutting down");
                     break;
                 }
             }
@@ -345,7 +345,7 @@ fn run_decoder_thread(
                     state.stop();
                 }
                 Err(e) => {
-                    eprintln!("[Decoder Thread] Error: {}", e);
+                    log::debug!("[Decoder Thread] Error: {}", e);
                     state.stop();
                 }
             }
@@ -357,6 +357,6 @@ fn run_decoder_thread(
         }
     }
 
-    eprintln!("[Decoder Thread] Stopped");
+    log::debug!("[Decoder Thread] Stopped");
     Ok(())
 }

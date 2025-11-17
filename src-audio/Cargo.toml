@@ -45,6 +45,7 @@ chrono = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 rustfft = { workspace = true }
+log = "0.4"
 autoeq-env = { path = "../src-env" }
 autoeq-iir = { path = "../src-iir" }
 

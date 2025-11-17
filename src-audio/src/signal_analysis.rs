@@ -67,7 +67,7 @@ impl MicrophoneCompensation {
 
             // Debug output for sample points
             if debug_points.contains(&i) {
-                eprintln!(
+                log::info!(
                     "[apply_to_sweep] t={:.3}s, freq={:.1}Hz, comp_db={:.2}dB, gain_db={:.2}dB, gain={:.3}x",
                     t, freq, comp_db, gain_db, gain
                 );
@@ -76,7 +76,7 @@ impl MicrophoneCompensation {
             compensated.push(sample * gain);
         }
 
-        eprintln!(
+        log::info!(
             "[apply_to_sweep] Processed {} samples, duration={:.2}s",
             signal.len(),
             duration
@@ -93,7 +93,7 @@ impl MicrophoneCompensation {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
 
-        eprintln!("[MicrophoneCompensation] Loading from {:?}", path);
+        log::debug!("[MicrophoneCompensation] Loading from {:?}", path);
 
         let file = File::open(path)
             .map_err(|e| format!("Failed to open compensation file {:?}: {}", path, e))?;
@@ -107,7 +107,7 @@ impl MicrophoneCompensation {
             .unwrap_or(false);
 
         if is_txt_file {
-            eprintln!(
+            log::info!(
                 "[MicrophoneCompensation] Detected .txt file - assuming space/tab-separated without header"
             );
         }
@@ -133,7 +133,7 @@ impl MicrophoneCompensation {
             if is_txt_file {
                 let first_char = line.chars().next().unwrap_or(' ');
                 if !first_char.is_ascii_digit() && first_char != '-' && first_char != '+' {
-                    eprintln!(
+                    log::info!(
                         "[MicrophoneCompensation] Skipping non-numeric line {}: '{}'",
                         line_num + 1,
                         line
@@ -213,13 +213,13 @@ impl MicrophoneCompensation {
             }
         }
 
-        eprintln!(
+        log::info!(
             "[MicrophoneCompensation] Loaded {} calibration points: {:.1} Hz - {:.1} Hz",
             frequencies.len(),
             frequencies[0],
             frequencies[frequencies.len() - 1]
         );
-        eprintln!(
+        log::info!(
             "[MicrophoneCompensation] SPL range: {:.2} dB to {:.2} dB",
             spl_db.iter().fold(f32::INFINITY, |a, &b| a.min(b)),
             spl_db.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b))
@@ -296,13 +296,13 @@ pub fn analyze_recording(
     sample_rate: u32,
 ) -> Result<AnalysisResult, String> {
     // Load recorded WAV
-    println!("[FFT Analysis] Loading recorded file: {:?}", recorded_path);
+    log::info!("[FFT Analysis] Loading recorded file: {:?}", recorded_path);
     let recorded = load_wav_mono(recorded_path)?;
-    println!(
+    log::info!(
         "[FFT Analysis] Loaded {} samples from recording",
         recorded.len()
     );
-    println!(
+    log::info!(
         "[FFT Analysis] Reference has {} samples",
         reference_signal.len()
     );
@@ -330,21 +330,21 @@ pub fn analyze_recording(
     let ref_rms = (reference.iter().map(|&x| x * x).sum::<f32>() / reference.len() as f32).sqrt();
     let rec_rms = (recorded.iter().map(|&x| x * x).sum::<f32>() / recorded.len() as f32).sqrt();
 
-    println!(
+    log::info!(
         "[FFT Analysis] Reference: max={:.4}, RMS={:.4}",
         ref_max, ref_rms
     );
-    println!(
+    log::info!(
         "[FFT Analysis] Recorded:  max={:.4}, RMS={:.4}",
         rec_max, rec_rms
     );
 
     // Show first 10 samples for comparison
-    println!(
+    log::info!(
         "[FFT Analysis] First 5 reference samples: {:?}",
         &reference[..5.min(reference.len())]
     );
-    println!(
+    log::info!(
         "[FFT Analysis] First 5 recorded samples:  {:?}",
         &recorded[..5.min(recorded.len())]
     );
@@ -360,7 +360,7 @@ pub fn analyze_recording(
             identical_count += 1;
         }
     }
-    println!(
+    log::info!(
         "[FFT Analysis] Identical samples: {}/{} ({:.1}%)",
         identical_count,
         check_len,
@@ -370,7 +370,7 @@ pub fn analyze_recording(
     // Estimate lag using cross-correlation
     let lag = estimate_lag(reference, recorded);
 
-    println!(
+    log::info!(
         "[FFT Analysis] Estimated lag: {} samples ({:.2} ms)",
         lag,
         lag as f32 * 1000.0 / sample_rate as f32
@@ -390,11 +390,11 @@ pub fn analyze_recording(
         // Check if we have enough recorded samples after the lag
         let available_rec_len = recorded.len() - lag_usize;
         if available_rec_len < analysis_len {
-            println!(
+            log::info!(
                 "[FFT Analysis] Warning: Only {} samples available after lag alignment (need {})",
                 available_rec_len, analysis_len
             );
-            println!("[FFT Analysis] Analysis will be truncated to available length");
+            log::info!("[FFT Analysis] Analysis will be truncated to available length");
             let truncated_len = available_rec_len;
             (
                 &reference[..truncated_len],
@@ -417,7 +417,7 @@ pub fn analyze_recording(
         )
     };
 
-    println!(
+    log::info!(
         "[FFT Analysis] Aligned signal length: {} samples ({:.2}s)",
         aligned_ref.len(),
         aligned_ref.len() as f32 / sample_rate as f32
@@ -460,7 +460,7 @@ pub fn analyze_recording(
 
         if bin_lower > bin_upper || bin_upper >= ref_spectrum.len() {
             if skipped_count < 5 {
-                println!(
+                log::info!(
                     "[FFT Analysis] Skipping freq {:.1} Hz: bin_lower={}, bin_upper={}, ref_spectrum.len()={}",
                     target_freq,
                     bin_lower,
@@ -520,21 +520,21 @@ pub fn analyze_recording(
         phase_deg.push(phase);
     }
 
-    println!(
+    log::info!(
         "[FFT Analysis] Generated {} frequency points for CSV output",
         frequencies.len()
     );
-    println!(
+    log::info!(
         "[FFT Analysis] Skipped {} frequency points (out of {})",
         skipped_count, num_output_points
     );
 
     if frequencies.is_empty() {
-        println!("[FFT Analysis] WARNING: No frequency points generated!");
-        println!("[FFT Analysis] ref_spectrum.len() = {}", ref_spectrum.len());
-        println!("[FFT Analysis] fft_size = {}", fft_size);
-        println!("[FFT Analysis] freq_resolution = {}", freq_resolution);
-        println!("[FFT Analysis] num_bins = {}", num_bins);
+        log::info!("[FFT Analysis] WARNING: No frequency points generated!");
+        log::info!("[FFT Analysis] ref_spectrum.len() = {}", ref_spectrum.len());
+        log::info!("[FFT Analysis] fft_size = {}", fft_size);
+        log::info!("[FFT Analysis] freq_resolution = {}", freq_resolution);
+        log::info!("[FFT Analysis] num_bins = {}", num_bins);
     }
 
     Ok(AnalysisResult {
@@ -562,14 +562,14 @@ pub fn write_analysis_csv(
     use std::fs::File;
     use std::io::Write;
 
-    println!(
+    log::info!(
         "[write_analysis_csv] Writing {} frequency points to {:?}",
         result.frequencies.len(),
         output_path
     );
 
     if let Some(comp) = compensation {
-        println!(
+        log::info!(
             "[write_analysis_csv] Applying inverse microphone compensation ({} calibration points)",
             comp.frequencies.len()
         );
@@ -602,7 +602,7 @@ pub fn write_analysis_csv(
             .map_err(|e| format!("Failed to write data: {}", e))?;
     }
 
-    println!(
+    log::info!(
         "[write_analysis_csv] Successfully wrote {} data rows to CSV",
         result.frequencies.len()
     );
@@ -731,7 +731,7 @@ fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -> Result<Ve
     let spec = reader.spec();
     let channels = spec.channels as usize;
 
-    println!(
+    log::info!(
         "[load_wav_mono_channel] WAV file: {} channels, {} Hz, {:?} format",
         channels, spec.sample_rate, spec.sample_format
     );
@@ -746,14 +746,14 @@ fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -> Result<Ve
     };
 
     let samples = samples.map_err(|e| format!("Failed to read samples: {}", e))?;
-    println!(
+    log::info!(
         "[load_wav_mono_channel] Read {} total samples",
         samples.len()
     );
 
     // Handle mono file - return as-is
     if channels == 1 {
-        println!(
+        log::info!(
             "[load_wav_mono_channel] File is already mono, returning {} samples",
             samples.len()
         );
@@ -769,7 +769,7 @@ fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -> Result<Ve
                 ch_idx, channels
             ));
         }
-        println!(
+        log::info!(
             "[load_wav_mono_channel] Extracting channel {} from {} channels",
             ch_idx, channels
         );
@@ -779,7 +779,7 @@ fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -> Result<Ve
             .collect())
     } else {
         // Average all channels to mono
-        println!(
+        log::info!(
             "[load_wav_mono_channel] Averaging {} channels to mono",
             channels
         );
@@ -829,7 +829,7 @@ mod tests {
                 .map(|(_, &spl)| spl)
             {
                 spl_values.push(spl);
-                println!("Sine wave {} Hz: SPL = {:.2} dB", freq, spl);
+                log::info!("Sine wave {} Hz: SPL = {:.2} dB", freq, spl);
             }
         }
 
@@ -839,7 +839,7 @@ mod tests {
             let max_spl = spl_values.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
             let variation = max_spl - min_spl;
 
-            println!(
+            log::info!(
                 "Sine wave SPL variation: {:.2} dB (min: {:.2}, max: {:.2})",
                 variation, min_spl, max_spl
             );
@@ -899,7 +899,7 @@ mod tests {
                 .map(|(_, &spl)| spl)
             {
                 spl_values.push(spl);
-                println!("Frequency ~{} Hz: SPL = {:.2} dB", target_freq, spl);
+                log::info!("Frequency ~{} Hz: SPL = {:.2} dB", target_freq, spl);
             }
         }
 
@@ -910,7 +910,7 @@ mod tests {
             let max_spl = spl_values.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
             let variation = max_spl - min_spl;
 
-            println!(
+            log::info!(
                 "SPL variation: {:.2} dB (min: {:.2}, max: {:.2})",
                 variation, min_spl, max_spl
             );
@@ -938,7 +938,7 @@ mod tests {
         // Estimate lag using cross-correlation
         let lag = estimate_lag(reference, recorded);
 
-        println!(
+        log::info!(
             "[FFT Analysis] Estimated lag: {} samples ({:.2} ms)",
             lag,
             lag as f32 * 1000.0 / sample_rate as f32

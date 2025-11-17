@@ -207,7 +207,7 @@ impl SymphoniaDecoder {
         // Detect the format from the file extension
         let format = AudioFormat::from_path(path)?;
 
-        println!(
+        log::info!(
             "[SymphoniaDecoder] Initialized {}: {}Hz, {}ch, {}bit, {:?} frames",
             format.as_str(),
             spec.sample_rate,

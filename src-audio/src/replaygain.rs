@@ -49,11 +49,11 @@ pub struct ReplayGainInfo {
 /// use sotf_audio::replaygain::analyze_file;
 ///
 /// let info = analyze_file("track.flac").unwrap();
-/// println!("ReplayGain: {:.2} dB", info.gain);
-/// println!("Peak: {:.6}", info.peak);
+/// log::info!("ReplayGain: {:.2} dB", info.gain);
+/// log::info!("Peak: {:.6}", info.peak);
 /// ```
 pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInfo> {
-    eprintln!(
+    log::info!(
         "[Replay Gain] Analyze : {}",
         path.as_ref().to_str().unwrap()
     );
@@ -106,7 +106,7 @@ pub fn analyze_file<P: AsRef<Path>>(path: P) -> AudioDecoderResult<ReplayGainInf
     // Calculate ReplayGain: reference level minus the measured loudness
     let gain = REPLAYGAIN2_REFERENCE_LUFS - loudness;
 
-    eprintln!("[Replay Gain] Gain: {}dB Peak: {}dB", gain, peak);
+    log::debug!("[Replay Gain] Gain: {}dB Peak: {}dB", gain, peak);
     Ok(ReplayGainInfo { gain, peak })
 }
 

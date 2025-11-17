@@ -40,7 +40,7 @@ impl PlaybackThread {
                     channels,
                     output_device,
                 ) {
-                    eprintln!("[Playback Thread] Error: {}", e);
+                    log::debug!("[Playback Thread] Error: {}", e);
                 }
             })
             .map_err(|e| format!("Failed to spawn playback thread: {}", e))?;
@@ -182,7 +182,7 @@ fn run_playback_thread(
     // Select output device
     let device = if let Some(device_name) = output_device {
         // Try to find device by name
-        eprintln!("[Playback Thread] Looking for device: '{}'", device_name);
+        log::debug!("[Playback Thread] Looking for device: '{}'", device_name);
 
         // Case-insensitive pattern matching with exact match priority
         let target_pattern = device_name.to_lowercase();
@@ -219,11 +219,11 @@ fn run_playback_thread(
         match found_device {
             Some(dev) => {
                 let dev_name = dev.name().unwrap_or_else(|_| "Unknown".to_string());
-                eprintln!("[Playback Thread] Using device: '{}'", dev_name);
+                log::debug!("[Playback Thread] Using device: '{}'", dev_name);
                 dev
             }
             None => {
-                eprintln!(
+                log::info!(
                     "[Playback Thread] Device '{}' not found, using default",
                     device_name
                 );
@@ -259,7 +259,7 @@ fn run_playback_thread(
         .play()
         .map_err(|e| format!("Failed to start stream: {}", e))?;
 
-    eprintln!(
+    log::info!(
         "[Playback Thread] Started - {}Hz, {} channels",
         sample_rate, channels
     );
@@ -277,7 +277,7 @@ fn run_playback_thread(
                 }
                 PlaybackCommand::UpdateChannels(new_channels) => {
                     if new_channels != channels {
-                        eprintln!(
+                        log::info!(
                             "[Playback Thread] Updating channel count: {} -> {}",
                             channels, new_channels
                         );
@@ -300,21 +300,21 @@ fn run_playback_thread(
                         ) {
                             Ok(new_stream) => {
                                 if let Err(e) = new_stream.play() {
-                                    eprintln!(
+                                    log::info!(
                                         "[Playback Thread] Failed to start new stream: {}",
                                         e
                                     );
                                 } else {
                                     // Replace old stream with new one (old one drops automatically)
                                     stream = new_stream;
-                                    eprintln!(
+                                    log::info!(
                                         "[Playback Thread] Stream rebuilt with {} channels",
                                         channels
                                     );
                                 }
                             }
                             Err(e) => {
-                                eprintln!("[Playback Thread] Failed to rebuild stream: {}", e);
+                                log::debug!("[Playback Thread] Failed to rebuild stream: {}", e);
                             }
                         }
                     }
@@ -323,7 +323,7 @@ fn run_playback_thread(
                     state.ring_buffer.lock().clear();
                 }
                 PlaybackCommand::Shutdown => {
-                    eprintln!("[Playback Thread] Shutting down");
+                    log::debug!("[Playback Thread] Shutting down");
                     break;
                 }
             }
@@ -350,14 +350,14 @@ fn run_playback_thread(
                 // Write to ring buffer (should have space now)
                 let written = state.ring_buffer.lock().write(&frame.data);
                 if written < frame.data.len() {
-                    eprintln!(
+                    log::info!(
                         "[Playback Thread] Ring buffer full, dropped {} samples",
                         frame.data.len() - written
                     );
                 }
             }
             Ok(ProcessingMessage::EndOfStream) => {
-                eprintln!("[Playback Thread] End of stream");
+                log::debug!("[Playback Thread] End of stream");
                 // Could notify manager here
             }
             Ok(ProcessingMessage::Flush) => {
@@ -367,7 +367,7 @@ fn run_playback_thread(
                 // No message, continue
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                eprintln!("[Playback Thread] Queue disconnected");
+                log::debug!("[Playback Thread] Queue disconnected");
                 break;
             }
         }
@@ -375,7 +375,7 @@ fn run_playback_thread(
 
     // Cleanup
     drop(stream);
-    eprintln!("[Playback Thread] Stopped");
+    log::debug!("[Playback Thread] Stopped");
     Ok(())
 }
 
@@ -424,7 +424,7 @@ fn build_output_stream(
                 }
             },
             |err| {
-                eprintln!("[Playback Thread] Stream error: {}", err);
+                log::debug!("[Playback Thread] Stream error: {}", err);
             },
             None,
         )

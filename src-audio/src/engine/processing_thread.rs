@@ -52,7 +52,7 @@ impl ProcessingThread {
                     sample_rate,
                     channels,
                 ) {
-                    eprintln!("[Processing Thread] Error: {}", e);
+                    log::debug!("[Processing Thread] Error: {}", e);
                 }
             })
             .map_err(|e| format!("Failed to spawn processing thread: {}", e))?;
@@ -133,7 +133,7 @@ impl ProcessingState {
         self.next_host = Some(new_host);
         self.crossfade_pos = 0.0;
         self.crossfade_current = 0;
-        eprintln!(
+        log::info!(
             "[Processing Thread] Starting plugin hot-reload (crossfade {} frames)",
             self.crossfade_frames
         );
@@ -162,14 +162,14 @@ impl ProcessingState {
         // Initialize the analyzer with current sample rate
         analyzer.initialize(self.sample_rate)?;
 
-        eprintln!("[Processing Thread] Added analyzer: {}", id);
+        log::debug!("[Processing Thread] Added analyzer: {}", id);
         self.analyzers.insert(id, analyzer);
         Ok(())
     }
 
     /// Remove an analyzer plugin
     fn remove_analyzer(&mut self, id: &str) -> Option<Box<dyn AnalyzerPlugin>> {
-        eprintln!("[Processing Thread] Removed analyzer: {}", id);
+        log::debug!("[Processing Thread] Removed analyzer: {}", id);
         self.analyzers.remove(id)
     }
 
@@ -208,7 +208,7 @@ impl ProcessingState {
         if let Some(next_host) = &mut self.next_host {
             // Check if channel counts differ - crossfade only works for same channel count
             if self.host.output_channels() != next_host.output_channels() {
-                eprintln!(
+                log::info!(
                     "[Processing Thread] Channel count change detected ({}→{}), immediate swap (no crossfade)",
                     self.host.output_channels(),
                     next_host.output_channels()
@@ -221,7 +221,7 @@ impl ProcessingState {
                 self.crossfade_pos = 0.0;
                 self.crossfade_current = 0;
 
-                eprintln!(
+                log::info!(
                     "[Processing Thread] Updated output channels: {}",
                     self.channels
                 );
@@ -252,7 +252,7 @@ impl ProcessingState {
 
                 // Check if crossfade complete
                 if self.crossfade_pos >= 1.0 {
-                    eprintln!("[Processing Thread] Hot-reload complete");
+                    log::debug!("[Processing Thread] Hot-reload complete");
                     // Swap in the new host
                     std::mem::swap(&mut self.host, next_host);
                     self.next_host = None;
@@ -275,7 +275,7 @@ impl ProcessingState {
 
             for (id, analyzer) in self.analyzers.iter_mut() {
                 if let Err(e) = analyzer.process(output, &context) {
-                    eprintln!("[Processing Thread] Analyzer '{}' error: {}", id, e);
+                    log::debug!("[Processing Thread] Analyzer '{}' error: {}", id, e);
                 }
             }
         }
@@ -296,7 +296,7 @@ fn run_processing_thread(
 ) -> Result<(), String> {
     let mut state = ProcessingState::new(sample_rate, channels);
 
-    eprintln!(
+    log::info!(
         "[Processing Thread] Started - {}Hz, {} channels",
         sample_rate, channels
     );
@@ -316,7 +316,7 @@ fn run_processing_thread(
                                 .ok();
                         }
                         Err(e) => {
-                            eprintln!("[Processing Thread] Failed to build plugin chain: {}", e);
+                            log::debug!("[Processing Thread] Failed to build plugin chain: {}", e);
                             response_tx.send(ProcessingResponse::Error(e)).ok();
                         }
                     }
@@ -328,7 +328,7 @@ fn run_processing_thread(
                 } => {
                     // Update parameter on current host
                     // TODO: Implement parameter setting
-                    eprintln!(
+                    log::info!(
                         "[Processing Thread] Set parameter: plugin {} param {} = {}",
                         plugin_index, param_id, value
                     );
@@ -336,7 +336,7 @@ fn run_processing_thread(
                 }
                 ProcessingCommand::Bypass(bypass) => {
                     state.bypassed = bypass;
-                    eprintln!("[Processing Thread] Bypass: {}", bypass);
+                    log::debug!("[Processing Thread] Bypass: {}", bypass);
                     response_tx.send(ProcessingResponse::Ok).ok();
                 }
                 ProcessingCommand::AddLoudnessAnalyzer { id, channels } => {
@@ -344,11 +344,11 @@ fn run_processing_thread(
                     match LoudnessMonitorPlugin::new(channels) {
                         Ok(plugin) => match state.add_analyzer(id.clone(), Box::new(plugin)) {
                             Ok(_) => {
-                                eprintln!("[Processing Thread] Added loudness analyzer: {}", id);
+                                log::debug!("[Processing Thread] Added loudness analyzer: {}", id);
                                 response_tx.send(ProcessingResponse::Ok).ok();
                             }
                             Err(e) => {
-                                eprintln!(
+                                log::info!(
                                     "[Processing Thread] Failed to add loudness analyzer: {}",
                                     e
                                 );
@@ -356,7 +356,7 @@ fn run_processing_thread(
                             }
                         },
                         Err(e) => {
-                            eprintln!(
+                            log::info!(
                                 "[Processing Thread] Failed to create loudness analyzer: {}",
                                 e
                             );
@@ -369,11 +369,11 @@ fn run_processing_thread(
                     match SpectrumAnalyzerPlugin::new(channels) {
                         Ok(plugin) => match state.add_analyzer(id.clone(), Box::new(plugin)) {
                             Ok(_) => {
-                                eprintln!("[Processing Thread] Added spectrum analyzer: {}", id);
+                                log::debug!("[Processing Thread] Added spectrum analyzer: {}", id);
                                 response_tx.send(ProcessingResponse::Ok).ok();
                             }
                             Err(e) => {
-                                eprintln!(
+                                log::info!(
                                     "[Processing Thread] Failed to add spectrum analyzer: {}",
                                     e
                                 );
@@ -381,7 +381,7 @@ fn run_processing_thread(
                             }
                         },
                         Err(e) => {
-                            eprintln!(
+                            log::info!(
                                 "[Processing Thread] Failed to create spectrum analyzer: {}",
                                 e
                             );
@@ -391,17 +391,17 @@ fn run_processing_thread(
                 }
                 ProcessingCommand::RemoveAnalyzer(id) => match state.remove_analyzer(&id) {
                     Some(_) => {
-                        eprintln!("[Processing Thread] Removed analyzer: {}", id);
+                        log::debug!("[Processing Thread] Removed analyzer: {}", id);
                         response_tx.send(ProcessingResponse::Ok).ok();
                     }
                     None => {
                         let err = format!("Analyzer '{}' not found", id);
-                        eprintln!("[Processing Thread] {}", err);
+                        log::debug!("[Processing Thread] {}", err);
                         response_tx.send(ProcessingResponse::Error(err)).ok();
                     }
                 },
                 ProcessingCommand::GetAnalyzerData(analyzer_id) => {
-                    eprintln!("[Processing Thread] Get analyzer data: {}", analyzer_id);
+                    log::debug!("[Processing Thread] Get analyzer data: {}", analyzer_id);
                     match state.get_analyzer_data(&analyzer_id) {
                         Ok(data) => {
                             response_tx
@@ -415,10 +415,10 @@ fn run_processing_thread(
                 }
                 ProcessingCommand::Stop => {
                     // Stop processing - just clear state
-                    eprintln!("[Processing Thread] Stopped");
+                    log::debug!("[Processing Thread] Stopped");
                 }
                 ProcessingCommand::Shutdown => {
-                    eprintln!("[Processing Thread] Shutting down");
+                    log::debug!("[Processing Thread] Shutting down");
                     break;
                 }
             }
@@ -448,7 +448,7 @@ fn run_processing_thread(
                             .ok();
                     }
                     Err(e) => {
-                        eprintln!("[Processing Thread] Processing error: {}", e);
+                        log::debug!("[Processing Thread] Processing error: {}", e);
                         event_tx.send(ThreadEvent::ProcessingError(e)).ok();
                     }
                 }
@@ -463,13 +463,13 @@ fn run_processing_thread(
                 // No message, continue
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                eprintln!("[Processing Thread] Decoder queue disconnected");
+                log::debug!("[Processing Thread] Decoder queue disconnected");
                 break;
             }
         }
     }
 
-    eprintln!("[Processing Thread] Stopped");
+    log::debug!("[Processing Thread] Stopped");
     Ok(())
 }
 
@@ -491,7 +491,7 @@ fn build_plugin_host(
     let mut current_channels = channels;
 
     for (i, config) in configs.iter().enumerate() {
-        eprintln!(
+        log::info!(
             "[Processing Thread] Loading plugin {}: {}",
             i, config.plugin_type
         );
@@ -516,7 +516,7 @@ fn build_plugin_host(
                 // Update current channel count for next plugin
                 current_channels = plugin.output_channels();
 
-                eprintln!(
+                log::info!(
                     "[Processing Thread] Plugin '{}' loaded: {}ch -> {}ch",
                     config.plugin_type,
                     plugin.input_channels(),
@@ -534,7 +534,7 @@ fn build_plugin_host(
         }
     }
 
-    eprintln!(
+    log::info!(
         "[Processing Thread] Plugin chain loaded: {} plugins, {}ch -> {}ch",
         configs.len(),
         channels,

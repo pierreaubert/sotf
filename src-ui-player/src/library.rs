@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
+use symphonia::core::meta::{Limit, MetadataOptions};
+use symphonia::core::probe::{Hint, Probe};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,6 +158,21 @@ struct TrackMetadata {
     pub duration_secs: Option<u64>,
 }
 
+/// Create a custom probe with all supported format readers registered
+fn create_probe() -> Probe {
+    let mut probe = Probe::default();
+
+    // Register all format readers to help probe find formats more efficiently
+    probe.register_all::<symphonia_bundle_flac::FlacReader>();
+    probe.register_all::<symphonia_bundle_mp3::MpaReader>();
+    probe.register_all::<symphonia_format_riff::WavReader>();
+    probe.register_all::<symphonia_format_ogg::OggReader>();
+    probe.register_all::<symphonia_format_isomp4::IsoMp4Reader>();
+    probe.register_all::<symphonia_codec_aac::AdtsReader>();
+
+    probe
+}
+
 fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -168,9 +183,15 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     }
 
     let format_opts = FormatOptions::default();
-    let metadata_opts = MetadataOptions::default();
+    // Use larger limits to avoid crashes with files that have large metadata or embedded artwork
+    let metadata_opts = MetadataOptions {
+        limit_metadata_bytes: Limit::Maximum(10 * 1024 * 1024), // 10 MB for metadata
+        limit_visual_bytes: Limit::Maximum(20 * 1024 * 1024),   // 20 MB for embedded artwork
+    };
 
-    let mut probed = symphonia::default::get_probe().format(&hint, mss, &format_opts, &metadata_opts)?;
+    // Use custom probe with registered formats for better format detection
+    let probe = create_probe();
+    let mut probed = probe.format(&hint, mss, &format_opts, &metadata_opts)?;
 
     let mut metadata = TrackMetadata::default();
 

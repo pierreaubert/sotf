@@ -449,7 +449,7 @@ mod tests {
         let output_rms = (output.iter().map(|x| x * x).sum::<f32>() / output.len() as f32).sqrt();
         let ratio = output_rms / input_rms;
 
-        println!("RMS ratio (1kHz): {:.3}", ratio);
+        log::info!("RMS ratio (1kHz): {:.3}", ratio);
         // At 1kHz (between 100Hz and 10kHz), should be relatively flat
         assert!(
             ratio > 0.5 && ratio < 2.0,
@@ -487,7 +487,7 @@ mod tests {
         let output_energy: f32 = output.iter().map(|x| x * x).sum();
         let ratio = output_energy / input_energy;
 
-        println!("Energy ratio at 50Hz with +12dB bass: {:.2}", ratio);
+        log::info!("Energy ratio at 50Hz with +12dB bass: {:.2}", ratio);
         // With +12dB boost and compensation, should still be boosted
         // 12dB = 4x power, but compensation is -12dB so we get ~1x
         assert!(ratio > 0.5, "Bass should be affected by boost");
@@ -540,7 +540,7 @@ mod tests {
             .map(|(a, b)| (a - b).abs())
             .fold(0.0_f32, f32::max);
 
-        println!("Max difference with zero gain: {}", max_diff);
+        log::info!("Max difference with zero gain: {}", max_diff);
         assert!(
             max_diff < 0.01,
             "With zero gain should be nearly passthrough"

@@ -55,7 +55,7 @@ impl ConfigWatcher {
                     shutdown_tx_thread,
                     shutdown_rx,
                 ) {
-                    eprintln!("[Config Watcher] Error: {}", e);
+                    log::debug!("[Config Watcher] Error: {}", e);
                 }
             })
             .map_err(|e| format!("Failed to spawn config watcher thread: {}", e))?;
@@ -100,9 +100,9 @@ fn run_config_watcher(
     shutdown_tx: Sender<()>,
     shutdown_rx: Receiver<()>,
 ) -> Result<(), String> {
-    eprintln!("[Config Watcher] Starting");
-    eprintln!("[Config Watcher]   Config file: {:?}", config_path);
-    eprintln!("[Config Watcher]   Watch signals: {}", watch_signals);
+    log::debug!("[Config Watcher] Starting");
+    log::debug!("[Config Watcher]   Config file: {:?}", config_path);
+    log::debug!("[Config Watcher]   Watch signals: {}", watch_signals);
 
     // Setup file watcher if config path provided
     let _file_watcher = if let Some(ref path) = config_path {
@@ -121,10 +121,10 @@ fn run_config_watcher(
 
     #[cfg(not(unix))]
     if watch_signals {
-        eprintln!("[Config Watcher] Warning: Signal watching not supported on this platform");
+        log::debug!("[Config Watcher] Warning: Signal watching not supported on this platform");
     }
 
-    eprintln!("[Config Watcher] Ready");
+    log::debug!("[Config Watcher] Ready");
 
     // Main loop - check for signals and shutdown requests
     loop {
@@ -132,13 +132,13 @@ fn run_config_watcher(
         #[cfg(unix)]
         if let Some(ref flags) = signal_flags {
             if flags.shutdown.load(Ordering::Relaxed) {
-                eprintln!("[Config Watcher] Shutdown signal received (SIGTERM/SIGINT)");
+                log::debug!("[Config Watcher] Shutdown signal received (SIGTERM/SIGINT)");
                 event_tx.send(ConfigEvent::Shutdown).ok();
                 shutdown_tx.send(()).ok();
                 break;
             }
             if flags.reload.load(Ordering::Relaxed) {
-                eprintln!("[Config Watcher] Reload signal received (SIGHUP)");
+                log::debug!("[Config Watcher] Reload signal received (SIGHUP)");
                 event_tx.send(ConfigEvent::Reload).ok();
                 // Reset flag so we can detect future signals
                 flags.reload.store(false, Ordering::Relaxed);
@@ -148,7 +148,7 @@ fn run_config_watcher(
         // Check for shutdown request from parent (with short timeout for responsiveness)
         match shutdown_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                eprintln!("[Config Watcher] Shutting down");
+                log::debug!("[Config Watcher] Shutting down");
                 break;
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -167,7 +167,7 @@ fn setup_file_watcher(
 ) -> Result<notify::RecommendedWatcher, String> {
     use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
-    eprintln!("[Config Watcher] Watching file: {:?}", config_path);
+    log::debug!("[Config Watcher] Watching file: {:?}", config_path);
 
     let config_path_clone = config_path.clone();
     let mut watcher = RecommendedWatcher::new(
@@ -177,7 +177,7 @@ fn setup_file_watcher(
                     // Only trigger on modify/write events
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) => {
-                            eprintln!("[Config Watcher] File changed: {:?}", config_path_clone);
+                            log::debug!("[Config Watcher] File changed: {:?}", config_path_clone);
                             event_tx
                                 .send(ConfigEvent::ConfigChanged(config_path_clone.clone()))
                                 .ok();
@@ -188,7 +188,7 @@ fn setup_file_watcher(
                     }
                 }
                 Err(e) => {
-                    eprintln!("[Config Watcher] Watch error: {}", e);
+                    log::debug!("[Config Watcher] Watch error: {}", e);
                 }
             }
         },
@@ -200,7 +200,7 @@ fn setup_file_watcher(
     let watch_path = if config_path.exists() {
         config_path.clone()
     } else if let Some(parent) = config_path.parent() {
-        eprintln!(
+        log::info!(
             "[Config Watcher] File doesn't exist, watching parent directory: {:?}",
             parent
         );
@@ -226,12 +226,12 @@ struct SignalFlags {
 /// Setup Unix signal handler using flag-based approach
 #[cfg(unix)]
 fn setup_signal_handler() -> Result<SignalFlags, String> {
-    eprintln!("[Config Watcher] Setting up signal handlers (SIGHUP, SIGTERM, SIGINT)");
+    log::debug!("[Config Watcher] Setting up signal handlers (SIGHUP, SIGTERM, SIGINT)");
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let reload = Arc::new(AtomicBool::new(false));
 
-    eprintln!("[Config Watcher] Signal handlers registered successfully");
+    log::debug!("[Config Watcher] Signal handlers registered successfully");
 
     Ok(SignalFlags { shutdown, reload })
 }

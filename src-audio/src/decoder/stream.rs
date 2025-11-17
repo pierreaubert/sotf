@@ -135,7 +135,7 @@ impl AudioStream {
         let decoder = create_decoder(path)?;
         let spec = decoder.spec().clone();
 
-        println!(
+        log::info!(
             "[AudioStream] Created stream: {}Hz, {}ch, {:?} frames",
             spec.sample_rate, spec.channels, spec.total_frames
         );
@@ -169,7 +169,7 @@ impl AudioStream {
         // Spawn decoder thread
         let thread_handle = thread::spawn(move || {
             if let Err(e) = Self::decoder_thread_main(path, config, state, cmd_rx, event_tx) {
-                eprintln!("[AudioStream] Decoder thread error: {:?}", e);
+                log::debug!("[AudioStream] Decoder thread error: {:?}", e);
             }
         });
 
@@ -261,7 +261,7 @@ impl AudioStream {
         cmd_rx: Receiver<StreamCommand>,
         event_tx: Sender<StreamEvent>,
     ) -> AudioDecoderResult<()> {
-        println!("[AudioStream] Decoder thread starting for: {:?}", path);
+        log::info!("[AudioStream] Decoder thread starting for: {:?}", path);
 
         // Create decoder
         let mut decoder = create_decoder(&path)?;
@@ -359,7 +359,7 @@ impl AudioStream {
             }
         }
 
-        println!("[AudioStream] Decoder thread exiting");
+        log::info!("[AudioStream] Decoder thread exiting");
         Ok(())
     }
 }

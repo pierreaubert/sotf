@@ -40,7 +40,8 @@ impl Player {
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let manager = self.manager.lock().await;
-        manager.update_plugin_chain(plugins)?;
+        // Ignore error if engine not running - plugins will be applied on next playback
+        let _ = manager.update_plugin_chain(plugins);
         Ok(())
     }
 

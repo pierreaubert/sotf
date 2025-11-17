@@ -119,7 +119,7 @@ impl SofaFile {
 
         // Read global attributes
         let convention = Self::read_string_attr(&file, "SOFAConventions")?;
-        eprintln!("[SOFA] Convention: {}", convention);
+        log::debug!("[SOFA] Convention: {}", convention);
 
         // Read dimensions
         let m_dim = file
@@ -136,7 +136,7 @@ impl SofaFile {
         let ir_length = n_dim.len();
         let num_receivers = r_dim.len();
 
-        eprintln!(
+        log::info!(
             "[SOFA] Dimensions: M={}, R={}, N={}",
             num_measurements, num_receivers, ir_length
         );
@@ -150,11 +150,11 @@ impl SofaFile {
 
         // Read sample rate
         let sample_rate = Self::read_sample_rate(&file)?;
-        eprintln!("[SOFA] Sample rate: {} Hz", sample_rate);
+        log::debug!("[SOFA] Sample rate: {} Hz", sample_rate);
 
         // Read source positions
         let positions = Self::read_source_positions(&file, num_measurements)?;
-        eprintln!("[SOFA] Loaded {} source positions", positions.len());
+        log::debug!("[SOFA] Loaded {} source positions", positions.len());
 
         // Read impulse responses
         // Data.IR has shape [M, R, N] = [measurements, receivers, samples]
@@ -166,7 +166,7 @@ impl SofaFile {
             .get_values(..)
             .map_err(|e| format!("Failed to read IR data: {}", e))?;
 
-        eprintln!(
+        log::info!(
             "[SOFA] Loaded {} IR samples ({}×{}×{})",
             ir_data.len(),
             num_measurements,
@@ -359,7 +359,7 @@ impl SofaFile {
             None => CoordinateSystem::Spherical, // Default assumption
         };
 
-        eprintln!("[SOFA] Coordinate system: {:?}", coord_system);
+        log::debug!("[SOFA] Coordinate system: {:?}", coord_system);
 
         // Parse positions
         let mut positions = Vec::with_capacity(num_measurements);

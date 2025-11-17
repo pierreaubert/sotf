@@ -353,13 +353,13 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     }
 
     status_spans.push(Span::raw("Keys: "));
-    status_spans.push(Span::styled("1", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("L", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Library "));
-    status_spans.push(Span::styled("2", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("D", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Directories "));
-    status_spans.push(Span::styled("3", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("Q", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Queue "));
-    status_spans.push(Span::styled("4", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("P", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Plugins "));
     status_spans.push(Span::styled("ESC", Style::default().fg(Color::Red)));
     status_spans.push(Span::raw("=Quit "));
