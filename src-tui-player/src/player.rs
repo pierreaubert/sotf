@@ -21,6 +21,7 @@ impl Player {
         path: PathBuf,
         plugins: Vec<PluginConfig>,
         output_channels: usize,
+        output_device: Option<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut manager = self.manager.lock().await;
 
@@ -30,8 +31,8 @@ impl Player {
         // Load the new file
         manager.load_file(&path)?;
 
-        // Start playback with plugins
-        manager.start_playback(None, plugins, output_channels)?;
+        // Start playback with plugins and specified output device
+        manager.start_playback(output_device, plugins, output_channels)?;
 
         Ok(())
     }
@@ -90,6 +91,24 @@ impl Player {
     pub async fn get_loudness(&self) -> Option<LoudnessInfo> {
         let manager = self.manager.lock().await;
         manager.get_loudness()
+    }
+
+    pub async fn set_output_device(
+        &self,
+        device_name: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut manager = self.manager.lock().await;
+
+        // Stop current playback before switching device
+        manager.stop()?;
+
+        // Store the device name for next playback
+        // Note: The device will be applied when playback starts next time
+        log::info!("Output device set to: {}", device_name);
+
+        // The actual device switching happens in the AudioEngine when it starts
+        // We need to restart playback with the new device setting
+        Ok(())
     }
 }
 

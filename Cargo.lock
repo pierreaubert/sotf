@@ -385,7 +385,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "accelerate-src",
  "autoeq-cea2034",
@@ -418,7 +418,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq-cea2034"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "ndarray 0.16.1",
  "serde",
@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq-de"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "accelerate-src",
  "autoeq-env",
@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq-env"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "chrono",
  "thiserror 2.0.17",
@@ -460,7 +460,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq-iir"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -471,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq-testfunctions"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "autoeq-env",
  "clap",
@@ -1167,7 +1167,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convexhull3d"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "log",
  "ndarray 0.16.1",
@@ -2857,10 +2857,9 @@ dependencies = [
 
 [[package]]
 name = "head-scanner"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "bytemuck",
- "convexhull3d",
  "delaunator",
  "env_logger 0.11.8",
  "futures",
@@ -7008,7 +7007,7 @@ checksum = "19f58d7b0190c7f12df7e8be6b79767a0836059159811b869d5ab55721fe14d0"
 
 [[package]]
 name = "sotf"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "accelerate-src",
  "autoeq",
@@ -7038,7 +7037,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-ui-player"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "autoeq-iir",
  "clap",
@@ -7068,7 +7067,7 @@ dependencies = [
 
 [[package]]
 name = "sotf_audio"
-version = "0.4.466"
+version = "0.5.0"
 dependencies = [
  "autoeq-env",
  "autoeq-iir",

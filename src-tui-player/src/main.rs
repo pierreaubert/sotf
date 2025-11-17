@@ -129,7 +129,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     let sample_rate = 48000.0;
                                     let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
                                     let output_channels = app.plugin_chain.output_channels();
-                                    let _ = player.load_and_play(path, plugins, output_channels).await;
+                                    let _ = player.load_and_play(path, plugins, output_channels, app.current_output_device_name.clone()).await;
                                 } else {
                                     app.is_playing = false;
                                 }
@@ -163,7 +163,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 
 async fn handle_player_command(
     player: &Player,
-    app: &App,
+    app: &mut App,
     cmd: PlayerCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
@@ -173,7 +173,7 @@ async fn handle_player_command(
             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
             let output_channels = app.plugin_chain.output_channels();
 
-            player.load_and_play(path, plugins, output_channels).await?;
+            player.load_and_play(path, plugins, output_channels, app.current_output_device_name.clone()).await?;
         }
         PlayerCommand::Pause => {
             player.pause().await?;
@@ -192,6 +192,12 @@ async fn handle_player_command(
             let sample_rate = 48000.0;
             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
             player.update_plugins(plugins).await?;
+        }
+        PlayerCommand::SetOutputDevice(device_name) => {
+            // Store the device name for future playback
+            app.current_output_device_name = Some(device_name.clone());
+            player.set_output_device(device_name).await?;
+            log::info!("Output device changed");
         }
     }
     Ok(())

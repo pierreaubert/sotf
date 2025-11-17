@@ -182,11 +182,15 @@ impl AudioStreamingManager {
         // Enable any pending analyzers that were requested before engine was running
         if *self.pending_spectrum_monitoring.lock() {
             log::debug!("[AudioStreamingManager] Enabling pending spectrum monitoring");
-            self.enable_spectrum_monitoring().ok();
+            if let Err(e) = self.enable_spectrum_monitoring() {
+                log::error!("[AudioStreamingManager] Failed to enable spectrum monitoring: {}", e);
+            }
         }
         if *self.pending_loudness_monitoring.lock() {
             log::debug!("[AudioStreamingManager] Enabling pending loudness monitoring");
-            self.enable_loudness_monitoring().ok();
+            if let Err(e) = self.enable_loudness_monitoring() {
+                log::error!("[AudioStreamingManager] Failed to enable loudness monitoring: {}", e);
+            }
         }
 
         Ok(())
@@ -225,9 +229,9 @@ impl AudioStreamingManager {
             engine.shutdown().map_err(AudioDecoderError::IoError)?;
         }
 
-        // Clear pending analyzer flags
-        *self.pending_spectrum_monitoring.lock() = false;
-        *self.pending_loudness_monitoring.lock() = false;
+        // Don't clear pending analyzer flags - they should persist until the analyzer is added
+        // The flags are cleared when enable_loudness_monitoring/enable_spectrum_monitoring
+        // successfully adds the analyzer to the engine
 
         self.set_state(StreamingState::Idle);
 

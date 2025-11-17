@@ -25,8 +25,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(70), // Main content
-            Constraint::Percentage(30), // Right column (LUFS, level meter, volume)
+            Constraint::Percentage(85), // Main content
+            Constraint::Percentage(15), // Right column (LUFS, level meter, volume)
         ])
         .split(chunks[1]);
 
@@ -36,6 +36,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::DirectoryManager => draw_directory_manager(f, main_chunks[0], app),
         Screen::Queue => draw_queue_screen(f, main_chunks[0], app),
         Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
+        Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
     }
 
     // Right column with meters
@@ -63,6 +64,7 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
         Screen::DirectoryManager => "SOTF Music Player - Directories",
         Screen::Queue => "SOTF Music Player - Queue",
         Screen::Plugins => "SOTF Music Player - Audio Plugins",
+        Screen::Devices => "SOTF Music Player - Output Devices",
     };
 
     // Split title area into left (title) and right (device selector)
@@ -424,6 +426,79 @@ fn draw_available_plugins(f: &mut Frame, area: Rect, _app: &App) {
     f.render_widget(list, area);
 }
 
+fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Info box
+            Constraint::Min(0),    // Device list
+        ])
+        .split(area);
+
+    // Info box
+    let info_text = "Select output device with ↑/↓, press Enter or Space to apply";
+    let info = Paragraph::new(info_text)
+        .style(Style::default().fg(Color::Yellow))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL).title("Help"));
+
+    f.render_widget(info, chunks[0]);
+
+    // Device list
+    let items: Vec<ListItem> = app
+        .output_devices
+        .iter()
+        .enumerate()
+        .map(|(i, device)| {
+            let default_marker = if device.is_default { " [DEFAULT]" } else { "" };
+            let current_marker = if i == app.selected_output_device_index {
+                "► "
+            } else {
+                "  "
+            };
+
+            // Show device name and some config info
+            let config_info = if let Some(ref config) = device.default_config {
+                format!(
+                    " ({}ch, {}Hz)",
+                    config.channels, config.sample_rate
+                )
+            } else {
+                String::new()
+            };
+
+            let content = format!(
+                "{}{}{}{}",
+                current_marker, device.name, default_marker, config_info
+            );
+
+            let style = if i == app.selected_output_device_index {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else if device.is_default {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default()
+            };
+
+            ListItem::new(content).style(style)
+        })
+        .collect();
+
+    let title = if app.output_devices.is_empty() {
+        "Output Devices (none found)".to_string()
+    } else {
+        format!("Output Devices ({}) - Use ↑/↓ to select, Enter to apply", app.output_devices.len())
+    };
+
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title));
+
+    f.render_widget(list, chunks[1]);
+}
+
 fn draw_meters_column(f: &mut Frame, area: Rect, app: &App) {
     // Split the right column into 3 boxes
     let chunks = Layout::default()
@@ -488,56 +563,118 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
-    let text = if let Some(ref loudness) = app.loudness_info {
-        let mut lines = Vec::new();
+    if let Some(ref loudness) = app.loudness_info {
+        let num_channels = loudness.channel_peaks.len();
+        if num_channels == 0 {
+            let paragraph = Paragraph::new("No channels")
+                .block(Block::default().borders(Borders::ALL).title("Levels"));
+            f.render_widget(paragraph, area);
+            return;
+        }
 
-        for (i, &peak) in loudness.channel_peaks.iter().enumerate() {
+        // Create inner area for meters (without borders)
+        let inner = Rect {
+            x: area.x + 1,
+            y: area.y + 1,
+            width: area.width.saturating_sub(2),
+            height: area.height.saturating_sub(2),
+        };
+
+        // Draw border
+        let block = Block::default().borders(Borders::ALL).title("Levels");
+        f.render_widget(block, area);
+
+        // Calculate meter dimensions
+        let meter_height = inner.height as usize;
+        let channel_width = (inner.width as usize) / num_channels.max(1);
+
+        // Draw each channel as a vertical meter
+        for (ch_idx, &peak) in loudness.channel_peaks.iter().enumerate() {
             let peak_db = 20.0 * peak.max(0.0001).log10();
-            let meter_width = (area.width as usize).saturating_sub(12); // Reserve space for label and dB value
 
             // Calculate meter fill (0 dB = full, -60 dB = empty)
             let fill_ratio = ((peak_db + 60.0) / 60.0).clamp(0.0, 1.0);
-            let filled_chars = (fill_ratio * meter_width as f64) as usize;
+            let filled_rows = (fill_ratio * meter_height as f64).round() as usize;
 
-            // Color based on level
-            let color = if peak_db > -3.0 {
-                Color::Red
-            } else if peak_db > -6.0 {
-                Color::Yellow
-            } else {
-                Color::Green
-            };
+            let ch_x = inner.x + (ch_idx * channel_width) as u16;
+            let ch_width = channel_width.min((inner.width as usize - ch_idx * channel_width).min(channel_width)) as u16;
 
-            let meter = "█".repeat(filled_chars) + &"░".repeat(meter_width - filled_chars);
+            // Draw vertical meter from bottom to top
+            for row_idx in 0..meter_height {
+                let y = inner.y + inner.height - 1 - row_idx as u16;
 
-            lines.push(Line::from(vec![
-                Span::raw(format!("{}: ", i + 1)),
-                Span::styled(meter, Style::default().fg(color)),
-            ]));
+                // Determine if this row should be filled
+                let is_filled = row_idx < filled_rows;
+
+                // Color based on level (top = red, middle = yellow, bottom = green)
+                let level_ratio = row_idx as f64 / meter_height as f64;
+                let color = if level_ratio > 0.95 {
+                    Color::Red
+                } else if level_ratio > 0.90 {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                };
+
+                if is_filled {
+                    // Draw filled bar
+                    let bar = "█".repeat(ch_width.saturating_sub(1) as usize);
+                    let span = Span::styled(bar, Style::default().fg(color));
+                    f.render_widget(
+                        Paragraph::new(Line::from(span)),
+                        Rect {
+                            x: ch_x,
+                            y,
+                            width: ch_width.saturating_sub(1),
+                            height: 1,
+                        },
+                    );
+                } else {
+                    // Draw empty bar
+                    let bar = "░".repeat(ch_width.saturating_sub(1) as usize);
+                    let span = Span::styled(bar, Style::default().fg(Color::DarkGray));
+                    f.render_widget(
+                        Paragraph::new(Line::from(span)),
+                        Rect {
+                            x: ch_x,
+                            y,
+                            width: ch_width.saturating_sub(1),
+                            height: 1,
+                        },
+                    );
+                }
+            }
+
+            // Draw channel label at bottom
+            let label = format!("{}", ch_idx + 1);
+            f.render_widget(
+                Paragraph::new(label)
+                    .style(Style::default().fg(Color::Cyan))
+                    .alignment(Alignment::Center),
+                Rect {
+                    x: ch_x,
+                    y: inner.y + inner.height,
+                    width: ch_width.saturating_sub(1),
+                    height: 1,
+                },
+            );
         }
-
-        lines
     } else {
-        vec![Line::from("No audio playing")]
-    };
-
-    let paragraph = Paragraph::new(text)
-        .block(Block::default().borders(Borders::ALL).title("Levels"));
-
-    f.render_widget(paragraph, area);
+        let paragraph = Paragraph::new("No audio")
+            .block(Block::default().borders(Borders::ALL).title("Levels"))
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+    }
 }
 
 fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
     let volume_pct = (app.volume * 100.0) as u32;
-    let text = vec![
-        Line::from(vec![
-            Span::styled(
-                format!("{}%", volume_pct),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-            ),
-        ]),
-        Line::from(Span::raw("↑/↓ to adjust")),
-    ];
+    let text = Line::from(vec![
+        Span::styled(
+            format!("{}%", volume_pct),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ),
+    ]);
 
     let paragraph = Paragraph::new(text)
         .block(Block::default().borders(Borders::ALL).title("Volume"))
@@ -582,14 +719,20 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     }
 
     status_spans.push(Span::raw("Keys: "));
+    status_spans.push(Span::styled("TAB", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::raw("=Next "));
     status_spans.push(Span::styled("L", Style::default().fg(Color::Cyan)));
-    status_spans.push(Span::raw("=Library "));
+    status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("D", Style::default().fg(Color::Cyan)));
-    status_spans.push(Span::raw("=Directories "));
+    status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("Q", Style::default().fg(Color::Cyan)));
-    status_spans.push(Span::raw("=Queue "));
+    status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("P", Style::default().fg(Color::Cyan)));
-    status_spans.push(Span::raw("=Plugins "));
+    status_spans.push(Span::raw("/"));
+    status_spans.push(Span::styled("O", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::raw("=Screens "));
+    status_spans.push(Span::styled("Shift+↑/↓", Style::default().fg(Color::Yellow)));
+    status_spans.push(Span::raw("=Volume "));
     status_spans.push(Span::styled("ESC", Style::default().fg(Color::Red)));
     status_spans.push(Span::raw("=Quit "));
 
