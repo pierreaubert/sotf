@@ -56,6 +56,18 @@ pub enum ScannerError {
     #[error("Insufficient data: {0}")]
     InsufficientData(String),
 
+    /// Invalid input
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    /// Feature not implemented
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
+
+    /// IO error with custom message
+    #[error("IO error: {0}")]
+    IoError(String),
+
     /// Generic error
     #[error("{0}")]
     Other(String),

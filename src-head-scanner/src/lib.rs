@@ -41,6 +41,7 @@
 //! # }
 //! ```
 
+pub mod bundle_adjustment;
 pub mod camera;
 pub mod convexhull;
 pub mod coverage;
@@ -48,6 +49,8 @@ pub mod error;
 pub mod mesh;
 pub mod pointcloud;
 pub mod reconstruction;
+pub mod stereo;
+pub mod texture;
 pub mod vision;
 
 pub use error::{ScannerError, ScannerResult};

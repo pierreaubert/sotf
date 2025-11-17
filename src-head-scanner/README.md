@@ -1,318 +1,249 @@
 # Head Scanner
 
-A Rust-based 3D head scanning system using computer vision for HRTF (Head-Related Transfer Function) optimization.
+A comprehensive 3D head scanning system using computer vision for HRTF (Head-Related Transfer Function) optimization.
 
-## Overview
+## Recent Enhancements
 
-The head scanner uses a camera (webcam or phone) to capture multiple views of a person's head and reconstructs a high-precision 3D surface model. The system provides real-time feedback about scan coverage and outputs a triangulated mesh using convex hull algorithms.
+This crate has been significantly enhanced with the following improvements:
+
+### 1. **Convex Hull Integration**
+- Replaced homemade convex hull implementation with the robust `src-convexhull3d` crate
+- Provides better accuracy and performance for 3D mesh generation
+- Full integration with existing point cloud infrastructure
+
+### 2. **Bundle Adjustment for SfM**
+- Added `bundle_adjustment` module implementing Levenberg-Marquardt optimization
+- Simultaneously refines camera poses and 3D point positions
+- Minimizes reprojection error across all views
+- Configurable iteration count and convergence thresholds
+
+### 3. **ML Model Support**
+- **Preprocessing**: Image normalization, resizing, and NCHW format conversion for ONNX models
+- **Postprocessing**: Support for multiple output formats (detection boxes, keypoints)
+- **Non-Maximum Suppression**: Removes overlapping detections
+- Fully integrated with ONNX Runtime for neural network inference
+
+### 4. **Stereo Camera Support**
+- Complete stereo vision pipeline for accurate depth estimation
+- Stereo matching with epipolar constraints
+- Triangulation from stereo correspondences
+- Dense depth map computation
+- Calibration framework (ready for implementation)
+
+### 5. **Texture Mapping**
+- Project camera images onto 3D meshes
+- Spherical UV mapping for head geometry
+- Multi-view texture blending
+- Best-camera selection per triangle based on viewing angle
+- Export textured meshes with OBJ/MTL format
+
+### 6. **Comprehensive Integration Tests**
+- Full workflow testing from point cloud to mesh export
+- SfM reconstruction pipeline tests
+- Bundle adjustment verification
+- Stereo depth estimation tests
+- Texture mapping validation
+- Coverage tracking and mesh export tests
+
+### 7. **Performance Profiling & Benchmarking**
+- Dedicated benchmark suite (`benches/performance.rs`)
+- Benchmarks for:
+  - Convex hull computation (100 to 10,000 points)
+  - SfM reconstruction (10 to 100 frames)
+  - Bundle adjustment (10 to 500 points)
+  - Point cloud operations (1,000 to 50,000 points)
+  - Texture mapping initialization
+- Run with: `cargo bench --package head-scanner`
+
+### 8. **Examples for Common Use Cases**
+- **simple_scan.rs**: Basic scanning workflow with synthetic data
+- **sfm_reconstruction.rs**: Structure-from-Motion example
+- **stereo_depth.rs**: Stereo depth estimation demo
+- **textured_mesh.rs**: Texture mapping example
 
 ## Architecture
 
-### Core Components
+The head scanner consists of several key modules:
 
-1. **Camera Capture** (`camera.rs`)
-   - Cross-platform camera access via OpenCV
-   - Real-time frame capture and preprocessing
-   - Supports webcams and mobile device cameras
-
-2. **Computer Vision** (`vision.rs`)
-   - Feature detection using Haar cascades (classical CV)
-   - Optional ML model support via ONNX Runtime
-   - Facial landmark tracking across frames
-
-3. **3D Reconstruction** (`reconstruction.rs`)
-   - Structure-from-Motion (SfM) pipeline
-   - Camera pose estimation
-   - Point triangulation from multiple views
-   - Configurable camera intrinsics
-
-4. **Point Cloud** (`pointcloud.rs`)
-   - Efficient 3D point storage with k-d tree indexing
-   - Point cloud filtering and downsampling
-   - Outlier removal using statistical methods
-   - Normal estimation
-   - PLY export format
-
-5. **Coverage Tracking** (`coverage.rs`)
-   - Voxel-based coverage mapping
-   - Real-time feedback on uncovered regions
-   - Coverage percentage calculation
-   - Heatmap generation for visualization
-
-6. **Convex Hull** (`convexhull.rs`)
-   - 3D convex hull computation using QuickHull algorithm
-   - Volume and surface area calculations
-   - Face extraction for mesh generation
-
-7. **Mesh Generation** (`mesh.rs`)
-   - Triangulated mesh creation
-   - Smooth vertex normal computation
-   - Multiple export formats: OBJ, PLY, STL
-   - Texture coordinate support
+- **bundle_adjustment**: Bundle adjustment optimizer for SfM refinement
+- **camera**: Camera capture and frame management
+- **convexhull**: 3D convex hull computation (uses `src-convexhull3d`)
+- **coverage**: Scan coverage tracking
+- **mesh**: 3D mesh generation and export
+- **pointcloud**: Point cloud data structure and operations
+- **reconstruction**: Structure-from-Motion and 3D reconstruction
+- **stereo**: Stereo camera support and depth estimation
+- **texture**: Texture mapping from camera frames
+- **vision**: Computer vision features (classical and ML-based)
 
 ## Usage
 
+### Basic Scanning
+
 ```rust
-use head_scanner::{HeadScanner, ScannerConfig};
+use head_scanner::*;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Create scanner with default configuration
-    let config = ScannerConfig::default();
-    let mut scanner = HeadScanner::new(config)?;
+// Create scanner configuration
+let config = ScannerConfig::default();
+let mut scanner = HeadScanner::new(config)?;
 
-    // Start scanning
-    scanner.start().await?;
+// Start scanning
+scanner.start().await?;
 
-    // Process frames until scan is complete
-    while !scanner.is_scan_complete() {
-        scanner.process_frame().await?;
-
-        // Get real-time feedback
-        let coverage = scanner.get_coverage();
-        let coverage_map = scanner.get_coverage_map();
-        let uncovered = coverage_map.get_uncovered_regions();
-
-        println!("Scan coverage: {:.1}%", coverage * 100.0);
-        println!("Uncovered regions: {}", uncovered.len());
-    }
-
-    // Generate final mesh
-    let mesh = scanner.generate_mesh()?;
-
-    // Export in multiple formats
-    mesh.export("head_model.obj")?;  // Wavefront OBJ
-    mesh.export("head_model.ply")?;  // Stanford PLY
-    mesh.export("head_model.stl")?;  // STL for 3D printing
-
-    Ok(())
+// Process frames
+while !scanner.is_scan_complete() {
+    scanner.process_frame().await?;
+    let coverage = scanner.get_coverage();
+    println!("Coverage: {:.1}%", coverage * 100.0);
 }
+
+// Generate mesh
+let mesh = scanner.generate_mesh()?;
+mesh.export("head_model.obj")?;
 ```
 
-## Configuration
-
-The `ScannerConfig` struct provides extensive configuration options:
+### Structure-from-Motion with Bundle Adjustment
 
 ```rust
-let config = ScannerConfig {
-    camera_index: 0,           // Camera device ID
-    frame_width: 1280,         // Frame resolution width
-    frame_height: 720,         // Frame resolution height
-    fps: 30,                   // Target frame rate
-    min_coverage: 0.85,        // Minimum coverage (85%)
-    point_density: 50.0,       // Points per cm²
-    use_gpu: true,             // Enable GPU acceleration
-    model_path: Some("depth_model.onnx".into()), // Optional ML model
-};
+use head_scanner::*;
+use reconstruction::{CameraIntrinsics, SfMReconstructor};
+use bundle_adjustment::BundleAdjuster;
+
+// Initialize SfM
+let intrinsics = CameraIntrinsics::default_webcam(1280, 720);
+let mut sfm = SfMReconstructor::new(intrinsics.clone());
+
+// Add frames
+for features in frame_features {
+    sfm.add_frame(features)?;
+}
+
+// Refine with bundle adjustment
+let adjuster = BundleAdjuster::new(intrinsics);
+let (refined_poses, refined_points) = adjuster.optimize(&poses, &points)?;
+```
+
+### Stereo Depth Estimation
+
+```rust
+use head_scanner::stereo::{StereoConfig, StereoDepthEstimator};
+
+// Configure stereo system
+let config = StereoConfig::default_webcam_stereo(1280, 720, 6.0);
+let estimator = StereoDepthEstimator::new(config);
+
+// Compute depth map
+let depth_map = estimator.compute_depth_map(&left_frame, &right_frame)?;
+
+// Or triangulate specific points
+let points_3d = estimator.triangulate_points(&left_features, &right_features)?;
+```
+
+### Texture Mapping
+
+```rust
+use head_scanner::texture::TextureMapper;
+
+// Create texture mapper
+let mapper = TextureMapper::new(1024, 1024);
+
+// Apply texture from multiple views
+let textured_mesh = mapper.apply_multi_frame(&mesh, &frames_with_poses)?;
+
+// Export with textures
+textured_mesh.export_obj("model.obj", "material.mtl", "texture.png")?;
+```
+
+## Running Examples
+
+```bash
+# Simple scanning example
+cargo run --example simple_scan
+
+# Structure-from-Motion
+cargo run --example sfm_reconstruction
+
+# Stereo depth estimation
+cargo run --example stereo_depth
+
+# Textured mesh generation
+cargo run --example textured_mesh
+```
+
+## Running Benchmarks
+
+```bash
+cargo bench --package head-scanner
+```
+
+## Running Tests
+
+```bash
+# All tests
+cargo test --package head-scanner
+
+# Integration tests only
+cargo test --package head-scanner --test integration_tests
+
+# Unit tests only
+cargo test --package head-scanner --lib
 ```
 
 ## Dependencies
 
-### System Dependencies
+### Required System Libraries
+- **OpenCV**: Computer vision operations
+- **ONNX Runtime**: ML model inference
 
-**Linux:**
-```bash
-# OpenCV
-sudo apt-get install libopencv-dev libclang-dev
+### Key Rust Dependencies
+- `convexhull3d`: Robust 3D convex hull computation
+- `nalgebra`: Linear algebra
+- `opencv`: Computer vision
+- `ort`: ONNX Runtime bindings
+- `image`: Image processing
+- `ndarray`: N-dimensional arrays (without BLAS to avoid system dependencies)
 
-# OpenBLAS (required by workspace configuration)
-sudo apt-get install libopenblas-dev
+## Development
 
-# Optional: CUDA for GPU acceleration
-sudo apt-get install nvidia-cuda-toolkit
-```
+### Adding New Features
 
-**macOS:**
-```bash
-brew install opencv pkg-config
+1. Implement new module in `src/`
+2. Add module to `lib.rs`
+3. Write unit tests in the module
+4. Add integration tests to `tests/integration_tests.rs`
+5. Create example in `examples/` if appropriate
+6. Update this README
 
-# OpenBLAS is provided by Accelerate framework (built-in)
-```
+### Performance Optimization
 
-**Windows:**
-```powershell
-# Install OpenCV via vcpkg
-vcpkg install opencv:x64-windows
-
-# Or download pre-built binaries from opencv.org
-```
-
-### Rust Dependencies
-
-The crate depends on:
-- **opencv** (0.92): Computer vision algorithms
-- **nalgebra** (0.33): Linear algebra and 3D math
-- **parry3d** (0.17): 3D geometry (modern replacement for deprecated ncollide3d)
-- **ort** (2.0.0-rc.10): ONNX Runtime for ML models
-- **kiddo** (4.2): k-d tree for spatial queries
-- **ndarray**: N-dimensional arrays (without BLAS to reduce system dependencies)
-- **tokio**: Async runtime
-- **serde/serde_json**: Serialization
-- **parking_lot**: Efficient synchronization primitives
-
-## ⚠️ Current Status and Limitations
-
-**This crate is in early development** and contains incomplete implementations:
-
-### Known Limitations
-
-1. **Convex Hull Algorithm**: The QuickHull implementation is simplified and may not produce correct results for complex geometries. Consider using external libraries like `delaunator` for production use.
-
-2. **Structure-from-Motion (SfM)**: The 3D reconstruction pipeline uses naive depth estimation and simplified camera pose tracking. For production-quality scanning, integrate with external SfM libraries.
-
-3. **Vision Models**: ONNX model preprocessing/postprocessing is not fully implemented. The fallback uses Haar cascades for basic face detection.
-
-4. **Security**: Path validation is implemented but should be reviewed for production use. Never use this crate with untrusted user input without additional sandboxing.
-
-5. **Testing**: Test coverage is minimal. Camera tests require hardware and are disabled by default.
-
-### Recent Fixes
-
-- ✅ Fixed camera mutable borrow issue by wrapping VideoCapture in Mutex
-- ✅ Replaced deprecated `ncollide3d` with `parry3d`
-- ✅ Implemented point deduplication using k-d tree spatial filtering
-- ✅ Added path validation to prevent path traversal attacks
-- ✅ Added model path validation with existence checks
-- ✅ Improved locking strategy with explicit lock releases
-
-### TODO
-
-- [ ] Implement proper QuickHull or use existing convex hull library
-- [ ] Add bundle adjustment for SfM accuracy
-- [ ] Implement ML model preprocessing/postprocessing
-- [ ] Add comprehensive integration tests
-- [ ] Add CI/CD pipeline with OpenCV installation
-- [ ] Implement stereo camera support for better depth
-- [ ] Add texture mapping from camera frames
-- [ ] Performance profiling and optimization
-- [ ] Add examples for common use cases
-
-## Building
+Use the benchmark suite to identify bottlenecks:
 
 ```bash
-# Build the crate
-cargo build -p head-scanner
-
-# Run tests
-cargo test -p head-scanner
-
-# Build examples
-cargo build -p head-scanner --examples
-
-# With release optimizations
-cargo build -p head-scanner --release
+cargo bench --package head-scanner
 ```
 
-### Build Requirements
+Profile with:
 
-The workspace uses platform-specific BLAS backends (configured in `/.cargo/config.toml`):
-- **Linux**: OpenBLAS
-- **macOS**: Accelerate framework (Apple)
-- **Windows**: Intel MKL or OpenBLAS via vcpkg
-
-Make sure the appropriate BLAS library is installed for your platform before building.
-
-## Integration with Tauri
-
-The head scanner can be integrated into a Tauri desktop application:
-
-```rust
-// In src-tauri/src/lib.rs
-
-use head_scanner::{HeadScanner, ScannerConfig};
-use tauri::State;
-use tokio::sync::Mutex;
-
-#[tauri::command]
-async fn start_head_scan(
-    scanner: State<'_, Mutex<Option<HeadScanner>>>,
-) -> Result<(), String> {
-    let config = ScannerConfig::default();
-    let head_scanner = HeadScanner::new(config)
-        .map_err(|e| e.to_string())?;
-
-    head_scanner.start().await
-        .map_err(|e| e.to_string())?;
-
-    *scanner.lock().await = Some(head_scanner);
-    Ok(())
-}
-
-#[tauri::command]
-async fn get_scan_coverage(
-    scanner: State<'_, Mutex<Option<HeadScanner>>>,
-) -> Result<f32, String> {
-    let scanner_guard = scanner.lock().await;
-    let scanner = scanner_guard.as_ref()
-        .ok_or("Scanner not initialized")?;
-
-    Ok(scanner.get_coverage())
-}
-
-// Register commands in Tauri builder
-tauri::Builder::default()
-    .manage(Mutex::new(None::<HeadScanner>))
-    .invoke_handler(tauri::generate_handler![
-        start_head_scan,
-        get_scan_coverage,
-        // ... more commands
-    ])
+```bash
+cargo build --release --package head-scanner
+perf record --call-graph dwarf ./target/release/examples/simple_scan
+perf report
 ```
-
-## Examples
-
-See the `examples/` directory for complete working examples:
-
-- `basic_scan.rs` - Simple head scanning pipeline
-- `coverage_visualization.rs` - Real-time coverage feedback
-- `mesh_export.rs` - Exporting to various formats
-- `camera_calibration.rs` - Calibrating camera intrinsics
 
 ## Future Enhancements
 
-- [ ] Stereo camera support for improved depth accuracy
-- [ ] Real-time depth estimation using ML models
-- [ ] Texture mapping from camera frames
-- [ ] Multi-resolution mesh generation
-- [ ] Automatic head alignment and centering
-- [ ] Cloud-based processing for resource-intensive operations
-- [ ] Mobile app integration (iOS/Android)
-- [ ] Integration with HRTF generation pipeline
-
-## Performance
-
-The scanner is optimized for real-time operation:
-
-- **Frame Processing**: ~30 FPS on modern hardware
-- **Point Cloud**: Handles 100K+ points efficiently
-- **Memory Usage**: ~100-500 MB typical
-- **Scan Time**: 30-60 seconds for complete coverage
-
-## Troubleshooting
-
-### Camera not found
-- Check camera permissions
-- Verify camera index (try 0, 1, 2...)
-- Ensure no other application is using the camera
-
-### OpenCV errors
-- Verify OpenCV installation
-- Check that Haar cascade files are in the correct location
-- Linux: `/usr/share/opencv4/haarcascades/`
-- macOS: `/usr/local/share/opencv4/haarcascades/`
-
-### BLAS linker errors
-- Install platform-specific BLAS library
-- Linux: `sudo apt-get install libopenblas-dev`
-- Ensure `.cargo/config.toml` paths match your system
+- [ ] GPU acceleration for stereo matching
+- [ ] Real-time ML model inference on GPU
+- [ ] Advanced mesh smoothing algorithms
+- [ ] Automatic camera calibration
+- [ ] Support for multiple camera systems
+- [ ] Cloud-based 3D reconstruction
+- [ ] Integration with audio HRTF measurement systems
 
 ## License
 
-This crate is part of the SOTF (Sound of the Future) project and is licensed under GPL-3.0-or-later.
+GPL-3.0-or-later
 
-## Contributing
+## Authors
 
-Contributions are welcome! Please ensure:
-- Code follows Rust formatting guidelines (`cargo fmt`)
-- All tests pass (`cargo test`)
-- New features include documentation and examples
+Pierre F. Aubert <pierre@spinorama.org>
