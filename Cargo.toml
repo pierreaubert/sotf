@@ -9,6 +9,7 @@ members = [
     "src-audio",
     "src-tauri",
     "src-hal",
+    "src-head-scanner"
     "src-convexhull3d"
 ]
 resolver = "3"
