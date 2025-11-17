@@ -96,6 +96,36 @@ impl StereoDepthEstimator {
         left_frame: &Frame,
         right_frame: &Frame,
     ) -> ScannerResult<DepthMap> {
+        // Validate input frames
+        if left_frame.width != right_frame.width || left_frame.height != right_frame.height {
+            return Err(ScannerError::InvalidInput(format!(
+                "Stereo frames must have same dimensions (left: {}x{}, right: {}x{})",
+                left_frame.width, left_frame.height,
+                right_frame.width, right_frame.height
+            )));
+        }
+
+        if left_frame.width == 0 || left_frame.height == 0 {
+            return Err(ScannerError::InvalidInput(
+                "Frame dimensions must be non-zero".to_string()
+            ));
+        }
+
+        // Validate stereo parameters
+        if self.config.block_size % 2 == 0 || self.config.block_size < 5 {
+            return Err(ScannerError::InvalidInput(format!(
+                "Block size must be odd and >= 5, got {}",
+                self.config.block_size
+            )));
+        }
+
+        if self.config.num_disparities % 16 != 0 || self.config.num_disparities <= 0 {
+            return Err(ScannerError::InvalidInput(format!(
+                "Number of disparities must be positive and divisible by 16, got {}",
+                self.config.num_disparities
+            )));
+        }
+
         // Convert frames to grayscale for stereo matching
         let left_gray = left_frame.to_gray()?;
         let right_gray = right_frame.to_gray()?;
@@ -144,11 +174,16 @@ impl StereoDepthEstimator {
             let disparity = left_pt.x - right_pt.x;
 
             if disparity > 0.0 {
-                // Triangulate using disparity
+                // Triangulate using disparity formula: Z = (f * baseline) / disparity
                 let depth = (self.config.left_intrinsics.fx * self.config.baseline) / disparity;
 
                 // Unproject to 3D
+                // NOTE: unproject() returns a NORMALIZED direction vector
+                // We must scale by depth to get the actual 3D position
                 let ray = self.config.left_intrinsics.unproject(left_pt.x, left_pt.y);
+
+                // ray is already normalized, so we can scale directly by depth
+                // This gives us the 3D point in camera coordinates
                 let point_3d = Point3::from(ray * depth);
 
                 points_3d.push(point_3d);
@@ -214,13 +249,24 @@ impl StereoDepthEstimator {
         for y in 0..height {
             for x in 0..width {
                 // Get disparity value (OpenCV stores as 16-bit fixed point)
-                let disp_val = disparity.at_2d::<i16>(y as i32, x as i32)? as f32 / 16.0;
+                // Safely convert i16 to avoid overflow
+                let disp_raw = disparity.at_2d::<i16>(y as i32, x as i32)?;
 
-                // Convert to depth
-                let depth = if disp_val > 0.0 {
+                // Check for invalid disparity marker (OpenCV uses negative values)
+                if disp_raw < 0 {
+                    depths[y][x] = 0.0;
+                    continue;
+                }
+
+                // Convert from fixed-point (divide by 16)
+                let disp_val = disp_raw as f32 / 16.0;
+
+                // Convert to depth using stereo formula
+                // Add small epsilon to avoid division by zero
+                let depth = if disp_val > 0.1 {
                     (focal_length * baseline) / disp_val
                 } else {
-                    0.0 // Invalid depth
+                    0.0 // Invalid depth (disparity too small)
                 };
 
                 depths[y][x] = depth;

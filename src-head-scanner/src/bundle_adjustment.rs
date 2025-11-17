@@ -3,6 +3,22 @@
 //! Bundle adjustment is a refinement technique that simultaneously optimizes
 //! camera poses and 3D point positions to minimize reprojection error across
 //! all observations.
+//!
+//! # ⚠️ IMPORTANT: Placeholder Implementation
+//!
+//! This is a **simplified educational implementation** with known limitations:
+//!
+//! - **Jacobian**: Only computes partial derivatives, not full 2x6 camera Jacobian
+//! - **Solver**: Uses diagonal approximation instead of proper sparse solver
+//! - **Rotation**: Camera rotations are NOT optimized (translation only)
+//! - **Accuracy**: Will NOT produce production-quality results
+//!
+//! For production use, consider:
+//! - [ceres-solver](https://crates.io/crates/ceres-solver) bindings
+//! - [g2o](https://github.com/RainerKuemmerle/g2o) via FFI
+//! - Full Jacobian implementation with proper sparse linear solver
+//!
+//! See: Triggs et al., "Bundle Adjustment — A Modern Synthesis" (1999)
 
 use crate::error::{ScannerError, ScannerResult};
 use crate::reconstruction::{CameraIntrinsics, CameraPose};
@@ -228,13 +244,20 @@ impl BundleAdjuster {
     }
 
     /// Compute camera jacobian for x coordinate (simplified)
+    ///
+    /// FIXME: This only computes a single scalar instead of the full 2x6 Jacobian matrix.
+    /// A proper implementation needs:
+    /// - ∂u/∂[tx, ty, tz, rx, ry, rz] (6 partial derivatives for x projection)
+    /// - ∂v/∂[tx, ty, tz, rx, ry, rz] (6 partial derivatives for y projection)
     fn compute_cam_jacobian_x(&self, point_cam: &Point3<f32>) -> f32 {
-        // Simplified: derivative of projection w.r.t. rotation
-        // In practice, use full analytical derivatives or auto-diff
+        // PLACEHOLDER: Only partial derivative w.r.t. translation
+        // Real implementation needs rotation derivatives using Lie algebra
         self.intrinsics.fx / point_cam.z
     }
 
     /// Compute camera jacobian for y coordinate (simplified)
+    ///
+    /// FIXME: See compute_cam_jacobian_x - same issue applies here
     fn compute_cam_jacobian_y(&self, point_cam: &Point3<f32>) -> f32 {
         self.intrinsics.fy / point_cam.z
     }
@@ -263,6 +286,17 @@ impl BundleAdjuster {
     }
 
     /// Solve normal equations using simplified method
+    ///
+    /// FIXME: This uses diagonal approximation which ignores off-diagonal terms
+    /// in J^T*J. This is mathematically incorrect and produces suboptimal results.
+    ///
+    /// Proper implementation should use:
+    /// - Sparse Cholesky decomposition (nalgebra, faer, or sprs crate)
+    /// - Conjugate Gradient for large problems
+    /// - Schur complement trick to exploit problem structure
+    ///
+    /// The diagonal approximation assumes parameters are independent, which is
+    /// violated in bundle adjustment where camera poses affect multiple points.
     fn solve_normal_equations(
         &self,
         jacobian: &[Vec<f32>],
@@ -275,11 +309,8 @@ impl BundleAdjuster {
 
         let num_params = jacobian[0].len();
 
-        // Compute J^T * J (approximate with identity + damping)
-        let mut jtj = vec![vec![0.0; num_params]; num_params];
-        for i in 0..num_params {
-            jtj[i][i] = lambda; // Damping
-        }
+        // FIXME: Only computing diagonal of J^T*J, ignoring off-diagonal correlation
+        let mut jtj_diag = vec![lambda; num_params]; // Initialize with damping
 
         // Compute J^T * r
         let mut jtr = vec![0.0; num_params];
@@ -287,15 +318,16 @@ impl BundleAdjuster {
             let r = residuals[row_idx];
             for (col_idx, &jac_val) in jac_row.iter().enumerate() {
                 jtr[col_idx] -= jac_val * r;
-                jtj[col_idx][col_idx] += jac_val * jac_val;
+                jtj_diag[col_idx] += jac_val * jac_val;
             }
         }
 
-        // Solve using simple diagonal approximation (faster but less accurate)
+        // FIXME: Diagonal solve - mathematically incorrect but fast
+        // Should use: nalgebra::Cholesky::new(jtj_full).solve(&jtr)
         let mut delta = vec![0.0; num_params];
         for i in 0..num_params {
-            if jtj[i][i].abs() > 1e-10 {
-                delta[i] = jtr[i] / jtj[i][i];
+            if jtj_diag[i].abs() > 1e-10 {
+                delta[i] = jtr[i] / jtj_diag[i];
             }
         }
 
@@ -303,6 +335,12 @@ impl BundleAdjuster {
     }
 
     /// Update camera poses and 3D points with delta
+    ///
+    /// FIXME: Rotation updates are completely skipped! Camera orientations are never optimized.
+    /// Proper implementation needs to:
+    /// - Use SO(3) Lie algebra to update rotations
+    /// - Apply exponential map: R_new = R_old * exp(skew([rx, ry, rz]))
+    /// - See "A tutorial on SE(3) transformation parameterizations" for details
     fn update_parameters(
         &self,
         poses: &[CameraPose],
@@ -313,14 +351,17 @@ impl BundleAdjuster {
         let mut new_poses = poses.to_vec();
         let mut new_points = points.to_vec();
 
-        // Update camera poses (simplified: only update translation)
+        // Update camera poses (ONLY translation, rotation ignored)
         for (i, pose) in new_poses.iter_mut().enumerate() {
             let offset = i * 6;
             if offset + 5 < delta.len() {
                 pose.position.x += delta[offset];
                 pose.position.y += delta[offset + 1];
                 pose.position.z += delta[offset + 2];
-                // Rotation updates (offset+3..offset+6) skipped for simplicity
+
+                // FIXME: Rotation updates (offset+3..offset+6) completely skipped!
+                // This means camera orientations are NEVER optimized.
+                // Should use: pose.rotation = pose.rotation * exp_map(delta[offset+3..offset+6])
             }
         }
 

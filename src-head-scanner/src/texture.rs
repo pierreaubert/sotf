@@ -67,11 +67,15 @@ impl TexturedMesh {
         // Save texture image
         self.texture
             .save(texture_path)
-            .map_err(|e| ScannerError::IoError(format!("Failed to save texture: {}", e)))?;
+            .map_err(|e| {
+                ScannerError::Io(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to save texture to '{}': {}", texture_path, e)
+                ))
+            })?;
 
         // Write MTL file
-        let mut mtl_file = File::create(mtl_path)
-            .map_err(|e| ScannerError::IoError(format!("Failed to create MTL file: {}", e)))?;
+        let mut mtl_file = File::create(mtl_path)?;
 
         writeln!(mtl_file, "newmtl material0")?;
         writeln!(mtl_file, "Ka 1.0 1.0 1.0")?;
@@ -80,8 +84,7 @@ impl TexturedMesh {
         writeln!(mtl_file, "map_Kd {}", texture_path)?;
 
         // Write OBJ file
-        let mut obj_file = File::create(obj_path)
-            .map_err(|e| ScannerError::IoError(format!("Failed to create OBJ file: {}", e)))?;
+        let mut obj_file = File::create(obj_path)?;
 
         writeln!(obj_file, "# Textured head model")?;
         writeln!(obj_file, "mtllib {}", mtl_path)?;

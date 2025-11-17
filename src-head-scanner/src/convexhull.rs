@@ -92,6 +92,20 @@ impl ConvexHull3D {
 }
 
 /// Compute the 3D convex hull of a point cloud using the Quickhull algorithm
+///
+/// # Type Conversion Notes
+///
+/// This function converts f32 → f64 → f32 during processing:
+/// 1. Input: Point3<f32> from point cloud
+/// 2. Conversion to f64 for convexhull3d crate (uses f64 internally for precision)
+/// 3. Conversion back to f32 for output
+///
+/// **Precision**: For typical head scanning use cases (coordinates < 1000 cm),
+/// f32 provides ~7 decimal digits of precision, which is sufficient. However,
+/// for very large coordinate values, the f64→f32 conversion may lose precision.
+///
+/// If your application requires higher precision, consider keeping the output
+/// as f64 throughout the pipeline.
 pub fn compute_convex_hull_3d(point_cloud: &PointCloud) -> ScannerResult<ConvexHull3D> {
     let points: Vec<Point3<f32>> = point_cloud
         .points()
@@ -106,6 +120,7 @@ pub fn compute_convex_hull_3d(point_cloud: &PointCloud) -> ScannerResult<ConvexH
     }
 
     // Convert nalgebra Point3<f32> to convexhull3d Vertex (f64)
+    // Using f64 for convex hull computation provides better numerical stability
     let vertices: Vec<Vertex> = points
         .iter()
         .map(|p| Vertex::new(p.x as f64, p.y as f64, p.z as f64))
