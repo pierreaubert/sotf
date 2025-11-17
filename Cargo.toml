@@ -1,17 +1,17 @@
 [workspace]
 members = [
-    "src-autoeq",
-    "src-iir",
-    "src-de",
-    "src-cea2034",
-    "src-testfunctions",
-    "src-env",
     "src-audio",
-    "src-tauri",
+    "src-autoeq",
+    "src-cea2034",
+    "src-convexhull3d",
+    "src-de",
+    "src-env",
     "src-hal",
+    "src-head-scanner",
+    "src-iir",
+    "src-tauri",
+    "src-testfunctions",
     "src-ui-player"
-    "src-head-scanner"
-    "src-convexhull3d"
 ]
 resolver = "3"
 
