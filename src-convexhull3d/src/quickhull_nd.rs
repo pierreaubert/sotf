@@ -246,6 +246,9 @@ fn quickhull_2d(points: &[PointND]) -> Result<ConvexHullND> {
     // Find lower hull
     find_hull_2d(points, right_idx, left_idx, &mut hull_indices, false);
 
+    // Remove consecutive duplicates from hull_indices
+    hull_indices.dedup();
+
     // Create edges (facets in 2D)
     let mut facets = Vec::new();
     for i in 0..hull_indices.len() {
@@ -257,7 +260,10 @@ fn quickhull_2d(points: &[PointND]) -> Result<ConvexHullND> {
 }
 
 fn find_hull_2d(points: &[PointND], start: usize, end: usize, hull: &mut Vec<usize>, upper: bool) {
-    hull.push(start);
+    // Only push start if it's not already the last element in hull
+    if hull.is_empty() || hull.last() != Some(&start) {
+        hull.push(start);
+    }
 
     // Find furthest point from line
     let mut max_dist = 0.0;
@@ -268,20 +274,32 @@ fn find_hull_2d(points: &[PointND], start: usize, end: usize, hull: &mut Vec<usi
             continue;
         }
 
-        let dist = point_line_distance_2d(&points[start], &points[end], point);
+        // Skip points already in the hull
+        if hull.contains(&i) {
+            continue;
+        }
+
         let sign = cross_product_2d(&points[start], &points[end], point);
 
-        let signed_dist = if upper { dist * sign.signum() } else { -dist * sign.signum() };
+        // For upper hull going left→right: positive cross product means above the line
+        // For lower hull going right→left: positive cross product means below the line
+        // So we use the same sign check for both!
+        let qualifies = sign > EPSILON;
 
-        if signed_dist > max_dist {
-            max_dist = signed_dist;
-            max_idx = Some(i);
+        if qualifies {
+            let dist = point_line_distance_2d(&points[start], &points[end], point);
+            if dist > max_dist {
+                max_dist = dist;
+                max_idx = Some(i);
+            }
         }
     }
 
     if let Some(idx) = max_idx {
         find_hull_2d(points, start, idx, hull, upper);
-        hull.pop(); // Remove start to avoid duplication
+        // The recursive call added points from start to idx
+        // Now we need to add points from idx to end
+        // idx should already be at the end of hull from the previous call
         find_hull_2d(points, idx, end, hull, upper);
     }
 }

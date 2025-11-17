@@ -27,6 +27,13 @@ pub fn delaunay_nd(points: &[PointND]) -> Result<DelaunayMesh> {
 
     let dim = points[0].dim();
 
+    // Special case: exactly dim+1 points forms a single simplex
+    if points.len() == dim + 1 {
+        let indices: Vec<usize> = (0..points.len()).collect();
+        let simplex = SimplexND::new(indices);
+        return Ok(DelaunayMesh::new(points.to_vec(), vec![simplex], dim));
+    }
+
     // Lift points to paraboloid
     let lifted_points: Vec<PointND> = points
         .iter()
