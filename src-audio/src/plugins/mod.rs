@@ -36,6 +36,7 @@ mod plugin_loudness_compensation;
 mod plugin_matrix;
 mod plugin_resampler;
 mod plugin_upmixer;
+mod plugin_binaural_decoder;
 mod speaker_config;
 
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
@@ -56,6 +57,7 @@ pub use plugin_loudness_compensation::{
 pub use plugin_matrix::MatrixPlugin;
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
+pub use plugin_binaural_decoder::{BinauralDecoderPlugin, BinauralDecoderParams};
 pub use speaker_config::{
     SpeakerConfig, SpeakerPosition, calculate_panning_gain, get_available_configs,
     get_speaker_config,

@@ -1,0 +1,55 @@
+[package]
+name = "head-scanner"
+version = { workspace = true }
+authors = { workspace = true }
+description = "3D head scanner using computer vision for HRTF optimization"
+edition = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+name = "head_scanner"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+# Core workspace dependencies (ndarray without BLAS to avoid system dependency issues)
+ndarray = { version = "0.16.1", features = ["rayon", "serde"], default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+
+# Computer vision and image processing
+opencv = { version = "0.92", default-features = false, features = [
+    "videoio",
+    "imgproc",
+    "calib3d",
+    "features2d",
+    "highgui"
+] }
+image = "0.25"
+imageproc = "0.25"
+
+# 3D geometry and mesh processing
+nalgebra = "0.33"
+parry3d = "0.17"  # Modern replacement for deprecated ncollide3d
+bytemuck = "1.24"  # For efficient data conversion
+
+# ML inference for vision models (ONNX Runtime)
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries"] }
+
+# Point cloud and mesh algorithms
+kiddo = "4.2"  # k-d tree for nearest neighbor search
+delaunator = "1.0"  # Delaunay triangulation
+
+# Async and parallelism
+rayon = { workspace = true }
+futures = { workspace = true }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+tempfile = { workspace = true }
