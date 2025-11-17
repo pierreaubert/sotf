@@ -225,6 +225,8 @@ fn quickhull_1d(points: &[PointND]) -> Result<ConvexHullND> {
 
 /// 2D convex hull using QuickHull
 fn quickhull_2d(points: &[PointND]) -> Result<ConvexHullND> {
+    use std::collections::HashSet;
+
     // Find leftmost and rightmost points
     let mut left_idx = 0;
     let mut right_idx = 0;
@@ -239,12 +241,13 @@ fn quickhull_2d(points: &[PointND]) -> Result<ConvexHullND> {
     }
 
     let mut hull_indices = Vec::new();
+    let mut processed = HashSet::new();
 
     // Find upper hull
-    find_hull_2d(points, left_idx, right_idx, &mut hull_indices, true);
+    find_hull_2d(points, left_idx, right_idx, &mut hull_indices, &mut processed);
 
     // Find lower hull
-    find_hull_2d(points, right_idx, left_idx, &mut hull_indices, false);
+    find_hull_2d(points, right_idx, left_idx, &mut hull_indices, &mut processed);
 
     // Remove consecutive duplicates from hull_indices
     hull_indices.dedup();
@@ -259,10 +262,17 @@ fn quickhull_2d(points: &[PointND]) -> Result<ConvexHullND> {
     Ok(ConvexHullND::new(points.to_vec(), facets, 2))
 }
 
-fn find_hull_2d(points: &[PointND], start: usize, end: usize, hull: &mut Vec<usize>, upper: bool) {
+fn find_hull_2d(
+    points: &[PointND],
+    start: usize,
+    end: usize,
+    hull: &mut Vec<usize>,
+    processed: &mut std::collections::HashSet<usize>,
+) {
     // Only push start if it's not already the last element in hull
     if hull.is_empty() || hull.last() != Some(&start) {
         hull.push(start);
+        processed.insert(start);
     }
 
     // Find furthest point from line
@@ -274,8 +284,8 @@ fn find_hull_2d(points: &[PointND], start: usize, end: usize, hull: &mut Vec<usi
             continue;
         }
 
-        // Skip points already in the hull
-        if hull.contains(&i) {
+        // Skip points already processed (O(1) lookup with HashSet)
+        if processed.contains(&i) {
             continue;
         }
 
@@ -296,11 +306,11 @@ fn find_hull_2d(points: &[PointND], start: usize, end: usize, hull: &mut Vec<usi
     }
 
     if let Some(idx) = max_idx {
-        find_hull_2d(points, start, idx, hull, upper);
+        find_hull_2d(points, start, idx, hull, processed);
         // The recursive call added points from start to idx
         // Now we need to add points from idx to end
         // idx should already be at the end of hull from the previous call
-        find_hull_2d(points, idx, end, hull, upper);
+        find_hull_2d(points, idx, end, hull, processed);
     }
 }
 
@@ -588,5 +598,75 @@ mod tests {
         let hull = quickhull_nd(&points).unwrap();
         assert_eq!(hull.dim(), 2);
         assert_eq!(hull.num_facets(), 4); // 4 edges
+    }
+
+    #[test]
+    fn test_2d_triangle() {
+        // Simple triangle with no interior points
+        let points = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0]),
+            PointND::new(vec![0.5, 1.0]),
+        ];
+
+        let hull = quickhull_nd(&points).unwrap();
+        assert_eq!(hull.dim(), 2);
+        assert_eq!(hull.num_facets(), 3); // 3 edges
+    }
+
+    #[test]
+    fn test_2d_with_duplicate_points() {
+        // Points with duplicates - the duplicate should be ignored
+        let points = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0]),
+            PointND::new(vec![1.0, 1.0]),
+            PointND::new(vec![0.0, 1.0]),
+            PointND::new(vec![0.0, 0.0]), // Duplicate of first point
+        ];
+
+        let hull = quickhull_nd(&points).unwrap();
+        assert_eq!(hull.dim(), 2);
+        // Should still form a square (4 edges)
+        assert_eq!(hull.num_facets(), 4);
+    }
+
+    #[test]
+    fn test_2d_collinear_points() {
+        // All points on a line - produces a degenerate hull (line segment)
+        let points = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![1.0, 0.0]),
+            PointND::new(vec![2.0, 0.0]),
+            PointND::new(vec![3.0, 0.0]),
+        ];
+
+        let hull = quickhull_nd(&points).unwrap();
+        assert_eq!(hull.dim(), 2);
+        // Collinear points in 2D produce just the 2 endpoints
+        // The hull should have 2 facets (edges from each endpoint)
+        assert_eq!(hull.num_facets(), 2);
+    }
+
+    #[test]
+    fn test_2d_larger_point_set() {
+        // Test with more points to verify performance
+        let mut points = vec![
+            PointND::new(vec![0.0, 0.0]),
+            PointND::new(vec![5.0, 0.0]),
+            PointND::new(vec![5.0, 5.0]),
+            PointND::new(vec![0.0, 5.0]),
+        ];
+
+        // Add interior points
+        for i in 1..4 {
+            for j in 1..4 {
+                points.push(PointND::new(vec![i as f64, j as f64]));
+            }
+        }
+
+        let hull = quickhull_nd(&points).unwrap();
+        assert_eq!(hull.dim(), 2);
+        assert_eq!(hull.num_facets(), 4); // Should still be 4 edges (the square boundary)
     }
 }
