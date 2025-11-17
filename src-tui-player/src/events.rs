@@ -25,6 +25,9 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match app.input_mode {
         InputMode::Search => handle_search_mode(app, key),
         InputMode::AddDirectory => handle_add_directory_mode(app, key),
+        InputMode::EditPlugin => handle_edit_plugin_mode(app, key),
+        InputMode::SavePlugins => handle_save_plugins_mode(app, key),
+        InputMode::LoadPlugins => handle_load_plugins_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
     }
 }
@@ -59,6 +62,28 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
 
+        // Global volume controls with Shift+Arrow keys
+        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.increase_volume();
+            Some(PlayerCommand::SetVolume(app.volume))
+        }
+        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.decrease_volume();
+            Some(PlayerCommand::SetVolume(app.volume))
+        }
+
+        // Output device selection with Ctrl+Arrow keys
+        KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.select_next_output_device();
+            // TODO: Implement device switching
+            None
+        }
+        KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.select_previous_output_device();
+            // TODO: Implement device switching
+            None
+        }
+
         // Screen-specific controls
         _ => match app.current_screen {
             Screen::Library => handle_library_keys(app, key),
@@ -70,21 +95,51 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use crate::app::LibraryViewMode;
+
     match key.code {
         KeyCode::Char('/') => {
             app.input_mode = InputMode::Search;
             None
         }
+        KeyCode::Char('t') => {
+            // Toggle between flat and tree view
+            app.toggle_library_view_mode();
+            None
+        }
         KeyCode::Up | KeyCode::Char('k') => {
-            app.select_previous_album();
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.select_previous_album(),
+                LibraryViewMode::TreeView => app.select_previous_tree_item(),
+            }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            app.select_next_album();
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.select_next_album(),
+                LibraryViewMode::TreeView => app.select_next_tree_item(),
+            }
+            None
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            // Expand artist in tree view
+            if app.library_view_mode == LibraryViewMode::TreeView {
+                app.toggle_artist_expansion();
+            }
+            None
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            // Collapse artist in tree view
+            if app.library_view_mode == LibraryViewMode::TreeView {
+                app.toggle_artist_expansion();
+            }
             None
         }
         KeyCode::Char('a') | KeyCode::Enter => {
-            app.add_album_to_queue();
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.add_album_to_queue(),
+                LibraryViewMode::TreeView => app.add_tree_selection_to_queue(),
+            }
             None
         }
         KeyCode::Char('q') => {
@@ -248,6 +303,23 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.select_next_plugin();
             None
         }
+        KeyCode::Char('e') | KeyCode::Enter => {
+            // Edit selected plugin
+            app.enter_plugin_edit_mode();
+            None
+        }
+        KeyCode::Char('s') => {
+            // Save plugin chain
+            app.input_mode = InputMode::SavePlugins;
+            app.plugin_file_input.clear();
+            None
+        }
+        KeyCode::Char('l') => {
+            // Load plugin chain
+            app.input_mode = InputMode::LoadPlugins;
+            app.plugin_file_input.clear();
+            None
+        }
         KeyCode::Char('a') => {
             // Add a plugin - cycle through available types for simplicity
             // In a more complex UI, this could open a selection dialog
@@ -299,6 +371,112 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Quick add Loudness Compensation
             app.add_plugin(&PluginType::LoudnessCompensation);
             Some(PlayerCommand::UpdatePlugins)
+        }
+        _ => None,
+    }
+}
+
+fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.exit_plugin_edit_mode();
+            None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_param();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_param();
+            None
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            // Decrease parameter value
+            if app.adjust_selected_param(-1.0) {
+                app.needs_plugin_update = true;
+                Some(PlayerCommand::UpdatePlugins)
+            } else {
+                None
+            }
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            // Increase parameter value
+            if app.adjust_selected_param(1.0) {
+                app.needs_plugin_update = true;
+                Some(PlayerCommand::UpdatePlugins)
+            } else {
+                None
+            }
+        }
+        KeyCode::Char('[') => {
+            // Large decrease
+            if app.adjust_selected_param(-10.0) {
+                app.needs_plugin_update = true;
+                Some(PlayerCommand::UpdatePlugins)
+            } else {
+                None
+            }
+        }
+        KeyCode::Char(']') => {
+            // Large increase
+            if app.adjust_selected_param(10.0) {
+                app.needs_plugin_update = true;
+                Some(PlayerCommand::UpdatePlugins)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.plugin_file_input.clear();
+            None
+        }
+        KeyCode::Enter => {
+            app.save_plugin_chain();
+            app.input_mode = InputMode::Normal;
+            None
+        }
+        KeyCode::Char(c) => {
+            app.plugin_file_input.push(c);
+            None
+        }
+        KeyCode::Backspace => {
+            app.plugin_file_input.pop();
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.plugin_file_input.clear();
+            None
+        }
+        KeyCode::Enter => {
+            app.load_plugin_chain();
+            app.input_mode = InputMode::Normal;
+            if app.needs_plugin_update {
+                Some(PlayerCommand::UpdatePlugins)
+            } else {
+                None
+            }
+        }
+        KeyCode::Char(c) => {
+            app.plugin_file_input.push(c);
+            None
+        }
+        KeyCode::Backspace => {
+            app.plugin_file_input.pop();
+            None
         }
         _ => None,
     }

@@ -15,7 +15,7 @@ use events::{handle_events, handle_key_event, AppEvent, PlayerCommand};
 use player::Player;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::fs::OpenOptions;
-use std::io::{self, Write};
+use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -61,6 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create app and player
     let mut app = App::new();
     let player = Player::new();
+
+    // Enable loudness monitoring
+    let _ = player.enable_loudness_monitoring().await;
+
+    // Load available output devices
+    app.load_output_devices();
 
     // Add initial directories
     for dir in args.directories {
@@ -130,6 +136,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                             }
                         }
                     }
+
+                    // Update loudness data
+                    app.loudness_info = player.get_loudness().await;
 
                     // Perform library scan if needed
                     if app.needs_rescan {

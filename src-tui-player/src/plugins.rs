@@ -1,8 +1,9 @@
 use autoeq_iir::{Biquad, BiquadFilterType};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sotf_audio::engine::PluginConfig;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PluginType {
     EQ,
     Upmixer,
@@ -47,7 +48,7 @@ impl PluginType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EQFilter {
     pub filter_type: BiquadFilterType,
     pub frequency: f64,
@@ -76,7 +77,7 @@ impl EQFilter {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
         filters: Vec<EQFilter>,
@@ -261,7 +262,7 @@ impl PluginSettings {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plugin {
     pub id: usize,
     pub enabled: bool,
@@ -368,6 +369,26 @@ impl PluginChain {
         } else {
             2 // Stereo
         }
+    }
+
+    /// Save the plugin chain to a JSON file
+    pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string_pretty(&self.plugins)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load the plugin chain from a JSON file
+    pub fn load_from_file<P: AsRef<std::path::Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+        let json = std::fs::read_to_string(path)?;
+        let plugins: Vec<Plugin> = serde_json::from_str(&json)?;
+
+        // Update next_id to be higher than any loaded plugin id
+        let max_id = plugins.iter().map(|p| p.id).max().unwrap_or(0);
+        self.next_id = max_id + 1;
+
+        self.plugins = plugins;
+        Ok(())
     }
 }
 
