@@ -700,6 +700,29 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        // HAL plugins (macOS only)
+        #[cfg(target_os = "macos")]
+        "hal_input" => {
+            use crate::plugins::{HalInputPlugin, HalInputPluginParams};
+
+            let params: HalInputPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse HAL input plugin parameters: {}", e))?;
+
+            let plugin = HalInputPlugin::from_params(params);
+            Ok(Box::new(plugin))
+        }
+
+        #[cfg(target_os = "macos")]
+        "hal_output" => {
+            use crate::plugins::{HalOutputPlugin, HalOutputPluginParams, InPlacePluginAdapter};
+
+            let params: HalOutputPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse HAL output plugin parameters: {}", e))?;
+
+            let plugin = HalOutputPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }
