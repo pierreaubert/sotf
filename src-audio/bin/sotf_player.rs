@@ -17,8 +17,27 @@ fn parse_loudness_compensation(vals: &Vec<f64>) -> Result<Option<LoudnessCompens
         .map_err(|e| e.to_string())
 }
 
+/// Get channel count for a speaker configuration
+fn get_speaker_config_channels(config: &str) -> Result<usize, String> {
+    match config {
+        "5.1" => Ok(6),
+        "7.1" => Ok(8),
+        "5.1.2" => Ok(8),
+        "5.1.4" => Ok(10),
+        "7.1.2" => Ok(10),
+        "7.1.4" => Ok(12),
+        "9.1.4" => Ok(14),
+        "9.1.6" => Ok(16),
+        _ => Err(format!(
+            "Invalid speaker configuration '{}'. Valid options: 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6",
+            config
+        )),
+    }
+}
+
 /// Create upmixer PluginConfig from parameters
 fn create_upmixer_plugin_config(
+    speaker_config: String,
     fft_size: usize,
     gain_front_direct: f32,
     gain_front_ambient: f32,
@@ -34,7 +53,11 @@ fn create_upmixer_plugin_config(
         ));
     }
 
+    // Validate speaker configuration
+    let _ = get_speaker_config_channels(&speaker_config)?;
+
     let parameters = json!({
+        "speaker_config": speaker_config,
         "fft_size": fft_size,
         "gain_front_direct": gain_front_direct,
         "gain_front_ambient": gain_front_ambient,
@@ -174,9 +197,13 @@ enum Commands {
         #[arg(long = "loudness-compensation", value_name = "REF,LOW[,HIGH]", value_parser = clap::value_parser!(f64), value_delimiter = ',')]
         loudness_compensation: Option<Vec<f64>>,
 
-        /// Enable stereo-to-5.0 upmixer (converts 2ch to 5ch surround)
+        /// Enable stereo-to-surround upmixer (converts 2ch to multi-channel surround)
         #[arg(long = "upmixer", default_value_t = false)]
         upmixer: bool,
+
+        /// Upmixer speaker configuration (5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
+        #[arg(long = "upmixer-config", default_value = "5.1")]
+        upmixer_config: String,
 
         /// Upmixer FFT size (must be power of 2: 1024, 2048, 4096)
         #[arg(long = "upmixer-fft-size", default_value = "2048")]
@@ -232,6 +259,7 @@ fn main() {
             lufs,
             loudness_compensation,
             upmixer,
+            upmixer_config,
             upmixer_fft_size,
             upmixer_gain_front_direct,
             upmixer_gain_front_ambient,
@@ -265,6 +293,7 @@ fn main() {
                 lufs,
                 loudness,
                 upmixer,
+                upmixer_config,
                 upmixer_fft_size,
                 upmixer_gain_front_direct,
                 upmixer_gain_front_ambient,
@@ -570,6 +599,7 @@ fn play_stream(
     lufs: bool,
     loudness: Option<LoudnessCompensation>,
     upmixer: bool,
+    upmixer_config: String,
     upmixer_fft_size: usize,
     upmixer_gain_front_direct: f32,
     upmixer_gain_front_ambient: f32,
@@ -628,22 +658,28 @@ fn play_stream(
             ));
         }
 
-        println!("Enabling stereo-to-5.0 upmixer plugin:");
+        // Get channel count for the configuration
+        let output_channel_count = get_speaker_config_channels(&upmixer_config)?;
+
+        println!("Enabling stereo-to-{} upmixer plugin:", upmixer_config);
+        println!("  Speaker configuration: {}", upmixer_config);
+        println!("  Output channels: {}", output_channel_count);
         println!("  FFT size: {}", upmixer_fft_size);
         println!("  Front direct gain: {:.2}", upmixer_gain_front_direct);
         println!("  Front ambient gain: {:.2}", upmixer_gain_front_ambient);
         println!("  Rear ambient gain: {:.2}", upmixer_gain_rear_ambient);
-        println!("  Output: 5.0 surround (FL, FR, C, RL, RR)\n");
+        println!();
 
         let upmixer_plugin = create_upmixer_plugin_config(
+            upmixer_config.clone(),
             upmixer_fft_size,
             upmixer_gain_front_direct,
             upmixer_gain_front_ambient,
             upmixer_gain_rear_ambient,
         )?;
         plugins.push(upmixer_plugin);
-        eprintln!("Added upmixer plugin: 2ch -> 5ch");
-        5 // Upmixer outputs 5.0 surround
+        eprintln!("Added upmixer plugin: 2ch -> {}ch ({})", output_channel_count, upmixer_config);
+        output_channel_count
     } else {
         audio_info.spec.channels as usize
     };
