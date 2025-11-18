@@ -20,6 +20,8 @@ fn parse_loudness_compensation(vals: &Vec<f64>) -> Result<Option<LoudnessCompens
 /// Get channel count for a speaker configuration
 fn get_speaker_config_channels(config: &str) -> Result<usize, String> {
     match config {
+        "2.0" => Ok(2),
+        "5.0" => Ok(5),
         "5.1" => Ok(6),
         "7.1" => Ok(8),
         "5.1.2" => Ok(8),
@@ -29,7 +31,7 @@ fn get_speaker_config_channels(config: &str) -> Result<usize, String> {
         "9.1.4" => Ok(14),
         "9.1.6" => Ok(16),
         _ => Err(format!(
-            "Invalid speaker configuration '{}'. Valid options: 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6",
+            "Invalid speaker configuration '{}'. Valid options: 2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6",
             config
         )),
     }
@@ -201,7 +203,7 @@ enum Commands {
         #[arg(long = "upmixer", default_value_t = false)]
         upmixer: bool,
 
-        /// Upmixer speaker configuration (5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
+        /// Upmixer speaker configuration (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
         #[arg(long = "upmixer-config", default_value = "5.1")]
         upmixer_config: String,
 

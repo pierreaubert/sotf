@@ -44,6 +44,82 @@ pub struct SpeakerConfig {
 // Standard Speaker Configurations
 // ============================================================================
 
+/// 2.0 Stereo
+pub const CONFIG_2_0: SpeakerConfig = SpeakerConfig {
+    id: "2.0",
+    name: "2.0 Stereo",
+    description: "Standard stereo (left and right)",
+    total_channels: 2,
+    speakers: &[
+        SpeakerPosition {
+            label: "L",
+            name: "Left",
+            azimuth: 30.0,
+            elevation: 0.0,
+            channel: 0,
+            is_lfe: false,
+        },
+        SpeakerPosition {
+            label: "R",
+            name: "Right",
+            azimuth: -30.0,
+            elevation: 0.0,
+            channel: 1,
+            is_lfe: false,
+        },
+    ],
+};
+
+/// 5.0 Surround (no LFE)
+pub const CONFIG_5_0: SpeakerConfig = SpeakerConfig {
+    id: "5.0",
+    name: "5.0 Surround",
+    description: "5.0 surround without LFE channel",
+    total_channels: 5,
+    speakers: &[
+        SpeakerPosition {
+            label: "FL",
+            name: "Front Left",
+            azimuth: 30.0,
+            elevation: 0.0,
+            channel: 0,
+            is_lfe: false,
+        },
+        SpeakerPosition {
+            label: "FR",
+            name: "Front Right",
+            azimuth: -30.0,
+            elevation: 0.0,
+            channel: 1,
+            is_lfe: false,
+        },
+        SpeakerPosition {
+            label: "C",
+            name: "Center",
+            azimuth: 0.0,
+            elevation: 0.0,
+            channel: 2,
+            is_lfe: false,
+        },
+        SpeakerPosition {
+            label: "SL",
+            name: "Side Left",
+            azimuth: 110.0,
+            elevation: 0.0,
+            channel: 3,
+            is_lfe: false,
+        },
+        SpeakerPosition {
+            label: "SR",
+            name: "Side Right",
+            azimuth: -110.0,
+            elevation: 0.0,
+            channel: 4,
+            is_lfe: false,
+        },
+    ],
+};
+
 /// 5.1 Surround (ITU-R BS.775)
 pub const CONFIG_5_1: SpeakerConfig = SpeakerConfig {
     id: "5.1",
@@ -803,6 +879,8 @@ pub const CONFIG_9_1_6: SpeakerConfig = SpeakerConfig {
 /// Get speaker configuration by ID
 pub fn get_speaker_config(id: &str) -> Option<&'static SpeakerConfig> {
     match id {
+        "2.0" => Some(&CONFIG_2_0),
+        "5.0" => Some(&CONFIG_5_0),
         "5.1" => Some(&CONFIG_5_1),
         "7.1" => Some(&CONFIG_7_1),
         "5.1.2" => Some(&CONFIG_5_1_2),
@@ -818,8 +896,24 @@ pub fn get_speaker_config(id: &str) -> Option<&'static SpeakerConfig> {
 /// Get all available configuration IDs
 pub fn get_available_configs() -> &'static [&'static str] {
     &[
-        "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
+        "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
     ]
+}
+
+/// Get speaker configuration by number of channels
+/// Returns the most common configuration for the given channel count
+pub fn get_speaker_config_by_channels(num_channels: usize) -> Option<&'static SpeakerConfig> {
+    match num_channels {
+        2 => Some(&CONFIG_2_0),
+        5 => Some(&CONFIG_5_0),
+        6 => Some(&CONFIG_5_1),
+        8 => Some(&CONFIG_7_1), // Could also be 5.1.2, prefer 7.1
+        10 => Some(&CONFIG_5_1_4), // Could also be 7.1.2, prefer 5.1.4
+        12 => Some(&CONFIG_7_1_4),
+        14 => Some(&CONFIG_9_1_4),
+        16 => Some(&CONFIG_9_1_6),
+        _ => None,
+    }
 }
 
 // ============================================================================

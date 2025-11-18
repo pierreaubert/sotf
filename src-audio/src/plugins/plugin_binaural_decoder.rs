@@ -11,14 +11,16 @@
 // - Uses FFT-based fast convolution (overlap-add method)
 // - Output is stereo (left/right ears) suitable for headphone playback
 //
-// Supported input formats:
-// - Stereo (2.0): L/R at ±30°
-// - 5.0: FL/FR/C/LS/RS (standard surround)
-// - 5.1: FL/FR/C/LFE/LS/RS (LFE passed through)
+// Supported input formats (using speaker_config module):
+// - 2.0: Stereo (L/R at ±30°)
+// - 5.0: FL/FR/C/SL/SR (standard surround without LFE)
+// - 5.1: FL/FR/C/LFE/SL/SR (LFE passed through)
 // - 7.1: FL/FR/C/LFE/SL/SR/RL/RR
+// - Plus all configurations from speaker_config module
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::speaker_config::{get_speaker_config_by_channels, SpeakerConfig, SpeakerPosition};
 use crate::sofa::{SofaFile, SourcePosition};
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
@@ -38,134 +40,10 @@ fn default_sofa_path() -> String {
     "".to_string()
 }
 
-/// Speaker positions for standard layouts
-#[derive(Debug, Clone, Copy)]
-pub struct SpeakerPosition {
-    /// Speaker index in channel order
-    pub channel: usize,
-    /// Speaker name (for debugging)
-    pub name: &'static str,
-    /// Azimuth in degrees
-    pub azimuth: f32,
-    /// Elevation in degrees
-    pub elevation: f32,
-    /// Distance in meters
-    pub distance: f32,
-}
-
-impl SpeakerPosition {
-    fn to_source_position(&self) -> SourcePosition {
-        SourcePosition::new(self.azimuth, self.elevation, self.distance)
-    }
-}
-
-/// Standard speaker layouts
-pub struct SpeakerLayouts;
-
-impl SpeakerLayouts {
-    /// 2.0 stereo: L/R at ±30°
-    pub const STEREO: [SpeakerPosition; 2] = [
-        SpeakerPosition {
-            channel: 0,
-            name: "L",
-            azimuth: 30.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 1,
-            name: "R",
-            azimuth: -30.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-    ];
-
-    /// 5.0 surround: FL/FR/C/LS/RS
-    pub const SURROUND_5_0: [SpeakerPosition; 5] = [
-        SpeakerPosition {
-            channel: 0,
-            name: "FL",
-            azimuth: 30.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 1,
-            name: "FR",
-            azimuth: -30.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 2,
-            name: "C",
-            azimuth: 0.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 3,
-            name: "LS",
-            azimuth: 110.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 4,
-            name: "RS",
-            azimuth: -110.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-    ];
-
-    /// 5.1 surround: FL/FR/C/LFE/LS/RS
-    /// Note: LFE is handled specially (passed through to both ears)
-    pub const SURROUND_5_1: [SpeakerPosition; 6] = [
-        SpeakerPosition {
-            channel: 0,
-            name: "FL",
-            azimuth: 30.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 1,
-            name: "FR",
-            azimuth: -30.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 2,
-            name: "C",
-            azimuth: 0.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 3,
-            name: "LFE",
-            azimuth: 0.0,
-            elevation: -90.0,
-            distance: 1.0,
-        }, // LFE (special handling)
-        SpeakerPosition {
-            channel: 4,
-            name: "LS",
-            azimuth: 110.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-        SpeakerPosition {
-            channel: 5,
-            name: "RS",
-            azimuth: -110.0,
-            elevation: 0.0,
-            distance: 1.0,
-        },
-    ];
+/// Helper to convert SpeakerPosition to SourcePosition
+fn speaker_to_source_position(speaker: &SpeakerPosition) -> SourcePosition {
+    // Use a fixed distance of 1.0 for all speakers
+    SourcePosition::new(speaker.azimuth, speaker.elevation, 1.0)
 }
 
 /// Configuration parameters for BinauralDecoderPlugin
@@ -201,8 +79,8 @@ pub struct BinauralDecoderPlugin {
     /// Path to SOFA file
     sofa_path: Option<PathBuf>,
 
-    /// Speaker layout for input channels
-    speaker_layout: Vec<SpeakerPosition>,
+    /// Speaker configuration for input channels
+    speaker_config: &'static SpeakerConfig,
 
     /// FFT planners
     fft_forward: Arc<dyn Fft<f32>>,
@@ -253,15 +131,25 @@ impl BinauralDecoderPlugin {
             })
             .collect();
 
-        // Determine speaker layout based on channel count
-        let speaker_layout = Self::get_speaker_layout(input_channels);
+        // Determine speaker configuration based on channel count
+        let speaker_config = get_speaker_config_by_channels(input_channels)
+            .unwrap_or_else(|| {
+                log::warn!(
+                    "[BinauralDecoder] No standard configuration for {} channels, using default circular layout",
+                    input_channels
+                );
+                // Fall back to a generic circular layout for unsupported channel counts
+                // For now, default to stereo for safety
+                get_speaker_config_by_channels(2).unwrap()
+            });
 
         log::info!(
-            "[BinauralDecoder] Created with {} input channels, FFT size {}",
+            "[BinauralDecoder] Created with {} input channels ({}), FFT size {}",
             input_channels,
+            speaker_config.name,
             fft_size
         );
-        for speaker in &speaker_layout {
+        for speaker in speaker_config.speakers {
             log::info!(
                 "[BinauralDecoder]   Ch{}: {} at az={:.1}°, el={:.1}°",
                 speaker.channel,
@@ -279,7 +167,7 @@ impl BinauralDecoderPlugin {
 
             sofa: None,
             sofa_path,
-            speaker_layout,
+            speaker_config,
 
             fft_forward,
             fft_inverse,
@@ -338,9 +226,9 @@ impl BinauralDecoderPlugin {
 
     /// Prepare HRTF filters in frequency domain for all speakers
     fn prepare_hrtf_filters(&mut self, sofa: &SofaFile) -> Result<(), String> {
-        for (i, speaker) in self.speaker_layout.iter().enumerate() {
+        for (i, speaker) in self.speaker_config.speakers.iter().enumerate() {
             let hrtf = sofa
-                .get_hrtf_at_position(&speaker.to_source_position())
+                .get_hrtf_at_position(&speaker_to_source_position(speaker))
                 .ok_or_else(|| format!("No HRTF found for speaker {}", speaker.name))?;
 
             log::info!(
@@ -380,34 +268,6 @@ impl BinauralDecoderPlugin {
         self.fft_forward.process(&mut freq);
 
         freq
-    }
-
-    /// Get speaker layout for given number of channels
-    fn get_speaker_layout(num_channels: usize) -> Vec<SpeakerPosition> {
-        match num_channels {
-            2 => SpeakerLayouts::STEREO.to_vec(),
-            5 => SpeakerLayouts::SURROUND_5_0.to_vec(),
-            6 => SpeakerLayouts::SURROUND_5_1.to_vec(),
-            _ => {
-                // Default: arrange channels in a circle
-                log::info!(
-                    "[BinauralDecoder] Using default circular layout for {} channels",
-                    num_channels
-                );
-                let mut layout = Vec::new();
-                for i in 0..num_channels {
-                    let angle = (i as f32) * 360.0 / (num_channels as f32);
-                    layout.push(SpeakerPosition {
-                        channel: i,
-                        name: "CH",
-                        azimuth: angle,
-                        elevation: 0.0,
-                        distance: 1.0,
-                    });
-                }
-                layout
-            }
-        }
     }
 
     /// Process one FFT block using fast convolution
@@ -718,9 +578,16 @@ mod tests {
     }
 
     #[test]
-    fn test_speaker_layouts() {
-        assert_eq!(SpeakerLayouts::STEREO.len(), 2);
-        assert_eq!(SpeakerLayouts::SURROUND_5_0.len(), 5);
-        assert_eq!(SpeakerLayouts::SURROUND_5_1.len(), 6);
+    fn test_speaker_configs() {
+        use super::super::speaker_config::get_speaker_config;
+
+        let config_2_0 = get_speaker_config("2.0").unwrap();
+        assert_eq!(config_2_0.total_channels, 2);
+
+        let config_5_0 = get_speaker_config("5.0").unwrap();
+        assert_eq!(config_5_0.total_channels, 5);
+
+        let config_5_1 = get_speaker_config("5.1").unwrap();
+        assert_eq!(config_5_1.total_channels, 6);
     }
 }

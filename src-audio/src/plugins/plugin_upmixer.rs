@@ -647,8 +647,8 @@ impl Plugin for UpmixerPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_int("speaker_config", "Configuration", 0, 0, 7)
-                .with_description("Speaker configuration (0=5.1, 1=7.1, 2=5.1.2, 3=5.1.4, 4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6)"),
+            Parameter::new_int("speaker_config", "Configuration", 0, 0, 9)
+                .with_description("Speaker configuration (0=5.1, 1=7.1, 2=5.1.2, 3=5.1.4, 4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6, 8=2.0, 9=5.0)"),
             Parameter::new_float("gain_front_direct", "Front Direct Gain", 1.0, 0.0, 2.0)
                 .with_description("Gain for direct sound in front channels"),
             Parameter::new_float("gain_front_ambient", "Front Ambient Gain", 0.5, 0.0, 2.0)
@@ -680,6 +680,8 @@ impl Plugin for UpmixerPlugin {
                     5 => "7.1.4",
                     6 => "9.1.4",
                     7 => "9.1.6",
+                    8 => "2.0",
+                    9 => "5.0",
                     _ => return Err("Invalid configuration index".to_string()),
                 };
                 return self.change_speaker_config(config_id);
@@ -754,6 +756,8 @@ impl Plugin for UpmixerPlugin {
                 "7.1.4" => 5,
                 "9.1.4" => 6,
                 "9.1.6" => 7,
+                "2.0" => 8,
+                "5.0" => 9,
                 _ => 0,
             };
             Some(ParameterValue::Int(config_idx))
@@ -1514,5 +1518,66 @@ mod tests {
             "Found {} gaps in output after initial latency",
             gap_count
         );
+    }
+
+    #[test]
+    fn test_upmixer_new_configs() {
+        // Test creating upmixer with 2.0 configuration
+        let plugin_2_0 = UpmixerPlugin::new(2048, "2.0", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        assert_eq!(plugin_2_0.input_channels(), 2);
+        assert_eq!(plugin_2_0.output_channels(), 2);
+        assert_eq!(plugin_2_0.speaker_config.id, "2.0");
+
+        // Test creating upmixer with 5.0 configuration
+        let plugin_5_0 = UpmixerPlugin::new(2048, "5.0", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        assert_eq!(plugin_5_0.input_channels(), 2);
+        assert_eq!(plugin_5_0.output_channels(), 5);
+        assert_eq!(plugin_5_0.speaker_config.id, "5.0");
+    }
+
+    #[test]
+    fn test_upmixer_parameter_config_indices() {
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+
+        // Test that parameter index 0 corresponds to 5.1
+        let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
+        assert_eq!(value, Some(ParameterValue::Int(0)));
+
+        // Test setting to 2.0 (index 8)
+        plugin
+            .set_parameter(
+                ParameterId::from("speaker_config"),
+                ParameterValue::Int(8),
+            )
+            .unwrap();
+        assert_eq!(plugin.speaker_config.id, "2.0");
+        assert_eq!(plugin.output_channels(), 2);
+        let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
+        assert_eq!(value, Some(ParameterValue::Int(8)));
+
+        // Test setting to 5.0 (index 9)
+        plugin
+            .set_parameter(
+                ParameterId::from("speaker_config"),
+                ParameterValue::Int(9),
+            )
+            .unwrap();
+        assert_eq!(plugin.speaker_config.id, "5.0");
+        assert_eq!(plugin.output_channels(), 5);
+        let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
+        assert_eq!(value, Some(ParameterValue::Int(9)));
+
+        // Test setting to 7.1 (index 1)
+        plugin
+            .set_parameter(
+                ParameterId::from("speaker_config"),
+                ParameterValue::Int(1),
+            )
+            .unwrap();
+        assert_eq!(plugin.speaker_config.id, "7.1");
+        assert_eq!(plugin.output_channels(), 8);
+        let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
+        assert_eq!(value, Some(ParameterValue::Int(1)));
     }
 }
