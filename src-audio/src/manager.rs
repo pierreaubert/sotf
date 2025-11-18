@@ -316,13 +316,23 @@ impl AudioStreamingManager {
         log::debug!("[AudioStreamingManager] Stopping");
 
         if let Some(mut engine) = self.engine.lock().take() {
+            // Check which analyzers are currently active before stopping
+            // so we can restore them on next playback
+            let has_loudness = engine.get_analyzer_data("loudness".to_string()).is_ok();
+            let has_spectrum = engine.get_analyzer_data("spectrum".to_string()).is_ok();
+
+            if has_loudness {
+                log::debug!("[AudioStreamingManager] Preserving loudness monitoring state");
+                *self.pending_loudness_monitoring.lock() = true;
+            }
+            if has_spectrum {
+                log::debug!("[AudioStreamingManager] Preserving spectrum monitoring state");
+                *self.pending_spectrum_monitoring.lock() = true;
+            }
+
             engine.stop().map_err(AudioDecoderError::IoError)?;
             engine.shutdown().map_err(AudioDecoderError::IoError)?;
         }
-
-        // Don't clear pending analyzer flags - they should persist until the analyzer is added
-        // The flags are cleared when enable_loudness_monitoring/enable_spectrum_monitoring
-        // successfully adds the analyzer to the engine
 
         self.set_state(StreamingState::Idle);
 
