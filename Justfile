@@ -3,6 +3,8 @@
 #	  cargo install just
 # ----------------------------------------------------------------------
 
+autoeq_dir := env('AUTOEQ_DIR')
+
 default:
 	just --list
 
