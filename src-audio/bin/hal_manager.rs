@@ -3,6 +3,36 @@
 //! This module manages the HAL driver lifecycle within the daemon process.
 //! When the daemon starts, it automatically initializes the HAL audio buffer,
 //! making the HAL plugins functional without any user intervention.
+//!
+//! # Thread Safety
+//!
+//! The HAL driver uses a global audio buffer implemented with thread-safe primitives:
+//!
+//! - **Global Buffer**: `OnceLock<Mutex<Option<Arc<AudioBuffer>>>>` ensures:
+//!   - One-time initialization (first call wins, concurrent calls are safe)
+//!   - Thread-safe access via Mutex
+//!   - Shared ownership via Arc (multiple readers/writers can coexist)
+//!
+//! - **Audio Channels**: The AudioBuffer uses `crossbeam::channel` which is lock-free
+//!   and designed for concurrent producer/consumer access:
+//!   - Input channel: HAL I/O callback (writer) ↔ HalInputPlugin (reader)
+//!   - Output channel: HalOutputPlugin (writer) ↔ HAL I/O callback (reader)
+//!
+//! - **Concurrent Plugin Access**: Multiple `HalInputPlugin` and `HalOutputPlugin`
+//!   instances can safely read/write concurrently. The crossbeam channels handle
+//!   synchronization internally.
+//!
+//! - **HalManager Arc Cloning**: The daemon uses `Arc<Mutex<HalManager>>` to share
+//!   the manager across threads. The Drop impl was intentionally removed to avoid
+//!   shutdown being triggered when client threads exit. Shutdown must be called
+//!   explicitly by the main daemon thread.
+//!
+//! # Initialization Guarantees
+//!
+//! - `init_global_buffer()` is safe to call multiple times (subsequent calls log a warning)
+//! - `get_global_buffer()` returns None until initialization completes
+//! - Plugin constructors check for initialization and return Err if buffer is unavailable
+//! - This ensures fail-fast behavior rather than silent degradation
 
 #[cfg(target_os = "macos")]
 use sotf_hal::audio_buffer::init_global_buffer;
@@ -86,6 +116,11 @@ impl HalManager {
     }
 
     /// Shutdown the HAL driver
+    ///
+    /// This should be called explicitly before the daemon exits.
+    /// Note: This is NOT called automatically in Drop to avoid
+    /// shutdown being triggered when Arc clones are dropped in
+    /// client handler threads.
     pub fn shutdown(&mut self) {
         #[cfg(target_os = "macos")]
         {
@@ -101,11 +136,9 @@ impl HalManager {
     }
 }
 
-impl Drop for HalManager {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
+// NOTE: Drop implementation intentionally omitted
+// Shutdown must be called explicitly to avoid race conditions
+// when Arc<Mutex<HalManager>> is cloned into multiple threads
 
 /// Helper function to create default HAL plugin configuration
 ///

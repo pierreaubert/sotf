@@ -54,9 +54,6 @@ pub struct HalInputPlugin {
     #[cfg(target_os = "macos")]
     /// HAL input reader
     reader: Option<HalInputReader>,
-
-    /// Buffer for zero-filling when no data available
-    zero_buffer: Vec<f32>,
 }
 
 impl HalInputPlugin {
@@ -64,25 +61,47 @@ impl HalInputPlugin {
     ///
     /// # Arguments
     /// * `channels` - Number of output channels
-    pub fn new(channels: usize) -> Self {
-        #[cfg(target_os = "macos")]
-        let reader = HalInputReader::new();
-
-        #[cfg(target_os = "macos")]
-        if reader.is_none() {
-            log::warn!("HAL driver not initialized - plugin will output silence");
+    ///
+    /// # Returns
+    /// - `Ok(plugin)` if successful
+    /// - `Err(msg)` if channels are invalid or HAL is not initialized
+    pub fn new(channels: usize) -> Result<Self, String> {
+        // Validate channels
+        if channels == 0 || channels > 16 {
+            return Err(format!(
+                "Invalid channel count: {}. Must be between 1 and 16",
+                channels
+            ));
         }
 
-        Self {
-            channels,
-            #[cfg(target_os = "macos")]
-            reader,
-            zero_buffer: vec![0.0; 8192], // Pre-allocate buffer for zero-filling
+        #[cfg(target_os = "macos")]
+        {
+            let reader = HalInputReader::new();
+
+            if reader.is_none() {
+                return Err(
+                    "HAL driver not initialized. Ensure daemon initialized HAL before creating plugins".to_string()
+                );
+            }
+
+            Ok(Self {
+                channels,
+                reader,
+            })
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err("HAL input plugin is only supported on macOS".to_string())
         }
     }
 
     /// Create from configuration parameters
-    pub fn from_params(params: HalInputPluginParams) -> Self {
+    ///
+    /// # Returns
+    /// - `Ok(plugin)` if successful
+    /// - `Err(msg)` if validation fails or HAL is not initialized
+    pub fn from_params(params: HalInputPluginParams) -> Result<Self, String> {
         Self::new(params.channels)
     }
 }
@@ -164,18 +183,23 @@ impl Plugin for HalInputPlugin {
 
                 // Zero-fill any remaining samples if we didn't read enough
                 if samples_read < output.len() {
+                    log::trace!(
+                        "HAL input underrun: read {}/{} samples, zero-filling remainder",
+                        samples_read,
+                        output.len()
+                    );
                     output[samples_read..].fill(0.0);
                 }
             } else {
-                // No HAL driver available - output silence
-                output.fill(0.0);
+                // Should never happen since new() checks for reader
+                return Err("HAL reader not available".to_string());
             }
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            // Not on macOS - output silence
-            output.fill(0.0);
+            // Should never happen since new() fails on non-macOS
+            return Err("HAL input plugin is only supported on macOS".to_string());
         }
 
         Ok(())
@@ -187,51 +211,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hal_input_plugin_creation() {
-        let plugin = HalInputPlugin::new(2);
-        assert_eq!(plugin.input_channels(), 0);
-        assert_eq!(plugin.output_channels(), 2);
+    fn test_hal_input_plugin_validation() {
+        // Invalid channel counts should fail
+        assert!(HalInputPlugin::new(0).is_err());
+        assert!(HalInputPlugin::new(17).is_err());
+
+        // Valid channel counts (will still fail without HAL initialized)
+        #[cfg(target_os = "macos")]
+        {
+            // This will fail because HAL isn't initialized in tests
+            assert!(HalInputPlugin::new(2).is_err());
+            assert!(HalInputPlugin::new(5).is_err());
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Should fail on non-macOS platforms
+            assert!(HalInputPlugin::new(2).is_err());
+        }
     }
 
     #[test]
     fn test_hal_input_plugin_from_params() {
-        let params = HalInputPluginParams { channels: 5 };
-        let plugin = HalInputPlugin::from_params(params);
-        assert_eq!(plugin.output_channels(), 5);
+        let params = HalInputPluginParams { channels: 2 };
+        // Will fail without HAL initialized
+        let result = HalInputPlugin::from_params(params);
+
+        #[cfg(target_os = "macos")]
+        assert!(result.is_err());
+
+        #[cfg(not(target_os = "macos"))]
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_hal_input_plugin_process() {
-        let mut plugin = HalInputPlugin::new(2);
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+    fn test_hal_input_plugin_invalid_params() {
+        let params = HalInputPluginParams { channels: 0 };
+        assert!(HalInputPlugin::from_params(params).is_err());
 
-        let input = vec![];
-        let mut output = vec![0.0; 512 * 2];
-
-        let result = plugin.process(&input, &mut output, &context);
-        assert!(result.is_ok());
-
-        // Should output silence when HAL not available
-        // (or actual data if HAL is initialized)
-    }
-
-    #[test]
-    fn test_hal_input_plugin_parameters() {
-        let mut plugin = HalInputPlugin::new(2);
-
-        // Test setting channels
-        let result = plugin.set_parameter(
-            ParameterId::from("channels"),
-            ParameterValue::Int(5),
-        );
-        assert!(result.is_ok());
-        assert_eq!(plugin.output_channels(), 5);
-
-        // Test getting channels
-        let value = plugin.get_parameter(&ParameterId::from("channels"));
-        assert_eq!(value, Some(ParameterValue::Int(5)));
+        let params = HalInputPluginParams { channels: 20 };
+        assert!(HalInputPlugin::from_params(params).is_err());
     }
 }

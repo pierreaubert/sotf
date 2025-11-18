@@ -329,11 +329,14 @@ impl AudioDaemon {
 
             match stream {
                 Ok(stream) => {
+                    // Clone daemon for client thread
+                    // Note: hal_manager uses Arc, so Drop won't shutdown until last Arc drops
+                    // Actual shutdown is called explicitly in main()
                     let daemon = AudioDaemon {
                         manager: Arc::clone(&self.manager),
                         last_activity: Arc::clone(&self.last_activity),
-                        hal_manager: Arc::clone(&self.hal_manager),
                         running: Arc::clone(&self.running),
+                        hal_manager: Arc::clone(&self.hal_manager),
                     };
 
                     // Handle each client in a separate thread
@@ -452,6 +455,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("===============================================================================");
 
     daemon.run()?;
+
+    // Explicit HAL cleanup (not in Drop to avoid issues with Arc cloning)
+    {
+        let mut hal = daemon.hal_manager.lock();
+        hal.shutdown();
+    }
 
     println!();
     println!("✅ Daemon stopped cleanly");

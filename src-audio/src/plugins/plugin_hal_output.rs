@@ -63,25 +63,51 @@ impl HalOutputPlugin {
     ///
     /// # Arguments
     /// * `channels` - Number of channels
-    pub fn new(channels: usize) -> Self {
-        #[cfg(target_os = "macos")]
-        let writer = HalOutputWriter::new();
-
-        #[cfg(target_os = "macos")]
-        if writer.is_none() {
-            log::warn!("HAL driver not initialized - plugin will not write to HAL");
+    ///
+    /// # Returns
+    /// - `Ok(plugin)` if successful
+    /// - `Err(msg)` if channels are invalid or HAL is not initialized
+    pub fn new(channels: usize) -> Result<Self, String> {
+        // Validate channels
+        if channels == 0 || channels > 16 {
+            return Err(format!(
+                "Invalid channel count: {}. Must be between 1 and 16",
+                channels
+            ));
         }
 
-        Self {
-            channels,
-            #[cfg(target_os = "macos")]
-            writer,
+        #[cfg(target_os = "macos")]
+        {
+            let writer = HalOutputWriter::new();
+
+            if writer.is_none() {
+                return Err(
+                    "HAL driver not initialized. Ensure daemon initialized HAL before creating plugins".to_string()
+                );
+            }
+
+            Ok(Self {
+                channels,
+                writer,
+            })
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            Err("HAL output plugin is only supported on macOS".to_string())
         }
     }
 
     /// Create from configuration parameters
-    pub fn from_params(channels: usize, params: HalOutputPluginParams) -> Self {
-        let _ = params; // params.channels is used to validate, but we use the provided channels
+    ///
+    /// # Arguments
+    /// * `channels` - Number of channels (from plugin chain, may differ from params)
+    /// * `params` - Plugin parameters (currently unused, kept for API consistency)
+    ///
+    /// # Returns
+    /// - `Ok(plugin)` if successful
+    /// - `Err(msg)` if validation fails or HAL is not initialized
+    pub fn from_params(channels: usize, _params: HalOutputPluginParams) -> Result<Self, String> {
         Self::new(channels)
     }
 }
@@ -164,13 +190,16 @@ impl InPlacePlugin for HalOutputPlugin {
                         buffer.len()
                     );
                 }
+            } else {
+                // Should never happen since new() checks for writer
+                return Err("HAL writer not available".to_string());
             }
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            // Not on macOS - just pass through
-            let _ = context;
+            // Should never happen since new() fails on non-macOS
+            return Err("HAL output plugin is only supported on macOS".to_string());
         }
 
         // Audio passes through unmodified
@@ -183,50 +212,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_hal_output_plugin_creation() {
-        let plugin = HalOutputPlugin::new(2);
-        assert_eq!(plugin.channels(), 2);
+    fn test_hal_output_plugin_validation() {
+        // Invalid channel counts should fail
+        assert!(HalOutputPlugin::new(0).is_err());
+        assert!(HalOutputPlugin::new(17).is_err());
+
+        // Valid channel counts (will still fail without HAL initialized)
+        #[cfg(target_os = "macos")]
+        {
+            // This will fail because HAL isn't initialized in tests
+            assert!(HalOutputPlugin::new(2).is_err());
+            assert!(HalOutputPlugin::new(5).is_err());
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Should fail on non-macOS platforms
+            assert!(HalOutputPlugin::new(2).is_err());
+        }
     }
 
     #[test]
     fn test_hal_output_plugin_from_params() {
-        let params = HalOutputPluginParams { channels: 5 };
-        let plugin = HalOutputPlugin::from_params(5, params);
-        assert_eq!(plugin.channels(), 5);
+        let params = HalOutputPluginParams { channels: 2 };
+        // Will fail without HAL initialized
+        let result = HalOutputPlugin::from_params(2, params);
+
+        #[cfg(target_os = "macos")]
+        assert!(result.is_err());
+
+        #[cfg(not(target_os = "macos"))]
+        assert!(result.is_err());
     }
 
     #[test]
-    fn test_hal_output_plugin_process() {
-        let mut plugin = HalOutputPlugin::new(2);
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 512,
-        };
+    fn test_hal_output_plugin_invalid_params() {
+        let params = HalOutputPluginParams { channels: 2 };
 
-        let mut buffer = vec![0.5; 512 * 2];
-        let original = buffer.clone();
-
-        let result = plugin.process_in_place(&mut buffer, &context);
-        assert!(result.is_ok());
-
-        // Buffer should be unchanged (passthrough)
-        assert_eq!(buffer, original);
-    }
-
-    #[test]
-    fn test_hal_output_plugin_parameters() {
-        let mut plugin = HalOutputPlugin::new(2);
-
-        // Test setting channels
-        let result = plugin.set_parameter(
-            ParameterId::from("channels"),
-            ParameterValue::Int(5),
-        );
-        assert!(result.is_ok());
-        assert_eq!(plugin.channels(), 5);
-
-        // Test getting channels
-        let value = plugin.get_parameter(&ParameterId::from("channels"));
-        assert_eq!(value, Some(ParameterValue::Int(5)));
+        assert!(HalOutputPlugin::from_params(0, params.clone()).is_err());
+        assert!(HalOutputPlugin::from_params(20, params).is_err());
     }
 }
