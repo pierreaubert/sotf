@@ -20,7 +20,11 @@
 //! - {"command": "set_device", "device": "device_name"} -> Set output device
 //! - {"command": "load_plugins", "plugins": [...]} -> Load plugin chain
 //! - {"command": "get_loudness"} -> Get current loudness (LUFS)
+//! - {"command": "hal_status"} -> Get HAL driver status (macOS only)
 //! - {"command": "shutdown"} -> Gracefully shutdown daemon
+
+mod hal_manager;
+use hal_manager::{HalManager, get_hal_status};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -60,6 +64,8 @@ enum Command {
     LoadPlugins { plugins: Vec<PluginConfig> },
     #[serde(rename = "get_loudness")]
     GetLoudness,
+    #[serde(rename = "hal_status")]
+    HalStatus,
     #[serde(rename = "shutdown")]
     Shutdown,
 }
@@ -103,6 +109,7 @@ struct AudioDaemon {
     manager: Arc<Mutex<AudioStreamingManager>>,
     last_activity: Arc<Mutex<std::time::Instant>>,
     running: Arc<Mutex<bool>>,
+    hal_manager: Arc<Mutex<HalManager>>,
 }
 
 impl AudioDaemon {
@@ -111,6 +118,7 @@ impl AudioDaemon {
             manager: Arc::new(Mutex::new(AudioStreamingManager::new())),
             last_activity: Arc::new(Mutex::new(std::time::Instant::now())),
             running: Arc::new(Mutex::new(true)),
+            hal_manager: Arc::new(Mutex::new(HalManager::new())),
         }
     }
 
@@ -130,6 +138,7 @@ impl AudioDaemon {
             Command::SetDevice { device } => self.handle_set_device(&device).await,
             Command::LoadPlugins { plugins } => self.handle_load_plugins(plugins).await,
             Command::GetLoudness => self.handle_get_loudness().await,
+            Command::HalStatus => self.handle_hal_status().await,
             Command::Shutdown => {
                 *self.running.lock() = false;
                 Response::ok_empty()
@@ -225,6 +234,16 @@ impl AudioDaemon {
         }
     }
 
+    async fn handle_hal_status(&self) -> Response {
+        let status = get_hal_status();
+        Response::ok(serde_json::json!({
+            "platform_supported": status.platform_supported,
+            "buffer_initialized": status.buffer_initialized,
+            "driver_installed": status.driver_installed,
+            "ready": status.is_ready(),
+        }))
+    }
+
     fn handle_client(&self, mut stream: UnixStream) {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut line = String::new();
@@ -313,6 +332,7 @@ impl AudioDaemon {
                     let daemon = AudioDaemon {
                         manager: Arc::clone(&self.manager),
                         last_activity: Arc::clone(&self.last_activity),
+                        hal_manager: Arc::clone(&self.hal_manager),
                         running: Arc::clone(&self.running),
                     };
 
@@ -393,10 +413,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         *r.lock() = false;
     })?;
 
-    println!("Starting AutoEQ Audio Control Daemon");
+    println!("===============================================================================");
+    println!("🎵 AutoEQ Audio Control Daemon");
+    println!("===============================================================================");
+
+    // Initialize HAL driver
+    println!();
     let daemon = AudioDaemon::new();
+
+    {
+        let mut hal = daemon.hal_manager.lock();
+        match hal.initialize_default() {
+            Ok(_) => {
+                let status = get_hal_status();
+                println!("📊 HAL Status:");
+                println!("   Platform supported: {}", if status.platform_supported { "✅ Yes" } else { "❌ No" });
+                println!("   Buffer initialized: {}", if status.buffer_initialized { "✅ Yes" } else { "❌ No" });
+                println!("   Driver installed:   {}", if status.driver_installed { "✅ Yes" } else { "⚠️  No (optional)" });
+                println!("   Ready to use:       {}", if status.is_ready() { "✅ Yes" } else { "❌ No" });
+
+                if status.is_ready() {
+                    println!();
+                    println!("💡 HAL plugins available:");
+                    println!("   - hal_input:  Read audio from macOS apps");
+                    println!("   - hal_output: Write processed audio back (loopback)");
+                }
+            }
+            Err(e) => {
+                eprintln!("⚠️  Warning: Failed to initialize HAL: {}", e);
+                eprintln!("   HAL plugins will not be available");
+            }
+        }
+    }
+
+    println!();
+    println!("===============================================================================");
+    println!("🚀 Starting daemon...");
+    println!("===============================================================================");
+
     daemon.run()?;
 
-    println!("Daemon stopped");
+    println!();
+    println!("✅ Daemon stopped cleanly");
     Ok(())
 }
