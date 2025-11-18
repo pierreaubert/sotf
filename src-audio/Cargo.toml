@@ -68,6 +68,9 @@ rubato = { workspace = true }
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+sotf_hal = { path = "../src-hal" }
+
 [dev-dependencies]
 rand = { workspace = true }
 

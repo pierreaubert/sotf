@@ -92,6 +92,9 @@ pub enum ProcessingMessage {
 pub enum DecoderCommand {
     /// Start playing a file
     Play(PathBuf),
+    /// Start silent source (for HAL input plugins)
+    /// Sends empty frames at regular intervals for source plugins
+    StartSilentSource,
     /// Pause decoding
     Pause,
     /// Resume decoding

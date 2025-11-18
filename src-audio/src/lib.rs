@@ -33,6 +33,10 @@ pub use plugins::{
     SharedPluginHost, SpectrumAnalyzerPlugin, SpectrumData, SpectrumInfo, UpmixerPlugin,
 };
 
+// HAL plugins (macOS only)
+#[cfg(target_os = "macos")]
+pub use plugins::{HalInputPlugin, HalInputPluginParams, HalOutputPlugin, HalOutputPluginParams};
+
 pub mod engine;
 pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 

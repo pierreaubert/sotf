@@ -39,6 +39,12 @@ mod plugin_resampler;
 mod plugin_upmixer;
 mod speaker_config;
 
+// HAL plugins (macOS only)
+#[cfg(target_os = "macos")]
+mod plugin_hal_input;
+#[cfg(target_os = "macos")]
+mod plugin_hal_output;
+
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
 pub use host::{PluginHost, SharedPluginHost};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
@@ -70,3 +76,9 @@ pub use analyzer_loudness_monitor::{LoudnessInfo, LoudnessMonitorPlugin};
 pub(crate) use analyzer_spectrum::SpectrumAnalyzer;
 pub use analyzer_spectrum::{SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo};
 pub use plugin_loudness_compensation::LoudnessCompensation;
+
+// HAL plugins (macOS only)
+#[cfg(target_os = "macos")]
+pub use plugin_hal_input::{HalInputPlugin, HalInputPluginParams};
+#[cfg(target_os = "macos")]
+pub use plugin_hal_output::{HalOutputPlugin, HalOutputPluginParams};

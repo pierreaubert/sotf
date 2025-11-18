@@ -7159,6 +7159,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "signal-hook",
+ "sotf_hal",
  "symphonia",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3",

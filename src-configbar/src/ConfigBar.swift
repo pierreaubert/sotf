@@ -387,6 +387,16 @@ struct ConfigurationView: View {
     @State private var volume: Float = 1.0
     @State private var showingPluginConfig = false
 
+    // HAL Configuration
+    @State private var halInputChannels: Int = 2
+    @State private var halOutputChannels: Int = 2
+
+    // Error handling
+    @State private var showingError = false
+    @State private var errorMessage = ""
+
+    let channelOptions = Array(1...16)
+
     var body: some View {
         VStack(spacing: 20) {
             // Header
@@ -402,8 +412,44 @@ struct ConfigurationView: View {
 
             Divider()
 
-            // Audio Interface Section
-            GroupBox(label: Label("Audio Interface", systemImage: "hifispeaker")) {
+            // HAL Input Section
+            GroupBox(label: Label("HAL Input (from macOS apps)", systemImage: "waveform.path")) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("The HAL driver captures audio from macOS applications")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    HStack {
+                        Text("Input Channels:")
+                            .font(.headline)
+
+                        Picker("", selection: $halInputChannels) {
+                            ForEach(channelOptions, id: \.self) { count in
+                                Text("\(count) channel\(count == 1 ? "" : "s")").tag(count)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 150)
+                        .onChange(of: halInputChannels) { _ in
+                            applyHALConfiguration()
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.blue)
+                            Text("Usually 2 for stereo")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding()
+            }
+
+            // Audio Output Section
+            GroupBox(label: Label("Audio Output (to speakers)", systemImage: "hifispeaker")) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Output Device:")
                         .font(.headline)
@@ -434,6 +480,36 @@ struct ConfigurationView: View {
                         loadDevices()
                     }
 
+                    Divider()
+
+                    HStack {
+                        Text("Output Channels:")
+                            .font(.headline)
+
+                        Picker("", selection: $halOutputChannels) {
+                            ForEach(channelOptions, id: \.self) { count in
+                                Text("\(count) channel\(count == 1 ? "" : "s")").tag(count)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 150)
+                        .onChange(of: halOutputChannels) { _ in
+                            applyHALConfiguration()
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.blue)
+                            Text("2=stereo, 5=5.0 surround, 6=5.1")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Divider()
+
                     HStack {
                         Text("Volume:")
                         Slider(value: $volume, in: 0...1)
@@ -448,7 +524,7 @@ struct ConfigurationView: View {
             }
 
             // Plugin Configuration Section
-            GroupBox(label: Label("Host Plugins", systemImage: "slider.horizontal.3")) {
+            GroupBox(label: Label("Audio Processing Plugins", systemImage: "slider.horizontal.3")) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Button("Load Configuration...") {
@@ -480,14 +556,19 @@ struct ConfigurationView: View {
             HStack {
                 Image(systemName: "circle.fill")
                     .foregroundColor(.green)
-                Text("Connected to audio engine")
+                Text("Connected to audio engine | HAL: \(halInputChannels)ch in → \(halOutputChannels)ch out")
                     .foregroundColor(.secondary)
             }
             .padding()
         }
-        .frame(minWidth: 700, minHeight: 500)
+        .frame(minWidth: 700, minHeight: 600)
         .onAppear {
             loadDevices()
+        }
+        .alert("Configuration Error", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
         }
     }
 
@@ -499,6 +580,51 @@ struct ConfigurationView: View {
             selectedDevice = defaultDevice.name
         } else if let firstDevice = devices.first {
             selectedDevice = firstDevice.name
+        }
+    }
+
+    private func applyHALConfiguration() {
+        // Validate channel configuration
+        guard halInputChannels >= 1 && halInputChannels <= 16 else {
+            errorMessage = "Invalid input channel count: \(halInputChannels). Must be between 1 and 16."
+            showingError = true
+            return
+        }
+
+        guard halOutputChannels >= 1 && halOutputChannels <= 16 else {
+            errorMessage = "Invalid output channel count: \(halOutputChannels). Must be between 1 and 16."
+            showingError = true
+            return
+        }
+
+        // Build HAL plugin chain with configured channels
+        let plugins: [[String: Any]] = [
+            [
+                "plugin_type": "hal_input",
+                "parameters": ["channels": halInputChannels]
+            ],
+            [
+                "plugin_type": "hal_output",
+                "parameters": ["channels": halOutputChannels]
+            ]
+        ]
+
+        let command: [String: Any] = [
+            "command": "load_plugins",
+            "plugins": plugins
+        ]
+
+        guard let response = client.sendCommand(command) else {
+            errorMessage = "Failed to communicate with daemon. Please ensure the daemon is running."
+            showingError = true
+            return
+        }
+
+        if response.success {
+            print("✅ HAL configuration applied: \(halInputChannels)ch in → \(halOutputChannels)ch out")
+        } else {
+            errorMessage = response.error ?? "Unknown error occurred while applying HAL configuration."
+            showingError = true
         }
     }
 

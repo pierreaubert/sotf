@@ -184,6 +184,12 @@ fn run_manager_thread(
     playback_thread.send_command(PlaybackCommand::SetVolume(config.volume))?;
     playback_thread.send_command(PlaybackCommand::Mute(config.muted))?;
 
+    // Start silent source mode if no input channels (HAL playback)
+    if config.input_channels == 0 {
+        log::info!("[Manager Thread] Starting silent source mode for HAL input");
+        decoder_thread.send_command(super::DecoderCommand::StartSilentSource)?;
+    }
+
     // Setup config watcher if enabled
     let config_watcher = if config.watch_config {
         match ConfigWatcher::new(config.config_path.clone(), true) {
