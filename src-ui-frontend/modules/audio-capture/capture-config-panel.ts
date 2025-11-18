@@ -13,6 +13,8 @@ import {
 } from "./capture-tauri";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { appDataDir } from "@tauri-apps/api/path";
 
 console.log("[MODULE] capture-config-panel.ts imports complete");
 
@@ -249,6 +251,12 @@ export class CaptureConfigPanel extends HTMLElement {
             </button>
           </div>
           <div class="capture-config-actions-right">
+            <button type="button" id="config_minimize_btn" class="btn btn-outline">
+              Minimize
+            </button>
+            <button type="button" id="config_quit_btn" class="btn btn-outline">
+              Quit
+            </button>
             <button type="button" id="config_next_btn" class="btn btn-primary">
               Next →
             </button>
@@ -327,6 +335,28 @@ export class CaptureConfigPanel extends HTMLElement {
     const configNextBtn = this.querySelector("#config_next_btn");
     configNextBtn?.addEventListener("click", () => {
       this.onNext();
+    });
+
+    // Minimize button
+    const configMinimizeBtn = this.querySelector("#config_minimize_btn");
+    configMinimizeBtn?.addEventListener("click", async () => {
+      try {
+        const window = getCurrentWindow();
+        await window.minimize();
+      } catch (error) {
+        console.error("Failed to minimize window:", error);
+      }
+    });
+
+    // Quit button
+    const configQuitBtn = this.querySelector("#config_quit_btn");
+    configQuitBtn?.addEventListener("click", async () => {
+      try {
+        const window = getCurrentWindow();
+        await window.close();
+      } catch (error) {
+        console.error("Failed to quit application:", error);
+      }
     });
 
     // Initialize with default channel counts
@@ -493,9 +523,13 @@ export class CaptureConfigPanel extends HTMLElement {
 
   private async loadConfig(): Promise<void> {
     try {
-      // Open file dialog
+      // Get the app data directory (~/Library/Application Support/org.spinorama.sotf on macOS)
+      const appDir = await appDataDir();
+
+      // Open file dialog with default path to app support directory
       const filePath = await open({
         title: "Load Capture Configuration",
+        defaultPath: appDir,
         filters: [
           {
             name: "JSON",
