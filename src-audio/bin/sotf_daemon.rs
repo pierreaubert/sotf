@@ -216,10 +216,24 @@ impl AudioDaemon {
         Response::err("Device selection not yet implemented in streaming manager")
     }
 
-    async fn handle_load_plugins(&self, _plugins: Vec<PluginConfig>) -> Response {
-        // This would require extending AudioStreamingManager to support runtime plugin loading
-        // For now, plugins are loaded at playback start
-        Response::err("Runtime plugin loading not yet implemented")
+    async fn handle_load_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
+        let mut manager = self.manager.lock();
+
+        // Stop current playback if running
+        let _ = manager.stop();
+
+        // Start playback with new plugin chain
+        // Note: This requires a file to be loaded first, or we use a dummy silent source
+        match manager.start_playback(None, plugins, 2) {
+            Ok(_) => {
+                log::info!("Plugin chain loaded successfully");
+                Response::ok_empty()
+            }
+            Err(e) => {
+                log::error!("Failed to load plugins: {}", e);
+                Response::err(format!("Failed to load plugin chain: {}", e))
+            }
+        }
     }
 
     async fn handle_get_loudness(&self) -> Response {
