@@ -6,7 +6,7 @@
     <string>English</string>
 
     <key>CFBundleExecutable</key>
-    <string>AutoEQ</string>
+    <string>sotf_driver</string>
 
     <key>CFBundleIdentifier</key>
     <string>org.spinorama.sotf-driver</string>
@@ -38,7 +38,7 @@
     <key>CFPlugInFactories</key>
     <dict>
         <key>00000000-0000-0000-0000-000000000001</key>
-        <string>AutoEQHalFactory</string>
+        <string>AudioDriverPlugInFactory</string>
     </dict>
 
     <key>CFPlugInTypes</key>

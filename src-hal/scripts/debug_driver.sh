@@ -8,11 +8,20 @@ set -e
 echo "🔍 Debugging Audio HAL Driver..."
 echo ""
 
-# Check if driver is installed
-DRIVER_PATH="/Library/Audio/Plug-Ins/HAL/AutoEQ.driver"
+# Check both possible installation locations
+USER_DRIVER_PATH="$HOME/Library/Audio/Plug-Ins/HAL/sotf.driver"
+SYSTEM_DRIVER_PATH="/Library/Audio/Plug-Ins/HAL/sotf.driver"
 
-if [ ! -d "$DRIVER_PATH" ]; then
-    echo "❌ Driver not installed at: $DRIVER_PATH"
+if [ -d "$USER_DRIVER_PATH" ]; then
+    DRIVER_PATH="$USER_DRIVER_PATH"
+    echo "✅ Found driver in user location: $DRIVER_PATH"
+elif [ -d "$SYSTEM_DRIVER_PATH" ]; then
+    DRIVER_PATH="$SYSTEM_DRIVER_PATH"
+    echo "✅ Found driver in system location: $DRIVER_PATH"
+else
+    echo "❌ Driver not installed at either location:"
+    echo "   User: $USER_DRIVER_PATH"
+    echo "   System: $SYSTEM_DRIVER_PATH"
     exit 1
 fi
 
@@ -25,7 +34,7 @@ ls -la "$DRIVER_PATH/Contents/" 2>&1 | head -10
 echo ""
 
 # Check binary
-BINARY_PATH="$DRIVER_PATH/Contents/MacOS/AutoEQ"
+BINARY_PATH="$DRIVER_PATH/Contents/MacOS/sotf_driver"
 if [ -f "$BINARY_PATH" ]; then
     echo "✅ Binary exists"
     echo "📊 Binary info:"
@@ -60,7 +69,10 @@ echo ""
 
 # Check for other HAL drivers
 echo "📚 All installed HAL drivers:"
-ls -la /Library/Audio/Plug-Ins/HAL/
+echo "System drivers:"
+ls -la /Library/Audio/Plug-Ins/HAL/ 2>/dev/null || echo "  None"
+echo "User drivers:"
+ls -la "$HOME/Library/Audio/Plug-Ins/HAL/" 2>/dev/null || echo "  None"
 echo ""
 
 # Check Core Audio daemon status
@@ -91,5 +103,5 @@ echo "4. Check Console.app for errors:"
 echo "   Open Console.app and filter for 'coreaudio' or 'AudioHALDriver'"
 echo ""
 echo "5. Verify the driver loads:"
-echo "   system_profiler SPAudioDataType | grep -i autoeq"
+echo "   system_profiler SPAudioDataType | grep -i 'sotf\|SotF'"
 echo ""

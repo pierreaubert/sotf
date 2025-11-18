@@ -115,3 +115,10 @@ pub unsafe extern "C" fn AudioDriverPlugInFactory(uuid: CFUUIDRef) -> *mut c_voi
     log::info!("🏁 AudioDriverPlugInFactory returning: {:p}", result);
     result
 }
+
+/// Alias for factory function (for backward compatibility)
+#[no_mangle]
+pub unsafe extern "C" fn AutoEQHalFactory(uuid: CFUUIDRef) -> *mut c_void {
+    log::info!("🏭 AutoEQHalFactory alias called, forwarding to AudioDriverPlugInFactory");
+    AudioDriverPlugInFactory(uuid)
+}
