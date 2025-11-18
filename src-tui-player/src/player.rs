@@ -1,6 +1,6 @@
 use sotf_audio::engine::PluginConfig;
 use sotf_audio::manager::AudioStreamingManager;
-use sotf_audio::plugins::LoudnessInfo;
+use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -94,6 +94,23 @@ impl Player {
     pub async fn get_loudness(&self) -> Option<LoudnessInfo> {
         let manager = self.manager.lock().await;
         manager.get_loudness()
+    }
+
+    pub async fn enable_spectrum_monitoring(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut manager = self.manager.lock().await;
+        manager.enable_spectrum_monitoring()?;
+        Ok(())
+    }
+
+    pub async fn disable_spectrum_monitoring(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut manager = self.manager.lock().await;
+        manager.disable_spectrum_monitoring();
+        Ok(())
+    }
+
+    pub async fn get_spectrum(&self) -> Option<SpectrumInfo> {
+        let manager = self.manager.lock().await;
+        manager.get_spectrum()
     }
 
     pub async fn set_output_device(

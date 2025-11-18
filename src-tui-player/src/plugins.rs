@@ -83,9 +83,8 @@ pub enum PluginSettings {
         filters: Vec<EQFilter>,
     },
     Upmixer {
-        center_level_db: f64,
-        lfe_level_db: f64,
-        surround_delay_ms: f64,
+        speaker_config: String,
+        lfe_gain: f64,
     },
     Compressor {
         threshold_db: f64,
@@ -147,15 +146,13 @@ impl PluginSettings {
                 )
             }
             Self::Upmixer {
-                center_level_db,
-                lfe_level_db,
-                surround_delay_ms,
+                speaker_config,
+                lfe_gain,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
-                    "center_level_db": center_level_db,
-                    "lfe_level_db": lfe_level_db,
-                    "surround_delay_ms": surround_delay_ms,
+                    "speaker_config": speaker_config,
+                    "lfe_gain": lfe_gain,
                 }),
             ),
             Self::Compressor {
@@ -232,9 +229,8 @@ impl PluginSettings {
                 ],
             },
             PluginType::Upmixer => Self::Upmixer {
-                center_level_db: 0.0,
-                lfe_level_db: 0.0,
-                surround_delay_ms: 15.0,
+                speaker_config: "5.1".to_string(),
+                lfe_gain: 1.0,
             },
             PluginType::Compressor => Self::Compressor {
                 threshold_db: -20.0,

@@ -1,7 +1,7 @@
 use crate::library::{Album, MusicLibrary, Track};
 use crate::plugins::{PluginChain, PluginType};
 use sotf_audio::devices::AudioDevice;
-use sotf_audio::plugins::LoudnessInfo;
+use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,6 +9,7 @@ pub enum Screen {
     Library,
     DirectoryManager,
     Queue,
+    Spectrum,
     Plugins,
     Devices,
 }
@@ -129,6 +130,10 @@ pub struct App {
     // Loudness monitoring
     pub loudness_info: Option<LoudnessInfo>,
 
+    // Spectrum analyzer
+    pub spectrum_visible: bool,
+    pub spectrum_info: Option<SpectrumInfo>,
+
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
     pub selected_output_device_index: usize,
@@ -189,6 +194,8 @@ impl App {
             volume: 0.1, // Start at 10% volume
             position_secs: 0.0,
             loudness_info: None,
+            spectrum_visible: false,
+            spectrum_info: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
@@ -217,15 +224,14 @@ impl App {
 
     pub fn load_output_devices(&mut self) {
         // Load available output devices
-        if let Ok(devices_map) = sotf_audio::devices::get_audio_devices() {
-            if let Some(output_devices) = devices_map.get("output") {
+        if let Ok(devices_map) = sotf_audio::devices::get_audio_devices()
+            && let Some(output_devices) = devices_map.get("output") {
                 self.output_devices = output_devices.clone();
                 // Find the default device
                 if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
                     self.selected_output_device_index = default_idx;
                 }
             }
-        }
     }
 
     pub fn select_next_output_device(&mut self) {
@@ -259,14 +265,15 @@ impl App {
 
     pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
         let was_empty = self.queue.is_empty();
+        let was_not_playing = !self.is_playing;
         let albums = self.filtered_albums();
 
         if let Some(album) = albums.get(self.selected_album_index) {
             self.queue.push(QueueItem::new((*album).clone()));
             self.expanded_queue_items.push(false);
 
-            // Auto-play if queue was empty
-            if was_empty {
+            // Auto-play if queue was empty OR if nothing was playing
+            if was_empty || was_not_playing {
                 return self.start_queue();
             }
         }
@@ -276,7 +283,21 @@ impl App {
     pub fn remove_from_queue(&mut self, index: usize) {
         if index < self.queue.len() {
             self.queue.remove(index);
-            self.expanded_queue_items.remove(index);
+
+            // Safely remove from expanded_queue_items, handling potential sync issues
+            if index < self.expanded_queue_items.len() {
+                self.expanded_queue_items.remove(index);
+            } else {
+                // If vectors are out of sync, resync them
+                log::warn!(
+                    "Queue sync issue detected: queue.len()={}, expanded.len()={}",
+                    self.queue.len(),
+                    self.expanded_queue_items.len()
+                );
+                // Resize expanded_queue_items to match queue
+                self.expanded_queue_items.resize(self.queue.len(), false);
+            }
+
             // Adjust current queue index if needed
             if let Some(current_idx) = self.current_queue_index {
                 if current_idx == index {
@@ -437,10 +458,9 @@ impl App {
                 {
                     dir_info.expanded = !dir_info.expanded;
                 }
-            } else {
-                // If we're on a subdirectory, we could add it as a new main directory
-                self.add_directory(path.clone());
             }
+            // If we're on a subdirectory (level 1), do nothing - it's already part of the tree
+            // Don't add it as a new main directory or trigger a rescan
         }
     }
 
@@ -556,25 +576,24 @@ impl App {
                 .cloned()
             {
                 self.queue.push(QueueItem::new(album));
+                self.expanded_queue_items.push(false);
             }
         }
 
         // Restore queue position
-        if let Some(queue_idx) = config.queue_index {
-            if queue_idx < self.queue.len() {
+        if let Some(queue_idx) = config.queue_index
+            && queue_idx < self.queue.len() {
                 self.current_queue_index = Some(queue_idx);
                 // Restore track position within album
-                if let Some(item) = self.queue.get_mut(queue_idx) {
-                    if config.track_index < item.album.tracks.len() {
+                if let Some(item) = self.queue.get_mut(queue_idx)
+                    && config.track_index < item.album.tracks.len() {
                         item.current_track_index = config.track_index;
                     }
-                }
             }
-        }
 
         // Restore plugin preset
-        if let Some(preset_name) = &config.plugin_preset {
-            if let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
+        if let Some(preset_name) = &config.plugin_preset
+            && let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
                 let preset_path = presets_dir.join(preset_name);
                 if preset_path.exists() {
                     match self.plugin_chain.load_from_file(&preset_path) {
@@ -591,7 +610,6 @@ impl App {
                     log::warn!("Saved preset '{}' not found", preset_name);
                 }
             }
-        }
 
         log::info!(
             "Loaded app configuration: {} items in queue, device: {:?}, preset: {:?}",
@@ -716,6 +734,7 @@ impl App {
         }
 
         let was_empty = self.queue.is_empty();
+        let was_not_playing = !self.is_playing;
         let tree_items = self.get_tree_items();
 
         if let Some(item) = tree_items.get(self.selected_tree_index) {
@@ -731,8 +750,8 @@ impl App {
                                     self.expanded_queue_items.push(false);
                                 }
                             }
-                            // Auto-play if queue was empty
-                            if was_empty {
+                            // Auto-play if queue was empty OR if nothing was playing
+                            if was_empty || was_not_playing {
                                 return self.start_queue();
                             }
                             return None;
@@ -749,8 +768,8 @@ impl App {
                         self.queue.push(QueueItem::new(album.clone()));
                         self.expanded_queue_items.push(false);
 
-                        // Auto-play if queue was empty
-                        if was_empty {
+                        // Auto-play if queue was empty OR if nothing was playing
+                        if was_empty || was_not_playing {
                             return self.start_queue();
                         }
                     }
@@ -768,8 +787,8 @@ impl App {
     }
 
     pub fn next_track(&mut self) -> Option<PathBuf> {
-        if let Some(idx) = self.current_queue_index {
-            if let Some(item) = self.queue.get_mut(idx) {
+        if let Some(idx) = self.current_queue_index
+            && let Some(item) = self.queue.get_mut(idx) {
                 if let Some(track) = item.next_track() {
                     return Some(track.path.clone());
                 } else {
@@ -780,13 +799,12 @@ impl App {
                     }
                 }
             }
-        }
         None
     }
 
     pub fn previous_track(&mut self) -> Option<PathBuf> {
-        if let Some(idx) = self.current_queue_index {
-            if let Some(item) = self.queue.get_mut(idx) {
+        if let Some(idx) = self.current_queue_index
+            && let Some(item) = self.queue.get_mut(idx) {
                 if let Some(track) = item.previous_track() {
                     return Some(track.path.clone());
                 } else {
@@ -802,7 +820,6 @@ impl App {
                     }
                 }
             }
-        }
         None
     }
 
@@ -933,14 +950,16 @@ impl App {
         if let Some(plugin) = self.get_editing_plugin_mut() {
             match &mut plugin.settings {
                 PluginSettings::Upmixer {
-                    center_level_db,
-                    lfe_level_db,
-                    surround_delay_ms,
+                    speaker_config: _,
+                    lfe_gain,
                 } => {
                     match param_idx {
-                        0 => *center_level_db = (*center_level_db + delta).clamp(-20.0, 20.0),
-                        1 => *lfe_level_db = (*lfe_level_db + delta).clamp(-20.0, 20.0),
-                        2 => *surround_delay_ms = (*surround_delay_ms + delta).clamp(0.0, 100.0),
+                        0 => {
+                            // speaker_config: cycle through available configs
+                            // For now, we just have 5.1, so no-op
+                            return false;
+                        }
+                        1 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
                         _ => return false,
                     }
                     true
@@ -1058,25 +1077,21 @@ impl App {
         self.available_plugin_presets.clear();
         self.selected_preset_index = 0;
 
-        if let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
-            if let Ok(entries) = std::fs::read_dir(&presets_dir) {
+        if let Some(presets_dir) = crate::config::get_plugin_presets_dir()
+            && let Ok(entries) = std::fs::read_dir(&presets_dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() {
-                        if let Some(ext) = path.extension() {
-                            if ext == "json" {
-                                if let Some(filename) = path.file_name() {
+                    if path.is_file()
+                        && let Some(ext) = path.extension()
+                            && ext == "json"
+                                && let Some(filename) = path.file_name() {
                                     self.available_plugin_presets
                                         .push(filename.to_string_lossy().to_string());
                                 }
-                            }
-                        }
-                    }
                 }
                 // Sort presets alphabetically
                 self.available_plugin_presets.sort();
             }
-        }
 
         log::info!(
             "Found {} plugin presets",
@@ -1113,8 +1128,7 @@ impl App {
         if let Some(preset_filename) = self
             .available_plugin_presets
             .get(self.selected_preset_index)
-        {
-            if let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
+            && let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
                 let preset_path = presets_dir.join(preset_filename);
                 match self.plugin_chain.load_from_file(&preset_path) {
                     Ok(_) => {
@@ -1129,7 +1143,6 @@ impl App {
                     }
                 }
             }
-        }
     }
 
     /// Generate autocomplete suggestions for the current directory input
@@ -1230,7 +1243,7 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
     use crate::plugins::PluginSettings;
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
-        PluginSettings::Upmixer { .. } => 3, // center_level, lfe_level, surround_delay
+        PluginSettings::Upmixer { .. } => 2, // speaker_config, lfe_gain
         PluginSettings::Compressor { .. } => 5, // threshold, ratio, attack, release, knee
         PluginSettings::Limiter { .. } => 2, // threshold, release
         PluginSettings::Gate { .. } => 4,    // threshold, ratio, attack, release

@@ -136,6 +136,9 @@ async fn run_app<B: ratatui::backend::Backend>(
     app: &mut App,
     player: &Player,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Track previous spectrum visibility state
+    let mut spectrum_was_visible = app.spectrum_visible;
+
     loop {
         // Draw UI
         terminal.draw(|f| ui::draw(f, app))?;
@@ -149,6 +152,20 @@ async fn run_app<B: ratatui::backend::Backend>(
                     }
                 }
                 AppEvent::Tick => {
+                    // Enable/disable spectrum monitoring when visibility changes
+                    // Do this in Tick to avoid blocking the UI thread
+                    if app.spectrum_visible != spectrum_was_visible {
+                        if app.spectrum_visible {
+                            let _ = player.enable_spectrum_monitoring().await;
+                            log::info!("Spectrum analyzer enabled");
+                        } else {
+                            let _ = player.disable_spectrum_monitoring().await;
+                            app.spectrum_info = None;
+                            log::info!("Spectrum analyzer disabled");
+                        }
+                        spectrum_was_visible = app.spectrum_visible;
+                    }
+
                     // Update position if playing
                     if app.is_playing {
                         if let Ok(pos) = player.get_position().await {
@@ -156,8 +173,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
 
                         // Check if playback ended and auto-advance
-                        if let Ok(is_playing) = player.is_playing().await {
-                            if !is_playing && app.current_queue_index.is_some() {
+                        if let Ok(is_playing) = player.is_playing().await
+                            && !is_playing && app.current_queue_index.is_some() {
                                 // Track ended, advance to next
                                 if let Some(path) = app.next_track() {
                                     let sample_rate = 48000.0;
@@ -175,11 +192,15 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     app.is_playing = false;
                                 }
                             }
-                        }
                     }
 
                     // Update loudness data
                     app.loudness_info = player.get_loudness().await;
+
+                    // Update spectrum data only if spectrum panel is visible
+                    if app.spectrum_visible {
+                        app.spectrum_info = player.get_spectrum().await;
+                    }
 
                     // Perform library scan if needed
                     // Note: This is intentionally synchronous and will block the UI

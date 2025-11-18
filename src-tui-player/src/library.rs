@@ -50,21 +50,13 @@ impl Album {
 }
 
 #[derive(Debug)]
+#[derive(Default)]
 pub struct MusicLibrary {
     pub directories: Vec<DirectoryInfo>,
     pub albums: Vec<Album>,
     db: Option<MusicDatabase>,
 }
 
-impl Default for MusicLibrary {
-    fn default() -> Self {
-        Self {
-            directories: Vec::new(),
-            albums: Vec::new(),
-            db: None,
-        }
-    }
-}
 
 impl MusicLibrary {
     pub fn new() -> Self {
@@ -125,6 +117,7 @@ impl MusicLibrary {
         }
     }
 
+    #[allow(dead_code)]
     pub fn scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.scan_incremental(false)
     }
@@ -143,6 +136,7 @@ impl MusicLibrary {
 
     /// Scan directories with optional incremental mode
     /// If incremental is true, only scan new or modified files
+    #[allow(dead_code)]
     pub fn scan_incremental(
         &mut self,
         incremental: bool,
@@ -200,8 +194,8 @@ impl MusicLibrary {
         }
 
         // Merge with existing albums if we have a database
-        if let Some(db) = &self.db {
-            if incremental {
+        if let Some(db) = &self.db
+            && incremental {
                 // Load existing albums from database
                 let existing_albums = db.load_library()?;
 
@@ -211,7 +205,6 @@ impl MusicLibrary {
                     album_map.entry(key).or_insert(existing_album);
                 }
             }
-        }
 
         self.albums = album_map.into_values().collect();
 
@@ -284,8 +277,8 @@ impl MusicLibrary {
                     total_tracks += 1;
 
                     // Check if we should skip this file in incremental mode
-                    if incremental {
-                        if let Some(db) = &self.db {
+                    if incremental
+                        && let Some(db) = &self.db {
                             let file_mtime = get_file_mtime(path).unwrap_or(0);
                             if let Ok(Some(db_mtime)) = db.get_track_mtime(path) {
                                 // Skip if file hasn't been modified
@@ -294,7 +287,6 @@ impl MusicLibrary {
                                 }
                             }
                         }
-                    }
 
                     scanned_tracks += 1;
 
@@ -403,14 +395,12 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     let mut metadata = TrackMetadata::default();
 
     // Extract duration from the format
-    if let Some(track) = probed.format.default_track() {
-        if let Some(time_base) = track.codec_params.time_base {
-            if let Some(n_frames) = track.codec_params.n_frames {
+    if let Some(track) = probed.format.default_track()
+        && let Some(time_base) = track.codec_params.time_base
+            && let Some(n_frames) = track.codec_params.n_frames {
                 let duration = time_base.calc_time(n_frames);
                 metadata.duration_secs = Some(duration.seconds);
             }
-        }
-    }
 
     // Extract metadata tags
     if let Some(metadata_rev) = probed.format.metadata().current() {
@@ -434,11 +424,10 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                 | Some(symphonia::core::meta::StandardTagKey::ReleaseDate) => {
                     // Try to extract year from date string
                     let date_str = tag.value.to_string();
-                    if let Some(year_str) = date_str.split('-').next() {
-                        if let Ok(year) = year_str.parse() {
+                    if let Some(year_str) = date_str.split('-').next()
+                        && let Ok(year) = year_str.parse() {
                             metadata.year = Some(year);
                         }
-                    }
                 }
                 _ => {}
             }

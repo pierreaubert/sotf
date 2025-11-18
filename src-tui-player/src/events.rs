@@ -54,7 +54,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.current_screen = match app.current_screen {
                 Screen::Library => Screen::DirectoryManager,
                 Screen::DirectoryManager => Screen::Queue,
-                Screen::Queue => Screen::Plugins,
+                Screen::Queue => Screen::Spectrum,
+                Screen::Spectrum => Screen::Plugins,
                 Screen::Plugins => Screen::Devices,
                 Screen::Devices => Screen::Library,
             };
@@ -74,12 +75,22 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.current_screen = Screen::Queue;
             None
         }
+        KeyCode::Char('M') => {
+            app.current_screen = Screen::Spectrum;
+            None
+        }
         KeyCode::Char('P') => {
             app.current_screen = Screen::Plugins;
             None
         }
         KeyCode::Char('O') => {
             app.current_screen = Screen::Devices;
+            None
+        }
+
+        // Toggle spectrum analyzer with 'S'
+        KeyCode::Char('S') => {
+            app.spectrum_visible = !app.spectrum_visible;
             None
         }
 
@@ -110,6 +121,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             Screen::Library => handle_library_keys(app, key),
             Screen::DirectoryManager => handle_directory_keys(app, key),
             Screen::Queue => handle_queue_keys(app, key),
+            Screen::Spectrum => handle_spectrum_keys(app, key),
             Screen::Plugins => handle_plugins_keys(app, key),
             Screen::Devices => handle_devices_keys(app, key),
         },
@@ -253,6 +265,11 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.select_next_queue_item();
             None
         }
+        KeyCode::Enter => {
+            // Toggle expansion of the selected queue item
+            app.toggle_queue_item_expansion();
+            None
+        }
         KeyCode::Char('d') | KeyCode::Delete => {
             app.remove_from_queue(app.selected_queue_index);
             None
@@ -294,16 +311,7 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Char('b') | KeyCode::Char('<') => {
             // Previous track
-            if let Some(path) = app.previous_track() {
-                Some(PlayerCommand::Play(path))
-            } else {
-                None
-            }
-        }
-        KeyCode::Enter => {
-            // Toggle expansion of selected queue item
-            app.toggle_queue_item_expansion();
-            None
+            app.previous_track().map(PlayerCommand::Play)
         }
         KeyCode::Char('+') | KeyCode::Char('=') => {
             app.increase_volume();
@@ -315,6 +323,12 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         _ => None,
     }
+}
+
+fn handle_spectrum_keys(_app: &mut App, _key: KeyEvent) -> Option<PlayerCommand> {
+    // Spectrum screen is mostly passive - no specific controls needed
+    // The 'S' key to toggle spectrum is handled globally
+    None
 }
 
 fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
@@ -640,11 +654,7 @@ fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Enter | KeyCode::Char(' ') => {
             // Apply device change
-            if let Some(device) = app.get_selected_output_device() {
-                Some(PlayerCommand::SetOutputDevice(device.name.clone()))
-            } else {
-                None
-            }
+            app.get_selected_output_device().map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
         }
         _ => None,
     }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 /// Application state that persists between sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct AppConfig {
     /// Currently selected output device name
     pub output_device: Option<String>,
@@ -16,17 +17,6 @@ pub struct AppConfig {
     pub plugin_preset: Option<String>,
 }
 
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            output_device: None,
-            queue: Vec::new(),
-            queue_index: None,
-            track_index: 0,
-            plugin_preset: None,
-        }
-    }
-}
 
 /// Get the application configuration directory
 /// - Linux: ~/.config/sotf

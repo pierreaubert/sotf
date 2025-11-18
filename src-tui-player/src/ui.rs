@@ -8,6 +8,103 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
+/// Clean up track/song titles by:
+/// - Trimming ALL leading/trailing whitespace
+/// - Replacing multiple consecutive spaces with a single space
+/// - Removing tabs, newlines, and other control characters
+fn clean_track_name(name: &str) -> String {
+    clean_text(name)
+}
+
+/// Clean up any text field (artist, album, track) by:
+/// - Trimming ALL leading/trailing whitespace
+/// - Replacing multiple consecutive spaces with a single space
+/// - Removing tabs, newlines, and other control characters
+fn clean_text(text: &str) -> String {
+    // First, replace all control characters (tabs, newlines, etc.) with spaces
+    let normalized: String = text.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+
+    // Then split by whitespace and rejoin with single spaces (handles multiple spaces)
+    // This also trims all leading and trailing whitespace
+    normalized
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Truncate a string to a maximum length, adding "..." if truncated
+fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
+        format!("{}...", truncated)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_text() {
+        // Test leading/trailing whitespace
+        assert_eq!(clean_text("  Text  "), "Text");
+
+        // Test multiple spaces
+        assert_eq!(clean_text("Text    Name"), "Text Name");
+
+        // Test tabs
+        assert_eq!(clean_text("Text\tName"), "Text Name");
+
+        // Test newlines
+        assert_eq!(clean_text("Text\nName"), "Text Name");
+
+        // Test combination
+        assert_eq!(clean_text("  \t Text   Name\n  "), "Text Name");
+
+        // Test normal string (no change needed)
+        assert_eq!(clean_text("Text Name"), "Text Name");
+
+        // Test empty string
+        assert_eq!(clean_text(""), "");
+
+        // Test only whitespace
+        assert_eq!(clean_text("   \t\n  "), "");
+    }
+
+    #[test]
+    fn test_clean_track_name() {
+        // Verify clean_track_name wraps clean_text correctly
+        assert_eq!(clean_track_name("  Track Name  "), "Track Name");
+        assert_eq!(clean_track_name("Track\tName"), "Track Name");
+    }
+
+    #[test]
+    fn test_truncate_with_ellipsis() {
+        // Test no truncation needed
+        assert_eq!(truncate_with_ellipsis("Short", 10), "Short");
+
+        // Test exact length
+        assert_eq!(truncate_with_ellipsis("Exact", 5), "Exact");
+
+        // Test truncation
+        assert_eq!(truncate_with_ellipsis("This is a very long track name", 15), "This is a ve...");
+
+        // Test truncation at edge
+        assert_eq!(truncate_with_ellipsis("12345678", 5), "12...");
+
+        // Test very short max_len
+        assert_eq!(truncate_with_ellipsis("Test", 3), "...");
+
+        // Test empty string
+        assert_eq!(truncate_with_ellipsis("", 10), "");
+    }
+}
+
 pub fn draw(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -22,11 +119,24 @@ pub fn draw(f: &mut Frame, app: &App) {
     draw_title(f, chunks[0], app);
 
     // Split main content into left (main) and right (meters) columns
+    // Adjust right column width based on number of channels
+    let num_channels = app
+        .loudness_info
+        .as_ref()
+        .map(|info| info.channel_peaks.len())
+        .unwrap_or(2);
+
+    let right_col_pct = if num_channels > 4 {
+        20 // For 5.1 and above, use wider right column
+    } else {
+        12 // For stereo/quad, use standard width
+    };
+
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(88), // Main content
-            Constraint::Percentage(12), // Right column (LUFS, level meter, volume)
+            Constraint::Percentage(100 - right_col_pct), // Main content
+            Constraint::Percentage(right_col_pct),        // Right column (LUFS, level meter, volume)
         ])
         .split(chunks[1]);
 
@@ -35,6 +145,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::Library => draw_library_screen(f, main_chunks[0], app),
         Screen::DirectoryManager => draw_directory_manager(f, main_chunks[0], app),
         Screen::Queue => draw_queue_screen(f, main_chunks[0], app),
+        Screen::Spectrum => draw_spectrum_screen(f, main_chunks[0], app),
         Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
         Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
     }
@@ -59,35 +170,32 @@ pub fn draw(f: &mut Frame, app: &App) {
 }
 
 fn draw_title(f: &mut Frame, area: Rect, app: &App) {
-    let title_text = match app.current_screen {
-        Screen::Library => "SOTF Music Player - Library",
-        Screen::DirectoryManager => "SOTF Music Player - Directories",
-        Screen::Queue => "SOTF Music Player - Queue",
-        Screen::Plugins => "SOTF Music Player - Audio Plugins",
-        Screen::Devices => "SOTF Music Player - Output Devices",
-    };
-
-    // Split title area into left (title) and right (device selector)
+    // Split title area into three parts: SOTF title, screen boxes, output device
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(80), // Title
-            Constraint::Percentage(20), // Device selector
+            Constraint::Length(8),      // SOTF title
+            Constraint::Min(0),         // Screen boxes (expandable)
+            Constraint::Length(25),     // Output device
         ])
         .split(area);
 
-    let title = Paragraph::new(title_text)
+    // Draw "SOTF" on the left
+    let sotf_title = Paragraph::new("SOTF")
         .style(
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )
-        .alignment(Alignment::Center)
+        .alignment(Alignment::Left)
         .block(Block::default().borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM));
 
-    f.render_widget(title, title_chunks[0]);
+    f.render_widget(sotf_title, title_chunks[0]);
 
-    // Device selector
+    // Draw screen indicator boxes in the middle
+    draw_screen_boxes(f, title_chunks[1], app);
+
+    // Device selector on the right
     let device_text = if let Some(device) = app.get_selected_output_device() {
         format!("Out: {}", device.name)
     } else {
@@ -103,7 +211,49 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
                 .title("Output Device"),
         );
 
-    f.render_widget(device_widget, title_chunks[1]);
+    f.render_widget(device_widget, title_chunks[2]);
+}
+
+fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
+    // Define screens with their labels
+    let screens = [
+        (Screen::Library, "Library"),
+        (Screen::DirectoryManager, "Directories"),
+        (Screen::Queue, "Queue"),
+        (Screen::Spectrum, "Spectrum"),
+        (Screen::Plugins, "Plugins"),
+        (Screen::Devices, "Devices"),
+    ];
+
+    // Create spans for each screen box
+    let mut spans = vec![Span::raw(" ")]; // Leading space
+
+    for (screen, label) in &screens {
+        let is_active = *screen == app.current_screen;
+
+        // Box with screen label
+        let style = if is_active {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::DarkGray)
+        };
+
+        spans.push(Span::raw("[ "));
+        spans.push(Span::styled(label.to_string(), style));
+        spans.push(Span::raw(" ]"));
+        spans.push(Span::raw(" "));
+    }
+
+    let boxes = Paragraph::new(Line::from(spans))
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::TOP | Borders::BOTTOM));
+
+    f.render_widget(boxes, area);
 }
 
 fn draw_library_screen(f: &mut Frame, area: Rect, app: &App) {
@@ -148,6 +298,13 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
     use crate::app::{LibraryViewMode, TreeItem};
     use ratatui::widgets::{ListState, StatefulWidget};
 
+    // Calculate channel count for truncation logic
+    let num_channels = app
+        .loudness_info
+        .as_ref()
+        .map(|info| info.channel_peaks.len())
+        .unwrap_or(2);
+
     match app.library_view_mode {
         LibraryViewMode::Flat => {
             let albums = app.filtered_albums();
@@ -156,7 +313,15 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 .iter()
                 .enumerate()
                 .map(|(i, album)| {
-                    let content = album.display_name().to_string();
+                    // Clean and truncate to prevent overflow into meters column
+                    // Truncation length adjusted based on right column width
+                    // For stereo (12% right column): 100 chars is safe
+                    // For 5.1 (20% right column): 85 chars to be safe
+                    let raw_content = album.display_name();
+                    let cleaned = clean_text(&raw_content);
+                    let max_len = if num_channels > 4 { 85 } else { 100 };
+                    let content = truncate_with_ellipsis(&cleaned, max_len);
+
                     let style = if i == app.selected_album_index {
                         Style::default()
                             .fg(Color::Black)
@@ -196,7 +361,10 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                     let (content, style) = match item {
                         TreeItem::Artist { name, expanded } => {
                             let prefix = if *expanded { "▼ " } else { "▶ " };
-                            let content = format!("{}{}", prefix, name);
+                            // Clean artist name and truncate to prevent overflow
+                            let cleaned_name = clean_text(name);
+                            let truncated_name = truncate_with_ellipsis(&cleaned_name, 95);
+                            let content = format!("{}{}", prefix, truncated_name);
                             let mut style = Style::default()
                                 .fg(Color::Cyan)
                                 .add_modifier(Modifier::BOLD);
@@ -207,7 +375,11 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                         }
                         TreeItem::Album { index } => {
                             if let Some(album) = app.library.albums.get(*index) {
-                                let content = format!("  └─ {}", album.title);
+                                // Use display_name for consistency, clean and truncate
+                                let raw_album = album.display_name();
+                                let cleaned = clean_text(&raw_album);
+                                let truncated = truncate_with_ellipsis(&cleaned, 90);
+                                let content = format!("  └─ {}", truncated);
                                 let mut style = Style::default();
                                 if i == app.selected_tree_index {
                                     style = Style::default()
@@ -338,7 +510,39 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
                     .unwrap_or_else(|| path.display().to_string())
             };
 
-            let content = format!("{}{}{}", indent, expand_indicator, path_str);
+            // For main directories (level 0), add track count and last scan time
+            let info_str = if *level == 0 {
+                // Find the directory info
+                if let Some(dir_info) = app.library.directories.iter().find(|d| d.path == *path) {
+                    let track_count = dir_info.file_count;
+                    let last_scan = if let Some(time) = dir_info.last_scanned {
+                        // Format as relative time (e.g., "2 days ago")
+                        if let Ok(elapsed) = time.elapsed() {
+                            let secs = elapsed.as_secs();
+                            if secs < 60 {
+                                "just now".to_string()
+                            } else if secs < 3600 {
+                                format!("{} min ago", secs / 60)
+                            } else if secs < 86400 {
+                                format!("{} hrs ago", secs / 3600)
+                            } else {
+                                format!("{} days ago", secs / 86400)
+                            }
+                        } else {
+                            "never".to_string()
+                        }
+                    } else {
+                        "never".to_string()
+                    };
+                    format!(" [{} tracks, {}]", track_count, last_scan)
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
+            let content = format!("{}{}{}{}", indent, expand_indicator, path_str, info_str);
 
             let style = if i == app.selected_directory_index {
                 Style::default()
@@ -389,7 +593,10 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
 
         // Album header
         let expand_indicator = if is_expanded { "▼" } else { "▶" };
-        let mut content = format!("{} {}", expand_indicator, item.album.display_name());
+        let raw_display = item.album.display_name();
+        let cleaned_display = clean_text(&raw_display);
+        let truncated_display = truncate_with_ellipsis(&cleaned_display, 90);
+        let mut content = format!("{} {}", expand_indicator, truncated_display);
 
         if is_current {
             let track_info = format!(
@@ -416,10 +623,13 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
         if is_expanded {
             for (track_idx, track) in item.album.tracks.iter().enumerate() {
                 let is_current_track = is_current && track_idx == item.current_track_index;
-                let track_name = track
+                let raw_track_name = track
                     .title
                     .as_deref()
                     .unwrap_or_else(|| track.path.file_name().unwrap().to_str().unwrap());
+                let cleaned_track_name = clean_track_name(raw_track_name);
+                // Truncate to max 60 chars to prevent overflow into meters
+                let track_name = truncate_with_ellipsis(&cleaned_track_name, 60);
 
                 let duration_str = if let Some(duration) = track.duration_secs {
                     format!(" ({}:{:02})", duration / 60, duration % 60)
@@ -462,6 +672,162 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
     let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(list, area);
+}
+
+fn draw_spectrum_screen(f: &mut Frame, area: Rect, app: &App) {
+    if let Some(ref spectrum) = app.spectrum_info {
+        // Split into top info box and main spectrum display
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Info box
+                Constraint::Min(0),    // Spectrum display
+            ])
+            .split(area);
+
+        // Info box with spectrum stats
+        let info_text = format!(
+            "Bins: {} | Freq Range: {:.0}Hz - {:.0}Hz | Press 'S' to toggle",
+            spectrum.frequencies.len(),
+            spectrum.frequencies.first().unwrap_or(&0.0),
+            spectrum.frequencies.last().unwrap_or(&0.0)
+        );
+        let info = Paragraph::new(info_text)
+            .style(Style::default().fg(Color::Cyan))
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL).title("Spectrum Info"));
+        f.render_widget(info, chunks[0]);
+
+        // Main spectrum display
+        let inner = Rect {
+            x: chunks[1].x + 1,
+            y: chunks[1].y + 1,
+            width: chunks[1].width.saturating_sub(2),
+            height: chunks[1].height.saturating_sub(2),
+        };
+
+        // Draw border with title
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title("Frequency Spectrum");
+        f.render_widget(block, chunks[1]);
+
+        if inner.width < 2 || inner.height < 2 {
+            return;
+        }
+
+        // Draw spectrum bars
+        let num_bins = spectrum.frequencies.len();
+        if num_bins == 0 {
+            return;
+        }
+
+        // Use logarithmic grouping for better frequency distribution
+        let num_bars = (inner.width as usize).min(200);
+        let bin_width = inner.width as usize / num_bars.max(1);
+
+        for bar_idx in 0..num_bars {
+            // Map bar to frequency bins (log scale)
+            let start_bin = (bar_idx * num_bins) / num_bars;
+            let end_bin = ((bar_idx + 1) * num_bins) / num_bars;
+
+            // Find max magnitude in this range
+            let mut max_db = -120.0f32;
+            for bin_idx in start_bin..end_bin.min(num_bins) {
+                if let Some(&mag) = spectrum.magnitudes.get(bin_idx) {
+                    max_db = max_db.max(mag);
+                }
+            }
+
+            // Scale dB to bar height (-60dB to 0dB range)
+            let db_range = 60.0;
+            let normalized = ((max_db + db_range) / db_range).clamp(0.0, 1.0);
+            let bar_height = (normalized * inner.height as f32).round() as usize;
+
+            // Choose color based on level
+            let color = if max_db > -10.0 {
+                Color::Red
+            } else if max_db > -30.0 {
+                Color::Yellow
+            } else {
+                Color::Green
+            };
+
+            // Draw vertical bar
+            let bar_x = inner.x + (bar_idx * bin_width) as u16;
+            for y_offset in 0..bar_height {
+                let y_pos = inner.y + inner.height - 1 - y_offset as u16;
+                if y_pos >= inner.y && bar_x < inner.x + inner.width {
+                    f.render_widget(
+                        Paragraph::new("█").style(Style::default().fg(color)),
+                        Rect {
+                            x: bar_x,
+                            y: y_pos,
+                            width: bin_width.min(1) as u16,
+                            height: 1,
+                        },
+                    );
+                }
+            }
+        }
+
+        // Draw frequency labels at the bottom
+        let label_positions = [
+            (0, "20Hz"),
+            (inner.width / 4, "100Hz"),
+            (inner.width / 2, "1kHz"),
+            (3 * inner.width / 4, "10kHz"),
+            (inner.width - 6, "20kHz"),
+        ];
+
+        for (x_offset, label) in &label_positions {
+            if *x_offset < inner.width {
+                f.render_widget(
+                    Paragraph::new(*label).style(Style::default().fg(Color::DarkGray)),
+                    Rect {
+                        x: inner.x + x_offset,
+                        y: inner.y + inner.height,
+                        width: 6,
+                        height: 1,
+                    },
+                );
+            }
+        }
+    } else {
+        // No spectrum data available - check if spectrum is enabled or disabled
+        let (message, title) = if app.spectrum_visible {
+            // Spectrum is enabled but data not available yet
+            (
+                vec![
+                    Line::from(""),
+                    Line::from("Waiting for spectrum data..."),
+                    Line::from(""),
+                    Line::from("Make sure audio is playing"),
+                    Line::from(""),
+                    Line::from("Press 'S' to disable"),
+                ],
+                "Spectrum - Loading...",
+            )
+        } else {
+            // Spectrum is disabled
+            (
+                vec![
+                    Line::from(""),
+                    Line::from("Spectrum Analyzer Disabled"),
+                    Line::from(""),
+                    Line::from("Press 'S' to enable spectrum analyzer"),
+                    Line::from(""),
+                    Line::from("Note: Spectrum will only show when audio is playing"),
+                ],
+                "Spectrum - Disabled",
+            )
+        };
+
+        let paragraph = Paragraph::new(message)
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+    }
 }
 
 fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
@@ -627,7 +993,7 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_meters_column(f: &mut Frame, area: Rect, app: &App) {
-    // Split the right column into 3 boxes
+    // Split the right column - LUFS, level meter, volume
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -830,6 +1196,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
             // Draw scale marks - show 0dB at top with "dB", then just numbers
             let db_marks = [
                 (0, true),
+                (-5, false),
                 (-10, false),
                 (-20, false),
                 (-30, false),
@@ -871,6 +1238,24 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                             height: 1,
                         },
                     );
+
+                    // Draw horizontal line across meters at specific dB levels (-10, -20, -30, -40, -50)
+                    // Skip 0 and -5 to avoid clutter, and skip -60 as it's at the bottom
+                    if db % 10 == 0 && db != 0 && db != -60 {
+                        let line_width = meters_width.saturating_sub(1);
+                        if line_width > 0 {
+                            let line = "_".repeat(line_width as usize);
+                            f.render_widget(
+                                Paragraph::new(line).style(Style::default().fg(Color::DarkGray)),
+                                Rect {
+                                    x: meters_start_x,
+                                    y: y_pos,
+                                    width: line_width,
+                                    height: 1,
+                                },
+                            );
+                        }
+                    }
                 }
             }
         }
@@ -927,21 +1312,22 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 
-    if let Some(idx) = app.current_queue_index {
-        if let Some(item) = app.queue.get(idx) {
-            if let Some(track) = item.current_track() {
-                let track_name = track
+    if let Some(idx) = app.current_queue_index
+        && let Some(item) = app.queue.get(idx)
+            && let Some(track) = item.current_track() {
+                let raw_track_name = track
                     .title
                     .as_deref()
                     .unwrap_or_else(|| track.path.file_name().unwrap().to_str().unwrap());
+                let cleaned_track_name = clean_track_name(raw_track_name);
+                // Truncate to max 50 chars for status bar to leave room for other info
+                let track_name = truncate_with_ellipsis(&cleaned_track_name, 50);
                 status_spans.push(Span::styled(
                     format!("Now: {}", track_name),
                     Style::default().fg(Color::Green),
                 ));
                 status_spans.push(Span::raw(" | "));
             }
-        }
-    }
 
     if !app.plugin_chain.is_empty() {
         status_spans.push(Span::styled(
@@ -960,10 +1346,14 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("Q", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("/"));
+    status_spans.push(Span::styled("M", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("P", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("O", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Screens "));
+    status_spans.push(Span::styled("S", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::raw("=Toggle "));
     status_spans.push(Span::styled(
         "Shift+↑/↓",
         Style::default().fg(Color::Yellow),
@@ -1056,19 +1446,14 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
 fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(String, String)> {
     match settings {
         PluginSettings::Upmixer {
-            center_level_db,
-            lfe_level_db,
-            surround_delay_ms,
+            speaker_config,
+            lfe_gain,
         } => vec![
             (
-                "Center Level".to_string(),
-                format!("{:.1} dB", center_level_db),
+                "Speaker Config".to_string(),
+                speaker_config.clone(),
             ),
-            ("LFE Level".to_string(), format!("{:.1} dB", lfe_level_db)),
-            (
-                "Surround Delay".to_string(),
-                format!("{:.1} ms", surround_delay_ms),
-            ),
+            ("LFE Gain".to_string(), format!("{:.2}x", lfe_gain)),
         ],
         PluginSettings::Compressor {
             threshold_db,
@@ -1166,16 +1551,17 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         height: dialog_area.height.saturating_sub(2),
     };
 
-    let mut lines = Vec::new();
-    lines.push(Line::from("Enter filename (e.g., plugins.json):"));
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("> ", Style::default().fg(Color::Cyan)),
-        Span::raw(&app.plugin_file_input),
-        Span::styled("_", Style::default().fg(Color::Green)),
-    ]));
-    lines.push(Line::from(""));
-    lines.push(Line::from("Press Enter to save, ESC to cancel"));
+    let lines = vec![
+        Line::from("Enter filename (e.g., plugins.json):"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::raw(&app.plugin_file_input),
+            Span::styled("_", Style::default().fg(Color::Green)),
+        ]),
+        Line::from(""),
+        Line::from("Press Enter to save, ESC to cancel"),
+    ];
 
     let paragraph = Paragraph::new(lines)
         .block(Block::default())
@@ -1215,16 +1601,17 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         height: dialog_area.height.saturating_sub(2),
     };
 
-    let mut lines = Vec::new();
-    lines.push(Line::from("Enter filename (e.g., plugins.json):"));
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled("> ", Style::default().fg(Color::Cyan)),
-        Span::raw(&app.plugin_file_input),
-        Span::styled("_", Style::default().fg(Color::Green)),
-    ]));
-    lines.push(Line::from(""));
-    lines.push(Line::from("Press Enter to load, ESC to cancel"));
+    let lines = vec![
+        Line::from("Enter filename (e.g., plugins.json):"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::raw(&app.plugin_file_input),
+            Span::styled("_", Style::default().fg(Color::Green)),
+        ]),
+        Line::from(""),
+        Line::from("Press Enter to load, ESC to cancel"),
+    ];
 
     let paragraph = Paragraph::new(lines)
         .block(Block::default())
