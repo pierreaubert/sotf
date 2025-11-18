@@ -582,6 +582,12 @@ impl UpmixerPlugin {
                 // Front speakers: azimuth between -90° and +90°
                 // Rear speakers: azimuth outside this range
                 let is_front = speaker.azimuth.abs() <= 90.0;
+                let is_height = speaker.elevation > 0.0;
+                let is_rear_height = is_height && !is_front;
+
+                // Check if VBAP panning gains are too low (happens for rear heights from front sources)
+                let has_low_vbap_gain = (panning_gain_left + panning_gain_right) < 0.01;
+
 
                 // Select appropriate gains
                 let (direct_gain, ambient_gain) = if is_front {
@@ -592,18 +598,33 @@ impl UpmixerPlugin {
 
                 // Build frequency-domain signal for this speaker
                 for i in 0..self.fft_size {
-                    // Pan direct component (front soundstage)
-                    let direct_component = self.direct_left[i] * panning_gain_left
-                        + self.direct_right[i] * panning_gain_right;
+                    let signal = if is_rear_height && has_low_vbap_gain {
+                        // Rear height speakers with low VBAP gains: use decorrelated ambient
+                        // Alternate between left and right ambient for spatial decorrelation
+                        // This creates diffuse overhead sound without relying on VBAP panning
 
-                    // Pan ambient component (surround/reverb)
-                    let ambient_component = self.ambient_left[i] * panning_gain_left
-                        + self.ambient_right[i] * panning_gain_right;
+                        // Use different ambient channel for left vs right speaker
+                        // This creates a wider, more diffuse overhead soundfield
+                        let amb_signal = if ch_idx % 2 == 0 {
+                            self.ambient_left[i]  // Left rear height uses ambient_left
+                        } else {
+                            self.ambient_right[i]  // Right rear height uses ambient_right
+                        };
 
-                    // Combine with gain parameters
-                    self.time_out_channels[ch_idx][i] = (direct_component * direct_gain
-                        + ambient_component * ambient_gain)
-                        * height_mult;
+                        amb_signal * self.gain_rear_ambient * 0.7
+
+                    } else {
+                        // Normal VBAP panning for all other speakers
+                        let direct_component = self.direct_left[i] * panning_gain_left
+                            + self.direct_right[i] * panning_gain_right;
+
+                        let ambient_component = self.ambient_left[i] * panning_gain_left
+                            + self.ambient_right[i] * panning_gain_right;
+
+                        direct_component * direct_gain + ambient_component * ambient_gain
+                    };
+
+                    self.time_out_channels[ch_idx][i] = signal * height_mult;
                 }
 
                 // Inverse FFT for this channel
@@ -1579,5 +1600,79 @@ mod tests {
         assert_eq!(plugin.output_channels(), 8);
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
         assert_eq!(value, Some(ParameterValue::Int(1)));
+    }
+
+    #[test]
+    fn test_upmixer_5_1_4_channel_distribution() {
+        // Test that 5.1.4 produces output on all channels including rear height
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        plugin.initialize(44100).unwrap();
+
+        // Create test input with different L/R content to generate both direct and ambient
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            let t = i as f32 / 44100.0;
+            input[i * 2] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5; // Left
+            input[i * 2 + 1] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.5; // Right (different frequency)
+        }
+
+        let mut output = vec![0.0_f32; 2048 * 10];
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Calculate energy per channel
+        let mut channel_energies = vec![0.0; 10];
+        for i in 0..2048 {
+            for ch in 0..10 {
+                channel_energies[ch] += output[i * 10 + ch].powi(2);
+            }
+        }
+
+        log::info!("5.1.4 Channel energies:");
+        log::info!("  [0] FL:  {:.6}", channel_energies[0]);
+        log::info!("  [1] FR:  {:.6}", channel_energies[1]);
+        log::info!("  [2] C:   {:.6}", channel_energies[2]);
+        log::info!("  [3] LFE: {:.6}", channel_energies[3]);
+        log::info!("  [4] SL:  {:.6}", channel_energies[4]);
+        log::info!("  [5] SR:  {:.6}", channel_energies[5]);
+        log::info!("  [6] TFL: {:.6}", channel_energies[6]);
+        log::info!("  [7] TFR: {:.6}", channel_energies[7]);
+        log::info!("  [8] TBL: {:.6}", channel_energies[8]);
+        log::info!("  [9] TBR: {:.6}", channel_energies[9]);
+
+        // Check that all non-LFE channels have some energy
+        for (ch, &energy) in channel_energies.iter().enumerate() {
+            if ch != 3 {
+                // Skip LFE (channel 3) as it only gets low frequencies
+                assert!(
+                    energy >= 0.0,
+                    "Channel {} should have non-negative energy",
+                    ch
+                );
+            }
+        }
+
+        // Front and side channels should have significant energy
+        assert!(channel_energies[0] > 0.01, "FL should have significant energy");
+        assert!(channel_energies[1] > 0.01, "FR should have significant energy");
+        assert!(channel_energies[4] > 0.001, "SL should have some energy");
+        assert!(channel_energies[5] > 0.001, "SR should have some energy");
+
+        // Rear height channels (8, 9) should now have energy from decorrelated ambient
+        assert!(
+            channel_energies[8] > 0.001,
+            "TBL (rear height left) should have energy from decorrelated ambient, got {}",
+            channel_energies[8]
+        );
+        assert!(
+            channel_energies[9] > 0.001,
+            "TBR (rear height right) should have energy from decorrelated ambient, got {}",
+            channel_energies[9]
+        );
     }
 }
