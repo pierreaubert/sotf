@@ -203,6 +203,90 @@ impl AudioStreamingManager {
         Ok(())
     }
 
+    /// Start HAL playback without a file source
+    ///
+    /// This method is specifically for HAL input plugins that act as audio sources.
+    /// Unlike `start_playback()`, this doesn't require a file to be loaded first.
+    ///
+    /// # Arguments
+    /// * `output_device` - Output device (None for default)
+    /// * `plugins` - Plugin chain (must include hal_input as first plugin)
+    /// * `output_channels` - Expected output channel count after all plugins
+    ///
+    /// # Notes
+    /// - Uses HAL default sample rate: 48000 Hz
+    /// - Input channels set to 0 (HAL input plugin is the source)
+    /// - No decoder thread is started since HAL input generates audio
+    pub fn start_hal_playback(
+        &mut self,
+        output_device: Option<String>,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+    ) -> AudioDecoderResult<()> {
+        log::debug!("[AudioStreamingManager] Starting HAL playback");
+
+        // Validate that we have a HAL input plugin
+        if !plugins.iter().any(|p| p.plugin_type == "hal_input") {
+            return Err(AudioDecoderError::ConfigError(
+                "HAL playback requires hal_input plugin in chain".to_string(),
+            ));
+        }
+
+        // Create engine config for HAL (no file source)
+        let config = EngineConfig {
+            frame_size: 1024,
+            buffer_ms: 200, // 200ms latency
+            output_sample_rate: 48000, // HAL default sample rate
+            input_channels: 0, // No file input - HAL input plugin is the source
+            output_channels,
+            output_device,
+            plugins,
+            volume: 1.0,
+            muted: false,
+            config_path: None,
+            watch_config: self.watch_signals,
+        };
+
+        log::info!(
+            "[AudioStreamingManager] Creating HAL engine: {}Hz, {}ch output",
+            config.output_sample_rate,
+            config.output_channels
+        );
+
+        // Create engine (but don't call play() since there's no file)
+        let engine = AudioEngine::new(config).map_err(|e| {
+            AudioDecoderError::ConfigError(format!("Failed to create HAL engine: {}", e))
+        })?;
+
+        // Store engine
+        *self.engine.lock() = Some(engine);
+        self.set_state(StreamingState::Playing);
+
+        log::debug!("[AudioStreamingManager] HAL playback started");
+
+        // Enable any pending analyzers
+        if *self.pending_spectrum_monitoring.lock() {
+            log::debug!("[AudioStreamingManager] Enabling pending spectrum monitoring");
+            if let Err(e) = self.enable_spectrum_monitoring() {
+                log::error!(
+                    "[AudioStreamingManager] Failed to enable spectrum monitoring: {}",
+                    e
+                );
+            }
+        }
+        if *self.pending_loudness_monitoring.lock() {
+            log::debug!("[AudioStreamingManager] Enabling pending loudness monitoring");
+            if let Err(e) = self.enable_loudness_monitoring() {
+                log::error!(
+                    "[AudioStreamingManager] Failed to enable loudness monitoring: {}",
+                    e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
     /// Pause streaming
     pub fn pause(&self) -> AudioDecoderResult<()> {
         log::debug!("[AudioStreamingManager] Pausing");

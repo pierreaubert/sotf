@@ -391,6 +391,10 @@ struct ConfigurationView: View {
     @State private var halInputChannels: Int = 2
     @State private var halOutputChannels: Int = 2
 
+    // Error handling
+    @State private var showingError = false
+    @State private var errorMessage = ""
+
     let channelOptions = Array(1...16)
 
     var body: some View {
@@ -561,6 +565,11 @@ struct ConfigurationView: View {
         .onAppear {
             loadDevices()
         }
+        .alert("Configuration Error", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
+        }
     }
 
     private func loadDevices() {
@@ -575,6 +584,19 @@ struct ConfigurationView: View {
     }
 
     private func applyHALConfiguration() {
+        // Validate channel configuration
+        guard halInputChannels >= 1 && halInputChannels <= 16 else {
+            errorMessage = "Invalid input channel count: \(halInputChannels). Must be between 1 and 16."
+            showingError = true
+            return
+        }
+
+        guard halOutputChannels >= 1 && halOutputChannels <= 16 else {
+            errorMessage = "Invalid output channel count: \(halOutputChannels). Must be between 1 and 16."
+            showingError = true
+            return
+        }
+
         // Build HAL plugin chain with configured channels
         let plugins: [[String: Any]] = [
             [
@@ -592,12 +614,17 @@ struct ConfigurationView: View {
             "plugins": plugins
         ]
 
-        if let response = client.sendCommand(command) {
-            if response.success {
-                print("HAL configuration applied: \(halInputChannels)ch in → \(halOutputChannels)ch out")
-            } else {
-                print("Failed to apply HAL configuration: \(response.error ?? "unknown error")")
-            }
+        guard let response = client.sendCommand(command) else {
+            errorMessage = "Failed to communicate with daemon. Please ensure the daemon is running."
+            showingError = true
+            return
+        }
+
+        if response.success {
+            print("✅ HAL configuration applied: \(halInputChannels)ch in → \(halOutputChannels)ch out")
+        } else {
+            errorMessage = response.error ?? "Unknown error occurred while applying HAL configuration."
+            showingError = true
         }
     }
 

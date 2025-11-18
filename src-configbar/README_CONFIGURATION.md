@@ -91,7 +91,7 @@ The status bar shows the current configuration: `HAL: 2ch in → 2ch out`
          ▼
 ┌─────────────────┐
 │  hal_input      │ Plugin reads configured_input_channels
-│  plugin         │
+│  plugin         │ (Source plugin - generates audio)
 └────────┬────────┘
          │
          ▼
@@ -103,7 +103,7 @@ The status bar shows the current configuration: `HAL: 2ch in → 2ch out`
          ▼
 ┌─────────────────┐
 │  hal_output     │ Plugin writes configured_output_channels
-│  plugin         │
+│  plugin         │ (Loopback - optional monitoring)
 └────────┬────────┘
          │
          ▼
@@ -112,6 +112,23 @@ The status bar shows the current configuration: `HAL: 2ch in → 2ch out`
 │  Audio Device   │ configured_output_channels
 └─────────────────┘
 ```
+
+### Technical Implementation
+
+The audio engine supports two modes:
+
+**File Playback Mode** (normal operation):
+- Decoder thread reads and decodes audio files
+- Processing thread applies plugin chain
+- Playback thread outputs to hardware
+
+**HAL Playback Mode** (for live audio routing):
+- Decoder thread sends empty frames (silent source mode)
+- HAL input plugin reads from HAL buffer and generates audio
+- Processing thread applies plugin chain
+- Playback thread outputs to hardware
+
+The HAL input plugin is a **source plugin** (0 input channels → N output channels) that doesn't need a file. When `input_channels: 0` is set in the engine config, the daemon automatically starts silent source mode, where empty frames trigger the HAL input plugin to read from the HAL driver buffer.
 
 ## JSON API
 

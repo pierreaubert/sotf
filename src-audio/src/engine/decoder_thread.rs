@@ -77,6 +77,7 @@ struct DecoderState {
     paused: bool,
     current_file: Option<PathBuf>,
     spec: Option<AudioSpec>,
+    silent_source: bool, // For HAL input plugins (no file source)
 }
 
 impl DecoderState {
@@ -88,6 +89,7 @@ impl DecoderState {
             paused: false,
             current_file: None,
             spec: None,
+            silent_source: false,
         }
     }
 
@@ -276,6 +278,33 @@ impl DecoderState {
         self.resampler_buffer.clear();
         self.current_file = None;
         self.spec = None;
+        self.silent_source = false;
+    }
+
+    /// Start silent source mode (for HAL input plugins)
+    fn start_silent_source(&mut self) {
+        self.stop(); // Clear any existing decoder
+        self.silent_source = true;
+        log::info!("[Decoder Thread] Started silent source mode for HAL input");
+    }
+
+    /// Generate a silent frame (0 channels, no data)
+    /// Used for HAL input plugins that act as audio sources
+    fn generate_silent_frame(
+        &mut self,
+        message_tx: &SyncSender<DecoderMessage>,
+        frame_size: usize,
+        sample_rate: u32,
+    ) -> Result<(), String> {
+        // Send empty frame (0 samples, 0 channels)
+        // The HAL input plugin will generate audio from this
+        let frame = AudioFrame::new(vec![], frame_size, 0, sample_rate);
+
+        message_tx
+            .send(DecoderMessage::Frame(frame))
+            .map_err(|_| "Failed to send silent frame")?;
+
+        Ok(())
     }
 }
 
@@ -296,8 +325,9 @@ fn run_decoder_thread(
     );
 
     loop {
-        // Check for commands (non-blocking when playing, blocking when stopped)
-        let command = if state.decoder.is_some() && !state.paused {
+        // Check for commands (non-blocking when playing/silent, blocking when stopped)
+        let is_active = (state.decoder.is_some() && !state.paused) || state.silent_source;
+        let command = if is_active {
             command_rx.try_recv().ok()
         } else {
             // Blocking wait when stopped/paused
@@ -312,6 +342,9 @@ fn run_decoder_thread(
                         log::debug!("[Decoder Thread] Play failed: {}", e);
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                     }
+                }
+                DecoderCommand::StartSilentSource => {
+                    state.start_silent_source();
                 }
                 DecoderCommand::Pause => {
                     state.paused = true;
@@ -339,8 +372,18 @@ fn run_decoder_thread(
             }
         }
 
-        // Decode if playing and not paused
-        if state.decoder.is_some() && !state.paused {
+        // Generate frames based on mode
+        if state.silent_source && !state.paused {
+            // Silent source mode: generate empty frames for HAL input plugins
+            if let Err(e) = state.generate_silent_frame(&message_tx, frame_size, target_sample_rate) {
+                log::debug!("[Decoder Thread] Silent frame error: {}", e);
+                state.stop();
+            }
+            // Sleep to maintain target frame rate (e.g., ~21ms for 1024 samples @ 48kHz)
+            let frame_duration_ms = (frame_size as f64 / target_sample_rate as f64 * 1000.0) as u64;
+            std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms));
+        } else if state.decoder.is_some() && !state.paused {
+            // File playback mode: decode from file
             match state.decode_chunk(&message_tx, &event_tx, frame_size, target_sample_rate) {
                 Ok(true) => {
                     // Continue
@@ -354,10 +397,8 @@ fn run_decoder_thread(
                     state.stop();
                 }
             }
-        }
-
-        // Small sleep to avoid busy loop when paused
-        if state.paused || state.decoder.is_none() {
+        } else {
+            // Idle: small sleep to avoid busy loop when paused/stopped
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }

@@ -222,15 +222,28 @@ impl AudioDaemon {
         // Stop current playback if running
         let _ = manager.stop();
 
-        // Start playback with new plugin chain
-        // Note: This requires a file to be loaded first, or we use a dummy silent source
-        match manager.start_playback(None, plugins, 2) {
+        // Extract output channel count from hal_output plugin
+        let output_channels = plugins
+            .iter()
+            .find(|p| p.plugin_type == "hal_output")
+            .and_then(|p| p.parameters.get("channels"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(2) as usize;
+
+        log::info!(
+            "Loading HAL plugin chain: {} plugins, {} output channels",
+            plugins.len(),
+            output_channels
+        );
+
+        // Start HAL playback (no file source needed)
+        match manager.start_hal_playback(None, plugins, output_channels) {
             Ok(_) => {
-                log::info!("Plugin chain loaded successfully");
+                log::info!("HAL plugin chain loaded successfully");
                 Response::ok_empty()
             }
             Err(e) => {
-                log::error!("Failed to load plugins: {}", e);
+                log::error!("Failed to load HAL plugins: {}", e);
                 Response::err(format!("Failed to load plugin chain: {}", e))
             }
         }
