@@ -32,6 +32,8 @@ mod plugin_delay;
 mod plugin_eq;
 mod plugin_gain;
 mod plugin_gate;
+mod plugin_graph;
+mod plugin_graph_parallel;
 mod plugin_limiter;
 mod plugin_loudness_compensation;
 mod plugin_matrix;
@@ -49,6 +51,8 @@ pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
 pub use host::{PluginHost, SharedPluginHost};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
+pub use plugin_graph::{GraphEdge, GraphNode, NodeId, PluginGraph};
+pub use plugin_graph_parallel::ParallelPluginGraph;
 
 pub use plugin_binaural_decoder::{BinauralDecoderParams, BinauralDecoderPlugin};
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
