@@ -2,6 +2,19 @@
 
 A Terminal User Interface (TUI) music player built with Ratatui for the SOTF audio engine.
 
+## Usage
+
+```bash
+# Basic usage
+cargo run --bin sotf_player_tui
+
+# Start with directories pre-configured
+cargo run --bin sotf_player_tui -- -d ~/Music -d ~/Downloads/Music
+
+# Auto-scan on startup
+cargo run --bin sotf_player_tui -- -d ~/Music --scan
+```
+
 ## Features
 
 - **Library Management**: Add/remove directories and automatically scan for music files
@@ -46,19 +59,6 @@ The TUI player consists of several modules:
   - Volume management
   - Position tracking
   - Real-time plugin updates
-
-## Usage
-
-```bash
-# Basic usage
-cargo run --bin sotf_player_tui
-
-# Start with directories pre-configured
-cargo run --bin sotf_player_tui -- -d ~/Music -d ~/Downloads/Music
-
-# Auto-scan on startup
-cargo run --bin sotf_player_tui -- -d ~/Music --scan
-```
 
 ## Keyboard Controls
 
@@ -154,29 +154,11 @@ Key dependencies include:
 - **ratatui**: Modern TUI framework
 - **crossterm**: Terminal manipulation
 - **sotf_audio**: Native audio engine with plugin system
-- **autoeq-iir**: IIR filter library for EQ implementation
-- **symphonia**: Audio metadata extraction
+  - **autoeq-iir**: IIR filter library for EQ implementation
+- *//*symphonia**: Audio metadata extraction
 - **tokio**: Async runtime for audio control
 - **walkdir**: Directory traversal
 - **serde_json**: JSON serialization for plugin parameters
-
-## Future Enhancements
-
-Potential improvements:
-
-- [x] **Audio plugin system** (EQ, upmixer, dynamics)
-- [ ] Playlist support (save/load playlists)
-- [ ] Track-level queue (not just albums)
-- [ ] Seek control (seek within tracks)
-- [ ] Advanced EQ editor (adjust individual bands)
-- [ ] Plugin parameter editing UI
-- [ ] Visualizations (spectrum analyzer)
-- [ ] Configuration file support (save plugin presets)
-- [ ] Album art display (with sixel/kitty graphics protocol)
-- [ ] Lyrics display
-- [ ] Smart playlists and filters
-- [ ] Shuffle and repeat modes
-- [ ] Gapless playback
 
 ## Integration with SOTF Audio Engine
 

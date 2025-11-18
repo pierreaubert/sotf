@@ -71,12 +71,22 @@ impl QueueItem {
             None
         }
     }
+
+    pub fn previous_track(&mut self) -> Option<&Track> {
+        if self.current_track_index > 0 {
+            self.current_track_index -= 1;
+            self.current_track()
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct App {
     pub library: MusicLibrary,
     pub queue: Vec<QueueItem>,
+    pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
     pub current_screen: Screen,
     pub input_mode: InputMode,
 
@@ -90,6 +100,14 @@ pub struct App {
     pub selected_plugin_index: usize,
     pub album_list_offset: usize,
     pub status_message: Option<String>, // For displaying save/load status
+
+    // Autocomplete state
+    pub autocomplete_suggestions: Vec<String>,
+    pub autocomplete_index: usize,
+
+    // Plugin preset selection
+    pub available_plugin_presets: Vec<String>, // List of preset filenames
+    pub selected_preset_index: usize,
 
     // Library tree view
     pub library_view_mode: LibraryViewMode,
@@ -119,13 +137,28 @@ pub struct App {
     // Flags
     pub should_quit: bool,
     pub needs_rescan: bool,
+
+    // Scan progress
+    pub scan_in_progress: bool,
+    pub scan_progress_tracks: usize,
+    pub scan_progress_albums: usize,
+
+    // Last loaded plugin preset name (for config persistence)
+    pub last_loaded_preset: Option<String>,
 }
 
 impl App {
     pub fn new() -> Self {
+        // Try to create library with database, fallback to simple library
+        let library = MusicLibrary::with_database().unwrap_or_else(|e| {
+            log::warn!("Failed to initialize database, using in-memory library: {}", e);
+            MusicLibrary::new()
+        });
+
         Self {
-            library: MusicLibrary::new(),
+            library,
             queue: Vec::new(),
+            expanded_queue_items: Vec::new(),
             current_screen: Screen::Library,
             input_mode: InputMode::Normal,
             search_query: String::new(),
@@ -137,6 +170,10 @@ impl App {
             selected_plugin_index: 0,
             album_list_offset: 0,
             status_message: None,
+            autocomplete_suggestions: Vec::new(),
+            autocomplete_index: 0,
+            available_plugin_presets: Vec::new(),
+            selected_preset_index: 0,
             library_view_mode: LibraryViewMode::Flat,
             artist_tree: Vec::new(),
             selected_tree_index: 0,
@@ -154,7 +191,25 @@ impl App {
             current_output_device_name: None,
             should_quit: false,
             needs_rescan: false,
+            scan_in_progress: false,
+            scan_progress_tracks: 0,
+            scan_progress_albums: 0,
+            last_loaded_preset: None,
         }
+    }
+
+    /// Load library from database if available
+    pub fn load_library_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.library.load_from_database()?;
+        self.rebuild_artist_tree();
+        // Update last scan times for directories from database
+        self.update_directory_scan_times();
+        Ok(())
+    }
+
+    /// Update directory scan times from database
+    fn update_directory_scan_times(&mut self) {
+        self.library.update_directory_scan_times();
     }
 
     pub fn load_output_devices(&mut self) {
@@ -199,16 +254,26 @@ impl App {
         }
     }
 
-    pub fn add_album_to_queue(&mut self) {
+    pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
+        let was_empty = self.queue.is_empty();
         let albums = self.filtered_albums();
+
         if let Some(album) = albums.get(self.selected_album_index) {
             self.queue.push(QueueItem::new((*album).clone()));
+            self.expanded_queue_items.push(false);
+
+            // Auto-play if queue was empty
+            if was_empty {
+                return self.start_queue();
+            }
         }
+        None
     }
 
     pub fn remove_from_queue(&mut self, index: usize) {
         if index < self.queue.len() {
             self.queue.remove(index);
+            self.expanded_queue_items.remove(index);
             // Adjust current queue index if needed
             if let Some(current_idx) = self.current_queue_index {
                 if current_idx == index {
@@ -226,9 +291,17 @@ impl App {
 
     pub fn clear_queue(&mut self) {
         self.queue.clear();
+        self.expanded_queue_items.clear();
         self.current_queue_index = None;
         self.selected_queue_index = 0;
         self.is_playing = false;
+    }
+
+    pub fn toggle_queue_item_expansion(&mut self) {
+        if self.selected_queue_index < self.expanded_queue_items.len() {
+            self.expanded_queue_items[self.selected_queue_index] =
+                !self.expanded_queue_items[self.selected_queue_index];
+        }
     }
 
     pub fn select_next_album(&mut self) {
@@ -249,17 +322,54 @@ impl App {
         }
     }
 
+    pub fn page_down_albums(&mut self, page_size: usize) {
+        let albums = self.filtered_albums();
+        if !albums.is_empty() {
+            self.selected_album_index = (self.selected_album_index + page_size).min(albums.len() - 1);
+        }
+    }
+
+    pub fn page_up_albums(&mut self, page_size: usize) {
+        let albums = self.filtered_albums();
+        if !albums.is_empty() {
+            self.selected_album_index = self.selected_album_index.saturating_sub(page_size);
+        }
+    }
+
+    pub fn page_down_tree(&mut self, page_size: usize) {
+        if self.library_view_mode != LibraryViewMode::TreeView {
+            return;
+        }
+
+        let tree_items = self.get_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_tree_index = (self.selected_tree_index + page_size).min(tree_items.len() - 1);
+        }
+    }
+
+    pub fn page_up_tree(&mut self, page_size: usize) {
+        if self.library_view_mode != LibraryViewMode::TreeView {
+            return;
+        }
+
+        let tree_items = self.get_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_tree_index = self.selected_tree_index.saturating_sub(page_size);
+        }
+    }
+
     pub fn select_next_directory(&mut self) {
-        if !self.library.directories.is_empty() {
-            self.selected_directory_index =
-                (self.selected_directory_index + 1) % self.library.directories.len();
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_directory_index = (self.selected_directory_index + 1) % tree_items.len();
         }
     }
 
     pub fn select_previous_directory(&mut self) {
-        if !self.library.directories.is_empty() {
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
             if self.selected_directory_index == 0 {
-                self.selected_directory_index = self.library.directories.len() - 1;
+                self.selected_directory_index = tree_items.len() - 1;
             } else {
                 self.selected_directory_index -= 1;
             }
@@ -287,6 +397,11 @@ impl App {
         self.needs_rescan = true;
     }
 
+    /// Add a directory without triggering rescan (for startup initialization)
+    pub fn add_directory_quiet(&mut self, path: PathBuf) {
+        self.library.add_directory(path);
+    }
+
     pub fn remove_selected_directory(&mut self) {
         if self.library.remove_directory(self.selected_directory_index).is_some() {
             if self.selected_directory_index >= self.library.directories.len()
@@ -298,12 +413,157 @@ impl App {
         }
     }
 
+    pub fn toggle_directory_expansion(&mut self) {
+        // Find which directory in the tree we're selecting
+        let tree_items = self.get_directory_tree_items();
+        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
+            // Only toggle if we're on a main directory (level 0)
+            if *level == 0 {
+                // Find the directory in our list and toggle it
+                if let Some(dir_info) = self.library.directories.iter_mut().find(|d| d.path == *path) {
+                    dir_info.expanded = !dir_info.expanded;
+                }
+            } else {
+                // If we're on a subdirectory, we could add it as a new main directory
+                self.add_directory(path.clone());
+            }
+        }
+    }
+
+    /// Get flattened directory tree for display
+    pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
+        let mut items = Vec::new();
+        for dir_info in &self.library.directories {
+            // Add the main directory (level 0)
+            items.push((dir_info.path.clone(), 0, dir_info.expanded));
+
+            // Add subdirectories if expanded (level 1)
+            if dir_info.expanded {
+                for subdir in &dir_info.subdirectories {
+                    items.push((subdir.clone(), 1, false));
+                }
+            }
+        }
+        items
+    }
+
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.library.scan()?;
+        self.scan_in_progress = true;
+        self.scan_progress_tracks = 0;
+        self.scan_progress_albums = 0;
+        self.status_message = Some("Scanning library...".to_string());
+
+        // Use progress callback to log progress
+        let result = self.library.scan_with_progress(|tracks, albums| {
+            log::info!("Scan progress: {} tracks, {} albums found", tracks, albums);
+        });
+
+        self.scan_in_progress = false;
         self.needs_rescan = false;
         self.selected_album_index = 0;
         self.album_list_offset = 0;
+
+        match &result {
+            Ok(_) => {
+                let album_count = self.library.albums.len();
+                let track_count: usize = self.library.albums.iter().map(|a| a.tracks.len()).sum();
+                self.status_message = Some(format!("Scan complete: {} tracks in {} albums", track_count, album_count));
+                log::info!("Scan complete: {} tracks in {} albums", track_count, album_count);
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Scan failed: {}", e));
+                log::error!("Scan failed: {}", e);
+            }
+        }
+
         self.rebuild_artist_tree();
+
+        result
+    }
+
+    pub fn clean_library_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        self.library.clean_database()
+    }
+
+    /// Save current app state to config file
+    pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let config = crate::config::AppConfig {
+            output_device: self.current_output_device_name.clone(),
+            queue: self.queue.iter().map(|item| {
+                (item.album.artist.clone(), item.album.title.clone())
+            }).collect(),
+            queue_index: self.current_queue_index,
+            track_index: self.current_queue_index
+                .and_then(|idx| self.queue.get(idx))
+                .map(|item| item.current_track_index)
+                .unwrap_or(0),
+            plugin_preset: self.last_loaded_preset.clone(),
+        };
+
+        crate::config::save_app_config(&config)?;
+        log::info!("Saved app configuration");
+        Ok(())
+    }
+
+    /// Load app state from config file and restore it
+    pub fn load_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let config = crate::config::load_app_config()?;
+
+        // Restore output device
+        if let Some(device_name) = &config.output_device {
+            self.current_output_device_name = Some(device_name.clone());
+            // Find the device index
+            if let Some(idx) = self.output_devices.iter().position(|d| d.name == *device_name) {
+                self.selected_output_device_index = idx;
+            }
+        }
+
+        // Restore queue - need to find albums by artist/title
+        for (artist, title) in config.queue {
+            if let Some(album) = self.library.albums.iter()
+                .find(|a| a.artist == artist && a.title == title)
+                .cloned()
+            {
+                self.queue.push(QueueItem::new(album));
+            }
+        }
+
+        // Restore queue position
+        if let Some(queue_idx) = config.queue_index {
+            if queue_idx < self.queue.len() {
+                self.current_queue_index = Some(queue_idx);
+                // Restore track position within album
+                if let Some(item) = self.queue.get_mut(queue_idx) {
+                    if config.track_index < item.album.tracks.len() {
+                        item.current_track_index = config.track_index;
+                    }
+                }
+            }
+        }
+
+        // Restore plugin preset
+        if let Some(preset_name) = &config.plugin_preset {
+            if let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
+                let preset_path = presets_dir.join(preset_name);
+                if preset_path.exists() {
+                    match self.plugin_chain.load_from_file(&preset_path) {
+                        Ok(_) => {
+                            self.last_loaded_preset = Some(preset_name.clone());
+                            self.needs_plugin_update = true;
+                            log::info!("Restored plugin preset: {}", preset_name);
+                        }
+                        Err(e) => {
+                            log::warn!("Could not restore preset '{}': {}", preset_name, e);
+                        }
+                    }
+                } else {
+                    log::warn!("Saved preset '{}' not found", preset_name);
+                }
+            }
+        }
+
+        log::info!("Loaded app configuration: {} items in queue, device: {:?}, preset: {:?}",
+                   self.queue.len(), self.current_output_device_name, self.last_loaded_preset);
         Ok(())
     }
 
@@ -415,12 +675,14 @@ impl App {
     }
 
     /// Add the selected item (artist or album) to queue from tree view
-    pub fn add_tree_selection_to_queue(&mut self) {
+    pub fn add_tree_selection_to_queue(&mut self) -> Option<PathBuf> {
         if self.library_view_mode != LibraryViewMode::TreeView {
-            return;
+            return None;
         }
 
+        let was_empty = self.queue.is_empty();
         let tree_items = self.get_tree_items();
+
         if let Some(item) = tree_items.get(self.selected_tree_index) {
             match item {
                 TreeItem::Artist { .. } => {
@@ -431,9 +693,14 @@ impl App {
                             for &album_idx in &artist_node.album_indices {
                                 if let Some(album) = self.library.albums.get(album_idx) {
                                     self.queue.push(QueueItem::new(album.clone()));
+                                    self.expanded_queue_items.push(false);
                                 }
                             }
-                            return;
+                            // Auto-play if queue was empty
+                            if was_empty {
+                                return self.start_queue();
+                            }
+                            return None;
                         }
                         current_row += 1;
                         if artist_node.expanded {
@@ -445,10 +712,17 @@ impl App {
                     // Add single album
                     if let Some(album) = self.library.albums.get(*index) {
                         self.queue.push(QueueItem::new(album.clone()));
+                        self.expanded_queue_items.push(false);
+
+                        // Auto-play if queue was empty
+                        if was_empty {
+                            return self.start_queue();
+                        }
                     }
                 }
             }
         }
+        None
     }
 
     pub fn current_track_path(&self) -> Option<PathBuf> {
@@ -467,6 +741,27 @@ impl App {
                     // Move to next album in queue
                     if idx + 1 < self.queue.len() {
                         self.current_queue_index = Some(idx + 1);
+                        return self.current_track_path();
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn previous_track(&mut self) -> Option<PathBuf> {
+        if let Some(idx) = self.current_queue_index {
+            if let Some(item) = self.queue.get_mut(idx) {
+                if let Some(track) = item.previous_track() {
+                    return Some(track.path.clone());
+                } else {
+                    // Move to previous album in queue
+                    if idx > 0 {
+                        self.current_queue_index = Some(idx - 1);
+                        // Go to last track of previous album
+                        if let Some(prev_item) = self.queue.get_mut(idx - 1) {
+                            prev_item.current_track_index = prev_item.album.tracks.len().saturating_sub(1);
+                        }
                         return self.current_track_path();
                     }
                 }
@@ -721,6 +1016,169 @@ impl App {
                 log::error!("Failed to load plugin chain: {}", e);
             }
         }
+    }
+
+    /// Refresh the list of available plugin presets from the config directory
+    pub fn refresh_plugin_presets(&mut self) {
+        self.available_plugin_presets.clear();
+        self.selected_preset_index = 0;
+
+        if let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
+            if let Ok(entries) = std::fs::read_dir(&presets_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Some(ext) = path.extension() {
+                            if ext == "json" {
+                                if let Some(filename) = path.file_name() {
+                                    self.available_plugin_presets.push(
+                                        filename.to_string_lossy().to_string()
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                // Sort presets alphabetically
+                self.available_plugin_presets.sort();
+            }
+        }
+
+        log::info!("Found {} plugin presets", self.available_plugin_presets.len());
+    }
+
+    /// Select the next preset in the list
+    pub fn select_next_preset(&mut self) {
+        if !self.available_plugin_presets.is_empty() {
+            self.selected_preset_index = (self.selected_preset_index + 1) % self.available_plugin_presets.len();
+        }
+    }
+
+    /// Select the previous preset in the list
+    pub fn select_previous_preset(&mut self) {
+        if !self.available_plugin_presets.is_empty() {
+            if self.selected_preset_index == 0 {
+                self.selected_preset_index = self.available_plugin_presets.len() - 1;
+            } else {
+                self.selected_preset_index -= 1;
+            }
+        }
+    }
+
+    /// Load the currently selected preset
+    pub fn load_selected_preset(&mut self) {
+        if self.available_plugin_presets.is_empty() {
+            self.status_message = Some("No presets available".to_string());
+            return;
+        }
+
+        if let Some(preset_filename) = self.available_plugin_presets.get(self.selected_preset_index) {
+            if let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
+                let preset_path = presets_dir.join(preset_filename);
+                match self.plugin_chain.load_from_file(&preset_path) {
+                    Ok(_) => {
+                        self.status_message = Some(format!("Loaded preset: {}", preset_filename));
+                        self.needs_plugin_update = true;
+                        self.last_loaded_preset = Some(preset_filename.clone());
+                        log::info!("Loaded preset from {}", preset_path.display());
+                    }
+                    Err(e) => {
+                        self.status_message = Some(format!("Error loading preset: {}", e));
+                        log::error!("Failed to load preset: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Generate autocomplete suggestions for the current directory input
+    pub fn generate_autocomplete_suggestions(&mut self) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
+
+        let input = if self.directory_input.is_empty() {
+            "./"
+        } else {
+            &self.directory_input
+        };
+
+        // Expand tilde to home directory
+        let expanded_input = if input.starts_with('~') {
+            if let Ok(home) = std::env::var("HOME") {
+                input.replacen('~', &home, 1)
+            } else {
+                input.to_string()
+            }
+        } else {
+            input.to_string()
+        };
+
+        let path = std::path::Path::new(&expanded_input);
+
+        // Determine the directory to search and the prefix to match
+        let (search_dir, prefix) = if path.is_dir() && expanded_input.ends_with('/') {
+            // User typed a complete directory with trailing slash
+            (path.to_path_buf(), String::new())
+        } else if let Some(parent) = path.parent() {
+            // User is typing a partial name
+            let prefix = path.file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (parent.to_path_buf(), prefix)
+        } else {
+            // Fallback to current directory
+            (std::path::PathBuf::from("."), expanded_input.clone())
+        };
+
+        // Read directory and find matching entries
+        if let Ok(entries) = std::fs::read_dir(&search_dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string() {
+                    // Skip hidden files unless prefix starts with '.'
+                    if file_name.starts_with('.') && !prefix.starts_with('.') {
+                        continue;
+                    }
+
+                    // Check if filename starts with prefix
+                    if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                        let mut full_path = search_dir.join(&file_name);
+
+                        // Add trailing slash for directories
+                        if entry.path().is_dir() {
+                            full_path = full_path.join("");
+                        }
+
+                        let suggestion = full_path.to_string_lossy().to_string();
+                        self.autocomplete_suggestions.push(suggestion);
+                    }
+                }
+            }
+        }
+
+        // Sort suggestions
+        self.autocomplete_suggestions.sort();
+    }
+
+    /// Apply the current autocomplete suggestion to the directory input
+    pub fn apply_autocomplete(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
+            self.directory_input = suggestion.clone();
+        }
+    }
+
+    /// Cycle to the next autocomplete suggestion
+    pub fn next_autocomplete(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            self.autocomplete_index = (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.apply_autocomplete();
+        }
+    }
+
+    /// Clear autocomplete suggestions
+    pub fn clear_autocomplete(&mut self) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
     }
 }
 

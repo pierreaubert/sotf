@@ -16,12 +16,12 @@ pub enum PluginType {
 impl PluginType {
     pub fn name(&self) -> &str {
         match self {
-            Self::EQ => "EQ",
-            Self::Upmixer => "Upmixer",
-            Self::Compressor => "Compressor",
-            Self::Limiter => "Limiter",
-            Self::Gate => "Gate",
-            Self::LoudnessCompensation => "Loudness Compensation",
+            Self::EQ => "[1] EQ",
+            Self::Upmixer => "[2] Upmixer",
+            Self::Compressor => "[3] Compressor",
+            Self::Limiter => "[4] Limiter",
+            Self::Gate => "[5] Gate",
+            Self::LoudnessCompensation => "[6] Loudness Compensation",
         }
     }
 

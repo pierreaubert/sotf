@@ -43,6 +43,11 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.should_quit = true;
             None
         }
+        // Command-Q on macOS (crossterm treats it as SUPER modifier)
+        KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::SUPER) => {
+            app.should_quit = true;
+            None
+        }
 
         // TAB to cycle through screens
         KeyCode::Tab => {
@@ -114,6 +119,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     use crate::app::LibraryViewMode;
 
+    const PAGE_SIZE: usize = 20;
+
     match key.code {
         KeyCode::Char('/') => {
             app.input_mode = InputMode::Search;
@@ -138,6 +145,20 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             }
             None
         }
+        KeyCode::PageUp => {
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.page_up_albums(PAGE_SIZE),
+                LibraryViewMode::TreeView => app.page_up_tree(PAGE_SIZE),
+            }
+            None
+        }
+        KeyCode::PageDown => {
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.page_down_albums(PAGE_SIZE),
+                LibraryViewMode::TreeView => app.page_down_tree(PAGE_SIZE),
+            }
+            None
+        }
         KeyCode::Right | KeyCode::Char('l') => {
             // Expand artist in tree view
             if app.library_view_mode == LibraryViewMode::TreeView {
@@ -153,9 +174,28 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Char('a') | KeyCode::Enter => {
-            match app.library_view_mode {
+            let path = match app.library_view_mode {
                 LibraryViewMode::Flat => app.add_album_to_queue(),
                 LibraryViewMode::TreeView => app.add_tree_selection_to_queue(),
+            };
+            path.map(PlayerCommand::Play)
+        }
+        KeyCode::Char('m') => {
+            // Maintenance: clean up database
+            match app.clean_library_database() {
+                Ok(removed) => {
+                    if removed > 0 {
+                        app.status_message = Some(format!("Cleaned {} missing tracks from database", removed));
+                        log::info!("Database maintenance: removed {} missing tracks", removed);
+                    } else {
+                        app.status_message = Some("Database is clean - no missing tracks found".to_string());
+                        log::info!("Database maintenance: no missing tracks found");
+                    }
+                }
+                Err(e) => {
+                    app.status_message = Some(format!("Database maintenance failed: {}", e));
+                    log::error!("Database maintenance failed: {}", e);
+                }
             }
             None
         }
@@ -180,6 +220,11 @@ fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         }
         KeyCode::Down | KeyCode::Char('j') => {
             app.select_next_directory();
+            None
+        }
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+            // Toggle directory expansion to show/hide subdirectories
+            app.toggle_directory_expansion();
             None
         }
         KeyCode::Char('d') | KeyCode::Delete => {
@@ -236,7 +281,7 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 Some(PlayerCommand::Resume)
             }
         }
-        KeyCode::Char('n') => {
+        KeyCode::Char('n') | KeyCode::Char('>') => {
             // Next track
             if let Some(path) = app.next_track() {
                 Some(PlayerCommand::Play(path))
@@ -244,6 +289,19 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 app.is_playing = false;
                 Some(PlayerCommand::Stop)
             }
+        }
+        KeyCode::Char('b') | KeyCode::Char('<') => {
+            // Previous track
+            if let Some(path) = app.previous_track() {
+                Some(PlayerCommand::Play(path))
+            } else {
+                None
+            }
+        }
+        KeyCode::Enter => {
+            // Toggle expansion of selected queue item
+            app.toggle_queue_item_expansion();
+            None
         }
         KeyCode::Char('+') | KeyCode::Char('=') => {
             app.increase_volume();
@@ -258,6 +316,10 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use crate::app::LibraryViewMode;
+
+    const PAGE_SIZE: usize = 20;
+
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
@@ -266,6 +328,35 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Enter => {
             app.input_mode = InputMode::Normal;
             app.selected_album_index = 0;
+            None
+        }
+        // Allow navigation while searching
+        KeyCode::Up => {
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.select_previous_album(),
+                LibraryViewMode::TreeView => app.select_previous_tree_item(),
+            }
+            None
+        }
+        KeyCode::Down => {
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.select_next_album(),
+                LibraryViewMode::TreeView => app.select_next_tree_item(),
+            }
+            None
+        }
+        KeyCode::PageUp => {
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.page_up_albums(PAGE_SIZE),
+                LibraryViewMode::TreeView => app.page_up_tree(PAGE_SIZE),
+            }
+            None
+        }
+        KeyCode::PageDown => {
+            match app.library_view_mode {
+                LibraryViewMode::Flat => app.page_down_albums(PAGE_SIZE),
+                LibraryViewMode::TreeView => app.page_down_tree(PAGE_SIZE),
+            }
             None
         }
         KeyCode::Char(c) => {
@@ -287,6 +378,7 @@ fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
             app.directory_input.clear();
+            app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
@@ -296,14 +388,29 @@ fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 app.directory_input.clear();
             }
             app.input_mode = InputMode::Normal;
+            app.clear_autocomplete();
+            None
+        }
+        KeyCode::Tab => {
+            // Generate suggestions on first Tab, cycle through them on subsequent Tabs
+            if app.autocomplete_suggestions.is_empty() {
+                app.generate_autocomplete_suggestions();
+                if !app.autocomplete_suggestions.is_empty() {
+                    app.apply_autocomplete();
+                }
+            } else {
+                app.next_autocomplete();
+            }
             None
         }
         KeyCode::Char(c) => {
             app.directory_input.push(c);
+            app.clear_autocomplete();
             None
         }
         KeyCode::Backspace => {
             app.directory_input.pop();
+            app.clear_autocomplete();
             None
         }
         _ => None,
@@ -335,6 +442,7 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Load plugin chain
             app.input_mode = InputMode::LoadPlugins;
             app.plugin_file_input.clear();
+            app.refresh_plugin_presets();
             None
         }
         KeyCode::Char('a') => {
@@ -479,13 +587,32 @@ fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
             None
         }
         KeyCode::Enter => {
-            app.load_plugin_chain();
+            // If there are presets shown and input is empty, load selected preset
+            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
+                app.load_selected_preset();
+            } else if !app.plugin_file_input.is_empty() {
+                app.load_plugin_chain();
+            }
             app.input_mode = InputMode::Normal;
             if app.needs_plugin_update {
                 Some(PlayerCommand::UpdatePlugins)
             } else {
                 None
             }
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            // Navigate through presets
+            if app.plugin_file_input.is_empty() {
+                app.select_previous_preset();
+            }
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            // Navigate through presets
+            if app.plugin_file_input.is_empty() {
+                app.select_next_preset();
+            }
+            None
         }
         KeyCode::Char(c) => {
             app.plugin_file_input.push(c);

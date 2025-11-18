@@ -50,6 +50,9 @@ env_logger = "0.11"
 # Path and config
 directories = "5.0"
 
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 [[bin]]
 name = "sotf_player_tui"
 path = "src/main.rs"

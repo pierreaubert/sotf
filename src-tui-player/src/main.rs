@@ -1,4 +1,6 @@
 mod app;
+mod config;
+mod database;
 mod events;
 mod library;
 mod player;
@@ -68,13 +70,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load available output devices
     app.load_output_devices();
 
-    // Add initial directories
+    // Add initial directories (without triggering rescan)
     for dir in args.directories {
-        app.add_directory(dir);
+        app.add_directory_quiet(dir);
     }
 
-    // Auto-scan if requested
-    if args.scan && !app.library.directories.is_empty() {
+    // Load from database if no scan is requested
+    let db_is_empty = if !args.scan {
+        if let Err(e) = app.load_library_from_database() {
+            log::warn!("Failed to load library from database: {}", e);
+            true // Treat as empty if load fails
+        } else {
+            let album_count = app.library.albums.len();
+            log::info!("Loaded library from database: {} albums", album_count);
+            album_count == 0
+        }
+    } else {
+        false // Explicit scan requested
+    };
+
+    // Load saved configuration
+    if let Err(e) = app.load_config() {
+        log::warn!("Could not load saved configuration: {}", e);
+    }
+
+    // Auto-scan if:
+    // 1. Explicit --scan flag provided, OR
+    // 2. Database is empty and we have directories to scan
+    if (args.scan || db_is_empty) && !app.library.directories.is_empty() {
+        log::info!("Starting library scan (scan={}, db_empty={}, dirs={})",
+                   args.scan, db_is_empty, app.library.directories.len());
         if let Err(e) = app.scan_library() {
             log::error!("Failed to scan library: {}", e);
         }
@@ -82,6 +107,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Main loop
     let result = run_app(&mut terminal, &mut app, &player).await;
+
+    // Save configuration before exit
+    if let Err(e) = app.save_config() {
+        log::error!("Failed to save configuration: {}", e);
+    }
 
     // Restore terminal
     disable_raw_mode()?;
@@ -141,7 +171,12 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.loudness_info = player.get_loudness().await;
 
                     // Perform library scan if needed
+                    // Note: This is intentionally synchronous and will block the UI
+                    // But progress will be shown in the directory view
                     if app.needs_rescan {
+                        // Switch to directory view so user can see scan progress
+                        app.current_screen = app::Screen::DirectoryManager;
+
                         if let Err(e) = app.scan_library() {
                             log::error!("Failed to scan library: {}", e);
                         }

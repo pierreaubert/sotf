@@ -25,8 +25,8 @@ pub fn draw(f: &mut Frame, app: &App) {
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(85), // Main content
-            Constraint::Percentage(15), // Right column (LUFS, level meter, volume)
+            Constraint::Percentage(88), // Main content
+            Constraint::Percentage(12), // Right column (LUFS, level meter, volume)
         ])
         .split(chunks[1]);
 
@@ -71,8 +71,8 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(70), // Title
-            Constraint::Percentage(30), // Device selector
+            Constraint::Percentage(80), // Title
+            Constraint::Percentage(20), // Device selector
         ])
         .split(area);
 
@@ -140,6 +140,7 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
     use crate::app::{LibraryViewMode, TreeItem};
+    use ratatui::widgets::{ListState, StatefulWidget};
 
     match app.library_view_mode {
         LibraryViewMode::Flat => {
@@ -149,7 +150,7 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 .iter()
                 .enumerate()
                 .map(|(i, album)| {
-                    let content = format!("{}", album.display_name());
+                    let content = album.display_name().to_string();
                     let style = if i == app.selected_album_index {
                         Style::default()
                             .fg(Color::Black)
@@ -162,16 +163,26 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .collect();
 
-            let list = List::new(items).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(
-                        "Albums ({}) - 'a' to add, 't' to toggle tree view",
-                        albums.len()
-                    )),
-            );
+            let list = List::new(items)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!(
+                            "Albums ({}) - 'a' to add, 't' to toggle tree view, 'm' for maintenance",
+                            albums.len()
+                        )),
+                )
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                );
 
-            f.render_widget(list, area);
+            let mut state = ListState::default();
+            state.select(Some(app.selected_album_index));
+
+            StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
         }
         LibraryViewMode::TreeView => {
             let tree_items = app.get_tree_items();
@@ -212,25 +223,43 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .collect();
 
-            let list = List::new(items).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(format!(
-                        "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
-                        app.artist_tree.len()
-                    )),
-            );
+            let list = List::new(items)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!(
+                            "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
+                            app.artist_tree.len()
+                        )),
+                )
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                );
 
-            f.render_widget(list, area);
+            let mut state = ListState::default();
+            state.select(Some(app.selected_tree_index));
+
+            StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
         }
     }
 }
 
 fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
+    // Calculate constraints based on whether we have autocomplete suggestions
+    let autocomplete_height = if app.input_mode == InputMode::AddDirectory && !app.autocomplete_suggestions.is_empty() {
+        (app.autocomplete_suggestions.len().min(5) + 2) as u16 // Max 5 suggestions + borders
+    } else {
+        0
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Input box
+            Constraint::Length(autocomplete_height), // Autocomplete suggestions
             Constraint::Min(0),    // Directory list
         ])
         .split(area);
@@ -243,7 +272,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let input_text = if app.input_mode == InputMode::AddDirectory {
-        format!("Path: {}█", app.directory_input)
+        format!("Path: {}█ (Tab to autocomplete)", app.directory_input)
     } else {
         "Path: (Press 'a' to add directory)".to_string()
     };
@@ -254,78 +283,177 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 
     f.render_widget(input_box, chunks[0]);
 
-    // Directory list
-    let items: Vec<ListItem> = app
-        .library
-        .directories
+    // Show autocomplete suggestions if in add directory mode
+    if app.input_mode == InputMode::AddDirectory && !app.autocomplete_suggestions.is_empty() {
+        let suggestion_items: Vec<ListItem> = app
+            .autocomplete_suggestions
+            .iter()
+            .take(5) // Show max 5 suggestions
+            .enumerate()
+            .map(|(i, suggestion)| {
+                let style = if i == app.autocomplete_index {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Gray)
+                };
+                ListItem::new(suggestion.as_str()).style(style)
+            })
+            .collect();
+
+        let suggestions_list = List::new(suggestion_items).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("Suggestions ({}/{})", app.autocomplete_index + 1, app.autocomplete_suggestions.len()))
+        );
+
+        f.render_widget(suggestions_list, chunks[1]);
+    }
+
+    // Directory list with tree view
+    let tree_items = app.get_directory_tree_items();
+
+    let items: Vec<ListItem> = tree_items
         .iter()
         .enumerate()
-        .map(|(i, dir)| {
-            let content = dir.display().to_string();
+        .map(|(i, (path, level, expanded))| {
+            let indent = "  ".repeat(*level);
+            let expand_indicator = if *level == 0 {
+                if *expanded { "▼ " } else { "▶ " }
+            } else {
+                "└─ "
+            };
+
+            let path_str = if *level == 0 {
+                path.display().to_string()
+            } else {
+                // For subdirectories, just show the name
+                path.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.display().to_string())
+            };
+
+            let content = format!("{}{}{}", indent, expand_indicator, path_str);
+
             let style = if i == app.selected_directory_index {
                 Style::default()
                     .fg(Color::Black)
                     .bg(Color::White)
                     .add_modifier(Modifier::BOLD)
+            } else if *level == 0 {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
+
             ListItem::new(content).style(style)
         })
         .collect();
+
+    // Update title to show scan progress if scanning
+    let title = if app.scan_in_progress {
+        format!(
+            "Directories - Scanning: {}T/{}A",
+            app.scan_progress_tracks, app.scan_progress_albums
+        )
+    } else if let Some(msg) = &app.status_message {
+        // Show scan results in title if available
+        if msg.contains("Scan complete") {
+            format!("Directories - {}", msg)
+        } else {
+            "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'a'=add".to_string()
+        }
+    } else {
+        "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'a'=add".to_string()
+    };
 
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Directories - Press 'd' to remove, 's' to scan"),
+            .title(title),
     );
 
-    f.render_widget(list, chunks[1]);
+    f.render_widget(list, chunks[2]);
 }
 
 fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
-    let items: Vec<ListItem> = app
-        .queue
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let is_current = app.current_queue_index == Some(i);
-            let is_selected = i == app.selected_queue_index;
+    let mut items: Vec<ListItem> = Vec::new();
 
-            let mut content = format!("{}", item.album.display_name());
-            if is_current {
-                let track_info = format!(
-                    " [Track {}/{}]",
-                    item.current_track_index + 1,
-                    item.album.tracks.len()
-                );
-                content.push_str(&track_info);
-                if app.is_playing {
-                    content = format!("▶ {}", content);
+    for (i, item) in app.queue.iter().enumerate() {
+        let is_current = app.current_queue_index == Some(i);
+        let is_selected = i == app.selected_queue_index;
+        let is_expanded = app.expanded_queue_items.get(i).copied().unwrap_or(false);
+
+        // Album header
+        let expand_indicator = if is_expanded { "▼" } else { "▶" };
+        let mut content = format!("{} {}", expand_indicator, item.album.display_name());
+
+        if is_current {
+            let track_info = format!(
+                " [Track {}/{}]",
+                item.current_track_index + 1,
+                item.album.tracks.len()
+            );
+            content.push_str(&track_info);
+        }
+
+        let mut style = Style::default();
+        if is_selected {
+            style = style
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD);
+        } else if is_current {
+            style = style.fg(Color::Green).add_modifier(Modifier::BOLD);
+        }
+
+        items.push(ListItem::new(content).style(style));
+
+        // Show individual tracks if expanded
+        if is_expanded {
+            for (track_idx, track) in item.album.tracks.iter().enumerate() {
+                let is_current_track = is_current && track_idx == item.current_track_index;
+                let track_name = track
+                    .title
+                    .as_deref()
+                    .unwrap_or_else(|| track.path.file_name().unwrap().to_str().unwrap());
+
+                let duration_str = if let Some(duration) = track.duration_secs {
+                    format!(" ({}:{:02})", duration / 60, duration % 60)
                 } else {
-                    content = format!("⏸ {}", content);
-                }
-            }
+                    String::new()
+                };
 
-            let mut style = Style::default();
-            if is_selected {
-                style = style
-                    .fg(Color::Black)
-                    .bg(Color::White)
-                    .add_modifier(Modifier::BOLD);
-            } else if is_current {
-                style = style.fg(Color::Green).add_modifier(Modifier::BOLD);
-            }
+                let track_content = if is_current_track {
+                    if app.is_playing {
+                        format!("  ▶ {}.{}{}", track_idx + 1, track_name, duration_str)
+                    } else {
+                        format!("  ⏸ {}.{}{}", track_idx + 1, track_name, duration_str)
+                    }
+                } else {
+                    format!("    {}.{}{}", track_idx + 1, track_name, duration_str)
+                };
 
-            ListItem::new(content).style(style)
-        })
-        .collect();
+                let track_style = if is_current_track {
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+
+                items.push(ListItem::new(track_content).style(track_style));
+            }
+        }
+    }
 
     let title = if app.queue.is_empty() {
         "Queue (empty) - Add albums from library".to_string()
     } else {
         format!(
-            "Queue ({}) - Press 'p' to play, SPACE to pause, 'n' for next, 'd' to remove",
+            "Queue ({}) - 'p' play, SPACE pause, 'n' next, 'b' prev, Enter expand, 'd' remove",
             app.queue.len()
         )
     };
@@ -504,9 +632,9 @@ fn draw_meters_column(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),  // LUFS box
+            Constraint::Length(5),  // LUFS box
             Constraint::Min(0),     // Level meter box (expandable)
-            Constraint::Length(5),  // Volume box
+            Constraint::Length(3),  // Volume box
         ])
         .split(area);
 
@@ -584,25 +712,44 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
         let block = Block::default().borders(Borders::ALL).title("Levels");
         f.render_widget(block, area);
 
+        // Reserve space for legend on the left (4 characters: "-60 ")
+        let legend_width = 4;
+        let meters_start_x = inner.x + legend_width;
+        let meters_width = inner.width.saturating_sub(legend_width);
+
         // Calculate meter dimensions
         let meter_height = inner.height as usize;
-        let channel_width = (inner.width as usize) / num_channels.max(1);
+        let channel_width = (meters_width as usize) / num_channels.max(1);
 
         // Draw each channel as a vertical meter
         for (ch_idx, &peak) in loudness.channel_peaks.iter().enumerate() {
             let peak_db = 20.0 * peak.max(0.0001).log10();
 
-            // Calculate meter fill (0 dB = full, -60 dB = empty)
-            let fill_ratio = ((peak_db + 60.0) / 60.0).clamp(0.0, 1.0);
+            // Non-linear meter scaling:
+            // [-20, 0]   -> 50% of meter (top half)
+            // [-40, -20] -> 30% of meter
+            // [-60, -40] -> 20% of meter (bottom)
+            let fill_ratio = if peak_db >= -20.0 {
+                // Top 50%: -20 to 0 dB
+                0.5 + ((peak_db + 20.0) / 40.0)
+            } else if peak_db >= -40.0 {
+                // Middle 30%: -40 to -20 dB
+                0.2 + ((peak_db + 40.0) / 20.0) * 0.3
+            } else {
+                // Bottom 20%: -60 to -40 dB
+                ((peak_db + 60.0) / 20.0) * 0.2
+            };
+            let fill_ratio = fill_ratio.clamp(0.0, 1.0);
             let filled_rows = (fill_ratio * meter_height as f64).round() as usize;
 
-            let ch_x = inner.x + (ch_idx * channel_width) as u16;
-            let ch_width = channel_width.min((inner.width as usize - ch_idx * channel_width).min(channel_width)) as u16;
+            let ch_x = meters_start_x + (ch_idx * channel_width) as u16;
+            let ch_width = channel_width.min((meters_width as usize - ch_idx * channel_width).min(channel_width)) as u16;
 
-            // Draw vertical meter from bottom to top
-            for row_idx in 0..meter_height {
-                let y = inner.y + inner.height - 1 - row_idx as u16;
+            // Build the entire meter as a single multi-line widget to ensure proper clearing
+            let mut meter_lines = Vec::new();
 
+            // Draw vertical meter from top to bottom (reversed iteration for display)
+            for row_idx in (0..meter_height).rev() {
                 // Determine if this row should be filled
                 let is_filled = row_idx < filled_rows;
 
@@ -619,31 +766,24 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                 if is_filled {
                     // Draw filled bar
                     let bar = "█".repeat(ch_width.saturating_sub(1) as usize);
-                    let span = Span::styled(bar, Style::default().fg(color));
-                    f.render_widget(
-                        Paragraph::new(Line::from(span)),
-                        Rect {
-                            x: ch_x,
-                            y,
-                            width: ch_width.saturating_sub(1),
-                            height: 1,
-                        },
-                    );
+                    meter_lines.push(Line::from(Span::styled(bar, Style::default().fg(color))));
                 } else {
                     // Draw empty bar
                     let bar = "░".repeat(ch_width.saturating_sub(1) as usize);
-                    let span = Span::styled(bar, Style::default().fg(Color::DarkGray));
-                    f.render_widget(
-                        Paragraph::new(Line::from(span)),
-                        Rect {
-                            x: ch_x,
-                            y,
-                            width: ch_width.saturating_sub(1),
-                            height: 1,
-                        },
-                    );
+                    meter_lines.push(Line::from(Span::styled(bar, Style::default().fg(Color::DarkGray))));
                 }
             }
+
+            // Render the entire meter column as a single widget
+            f.render_widget(
+                Paragraph::new(meter_lines),
+                Rect {
+                    x: ch_x,
+                    y: inner.y,
+                    width: ch_width.saturating_sub(1),
+                    height: meter_height as u16,
+                },
+            );
 
             // Draw channel label at bottom
             let label = format!("{}", ch_idx + 1);
@@ -658,6 +798,60 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                     height: 1,
                 },
             );
+        }
+
+        // Draw dB scale legend on the left
+        if legend_width > 0 && meter_height > 0 {
+            // Helper function to convert dB to non-linear fill ratio
+            let db_to_ratio = |db: i32| -> f64 {
+                let db = db as f64;
+                if db >= -20.0 {
+                    0.5 + ((db + 20.0) / 40.0)
+                } else if db >= -40.0 {
+                    0.2 + ((db + 40.0) / 20.0) * 0.3
+                } else {
+                    ((db + 60.0) / 20.0) * 0.2
+                }
+            };
+
+            // Draw scale marks - show 0dB at top with "dB", then just numbers
+            let db_marks = [(0, true), (-10, false), (-20, false), (-30, false), (-40, false), (-50, false), (-60, false)];
+
+            for &(db, show_db_suffix) in &db_marks {
+                // Calculate Y position using non-linear scale
+                let ratio = db_to_ratio(db);
+                let y_pos = inner.y + inner.height - 1 - (ratio * meter_height as f64).round() as u16;
+
+                // Only draw if within bounds
+                if y_pos >= inner.y && y_pos < inner.y + inner.height {
+                    let label = if show_db_suffix {
+                        format!("{:>3}dB", db)
+                    } else if db == 0 {
+                        "   0".to_string()
+                    } else {
+                        format!("{:>4}", db)
+                    };
+
+                    let color = if db >= -6 {
+                        Color::Red
+                    } else if db >= -20 {
+                        Color::Yellow
+                    } else {
+                        Color::DarkGray
+                    };
+
+                    f.render_widget(
+                        Paragraph::new(label)
+                            .style(Style::default().fg(color)),
+                        Rect {
+                            x: inner.x,
+                            y: y_pos,
+                            width: legend_width,
+                            height: 1,
+                        },
+                    );
+                }
+            }
         }
     } else {
         let paragraph = Paragraph::new("No audio")
@@ -687,11 +881,25 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     let mut status_spans = vec![Span::raw(" ")];
 
     // Show status message if available
+    // Filter out scan-related messages unless we're on the Directory screen
     if let Some(msg) = &app.status_message {
-        status_spans.push(Span::styled(
-            format!("{} | ", msg),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-        ));
+        let is_scan_message = msg.contains("Scanning") || msg.contains("Scan complete") || msg.contains("Scan failed");
+        let should_show = !is_scan_message || app.current_screen == Screen::DirectoryManager;
+
+        if should_show {
+            // Truncate message to prevent overflow (leave room for other info)
+            let max_msg_len = (area.width as usize).saturating_sub(80);
+            let truncated_msg = if msg.len() > max_msg_len {
+                format!("{}...", &msg[..max_msg_len.saturating_sub(3)])
+            } else {
+                msg.clone()
+            };
+
+            status_spans.push(Span::styled(
+                format!("{} | ", truncated_msg),
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ));
+        }
     }
 
     if let Some(idx) = app.current_queue_index {
