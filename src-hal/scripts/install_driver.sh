@@ -20,7 +20,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)/.."
 BUNDLE_NAME="sotf.driver"
 WORKSPACE_DIR="${PROJECT_DIR}/../target"
 SOURCE_BUNDLE="${WORKSPACE_DIR}/${BUNDLE_NAME}"
-TARGET_DIR="$HOME/Library/Audio/Plug-Ins/HAL"
+TARGET_DIR="/Library/Audio/Plug-Ins/HAL"
 TARGET_BUNDLE="${TARGET_DIR}/${BUNDLE_NAME}"
 
 # Verify source bundle exists
