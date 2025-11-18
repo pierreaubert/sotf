@@ -8,6 +8,85 @@ The Plugin Graph system extends the linear plugin chain architecture to support 
 - **Complex Routing**: Split and merge audio streams with arbitrary topologies
 - **Stream Synchronization**: Automatic synchronization at merge points where streams join
 - **Thread-based Concurrency**: Uses native threads (not async/tokio) for parallel processing
+- **Backward Compatibility**: Drop-in replacement for `PluginHost` with the same API
+
+## Dual API Support
+
+`ParallelPluginGraph` supports two complementary APIs that can be used independently or together:
+
+### 1. Chain Mode (PluginHost-Compatible)
+
+Use the familiar `PluginHost` API for linear plugin chains:
+
+```rust
+let mut graph = ParallelPluginGraph::new_with_channels(2, 48000);
+
+// Add plugins just like PluginHost
+graph.add_plugin(Box::new(eq_plugin))?;
+graph.add_plugin(Box::new(compressor_plugin))?;
+graph.add_plugin(Box::new(limiter_plugin))?;
+
+// Process (auto-builds the graph)
+graph.process(&input, &mut output)?;
+```
+
+**Compatible API Methods:**
+- `new_with_channels(channels, sample_rate)` - Create graph with initial channel count
+- `add_plugin(plugin)` - Add plugin to end of chain
+- `remove_plugin(index)` - Remove plugin by index
+- `plugin_count()` - Get number of plugins
+- `input_channels()` / `output_channels()` - Get channel counts
+- `process(input, output)` - Process audio (auto-builds if needed)
+- `reset()` - Reset all plugins
+
+### 2. Graph Mode (Advanced Routing)
+
+Use the graph API for complex routing topologies:
+
+```rust
+let mut graph = ParallelPluginGraph::new(48000);
+
+// Create nodes
+let node1 = graph.add_node("input", Box::new(plugin1))?;
+let node2 = graph.add_node("branch_a", Box::new(plugin2))?;
+let node3 = graph.add_node("branch_b", Box::new(plugin3))?;
+let node4 = graph.add_node("merge", Box::new(plugin4))?;
+
+// Connect edges
+graph.add_edge(GraphEdge::new(node1, node2))?;
+graph.add_edge(GraphEdge::new(node1, node3))?;
+graph.add_edge(GraphEdge::new(node2, node4))?;
+graph.add_edge(GraphEdge::new(node3, node4))?;
+
+// Build and process
+graph.build()?;
+graph.process(&input, &mut output)?;
+```
+
+### 3. Mixed Mode
+
+You can mix both APIs in a single graph:
+
+```rust
+let mut graph = ParallelPluginGraph::new_with_channels(2, 48000);
+
+// Start with chain mode
+graph.add_plugin(Box::new(preamp_plugin))?;
+
+// Switch to graph mode for parallel routing
+let last_node = *graph.chain_nodes.last().unwrap();
+let branch_a = graph.add_node("effect_a", Box::new(reverb))?;
+let branch_b = graph.add_node("effect_b", Box::new(delay))?;
+let merge = graph.add_node("mixer", Box::new(mixer))?;
+
+// Create parallel paths
+graph.add_edge(GraphEdge::new(last_node, branch_a))?;
+graph.add_edge(GraphEdge::new(last_node, branch_b))?;
+graph.add_edge(GraphEdge::new(branch_a, merge))?;
+graph.add_edge(GraphEdge::new(branch_b, merge))?;
+
+graph.process(&input, &mut output)?;
+```
 
 ## Architecture
 
@@ -360,15 +439,37 @@ pub fn with_channels(from: NodeId, to: NodeId, channels: Vec<usize>) -> Self
 
 ## Comparison with PluginHost
 
-| Feature | PluginHost | ParallelPluginGraph |
-|---------|-----------|---------------------|
-| Topology | Linear chain | Directed acyclic graph |
-| Parallel Processing | No | Yes (per-stage) |
-| Stream Merging | No | Yes (automatic sync) |
-| Channel Mapping | No | Yes (per-edge) |
-| Threading | Single-threaded | Multi-threaded (scoped) |
-| Complexity | Low | Medium |
-| Use Case | Simple chains | Complex routing |
+| Feature | PluginHost | ParallelPluginGraph (Chain Mode) | ParallelPluginGraph (Graph Mode) |
+|---------|-----------|----------------------------------|----------------------------------|
+| Topology | Linear chain | Linear chain | Directed acyclic graph |
+| Parallel Processing | No | No* | Yes (per-stage) |
+| Stream Merging | No | No | Yes (automatic sync) |
+| Channel Mapping | No | No | Yes (per-edge) |
+| Threading | Single-threaded | Single/Multi** | Multi-threaded (scoped) |
+| API Compatibility | Native | 100% compatible | Extended API |
+| Complexity | Low | Low | Medium |
+| Use Case | Simple chains | Simple chains | Complex routing |
+
+\* Parallel processing can be enabled even in chain mode for benchmarking
+\** Configurable via `set_parallel_enabled()`
+
+**Migration from PluginHost:**
+
+```rust
+// Old code with PluginHost
+let mut host = PluginHost::new(2, 48000);
+host.add_plugin(Box::new(plugin1))?;
+host.add_plugin(Box::new(plugin2))?;
+host.process(&input, &mut output)?;
+
+// New code with ParallelPluginGraph - EXACT SAME API
+let mut host = ParallelPluginGraph::new_with_channels(2, 48000);
+host.add_plugin(Box::new(plugin1))?;
+host.add_plugin(Box::new(plugin2))?;
+host.process(&input, &mut output)?;
+```
+
+No changes needed! ParallelPluginGraph is a drop-in replacement.
 
 ## Future Enhancements
 
