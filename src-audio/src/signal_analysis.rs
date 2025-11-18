@@ -69,7 +69,11 @@ impl MicrophoneCompensation {
             if debug_points.contains(&i) {
                 log::info!(
                     "[apply_to_sweep] t={:.3}s, freq={:.1}Hz, comp_db={:.2}dB, gain_db={:.2}dB, gain={:.3}x",
-                    t, freq, comp_db, gain_db, gain
+                    t,
+                    freq,
+                    comp_db,
+                    gain_db,
+                    gain
                 );
             }
 
@@ -332,11 +336,13 @@ pub fn analyze_recording(
 
     log::info!(
         "[FFT Analysis] Reference: max={:.4}, RMS={:.4}",
-        ref_max, ref_rms
+        ref_max,
+        ref_rms
     );
     log::info!(
         "[FFT Analysis] Recorded:  max={:.4}, RMS={:.4}",
-        rec_max, rec_rms
+        rec_max,
+        rec_rms
     );
 
     // Show first 10 samples for comparison
@@ -392,7 +398,8 @@ pub fn analyze_recording(
         if available_rec_len < analysis_len {
             log::info!(
                 "[FFT Analysis] Warning: Only {} samples available after lag alignment (need {})",
-                available_rec_len, analysis_len
+                available_rec_len,
+                analysis_len
             );
             log::info!("[FFT Analysis] Analysis will be truncated to available length");
             let truncated_len = available_rec_len;
@@ -526,7 +533,8 @@ pub fn analyze_recording(
     );
     log::info!(
         "[FFT Analysis] Skipped {} frequency points (out of {})",
-        skipped_count, num_output_points
+        skipped_count,
+        num_output_points
     );
 
     if frequencies.is_empty() {
@@ -733,7 +741,9 @@ fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -> Result<Ve
 
     log::info!(
         "[load_wav_mono_channel] WAV file: {} channels, {} Hz, {:?} format",
-        channels, spec.sample_rate, spec.sample_format
+        channels,
+        spec.sample_rate,
+        spec.sample_format
     );
 
     // Read all samples and convert to f32
@@ -771,7 +781,8 @@ fn load_wav_mono_channel(path: &Path, channel_index: Option<usize>) -> Result<Ve
         }
         log::info!(
             "[load_wav_mono_channel] Extracting channel {} from {} channels",
-            ch_idx, channels
+            ch_idx,
+            channels
         );
         Ok(samples
             .chunks(channels)
@@ -841,7 +852,9 @@ mod tests {
 
             log::info!(
                 "Sine wave SPL variation: {:.2} dB (min: {:.2}, max: {:.2})",
-                variation, min_spl, max_spl
+                variation,
+                min_spl,
+                max_spl
             );
 
             // Simple sine waves should have very consistent SPL
@@ -912,7 +925,9 @@ mod tests {
 
             log::info!(
                 "SPL variation: {:.2} dB (min: {:.2}, max: {:.2})",
-                variation, min_spl, max_spl
+                variation,
+                min_spl,
+                max_spl
             );
 
             // For a loopback test with constant amplitude sweep, we expect sub-0.5 dB accuracy

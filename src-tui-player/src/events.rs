@@ -185,10 +185,12 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             match app.clean_library_database() {
                 Ok(removed) => {
                     if removed > 0 {
-                        app.status_message = Some(format!("Cleaned {} missing tracks from database", removed));
+                        app.status_message =
+                            Some(format!("Cleaned {} missing tracks from database", removed));
                         log::info!("Database maintenance: removed {} missing tracks", removed);
                     } else {
-                        app.status_message = Some("Database is clean - no missing tracks found".to_string());
+                        app.status_message =
+                            Some("Database is clean - no missing tracks found".to_string());
                         log::info!("Database maintenance: no missing tracks found");
                     }
                 }

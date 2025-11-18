@@ -261,8 +261,7 @@ impl Mesh {
         // Validate path for security
         validate_export_path(path)?;
 
-        let mut file = File::create(path)
-            .map_err(|e| ScannerError::Io(e))?;
+        let mut file = File::create(path).map_err(|e| ScannerError::Io(e))?;
 
         writeln!(file, "# Head Scanner Mesh")?;
         writeln!(file, "# Vertices: {}", self.vertices.len())?;
@@ -424,7 +423,8 @@ impl Mesh {
         let mut file = File::create(path)?;
 
         // Write 80-byte header
-        let header = b"Head Scanner STL Export                                                         ";
+        let header =
+            b"Head Scanner STL Export                                                         ";
         file.write_all(header)?;
 
         // Write number of triangles

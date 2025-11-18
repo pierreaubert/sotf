@@ -237,10 +237,7 @@ impl BinauralDecoderPlugin {
     /// * `fft_size` - FFT size for convolution (must be power of 2)
     /// * `sofa_path` - Path to SOFA file (optional, can be loaded later)
     pub fn new(input_channels: usize, fft_size: usize, sofa_path: Option<PathBuf>) -> Self {
-        assert!(
-            fft_size.is_power_of_two(),
-            "FFT size must be power of 2"
-        );
+        assert!(fft_size.is_power_of_two(), "FFT size must be power of 2");
         assert!(input_channels > 0, "Must have at least 1 input channel");
 
         let hop_size = fft_size / 2;
@@ -251,7 +248,9 @@ impl BinauralDecoderPlugin {
 
         // Generate Hann window
         let window: Vec<f32> = (0..fft_size)
-            .map(|i| 0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / fft_size as f32).cos()))
+            .map(|i| {
+                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / fft_size as f32).cos())
+            })
             .collect();
 
         // Determine speaker layout based on channel count
@@ -259,12 +258,16 @@ impl BinauralDecoderPlugin {
 
         log::info!(
             "[BinauralDecoder] Created with {} input channels, FFT size {}",
-            input_channels, fft_size
+            input_channels,
+            fft_size
         );
         for speaker in &speaker_layout {
             log::info!(
                 "[BinauralDecoder]   Ch{}: {} at az={:.1}°, el={:.1}°",
-                speaker.channel, speaker.name, speaker.azimuth, speaker.elevation
+                speaker.channel,
+                speaker.name,
+                speaker.azimuth,
+                speaker.elevation
             );
         }
 
@@ -317,7 +320,9 @@ impl BinauralDecoderPlugin {
 
         log::info!(
             "[BinauralDecoder] SOFA loaded: {} measurements, IR length: {}, sample rate: {} Hz",
-            sofa.num_measurements, sofa.ir_length, sofa.sample_rate
+            sofa.num_measurements,
+            sofa.ir_length,
+            sofa.sample_rate
         );
 
         // Prepare HRTF filters for each speaker
@@ -340,8 +345,12 @@ impl BinauralDecoderPlugin {
 
             log::info!(
                 "[BinauralDecoder] Speaker {}: {} (az={:.1}°, el={:.1}°) -> HRTF at az={:.1}°, el={:.1}°",
-                i, speaker.name, speaker.azimuth, speaker.elevation,
-                hrtf.position.azimuth, hrtf.position.elevation
+                i,
+                speaker.name,
+                speaker.azimuth,
+                speaker.elevation,
+                hrtf.position.azimuth,
+                hrtf.position.elevation
             );
 
             // Convert HRTFs to frequency domain
@@ -350,10 +359,7 @@ impl BinauralDecoderPlugin {
             let right_fft = self.ir_to_freq(&hrtf.ir_right);
 
             // Store both left and right HRTFs
-            self.hrtf_filters_freq[i] = left_fft
-                .into_iter()
-                .chain(right_fft.into_iter())
-                .collect();
+            self.hrtf_filters_freq[i] = left_fft.into_iter().chain(right_fft.into_iter()).collect();
         }
 
         Ok(())
@@ -412,8 +418,7 @@ impl BinauralDecoderPlugin {
         output.fill(0.0);
 
         // Check if we have HRTF filters loaded
-        if self.hrtf_filters_freq.is_empty()
-            || self.hrtf_filters_freq[0].len() != self.fft_size * 2
+        if self.hrtf_filters_freq.is_empty() || self.hrtf_filters_freq[0].len() != self.fft_size * 2
         {
             // No HRTFs loaded - pass through first 2 channels or silence
             for i in 0..self.fft_size {
@@ -442,13 +447,13 @@ impl BinauralDecoderPlugin {
             }
 
             // 2. Forward FFT
-            self.temp_freq_buffer.copy_from_slice(&self.temp_time_buffer);
+            self.temp_freq_buffer
+                .copy_from_slice(&self.temp_time_buffer);
             self.fft_forward.process(&mut self.temp_freq_buffer);
 
             // 3. Convolve with left ear HRTF
             for i in 0..self.fft_size {
-                self.temp_time_buffer[i] =
-                    self.temp_freq_buffer[i] * self.hrtf_filters_freq[ch][i];
+                self.temp_time_buffer[i] = self.temp_freq_buffer[i] * self.hrtf_filters_freq[ch][i];
             }
 
             // 4. Inverse FFT for left ear
@@ -523,12 +528,15 @@ impl Plugin for BinauralDecoderPlugin {
                     log::info!(
                         "[BinauralDecoder] Warning: SOFA sample rate ({} Hz) differs from engine rate ({} Hz). \
                          This may cause incorrect spatialization. Consider resampling the SOFA file.",
-                        sofa.sample_rate, sample_rate
+                        sofa.sample_rate,
+                        sample_rate
                     );
                 }
             }
         } else {
-            log::debug!("[BinauralDecoder] Warning: No SOFA file specified, plugin will pass through audio");
+            log::debug!(
+                "[BinauralDecoder] Warning: No SOFA file specified, plugin will pass through audio"
+            );
         }
 
         Ok(())
@@ -632,7 +640,8 @@ impl Plugin for BinauralDecoderPlugin {
 
                 // Accumulate output (overlap-add)
                 for i in 0..self.fft_size {
-                    self.output_accumulator[0][self.next_add_position + i] += self.temp_output_block[i * 2];
+                    self.output_accumulator[0][self.next_add_position + i] +=
+                        self.temp_output_block[i * 2];
                     self.output_accumulator[1][self.next_add_position + i] +=
                         self.temp_output_block[i * 2 + 1];
                 }
@@ -657,8 +666,8 @@ impl Plugin for BinauralDecoderPlugin {
 
             // Step 3: Fill input buffers
             if input_pos < input.len() {
-                let frames_to_copy =
-                    ((input.len() - input_pos) / self.input_channels).min(self.fft_size - self.input_buffer_fill);
+                let frames_to_copy = ((input.len() - input_pos) / self.input_channels)
+                    .min(self.fft_size - self.input_buffer_fill);
 
                 for i in 0..frames_to_copy {
                     for ch in 0..self.input_channels {

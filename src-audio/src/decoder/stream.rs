@@ -137,7 +137,9 @@ impl AudioStream {
 
         log::info!(
             "[AudioStream] Created stream: {}Hz, {}ch, {:?} frames",
-            spec.sample_rate, spec.channels, spec.total_frames
+            spec.sample_rate,
+            spec.channels,
+            spec.total_frames
         );
 
         Ok(Self {

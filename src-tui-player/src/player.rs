@@ -79,7 +79,10 @@ impl Player {
     pub async fn is_playing(&self) -> Result<bool, Box<dyn std::error::Error>> {
         let manager = self.manager.lock().await;
         let state = manager.get_state();
-        Ok(matches!(state, sotf_audio::manager::StreamingState::Playing))
+        Ok(matches!(
+            state,
+            sotf_audio::manager::StreamingState::Playing
+        ))
     }
 
     pub async fn enable_loudness_monitoring(&self) -> Result<(), Box<dyn std::error::Error>> {

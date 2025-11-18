@@ -57,7 +57,7 @@ impl StereoConfig {
             translation: Vector3::new(baseline_cm, 0.0, 0.0), // Cameras separated horizontally
             min_disparity: 0,
             num_disparities: 64, // Must be divisible by 16
-            block_size: 15, // Odd number
+            block_size: 15,      // Odd number
         }
     }
 
@@ -100,14 +100,13 @@ impl StereoDepthEstimator {
         if left_frame.width != right_frame.width || left_frame.height != right_frame.height {
             return Err(ScannerError::InvalidInput(format!(
                 "Stereo frames must have same dimensions (left: {}x{}, right: {}x{})",
-                left_frame.width, left_frame.height,
-                right_frame.width, right_frame.height
+                left_frame.width, left_frame.height, right_frame.width, right_frame.height
             )));
         }
 
         if left_frame.width == 0 || left_frame.height == 0 {
             return Err(ScannerError::InvalidInput(
-                "Frame dimensions must be non-zero".to_string()
+                "Frame dimensions must be non-zero".to_string(),
             ));
         }
 
@@ -131,10 +130,8 @@ impl StereoDepthEstimator {
         let right_gray = right_frame.to_gray()?;
 
         // Create stereo block matcher
-        let mut stereo = calib3d::StereoBM::create(
-            self.config.num_disparities,
-            self.config.block_size,
-        )?;
+        let mut stereo =
+            calib3d::StereoBM::create(self.config.num_disparities, self.config.block_size)?;
 
         // Set parameters
         stereo.set_min_disparity(self.config.min_disparity)?;
@@ -369,10 +366,7 @@ mod tests {
 
     #[test]
     fn test_depth_map_creation() {
-        let depths = vec![
-            vec![10.0, 20.0, 30.0],
-            vec![15.0, 25.0, 35.0],
-        ];
+        let depths = vec![vec![10.0, 20.0, 30.0], vec![15.0, 25.0, 35.0]];
         let depth_map = DepthMap::new(depths);
 
         assert_eq!(depth_map.dimensions(), (3, 2));
@@ -381,10 +375,7 @@ mod tests {
 
     #[test]
     fn test_depth_map_filtering() {
-        let depths = vec![
-            vec![10.0, 0.0, 30.0],
-            vec![15.0, -5.0, 35.0],
-        ];
+        let depths = vec![vec![10.0, 0.0, 30.0], vec![15.0, -5.0, 35.0]];
         let mut depth_map = DepthMap::new(depths);
 
         depth_map.filter_invalid();
@@ -415,13 +406,10 @@ mod tests {
         let config = StereoConfig::default_webcam_stereo(1280, 720, 6.0);
         let estimator = StereoDepthEstimator::new(config);
 
-        let left_features = vec![
-            Point2::new(100.0, 100.0),
-            Point2::new(200.0, 200.0),
-        ];
+        let left_features = vec![Point2::new(100.0, 100.0), Point2::new(200.0, 200.0)];
 
         let right_features = vec![
-            Point2::new(95.0, 100.0), // Matches first left feature
+            Point2::new(95.0, 100.0),  // Matches first left feature
             Point2::new(195.0, 200.0), // Matches second left feature
         ];
 

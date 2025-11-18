@@ -372,14 +372,20 @@ impl PluginChain {
     }
 
     /// Save the plugin chain to a JSON file
-    pub fn save_to_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_to_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self.plugins)?;
         std::fs::write(path, json)?;
         Ok(())
     }
 
     /// Load the plugin chain from a JSON file
-    pub fn load_from_file<P: AsRef<std::path::Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn load_from_file<P: AsRef<std::path::Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let json = std::fs::read_to_string(path)?;
         let plugins: Vec<Plugin> = serde_json::from_str(&json)?;
 

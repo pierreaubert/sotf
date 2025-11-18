@@ -19,13 +19,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let point_cloud = generate_test_mesh_points();
     let hull = convexhull::compute_convex_hull_3d(&point_cloud)?;
     let mesh = mesh::Mesh::from_convex_hull(&hull);
-    println!("   Mesh: {} vertices, {} triangles", mesh.vertices().len(), mesh.triangles().len());
+    println!(
+        "   Mesh: {} vertices, {} triangles",
+        mesh.vertices().len(),
+        mesh.triangles().len()
+    );
 
     // 2. Create texture mapper
     println!("\n2. Initializing texture mapper...");
     let texture_resolution = 1024;
     let mapper = TextureMapper::new(texture_resolution, texture_resolution);
-    println!("   Texture resolution: {}x{}", texture_resolution, texture_resolution);
+    println!(
+        "   Texture resolution: {}x{}",
+        texture_resolution, texture_resolution
+    );
 
     // 3. Generate UV coordinates
     println!("\n3. Generating UV coordinates...");

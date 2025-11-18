@@ -1,11 +1,11 @@
 use crate::app::{App, InputMode, Screen};
 use crate::plugins::{PluginSettings, PluginType};
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
-    Frame,
 };
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -77,7 +77,11 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     let title = Paragraph::new(title_text)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM));
 
@@ -93,7 +97,11 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let device_widget = Paragraph::new(device_text)
         .style(Style::default().fg(Color::Yellow))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::ALL).title("Output Device"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Output Device"),
+        );
 
     f.render_widget(device_widget, title_chunks[1]);
 }
@@ -127,13 +135,11 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
         format!("Search: {}", app.search_query)
     };
 
-    let search_box = Paragraph::new(search_text)
-        .style(input_style)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Search Albums (Press '/' to search, ESC to exit search)"),
-        );
+    let search_box = Paragraph::new(search_text).style(input_style).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Search Albums (Press '/' to search, ESC to exit search)"),
+    );
 
     f.render_widget(search_box, area);
 }
@@ -164,14 +170,10 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 .collect();
 
             let list = List::new(items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!(
-                            "Albums ({}) - 'a' to add, 't' to toggle tree view, 'm' for maintenance",
-                            albums.len()
-                        )),
-                )
+                .block(Block::default().borders(Borders::ALL).title(format!(
+                    "Albums ({}) - 'a' to add, 't' to toggle tree view, 'm' for maintenance",
+                    albums.len()
+                )))
                 .highlight_style(
                     Style::default()
                         .fg(Color::Black)
@@ -224,14 +226,10 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 .collect();
 
             let list = List::new(items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!(
-                            "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
-                            app.artist_tree.len()
-                        )),
-                )
+                .block(Block::default().borders(Borders::ALL).title(format!(
+                    "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
+                    app.artist_tree.len()
+                )))
                 .highlight_style(
                     Style::default()
                         .fg(Color::Black)
@@ -249,18 +247,19 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     // Calculate constraints based on whether we have autocomplete suggestions
-    let autocomplete_height = if app.input_mode == InputMode::AddDirectory && !app.autocomplete_suggestions.is_empty() {
-        (app.autocomplete_suggestions.len().min(5) + 2) as u16 // Max 5 suggestions + borders
-    } else {
-        0
-    };
+    let autocomplete_height =
+        if app.input_mode == InputMode::AddDirectory && !app.autocomplete_suggestions.is_empty() {
+            (app.autocomplete_suggestions.len().min(5) + 2) as u16 // Max 5 suggestions + borders
+        } else {
+            0
+        };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Input box
+            Constraint::Length(3),                   // Input box
             Constraint::Length(autocomplete_height), // Autocomplete suggestions
-            Constraint::Min(0),    // Directory list
+            Constraint::Min(0),                      // Directory list
         ])
         .split(area);
 
@@ -277,9 +276,11 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         "Path: (Press 'a' to add directory)".to_string()
     };
 
-    let input_box = Paragraph::new(input_text)
-        .style(input_style)
-        .block(Block::default().borders(Borders::ALL).title("Add Directory"));
+    let input_box = Paragraph::new(input_text).style(input_style).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Add Directory"),
+    );
 
     f.render_widget(input_box, chunks[0]);
 
@@ -304,9 +305,11 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
             .collect();
 
         let suggestions_list = List::new(suggestion_items).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!("Suggestions ({}/{})", app.autocomplete_index + 1, app.autocomplete_suggestions.len()))
+            Block::default().borders(Borders::ALL).title(format!(
+                "Suggestions ({}/{})",
+                app.autocomplete_index + 1,
+                app.autocomplete_suggestions.len()
+            )),
         );
 
         f.render_widget(suggestions_list, chunks[1]);
@@ -343,7 +346,9 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
                     .bg(Color::White)
                     .add_modifier(Modifier::BOLD)
             } else if *level == 0 {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -369,11 +374,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'a'=add".to_string()
     };
 
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title),
-    );
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(list, chunks[2]);
 }
@@ -458,8 +459,7 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
         )
     };
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title));
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(list, area);
 }
@@ -587,10 +587,7 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Show device name and some config info
             let config_info = if let Some(ref config) = device.default_config {
-                format!(
-                    " ({}ch, {}Hz)",
-                    config.channels, config.sample_rate
-                )
+                format!(" ({}ch, {}Hz)", config.channels, config.sample_rate)
             } else {
                 String::new()
             };
@@ -618,11 +615,13 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     let title = if app.output_devices.is_empty() {
         "Output Devices (none found)".to_string()
     } else {
-        format!("Output Devices ({}) - Use ↑/↓ to select, Enter to apply", app.output_devices.len())
+        format!(
+            "Output Devices ({}) - Use ↑/↓ to select, Enter to apply",
+            app.output_devices.len()
+        )
     };
 
-    let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title));
+    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(list, chunks[1]);
 }
@@ -632,9 +631,9 @@ fn draw_meters_column(f: &mut Frame, area: Rect, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),  // LUFS box
-            Constraint::Min(0),     // Level meter box (expandable)
-            Constraint::Length(3),  // Volume box
+            Constraint::Length(5), // LUFS box
+            Constraint::Min(0),    // Level meter box (expandable)
+            Constraint::Length(3), // Volume box
         ])
         .split(area);
 
@@ -665,15 +664,24 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
         vec![
             Line::from(vec![
                 Span::raw("M: "),
-                Span::styled(format!("{} LUFS", momentary), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format!("{} LUFS", momentary),
+                    Style::default().fg(Color::Yellow),
+                ),
             ]),
             Line::from(vec![
                 Span::raw("S: "),
-                Span::styled(format!("{} LUFS", shortterm), Style::default().fg(Color::Yellow)),
+                Span::styled(
+                    format!("{} LUFS", shortterm),
+                    Style::default().fg(Color::Yellow),
+                ),
             ]),
             Line::from(vec![
                 Span::raw("Pk: "),
-                Span::styled(format!("{:>5.1} dBFS", peak_db), Style::default().fg(Color::Red)),
+                Span::styled(
+                    format!("{:>5.1} dBFS", peak_db),
+                    Style::default().fg(Color::Red),
+                ),
             ]),
         ]
     } else {
@@ -684,8 +692,8 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
         ]
     };
 
-    let paragraph = Paragraph::new(text)
-        .block(Block::default().borders(Borders::ALL).title("Loudness"));
+    let paragraph =
+        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Loudness"));
 
     f.render_widget(paragraph, area);
 }
@@ -743,7 +751,9 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
             let filled_rows = (fill_ratio * meter_height as f64).round() as usize;
 
             let ch_x = meters_start_x + (ch_idx * channel_width) as u16;
-            let ch_width = channel_width.min((meters_width as usize - ch_idx * channel_width).min(channel_width)) as u16;
+            let ch_width = channel_width
+                .min((meters_width as usize - ch_idx * channel_width).min(channel_width))
+                as u16;
 
             // Build the entire meter as a single multi-line widget to ensure proper clearing
             let mut meter_lines = Vec::new();
@@ -770,7 +780,10 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     // Draw empty bar
                     let bar = "░".repeat(ch_width.saturating_sub(1) as usize);
-                    meter_lines.push(Line::from(Span::styled(bar, Style::default().fg(Color::DarkGray))));
+                    meter_lines.push(Line::from(Span::styled(
+                        bar,
+                        Style::default().fg(Color::DarkGray),
+                    )));
                 }
             }
 
@@ -815,12 +828,21 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
             };
 
             // Draw scale marks - show 0dB at top with "dB", then just numbers
-            let db_marks = [(0, true), (-10, false), (-20, false), (-30, false), (-40, false), (-50, false), (-60, false)];
+            let db_marks = [
+                (0, true),
+                (-10, false),
+                (-20, false),
+                (-30, false),
+                (-40, false),
+                (-50, false),
+                (-60, false),
+            ];
 
             for &(db, show_db_suffix) in &db_marks {
                 // Calculate Y position using non-linear scale
                 let ratio = db_to_ratio(db);
-                let y_pos = inner.y + inner.height - 1 - (ratio * meter_height as f64).round() as u16;
+                let y_pos =
+                    inner.y + inner.height - 1 - (ratio * meter_height as f64).round() as u16;
 
                 // Only draw if within bounds
                 if y_pos >= inner.y && y_pos < inner.y + inner.height {
@@ -841,8 +863,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                     };
 
                     f.render_widget(
-                        Paragraph::new(label)
-                            .style(Style::default().fg(color)),
+                        Paragraph::new(label).style(Style::default().fg(color)),
                         Rect {
                             x: inner.x,
                             y: y_pos,
@@ -863,12 +884,12 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
     let volume_pct = (app.volume * 100.0) as u32;
-    let text = Line::from(vec![
-        Span::styled(
-            format!("{}%", volume_pct),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-        ),
-    ]);
+    let text = Line::from(vec![Span::styled(
+        format!("{}%", volume_pct),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )]);
 
     let paragraph = Paragraph::new(text)
         .block(Block::default().borders(Borders::ALL).title("Volume"))
@@ -883,7 +904,9 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     // Show status message if available
     // Filter out scan-related messages unless we're on the Directory screen
     if let Some(msg) = &app.status_message {
-        let is_scan_message = msg.contains("Scanning") || msg.contains("Scan complete") || msg.contains("Scan failed");
+        let is_scan_message = msg.contains("Scanning")
+            || msg.contains("Scan complete")
+            || msg.contains("Scan failed");
         let should_show = !is_scan_message || app.current_screen == Screen::DirectoryManager;
 
         if should_show {
@@ -897,7 +920,9 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
 
             status_spans.push(Span::styled(
                 format!("{} | ", truncated_msg),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
     }
@@ -939,7 +964,10 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("O", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Screens "));
-    status_spans.push(Span::styled("Shift+↑/↓", Style::default().fg(Color::Yellow)));
+    status_spans.push(Span::styled(
+        "Shift+↑/↓",
+        Style::default().fg(Color::Yellow),
+    ));
     status_spans.push(Span::raw("=Volume "));
     status_spans.push(Span::styled("ESC", Style::default().fg(Color::Red)));
     status_spans.push(Span::raw("=Quit "));
@@ -973,7 +1001,10 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         let block = Block::default()
             .borders(Borders::ALL)
             .style(Style::default().bg(Color::Black))
-            .title(format!("Edit {} Plugin (ESC to close)", plugin.plugin_type().name()));
+            .title(format!(
+                "Edit {} Plugin (ESC to close)",
+                plugin.plugin_type().name()
+            ));
 
         f.render_widget(block, modal_area);
 
@@ -1029,9 +1060,15 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             lfe_level_db,
             surround_delay_ms,
         } => vec![
-            ("Center Level".to_string(), format!("{:.1} dB", center_level_db)),
+            (
+                "Center Level".to_string(),
+                format!("{:.1} dB", center_level_db),
+            ),
             ("LFE Level".to_string(), format!("{:.1} dB", lfe_level_db)),
-            ("Surround Delay".to_string(), format!("{:.1} ms", surround_delay_ms)),
+            (
+                "Surround Delay".to_string(),
+                format!("{:.1} ms", surround_delay_ms),
+            ),
         ],
         PluginSettings::Compressor {
             threshold_db,
@@ -1069,7 +1106,10 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             min_gain_db,
             max_gain_db,
         } => vec![
-            ("Target LUFS".to_string(), format!("{:.1} LUFS", target_lufs)),
+            (
+                "Target LUFS".to_string(),
+                format!("{:.1} LUFS", target_lufs),
+            ),
             ("Min Gain".to_string(), format!("{:.1} dB", min_gain_db)),
             ("Max Gain".to_string(), format!("{:.1} dB", max_gain_db)),
         ],
@@ -1080,10 +1120,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                     format!("Filter {} Frequency", i + 1),
                     format!("{:.0} Hz", filter.frequency),
                 ));
-                params.push((
-                    format!("Filter {} Q", i + 1),
-                    format!("{:.2}", filter.q),
-                ));
+                params.push((format!("Filter {} Q", i + 1), format!("{:.2}", filter.q)));
                 params.push((
                     format!("Filter {} Gain", i + 1),
                     format!("{:.1} dB", filter.gain_db),

@@ -4,8 +4,7 @@ use crate::types::Vertex;
 
 /// Compute the determinant of a 3x3 matrix
 pub fn det3(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> f64 {
-    a[0] * (b[1] * c[2] - b[2] * c[1])
-        - a[1] * (b[0] * c[2] - b[2] * c[0])
+    a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
         + a[2] * (b[0] * c[1] - b[1] * c[0])
 }
 
@@ -75,13 +74,17 @@ pub fn find_extreme_points(vertices: &[Vertex]) -> [usize; 6] {
         }
     }
 
-    [min_x_idx, max_x_idx, min_y_idx, max_y_idx, min_z_idx, max_z_idx]
+    [
+        min_x_idx, max_x_idx, min_y_idx, max_y_idx, min_z_idx, max_z_idx,
+    ]
 }
 
 /// Compute the centroid of a set of vertices
 pub fn centroid(vertices: &[Vertex]) -> Vertex {
     let n = vertices.len() as f64;
-    let sum = vertices.iter().fold(Vertex::new(0.0, 0.0, 0.0), |acc, v| acc.add(v));
+    let sum = vertices
+        .iter()
+        .fold(Vertex::new(0.0, 0.0, 0.0), |acc, v| acc.add(v));
     sum.scale(1.0 / n)
 }
 

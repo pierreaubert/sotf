@@ -22,14 +22,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Compute convex hull
     println!("\n2. Computing convex hull...");
     let hull = convexhull::compute_convex_hull_3d(&point_cloud)?;
-    println!("   Hull has {} vertices and {} faces", hull.vertex_count(), hull.face_count());
+    println!(
+        "   Hull has {} vertices and {} faces",
+        hull.vertex_count(),
+        hull.face_count()
+    );
     println!("   Volume: {:.2} cm³", hull.volume());
     println!("   Surface area: {:.2} cm²", hull.surface_area());
 
     // 3. Convert to mesh
     println!("\n3. Converting to triangulated mesh...");
     let mesh = mesh::Mesh::from_convex_hull(&hull);
-    println!("   Mesh has {} vertices and {} triangles", mesh.vertices().len(), mesh.triangles().len());
+    println!(
+        "   Mesh has {} vertices and {} triangles",
+        mesh.vertices().len(),
+        mesh.triangles().len()
+    );
 
     // 4. Export mesh
     println!("\n4. Exporting mesh to OBJ file...");

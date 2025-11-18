@@ -261,7 +261,8 @@ fn run_playback_thread(
 
     log::info!(
         "[Playback Thread] Started - {}Hz, {} channels",
-        sample_rate, channels
+        sample_rate,
+        channels
     );
 
     // Main loop: read from queue and write to ring buffer
@@ -279,7 +280,8 @@ fn run_playback_thread(
                     if new_channels != channels {
                         log::info!(
                             "[Playback Thread] Updating channel count: {} -> {}",
-                            channels, new_channels
+                            channels,
+                            new_channels
                         );
 
                         // Update channel count

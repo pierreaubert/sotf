@@ -387,7 +387,8 @@ mod tests {
 
         log::info!(
             "5-channel resampling: {} input frames, {} max output frames",
-            num_frames, max_output_frames
+            num_frames,
+            max_output_frames
         );
 
         // Check each channel has signal (check expected number of frames)

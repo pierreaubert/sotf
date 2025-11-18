@@ -89,8 +89,7 @@ impl BundleAdjuster {
         }
 
         let mut current_poses = poses.to_vec();
-        let mut current_points: Vec<Point3<f32>> =
-            points.iter().map(|p| p.position).collect();
+        let mut current_points: Vec<Point3<f32>> = points.iter().map(|p| p.position).collect();
 
         let mut lambda = self.initial_lambda;
         let mut prev_cost = self.compute_cost(&current_poses, points, &current_points);
@@ -189,10 +188,7 @@ impl BundleAdjuster {
         points_with_obs: &[Point3DWithObservations],
         points_3d: &[Point3<f32>],
     ) -> (Vec<Vec<f32>>, Vec<f32>) {
-        let num_observations: usize = points_with_obs
-            .iter()
-            .map(|p| p.observations.len())
-            .sum();
+        let num_observations: usize = points_with_obs.iter().map(|p| p.observations.len()).sum();
 
         let num_params = poses.len() * 6 + points_3d.len() * 3; // 6 DOF per camera, 3 per point
         let num_residuals = num_observations * 2; // 2 residuals per observation (x, y)

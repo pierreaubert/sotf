@@ -2,7 +2,7 @@
 //!
 //! These tests correspond to the test cases in the C++ convhull_3d library.
 
-use convexhull3d::{export_html, export_obj, testdata, ConvexHull3D, Vertex};
+use convexhull3d::{ConvexHull3D, Vertex, export_html, export_obj, testdata};
 use std::fs;
 
 /// Helper function to run a test and generate visualizations
@@ -27,14 +27,21 @@ fn run_test_with_visualization(
     println!("Surface area: {:.6}", surface_area);
 
     // Verify basic properties
-    assert!(num_faces >= expected_min_faces, "Expected at least {} faces, got {}", expected_min_faces, num_faces);
-    assert!(num_vertices >= 4, "Convex hull must have at least 4 vertices");
+    assert!(
+        num_faces >= expected_min_faces,
+        "Expected at least {} faces, got {}",
+        expected_min_faces,
+        num_faces
+    );
+    assert!(
+        num_vertices >= 4,
+        "Convex hull must have at least 4 vertices"
+    );
     assert!(volume > 0.0, "Volume must be positive");
     assert!(surface_area > 0.0, "Surface area must be positive");
 
     // Create output directory
-    let output_dir = std::env::var("AUTOEQ_DIR")
-        .unwrap_or_else(|_| ".".to_string());
+    let output_dir = std::env::var("AUTOEQ_DIR").unwrap_or_else(|_| ".".to_string());
     let output_dir = format!("{}/data_generated/convexhull3d", output_dir);
     fs::create_dir_all(&output_dir).unwrap();
 
@@ -65,7 +72,11 @@ fn test_cube() {
     let (num_faces, _) = run_test_with_visualization("cube", vertices, 12);
     // A cube should have 12 triangular faces (2 per square face)
     // Note: due to numerical precision and triangulation choices, we might get 12-14 faces
-    assert!(num_faces >= 12 && num_faces <= 14, "A cube should have approximately 12 triangular faces, got {}", num_faces);
+    assert!(
+        num_faces >= 12 && num_faces <= 14,
+        "A cube should have approximately 12 triangular faces, got {}",
+        num_faces
+    );
 }
 
 #[test]
@@ -73,7 +84,11 @@ fn test_octahedron() {
     let vertices = testdata::octahedron_vertices();
     let (num_faces, _) = run_test_with_visualization("octahedron", vertices, 8);
     // Octahedron has 8 faces, but numerical precision might cause slight variations
-    assert!(num_faces >= 8 && num_faces <= 12, "An octahedron should have approximately 8 faces, got {}", num_faces);
+    assert!(
+        num_faces >= 8 && num_faces <= 12,
+        "An octahedron should have approximately 8 faces, got {}",
+        num_faces
+    );
 }
 
 #[test]
@@ -81,7 +96,11 @@ fn test_icosahedron() {
     let vertices = testdata::icosahedron_vertices();
     let (num_faces, _) = run_test_with_visualization("icosahedron", vertices, 20);
     // Icosahedron has 20 faces, but numerical precision might cause variations
-    assert!(num_faces >= 20 && num_faces <= 32, "An icosahedron should have approximately 20 faces, got {}", num_faces);
+    assert!(
+        num_faces >= 20 && num_faces <= 32,
+        "An icosahedron should have approximately 20 faces, got {}",
+        num_faces
+    );
 }
 
 #[test]
@@ -120,7 +139,11 @@ fn test_cube_with_interior_100() {
     let vertices = testdata::cube_with_interior_points(2.0, 100);
     let (num_faces, _) = run_test_with_visualization("cube_interior_100", vertices, 12);
     // The hull should have at least 12 faces (minimum for a cube-like shape)
-    assert!(num_faces >= 12, "Hull should have at least 12 faces, got {}", num_faces);
+    assert!(
+        num_faces >= 12,
+        "Hull should have at least 12 faces, got {}",
+        num_faces
+    );
 }
 
 #[test]
@@ -131,7 +154,11 @@ fn test_cube_with_interior_1000() {
     let vertices = testdata::cube_with_interior_points(2.0, 1000);
     let (num_faces, _) = run_test_with_visualization("cube_interior_1000", vertices, 12);
     // The hull should have at least 12 faces (minimum for a cube-like shape)
-    assert!(num_faces >= 12, "Hull should have at least 12 faces, got {}", num_faces);
+    assert!(
+        num_faces >= 12,
+        "Hull should have at least 12 faces, got {}",
+        num_faces
+    );
 }
 
 #[test]
@@ -143,7 +170,11 @@ fn test_volume_calculation() {
 
     // Volume should be positive and reasonable for a 2x2x2 cube
     // (Note: exact value may vary due to triangulation method)
-    assert!(volume > 0.0 && volume < 15.0, "Volume should be reasonable, got {}", volume);
+    assert!(
+        volume > 0.0 && volume < 15.0,
+        "Volume should be reasonable, got {}",
+        volume
+    );
 }
 
 #[test]
@@ -160,7 +191,11 @@ fn test_volume_tetrahedron() {
     let volume = hull.volume();
 
     // Expected volume is 1/6
-    assert!((volume - 1.0/6.0).abs() < 0.01, "Volume of unit tetrahedron should be approximately 1/6, got {}", volume);
+    assert!(
+        (volume - 1.0 / 6.0).abs() < 0.01,
+        "Volume of unit tetrahedron should be approximately 1/6, got {}",
+        volume
+    );
 }
 
 #[test]
@@ -172,7 +207,11 @@ fn test_surface_area_cube() {
 
     // Surface area should be positive and reasonable for a 2x2x2 cube
     // (Note: exact value may vary due to triangulation method)
-    assert!(area > 20.0 && area < 40.0, "Surface area should be reasonable, got {}", area);
+    assert!(
+        area > 20.0 && area < 40.0,
+        "Surface area should be reasonable, got {}",
+        area
+    );
 }
 
 #[test]
@@ -187,7 +226,10 @@ fn test_all_tests_summary() {
         ("Cube", Box::new(|| testdata::cube_vertices(2.0))),
         ("Octahedron", Box::new(|| testdata::octahedron_vertices())),
         ("Icosahedron", Box::new(|| testdata::icosahedron_vertices())),
-        ("Random Sphere 936", Box::new(|| testdata::random_sphere_points(936, 1.0))),
+        (
+            "Random Sphere 936",
+            Box::new(|| testdata::random_sphere_points(936, 1.0)),
+        ),
         ("T-Design 180", Box::new(|| testdata::tdesign_180_sphere())),
         ("T-Design 840", Box::new(|| testdata::tdesign_840_sphere())),
     ];
@@ -201,7 +243,12 @@ fn test_all_tests_summary() {
         match ConvexHull3D::build(&vertices) {
             Ok(hull) => {
                 success_count += 1;
-                println!("✓ {}: {} vertices → {} faces", name, vertices.len(), hull.num_faces());
+                println!(
+                    "✓ {}: {} vertices → {} faces",
+                    name,
+                    vertices.len(),
+                    hull.num_faces()
+                );
             }
             Err(e) => {
                 println!("✗ {}: Failed with error: {}", name, e);
@@ -223,8 +270,7 @@ fn test_process_all_obj_files() {
     println!("========================================");
 
     // Get the data directory path
-    let data_dir = std::env::var("AUTOEQ_DIR")
-        .unwrap_or_else(|_| ".".to_string());
+    let data_dir = std::env::var("AUTOEQ_DIR").unwrap_or_else(|_| ".".to_string());
     let obj_dir = format!("{}/data_tests/convexhull3d/obj_files", data_dir);
 
     // Maximum vertices to process (set to None to process all, or Some(n) to limit)
@@ -238,7 +284,9 @@ fn test_process_all_obj_files() {
         .expect("Failed to read obj_files directory")
         .filter_map(|entry| entry.ok())
         .filter(|entry| {
-            entry.path().extension()
+            entry
+                .path()
+                .extension()
                 .and_then(|ext| ext.to_str())
                 .map(|ext| ext == "obj")
                 .unwrap_or(false)
@@ -250,7 +298,10 @@ fn test_process_all_obj_files() {
 
     println!("Found {} OBJ files to process", obj_files.len());
     if let Some(max) = max_vertices {
-        println!("Vertex limit: {} (set MAX_VERTICES env var to change)\n", max);
+        println!(
+            "Vertex limit: {} (set MAX_VERTICES env var to change)\n",
+            max
+        );
     } else {
         println!("No vertex limit (this may take a very long time for large models)\n");
     }
@@ -261,7 +312,8 @@ fn test_process_all_obj_files() {
 
     for entry in obj_files {
         let path = entry.path();
-        let filename = path.file_stem()
+        let filename = path
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
 
@@ -288,8 +340,10 @@ fn test_process_all_obj_files() {
                         let volume = hull.volume();
                         let surface_area = hull.surface_area();
 
-                        println!("{} vertices → {} faces (V={:.2}, SA={:.2})",
-                            vertex_count, num_faces, volume, surface_area);
+                        println!(
+                            "{} vertices → {} faces (V={:.2}, SA={:.2})",
+                            vertex_count, num_faces, volume, surface_area
+                        );
 
                         // Export results
                         let output_dir = format!("{}/data_generated/convexhull3d", data_dir);
@@ -321,8 +375,14 @@ fn test_process_all_obj_files() {
     }
 
     println!("\n========================================");
-    println!("Success: {} | Skipped: {} | Total: {}", success_count, skipped_count, total_count);
+    println!(
+        "Success: {} | Skipped: {} | Total: {}",
+        success_count, skipped_count, total_count
+    );
     println!("========================================");
 
-    assert!(success_count > 0, "At least some OBJ files should process successfully");
+    assert!(
+        success_count > 0,
+        "At least some OBJ files should process successfully"
+    );
 }

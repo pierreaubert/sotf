@@ -7,7 +7,7 @@ const APPLICATION_PATH = join(
   process.cwd(),
   "target",
   "release",
-  "sotf" // Your app name from src-tauri/Cargo.toml
+  "sotf"
 );
 
 // Reference to tauri-driver process
@@ -25,7 +25,7 @@ export const config: Options.Testrunner = {
       "tauri:options": {
         application: APPLICATION_PATH,
       },
-      browserName: "wry",
+      browserName: "chrome",
       browserVersion: "",
       platformName: "",
       acceptInsecureCerts: true,

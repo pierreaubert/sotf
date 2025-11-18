@@ -73,8 +73,8 @@ impl MusicLibrary {
 
     /// Create a new library with database persistence
     pub fn with_database() -> Result<Self, Box<dyn std::error::Error>> {
-        let db_path = MusicDatabase::default_path()
-            .ok_or("Could not determine config directory")?;
+        let db_path =
+            MusicDatabase::default_path().ok_or("Could not determine config directory")?;
 
         let db = MusicDatabase::open(&db_path)?;
 
@@ -131,7 +131,10 @@ impl MusicLibrary {
 
     /// Scan directories with progress callback
     /// The callback is called periodically with (tracks_scanned, albums_found)
-    pub fn scan_with_progress<F>(&mut self, progress_callback: F) -> Result<(), Box<dyn std::error::Error>>
+    pub fn scan_with_progress<F>(
+        &mut self,
+        progress_callback: F,
+    ) -> Result<(), Box<dyn std::error::Error>>
     where
         F: FnMut(usize, usize),
     {
@@ -140,12 +143,19 @@ impl MusicLibrary {
 
     /// Scan directories with optional incremental mode
     /// If incremental is true, only scan new or modified files
-    pub fn scan_incremental(&mut self, incremental: bool) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn scan_incremental(
+        &mut self,
+        incremental: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.scan_incremental_with_progress(incremental, |_, _| {})
     }
 
     /// Scan directories with optional incremental mode and progress reporting
-    fn scan_incremental_with_progress<F>(&mut self, incremental: bool, mut progress_callback: F) -> Result<(), Box<dyn std::error::Error>>
+    fn scan_incremental_with_progress<F>(
+        &mut self,
+        incremental: bool,
+        mut progress_callback: F,
+    ) -> Result<(), Box<dyn std::error::Error>>
     where
         F: FnMut(usize, usize),
     {
@@ -159,14 +169,20 @@ impl MusicLibrary {
         let mut dir_file_counts: HashMap<usize, usize> = HashMap::new();
 
         for (dir_idx, dir_info) in self.directories.clone().iter().enumerate() {
-            let (tracks, scanned) = self.scan_directory(&dir_info.path, &mut album_map, incremental)?;
+            let (tracks, scanned) =
+                self.scan_directory(&dir_info.path, &mut album_map, incremental)?;
             total_tracks += tracks;
             scanned_tracks += scanned;
             dir_file_counts.insert(dir_idx, tracks);
 
             // Report progress after each directory and every 30 seconds
             let now = SystemTime::now();
-            if now.duration_since(last_progress_report).unwrap_or_default().as_secs() >= 30 {
+            if now
+                .duration_since(last_progress_report)
+                .unwrap_or_default()
+                .as_secs()
+                >= 30
+            {
                 progress_callback(total_tracks, album_map.len());
                 last_progress_report = now;
             }
@@ -205,11 +221,8 @@ impl MusicLibrary {
         }
 
         // Sort albums by artist and title
-        self.albums.sort_by(|a, b| {
-            a.artist
-                .cmp(&b.artist)
-                .then(a.title.cmp(&b.title))
-        });
+        self.albums
+            .sort_by(|a, b| a.artist.cmp(&b.artist).then(a.title.cmp(&b.title)));
 
         // Save to database if available
         if let Some(db) = &mut self.db {
@@ -221,8 +234,12 @@ impl MusicLibrary {
             }
         }
 
-        log::info!("Scan complete: {} tracks ({} scanned), {} albums",
-                   total_tracks, scanned_tracks, self.albums.len());
+        log::info!(
+            "Scan complete: {} tracks ({} scanned), {} albums",
+            total_tracks,
+            scanned_tracks,
+            self.albums.len()
+        );
 
         Ok(())
     }
@@ -282,8 +299,12 @@ impl MusicLibrary {
                     scanned_tracks += 1;
 
                     if let Ok(metadata) = extract_metadata(path) {
-                        let artist = metadata.artist.unwrap_or_else(|| "Unknown Artist".to_string());
-                        let album_title = metadata.album.unwrap_or_else(|| "Unknown Album".to_string());
+                        let artist = metadata
+                            .artist
+                            .unwrap_or_else(|| "Unknown Artist".to_string());
+                        let album_title = metadata
+                            .album
+                            .unwrap_or_else(|| "Unknown Album".to_string());
                         let key = (artist.clone(), album_title.clone());
 
                         let album = album_map.entry(key).or_insert_with(|| Album {
@@ -326,9 +347,8 @@ impl MusicLibrary {
         if let Some(db) = &self.db {
             for dir_info in &mut self.directories {
                 if let Ok(Some(scan_time)) = db.get_last_scan_time(&dir_info.path) {
-                    dir_info.last_scanned = Some(
-                        std::time::UNIX_EPOCH + std::time::Duration::from_secs(scan_time)
-                    );
+                    dir_info.last_scanned =
+                        Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(scan_time));
                 }
             }
         }
@@ -410,8 +430,8 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                         metadata.track_number = Some(num);
                     }
                 }
-                Some(symphonia::core::meta::StandardTagKey::Date) |
-                Some(symphonia::core::meta::StandardTagKey::ReleaseDate) => {
+                Some(symphonia::core::meta::StandardTagKey::Date)
+                | Some(symphonia::core::meta::StandardTagKey::ReleaseDate) => {
                     // Try to extract year from date string
                     let date_str = tag.value.to_string();
                     if let Some(year_str) = date_str.split('-').next() {

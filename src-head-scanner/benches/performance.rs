@@ -39,10 +39,7 @@ fn bench_convex_hull() {
         if let Ok(hull) = hull {
             let ms = elapsed.as_secs_f64() * 1000.0;
             let points_per_sec = size as f64 / elapsed.as_secs_f64();
-            println!(
-                "{:<12} {:<15.2} {:<15.0}",
-                size, ms, points_per_sec
-            );
+            println!("{:<12} {:<15.2} {:<15.0}", size, ms, points_per_sec);
         }
     }
 }
@@ -65,7 +62,12 @@ fn bench_sfm_reconstruction() {
             let features = vec![
                 Feature::new(640.0 + frame_idx as f32, 360.0, "nose".to_string(), 0.9),
                 Feature::new(600.0 + frame_idx as f32, 340.0, "left_eye".to_string(), 0.8),
-                Feature::new(680.0 + frame_idx as f32, 340.0, "right_eye".to_string(), 0.8),
+                Feature::new(
+                    680.0 + frame_idx as f32,
+                    340.0,
+                    "right_eye".to_string(),
+                    0.8,
+                ),
                 Feature::new(640.0 + frame_idx as f32, 400.0, "mouth".to_string(), 0.85),
             ];
 
@@ -89,7 +91,10 @@ fn bench_bundle_adjustment() {
     let point_counts = [10, 50, 100, 500];
 
     println!("\n=== Bundle Adjustment Performance ===");
-    println!("{:<12} {:<12} {:<15} {:<15}", "Points", "Cameras", "Time (ms)", "Points/sec");
+    println!(
+        "{:<12} {:<12} {:<15} {:<15}",
+        "Points", "Cameras", "Time (ms)", "Points/sec"
+    );
     println!("{}", "-".repeat(60));
 
     for &num_points in &point_counts {
@@ -140,7 +145,10 @@ fn bench_point_cloud_ops() {
     let sizes = [1000, 5000, 10000, 50000];
 
     println!("\n=== Point Cloud Operations Performance ===");
-    println!("{:<12} {:<20} {:<20}", "Points", "Add Time (ms)", "Downsample (ms)");
+    println!(
+        "{:<12} {:<20} {:<20}",
+        "Points", "Add Time (ms)", "Downsample (ms)"
+    );
     println!("{}", "-".repeat(55));
 
     for &size in &sizes {

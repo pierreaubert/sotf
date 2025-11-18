@@ -362,7 +362,8 @@ fn handle_config_event(
                                         if output_channels != old_channels {
                                             log::info!(
                                                 "[Manager] Channel count changed {}→{} (playback will need restart)",
-                                                old_channels, output_channels
+                                                old_channels,
+                                                output_channels
                                             );
                                         }
                                     }
@@ -558,7 +559,8 @@ fn handle_command(
                         if output_channels != old_channels {
                             log::info!(
                                 "[Manager] Channel count changed {}→{}, updating playback thread",
-                                old_channels, output_channels
+                                old_channels,
+                                output_channels
                             );
                             playback
                                 .send_command(PlaybackCommand::UpdateChannels(output_channels))
@@ -583,7 +585,9 @@ fn handle_command(
         } => {
             log::info!(
                 "[Manager] Set plugin {} parameter {} = {}",
-                plugin_index, param_id, value
+                plugin_index,
+                param_id,
+                value
             );
 
             if let Err(e) = processing.send_command(ProcessingCommand::SetParameter {
@@ -613,7 +617,8 @@ fn handle_command(
         ManagerCommand::AddLoudnessAnalyzer { id, channels } => {
             log::info!(
                 "[Manager] Add loudness analyzer: {} ({} channels)",
-                id, channels
+                id,
+                channels
             );
 
             if let Err(e) =
@@ -636,7 +641,8 @@ fn handle_command(
         ManagerCommand::AddSpectrumAnalyzer { id, channels } => {
             log::info!(
                 "[Manager] Add spectrum analyzer: {} ({} channels)",
-                id, channels
+                id,
+                channels
             );
 
             if let Err(e) =

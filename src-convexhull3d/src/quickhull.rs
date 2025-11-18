@@ -6,7 +6,7 @@
 
 use crate::geometry::{are_coplanar, find_extreme_points};
 use crate::types::{ConvexHull3D, Face, Vertex};
-use crate::{ConvexHullError, Result, EPSILON};
+use crate::{ConvexHullError, EPSILON, Result};
 use std::collections::{HashMap, HashSet};
 
 const MAX_ITERATIONS: usize = 100000;
@@ -98,12 +98,21 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
 
     // Compute the centroid of the initial simplex - this is guaranteed to be inside the hull
     let simplex_centroid = Vertex {
-        x: (vertices[initial_simplex[0]].x + vertices[initial_simplex[1]].x +
-            vertices[initial_simplex[2]].x + vertices[initial_simplex[3]].x) / 4.0,
-        y: (vertices[initial_simplex[0]].y + vertices[initial_simplex[1]].y +
-            vertices[initial_simplex[2]].y + vertices[initial_simplex[3]].y) / 4.0,
-        z: (vertices[initial_simplex[0]].z + vertices[initial_simplex[1]].z +
-            vertices[initial_simplex[2]].z + vertices[initial_simplex[3]].z) / 4.0,
+        x: (vertices[initial_simplex[0]].x
+            + vertices[initial_simplex[1]].x
+            + vertices[initial_simplex[2]].x
+            + vertices[initial_simplex[3]].x)
+            / 4.0,
+        y: (vertices[initial_simplex[0]].y
+            + vertices[initial_simplex[1]].y
+            + vertices[initial_simplex[2]].y
+            + vertices[initial_simplex[3]].y)
+            / 4.0,
+        z: (vertices[initial_simplex[0]].z
+            + vertices[initial_simplex[1]].z
+            + vertices[initial_simplex[2]].z
+            + vertices[initial_simplex[3]].z)
+            / 4.0,
     };
 
     // Build initial hull from simplex
@@ -136,14 +145,23 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
     loop {
         iterations += 1;
         if iterations > MAX_ITERATIONS {
-            log::error!("Max iterations exceeded after {} iterations with {} faces", iterations, hull_faces.len());
+            log::error!(
+                "Max iterations exceeded after {} iterations with {} faces",
+                iterations,
+                hull_faces.len()
+            );
             return Err(ConvexHullError::MaxIterationsExceeded);
         }
 
         if iterations % 100 == 0 {
-            let total_outside_points: usize = hull_faces.iter().map(|f| f.outside_points.len()).sum();
-            log::debug!("Iteration {}: {} faces, {} outside points remaining",
-                iterations, hull_faces.len(), total_outside_points);
+            let total_outside_points: usize =
+                hull_faces.iter().map(|f| f.outside_points.len()).sum();
+            log::debug!(
+                "Iteration {}: {} faces, {} outside points remaining",
+                iterations,
+                hull_faces.len(),
+                total_outside_points
+            );
         }
 
         // Find face with furthest outside point
@@ -165,7 +183,9 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
 
         if visible_faces.is_empty() {
             // This shouldn't happen, but handle gracefully
-            hull_faces[face_idx].outside_points.retain(|&p| p != point_idx);
+            hull_faces[face_idx]
+                .outside_points
+                .retain(|&p| p != point_idx);
             continue;
         }
 
@@ -328,7 +348,13 @@ fn find_initial_simplex(vertices: &[Vertex]) -> Result<[usize; 4]> {
     }
 
     // Verify the simplex is not degenerate
-    if are_coplanar(&vertices[v0], &vertices[v1], &vertices[v2], &vertices[v3], EPSILON) {
+    if are_coplanar(
+        &vertices[v0],
+        &vertices[v1],
+        &vertices[v2],
+        &vertices[v3],
+        EPSILON,
+    ) {
         return Err(ConvexHullError::DegenerateConfiguration);
     }
 
@@ -408,7 +434,8 @@ fn find_horizon(hull_faces: &[HullFace], visible_faces: &[usize]) -> Vec<Edge> {
 
         for (v0, v1) in oriented_edges {
             let normalized = Edge::new(v0, v1);
-            edge_to_faces.entry(normalized)
+            edge_to_faces
+                .entry(normalized)
                 .or_insert_with(Vec::new)
                 .push(face_idx);
         }
@@ -443,7 +470,6 @@ fn find_horizon(hull_faces: &[HullFace], visible_faces: &[usize]) -> Vec<Edge> {
 
     horizon
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -328,7 +328,8 @@ pub fn record_and_analyze(
 
     log::info!(
         "[record_and_analyze] Recording from input channel {} (0-indexed) out of {} total channels",
-        input_channel, hardware_input_channels
+        input_channel,
+        hardware_input_channels
     );
 
     // Shared state for recording
@@ -449,7 +450,8 @@ pub fn record_and_analyze(
 
     log::info!(
         "[record_and_analyze] Matrix: 1 input -> {} outputs, channel {} active (rest silent)",
-        hardware_channels, output_channel
+        hardware_channels,
+        output_channel
     );
 
     manager
@@ -482,7 +484,9 @@ pub fn record_and_analyze(
             let recorded_duration = current_sample_count as f64 / sample_rate as f64;
             log::info!(
                 "[record_and_analyze] Recording progress: {:.2}s / {:.2}s ({} samples)",
-                recorded_duration, expected_duration, current_sample_count
+                recorded_duration,
+                expected_duration,
+                current_sample_count
             );
         }
 
@@ -659,7 +663,8 @@ fn find_device_by_name(
             if name.to_lowercase() == target_pattern {
                 log::info!(
                     "[find_device_by_name] Found {} device (exact match): {}",
-                    device_type, name
+                    device_type,
+                    name
                 );
                 return Ok(device.clone());
             }
@@ -672,7 +677,9 @@ fn find_device_by_name(
             if name.to_lowercase().contains(&target_pattern) {
                 log::info!(
                     "[find_device_by_name] Found {} device (partial match): {} (matched by '{}')",
-                    device_type, name, device_name
+                    device_type,
+                    name,
+                    device_name
                 );
                 return Ok(device.clone());
             }

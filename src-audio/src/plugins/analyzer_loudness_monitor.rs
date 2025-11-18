@@ -56,6 +56,10 @@ pub(crate) struct LoudnessMonitor {
     sample_rate: u32,
     /// Current measurements
     current_loudness: Arc<Mutex<LoudnessInfo>>,
+    /// Per-channel peak trackers (separate from EBU R128 for meter display)
+    channel_peak_trackers: Arc<Mutex<Vec<f64>>>,
+    /// Peak decay rate per sample (for visual meter decay)
+    peak_decay_per_sample: f64,
 }
 
 impl LoudnessMonitor {
@@ -68,11 +72,24 @@ impl LoudnessMonitor {
         let ebur128 = EbuR128::new(channels, sample_rate, Mode::M | Mode::S | Mode::SAMPLE_PEAK)
             .map_err(|e| format!("Failed to create EBU R128 analyzer: {:?}", e))?;
 
+        // Calculate decay rate: decay to 0.0 over ~300ms (roughly -60 dB in 1.5 seconds)
+        // Decay factor per sample = (1 - decay_time_samples)^(-1)
+        // For 300ms hold + exponential decay: peak * (1 - decay_rate)^samples
+        // We want to reach 0.01 (1%) in about 300ms
+        // 0.01 = 1.0 * decay_rate^(sample_rate * 0.3)
+        // decay_rate = 0.01^(1 / (sample_rate * 0.3))
+        let decay_time_seconds = 0.3;
+        let decay_samples = sample_rate as f64 * decay_time_seconds;
+        // Use a linear decay for simplicity: subtract this much per sample
+        let peak_decay_per_sample = 1.0 / decay_samples;
+
         Ok(Self {
             ebur128: Arc::new(Mutex::new(ebur128)),
             channels,
             sample_rate,
             current_loudness: Arc::new(Mutex::new(LoudnessInfo::default())),
+            channel_peak_trackers: Arc::new(Mutex::new(vec![0.0; channels as usize])),
+            peak_decay_per_sample,
         })
     }
 
@@ -92,23 +109,42 @@ impl LoudnessMonitor {
 
         // Update measurements
         let momentary_lufs = ebur.loudness_momentary().unwrap_or(f64::NEG_INFINITY);
-
         let shortterm_lufs = ebur.loudness_shortterm().unwrap_or(f64::NEG_INFINITY);
 
-        // Get peak across all channels and per-channel peaks
+        // Calculate per-channel peaks from the current buffer with decay
+        let num_frames = samples.len() / self.channels as usize;
         let mut peak = 0.0f64;
-        let mut channel_peaks = Vec::with_capacity(self.channels as usize);
-        for ch in 0..self.channels {
-            if let Ok(ch_peak) = ebur.sample_peak(ch) {
-                peak = peak.max(ch_peak);
-                channel_peaks.push(ch_peak);
-            } else {
-                channel_peaks.push(0.0);
+        let mut new_channel_peaks = vec![0.0; self.channels as usize];
+
+        // Get current peak levels by scanning the buffer
+        for frame_idx in 0..num_frames {
+            for ch in 0..self.channels as usize {
+                let sample_idx = frame_idx * self.channels as usize + ch;
+                let sample_abs = samples[sample_idx].abs() as f64;
+                new_channel_peaks[ch] = f64::max(new_channel_peaks[ch], sample_abs);
+                peak = f64::max(peak, sample_abs);
             }
         }
 
-        // Update shared state
+        // Apply decay to existing peaks and take max with new peaks
         {
+            let mut peak_trackers = self.channel_peak_trackers.lock().unwrap();
+
+            // Decay existing peaks
+            for tracker in peak_trackers.iter_mut() {
+                *tracker = (*tracker - self.peak_decay_per_sample * num_frames as f64).max(0.0);
+            }
+
+            // Update with new peaks (take max of decayed and new)
+            for (tracker, new_peak) in peak_trackers.iter_mut().zip(new_channel_peaks.iter()) {
+                *tracker = f64::max(*tracker, *new_peak);
+            }
+
+            // Use the peak trackers as the channel peaks
+            let channel_peaks = peak_trackers.clone();
+            peak = channel_peaks.iter().cloned().fold(0.0, f64::max);
+
+            // Update shared state
             let mut info = self.current_loudness.lock().unwrap();
             info.momentary_lufs = momentary_lufs;
             info.shortterm_lufs = shortterm_lufs;
@@ -145,6 +181,12 @@ impl LoudnessMonitor {
             *info = LoudnessInfo::default();
         }
 
+        // Reset peak trackers
+        {
+            let mut peak_trackers = self.channel_peak_trackers.lock().unwrap();
+            peak_trackers.fill(0.0);
+        }
+
         Ok(())
     }
 }
@@ -156,6 +198,8 @@ impl Clone for LoudnessMonitor {
             channels: self.channels,
             sample_rate: self.sample_rate,
             current_loudness: Arc::clone(&self.current_loudness),
+            channel_peak_trackers: Arc::clone(&self.channel_peak_trackers),
+            peak_decay_per_sample: self.peak_decay_per_sample,
         }
     }
 }
@@ -332,7 +376,8 @@ mod tests {
         // After reset, values should be back to default (negative infinity for LUFS)
         log::info!(
             "After reset - Momentary: {:.1}, Peak: {:.3}",
-            loudness_data.momentary_lufs, loudness_data.peak
+            loudness_data.momentary_lufs,
+            loudness_data.peak
         );
     }
 
@@ -367,7 +412,8 @@ mod tests {
 
         log::info!(
             "5-channel loudness: {:.1} LUFS, peak: {:.3}",
-            loudness_data.momentary_lufs, loudness_data.peak
+            loudness_data.momentary_lufs,
+            loudness_data.peak
         );
 
         assert!(loudness_data.peak > 0.0, "Peak should be non-zero");

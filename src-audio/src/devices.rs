@@ -424,7 +424,10 @@ pub fn set_audio_device(
     if !config_valid {
         log::info!(
             "[AUDIO ERROR] Invalid configuration for device '{}': sample_rate={}, channels={}, format={}",
-            device_name, config.sample_rate, config.channels, config.sample_format
+            device_name,
+            config.sample_rate,
+            config.channels,
+            config.sample_format
         );
         return Err(format!(
             "Configuration not supported by device '{}': sample_rate={}, channels={}, format={}",

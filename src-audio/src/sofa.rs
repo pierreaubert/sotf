@@ -65,8 +65,7 @@ impl SourcePosition {
         let dlat = el2 - el1;
         let dlon = az2 - az1;
 
-        let a = (dlat / 2.0).sin().powi(2)
-            + el1.cos() * el2.cos() * (dlon / 2.0).sin().powi(2);
+        let a = (dlat / 2.0).sin().powi(2) + el1.cos() * el2.cos() * (dlon / 2.0).sin().powi(2);
         let c = 2.0 * a.sqrt().atan2((1.0 - a).sqrt());
 
         c.to_degrees()
@@ -138,7 +137,9 @@ impl SofaFile {
 
         log::info!(
             "[SOFA] Dimensions: M={}, R={}, N={}",
-            num_measurements, num_receivers, ir_length
+            num_measurements,
+            num_receivers,
+            ir_length
         );
 
         if num_receivers != 2 {
@@ -205,9 +206,8 @@ impl SofaFile {
         let offset = index * 2 * self.ir_length;
 
         let ir_left = self.impulse_responses[offset..offset + self.ir_length].to_vec();
-        let ir_right = self.impulse_responses
-            [offset + self.ir_length..offset + 2 * self.ir_length]
-            .to_vec();
+        let ir_right =
+            self.impulse_responses[offset + self.ir_length..offset + 2 * self.ir_length].to_vec();
 
         Some(HrtfData {
             position,
@@ -400,7 +400,11 @@ mod tests {
         let pos2 = SourcePosition::new(90.0, 0.0, 1.0);
 
         let dist = pos1.angular_distance(&pos2);
-        assert!((dist - 90.0).abs() < 0.1, "Expected ~90 degrees, got {}", dist);
+        assert!(
+            (dist - 90.0).abs() < 0.1,
+            "Expected ~90 degrees, got {}",
+            dist
+        );
     }
 
     #[test]

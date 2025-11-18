@@ -47,11 +47,7 @@ impl CameraIntrinsics {
 
     /// Get the camera matrix (K)
     pub fn camera_matrix(&self) -> Matrix3<f32> {
-        Matrix3::new(
-            self.fx, 0.0, self.cx,
-            0.0, self.fy, self.cy,
-            0.0, 0.0, 1.0,
-        )
+        Matrix3::new(self.fx, 0.0, self.cx, 0.0, self.fy, self.cy, 0.0, 0.0, 1.0)
     }
 
     /// Unproject a 2D point to a 3D ray
@@ -147,9 +143,9 @@ pub fn features_to_points(features: &[Feature], frame: &Frame) -> ScannerResult<
 /// Estimate depth based on feature type
 fn estimate_depth_from_feature_type(feature_type: &str) -> f32 {
     match feature_type {
-        "face" => 50.0,      // 50cm typical distance
-        "nose" => 48.0,      // Slightly closer
-        "ear" => 52.0,       // Slightly farther
+        "face" => 50.0, // 50cm typical distance
+        "nose" => 48.0, // Slightly closer
+        "ear" => 52.0,  // Slightly farther
         "eye" => 49.0,
         "mouth" => 49.0,
         _ => 50.0,
@@ -292,8 +288,12 @@ impl SfMReconstructor {
         feature2: &Feature,
     ) -> ScannerResult<Point3<f32>> {
         // Get rays from both cameras
-        let ray1 = self.intrinsics.unproject(feature1.position.x, feature1.position.y);
-        let ray2 = self.intrinsics.unproject(feature2.position.x, feature2.position.y);
+        let ray1 = self
+            .intrinsics
+            .unproject(feature1.position.x, feature1.position.y);
+        let ray2 = self
+            .intrinsics
+            .unproject(feature2.position.x, feature2.position.y);
 
         // Transform rays to world space
         let ray1_world = pose1.rotation * ray1;

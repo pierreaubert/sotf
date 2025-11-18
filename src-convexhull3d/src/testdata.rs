@@ -2,8 +2,8 @@
 //!
 //! This module provides test datasets similar to those used in the C++ convhull_3d library.
 
-use crate::types::Vertex;
 use crate::ConvexHullError;
+use crate::types::Vertex;
 use rand::Rng;
 use std::fs::File;
 use std::io::{BufRead, BufReader};

@@ -107,11 +107,7 @@ impl ConvexHull3D {
 /// If your application requires higher precision, consider keeping the output
 /// as f64 throughout the pipeline.
 pub fn compute_convex_hull_3d(point_cloud: &PointCloud) -> ScannerResult<ConvexHull3D> {
-    let points: Vec<Point3<f32>> = point_cloud
-        .points()
-        .iter()
-        .map(|p| p.position)
-        .collect();
+    let points: Vec<Point3<f32>> = point_cloud.points().iter().map(|p| p.position).collect();
 
     if points.len() < 4 {
         return Err(ScannerError::InsufficientData(
@@ -137,11 +133,7 @@ pub fn compute_convex_hull_3d(point_cloud: &PointCloud) -> ScannerResult<ConvexH
         .map(|v| Point3::new(v.x as f32, v.y as f32, v.z as f32))
         .collect();
 
-    let output_faces: Vec<[usize; 3]> = hull
-        .faces()
-        .iter()
-        .map(|f| [f.v0, f.v1, f.v2])
-        .collect();
+    let output_faces: Vec<[usize; 3]> = hull.faces().iter().map(|f| [f.v0, f.v1, f.v2]).collect();
 
     Ok(ConvexHull3D::new(output_vertices, output_faces))
 }

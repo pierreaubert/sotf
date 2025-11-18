@@ -135,7 +135,10 @@ impl CoverageMap {
             (bbox_min.z + bbox_max.z) / 2.0,
         );
 
-        let radius = ((bbox_max.x - bbox_min.x).max(bbox_max.y - bbox_min.y).max(bbox_max.z - bbox_min.z)) / 2.0;
+        let radius = ((bbox_max.x - bbox_min.x)
+            .max(bbox_max.y - bbox_min.y)
+            .max(bbox_max.z - bbox_min.z))
+            / 2.0;
 
         // Sample points on a sphere and check coverage
         let samples = 100;

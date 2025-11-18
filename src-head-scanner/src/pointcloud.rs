@@ -115,9 +115,10 @@ impl PointCloud {
             return None;
         }
 
-        let sum = self.points.iter().fold(Vector3::zeros(), |acc, p| {
-            acc + p.position.coords
-        });
+        let sum = self
+            .points
+            .iter()
+            .fold(Vector3::zeros(), |acc, p| acc + p.position.coords);
 
         Some(Point3::from(sum / self.points.len() as f32))
     }
@@ -161,11 +162,8 @@ impl PointCloud {
 
         // Compute mean and standard deviation
         let mean = distances.iter().sum::<f32>() / distances.len() as f32;
-        let variance = distances
-            .iter()
-            .map(|d| (d - mean).powi(2))
-            .sum::<f32>()
-            / distances.len() as f32;
+        let variance =
+            distances.iter().map(|d| (d - mean).powi(2)).sum::<f32>() / distances.len() as f32;
         let std_dev = variance.sqrt();
 
         let threshold = mean + std_ratio * std_dev;

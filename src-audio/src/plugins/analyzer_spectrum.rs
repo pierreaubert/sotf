@@ -513,7 +513,9 @@ mod tests {
         log::info!("1kHz test:");
         log::info!(
             "  Bin {} ({:.0}Hz): {:.1}dB",
-            bin_idx, spectrum_data.frequencies[bin_idx], spectrum_data.magnitudes[bin_idx]
+            bin_idx,
+            spectrum_data.frequencies[bin_idx],
+            spectrum_data.magnitudes[bin_idx]
         );
 
         // The 1kHz bin should have more energy than average

@@ -32,7 +32,10 @@ fn test_complete_scanning_workflow() {
 
     // 2. Compute convex hull
     let hull_result = convexhull::compute_convex_hull_3d(&point_cloud);
-    assert!(hull_result.is_ok(), "Convex hull computation should succeed");
+    assert!(
+        hull_result.is_ok(),
+        "Convex hull computation should succeed"
+    );
 
     let hull = hull_result.unwrap();
     assert!(hull.vertex_count() > 0, "Hull should have vertices");
@@ -58,7 +61,12 @@ fn test_sfm_reconstruction_pipeline() {
         let features = vec![
             Feature::new(640.0 + frame_idx as f32, 360.0, "nose".to_string(), 0.9),
             Feature::new(600.0 + frame_idx as f32, 340.0, "left_eye".to_string(), 0.8),
-            Feature::new(680.0 + frame_idx as f32, 340.0, "right_eye".to_string(), 0.8),
+            Feature::new(
+                680.0 + frame_idx as f32,
+                340.0,
+                "right_eye".to_string(),
+                0.8,
+            ),
         ];
 
         let result = sfm.add_frame(features);
@@ -79,14 +87,11 @@ fn test_bundle_adjustment_improves_reconstruction() {
     let adjuster = BundleAdjuster::new(intrinsics);
 
     // Create simple test data
-    let poses = vec![
-        CameraPose::identity(),
-        {
-            let mut pose = CameraPose::identity();
-            pose.position.z = 10.0;
-            pose
-        },
-    ];
+    let poses = vec![CameraPose::identity(), {
+        let mut pose = CameraPose::identity();
+        pose.position.z = 10.0;
+        pose
+    }];
 
     let points = vec![Point3DWithObservations {
         position: Point3::new(0.0, 0.0, 50.0),
@@ -112,10 +117,7 @@ fn test_stereo_depth_estimation() {
     let estimator = StereoDepthEstimator::new(config);
 
     // Test depth map creation and filtering
-    let depths = vec![
-        vec![10.0, 20.0, 0.0],
-        vec![15.0, -5.0, 25.0],
-    ];
+    let depths = vec![vec![10.0, 20.0, 0.0], vec![15.0, -5.0, 25.0]];
     let mut depth_map = DepthMap::new(depths);
 
     assert_eq!(depth_map.dimensions(), (3, 2));
@@ -145,7 +147,7 @@ fn test_texture_mapping_pipeline() {
 fn test_vision_model_preprocessing() {
     // Test that preprocessing functions are available
     // Actual testing would require real frames
-    use vision::{apply_nms, Feature};
+    use vision::{Feature, apply_nms};
 
     let features = vec![
         Feature::new(100.0, 100.0, "test1".to_string(), 0.9),
@@ -154,7 +156,10 @@ fn test_vision_model_preprocessing() {
     ];
 
     let filtered = apply_nms(features, 0.5);
-    assert!(filtered.len() <= 3, "NMS should reduce or maintain feature count");
+    assert!(
+        filtered.len() <= 3,
+        "NMS should reduce or maintain feature count"
+    );
 }
 
 #[test]
@@ -201,10 +206,7 @@ fn test_point_cloud_operations() {
     assert!(!cloud.is_empty());
 
     // Test add_points
-    let more_points = vec![
-        Point::new(7.0, 8.0, 9.0),
-        Point::new(10.0, 11.0, 12.0),
-    ];
+    let more_points = vec![Point::new(7.0, 8.0, 9.0), Point::new(10.0, 11.0, 12.0)];
     cloud.add_points(&more_points);
 
     assert_eq!(cloud.len(), 4);

@@ -9,10 +9,9 @@ use super::{
     ThreadEvent,
 };
 use crate::plugins::{
-    AnalyzerPlugin, CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams,
-    DelayPlugin, DelayPluginParams, EqPluginParams, GainPluginParams, GatePluginParams,
-    LimiterPluginParams, LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext,
-    UpmixerPluginParams,
+    AnalyzerPlugin, CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin,
+    DelayPluginParams, EqPluginParams, GainPluginParams, GatePluginParams, LimiterPluginParams,
+    LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext, UpmixerPluginParams,
 };
 
 use std::collections::HashMap;
@@ -298,7 +297,8 @@ fn run_processing_thread(
 
     log::info!(
         "[Processing Thread] Started - {}Hz, {} channels",
-        sample_rate, channels
+        sample_rate,
+        channels
     );
 
     loop {
@@ -330,7 +330,9 @@ fn run_processing_thread(
                     // TODO: Implement parameter setting
                     log::info!(
                         "[Processing Thread] Set parameter: plugin {} param {} = {}",
-                        plugin_index, param_id, value
+                        plugin_index,
+                        param_id,
+                        value
                     );
                     response_tx.send(ProcessingResponse::Ok).ok();
                 }
@@ -493,7 +495,8 @@ fn build_plugin_host(
     for (i, config) in configs.iter().enumerate() {
         log::info!(
             "[Processing Thread] Loading plugin {}: {}",
-            i, config.plugin_type
+            i,
+            config.plugin_type
         );
 
         match create_plugin(
@@ -687,7 +690,7 @@ fn create_plugin(
 
             let plugin = BinauralDecoderPlugin::from_params(params);
             Ok(Box::new(plugin))
-	}
+        }
 
         "crossover" => {
             let params: CrossoverPluginParams = serde_json::from_value(parameters.clone())

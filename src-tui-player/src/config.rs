@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Application state that persists between sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -143,7 +143,10 @@ mod tests {
         if let Some(dir) = config_dir {
             // On macOS
             #[cfg(target_os = "macos")]
-            assert!(dir.to_string_lossy().contains("Library/Application Support/org.spinorama.sotf"));
+            assert!(
+                dir.to_string_lossy()
+                    .contains("Library/Application Support/org.spinorama.sotf")
+            );
 
             // On Linux/Windows
             #[cfg(any(target_os = "linux", target_os = "windows"))]

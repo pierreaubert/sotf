@@ -11,11 +11,11 @@ use app::App;
 use clap::Parser;
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use events::{handle_events, handle_key_event, AppEvent, PlayerCommand};
+use events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
 use player::Player;
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use std::fs::OpenOptions;
 use std::io;
 use std::path::PathBuf;
@@ -98,8 +98,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Explicit --scan flag provided, OR
     // 2. Database is empty and we have directories to scan
     if (args.scan || db_is_empty) && !app.library.directories.is_empty() {
-        log::info!("Starting library scan (scan={}, db_empty={}, dirs={})",
-                   args.scan, db_is_empty, app.library.directories.len());
+        log::info!(
+            "Starting library scan (scan={}, db_empty={}, dirs={})",
+            args.scan,
+            db_is_empty,
+            app.library.directories.len()
+        );
         if let Err(e) = app.scan_library() {
             log::error!("Failed to scan library: {}", e);
         }
@@ -159,7 +163,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     let sample_rate = 48000.0;
                                     let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
                                     let output_channels = app.plugin_chain.output_channels();
-                                    let _ = player.load_and_play(path, plugins, output_channels, app.current_output_device_name.clone()).await;
+                                    let _ = player
+                                        .load_and_play(
+                                            path,
+                                            plugins,
+                                            output_channels,
+                                            app.current_output_device_name.clone(),
+                                        )
+                                        .await;
                                 } else {
                                     app.is_playing = false;
                                 }
@@ -208,7 +219,14 @@ async fn handle_player_command(
             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
             let output_channels = app.plugin_chain.output_channels();
 
-            player.load_and_play(path, plugins, output_channels, app.current_output_device_name.clone()).await?;
+            player
+                .load_and_play(
+                    path,
+                    plugins,
+                    output_channels,
+                    app.current_output_device_name.clone(),
+                )
+                .await?;
         }
         PlayerCommand::Pause => {
             player.pause().await?;

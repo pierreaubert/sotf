@@ -161,7 +161,8 @@ impl AudioStreamingManager {
 
         log::info!(
             "[AudioStreamingManager] Creating engine: {}Hz, {}ch",
-            config.output_sample_rate, config.output_channels
+            config.output_sample_rate,
+            config.output_channels
         );
 
         // Create and start engine
@@ -183,13 +184,19 @@ impl AudioStreamingManager {
         if *self.pending_spectrum_monitoring.lock() {
             log::debug!("[AudioStreamingManager] Enabling pending spectrum monitoring");
             if let Err(e) = self.enable_spectrum_monitoring() {
-                log::error!("[AudioStreamingManager] Failed to enable spectrum monitoring: {}", e);
+                log::error!(
+                    "[AudioStreamingManager] Failed to enable spectrum monitoring: {}",
+                    e
+                );
             }
         }
         if *self.pending_loudness_monitoring.lock() {
             log::debug!("[AudioStreamingManager] Enabling pending loudness monitoring");
             if let Err(e) = self.enable_loudness_monitoring() {
-                log::error!("[AudioStreamingManager] Failed to enable loudness monitoring: {}", e);
+                log::error!(
+                    "[AudioStreamingManager] Failed to enable loudness monitoring: {}",
+                    e
+                );
             }
         }
 

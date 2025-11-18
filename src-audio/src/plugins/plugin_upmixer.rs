@@ -849,11 +849,14 @@ impl Plugin for UpmixerPlugin {
 
         log::info!(
             "[UPMIXER] process() called: input={} frames, output={} frames",
-            context.num_frames, context.num_frames
+            context.num_frames,
+            context.num_frames
         );
         log::info!(
             "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-            self.input_buffer_fill, self.output_accumulator_fill, self.next_add_position
+            self.input_buffer_fill,
+            self.output_accumulator_fill,
+            self.next_add_position
         );
 
         // Sanity check for threading issues
@@ -888,7 +891,9 @@ impl Plugin for UpmixerPlugin {
                 );
                 log::info!(
                     "[UPMIXER] input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-                    self.input_buffer_fill, self.output_accumulator_fill, self.next_add_position
+                    self.input_buffer_fill,
+                    self.output_accumulator_fill,
+                    self.next_add_position
                 );
                 break;
             }
@@ -899,7 +904,10 @@ impl Plugin for UpmixerPlugin {
             if frames_to_drain > 0 {
                 log::info!(
                     "[UPMIXER] Iter {}: DRAIN {} frames (accum_fill={}, frames_avail={})",
-                    iteration, frames_to_drain, self.output_accumulator_fill, frames_available
+                    iteration,
+                    frames_to_drain,
+                    self.output_accumulator_fill,
+                    frames_available
                 );
 
                 // Copy samples to output
@@ -1003,7 +1011,9 @@ impl Plugin for UpmixerPlugin {
             } else if !can_process_input || !can_process_space {
                 log::info!(
                     "[UPMIXER] Iter {}: SKIP FFT (can_process_input={}, can_process_space={})",
-                    iteration, can_process_input, can_process_space
+                    iteration,
+                    can_process_input,
+                    can_process_space
                 );
             }
 
@@ -1080,7 +1090,9 @@ impl Plugin for UpmixerPlugin {
         if frames_to_drain > 0 {
             log::info!(
                 "[UPMIXER] FINAL DRAIN: {} frames (accum_fill={}, frames_avail={})",
-                frames_to_drain, self.output_accumulator_fill, frames_available
+                frames_to_drain,
+                self.output_accumulator_fill,
+                frames_available
             );
 
             for i in 0..frames_to_drain {
@@ -1386,7 +1398,9 @@ mod tests {
             let non_zero_samples = all_output.iter().filter(|&&x| x.abs() > 1e-6).count();
             log::info!(
                 "Buffer size {}: {} total frames, {} non-zero samples",
-                buffer_size, total_output_samples, non_zero_samples
+                buffer_size,
+                total_output_samples,
+                non_zero_samples
             );
 
             assert!(

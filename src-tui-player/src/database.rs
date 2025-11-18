@@ -95,13 +95,11 @@ impl MusicDatabase {
     /// Get the file modification time for a track by path
     pub fn get_track_mtime(&self, path: &Path) -> SqlResult<Option<u64>> {
         let path_str = path.to_string_lossy();
-        let mut stmt = self.conn.prepare(
-            "SELECT file_mtime FROM tracks WHERE path = ?1"
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_mtime FROM tracks WHERE path = ?1")?;
 
-        let result = stmt.query_row(params![path_str.as_ref()], |row| {
-            row.get::<_, i64>(0)
-        });
+        let result = stmt.query_row(params![path_str.as_ref()], |row| row.get::<_, i64>(0));
 
         match result {
             Ok(mtime) => Ok(Some(mtime as u64)),
@@ -113,17 +111,17 @@ impl MusicDatabase {
     /// Load all albums and tracks from database
     pub fn load_library(&self) -> SqlResult<Vec<Album>> {
         let mut albums_stmt = self.conn.prepare(
-            "SELECT id, artist, title, year, album_art_path FROM albums ORDER BY artist, title"
+            "SELECT id, artist, title, year, album_art_path FROM albums ORDER BY artist, title",
         )?;
 
         let mut albums = Vec::new();
         let album_rows = albums_stmt.query_map([], |row| {
             Ok((
-                row.get::<_, i64>(0)?,  // id
-                row.get::<_, String>(1)?,  // artist
-                row.get::<_, String>(2)?,  // title
-                row.get::<_, Option<i64>>(3)?,  // year
-                row.get::<_, Option<String>>(4)?,  // album_art_path
+                row.get::<_, i64>(0)?,            // id
+                row.get::<_, String>(1)?,         // artist
+                row.get::<_, String>(2)?,         // title
+                row.get::<_, Option<i64>>(3)?,    // year
+                row.get::<_, Option<String>>(4)?, // album_art_path
             ))
         })?;
 
@@ -135,18 +133,19 @@ impl MusicDatabase {
                 "SELECT path, title, track_number, duration_secs
                  FROM tracks
                  WHERE album_id = ?1
-                 ORDER BY track_number"
+                 ORDER BY track_number",
             )?;
 
-            let tracks = tracks_stmt.query_map(params![album_id], |row| {
-                Ok(Track {
-                    path: PathBuf::from(row.get::<_, String>(0)?),
-                    title: row.get::<_, Option<String>>(1)?,
-                    track_number: row.get::<_, Option<i64>>(2)?.map(|n| n as u32),
-                    duration_secs: row.get::<_, Option<i64>>(3)?.map(|n| n as u64),
-                })
-            })?
-            .collect::<SqlResult<Vec<_>>>()?;
+            let tracks = tracks_stmt
+                .query_map(params![album_id], |row| {
+                    Ok(Track {
+                        path: PathBuf::from(row.get::<_, String>(0)?),
+                        title: row.get::<_, Option<String>>(1)?,
+                        track_number: row.get::<_, Option<i64>>(2)?.map(|n| n as u32),
+                        duration_secs: row.get::<_, Option<i64>>(3)?.map(|n| n as u64),
+                    })
+                })?
+                .collect::<SqlResult<Vec<_>>>()?;
 
             albums.push(Album {
                 artist,
@@ -178,7 +177,10 @@ impl MusicDatabase {
                     &album.artist,
                     &album.title,
                     album.year.map(|y| y as i64),
-                    album.album_art_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+                    album
+                        .album_art_path
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().to_string()),
                     now,
                     now,
                 ],
@@ -227,7 +229,12 @@ impl MusicDatabase {
     }
 
     /// Record a scan in the scan history
-    pub fn record_scan(&self, directory: &Path, tracks_found: usize, albums_found: usize) -> SqlResult<()> {
+    pub fn record_scan(
+        &self,
+        directory: &Path,
+        tracks_found: usize,
+        albums_found: usize,
+    ) -> SqlResult<()> {
         let now = current_timestamp();
         self.conn.execute(
             "INSERT INTO scan_history (directory, scanned_at, tracks_found, albums_found)
@@ -249,7 +256,7 @@ impl MusicDatabase {
         // Check for exact match or parent directories
         let mut stmt = self.conn.prepare(
             "SELECT MAX(scanned_at) FROM scan_history
-             WHERE directory = ?1 OR ?1 LIKE directory || '/%' OR directory LIKE ?1 || '/%'"
+             WHERE directory = ?1 OR ?1 LIKE directory || '/%' OR directory LIKE ?1 || '/%'",
         )?;
 
         let result = stmt.query_row(params![dir_str.as_ref()], |row| {
@@ -264,9 +271,8 @@ impl MusicDatabase {
         // Collect all tracks first to avoid borrowing issues
         let tracks: Vec<(i64, String)> = {
             let mut stmt = self.conn.prepare("SELECT id, path FROM tracks")?;
-            stmt.query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?))
-            })?.collect::<SqlResult<Vec<_>>>()?
+            stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<SqlResult<Vec<_>>>()?
         }; // stmt is dropped here, releasing the immutable borrow
 
         let mut to_delete = Vec::new();

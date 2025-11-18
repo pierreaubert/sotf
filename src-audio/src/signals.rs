@@ -484,7 +484,9 @@ mod tests {
                     .fold(0.0_f32, |a, b| a.max(b));
                 log::info!(
                     "Checkpoint {:.1}: peak amplitude = {:.6} (target: {:.6})",
-                    checkpoint, window_peak, amp
+                    checkpoint,
+                    window_peak,
+                    amp
                 );
             }
         }

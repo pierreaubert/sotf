@@ -26,8 +26,8 @@ pub enum InputMode {
 /// Tree view mode for library
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibraryViewMode {
-    Flat,      // Original list view
-    TreeView,  // Hierarchical artist → albums
+    Flat,     // Original list view
+    TreeView, // Hierarchical artist → albums
 }
 
 /// Artist node in tree view
@@ -151,7 +151,10 @@ impl App {
     pub fn new() -> Self {
         // Try to create library with database, fallback to simple library
         let library = MusicLibrary::with_database().unwrap_or_else(|e| {
-            log::warn!("Failed to initialize database, using in-memory library: {}", e);
+            log::warn!(
+                "Failed to initialize database, using in-memory library: {}",
+                e
+            );
             MusicLibrary::new()
         });
 
@@ -325,7 +328,8 @@ impl App {
     pub fn page_down_albums(&mut self, page_size: usize) {
         let albums = self.filtered_albums();
         if !albums.is_empty() {
-            self.selected_album_index = (self.selected_album_index + page_size).min(albums.len() - 1);
+            self.selected_album_index =
+                (self.selected_album_index + page_size).min(albums.len() - 1);
         }
     }
 
@@ -343,7 +347,8 @@ impl App {
 
         let tree_items = self.get_tree_items();
         if !tree_items.is_empty() {
-            self.selected_tree_index = (self.selected_tree_index + page_size).min(tree_items.len() - 1);
+            self.selected_tree_index =
+                (self.selected_tree_index + page_size).min(tree_items.len() - 1);
         }
     }
 
@@ -403,7 +408,11 @@ impl App {
     }
 
     pub fn remove_selected_directory(&mut self) {
-        if self.library.remove_directory(self.selected_directory_index).is_some() {
+        if self
+            .library
+            .remove_directory(self.selected_directory_index)
+            .is_some()
+        {
             if self.selected_directory_index >= self.library.directories.len()
                 && self.selected_directory_index > 0
             {
@@ -420,7 +429,12 @@ impl App {
             // Only toggle if we're on a main directory (level 0)
             if *level == 0 {
                 // Find the directory in our list and toggle it
-                if let Some(dir_info) = self.library.directories.iter_mut().find(|d| d.path == *path) {
+                if let Some(dir_info) = self
+                    .library
+                    .directories
+                    .iter_mut()
+                    .find(|d| d.path == *path)
+                {
                     dir_info.expanded = !dir_info.expanded;
                 }
             } else {
@@ -467,8 +481,15 @@ impl App {
             Ok(_) => {
                 let album_count = self.library.albums.len();
                 let track_count: usize = self.library.albums.iter().map(|a| a.tracks.len()).sum();
-                self.status_message = Some(format!("Scan complete: {} tracks in {} albums", track_count, album_count));
-                log::info!("Scan complete: {} tracks in {} albums", track_count, album_count);
+                self.status_message = Some(format!(
+                    "Scan complete: {} tracks in {} albums",
+                    track_count, album_count
+                ));
+                log::info!(
+                    "Scan complete: {} tracks in {} albums",
+                    track_count,
+                    album_count
+                );
             }
             Err(e) => {
                 self.status_message = Some(format!("Scan failed: {}", e));
@@ -489,11 +510,14 @@ impl App {
     pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
         let config = crate::config::AppConfig {
             output_device: self.current_output_device_name.clone(),
-            queue: self.queue.iter().map(|item| {
-                (item.album.artist.clone(), item.album.title.clone())
-            }).collect(),
+            queue: self
+                .queue
+                .iter()
+                .map(|item| (item.album.artist.clone(), item.album.title.clone()))
+                .collect(),
             queue_index: self.current_queue_index,
-            track_index: self.current_queue_index
+            track_index: self
+                .current_queue_index
                 .and_then(|idx| self.queue.get(idx))
                 .map(|item| item.current_track_index)
                 .unwrap_or(0),
@@ -513,14 +537,21 @@ impl App {
         if let Some(device_name) = &config.output_device {
             self.current_output_device_name = Some(device_name.clone());
             // Find the device index
-            if let Some(idx) = self.output_devices.iter().position(|d| d.name == *device_name) {
+            if let Some(idx) = self
+                .output_devices
+                .iter()
+                .position(|d| d.name == *device_name)
+            {
                 self.selected_output_device_index = idx;
             }
         }
 
         // Restore queue - need to find albums by artist/title
         for (artist, title) in config.queue {
-            if let Some(album) = self.library.albums.iter()
+            if let Some(album) = self
+                .library
+                .albums
+                .iter()
                 .find(|a| a.artist == artist && a.title == title)
                 .cloned()
             {
@@ -562,8 +593,12 @@ impl App {
             }
         }
 
-        log::info!("Loaded app configuration: {} items in queue, device: {:?}, preset: {:?}",
-                   self.queue.len(), self.current_output_device_name, self.last_loaded_preset);
+        log::info!(
+            "Loaded app configuration: {} items in queue, device: {:?}, preset: {:?}",
+            self.queue.len(),
+            self.current_output_device_name,
+            self.last_loaded_preset
+        );
         Ok(())
     }
 
@@ -760,7 +795,8 @@ impl App {
                         self.current_queue_index = Some(idx - 1);
                         // Go to last track of previous album
                         if let Some(prev_item) = self.queue.get_mut(idx - 1) {
-                            prev_item.current_track_index = prev_item.album.tracks.len().saturating_sub(1);
+                            prev_item.current_track_index =
+                                prev_item.album.tracks.len().saturating_sub(1);
                         }
                         return self.current_track_path();
                     }
@@ -826,8 +862,7 @@ impl App {
 
     pub fn select_next_plugin(&mut self) {
         if !self.plugin_chain.is_empty() {
-            self.selected_plugin_index =
-                (self.selected_plugin_index + 1) % self.plugin_chain.len();
+            self.selected_plugin_index = (self.selected_plugin_index + 1) % self.plugin_chain.len();
         }
     }
 
@@ -1031,9 +1066,8 @@ impl App {
                         if let Some(ext) = path.extension() {
                             if ext == "json" {
                                 if let Some(filename) = path.file_name() {
-                                    self.available_plugin_presets.push(
-                                        filename.to_string_lossy().to_string()
-                                    );
+                                    self.available_plugin_presets
+                                        .push(filename.to_string_lossy().to_string());
                                 }
                             }
                         }
@@ -1044,13 +1078,17 @@ impl App {
             }
         }
 
-        log::info!("Found {} plugin presets", self.available_plugin_presets.len());
+        log::info!(
+            "Found {} plugin presets",
+            self.available_plugin_presets.len()
+        );
     }
 
     /// Select the next preset in the list
     pub fn select_next_preset(&mut self) {
         if !self.available_plugin_presets.is_empty() {
-            self.selected_preset_index = (self.selected_preset_index + 1) % self.available_plugin_presets.len();
+            self.selected_preset_index =
+                (self.selected_preset_index + 1) % self.available_plugin_presets.len();
         }
     }
 
@@ -1072,7 +1110,10 @@ impl App {
             return;
         }
 
-        if let Some(preset_filename) = self.available_plugin_presets.get(self.selected_preset_index) {
+        if let Some(preset_filename) = self
+            .available_plugin_presets
+            .get(self.selected_preset_index)
+        {
             if let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
                 let preset_path = presets_dir.join(preset_filename);
                 match self.plugin_chain.load_from_file(&preset_path) {
@@ -1121,7 +1162,8 @@ impl App {
             (path.to_path_buf(), String::new())
         } else if let Some(parent) = path.parent() {
             // User is typing a partial name
-            let prefix = path.file_name()
+            let prefix = path
+                .file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_default();
             (parent.to_path_buf(), prefix)
@@ -1170,7 +1212,8 @@ impl App {
     /// Cycle to the next autocomplete suggestion
     pub fn next_autocomplete(&mut self) {
         if !self.autocomplete_suggestions.is_empty() {
-            self.autocomplete_index = (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
             self.apply_autocomplete();
         }
     }
@@ -1190,7 +1233,7 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
         PluginSettings::Upmixer { .. } => 3, // center_level, lfe_level, surround_delay
         PluginSettings::Compressor { .. } => 5, // threshold, ratio, attack, release, knee
         PluginSettings::Limiter { .. } => 2, // threshold, release
-        PluginSettings::Gate { .. } => 4, // threshold, ratio, attack, release
+        PluginSettings::Gate { .. } => 4,    // threshold, ratio, attack, release
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
     }
 }

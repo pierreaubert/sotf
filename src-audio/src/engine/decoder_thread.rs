@@ -109,14 +109,17 @@ impl DecoderState {
 
         log::info!(
             "[Decoder Thread] Playing: {:?} ({}Hz, {}ch)",
-            path, source_sample_rate, channels
+            path,
+            source_sample_rate,
+            channels
         );
 
         // Create resampler if needed
         let resampler = if source_sample_rate != target_sample_rate {
             log::info!(
                 "[Decoder Thread] Resampling: {}Hz -> {}Hz",
-                source_sample_rate, target_sample_rate
+                source_sample_rate,
+                target_sample_rate
             );
             let rs =
                 ResamplerPlugin::new(channels, source_sample_rate, target_sample_rate, frame_size)
@@ -257,7 +260,8 @@ impl DecoderState {
 
             log::info!(
                 "[Decoder Thread] Seeked to {:.2}s (frame {})",
-                position, frame_position
+                position,
+                frame_position
             );
             Ok(())
         } else {
@@ -287,7 +291,8 @@ fn run_decoder_thread(
 
     log::info!(
         "[Decoder Thread] Started - target {}Hz, frame size {}",
-        target_sample_rate, frame_size
+        target_sample_rate,
+        frame_size
     );
 
     loop {

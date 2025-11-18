@@ -27,11 +27,7 @@ impl Vertex {
 
     /// Create a vertex from spherical coordinates in degrees
     pub fn from_spherical_deg(azimuth_deg: f64, elevation_deg: f64, radius: f64) -> Self {
-        Self::from_spherical(
-            azimuth_deg.to_radians(),
-            elevation_deg.to_radians(),
-            radius,
-        )
+        Self::from_spherical(azimuth_deg.to_radians(), elevation_deg.to_radians(), radius)
     }
 
     /// Dot product with another vertex

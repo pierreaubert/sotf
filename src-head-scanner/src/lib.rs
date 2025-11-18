@@ -95,7 +95,7 @@ impl Default for ScannerConfig {
             frame_width: 1280,
             frame_height: 720,
             fps: 30,
-            min_coverage: 0.85, // 85% coverage required
+            min_coverage: 0.85,  // 85% coverage required
             point_density: 50.0, // 50 points per square cm
             use_gpu: true,
             model_path: None,
@@ -201,7 +201,8 @@ impl HeadScanner {
                 // Capture frame from camera
                 let frame = {
                     let camera_guard = self.camera.read();
-                    let camera = camera_guard.as_ref()
+                    let camera = camera_guard
+                        .as_ref()
                         .ok_or(ScannerError::CameraNotInitialized)?;
                     camera.capture_frame()?
                 };
@@ -311,7 +312,11 @@ impl HeadScanner {
     /// Filter new points to remove duplicates and points too close to existing ones
     ///
     /// This prevents the point cloud from growing unbounded with redundant data
-    fn filter_new_points(&self, existing_cloud: &PointCloud, new_points: Vec<pointcloud::Point>) -> Vec<pointcloud::Point> {
+    fn filter_new_points(
+        &self,
+        existing_cloud: &PointCloud,
+        new_points: Vec<pointcloud::Point>,
+    ) -> Vec<pointcloud::Point> {
         use kiddo::KdTree;
 
         if existing_cloud.is_empty() {

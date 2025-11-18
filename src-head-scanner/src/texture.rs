@@ -43,13 +43,11 @@ impl TexturedMesh {
     /// Create a new textured mesh
     pub fn new(mesh: Mesh, uv_coords: Vec<UVCoord>, texture: RgbImage) -> ScannerResult<Self> {
         if uv_coords.len() != mesh.vertices().len() {
-            return Err(ScannerError::InvalidInput(
-                format!(
-                    "UV coordinate count ({}) must match vertex count ({})",
-                    uv_coords.len(),
-                    mesh.vertices().len()
-                )
-            ));
+            return Err(ScannerError::InvalidInput(format!(
+                "UV coordinate count ({}) must match vertex count ({})",
+                uv_coords.len(),
+                mesh.vertices().len()
+            )));
         }
 
         Ok(Self {
@@ -60,19 +58,22 @@ impl TexturedMesh {
     }
 
     /// Export textured mesh to OBJ format with MTL material
-    pub fn export_obj(&self, obj_path: &str, mtl_path: &str, texture_path: &str) -> ScannerResult<()> {
+    pub fn export_obj(
+        &self,
+        obj_path: &str,
+        mtl_path: &str,
+        texture_path: &str,
+    ) -> ScannerResult<()> {
         use std::fs::File;
         use std::io::Write;
 
         // Save texture image
-        self.texture
-            .save(texture_path)
-            .map_err(|e| {
-                ScannerError::Io(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to save texture to '{}': {}", texture_path, e)
-                ))
-            })?;
+        self.texture.save(texture_path).map_err(|e| {
+            ScannerError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to save texture to '{}': {}", texture_path, e),
+            ))
+        })?;
 
         // Write MTL file
         let mut mtl_file = File::create(mtl_path)?;
@@ -108,9 +109,12 @@ impl TexturedMesh {
             writeln!(
                 obj_file,
                 "f {}/{} {}/{} {}/{}",
-                triangle.v0 + 1, triangle.v0 + 1,
-                triangle.v1 + 1, triangle.v1 + 1,
-                triangle.v2 + 1, triangle.v2 + 1
+                triangle.v0 + 1,
+                triangle.v0 + 1,
+                triangle.v1 + 1,
+                triangle.v1 + 1,
+                triangle.v2 + 1,
+                triangle.v2 + 1
             )?;
         }
 
@@ -158,7 +162,7 @@ impl TextureMapper {
     ) -> ScannerResult<TexturedMesh> {
         if frames.is_empty() {
             return Err(ScannerError::InvalidInput(
-                "At least one frame required for texturing".to_string()
+                "At least one frame required for texturing".to_string(),
             ));
         }
 
@@ -172,13 +176,7 @@ impl TextureMapper {
         let triangle_cameras = self.select_best_camera_per_triangle(mesh, frames);
 
         // Project and blend textures
-        self.project_multi_view_texture(
-            mesh,
-            &uv_coords,
-            frames,
-            &triangle_cameras,
-            &mut texture,
-        )?;
+        self.project_multi_view_texture(mesh, &uv_coords, frames, &triangle_cameras, &mut texture)?;
 
         TexturedMesh::new(mesh.clone(), uv_coords, texture)
     }
@@ -301,13 +299,7 @@ impl TextureMapper {
             let uv2 = uv_coords[triangle.v2];
 
             // Rasterize triangle in texture space and sample from frame
-            self.rasterize_triangle_texture(
-                texture,
-                frame,
-                &uv0,
-                &uv1,
-                &uv2,
-            )?;
+            self.rasterize_triangle_texture(texture, frame, &uv0, &uv1, &uv2)?;
         }
 
         Ok(())

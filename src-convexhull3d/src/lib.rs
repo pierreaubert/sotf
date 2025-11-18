@@ -21,17 +21,17 @@
 //! println!("Number of faces: {}", hull.num_faces());
 //! ```
 
-mod types;
-mod quickhull;
-mod geometry;
 mod export;
+mod geometry;
+mod quickhull;
+mod types;
 
 // Make testdata publicly available for tests
 pub mod testdata;
 
 // 3D types and functions
-pub use types::{Vertex, Face, ConvexHull3D};
-pub use export::{export_obj, export_html};
+pub use export::{export_html, export_obj};
+pub use types::{ConvexHull3D, Face, Vertex};
 
 /// Error types for convex hull operations
 #[derive(Debug, thiserror::Error)]

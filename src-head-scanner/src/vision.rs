@@ -6,9 +6,7 @@ use nalgebra::Point2;
 use ndarray::{Array, Array4};
 use opencv::{
     core::{Mat, Point as CvPoint, Scalar, Vector},
-    features2d,
-    imgproc,
-    objdetect,
+    features2d, imgproc, objdetect,
     prelude::*,
 };
 use ort::{Environment, ExecutionProvider, Session, SessionBuilder, Value};
@@ -60,7 +58,9 @@ impl VisionModel {
             Environment::builder()
                 .with_name("head_scanner")
                 .build()
-                .map_err(|e| ScannerError::VisionModel(format!("Failed to create ONNX environment: {}", e)))?
+                .map_err(|e| {
+                    ScannerError::VisionModel(format!("Failed to create ONNX environment: {}", e))
+                })?,
         );
 
         let session = SessionBuilder::new(&environment)?
@@ -79,7 +79,8 @@ impl VisionModel {
         let input_tensor = self.preprocess_image(frame)?;
 
         // Run inference
-        let outputs = self.session
+        let outputs = self
+            .session
             .run(vec![input_tensor])
             .map_err(|e| ScannerError::VisionModel(format!("Inference failed: {}", e)))?;
 
@@ -125,23 +126,31 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
             // Try common installation paths
             let paths = [
                 "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml", // Linux (opencv4)
-                "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml",  // Linux (opencv3)
+                "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml", // Linux (opencv3)
                 "/usr/local/share/opencv4/haarcascades/haarcascade_frontalface_default.xml", // macOS (opencv4)
-                "/usr/local/share/opencv/haarcascades/haarcascade_frontalface_default.xml",  // macOS (opencv3)
+                "/usr/local/share/opencv/haarcascades/haarcascade_frontalface_default.xml", // macOS (opencv3)
                 "C:/opencv/build/etc/haarcascades/haarcascade_frontalface_default.xml", // Windows
             ];
 
-            paths.iter()
+            paths
+                .iter()
                 .find(|&&p| std::path::Path::new(p).exists())
                 .map(|&p| p.to_string())
         })
-        .ok_or_else(|| ScannerError::VisionModel(
-            "Could not find haarcascade_frontalface_default.xml. \
-             Set OPENCV_HAARCASCADES_PATH environment variable or install OpenCV properly.".to_string()
-        ))?;
+        .ok_or_else(|| {
+            ScannerError::VisionModel(
+                "Could not find haarcascade_frontalface_default.xml. \
+             Set OPENCV_HAARCASCADES_PATH environment variable or install OpenCV properly."
+                    .to_string(),
+            )
+        })?;
 
-    let mut face_cascade = objdetect::CascadeClassifier::new(&face_cascade_path)
-        .map_err(|e| ScannerError::VisionModel(format!("Failed to load face cascade from '{}': {}", face_cascade_path, e)))?;
+    let mut face_cascade = objdetect::CascadeClassifier::new(&face_cascade_path).map_err(|e| {
+        ScannerError::VisionModel(format!(
+            "Failed to load face cascade from '{}': {}",
+            face_cascade_path, e
+        ))
+    })?;
 
     if face_cascade.empty() {
         return Err(ScannerError::VisionModel(
@@ -154,11 +163,11 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
     face_cascade.detect_multi_scale(
         &gray,
         &mut faces,
-        1.1,  // scale factor
-        3,    // min neighbors
-        0,    // flags
-        opencv::core::Size::new(30, 30),  // min size
-        opencv::core::Size::new(0, 0),    // max size
+        1.1,                             // scale factor
+        3,                               // min neighbors
+        0,                               // flags
+        opencv::core::Size::new(30, 30), // min size
+        opencv::core::Size::new(0, 0),   // max size
     )?;
 
     // Convert detected faces to features
@@ -352,11 +361,8 @@ pub fn preprocess_image_for_model(
     }
 
     // Create ndarray with shape [1, C, H, W]
-    let array = Array::from_shape_vec(
-        (1, channels, height, width),
-        nchw_data,
-    )
-    .map_err(|e| ScannerError::VisionModel(format!("Failed to create ndarray: {}", e)))?;
+    let array = Array::from_shape_vec((1, channels, height, width), nchw_data)
+        .map_err(|e| ScannerError::VisionModel(format!("Failed to create ndarray: {}", e)))?;
 
     // Convert to ONNX Value
     // Note: This creates a CPU tensor. For GPU, use CUDAExecutionProvider
@@ -432,12 +438,7 @@ pub fn postprocess_model_outputs(
                 let confidence = tensor[offset + 2];
 
                 if confidence > 0.3 {
-                    features.push(Feature::new(
-                        x,
-                        y,
-                        format!("keypoint_{}", i),
-                        confidence,
-                    ));
+                    features.push(Feature::new(x, y, format!("keypoint_{}", i), confidence));
                 }
             }
         }
