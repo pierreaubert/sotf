@@ -152,6 +152,78 @@ impl ProcessingState {
         self.host.output_channels()
     }
 
+    /// Recreate all analyzers with new channel count
+    fn recreate_analyzers_for_channels(&mut self, new_channels: usize) -> Result<(), String> {
+        use crate::plugins::{LoudnessMonitorPlugin, SpectrumAnalyzerPlugin};
+
+        // Collect analyzer IDs and types before recreating
+        let analyzer_info: Vec<(String, bool)> = self
+            .analyzers
+            .keys()
+            .map(|id| {
+                let is_spectrum = id.contains("spectrum");
+                (id.clone(), is_spectrum)
+            })
+            .collect();
+
+        if analyzer_info.is_empty() {
+            return Ok(());
+        }
+
+        log::info!(
+            "[Processing Thread] Recreating {} analyzers for {} channels",
+            analyzer_info.len(),
+            new_channels
+        );
+
+        // Recreate each analyzer with new channel count
+        for (id, is_spectrum) in analyzer_info {
+            self.analyzers.remove(&id);
+
+            if is_spectrum {
+                match SpectrumAnalyzerPlugin::new(new_channels) {
+                    Ok(mut plugin) => {
+                        plugin.initialize(self.sample_rate)?;
+                        self.analyzers.insert(id.clone(), Box::new(plugin));
+                        log::debug!(
+                            "[Processing Thread] Recreated spectrum analyzer '{}' with {} channels",
+                            id,
+                            new_channels
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[Processing Thread] Failed to recreate spectrum analyzer '{}': {}",
+                            id,
+                            e
+                        );
+                    }
+                }
+            } else {
+                match LoudnessMonitorPlugin::new(new_channels) {
+                    Ok(mut plugin) => {
+                        plugin.initialize(self.sample_rate)?;
+                        self.analyzers.insert(id.clone(), Box::new(plugin));
+                        log::debug!(
+                            "[Processing Thread] Recreated loudness analyzer '{}' with {} channels",
+                            id,
+                            new_channels
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "[Processing Thread] Failed to recreate loudness analyzer '{}': {}",
+                            id,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Add an analyzer plugin
     fn add_analyzer(
         &mut self,
@@ -214,6 +286,7 @@ impl ProcessingState {
                 );
 
                 // Immediate swap - no crossfade possible when channel count changes
+                let old_channels = self.channels;
                 std::mem::swap(&mut self.host, next_host);
                 self.channels = self.host.output_channels();
                 self.next_host = None;
@@ -224,6 +297,13 @@ impl ProcessingState {
                     "[Processing Thread] Updated output channels: {}",
                     self.channels
                 );
+
+                // Recreate analyzers for new channel count
+                if old_channels != self.channels {
+                    if let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
+                        log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                    }
+                }
 
                 // Process with new host
                 self.host.process(input, output)?;
@@ -253,10 +333,19 @@ impl ProcessingState {
                 if self.crossfade_pos >= 1.0 {
                     log::debug!("[Processing Thread] Hot-reload complete");
                     // Swap in the new host
+                    let old_channels = self.channels;
                     std::mem::swap(&mut self.host, next_host);
+                    self.channels = self.host.output_channels();
                     self.next_host = None;
                     self.crossfade_pos = 0.0;
                     self.crossfade_current = 0;
+
+                    // Recreate analyzers if channel count changed (shouldn't happen in crossfade path, but be safe)
+                    if old_channels != self.channels {
+                        if let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
+                            log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                        }
+                    }
                 }
             }
         } else {
@@ -266,7 +355,9 @@ impl ProcessingState {
 
         // Feed audio to analyzer plugins
         if !self.analyzers.is_empty() {
-            let num_frames = output.len() / self.channels;
+            // Use actual host output channels, not cached self.channels
+            let output_channels = self.host.output_channels();
+            let num_frames = output.len() / output_channels;
             let context = ProcessContext {
                 sample_rate: self.sample_rate,
                 num_frames,
@@ -403,7 +494,7 @@ fn run_processing_thread(
                     }
                 },
                 ProcessingCommand::GetAnalyzerData(analyzer_id) => {
-                    log::debug!("[Processing Thread] Get analyzer data: {}", analyzer_id);
+                    // log::debug!("[Processing Thread] Get analyzer data: {}", analyzer_id);
                     match state.get_analyzer_data(&analyzer_id) {
                         Ok(data) => {
                             response_tx

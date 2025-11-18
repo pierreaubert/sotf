@@ -174,17 +174,17 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(8),      // SOTF title
+            Constraint::Length(6),      // SOTF title
             Constraint::Min(0),         // Screen boxes (expandable)
-            Constraint::Length(25),     // Output device
+            Constraint::Length(30),     // Output device
         ])
         .split(area);
 
     // Draw "SOTF" on the left
-    let sotf_title = Paragraph::new("SOTF")
+    let sotf_title = Paragraph::new("SotF")
         .style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
         )
         .alignment(Alignment::Left)
@@ -234,13 +234,13 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
         // Box with screen label
         let style = if is_active {
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
+                .fg(Color::Green)
+                .bg(Color::Black)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
                 .fg(Color::White)
-                .bg(Color::DarkGray)
+                .bg(Color::Black)
         };
 
         spans.push(Span::raw("[ "));
@@ -664,7 +664,7 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
         "Queue (empty) - Add albums from library".to_string()
     } else {
         format!(
-            "Queue ({}) - 'p' play, SPACE pause, 'n' next, 'b' prev, Enter expand, 'd' remove",
+            "Queue ({}) - Enter: play album, 'p' play, SPACE pause, 'n' next, 'b' prev, 'l'/'h' expand, 'd' remove",
             app.queue.len()
         )
     };
@@ -686,8 +686,14 @@ fn draw_spectrum_screen(f: &mut Frame, area: Rect, app: &App) {
             .split(area);
 
         // Info box with spectrum stats
+        let status = if app.spectrum_visible {
+            "Live"
+        } else {
+            "Last Snapshot"
+        };
         let info_text = format!(
-            "Bins: {} | Freq Range: {:.0}Hz - {:.0}Hz | Press 'S' to toggle",
+            "[{}] Bins: {} | Freq Range: {:.0}Hz - {:.0}Hz | Press 'S' to toggle",
+            status,
             spectrum.frequencies.len(),
             spectrum.frequencies.first().unwrap_or(&0.0),
             spectrum.frequencies.last().unwrap_or(&0.0)
@@ -794,37 +800,18 @@ fn draw_spectrum_screen(f: &mut Frame, area: Rect, app: &App) {
             }
         }
     } else {
-        // No spectrum data available - check if spectrum is enabled or disabled
-        let (message, title) = if app.spectrum_visible {
-            // Spectrum is enabled but data not available yet
-            (
-                vec![
-                    Line::from(""),
-                    Line::from("Waiting for spectrum data..."),
-                    Line::from(""),
-                    Line::from("Make sure audio is playing"),
-                    Line::from(""),
-                    Line::from("Press 'S' to disable"),
-                ],
-                "Spectrum - Loading...",
-            )
-        } else {
-            // Spectrum is disabled
-            (
-                vec![
-                    Line::from(""),
-                    Line::from("Spectrum Analyzer Disabled"),
-                    Line::from(""),
-                    Line::from("Press 'S' to enable spectrum analyzer"),
-                    Line::from(""),
-                    Line::from("Note: Spectrum will only show when audio is playing"),
-                ],
-                "Spectrum - Disabled",
-            )
-        };
+        // No spectrum data available - show disabled message
+        let message = vec![
+            Line::from(""),
+            Line::from("Spectrum Analyzer Disabled"),
+            Line::from(""),
+            Line::from("Press 'S' to enable spectrum analyzer"),
+            Line::from(""),
+            Line::from("Note: Spectrum will show when audio is playing"),
+        ];
 
         let paragraph = Paragraph::new(message)
-            .block(Block::default().borders(Borders::ALL).title(title))
+            .block(Block::default().borders(Borders::ALL).title("Spectrum - Disabled"))
             .alignment(Alignment::Center);
         f.render_widget(paragraph, area);
     }
@@ -1099,7 +1086,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
         for (ch_idx, &peak) in loudness.channel_peaks.iter().enumerate() {
             let peak_db = 20.0 * peak.max(0.0001).log10();
 
-            // Non-linear meter scaling:
+            // Non-linear meter scaling for better resolution at higher levels:
             // [-20, 0]   -> 50% of meter (top half)
             // [-40, -20] -> 30% of meter
             // [-60, -40] -> 20% of meter (bottom)
@@ -1182,6 +1169,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
         // Draw dB scale legend on the left
         if legend_width > 0 && meter_height > 0 {
             // Helper function to convert dB to non-linear fill ratio
+            // Same scale as meter bars: [-20,0] = 50%, [-40,-20] = 30%, [-60,-40] = 20%
             let db_to_ratio = |db: i32| -> f64 {
                 let db = db as f64;
                 if db >= -20.0 {
@@ -1238,24 +1226,6 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                             height: 1,
                         },
                     );
-
-                    // Draw horizontal line across meters at specific dB levels (-10, -20, -30, -40, -50)
-                    // Skip 0 and -5 to avoid clutter, and skip -60 as it's at the bottom
-                    if db % 10 == 0 && db != 0 && db != -60 {
-                        let line_width = meters_width.saturating_sub(1);
-                        if line_width > 0 {
-                            let line = "_".repeat(line_width as usize);
-                            f.render_widget(
-                                Paragraph::new(line).style(Style::default().fg(Color::DarkGray)),
-                                Rect {
-                                    x: meters_start_x,
-                                    y: y_pos,
-                                    width: line_width,
-                                    height: 1,
-                                },
-                            );
-                        }
-                    }
                 }
             }
         }

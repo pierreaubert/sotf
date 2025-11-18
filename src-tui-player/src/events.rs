@@ -266,6 +266,10 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Enter => {
+            // Jump to selected album and play its first track
+            app.jump_to_selected_album().map(PlayerCommand::Play)
+        }
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Left | KeyCode::Char('h') => {
             // Toggle expansion of the selected queue item
             app.toggle_queue_item_expansion();
             None

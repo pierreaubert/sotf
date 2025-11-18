@@ -695,7 +695,7 @@ fn handle_command(
             ManagerResponse::Position(position)
         }
         ManagerCommand::GetAnalyzerData(analyzer_id) => {
-            log::debug!("[Manager] Get analyzer data: {}", analyzer_id);
+            // log::debug!("[Manager] Get analyzer data: {}", analyzer_id);
 
             if let Err(e) = processing.send_command(ProcessingCommand::GetAnalyzerData(analyzer_id))
             {

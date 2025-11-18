@@ -160,8 +160,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                             log::info!("Spectrum analyzer enabled");
                         } else {
                             let _ = player.disable_spectrum_monitoring().await;
-                            app.spectrum_info = None;
-                            log::info!("Spectrum analyzer disabled");
+                            // Keep the last spectrum data to avoid flickering
+                            log::info!("Spectrum analyzer disabled (keeping last data)");
                         }
                         spectrum_was_visible = app.spectrum_visible;
                     }
@@ -173,25 +173,34 @@ async fn run_app<B: ratatui::backend::Backend>(
                         }
 
                         // Check if playback ended and auto-advance
-                        if let Ok(is_playing) = player.is_playing().await
-                            && !is_playing && app.current_queue_index.is_some() {
+                        if let Ok(is_playing) = player.is_playing().await {
+                            if !is_playing && app.current_queue_index.is_some() {
+                                log::info!("[TUI] Track ended, attempting auto-advance...");
                                 // Track ended, advance to next
                                 if let Some(path) = app.next_track() {
+                                    log::info!("[TUI] Auto-advancing to: {:?}", path);
                                     let sample_rate = 48000.0;
                                     let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
                                     let output_channels = app.plugin_chain.output_channels();
-                                    let _ = player
+                                    if let Err(e) = player
                                         .load_and_play(
                                             path,
                                             plugins,
                                             output_channels,
                                             app.current_output_device_name.clone(),
                                         )
-                                        .await;
+                                        .await {
+                                        log::error!("[TUI] Failed to auto-advance: {}", e);
+                                        app.is_playing = false;
+                                    } else {
+                                        log::info!("[TUI] Auto-advance successful");
+                                    }
                                 } else {
+                                    log::info!("[TUI] No more tracks in queue, stopping playback");
                                     app.is_playing = false;
                                 }
                             }
+                        }
                     }
 
                     // Update loudness data
