@@ -294,7 +294,8 @@ install-ubuntu-common:
 			 libasound2-dev \
 			 libnetcdf-dev \
 			 libopencv-dev \
-			 libclang-dev
+			 libclang-dev \
+			 webkit2gtk-driver
 
 install-ubuntu-x86-driver :
 		sudo apt install -y \
