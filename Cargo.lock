@@ -7115,6 +7115,7 @@ dependencies = [
  "id3",
  "log",
  "metaflac",
+ "parking_lot",
  "ratatui",
  "rusqlite",
  "serde",
@@ -7130,7 +7131,6 @@ dependencies = [
  "symphonia-format-riff",
  "symphonia-metadata",
  "thiserror 2.0.17",
- "tokio",
  "walkdir",
 ]
 
