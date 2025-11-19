@@ -83,12 +83,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
 
-        // Global volume controls with Shift+Arrow keys
-        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+        // Volume controls (in case Shift+Arrow doesn't work)
+        KeyCode::Char('+') | KeyCode::Char('=') => {
             app.increase_volume();
             Some(PlayerCommand::SetVolume(app.volume))
         }
-        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+        KeyCode::Char('-') | KeyCode::Char('_') => {
             app.decrease_volume();
             Some(PlayerCommand::SetVolume(app.volume))
         }
@@ -132,17 +132,17 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            match app.library_view_mode {
+	    match app.library_view_mode {
                 LibraryViewMode::Flat => app.select_previous_album(),
                 LibraryViewMode::TreeView => app.select_previous_tree_item(),
-            }
+	    }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            match app.library_view_mode {
+	    match app.library_view_mode {
                 LibraryViewMode::Flat => app.select_next_album(),
                 LibraryViewMode::TreeView => app.select_next_tree_item(),
-            }
+	    }
             None
         }
         KeyCode::PageUp => {
@@ -305,14 +305,7 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Previous track
             app.previous_track().map(PlayerCommand::Play)
         }
-        KeyCode::Char('+') | KeyCode::Char('=') => {
-            app.increase_volume();
-            Some(PlayerCommand::SetVolume(app.volume))
-        }
-        KeyCode::Char('-') => {
-            app.decrease_volume();
-            Some(PlayerCommand::SetVolume(app.volume))
-        }
+        // Note: Volume controls (+/-) are now global (see handle_normal_mode)
         _ => None,
     }
 }
