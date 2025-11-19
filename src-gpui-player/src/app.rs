@@ -157,7 +157,7 @@ pub struct App {
 /// GPUI-compatible state wrapper
 pub struct AppState {
     pub app: App,
-    pub player: Arc<Player>,
+    pub player: Arc<parking_lot::Mutex<crate::player::Player>>,
 }
 
 impl App {

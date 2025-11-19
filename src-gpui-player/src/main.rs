@@ -22,13 +22,11 @@ fn main() {
 
     log::info!("SOTF GPUI Player starting...");
 
-    gpui::App::new().run(|cx: &mut AppContext| {
-        // Load assets
-        cx.set_global(Assets);
-
+    gpui::App::new(Assets).run(move |cx| {
         // Create window with app state
         cx.open_window(
             WindowOptions {
+                app_id: Some("com.spinorama.sotf-player".into()),
                 window_bounds: Some(WindowBounds::Windowed(Bounds {
                     origin: Point::new(px(100.0), px(100.0)),
                     size: Size {
@@ -42,10 +40,12 @@ fn main() {
                     traffic_light_position: None,
                 }),
                 window_background: WindowBackgroundAppearance::Opaque,
-                focus: true,
-                show: true,
+                focus: Some(true),
+                show: Some(true),
                 kind: WindowKind::Normal,
                 is_movable: true,
+                is_minimizable: Some(true),
+                is_resizable: Some(true),
                 display_id: None,
             },
             |cx| {
@@ -66,16 +66,17 @@ fn main() {
                         log::warn!("Could not load saved configuration: {}", e);
                     }
 
+                    let mut player = Player::new();
+                    // Enable loudness monitoring
+                    if let Err(e) = player.enable_loudness_monitoring() {
+                        log::warn!("Failed to enable loudness monitoring: {}", e);
+                    }
+
                     AppState {
                         app,
-                        player: Arc::new(Player::new()),
+                        player: Arc::new(parking_lot::Mutex::new(player)),
                     }
                 });
-
-                // Enable loudness monitoring
-                if let Ok(state) = app_state.read(cx).player.enable_loudness_monitoring() {
-                    log::info!("Loudness monitoring enabled");
-                }
 
                 // Set up keyboard actions
                 cx.on_action(|_: &Quit, cx| {

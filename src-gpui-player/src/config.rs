@@ -1,9 +1,46 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Application state that persists between sessions
+/// Application configuration persisted between sessions
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+pub struct Config {
+    /// Directories to scan for music files
+    pub directories: Vec<crate::library::DirectoryInfo>,
+    /// Last loaded plugin preset name
+    pub last_loaded_plugin_preset: Option<String>,
+}
+
+impl Config {
+    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+        if let Some(path) = get_app_state_path() {
+            if path.exists() {
+                let json = std::fs::read_to_string(path)?;
+                let config = serde_json::from_str(&json)?;
+                Ok(config)
+            } else {
+                Ok(Self {
+                    directories: Vec::new(),
+                    last_loaded_plugin_preset: None,
+                })
+            }
+        } else {
+            Err("Could not determine config directory".into())
+        }
+    }
+
+    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(path) = get_app_state_path() {
+            let json = serde_json::to_string_pretty(self)?;
+            std::fs::write(path, json)?;
+            Ok(())
+        } else {
+            Err("Could not determine config directory".into())
+        }
+    }
+}
+
+/// Application state that persists between sessions
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     /// Currently selected output device name
     pub output_device: Option<String>,
