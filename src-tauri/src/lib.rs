@@ -18,11 +18,14 @@ mod tauri_compute_eq;
 mod tauri_generate_eq;
 mod tauri_optim;
 mod tauri_plots;
+mod tauri_roomeq; // NEW: Multi-channel room EQ optimization
 mod tauri_speakers;
 
 pub use tauri_speakers::{get_speaker_measurements, get_speaker_versions, get_speakers};
 
 pub use tauri_optim::{CancellationState, cancel_optimization, run_optimization};
+
+pub use tauri_roomeq::{cancel_roomeq_optimization, run_roomeq_optimization};
 
 pub use tauri_plots::{
     generate_peq_plots, generate_plot_filters, generate_plot_spin, generate_plot_spin_details,
@@ -204,6 +207,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             run_optimization,
             cancel_optimization,
+            run_roomeq_optimization,
+            cancel_roomeq_optimization,
             get_speakers,
             get_speaker_versions,
             get_speaker_measurements,
