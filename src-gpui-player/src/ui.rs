@@ -146,10 +146,7 @@ impl PlayerView {
 
     fn update_playback_state(&mut self, cx: &mut ViewContext<Self>) {
         self.state.update(cx, |state, cx| {
-            let playback_state =
-                state
-                    .player
-                    .get_playback_state(state.app.spectrum_visible);
+            let playback_state = state.player.get_playback_state(state.app.spectrum_visible);
 
             state.app.position_secs = playback_state.position_secs;
             state.app.loudness_info = playback_state.loudness;
@@ -226,19 +223,14 @@ impl Render for PlayerView {
             .bg(rgb(0x1e1e1e))
             .text_color(rgb(0xcccccc))
             .child(self.render_header(cx))
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .child(match state.app.current_screen {
-                        Screen::Library => self.render_library_screen(cx),
-                        Screen::Queue => self.render_queue_screen(cx),
-                        Screen::Plugins => self.render_plugins_screen(cx),
-                        Screen::Devices => self.render_devices_screen(cx),
-                        Screen::Spectrum => self.render_spectrum_screen(cx),
-                        Screen::DirectoryManager => self.render_directory_screen(cx),
-                    }),
-            )
+            .child(div().flex().flex_1().child(match state.app.current_screen {
+                Screen::Library => self.render_library_screen(cx),
+                Screen::Queue => self.render_queue_screen(cx),
+                Screen::Plugins => self.render_plugins_screen(cx),
+                Screen::Devices => self.render_devices_screen(cx),
+                Screen::Spectrum => self.render_spectrum_screen(cx),
+                Screen::DirectoryManager => self.render_directory_screen(cx),
+            }))
             .child(self.render_footer(cx))
     }
 }
@@ -333,9 +325,7 @@ impl PlayerView {
                                     .flex()
                                     .flex_col()
                                     .child(
-                                        div()
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .child(&album.title),
+                                        div().font_weight(FontWeight::SEMIBOLD).child(&album.title),
                                     )
                                     .child(
                                         div()
@@ -398,16 +388,13 @@ impl PlayerView {
                                             .text_color(rgb(0x999999))
                                             .child(&item.album.artist),
                                     )
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(rgb(0x666666))
-                                            .child(format!(
-                                                "Track {}/{}",
-                                                item.current_track_index + 1,
-                                                item.album.tracks.len()
-                                            )),
-                                    ),
+                                    .child(div().text_xs().text_color(rgb(0x666666)).child(
+                                        format!(
+                                            "Track {}/{}",
+                                            item.current_track_index + 1,
+                                            item.album.tracks.len()
+                                        ),
+                                    )),
                             )
                     })),
             )
@@ -434,13 +421,11 @@ impl PlayerView {
                     .flex_col()
                     .gap_2()
                     .child(div().text_sm().child("Plugin chain:"))
-                    .child(div().text_sm().text_color(rgb(0x999999)).child(
-                        format!(
-                            "{} plugins, {} output channels",
-                            state.app.plugin_chain.plugins.len(),
-                            state.app.plugin_chain.output_channels()
-                        ),
-                    )),
+                    .child(div().text_sm().text_color(rgb(0x999999)).child(format!(
+                        "{} plugins, {} output channels",
+                        state.app.plugin_chain.plugins.len(),
+                        state.app.plugin_chain.output_channels()
+                    ))),
             )
     }
 
@@ -460,12 +445,13 @@ impl PlayerView {
                     .child("Audio Devices"),
             )
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .children(state.app.output_devices.iter().enumerate().map(
-                        |(idx, device)| {
+                div().flex().flex_col().gap_2().children(
+                    state
+                        .app
+                        .output_devices
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, device)| {
                             let is_selected = state.app.selected_output_device_index == idx;
                             div()
                                 .p_3()
@@ -481,22 +467,19 @@ impl PlayerView {
                                                 .font_weight(FontWeight::SEMIBOLD)
                                                 .child(&device.name),
                                         )
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .text_color(rgb(0x999999))
-                                                .child(format!(
+                                        .child(div().text_sm().text_color(rgb(0x999999)).child(
+                                            format!(
                                                     "{} channels",
                                                     device
                                                         .default_config
                                                         .as_ref()
                                                         .map(|c| c.channels)
                                                         .unwrap_or(0)
-                                                )),
-                                        ),
+                                                ),
+                                        )),
                                 )
-                        },
-                    )),
+                        }),
+                ),
             )
     }
 
@@ -513,7 +496,11 @@ impl PlayerView {
                     .mb_4()
                     .child("Spectrum Analyzer"),
             )
-            .child(div().text_sm().child("Spectrum visualization coming soon..."))
+            .child(
+                div()
+                    .text_sm()
+                    .child("Spectrum visualization coming soon..."),
+            )
     }
 
     fn render_directory_screen(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
@@ -531,19 +518,15 @@ impl PlayerView {
                     .mb_4()
                     .child("Directory Manager"),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .children(state.app.library.directories.iter().map(|dir| {
-                        div()
-                            .p_3()
-                            .rounded_md()
-                            .bg(rgb(0x2d2d2d))
-                            .child(div().text_sm().child(dir.display().to_string()))
-                    })),
-            )
+            .child(div().flex().flex_col().gap_2().children(
+                state.app.library.directories.iter().map(|dir| {
+                    div()
+                        .p_3()
+                        .rounded_md()
+                        .bg(rgb(0x2d2d2d))
+                        .child(div().text_sm().child(dir.display().to_string()))
+                }),
+            ))
     }
 
     fn render_footer(&self, cx: &mut ViewContext<Self>) -> impl IntoElement {
@@ -561,15 +544,11 @@ impl PlayerView {
                 div()
                     .flex()
                     .gap_4()
-                    .child(
-                        div()
-                            .text_sm()
-                            .child(if state.app.is_playing {
-                                "Playing"
-                            } else {
-                                "Stopped"
-                            }),
-                    )
+                    .child(div().text_sm().child(if state.app.is_playing {
+                        "Playing"
+                    } else {
+                        "Stopped"
+                    }))
                     .child(
                         div()
                             .text_sm()
@@ -586,12 +565,7 @@ impl PlayerView {
                             .text_color(rgb(0x999999))
                             .child("Space: Play/Pause"),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child("N: Next"),
-                    )
+                    .child(div().text_xs().text_color(rgb(0x999999)).child("N: Next"))
                     .child(
                         div()
                             .text_xs()

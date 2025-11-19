@@ -37,7 +37,8 @@ impl Player {
         self.manager.load_file(&path)?;
 
         // Start playback with plugins and specified output device
-        self.manager.start_playback(output_device, plugins, output_channels)?;
+        self.manager
+            .start_playback(output_device, plugins, output_channels)?;
 
         Ok(())
     }
@@ -77,10 +78,7 @@ impl Player {
 
     pub fn is_playing(&self) -> bool {
         let state = self.manager.get_state();
-        matches!(
-            state,
-            sotf_audio::manager::StreamingState::Playing
-        )
+        matches!(state, sotf_audio::manager::StreamingState::Playing)
     }
 
     pub fn enable_loudness_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -129,10 +127,7 @@ impl Player {
 
         let state = self.manager.get_state();
         let position_secs = self.manager.get_position();
-        let is_playing = matches!(
-            state,
-            sotf_audio::manager::StreamingState::Playing
-        );
+        let is_playing = matches!(state, sotf_audio::manager::StreamingState::Playing);
 
         // Only query analyzers when actually playing to reduce overhead
         let loudness = if is_playing {

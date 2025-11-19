@@ -680,7 +680,10 @@ fn play_stream(
             upmixer_gain_rear_ambient,
         )?;
         plugins.push(upmixer_plugin);
-        eprintln!("Added upmixer plugin: 2ch -> {}ch ({})", output_channel_count, upmixer_config);
+        eprintln!(
+            "Added upmixer plugin: 2ch -> {}ch ({})",
+            output_channel_count, upmixer_config
+        );
         output_channel_count
     } else {
         audio_info.spec.channels as usize

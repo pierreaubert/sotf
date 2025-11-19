@@ -113,7 +113,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !will_scan {
         if !app.queue.is_empty() {
             app.current_screen = app::Screen::Queue;
-            log::info!("Starting with Queue view (queue has {} items)", app.queue.len());
+            log::info!(
+                "Starting with Queue view (queue has {} items)",
+                app.queue.len()
+            );
         } else {
             app.current_screen = app::Screen::Library;
             log::info!("Starting with Library view (queue is empty)");
@@ -257,13 +260,12 @@ fn handle_player_command(
                 }
             }
 
-            player
-                .load_and_play(
-                    path,
-                    plugins,
-                    output_channels,
-                    app.current_output_device_name.clone(),
-                )?;
+            player.load_and_play(
+                path,
+                plugins,
+                output_channels,
+                app.current_output_device_name.clone(),
+            )?;
         }
         PlayerCommand::Pause => {
             player.pause()?;

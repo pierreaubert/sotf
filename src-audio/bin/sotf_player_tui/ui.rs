@@ -22,16 +22,14 @@ fn clean_track_name(name: &str) -> String {
 /// - Removing tabs, newlines, and other control characters
 fn clean_text(text: &str) -> String {
     // First, replace all control characters (tabs, newlines, etc.) with spaces
-    let normalized: String = text.chars()
+    let normalized: String = text
+        .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
 
     // Then split by whitespace and rejoin with single spaces (handles multiple spaces)
     // This also trims all leading and trailing whitespace
-    normalized
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    normalized.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Truncate a string to a maximum length, adding "..." if truncated
@@ -92,7 +90,10 @@ mod tests {
         assert_eq!(truncate_with_ellipsis("Exact", 5), "Exact");
 
         // Test truncation
-        assert_eq!(truncate_with_ellipsis("This is a very long track name", 15), "This is a ve...");
+        assert_eq!(
+            truncate_with_ellipsis("This is a very long track name", 15),
+            "This is a ve..."
+        );
 
         // Test truncation at edge
         assert_eq!(truncate_with_ellipsis("12345678", 5), "12...");
@@ -136,7 +137,7 @@ pub fn draw(f: &mut Frame, app: &App) {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(100 - right_col_pct), // Main content
-            Constraint::Percentage(right_col_pct),        // Right column (LUFS, level meter, volume)
+            Constraint::Percentage(right_col_pct),       // Right column (LUFS, level meter, volume)
         ])
         .split(chunks[1]);
 
@@ -173,9 +174,9 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(6),      // SOTF title
-            Constraint::Min(0),         // Screen boxes (expandable)
-            Constraint::Length(30),     // Output device
+            Constraint::Length(6),  // SOTF title
+            Constraint::Min(0),     // Screen boxes (expandable)
+            Constraint::Length(30), // Output device
         ])
         .split(area);
 
@@ -236,9 +237,7 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
                 .bg(Color::Black)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
-                .fg(Color::White)
-                .bg(Color::Black)
+            Style::default().fg(Color::White).bg(Color::Black)
         };
 
         spans.push(Span::raw("[ "));
@@ -1139,20 +1138,21 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
 
     if let Some(idx) = app.current_queue_index
         && let Some(item) = app.queue.get(idx)
-            && let Some(track) = item.current_track() {
-                let raw_track_name = track
-                    .title
-                    .as_deref()
-                    .unwrap_or_else(|| track.path.file_name().unwrap().to_str().unwrap());
-                let cleaned_track_name = clean_track_name(raw_track_name);
-                // Truncate to max 50 chars for status bar to leave room for other info
-                let track_name = truncate_with_ellipsis(&cleaned_track_name, 50);
-                status_spans.push(Span::styled(
-                    format!("Now: {}", track_name),
-                    Style::default().fg(Color::Green),
-                ));
-                status_spans.push(Span::raw(" | "));
-            }
+        && let Some(track) = item.current_track()
+    {
+        let raw_track_name = track
+            .title
+            .as_deref()
+            .unwrap_or_else(|| track.path.file_name().unwrap().to_str().unwrap());
+        let cleaned_track_name = clean_track_name(raw_track_name);
+        // Truncate to max 50 chars for status bar to leave room for other info
+        let track_name = truncate_with_ellipsis(&cleaned_track_name, 50);
+        status_spans.push(Span::styled(
+            format!("Now: {}", track_name),
+            Style::default().fg(Color::Green),
+        ));
+        status_spans.push(Span::raw(" | "));
+    }
 
     if !app.plugin_chain.is_empty() {
         status_spans.push(Span::styled(
@@ -1278,9 +1278,18 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             lfe_gain,
         } => vec![
             ("Speaker Config".to_string(), speaker_config.clone()),
-            ("Front Direct Gain".to_string(), format!("{:.2}x", gain_front_direct)),
-            ("Front Ambient Gain".to_string(), format!("{:.2}x", gain_front_ambient)),
-            ("Rear Ambient Gain".to_string(), format!("{:.2}x", gain_rear_ambient)),
+            (
+                "Front Direct Gain".to_string(),
+                format!("{:.2}x", gain_front_direct),
+            ),
+            (
+                "Front Ambient Gain".to_string(),
+                format!("{:.2}x", gain_front_ambient),
+            ),
+            (
+                "Rear Ambient Gain".to_string(),
+                format!("{:.2}x", gain_rear_ambient),
+            ),
             ("LFE Cutoff".to_string(), format!("{:.0} Hz", lfe_cutoff_hz)),
             ("Stereo Width".to_string(), format!("{:.2}", stereo_width)),
             ("Bandpass".to_string(), format!("{:.0} Hz", bandpass_hz)),
@@ -1387,7 +1396,12 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         Line::from("Enter preset name (without .json extension):"),
         Line::from(vec![
             Span::styled("  Saved to: ", Style::default().fg(Color::DarkGray)),
-            Span::styled("plugin_presets/", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+            Span::styled(
+                "plugin_presets/",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
@@ -1483,7 +1497,10 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         let mut lines = vec![
             Line::from(vec![
                 Span::styled("Available Presets ", Style::default()),
-                Span::styled("(↑/↓ to select, Enter to load)", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "(↑/↓ to select, Enter to load)",
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]),
             Line::from(""),
         ];
@@ -1508,7 +1525,9 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from("Or type a filename to load manually, ESC to cancel"));
+        lines.push(Line::from(
+            "Or type a filename to load manually, ESC to cancel",
+        ));
 
         let paragraph = Paragraph::new(lines)
             .block(Block::default())

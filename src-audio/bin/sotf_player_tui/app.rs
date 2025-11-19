@@ -218,13 +218,14 @@ impl App {
     pub fn load_output_devices(&mut self) {
         // Load available output devices
         if let Ok(devices_map) = sotf_audio::devices::get_audio_devices()
-            && let Some(output_devices) = devices_map.get("output") {
-                self.output_devices = output_devices.clone();
-                // Find the default device
-                if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
-                    self.selected_output_device_index = default_idx;
-                }
+            && let Some(output_devices) = devices_map.get("output")
+        {
+            self.output_devices = output_devices.clone();
+            // Find the default device
+            if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
+                self.selected_output_device_index = default_idx;
             }
+        }
     }
 
     pub fn select_next_output_device(&mut self) {
@@ -603,14 +604,16 @@ impl App {
 
         // Restore queue position
         if let Some(queue_idx) = config.queue_index
-            && queue_idx < self.queue.len() {
-                self.current_queue_index = Some(queue_idx);
-                // Restore track position within album
-                if let Some(item) = self.queue.get_mut(queue_idx)
-                    && config.track_index < item.album.tracks.len() {
-                        item.current_track_index = config.track_index;
-                    }
+            && queue_idx < self.queue.len()
+        {
+            self.current_queue_index = Some(queue_idx);
+            // Restore track position within album
+            if let Some(item) = self.queue.get_mut(queue_idx)
+                && config.track_index < item.album.tracks.len()
+            {
+                item.current_track_index = config.track_index;
             }
+        }
 
         // Restore plugin preset
         if let Some(preset_name) = &config.plugin_preset {
@@ -804,38 +807,40 @@ impl App {
 
     pub fn next_track(&mut self) -> Option<PathBuf> {
         if let Some(idx) = self.current_queue_index
-            && let Some(item) = self.queue.get_mut(idx) {
-                if let Some(track) = item.next_track() {
-                    return Some(track.path.clone());
-                } else {
-                    // Move to next album in queue
-                    if idx + 1 < self.queue.len() {
-                        self.current_queue_index = Some(idx + 1);
-                        return self.current_track_path();
-                    }
+            && let Some(item) = self.queue.get_mut(idx)
+        {
+            if let Some(track) = item.next_track() {
+                return Some(track.path.clone());
+            } else {
+                // Move to next album in queue
+                if idx + 1 < self.queue.len() {
+                    self.current_queue_index = Some(idx + 1);
+                    return self.current_track_path();
                 }
             }
+        }
         None
     }
 
     pub fn previous_track(&mut self) -> Option<PathBuf> {
         if let Some(idx) = self.current_queue_index
-            && let Some(item) = self.queue.get_mut(idx) {
-                if let Some(track) = item.previous_track() {
-                    return Some(track.path.clone());
-                } else {
-                    // Move to previous album in queue
-                    if idx > 0 {
-                        self.current_queue_index = Some(idx - 1);
-                        // Go to last track of previous album
-                        if let Some(prev_item) = self.queue.get_mut(idx - 1) {
-                            prev_item.current_track_index =
-                                prev_item.album.tracks.len().saturating_sub(1);
-                        }
-                        return self.current_track_path();
+            && let Some(item) = self.queue.get_mut(idx)
+        {
+            if let Some(track) = item.previous_track() {
+                return Some(track.path.clone());
+            } else {
+                // Move to previous album in queue
+                if idx > 0 {
+                    self.current_queue_index = Some(idx - 1);
+                    // Go to last track of previous album
+                    if let Some(prev_item) = self.queue.get_mut(idx - 1) {
+                        prev_item.current_track_index =
+                            prev_item.album.tracks.len().saturating_sub(1);
                     }
+                    return self.current_track_path();
                 }
             }
+        }
         None
     }
 
@@ -991,8 +996,14 @@ impl App {
                     match param_idx {
                         0 => {
                             // speaker_config: cycle through available configs
-                            let configs = ["2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"];
-                            let current_idx = configs.iter().position(|&c| c == speaker_config.as_str()).unwrap_or(2);
+                            let configs = [
+                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
+                                "9.1.4", "9.1.6",
+                            ];
+                            let current_idx = configs
+                                .iter()
+                                .position(|&c| c == speaker_config.as_str())
+                                .unwrap_or(2);
                             let new_idx = if delta > 0.0 {
                                 (current_idx + 1) % configs.len()
                             } else {
@@ -1000,9 +1011,16 @@ impl App {
                             };
                             *speaker_config = configs[new_idx].to_string();
                         }
-                        1 => *gain_front_direct = (*gain_front_direct + delta * 0.1).clamp(0.0, 2.0),
-                        2 => *gain_front_ambient = (*gain_front_ambient + delta * 0.1).clamp(0.0, 2.0),
-                        3 => *gain_rear_ambient = (*gain_rear_ambient + delta * 0.1).clamp(0.0, 2.0),
+                        1 => {
+                            *gain_front_direct = (*gain_front_direct + delta * 0.1).clamp(0.0, 2.0)
+                        }
+                        2 => {
+                            *gain_front_ambient =
+                                (*gain_front_ambient + delta * 0.1).clamp(0.0, 2.0)
+                        }
+                        3 => {
+                            *gain_rear_ambient = (*gain_rear_ambient + delta * 0.1).clamp(0.0, 2.0)
+                        }
                         4 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(20.0, 200.0),
                         5 => *stereo_width = (*stereo_width + delta * 0.05).clamp(0.0, 1.0),
                         6 => *bandpass_hz = (*bandpass_hz + delta * 10.0).clamp(100.0, 500.0),
@@ -1142,20 +1160,22 @@ impl App {
         self.selected_preset_index = 0;
 
         if let Some(presets_dir) = crate::config::get_plugin_presets_dir()
-            && let Ok(entries) = std::fs::read_dir(&presets_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file()
-                        && let Some(ext) = path.extension()
-                            && ext == "json"
-                                && let Some(filename) = path.file_name() {
-                                    self.available_plugin_presets
-                                        .push(filename.to_string_lossy().to_string());
-                                }
+            && let Ok(entries) = std::fs::read_dir(&presets_dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file()
+                    && let Some(ext) = path.extension()
+                    && ext == "json"
+                    && let Some(filename) = path.file_name()
+                {
+                    self.available_plugin_presets
+                        .push(filename.to_string_lossy().to_string());
                 }
-                // Sort presets alphabetically
-                self.available_plugin_presets.sort();
             }
+            // Sort presets alphabetically
+            self.available_plugin_presets.sort();
+        }
 
         log::info!(
             "Found {} plugin presets",
@@ -1191,20 +1211,21 @@ impl App {
 
         if let Some(preset_filename) = self
             .available_plugin_presets
-            .get(self.selected_preset_index) {
-                // Use the plugin chain's own load method (handles path construction)
-                match self.plugin_chain.load_from_file(preset_filename) {
-                    Ok(_) => {
-                        self.status_message = Some(format!("Loaded preset: {}", preset_filename));
-                        self.needs_plugin_update = true;
-                        self.last_loaded_preset = Some(preset_filename.clone());
-                    }
-                    Err(e) => {
-                        self.status_message = Some(format!("Error loading preset: {}", e));
-                        log::error!("Failed to load preset: {}", e);
-                    }
+            .get(self.selected_preset_index)
+        {
+            // Use the plugin chain's own load method (handles path construction)
+            match self.plugin_chain.load_from_file(preset_filename) {
+                Ok(_) => {
+                    self.status_message = Some(format!("Loaded preset: {}", preset_filename));
+                    self.needs_plugin_update = true;
+                    self.last_loaded_preset = Some(preset_filename.clone());
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Error loading preset: {}", e));
+                    log::error!("Failed to load preset: {}", e);
                 }
             }
+        }
     }
 
     /// Generate autocomplete suggestions for the current directory input

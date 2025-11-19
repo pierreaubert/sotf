@@ -157,9 +157,12 @@ impl Fir {
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
         debug_assert!(srate > 0.0, "Sample rate must be positive");
-        debug_assert!(cutoff > 0.0 && cutoff < srate / 2.0,
+        debug_assert!(
+            cutoff > 0.0 && cutoff < srate / 2.0,
             "Cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0, cutoff);
+            srate / 2.0,
+            cutoff
+        );
 
         let coeffs = design_fir_lowpass(n_taps, cutoff, srate, window, kaiser_beta);
         let n = coeffs.len();
@@ -199,9 +202,12 @@ impl Fir {
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
         debug_assert!(srate > 0.0, "Sample rate must be positive");
-        debug_assert!(cutoff > 0.0 && cutoff < srate / 2.0,
+        debug_assert!(
+            cutoff > 0.0 && cutoff < srate / 2.0,
             "Cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0, cutoff);
+            srate / 2.0,
+            cutoff
+        );
 
         let coeffs = design_fir_highpass(n_taps, cutoff, srate, window, kaiser_beta);
         let n = coeffs.len();
@@ -245,15 +251,24 @@ impl Fir {
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
         debug_assert!(srate > 0.0, "Sample rate must be positive");
-        debug_assert!(freq_low > 0.0 && freq_low < srate / 2.0,
+        debug_assert!(
+            freq_low > 0.0 && freq_low < srate / 2.0,
             "Lower cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0, freq_low);
-        debug_assert!(freq_high > 0.0 && freq_high < srate / 2.0,
+            srate / 2.0,
+            freq_low
+        );
+        debug_assert!(
+            freq_high > 0.0 && freq_high < srate / 2.0,
             "Upper cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0, freq_high);
-        debug_assert!(freq_low < freq_high,
+            srate / 2.0,
+            freq_high
+        );
+        debug_assert!(
+            freq_low < freq_high,
             "Lower cutoff frequency ({}Hz) must be less than upper cutoff frequency ({}Hz)",
-            freq_low, freq_high);
+            freq_low,
+            freq_high
+        );
 
         let coeffs = design_fir_bandpass(n_taps, freq_low, freq_high, srate, window, kaiser_beta);
         let n = coeffs.len();
@@ -297,15 +312,24 @@ impl Fir {
     ) -> Self {
         debug_assert!(n_taps > 0, "Number of taps must be positive");
         debug_assert!(srate > 0.0, "Sample rate must be positive");
-        debug_assert!(freq_low > 0.0 && freq_low < srate / 2.0,
+        debug_assert!(
+            freq_low > 0.0 && freq_low < srate / 2.0,
             "Lower cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0, freq_low);
-        debug_assert!(freq_high > 0.0 && freq_high < srate / 2.0,
+            srate / 2.0,
+            freq_low
+        );
+        debug_assert!(
+            freq_high > 0.0 && freq_high < srate / 2.0,
             "Upper cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
-            srate / 2.0, freq_high);
-        debug_assert!(freq_low < freq_high,
+            srate / 2.0,
+            freq_high
+        );
+        debug_assert!(
+            freq_low < freq_high,
             "Lower cutoff frequency ({}Hz) must be less than upper cutoff frequency ({}Hz)",
-            freq_low, freq_high);
+            freq_low,
+            freq_high
+        );
 
         let coeffs = design_fir_bandstop(n_taps, freq_low, freq_high, srate, window, kaiser_beta);
         let n = coeffs.len();
@@ -405,10 +429,7 @@ impl Fir {
 
         // Convert to dB
         let min_val = 1.0e-20;
-        magnitude
-            .mapv(|val| val.max(min_val))
-            .mapv(f64::log10)
-            * 20.0
+        magnitude.mapv(|val| val.max(min_val)).mapv(f64::log10) * 20.0
     }
 }
 
@@ -500,8 +521,8 @@ pub fn generate_window(n: usize, window_type: WindowType, kaiser_beta: f64) -> V
             let i0_beta = bessel_i0(kaiser_beta);
             let n_minus_1 = (n - 1) as f64;
             for i in 0..n {
-                let x = kaiser_beta
-                    * (1.0 - ((2.0 * i as f64 - n_minus_1) / n_minus_1).powi(2)).sqrt();
+                let x =
+                    kaiser_beta * (1.0 - ((2.0 * i as f64 - n_minus_1) / n_minus_1).powi(2)).sqrt();
                 window[i] = bessel_i0(x) / i0_beta;
             }
         }
@@ -903,7 +924,11 @@ mod fir_tests {
         let gain = fir_bank_preamp_gain(&bank);
 
         // Preamp gain should be small and negative (or zero)
-        assert!(gain <= 1.0, "Preamp gain should be <= 1.0 dB, got {:.2}", gain);
+        assert!(
+            gain <= 1.0,
+            "Preamp gain should be <= 1.0 dB, got {:.2}",
+            gain
+        );
     }
 
     #[test]
@@ -936,11 +961,14 @@ mod fir_tests {
         let n = coeffs.len();
 
         // Check symmetry
-        for i in 0..n/2 {
+        for i in 0..n / 2 {
             assert!(
                 approx_eq(coeffs[i], coeffs[n - 1 - i], 1e-10),
                 "Coeffs should be symmetric: coeffs[{}]={:.6} != coeffs[{}]={:.6}",
-                i, coeffs[i], n - 1 - i, coeffs[n - 1 - i]
+                i,
+                coeffs[i],
+                n - 1 - i,
+                coeffs[n - 1 - i]
             );
         }
     }

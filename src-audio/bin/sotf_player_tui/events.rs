@@ -640,7 +640,8 @@ fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Enter | KeyCode::Char(' ') => {
             // Apply device change
-            app.get_selected_output_device().map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
+            app.get_selected_output_device()
+                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
         }
         _ => None,
     }

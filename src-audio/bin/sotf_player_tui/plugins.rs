@@ -399,7 +399,10 @@ impl PluginChain {
                         "9.1.4" => 14,
                         "9.1.6" => 16,
                         _ => {
-                            log::warn!("Unknown speaker config '{}', defaulting to 5.1 (6 channels)", speaker_config);
+                            log::warn!(
+                                "Unknown speaker config '{}', defaulting to 5.1 (6 channels)",
+                                speaker_config
+                            );
                             6
                         }
                     };
@@ -419,10 +422,7 @@ impl PluginChain {
     /// # Returns
     /// * Ok(()) on success
     /// * Err if the extension is not .json or if saving fails
-    pub fn save_to_file(
-        &self,
-        filename: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_to_file(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Validate extension - must be .json or none
         let path = std::path::Path::new(filename);
         let extension = path.extension().and_then(|ext| ext.to_str());
@@ -433,7 +433,8 @@ impl PluginChain {
                 return Err(format!(
                     "Only .json files are supported. Please use .json extension instead of .{}",
                     ext
-                ).into());
+                )
+                .into());
             }
         }
 
@@ -466,10 +467,7 @@ impl PluginChain {
     /// # Returns
     /// * Ok(()) on success
     /// * Err if the file doesn't exist or loading fails
-    pub fn load_from_file(
-        &mut self,
-        filename: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn load_from_file(&mut self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Auto-append .json if no extension provided
         let path = std::path::Path::new(filename);
         let filename = if path.extension().is_none() {

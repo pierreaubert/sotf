@@ -61,7 +61,12 @@ impl HalManager {
     /// * `capacity_ms` - Buffer capacity in milliseconds (default: 500ms)
     /// * `sample_rate` - Sample rate in Hz (default: 48000)
     /// * `channels` - Number of channels (default: 2 for stereo)
-    pub fn initialize(&mut self, capacity_ms: usize, sample_rate: u32, channels: usize) -> Result<(), String> {
+    pub fn initialize(
+        &mut self,
+        capacity_ms: usize,
+        sample_rate: u32,
+        channels: usize,
+    ) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
             if self.initialized {

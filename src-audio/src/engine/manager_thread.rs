@@ -12,8 +12,8 @@ use super::{
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 
-const SPIN_MS_SLEEP_MANAGER : u64 = 10;
-const SPIN_MS_CHECK_MANAGER : u64 = 50;
+const SPIN_MS_SLEEP_MANAGER: u64 = 10;
+const SPIN_MS_CHECK_MANAGER: u64 = 50;
 
 /// Manager thread handle
 pub struct ManagerThread {

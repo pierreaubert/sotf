@@ -26,7 +26,7 @@ use std::sync::Arc;
 /*
 const PHASE_SHIFT_0   : Complex<f32> = Complex::new(1.0, 0.0); // +1
 */
-const PHASE_SHIFT_90: Complex<f32> = Complex::new(0.0, 1.0);   // +i
+const PHASE_SHIFT_90: Complex<f32> = Complex::new(0.0, 1.0); // +i
 const PHASE_SHIFT_180: Complex<f32> = Complex::new(-1.0, 0.0); // -1
 const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
 
@@ -67,7 +67,7 @@ fn default_speaker_config() -> String {
 }
 
 fn default_height_gain() -> f32 {
-    0.7
+    0.2
 }
 
 fn default_lfe_gain() -> f32 {
@@ -280,7 +280,7 @@ impl UpmixerPlugin {
         let num_output_channels = speaker_config.total_channels;
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
-	// TODO need to change if imput is not stereo
+        // TODO need to change if imput is not stereo
         let left_azimuth = 30.0;
         let right_azimuth = -30.0;
 
@@ -441,9 +441,19 @@ impl UpmixerPlugin {
         const LEFT_AZIMUTH: f32 = 30.0;
         const RIGHT_AZIMUTH: f32 = -30.0;
 
-        log::debug!("[UPMIXER] recalculate_panning_gains() called for config: {}", self.speaker_config.name);
-        log::debug!("[UPMIXER]   num_output_channels: {}", self.num_output_channels);
-        log::debug!("[UPMIXER]   left_azimuth: {}, right_azimuth: {}", LEFT_AZIMUTH, RIGHT_AZIMUTH);
+        log::debug!(
+            "[UPMIXER] recalculate_panning_gains() called for config: {}",
+            self.speaker_config.name
+        );
+        log::debug!(
+            "[UPMIXER]   num_output_channels: {}",
+            self.num_output_channels
+        );
+        log::debug!(
+            "[UPMIXER]   left_azimuth: {}, right_azimuth: {}",
+            LEFT_AZIMUTH,
+            RIGHT_AZIMUTH
+        );
 
         self.panning_gains_left.clear();
         self.panning_gains_right.clear();
@@ -460,7 +470,12 @@ impl UpmixerPlugin {
                     calculate_panning_gain(RIGHT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
                 log::debug!(
                     "[UPMIXER]   Speaker[{}] az={:>6.1}° el={:>6.1}° is_height={}: left={:.4}, right={:.4}",
-                    idx, speaker.azimuth, speaker.elevation, speaker.elevation > 10.0, left_gain, right_gain
+                    idx,
+                    speaker.azimuth,
+                    speaker.elevation,
+                    speaker.elevation > 10.0,
+                    left_gain,
+                    right_gain
                 );
                 self.panning_gains_left.push(left_gain);
                 self.panning_gains_right.push(right_gain);
@@ -472,7 +487,11 @@ impl UpmixerPlugin {
         let left_energy: f32 = self.panning_gains_left.iter().map(|g| g * g).sum();
         let right_energy: f32 = self.panning_gains_right.iter().map(|g| g * g).sum();
 
-        log::debug!("[UPMIXER]   Pre-normalization energies: left={:.6}, right={:.6}", left_energy, right_energy);
+        log::debug!(
+            "[UPMIXER]   Pre-normalization energies: left={:.6}, right={:.6}",
+            left_energy,
+            right_energy
+        );
 
         if left_energy > 0.0 {
             let left_scale = 1.0 / left_energy.sqrt();
@@ -490,8 +509,14 @@ impl UpmixerPlugin {
             }
         }
 
-        log::debug!("[UPMIXER]   Final panning gains (left):  {:?}", self.panning_gains_left);
-        log::debug!("[UPMIXER]   Final panning gains (right): {:?}", self.panning_gains_right);
+        log::debug!(
+            "[UPMIXER]   Final panning gains (left):  {:?}",
+            self.panning_gains_left
+        );
+        log::debug!(
+            "[UPMIXER]   Final panning gains (right): {:?}",
+            self.panning_gains_right
+        );
     }
 
     /// Process one FFT block using VBAP panning
@@ -500,18 +525,26 @@ impl UpmixerPlugin {
         assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
         assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
 
-        log::trace!("[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
-            self.fft_size, self.num_output_channels);
+        log::trace!(
+            "[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
+            self.fft_size,
+            self.num_output_channels
+        );
 
         // Calculate input RMS for debugging
         let input_rms_left: f32 = (0..self.fft_size)
             .map(|i| input[i * 2].powi(2))
-            .sum::<f32>() / self.fft_size as f32;
+            .sum::<f32>()
+            / self.fft_size as f32;
         let input_rms_right: f32 = (0..self.fft_size)
             .map(|i| input[i * 2 + 1].powi(2))
-            .sum::<f32>() / self.fft_size as f32;
-        log::trace!("[UPMIXER]   Input RMS: left={:.6}, right={:.6}",
-            input_rms_left.sqrt(), input_rms_right.sqrt());
+            .sum::<f32>()
+            / self.fft_size as f32;
+        log::trace!(
+            "[UPMIXER]   Input RMS: left={:.6}, right={:.6}",
+            input_rms_left.sqrt(),
+            input_rms_right.sqrt()
+        );
 
         // 1. Copy input to time domain buffers and apply ANALYSIS window
         // CRITICAL: Window BEFORE FFT to prevent spectral leakage!
@@ -610,7 +643,7 @@ impl UpmixerPlugin {
                 // If the sound is centered (vocals), we keep surrounds quiet to keep focus.
                 let width_factor = 1.0 - coherence;
                 let base_gain = 1.0; // TODO parameters
-                let steering_boost = 1.2; // How much extra boost for panned sounds?
+                let steering_boost = 1.0; // How much extra boost for panned sounds?
                 let current_surround_gain = base_gain + (width_factor * steering_boost);
 
                 // 3. Calculate Ambient with dynamic gain
@@ -636,8 +669,12 @@ impl UpmixerPlugin {
         let combined_scale = fft_scale;
 
         log::trace!("[UPMIXER]   FFT processing complete, applying VBAP panning");
-        log::trace!("[UPMIXER]   fft_scale={:.6}, lfe_gain={:.3}, height_gain={:.3}",
-            fft_scale, self.lfe_gain, self.height_gain);
+        log::trace!(
+            "[UPMIXER]   fft_scale={:.6}, lfe_gain={:.3}, height_gain={:.3}",
+            fft_scale,
+            self.lfe_gain,
+            self.height_gain
+        );
 
         for (ch_idx, speaker) in self.speaker_config.speakers.iter().enumerate() {
             if speaker.is_lfe {
@@ -645,7 +682,11 @@ impl UpmixerPlugin {
                 for i in 0..self.fft_size {
                     self.time_out_channels[ch_idx][i] = self.lfe[i] * self.lfe_gain;
                 }
-                log::trace!("[UPMIXER]     Ch[{}] LFE: gain={:.3}", ch_idx, self.lfe_gain);
+                log::trace!(
+                    "[UPMIXER]     Ch[{}] LFE: gain={:.3}",
+                    ch_idx,
+                    self.lfe_gain
+                );
             } else {
                 // Regular speaker: pan direct and ambient components using VBAP
                 let panning_gain_left = self.panning_gains_left[ch_idx];
@@ -660,9 +701,14 @@ impl UpmixerPlugin {
 
                 log::trace!(
                     "[UPMIXER]     Ch[{}] az={:>6.1}° el={:>6.1}° pan_L={:.4} pan_R={:.4} is_front={} is_height={} is_left={}",
-                    ch_idx, speaker.azimuth, speaker.elevation,
-                    panning_gain_left, panning_gain_right,
-                    is_front, is_height, is_left
+                    ch_idx,
+                    speaker.azimuth,
+                    speaker.elevation,
+                    panning_gain_left,
+                    panning_gain_right,
+                    is_front,
+                    is_height,
+                    is_left
                 );
 
                 // Select appropriate gains
@@ -688,24 +734,31 @@ impl UpmixerPlugin {
                         // Rear heights: swapped decorrelation pattern
                         let ambient_component = if is_front {
                             if is_left {
-                                self.ambient_left[i] * PHASE_SHIFT_180 + self.ambient_right[i] * PHASE_SHIFT_270
+                                self.ambient_left[i] * PHASE_SHIFT_180
+                                    + self.ambient_right[i] * PHASE_SHIFT_270
                             } else {
-                                self.ambient_left[i] * PHASE_SHIFT_270 + self.ambient_right[i] * PHASE_SHIFT_180
+                                self.ambient_left[i] * PHASE_SHIFT_270
+                                    + self.ambient_right[i] * PHASE_SHIFT_180
                             }
                         } else {
                             // Rear heights: use swapped decorrelation + add late reflections
                             let decorrelated = if is_left {
-                                self.ambient_left[i] * PHASE_SHIFT_270 + self.ambient_right[i] * PHASE_SHIFT_180
+                                self.ambient_left[i] * PHASE_SHIFT_270
+                                    + self.ambient_right[i] * PHASE_SHIFT_180
                             } else {
-                                self.ambient_left[i] * PHASE_SHIFT_180 + self.ambient_right[i] * PHASE_SHIFT_270
+                                self.ambient_left[i] * PHASE_SHIFT_180
+
+                                    + self.ambient_right[i] * PHASE_SHIFT_270
                             };
                             // Add small amount of direct signal as late reflections for rear heights
-                            let late_reflection = (self.direct_left[i] + self.direct_right[i]) * 0.10;
+                            let late_reflection =
+                                (self.direct_left[i] + self.direct_right[i]) * 0.10;
                             decorrelated + late_reflection
                         };
 
                         // Combine direct and ambient with appropriate gains and height gain
-                        (direct_component * direct_gain + ambient_component * ambient_gain) * self.height_gain
+                        (direct_component * direct_gain + ambient_component * ambient_gain)
+                            * self.height_gain
                     } else {
                         // FLOOR SPEAKERS: Normal VBAP panning
                         let direct_component = self.direct_left[i] * panning_gain_left
@@ -719,7 +772,8 @@ impl UpmixerPlugin {
                 }
             }
             // Inverse FFT for this channel
-            self.fft_inverse.process(&mut self.time_out_channels[ch_idx]);
+            self.fft_inverse
+                .process(&mut self.time_out_channels[ch_idx]);
         }
 
         // 5. Extract real parts and apply final scaling

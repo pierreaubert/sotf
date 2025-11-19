@@ -10,7 +10,7 @@ use crate::plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
-const SPIN_MS_SLEEP_DECODER : u64 = 10;
+const SPIN_MS_SLEEP_DECODER: u64 = 10;
 
 /// Decoder thread handle
 pub struct DecoderThread {
@@ -377,7 +377,8 @@ fn run_decoder_thread(
         // Generate frames based on mode
         if state.silent_source && !state.paused {
             // Silent source mode: generate empty frames for HAL input plugins
-            if let Err(e) = state.generate_silent_frame(&message_tx, frame_size, target_sample_rate) {
+            if let Err(e) = state.generate_silent_frame(&message_tx, frame_size, target_sample_rate)
+            {
                 log::debug!("[Decoder Thread] Silent frame error: {}", e);
                 state.stop();
             }

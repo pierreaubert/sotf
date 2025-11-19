@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
-const SPIN_MS_RINGBUFFER : u64 = 5;
-const SPIN_MS_SIGNAL : u64 = 10;
+const SPIN_MS_RINGBUFFER: u64 = 5;
+const SPIN_MS_SIGNAL: u64 = 10;
 
 /// Playback thread handle
 pub struct PlaybackThread {

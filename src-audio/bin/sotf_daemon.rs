@@ -457,10 +457,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(_) => {
                 let status = get_hal_status();
                 println!("📊 HAL Status:");
-                println!("   Platform supported: {}", if status.platform_supported { "✅ Yes" } else { "❌ No" });
-                println!("   Buffer initialized: {}", if status.buffer_initialized { "✅ Yes" } else { "❌ No" });
-                println!("   Driver installed:   {}", if status.driver_installed { "✅ Yes" } else { "⚠️  No (optional)" });
-                println!("   Ready to use:       {}", if status.is_ready() { "✅ Yes" } else { "❌ No" });
+                println!(
+                    "   Platform supported: {}",
+                    if status.platform_supported {
+                        "✅ Yes"
+                    } else {
+                        "❌ No"
+                    }
+                );
+                println!(
+                    "   Buffer initialized: {}",
+                    if status.buffer_initialized {
+                        "✅ Yes"
+                    } else {
+                        "❌ No"
+                    }
+                );
+                println!(
+                    "   Driver installed:   {}",
+                    if status.driver_installed {
+                        "✅ Yes"
+                    } else {
+                        "⚠️  No (optional)"
+                    }
+                );
+                println!(
+                    "   Ready to use:       {}",
+                    if status.is_ready() {
+                        "✅ Yes"
+                    } else {
+                        "❌ No"
+                    }
+                );
 
                 if status.is_ready() {
                     println!();

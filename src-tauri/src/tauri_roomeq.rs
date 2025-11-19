@@ -463,9 +463,7 @@ pub async fn run_roomeq_optimization(
                 for handle in handles {
                     match handle.await {
                         Ok(Ok(result)) => channel_results.push(result),
-                        Ok(Err(e)) => {
-                            return Err(format!("Channel optimization failed: {}", e))
-                        }
+                        Ok(Err(e)) => return Err(format!("Channel optimization failed: {}", e)),
                         Err(e) => return Err(format!("Task join error: {}", e)),
                     }
                 }

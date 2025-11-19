@@ -1,23 +1,22 @@
 #![doc = include_str!("../README.md")]
 
 // Module declarations
-mod iir;
 mod fir;
+mod iir;
 
 // Re-export IIR types and functions
 pub use iir::{
-    Biquad, BiquadFilterType, FilterRow, Peq,
-    compute_peq_response, peq_equal, peq_spl, peq_loudness_gain,
-    peq_preamp_gain, peq_preamp_gain_max, peq_format_apo,
-    peq_butterworth_q, peq_butterworth_lowpass, peq_butterworth_highpass,
-    peq_linkwitzriley_q, peq_linkwitzriley_lowpass, peq_linkwitzriley_highpass,
-    peq_print, peq_format_rme_channel, peq_format_rme_room, peq_format_aupreset,
+    Biquad, BiquadFilterType, FilterRow, Peq, compute_peq_response, peq_butterworth_highpass,
+    peq_butterworth_lowpass, peq_butterworth_q, peq_equal, peq_format_apo, peq_format_aupreset,
+    peq_format_rme_channel, peq_format_rme_room, peq_linkwitzriley_highpass,
+    peq_linkwitzriley_lowpass, peq_linkwitzriley_q, peq_loudness_gain, peq_preamp_gain,
+    peq_preamp_gain_max, peq_print, peq_spl,
 };
 
 // Re-export FIR types and functions
 pub use fir::{
-    Fir, FirFilterType, WindowType, FirBank,
-    generate_window, compute_fir_bank_response, fir_bank_spl, fir_bank_preamp_gain,
+    Fir, FirBank, FirFilterType, WindowType, compute_fir_bank_response, fir_bank_preamp_gain,
+    fir_bank_spl, generate_window,
 };
 
 // ============================================================================

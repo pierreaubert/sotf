@@ -54,7 +54,6 @@ pub struct AppConfig {
     pub plugin_preset: Option<String>,
 }
 
-
 /// Get the application configuration directory
 /// - Linux: ~/.config/sotf
 /// - macOS: ~/Library/Application Support/org.spinorama.sotf

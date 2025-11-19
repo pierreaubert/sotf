@@ -21,7 +21,7 @@ use std::sync::{
     mpsc::{Receiver, Sender, SyncSender},
 };
 
-const SPIN_MS_SIGNAL : u64 = 10;
+const SPIN_MS_SIGNAL: u64 = 10;
 
 /// Processing thread handle
 pub struct ProcessingThread {

@@ -966,8 +966,12 @@ pub fn calculate_panning_gain(
 
     log::trace!(
         "[VBAP] source=({:>6.1}°, {:>5.1}°) speaker=({:>6.1}°, {:>5.1}°) cosine={:.4} gain={:.4}",
-        source_azimuth, source_elevation, speaker_azimuth, speaker_elevation,
-        cosine_gain, gain
+        source_azimuth,
+        source_elevation,
+        speaker_azimuth,
+        speaker_elevation,
+        cosine_gain,
+        gain
     );
 
     gain
@@ -1038,7 +1042,11 @@ mod tests {
         // Source at ear level (0°) to speaker at 45° elevation
         // cosine_gain = cos(45°) ≈ 0.707, with power 0.5: gain = 0.707^0.5 ≈ 0.841
         let gain = calculate_panning_gain(0.0, 0.0, 0.0, 45.0);
-        assert!(gain > 0.80 && gain < 0.90, "Expected gain ~0.841, got {}", gain);
+        assert!(
+            gain > 0.80 && gain < 0.90,
+            "Expected gain ~0.841, got {}",
+            gain
+        );
     }
 
     #[test]
@@ -1047,20 +1055,36 @@ mod tests {
 
         // To FL (30°, 0°) - perfect match
         let gain_fl = calculate_panning_gain(30.0, 0.0, 30.0, 0.0);
-        assert!((gain_fl - 1.0).abs() < 0.001, "FL should have gain ~1.0, got {}", gain_fl);
+        assert!(
+            (gain_fl - 1.0).abs() < 0.001,
+            "FL should have gain ~1.0, got {}",
+            gain_fl
+        );
 
         // To TFL (30°, 45°) - same azimuth, 45° elevation difference
         // cosine_gain = cos(45°) ≈ 0.707, with power 0.5: gain ≈ 0.841
         let gain_tfl = calculate_panning_gain(30.0, 0.0, 30.0, 45.0);
-        assert!(gain_tfl > 0.80 && gain_tfl < 0.90, "TFL should have gain ~0.841, got {}", gain_tfl);
+        assert!(
+            gain_tfl > 0.80 && gain_tfl < 0.90,
+            "TFL should have gain ~0.841, got {}",
+            gain_tfl
+        );
 
         // To C (0°, 0°) - 30° azimuth difference
         // cosine_gain = cos(30°) ≈ 0.866, with power 0.5: gain ≈ 0.930
         let gain_c = calculate_panning_gain(30.0, 0.0, 0.0, 0.0);
-        assert!(gain_c > 0.90 && gain_c < 0.95, "C should have gain ~0.930, got {}", gain_c);
+        assert!(
+            gain_c > 0.90 && gain_c < 0.95,
+            "C should have gain ~0.930, got {}",
+            gain_c
+        );
 
         // TFL should have reasonable gain compared to FL (not too attenuated)
         let ratio = gain_tfl / gain_fl;
-        assert!(ratio > 0.75, "Height speaker should have >75% of floor speaker gain, got {:.1}%", ratio * 100.0);
+        assert!(
+            ratio > 0.75,
+            "Height speaker should have >75% of floor speaker gain, got {:.1}%",
+            ratio * 100.0
+        );
     }
 }

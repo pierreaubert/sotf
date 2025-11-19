@@ -1,6 +1,6 @@
 use crate::library::{Album, MusicLibrary, Track};
-use crate::plugins::{PluginChain, PluginType};
 use crate::player::Player;
+use crate::plugins::{PluginChain, PluginType};
 use sotf_audio::devices::AudioDevice;
 use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};
 use std::path::PathBuf;

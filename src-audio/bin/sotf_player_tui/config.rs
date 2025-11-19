@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Application state that persists between sessions
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppConfig {
     /// Currently selected output device name
     pub output_device: Option<String>,
@@ -16,7 +15,6 @@ pub struct AppConfig {
     /// Currently loaded plugin preset name
     pub plugin_preset: Option<String>,
 }
-
 
 /// Get the application configuration directory
 /// - Linux: ~/.config/sotf

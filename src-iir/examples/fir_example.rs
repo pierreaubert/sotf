@@ -1,7 +1,7 @@
 //! Example demonstrating FIR filter usage
 
 use autoeq_iir::*;
-use ndarray::{array, Array1};
+use ndarray::{Array1, array};
 
 fn main() {
     println!("AutoEQ IIR - FIR Filter Example");

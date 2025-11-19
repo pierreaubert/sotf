@@ -235,9 +235,9 @@ impl AudioStreamingManager {
         // Create engine config for HAL (no file source)
         let config = EngineConfig {
             frame_size: 1024,
-            buffer_ms: 200, // 200ms latency
+            buffer_ms: 200,            // 200ms latency
             output_sample_rate: 48000, // HAL default sample rate
-            input_channels: 0, // No file input - HAL input plugin is the source
+            input_channels: 0,         // No file input - HAL input plugin is the source
             output_channels,
             output_device,
             plugins,

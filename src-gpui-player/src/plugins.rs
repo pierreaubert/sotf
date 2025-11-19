@@ -371,7 +371,10 @@ impl PluginChain {
                         "9.1.4" => 14,
                         "9.1.6" => 16,
                         _ => {
-                            log::warn!("Unknown speaker config '{}', defaulting to 5.1 (6 channels)", speaker_config);
+                            log::warn!(
+                                "Unknown speaker config '{}', defaulting to 5.1 (6 channels)",
+                                speaker_config
+                            );
                             6
                         }
                     };

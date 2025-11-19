@@ -49,14 +49,12 @@ impl Album {
     }
 }
 
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct MusicLibrary {
     pub directories: Vec<DirectoryInfo>,
     pub albums: Vec<Album>,
     db: Option<MusicDatabase>,
 }
-
 
 impl MusicLibrary {
     pub fn new() -> Self {
@@ -195,16 +193,17 @@ impl MusicLibrary {
 
         // Merge with existing albums if we have a database
         if let Some(db) = &self.db
-            && incremental {
-                // Load existing albums from database
-                let existing_albums = db.load_library()?;
+            && incremental
+        {
+            // Load existing albums from database
+            let existing_albums = db.load_library()?;
 
-                // Merge existing albums that weren't updated
-                for existing_album in existing_albums {
-                    let key = (existing_album.artist.clone(), existing_album.title.clone());
-                    album_map.entry(key).or_insert(existing_album);
-                }
+            // Merge existing albums that weren't updated
+            for existing_album in existing_albums {
+                let key = (existing_album.artist.clone(), existing_album.title.clone());
+                album_map.entry(key).or_insert(existing_album);
             }
+        }
 
         self.albums = album_map.into_values().collect();
 
@@ -277,16 +276,15 @@ impl MusicLibrary {
                     total_tracks += 1;
 
                     // Check if we should skip this file in incremental mode
-                    if incremental
-                        && let Some(db) = &self.db {
-                            let file_mtime = get_file_mtime(path).unwrap_or(0);
-                            if let Ok(Some(db_mtime)) = db.get_track_mtime(path) {
-                                // Skip if file hasn't been modified
-                                if file_mtime <= db_mtime {
-                                    continue;
-                                }
+                    if incremental && let Some(db) = &self.db {
+                        let file_mtime = get_file_mtime(path).unwrap_or(0);
+                        if let Ok(Some(db_mtime)) = db.get_track_mtime(path) {
+                            // Skip if file hasn't been modified
+                            if file_mtime <= db_mtime {
+                                continue;
                             }
                         }
+                    }
 
                     scanned_tracks += 1;
 
@@ -397,10 +395,11 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     // Extract duration from the format
     if let Some(track) = probed.format.default_track()
         && let Some(time_base) = track.codec_params.time_base
-            && let Some(n_frames) = track.codec_params.n_frames {
-                let duration = time_base.calc_time(n_frames);
-                metadata.duration_secs = Some(duration.seconds);
-            }
+        && let Some(n_frames) = track.codec_params.n_frames
+    {
+        let duration = time_base.calc_time(n_frames);
+        metadata.duration_secs = Some(duration.seconds);
+    }
 
     // Extract metadata tags
     if let Some(metadata_rev) = probed.format.metadata().current() {
@@ -425,9 +424,10 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                     // Try to extract year from date string
                     let date_str = tag.value.to_string();
                     if let Some(year_str) = date_str.split('-').next()
-                        && let Ok(year) = year_str.parse() {
-                            metadata.year = Some(year);
-                        }
+                        && let Ok(year) = year_str.parse()
+                    {
+                        metadata.year = Some(year);
+                    }
                 }
                 _ => {}
             }
