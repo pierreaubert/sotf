@@ -1,10 +1,11 @@
 // ============================================================================
-// Parallel Plugin Graph - Thread-safe graph processing with parallel stages
+// DAW Host - Thread-safe graph processing with parallel stages
 // ============================================================================
 //
 // This version wraps plugins in Mutex for true parallel processing.
 // Uses std::thread (not async/tokio) for concurrent execution.
 
+use super::host::Host;
 use super::plugin::{Plugin, ProcessContext};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -164,15 +165,15 @@ impl AudioBuffer {
 }
 
 // ============================================================================
-// Parallel Plugin Graph - Main graph structure
+// DAW Host - Main graph structure
 // ============================================================================
 
-/// Plugin graph for parallel audio processing
+/// DAW-style host for parallel audio processing
 ///
 /// Supports two modes:
 /// 1. **Chain Mode**: Compatible with PluginHost API - plugins are added linearly
 /// 2. **Graph Mode**: Full graph API with nodes and edges
-pub struct ParallelPluginGraph {
+pub struct DawHost {
     /// All nodes in the graph
     nodes: HashMap<NodeId, GraphNode>,
     /// All edges in the graph
@@ -197,7 +198,7 @@ pub struct ParallelPluginGraph {
     built: bool,
 }
 
-impl ParallelPluginGraph {
+impl DawHost {
     /// Create a new empty plugin graph
     ///
     /// # Arguments
@@ -881,6 +882,48 @@ impl ParallelPluginGraph {
     }
 }
 
+// ============================================================================
+// Host Trait Implementation
+// ============================================================================
+
+impl Host for DawHost {
+    fn add_plugin(&mut self, plugin: Box<dyn Plugin>) -> Result<(), String> {
+        DawHost::add_plugin(self, plugin)
+    }
+
+    fn remove_plugin(&mut self, index: usize) -> Result<Box<dyn Plugin>, String> {
+        DawHost::remove_plugin(self, index)
+    }
+
+    fn plugin_count(&self) -> usize {
+        DawHost::plugin_count(self)
+    }
+
+    fn get_plugin(&self, index: usize) -> Option<&dyn Plugin> {
+        DawHost::get_plugin(self, index)
+    }
+
+    fn input_channels(&self) -> usize {
+        DawHost::input_channels(self)
+    }
+
+    fn output_channels(&self) -> usize {
+        DawHost::output_channels(self)
+    }
+
+    fn process(&mut self, input: &[f32], output: &mut [f32]) -> Result<usize, String> {
+        DawHost::process(self, input, output)
+    }
+
+    fn reset(&mut self) {
+        DawHost::reset(self)
+    }
+
+    fn total_latency_samples(&self) -> usize {
+        DawHost::total_latency_samples(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -889,7 +932,7 @@ mod tests {
     #[test]
     fn test_linear_chain() {
         // Test that a linear chain works correctly
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
 
         // Create a simple chain: gain1 -> gain2
         let gain1 = GainPlugin::new(2, -6.0);
@@ -915,7 +958,7 @@ mod tests {
 
     #[test]
     fn test_cycle_detection() {
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
 
         let gain1 = GainPlugin::new(2, 0.0);
         let gain2 = GainPlugin::new(2, 0.0);
@@ -931,7 +974,7 @@ mod tests {
 
     #[test]
     fn test_parallel_diamond() {
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
 
         // Create a diamond pattern:
         //     -> gain2 ->
@@ -986,7 +1029,7 @@ mod tests {
     #[test]
     fn test_stream_merge() {
         // Test that stream merging works correctly at join points
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
 
         // Two inputs merge into one output
         //  input1 (gain1 -6dB) \
@@ -1032,7 +1075,7 @@ mod tests {
 
     #[test]
     fn test_parallel_processing_enabled() {
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
         graph.set_parallel_enabled(true);
 
         // Create multiple parallel paths
@@ -1074,7 +1117,7 @@ mod tests {
 
     #[test]
     fn test_parallel_processing_disabled() {
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
         graph.set_parallel_enabled(false); // Disable parallel processing
 
         let node1 = graph.add_node("gain1".to_string(),
@@ -1103,7 +1146,7 @@ mod tests {
 
     #[test]
     fn test_latency_calculation() {
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
 
         // Create a chain with different latencies
         // In real plugins, latency would vary, but GainPlugin has 0 latency
@@ -1122,7 +1165,7 @@ mod tests {
 
     #[test]
     fn test_reset() {
-        let mut graph = ParallelPluginGraph::new(48000);
+        let mut graph = DawHost::new(48000);
 
         let node1 = graph.add_node("gain1".to_string(),
             Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
@@ -1143,7 +1186,7 @@ mod tests {
     #[test]
     fn test_pluginhost_api_linear_chain() {
         // Test that the PluginHost-compatible API works
-        let mut graph = ParallelPluginGraph::new_with_channels(2, 48000);
+        let mut graph = DawHost::new_with_channels(2, 48000);
 
         // Add plugins like you would with PluginHost
         let gain1 = GainPlugin::new(2, -6.0);
@@ -1170,7 +1213,7 @@ mod tests {
 
     #[test]
     fn test_pluginhost_api_remove_plugin() {
-        let mut graph = ParallelPluginGraph::new_with_channels(2, 48000);
+        let mut graph = DawHost::new_with_channels(2, 48000);
 
         // Add three plugins
         graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0)))).unwrap();
@@ -1196,7 +1239,7 @@ mod tests {
 
     #[test]
     fn test_pluginhost_api_empty_graph() {
-        let mut graph = ParallelPluginGraph::new_with_channels(2, 48000);
+        let mut graph = DawHost::new_with_channels(2, 48000);
 
         assert_eq!(graph.plugin_count(), 0);
         assert_eq!(graph.input_channels(), 2);
@@ -1210,7 +1253,7 @@ mod tests {
 
     #[test]
     fn test_pluginhost_api_channel_mismatch() {
-        let mut graph = ParallelPluginGraph::new_with_channels(2, 48000);
+        let mut graph = DawHost::new_with_channels(2, 48000);
 
         // Add a 2-channel plugin
         graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
@@ -1223,7 +1266,7 @@ mod tests {
     #[test]
     fn test_mixed_api_usage() {
         // Test that you can mix PluginHost API with graph API
-        let mut graph = ParallelPluginGraph::new_with_channels(2, 48000);
+        let mut graph = DawHost::new_with_channels(2, 48000);
 
         // Add a plugin using PluginHost API
         graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -3.0)))).unwrap();

@@ -17,8 +17,6 @@ use std::thread;
 use std::time::Duration;
 
 const SPIN_MS_DELAY_WATCHER: u64 = 100;
-const SPIN_MS_INIT_WATCHER: u64 = 100;
-const SPIN_MS_SLEEP_WATCHER: u64 = 1000;
 
 /// Config watcher events
 #[derive(Debug, Clone)]
@@ -245,6 +243,9 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
+
+    const SPIN_MS_INIT_WATCHER: u64 = 100;
+    const SPIN_MS_SLEEP_WATCHER: u64 = 1000;
 
     #[test]
     fn test_file_watcher_basic() {

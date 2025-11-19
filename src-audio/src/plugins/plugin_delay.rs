@@ -51,7 +51,7 @@ pub struct DelayPluginParams {
 ///
 /// # Example
 /// ```
-/// use sotf_audio::DelayPlugin;
+/// use sotf_audio::plugins::DelayPlugin;
 ///
 /// let mut delay = DelayPlugin::new(2, 250.0, 0.4, 0.5); // 250ms delay, 40% feedback, 50% mix
 /// ```

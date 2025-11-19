@@ -10,8 +10,9 @@ use super::{
 };
 use crate::plugins::{
     AnalyzerPlugin, CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin,
-    DelayPluginParams, EqPluginParams, GainPluginParams, GatePluginParams, LimiterPluginParams,
-    LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext, UpmixerPluginParams,
+    DelayPluginParams, EqPluginParams, GainPluginParams, GatePluginParams, Host,
+    LimiterPluginParams, LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext,
+    UpmixerPluginParams,
 };
 
 use std::collections::HashMap;

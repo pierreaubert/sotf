@@ -1,5 +1,6 @@
 // Integration tests for dynamics processing plugins
 
+use sotf_audio::plugins::Host;
 use sotf_audio::{
     CompressorPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, PluginHost,
 };

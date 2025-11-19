@@ -682,6 +682,7 @@ pub fn fir_bank_preamp_gain(fir_bank: &FirBank) -> f64 {
 #[cfg(test)]
 mod fir_tests {
     use super::*;
+    use ndarray::array;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol

@@ -1,5 +1,6 @@
 // Integration test for upmixer plugin
 
+use sotf_audio::plugins::Host;
 use sotf_audio::{PluginHost, UpmixerPlugin};
 
 #[test]

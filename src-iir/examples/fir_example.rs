@@ -1,7 +1,7 @@
 //! Example demonstrating FIR filter usage
 
 use autoeq_iir::*;
-use ndarray::Array1;
+use ndarray::{array, Array1};
 
 fn main() {
     println!("AutoEQ IIR - FIR Filter Example");
@@ -83,9 +83,20 @@ fn main() {
     ];
 
     for (window_type, name) in windows.iter() {
-        let beta = if *window_type == WindowType::Kaiser { 5.0 } else { 0.0 };
+        let beta = if *window_type == WindowType::Kaiser {
+            5.0
+        } else {
+            0.0
+        };
         let window = generate_window(5, *window_type, beta);
-        println!("   {}: {:?}", name, window.iter().map(|&x| format!("{:.3}", x)).collect::<Vec<_>>());
+        println!(
+            "   {}: {:?}",
+            name,
+            window
+                .iter()
+                .map(|&x| format!("{:.3}", x))
+                .collect::<Vec<_>>()
+        );
     }
 
     // Example 7: Vectorized frequency response
@@ -128,7 +139,13 @@ fn main() {
         let output = fir.process(1.0);
         outputs.push(output);
     }
-    println!("   First 10 outputs: {:?}", outputs.iter().map(|&x| format!("{:.3}", x)).collect::<Vec<_>>());
+    println!(
+        "   First 10 outputs: {:?}",
+        outputs
+            .iter()
+            .map(|&x| format!("{:.3}", x))
+            .collect::<Vec<_>>()
+    );
 
     // Reset and process a step response
     fir.reset();

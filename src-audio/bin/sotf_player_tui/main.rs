@@ -161,7 +161,7 @@ fn run_app<B: ratatui::backend::Backend>(
                 }
                 AppEvent::Tick => {
                     // Get playback state
-                    let state = player.get_playback_state(false);
+                    let state = player.get_playback_state();
 
                     // Update app state
                     app.position_secs = state.position_secs;

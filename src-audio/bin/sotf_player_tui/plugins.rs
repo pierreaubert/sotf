@@ -532,6 +532,13 @@ mod tests {
         if let Some(plugin) = chain.get_plugin_mut(idx) {
             plugin.settings = PluginSettings::Upmixer {
                 speaker_config: "7.1".to_string(),
+                gain_front_direct: 1.0,
+                gain_front_ambient: 0.5,
+                gain_rear_ambient: 1.0,
+                lfe_cutoff_hz: 120.0,
+                stereo_width: 0.5,
+                bandpass_hz: 250.0,
+                height_gain: 1.0,
                 lfe_gain: 1.0,
             };
         }

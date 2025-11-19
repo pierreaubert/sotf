@@ -1,5 +1,5 @@
 // ============================================================================
-// Plugin Graph - Process plugins as a directed acyclic graph (DAG)
+// Graph Host - Process plugins as a directed acyclic graph (DAG)
 // ============================================================================
 //
 // Supports parallel processing and stream synchronization at merge points.
@@ -143,11 +143,11 @@ impl AudioBuffer {
 }
 
 // ============================================================================
-// Plugin Graph - Main graph structure
+// Graph Host - Main graph structure
 // ============================================================================
 
-/// Plugin graph for parallel audio processing
-pub struct PluginGraph {
+/// Graph host for parallel audio processing
+pub struct GraphHost {
     /// All nodes in the graph
     nodes: HashMap<NodeId, GraphNode>,
     /// All edges in the graph
@@ -166,7 +166,7 @@ pub struct PluginGraph {
     num_threads: usize,
 }
 
-impl PluginGraph {
+impl GraphHost {
     /// Create a new empty plugin graph
     pub fn new(sample_rate: u32) -> Self {
         let num_threads = std::thread::available_parallelism()
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn test_linear_chain() {
         // Test that a linear chain works correctly
-        let mut graph = PluginGraph::new(48000);
+        let mut graph = GraphHost::new(48000);
 
         // Create a simple chain: gain1 -> gain2
         let gain1 = GainPlugin::new(2, -6.0);
@@ -745,7 +745,7 @@ mod tests {
 
     #[test]
     fn test_cycle_detection() {
-        let mut graph = PluginGraph::new(48000);
+        let mut graph = GraphHost::new(48000);
 
         let gain1 = GainPlugin::new(2, 0.0);
         let gain2 = GainPlugin::new(2, 0.0);
@@ -761,7 +761,7 @@ mod tests {
 
     #[test]
     fn test_parallel_stages() {
-        let mut graph = PluginGraph::new(48000);
+        let mut graph = GraphHost::new(48000);
 
         // Create a diamond pattern:
         //     -> gain2 ->

@@ -1,5 +1,6 @@
 // Integration tests for the plugin system
 
+use sotf_audio::plugins::Host;
 use sotf_audio::{GainPlugin, InPlacePluginAdapter, PluginHost};
 
 #[test]
@@ -18,7 +19,7 @@ fn test_plugin_host_single_plugin() {
 
     // -12 dB ≈ 0.25x amplitude
     for &sample in &output {
-        assert!((sample - 0.25).abs() < 0.01);
+        assert!((sample - 0.25_f32).abs() < 0.01_f32);
     }
 }
 
@@ -42,7 +43,7 @@ fn test_plugin_host_chain() {
 
     // -6dB + -6dB = -12dB ≈ 0.25x amplitude
     for &sample in &output {
-        assert!((sample - 0.25).abs() < 0.01);
+        assert!((sample - 0.25_f32).abs() < 0.01_f32);
     }
 }
 

@@ -23,6 +23,11 @@ use rustfft::{Fft, FftPlanner};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+const PHASE_SHIFT_0   : Complex<f32> = Complex::new(1.0, 0.0);
+const PHASE_SHIFT_90  : Complex<f32> = Complex::new(0.0, 1.0);
+const PHASE_SHIFT_180 : Complex<f32> = Complex::new(-1.0, 0.0);
+const PHASE_SHIFT_270 : Complex<f32> = Complex::new(0.0, -1.0);
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -52,7 +57,7 @@ fn default_stereo_width() -> f32 {
 }
 
 fn default_bandpass_hz() -> f32 {
-    250.0
+    300.0
 }
 
 fn default_speaker_config() -> String {
@@ -60,7 +65,7 @@ fn default_speaker_config() -> String {
 }
 
 fn default_height_gain() -> f32 {
-    1.0
+    0.7
 }
 
 fn default_lfe_gain() -> f32 {
@@ -480,6 +485,7 @@ impl UpmixerPlugin {
         // CRITICAL: Window BEFORE FFT to prevent spectral leakage!
         // Standard STFT: window input -> FFT -> process -> IFFT -> overlap-add
         // Optimized for cache locality - process both channels together
+	// TODO: assume input is STEREO
         for i in 0..self.fft_size {
             let idx = i * 2;
             let window_val = self.window[i];
@@ -489,33 +495,56 @@ impl UpmixerPlugin {
 
         // 2. Forward FFT (in-place)
         // Copy to frequency domain buffers first
-        self.freq_domain_left
-            .copy_from_slice(&self.time_domain_left);
-        self.freq_domain_right
-            .copy_from_slice(&self.time_domain_right);
+        self.freq_domain_left.copy_from_slice(&self.time_domain_left);
+        self.freq_domain_right.copy_from_slice(&self.time_domain_right);
 
         self.fft_forward.process(&mut self.freq_domain_left);
         self.fft_forward.process(&mut self.freq_domain_right);
 
         // 3. Frequency-dependent processing
         // Calculate frequency bin boundaries
-        let lfe_cutoff_bin =
-            ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
-        let bandpass_bin =
-            ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
+        let lfe_cutoff_bin = ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
+        let bandpass_bin = ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
 
         for i in 0..self.fft_size {
             let left = self.freq_domain_left[i];
             let right = self.freq_domain_right[i];
 
+            // Magnitudes for analysis
+            let mag_l = left.norm();
+            let mag_r = right.norm();
+            let sum = left + right;
+            let diff = left - right;
+            let mag_sum = sum.norm();
+
+            // Calculate Phase Coherence (0.0 to 1.0)
+            // 1.0 = Perfect center (In-phase)
+            // 0.0 = Hard Panned or Out-of-phase
+            let coherence = if mag_sum > 1e-6 {
+                // "Normalized Projection" of sum onto sum of magnitudes
+                mag_sum / (mag_l + mag_r + 1e-9)
+            } else {
+                0.0
+            };
+	    let width_factor = 1.0 - coherence;
+
             // Handle Nyquist folding for real FFT
             let is_lfe_band = i <= lfe_cutoff_bin || i >= (self.fft_size - lfe_cutoff_bin);
+
+            // Simple LFE Tapering (Soft knee) to reduce ringing
+            let dist_to_cutoff = (lfe_cutoff_bin as isize - i as isize).abs();
+            let lfe_gain = if dist_to_cutoff < 4 { // TODO 4 is sampling_rate depandent
+                // Linear fade over 4 bins around cutoff
+                0.5 + 0.5 * (dist_to_cutoff as f32 / 4.0)
+            } else {
+                1.0
+            };
             let is_passthrough_band = (i > lfe_cutoff_bin && i < bandpass_bin)
                 || (i > (self.fft_size - bandpass_bin) && i < (self.fft_size - lfe_cutoff_bin));
 
             if is_lfe_band {
                 // LFE band: low-pass filtered mono sum
-                self.lfe[i] = (left + right) * 0.5;
+                self.lfe[i] = (left + right) * 0.5 * lfe_gain;
                 self.direct_left[i] = Complex::new(0.0, 0.0);
                 self.direct_right[i] = Complex::new(0.0, 0.0);
                 self.direct_center[i] = Complex::new(0.0, 0.0);
@@ -530,24 +559,41 @@ impl UpmixerPlugin {
                 self.ambient_left[i] = Complex::new(0.0, 0.0);
                 self.ambient_right[i] = Complex::new(0.0, 0.0);
             } else {
-                // Upmixing band: apply direct/ambient decomposition
+                // 1. Direct Extraction: only extract what is common to BOTH channels (Min Magnitude) scaled by how coherent (in-phase) they are.
+                let min_mag = mag_l.min(mag_r);
+                let direct_magnitude = min_mag * coherence;
 
-                // Direct component (what's common to both channels - center image)
-                self.direct[i] = (left + right) * 0.5;
+                // Reconstruct Complex Direct Signal
+                // We use the phase of the Sum (L+R) but the magnitude of the extraction
+                self.direct[i] = if mag_sum > 1e-9 {
+                    sum * (direct_magnitude / mag_sum)
+                } else {
+                    Complex::new(0.0, 0.0)
+                };
 
-                // Ambient component (what's different - spatial/reverb)
-                self.ambient_left[i] = (left - right) * 0.5;
-                self.ambient_right[i] = (right - left) * 0.5;
+		// 2. Smart Ambient Extraction
+		// We boost the ambient signal when the content is "wide" (width_factor is high)
+		// If the sound is centered (vocals), we keep surrounds quiet to keep focus.
+		let width_factor = 1.0 - coherence;
+		let base_gain = 0.5; // TODO parameters
+		let steering_boost = 1.5; // How much extra boost for panned sounds?
+		let current_surround_gain = base_gain + (width_factor * steering_boost);
 
-                // Center channel gets the direct component
+		// Calculate Ambient with dynamic gain
+		let ambient_base = (left - right) * current_surround_gain; // TODO add a surround boost faxctor as a parameter
+                self.ambient_left[i] = ambient_base;
+                self.ambient_right[i] = ambient_base*PHASE_SHIFT_90;
+
+		// 3. Assign to buffers
                 self.direct_center[i] = self.direct[i];
-                self.direct_center_mag[i] = self.direct[i].norm();
+                self.direct_center_mag[i] = direct_magnitude;
 
-                // Front left/right: remove center based on stereo_width
-                // stereo_width = 0.0: no removal (wide), 1.0: full removal (narrow)
+                // 4. Fronts Remapping (Divergence)
+                // Subtract the extracted direct component from L/R
+                // If stereo_width is 0 (Wide), we subtract nothing.
+                // If stereo_width is 1 (Narrow), we subtract the full direct signal.
                 self.direct_left[i] = left - self.direct[i] * self.stereo_width;
                 self.direct_right[i] = right - self.direct[i] * self.stereo_width;
-
                 self.lfe[i] = Complex::new(0.0, 0.0);
             }
         }
@@ -564,8 +610,7 @@ impl UpmixerPlugin {
                 for i in 0..self.fft_size {
                     self.time_out_channels[ch_idx][i] = self.lfe[i] * self.lfe_gain;
                 }
-                self.fft_inverse
-                    .process(&mut self.time_out_channels[ch_idx]);
+                self.fft_inverse.process(&mut self.time_out_channels[ch_idx]);
             } else {
                 // Regular speaker: pan direct and ambient components using VBAP
                 let panning_gain_left = self.panning_gains_left[ch_idx];
@@ -583,44 +628,46 @@ impl UpmixerPlugin {
                 // Rear speakers: azimuth outside this range
                 let is_front = speaker.azimuth.abs() <= 90.0;
                 let is_height = speaker.elevation > 0.0;
-                let is_rear_height = is_height && !is_front;
-
-                // Check if VBAP panning gains are too low (happens for rear heights from front sources)
-                let has_low_vbap_gain = (panning_gain_left + panning_gain_right) < 0.01;
-
+                let is_left = speaker.azimuth > 0.0;
 
                 // Select appropriate gains
                 let (direct_gain, ambient_gain) = if is_front {
                     (self.gain_front_direct, self.gain_front_ambient)
                 } else {
-                    (0.0, self.gain_rear_ambient) // Rear speakers get no direct, only ambient
+		    // TODO: sending 10% back to simulate a revert (and make it a parameter)
+                    (0.15, self.gain_rear_ambient) // Rear speakers get no direct, only ambient
                 };
 
                 // Build frequency-domain signal for this speaker
                 for i in 0..self.fft_size {
-                    let signal = if is_rear_height && has_low_vbap_gain {
-                        // Rear height speakers with low VBAP gains: use decorrelated ambient
-                        // Alternate between left and right ambient for spatial decorrelation
-                        // This creates diffuse overhead sound without relying on VBAP panning
-
-                        // Use different ambient channel for left vs right speaker
-                        // This creates a wider, more diffuse overhead soundfield
-                        let amb_signal = if ch_idx % 2 == 0 {
-                            self.ambient_left[i]  // Left rear height uses ambient_left
-                        } else {
-                            self.ambient_right[i]  // Right rear height uses ambient_right
-                        };
-
-                        amb_signal * self.gain_rear_ambient * 0.7
-
+                    let signal = if is_height {
+			// TOP FRONTS
+			// We want them to feel "diffuse" but connected to the front stage.
+			// We flip the phase (180) relative to the floor to push the sound "up".
+			// TOP REARS
+			// These should add "tail" to the room. We can actually mix in a tiny bit
+			// of the Direct signal to the Top Rears to simulate "Late Reflections"
+			// of the main vocals, but pure Ambience is safer.
+			// Let's use a "Swapped" decorrelation for the rear heights to ensure they
+			// sound different from Top Fronts.
+                        let amb_signal = if is_front {
+			    if is_left {
+				self.ambient_left[i] * PHASE_SHIFT_180
+                            } else {
+				self.ambient_left[i] * PHASE_SHIFT_270
+			    }
+			} else {
+			    if is_left {
+				self.ambient_left[i] * PHASE_SHIFT_90
+                            } else {
+				self.ambient_left[i] * PHASE_SHIFT_0
+			    }
+			};
+                        amb_signal * self.gain_rear_ambient * self.height_gain
                     } else {
                         // Normal VBAP panning for all other speakers
-                        let direct_component = self.direct_left[i] * panning_gain_left
-                            + self.direct_right[i] * panning_gain_right;
-
-                        let ambient_component = self.ambient_left[i] * panning_gain_left
-                            + self.ambient_right[i] * panning_gain_right;
-
+                        let direct_component = self.direct_left[i] * panning_gain_left   + self.direct_right[i] * panning_gain_right;
+                        let ambient_component = self.ambient_left[i] * panning_gain_left + self.ambient_right[i] * panning_gain_right;
                         direct_component * direct_gain + ambient_component * ambient_gain
                     };
 
