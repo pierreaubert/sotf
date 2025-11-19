@@ -6,6 +6,7 @@ members = [
     "src-convexhull3d",
     "src-de",
     "src-env",
+    "src-gpui-player",
     "src-hal",
     "src-head-scanner",
     "src-iir",
@@ -18,6 +19,7 @@ members = [
 #            just prod-hal
 #            just prod-configbar
 # Crate head-scanner is build separetly since it is hard to get all the dependency rights
+# src-gpui-player is also excluded from default build due to heavy GPUI dependency
 default-members = [
     "src-audio",
     "src-autoeq",
