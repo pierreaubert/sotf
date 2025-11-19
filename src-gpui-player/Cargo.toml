@@ -1,0 +1,63 @@
+[package]
+name = "sotf-gpui-player"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "GPUI music player frontend for SOTF"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# GPUI framework
+gpui = { git = "https://github.com/zed-industries/zed", rev = "main" }
+
+# Audio engine
+sotf_audio = { path = "../src-audio" }
+autoeq-iir = { path = "../src-iir" }
+
+# Synchronous mutex (faster than std::sync::Mutex)
+parking_lot = "0.12"
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# File system and utilities
+walkdir = "2"
+id3 = "1.14"
+metaflac = "0.2"
+symphonia = { workspace = true }
+symphonia-core = { workspace = true }
+symphonia-metadata = { workspace = true }
+symphonia-bundle-flac = { workspace = true }
+symphonia-bundle-mp3 = { workspace = true }
+symphonia-codec-aac = { workspace = true }
+symphonia-format-riff = { workspace = true }
+symphonia-format-ogg = { workspace = true }
+symphonia-format-isomp4 = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Path and config
+directories = "5.0"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Smol runtime (used by GPUI)
+smol = "2.0"
+
+[[bin]]
+name = "sotf_player_gpui"
+path = "src/main.rs"
