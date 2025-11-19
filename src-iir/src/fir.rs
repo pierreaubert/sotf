@@ -111,7 +111,15 @@ impl Fir {
     /// # Arguments
     /// * `coeffs` - Filter coefficients (taps)
     /// * `srate` - Sample rate in Hz
+    ///
+    /// # Panics
+    /// Panics in debug mode if:
+    /// - `coeffs` is empty
+    /// - `srate` is not positive
     pub fn new_custom(coeffs: Vec<f64>, srate: f64) -> Self {
+        debug_assert!(!coeffs.is_empty(), "FIR filter must have at least one tap");
+        debug_assert!(srate > 0.0, "Sample rate must be positive");
+
         let n_taps = coeffs.len();
         Fir {
             filter_type: FirFilterType::Custom,
@@ -134,6 +142,12 @@ impl Fir {
     /// * `srate` - Sample rate in Hz
     /// * `window` - Window function to use
     /// * `kaiser_beta` - Beta parameter for Kaiser window (ignored for other windows)
+    ///
+    /// # Panics
+    /// Panics in debug mode if:
+    /// - `n_taps` is zero
+    /// - `srate` is not positive
+    /// - `cutoff` is not positive or >= Nyquist frequency (srate/2)
     pub fn lowpass(
         n_taps: usize,
         cutoff: f64,
@@ -141,16 +155,23 @@ impl Fir {
         window: WindowType,
         kaiser_beta: f64,
     ) -> Self {
+        debug_assert!(n_taps > 0, "Number of taps must be positive");
+        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(cutoff > 0.0 && cutoff < srate / 2.0,
+            "Cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
+            srate / 2.0, cutoff);
+
         let coeffs = design_fir_lowpass(n_taps, cutoff, srate, window, kaiser_beta);
+        let n = coeffs.len();
         Fir {
             filter_type: FirFilterType::Lowpass,
-            coeffs: coeffs.clone(),
+            coeffs,
             srate,
             freq: cutoff,
             freq_upper: None,
             window,
             kaiser_beta,
-            state: vec![0.0; coeffs.len()],
+            state: vec![0.0; n],
             state_pos: 0,
         }
     }
@@ -163,6 +184,12 @@ impl Fir {
     /// * `srate` - Sample rate in Hz
     /// * `window` - Window function to use
     /// * `kaiser_beta` - Beta parameter for Kaiser window (ignored for other windows)
+    ///
+    /// # Panics
+    /// Panics in debug mode if:
+    /// - `n_taps` is zero
+    /// - `srate` is not positive
+    /// - `cutoff` is not positive or >= Nyquist frequency (srate/2)
     pub fn highpass(
         n_taps: usize,
         cutoff: f64,
@@ -170,16 +197,23 @@ impl Fir {
         window: WindowType,
         kaiser_beta: f64,
     ) -> Self {
+        debug_assert!(n_taps > 0, "Number of taps must be positive");
+        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(cutoff > 0.0 && cutoff < srate / 2.0,
+            "Cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
+            srate / 2.0, cutoff);
+
         let coeffs = design_fir_highpass(n_taps, cutoff, srate, window, kaiser_beta);
+        let n = coeffs.len();
         Fir {
             filter_type: FirFilterType::Highpass,
-            coeffs: coeffs.clone(),
+            coeffs,
             srate,
             freq: cutoff,
             freq_upper: None,
             window,
             kaiser_beta,
-            state: vec![0.0; coeffs.len()],
+            state: vec![0.0; n],
             state_pos: 0,
         }
     }
@@ -193,6 +227,14 @@ impl Fir {
     /// * `srate` - Sample rate in Hz
     /// * `window` - Window function to use
     /// * `kaiser_beta` - Beta parameter for Kaiser window (ignored for other windows)
+    ///
+    /// # Panics
+    /// Panics in debug mode if:
+    /// - `n_taps` is zero
+    /// - `srate` is not positive
+    /// - `freq_low` is not positive or >= Nyquist frequency (srate/2)
+    /// - `freq_high` is not positive or >= Nyquist frequency (srate/2)
+    /// - `freq_low` >= `freq_high`
     pub fn bandpass(
         n_taps: usize,
         freq_low: f64,
@@ -201,16 +243,29 @@ impl Fir {
         window: WindowType,
         kaiser_beta: f64,
     ) -> Self {
+        debug_assert!(n_taps > 0, "Number of taps must be positive");
+        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(freq_low > 0.0 && freq_low < srate / 2.0,
+            "Lower cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
+            srate / 2.0, freq_low);
+        debug_assert!(freq_high > 0.0 && freq_high < srate / 2.0,
+            "Upper cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
+            srate / 2.0, freq_high);
+        debug_assert!(freq_low < freq_high,
+            "Lower cutoff frequency ({}Hz) must be less than upper cutoff frequency ({}Hz)",
+            freq_low, freq_high);
+
         let coeffs = design_fir_bandpass(n_taps, freq_low, freq_high, srate, window, kaiser_beta);
+        let n = coeffs.len();
         Fir {
             filter_type: FirFilterType::Bandpass,
-            coeffs: coeffs.clone(),
+            coeffs,
             srate,
             freq: freq_low,
             freq_upper: Some(freq_high),
             window,
             kaiser_beta,
-            state: vec![0.0; coeffs.len()],
+            state: vec![0.0; n],
             state_pos: 0,
         }
     }
@@ -224,6 +279,14 @@ impl Fir {
     /// * `srate` - Sample rate in Hz
     /// * `window` - Window function to use
     /// * `kaiser_beta` - Beta parameter for Kaiser window (ignored for other windows)
+    ///
+    /// # Panics
+    /// Panics in debug mode if:
+    /// - `n_taps` is zero
+    /// - `srate` is not positive
+    /// - `freq_low` is not positive or >= Nyquist frequency (srate/2)
+    /// - `freq_high` is not positive or >= Nyquist frequency (srate/2)
+    /// - `freq_low` >= `freq_high`
     pub fn bandstop(
         n_taps: usize,
         freq_low: f64,
@@ -232,16 +295,29 @@ impl Fir {
         window: WindowType,
         kaiser_beta: f64,
     ) -> Self {
+        debug_assert!(n_taps > 0, "Number of taps must be positive");
+        debug_assert!(srate > 0.0, "Sample rate must be positive");
+        debug_assert!(freq_low > 0.0 && freq_low < srate / 2.0,
+            "Lower cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
+            srate / 2.0, freq_low);
+        debug_assert!(freq_high > 0.0 && freq_high < srate / 2.0,
+            "Upper cutoff frequency must be positive and below Nyquist ({}Hz), got {}Hz",
+            srate / 2.0, freq_high);
+        debug_assert!(freq_low < freq_high,
+            "Lower cutoff frequency ({}Hz) must be less than upper cutoff frequency ({}Hz)",
+            freq_low, freq_high);
+
         let coeffs = design_fir_bandstop(n_taps, freq_low, freq_high, srate, window, kaiser_beta);
+        let n = coeffs.len();
         Fir {
             filter_type: FirFilterType::Bandstop,
-            coeffs: coeffs.clone(),
+            coeffs,
             srate,
             freq: freq_low,
             freq_upper: Some(freq_high),
             window,
             kaiser_beta,
-            state: vec![0.0; coeffs.len()],
+            state: vec![0.0; n],
             state_pos: 0,
         }
     }
@@ -307,23 +383,25 @@ impl Fir {
     }
 
     /// Vectorized version to compute the SPL response for a vector of frequencies.
+    ///
+    /// # Performance
+    /// This implementation combines real and imaginary calculations in a single loop
+    /// for better cache locality compared to separate loops.
     pub fn np_log_result(&self, freq: &Array1<f64>) -> Array1<f64> {
         let omega = freq * (2.0 * PI / self.srate);
 
-        let mut response = Array1::zeros(freq.len());
-        for (n, &coeff) in self.coeffs.iter().enumerate() {
-            let phase = omega.mapv(|w| -(n as f64) * w);
-            response = response + phase.mapv(f64::cos) * coeff;
-        }
-
-        // Compute magnitude
+        let mut real = Array1::zeros(freq.len());
         let mut imag = Array1::zeros(freq.len());
+
+        // Combine both loops for better cache locality
         for (n, &coeff) in self.coeffs.iter().enumerate() {
             let phase = omega.mapv(|w| -(n as f64) * w);
+            real = real + phase.mapv(f64::cos) * coeff;
             imag = imag + phase.mapv(f64::sin) * coeff;
         }
 
-        let magnitude = (response.mapv(|x| x * x) + imag.mapv(|x| x * x)).mapv(f64::sqrt);
+        // Compute magnitude
+        let magnitude = (real.mapv(|x| x * x) + imag.mapv(|x| x * x)).mapv(f64::sqrt);
 
         // Convert to dB
         let min_val = 1.0e-20;
