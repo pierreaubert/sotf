@@ -618,24 +618,19 @@ impl App {
             }
 
         // Restore plugin preset
-        if let Some(preset_name) = &config.plugin_preset
-            && let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
-                let preset_path = presets_dir.join(preset_name);
-                if preset_path.exists() {
-                    match self.plugin_chain.load_from_file(&preset_path) {
-                        Ok(_) => {
-                            self.last_loaded_preset = Some(preset_name.clone());
-                            self.needs_plugin_update = true;
-                            log::info!("Restored plugin preset: {}", preset_name);
-                        }
-                        Err(e) => {
-                            log::warn!("Could not restore preset '{}': {}", preset_name, e);
-                        }
-                    }
-                } else {
-                    log::warn!("Saved preset '{}' not found", preset_name);
+        if let Some(preset_name) = &config.plugin_preset {
+            // Use the plugin chain's own load method (handles path construction and validation)
+            match self.plugin_chain.load_from_file(preset_name) {
+                Ok(_) => {
+                    self.last_loaded_preset = Some(preset_name.clone());
+                    self.needs_plugin_update = true;
+                    log::info!("Restored plugin preset: {}", preset_name);
+                }
+                Err(e) => {
+                    log::warn!("Could not restore preset '{}': {}", preset_name, e);
                 }
             }
+        }
 
         log::info!(
             "Loaded app configuration: {} items in queue, device: {:?}, preset: {:?}",
@@ -988,16 +983,36 @@ impl App {
         if let Some(plugin) = self.get_editing_plugin_mut() {
             match &mut plugin.settings {
                 PluginSettings::Upmixer {
-                    speaker_config: _,
+                    speaker_config,
+                    gain_front_direct,
+                    gain_front_ambient,
+                    gain_rear_ambient,
+                    lfe_cutoff_hz,
+                    stereo_width,
+                    bandpass_hz,
+                    height_gain,
                     lfe_gain,
                 } => {
                     match param_idx {
                         0 => {
                             // speaker_config: cycle through available configs
-                            // For now, we just have 5.1, so no-op
-                            return false;
+                            let configs = ["2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"];
+                            let current_idx = configs.iter().position(|&c| c == speaker_config.as_str()).unwrap_or(2);
+                            let new_idx = if delta > 0.0 {
+                                (current_idx + 1) % configs.len()
+                            } else {
+                                (current_idx + configs.len() - 1) % configs.len()
+                            };
+                            *speaker_config = configs[new_idx].to_string();
                         }
-                        1 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
+                        1 => *gain_front_direct = (*gain_front_direct + delta * 0.1).clamp(0.0, 2.0),
+                        2 => *gain_front_ambient = (*gain_front_ambient + delta * 0.1).clamp(0.0, 2.0),
+                        3 => *gain_rear_ambient = (*gain_rear_ambient + delta * 0.1).clamp(0.0, 2.0),
+                        4 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(20.0, 200.0),
+                        5 => *stereo_width = (*stereo_width + delta * 0.05).clamp(0.0, 1.0),
+                        6 => *bandpass_hz = (*bandpass_hz + delta * 10.0).clamp(100.0, 500.0),
+                        7 => *height_gain = (*height_gain + delta * 0.1).clamp(0.0, 2.0),
+                        8 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
                         _ => return false,
                     }
                     true
@@ -1076,11 +1091,20 @@ impl App {
             return;
         }
 
-        let path = PathBuf::from(&self.plugin_file_input);
-        match self.plugin_chain.save_to_file(&path) {
+        // Save using the plugin chain's own save method (handles path, validation, etc.)
+        match self.plugin_chain.save_to_file(&self.plugin_file_input) {
             Ok(_) => {
-                self.status_message = Some(format!("Saved plugin chain to {}", path.display()));
-                log::info!("Saved plugin chain to {}", path.display());
+                // Get the final filename (with .json appended if needed)
+                let filename = if self.plugin_file_input.ends_with(".json") {
+                    self.plugin_file_input.clone()
+                } else {
+                    format!("{}.json", self.plugin_file_input)
+                };
+
+                self.status_message = Some(format!("Saved preset: {}", filename));
+                self.last_loaded_preset = Some(filename);
+                // Refresh presets list
+                self.refresh_plugin_presets();
             }
             Err(e) => {
                 self.status_message = Some(format!("Error saving: {}", e));
@@ -1096,12 +1120,19 @@ impl App {
             return;
         }
 
-        let path = PathBuf::from(&self.plugin_file_input);
-        match self.plugin_chain.load_from_file(&path) {
+        // Load using the plugin chain's own load method (handles path, extension, etc.)
+        match self.plugin_chain.load_from_file(&self.plugin_file_input) {
             Ok(_) => {
-                self.status_message = Some(format!("Loaded plugin chain from {}", path.display()));
+                // Get the final filename (with .json appended if needed)
+                let filename = if self.plugin_file_input.ends_with(".json") {
+                    self.plugin_file_input.clone()
+                } else {
+                    format!("{}.json", self.plugin_file_input)
+                };
+
+                self.status_message = Some(format!("Loaded preset: {}", filename));
                 self.needs_plugin_update = true;
-                log::info!("Loaded plugin chain from {}", path.display());
+                self.last_loaded_preset = Some(filename);
             }
             Err(e) => {
                 self.status_message = Some(format!("Error loading: {}", e));
@@ -1165,15 +1196,13 @@ impl App {
 
         if let Some(preset_filename) = self
             .available_plugin_presets
-            .get(self.selected_preset_index)
-            && let Some(presets_dir) = crate::config::get_plugin_presets_dir() {
-                let preset_path = presets_dir.join(preset_filename);
-                match self.plugin_chain.load_from_file(&preset_path) {
+            .get(self.selected_preset_index) {
+                // Use the plugin chain's own load method (handles path construction)
+                match self.plugin_chain.load_from_file(preset_filename) {
                     Ok(_) => {
                         self.status_message = Some(format!("Loaded preset: {}", preset_filename));
                         self.needs_plugin_update = true;
                         self.last_loaded_preset = Some(preset_filename.clone());
-                        log::info!("Loaded preset from {}", preset_path.display());
                     }
                     Err(e) => {
                         self.status_message = Some(format!("Error loading preset: {}", e));
@@ -1281,7 +1310,7 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
     use crate::plugins::PluginSettings;
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
-        PluginSettings::Upmixer { .. } => 2, // speaker_config, lfe_gain
+        PluginSettings::Upmixer { .. } => 9, // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, lfe_cutoff_hz, stereo_width, bandpass_hz, height_gain, lfe_gain
         PluginSettings::Compressor { .. } => 5, // threshold, ratio, attack, release, knee
         PluginSettings::Limiter { .. } => 2, // threshold, release
         PluginSettings::Gate { .. } => 4,    // threshold, ratio, attack, release

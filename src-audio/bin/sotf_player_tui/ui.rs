@@ -1409,12 +1409,23 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
     match settings {
         PluginSettings::Upmixer {
             speaker_config,
+            gain_front_direct,
+            gain_front_ambient,
+            gain_rear_ambient,
+            lfe_cutoff_hz,
+            stereo_width,
+            bandpass_hz,
+            height_gain,
             lfe_gain,
         } => vec![
-            (
-                "Speaker Config".to_string(),
-                speaker_config.clone(),
-            ),
+            ("Speaker Config".to_string(), speaker_config.clone()),
+            ("Front Direct Gain".to_string(), format!("{:.2}x", gain_front_direct)),
+            ("Front Ambient Gain".to_string(), format!("{:.2}x", gain_front_ambient)),
+            ("Rear Ambient Gain".to_string(), format!("{:.2}x", gain_rear_ambient)),
+            ("LFE Cutoff".to_string(), format!("{:.0} Hz", lfe_cutoff_hz)),
+            ("Stereo Width".to_string(), format!("{:.2}", stereo_width)),
+            ("Bandpass".to_string(), format!("{:.0} Hz", bandpass_hz)),
+            ("Height Gain".to_string(), format!("{:.2}x", height_gain)),
             ("LFE Gain".to_string(), format!("{:.2}x", lfe_gain)),
         ],
         PluginSettings::Compressor {
@@ -1483,10 +1494,10 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
 }
 
 fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
-    // Create a centered dialog (50% width, 20% height)
+    // Create a centered dialog (60% width, larger to show info)
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.5) as u16;
-    let dialog_height = 7;
+    let dialog_width = (area.width as f32 * 0.6) as u16;
+    let dialog_height = 9;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height - dialog_height) / 2;
 
@@ -1501,7 +1512,7 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black))
-        .title("Save Plugin Chain");
+        .title("Save Plugin Preset");
 
     f.render_widget(block, dialog_area);
 
@@ -1514,7 +1525,11 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     };
 
     let lines = vec![
-        Line::from("Enter filename (e.g., plugins.json):"),
+        Line::from("Enter preset name (without .json extension):"),
+        Line::from(vec![
+            Span::styled("  Saved to: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("plugin_presets/", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+        ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("> ", Style::default().fg(Color::Cyan)),
@@ -1522,6 +1537,10 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
             Span::styled("_", Style::default().fg(Color::Green)),
         ]),
         Line::from(""),
+        Line::from(vec![
+            Span::styled("Note: ", Style::default().fg(Color::Yellow)),
+            Span::raw(".json extension will be added automatically"),
+        ]),
         Line::from("Press Enter to save, ESC to cancel"),
     ];
 
@@ -1533,10 +1552,10 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
 }
 
 fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
-    // Create a centered dialog (50% width, 20% height)
+    // Create a larger centered dialog for preset list (70% width, 60% height)
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.5) as u16;
-    let dialog_height = 7;
+    let dialog_width = (area.width as f32 * 0.7) as u16;
+    let dialog_height = (area.height as f32 * 0.6) as u16;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height - dialog_height) / 2;
 
@@ -1551,11 +1570,11 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .style(Style::default().bg(Color::Black))
-        .title("Load Plugin Chain");
+        .title("Load Plugin Preset");
 
     f.render_widget(block, dialog_area);
 
-    // Inner area for text
+    // Inner area for content
     let inner = Rect {
         x: dialog_area.x + 1,
         y: dialog_area.y + 1,
@@ -1563,21 +1582,79 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         height: dialog_area.height.saturating_sub(2),
     };
 
-    let lines = vec![
-        Line::from("Enter filename (e.g., plugins.json):"),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("> ", Style::default().fg(Color::Cyan)),
-            Span::raw(&app.plugin_file_input),
-            Span::styled("_", Style::default().fg(Color::Green)),
-        ]),
-        Line::from(""),
-        Line::from("Press Enter to load, ESC to cancel"),
-    ];
+    // If user is typing, show filename input; otherwise show preset list
+    if !app.plugin_file_input.is_empty() {
+        // Manual filename entry mode
+        let lines = vec![
+            Line::from("Enter filename (without .json extension):"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("> ", Style::default().fg(Color::Cyan)),
+                Span::raw(&app.plugin_file_input),
+                Span::styled("_", Style::default().fg(Color::Green)),
+            ]),
+            Line::from(""),
+            Line::from("Press Enter to load, ESC to cancel"),
+        ];
 
-    let paragraph = Paragraph::new(lines)
-        .block(Block::default())
-        .wrap(Wrap { trim: false });
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default())
+            .wrap(Wrap { trim: false });
 
-    f.render_widget(paragraph, inner);
+        f.render_widget(paragraph, inner);
+    } else if app.available_plugin_presets.is_empty() {
+        // No presets available
+        let lines = vec![
+            Line::from("No presets found in plugin_presets directory"),
+            Line::from(""),
+            Line::from("You can:"),
+            Line::from("  • Type a filename to load a preset"),
+            Line::from("  • Press ESC to cancel"),
+            Line::from("  • Save your first preset with 's' from the Plugins screen"),
+        ];
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default())
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(Color::Yellow));
+
+        f.render_widget(paragraph, inner);
+    } else {
+        // Show preset list
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("Available Presets ", Style::default()),
+                Span::styled("(↑/↓ to select, Enter to load)", Style::default().fg(Color::DarkGray)),
+            ]),
+            Line::from(""),
+        ];
+
+        // Add preset items
+        for (i, preset) in app.available_plugin_presets.iter().enumerate() {
+            let is_selected = i == app.selected_preset_index;
+            let style = if is_selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Cyan)
+            };
+
+            let marker = if is_selected { "► " } else { "  " };
+            lines.push(Line::from(vec![
+                Span::styled(marker, style),
+                Span::styled(preset, style),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from("Or type a filename to load manually, ESC to cancel"));
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default())
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, inner);
+    }
 }

@@ -84,6 +84,13 @@ pub enum PluginSettings {
     },
     Upmixer {
         speaker_config: String,
+        gain_front_direct: f64,
+        gain_front_ambient: f64,
+        gain_rear_ambient: f64,
+        lfe_cutoff_hz: f64,
+        stereo_width: f64,
+        bandpass_hz: f64,
+        height_gain: f64,
         lfe_gain: f64,
     },
     Compressor {
@@ -147,11 +154,25 @@ impl PluginSettings {
             }
             Self::Upmixer {
                 speaker_config,
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                lfe_cutoff_hz,
+                stereo_width,
+                bandpass_hz,
+                height_gain,
                 lfe_gain,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
                     "speaker_config": speaker_config,
+                    "gain_front_direct": gain_front_direct,
+                    "gain_front_ambient": gain_front_ambient,
+                    "gain_rear_ambient": gain_rear_ambient,
+                    "lfe_cutoff_hz": lfe_cutoff_hz,
+                    "stereo_width": stereo_width,
+                    "bandpass_hz": bandpass_hz,
+                    "height_gain": height_gain,
                     "lfe_gain": lfe_gain,
                 }),
             ),
@@ -230,6 +251,13 @@ impl PluginSettings {
             },
             PluginType::Upmixer => Self::Upmixer {
                 speaker_config: "5.1".to_string(),
+                gain_front_direct: 1.0,
+                gain_front_ambient: 0.5,
+                gain_rear_ambient: 1.0,
+                lfe_cutoff_hz: 120.0,
+                stereo_width: 0.5,
+                bandpass_hz: 250.0,
+                height_gain: 1.0,
                 lfe_gain: 1.0,
             },
             PluginType::Compressor => Self::Compressor {
@@ -383,22 +411,81 @@ impl PluginChain {
         2
     }
 
-    /// Save the plugin chain to a JSON file
-    pub fn save_to_file<P: AsRef<std::path::Path>>(
+    /// Save the plugin chain to a JSON file in the plugin_presets directory
+    ///
+    /// # Arguments
+    /// * `filename` - The preset filename (with or without .json extension)
+    ///
+    /// # Returns
+    /// * Ok(()) on success
+    /// * Err if the extension is not .json or if saving fails
+    pub fn save_to_file(
         &self,
-        path: P,
+        filename: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Validate extension - must be .json or none
+        let path = std::path::Path::new(filename);
+        let extension = path.extension().and_then(|ext| ext.to_str());
+
+        // Check if user specified a non-json extension
+        if let Some(ext) = extension {
+            if ext != "json" {
+                return Err(format!(
+                    "Only .json files are supported. Please use .json extension instead of .{}",
+                    ext
+                ).into());
+            }
+        }
+
+        // Auto-append .json if no extension provided
+        let filename = if extension.is_none() {
+            format!("{}.json", filename)
+        } else {
+            filename.to_string()
+        };
+
+        // Get plugin_presets directory
+        let presets_dir = crate::config::get_plugin_presets_dir()
+            .ok_or("Could not access plugin presets directory")?;
+
+        let full_path = presets_dir.join(&filename);
+
+        // Save to file
         let json = serde_json::to_string_pretty(&self.plugins)?;
-        std::fs::write(path, json)?;
+        std::fs::write(&full_path, json)?;
+
+        log::info!("Saved plugin chain to {}", full_path.display());
         Ok(())
     }
 
-    /// Load the plugin chain from a JSON file
-    pub fn load_from_file<P: AsRef<std::path::Path>>(
+    /// Load the plugin chain from a JSON file in the plugin_presets directory
+    ///
+    /// # Arguments
+    /// * `filename` - The preset filename (with or without .json extension)
+    ///
+    /// # Returns
+    /// * Ok(()) on success
+    /// * Err if the file doesn't exist or loading fails
+    pub fn load_from_file(
         &mut self,
-        path: P,
+        filename: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let json = std::fs::read_to_string(path)?;
+        // Auto-append .json if no extension provided
+        let path = std::path::Path::new(filename);
+        let filename = if path.extension().is_none() {
+            format!("{}.json", filename)
+        } else {
+            filename.to_string()
+        };
+
+        // Get plugin_presets directory
+        let presets_dir = crate::config::get_plugin_presets_dir()
+            .ok_or("Could not access plugin presets directory")?;
+
+        let full_path = presets_dir.join(&filename);
+
+        // Load from file
+        let json = std::fs::read_to_string(&full_path)?;
         let plugins: Vec<Plugin> = serde_json::from_str(&json)?;
 
         // Update next_id to be higher than any loaded plugin id
@@ -406,6 +493,8 @@ impl PluginChain {
         self.next_id = max_id + 1;
 
         self.plugins = plugins;
+
+        log::info!("Loaded plugin chain from {}", full_path.display());
         Ok(())
     }
 }
