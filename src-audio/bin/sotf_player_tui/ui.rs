@@ -174,9 +174,9 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(6),  // SOTF title
+            Constraint::Length(10),  // SOTF title
             Constraint::Min(0),     // Screen boxes (expandable)
-            Constraint::Length(30), // Output device
+            Constraint::Length(40), // Output device
         ])
         .split(area);
 
@@ -188,7 +188,7 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
                 .add_modifier(Modifier::BOLD),
         )
         .alignment(Alignment::Left)
-        .block(Block::default().borders(Borders::LEFT | Borders::TOP | Borders::BOTTOM));
+        .block(Block::default().borders(Borders::ALL));
 
     f.render_widget(sotf_title, title_chunks[0]);
 
@@ -197,13 +197,13 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
 
     // Device selector on the right
     let device_text = if let Some(device) = app.get_selected_output_device() {
-        format!("Out: {}", device.name)
+        device.name.to_string()
     } else {
-        "Out: Default".to_string()
+        "Default".to_string()
     };
 
     let device_widget = Paragraph::new(device_text)
-        .style(Style::default().fg(Color::Yellow))
+        .style(Style::default().fg(Color::Green))
         .alignment(Alignment::Center)
         .block(
             Block::default()
@@ -240,15 +240,21 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(Color::White).bg(Color::Black)
         };
 
-        spans.push(Span::raw("[ "));
-        spans.push(Span::styled(label.to_string(), style));
-        spans.push(Span::raw(" ]"));
-        spans.push(Span::raw(" "));
+	if is_active {
+            spans.push(Span::raw("("));
+            spans.push(Span::styled(label.chars().nth(0).unwrap().to_string(), style));
+            spans.push(Span::raw(")"));
+            spans.push(Span::styled(label[1..].to_string(), style));
+            spans.push(Span::raw(" "));
+	} else {
+            spans.push(Span::styled(label.to_string(), style));
+            spans.push(Span::raw(" "));
+	}
     }
 
     let boxes = Paragraph::new(Line::from(spans))
         .alignment(Alignment::Center)
-        .block(Block::default().borders(Borders::TOP | Borders::BOTTOM));
+        .block(Block::default().borders(Borders::ALL));
 
     f.render_widget(boxes, area);
 }
@@ -1176,11 +1182,11 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     status_spans.push(Span::styled("O", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Screens "));
     status_spans.push(Span::styled(
-        "Shift+↑/↓",
+        "+=/-_",
         Style::default().fg(Color::Yellow),
     ));
     status_spans.push(Span::raw("=Volume "));
-    status_spans.push(Span::styled("ESC", Style::default().fg(Color::Red)));
+    status_spans.push(Span::styled("ESC/%-Q", Style::default().fg(Color::Red)));
     status_spans.push(Span::raw("=Quit "));
 
     let status_text = Line::from(status_spans);
