@@ -271,7 +271,7 @@ mod tests {
         drop(file);
 
         // Give watcher time to detect change
-        thread::sleep(Duration::from_millis(spin_ms_sleep_watcher));
+        thread::sleep(Duration::from_millis(SPIN_MS_SLEEP_WATCHER));
 
         // Check for event
         let event = watcher.try_recv();

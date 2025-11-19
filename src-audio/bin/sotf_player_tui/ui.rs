@@ -145,7 +145,6 @@ pub fn draw(f: &mut Frame, app: &App) {
         Screen::Library => draw_library_screen(f, main_chunks[0], app),
         Screen::DirectoryManager => draw_directory_manager(f, main_chunks[0], app),
         Screen::Queue => draw_queue_screen(f, main_chunks[0], app),
-        Screen::Spectrum => draw_spectrum_screen(f, main_chunks[0], app),
         Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
         Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
     }
@@ -220,7 +219,6 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
         (Screen::Library, "Library"),
         (Screen::DirectoryManager, "Directories"),
         (Screen::Queue, "Queue"),
-        (Screen::Spectrum, "Spectrum"),
         (Screen::Plugins, "Plugins"),
         (Screen::Devices, "Devices"),
     ];
@@ -672,141 +670,6 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
     let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(list, area);
-}
-
-fn draw_spectrum_screen(f: &mut Frame, area: Rect, app: &App) {
-    if let Some(ref spectrum) = app.spectrum_info {
-        // Split into top info box and main spectrum display
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // Info box
-                Constraint::Min(0),    // Spectrum display
-            ])
-            .split(area);
-
-        // Info box with spectrum stats
-        let info_text = format!(
-            "Bins: {} | Freq Range: {:.0}Hz - {:.0}Hz",
-            spectrum.frequencies.len(),
-            spectrum.frequencies.first().unwrap_or(&0.0),
-            spectrum.frequencies.last().unwrap_or(&0.0)
-        );
-        let info = Paragraph::new(info_text)
-            .style(Style::default().fg(Color::Cyan))
-            .alignment(Alignment::Center)
-            .block(Block::default().borders(Borders::ALL).title("Spectrum Info"));
-        f.render_widget(info, chunks[0]);
-
-        // Main spectrum display
-        let inner = Rect {
-            x: chunks[1].x + 1,
-            y: chunks[1].y + 1,
-            width: chunks[1].width.saturating_sub(2),
-            height: chunks[1].height.saturating_sub(2),
-        };
-
-        // Draw border with title
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title("Frequency Spectrum");
-        f.render_widget(block, chunks[1]);
-
-        if inner.width < 2 || inner.height < 2 {
-            return;
-        }
-
-        // Draw spectrum bars
-        let num_bins = spectrum.frequencies.len();
-        if num_bins == 0 {
-            return;
-        }
-
-        // Use logarithmic grouping for better frequency distribution
-        let num_bars = (inner.width as usize).min(200);
-        let bin_width = inner.width as usize / num_bars.max(1);
-
-        for bar_idx in 0..num_bars {
-            // Map bar to frequency bins (log scale)
-            let start_bin = (bar_idx * num_bins) / num_bars;
-            let end_bin = ((bar_idx + 1) * num_bins) / num_bars;
-
-            // Find max magnitude in this range
-            let mut max_db = -120.0f32;
-            for bin_idx in start_bin..end_bin.min(num_bins) {
-                if let Some(&mag) = spectrum.magnitudes.get(bin_idx) {
-                    max_db = max_db.max(mag);
-                }
-            }
-
-            // Scale dB to bar height (-60dB to 0dB range)
-            let db_range = 60.0;
-            let normalized = ((max_db + db_range) / db_range).clamp(0.0, 1.0);
-            let bar_height = (normalized * inner.height as f32).round() as usize;
-
-            // Choose color based on level
-            let color = if max_db > -10.0 {
-                Color::Red
-            } else if max_db > -30.0 {
-                Color::Yellow
-            } else {
-                Color::Green
-            };
-
-            // Draw vertical bar
-            let bar_x = inner.x + (bar_idx * bin_width) as u16;
-            for y_offset in 0..bar_height {
-                let y_pos = inner.y + inner.height - 1 - y_offset as u16;
-                if y_pos >= inner.y && bar_x < inner.x + inner.width {
-                    f.render_widget(
-                        Paragraph::new("█").style(Style::default().fg(color)),
-                        Rect {
-                            x: bar_x,
-                            y: y_pos,
-                            width: bin_width.min(1) as u16,
-                            height: 1,
-                        },
-                    );
-                }
-            }
-        }
-
-        // Draw frequency labels at the bottom
-        let label_positions = [
-            (0, "20Hz"),
-            (inner.width / 4, "100Hz"),
-            (inner.width / 2, "1kHz"),
-            (3 * inner.width / 4, "10kHz"),
-            (inner.width - 6, "20kHz"),
-        ];
-
-        for (x_offset, label) in &label_positions {
-            if *x_offset < inner.width {
-                f.render_widget(
-                    Paragraph::new(*label).style(Style::default().fg(Color::DarkGray)),
-                    Rect {
-                        x: inner.x + x_offset,
-                        y: inner.y + inner.height,
-                        width: 6,
-                        height: 1,
-                    },
-                );
-            }
-        }
-    }
-/*
-    else {
-        // No spectrum data available - show disabled message
-        let message = vec![
-            Line::from("Note: Spectrum will show when audio is playing"),
-        ];
-
-        let paragraph = Paragraph::new(message)
-            .block(Block::default().borders(Borders::ALL).title("Spectrum - Disabled"))
-            .alignment(Alignment::Center);
-        f.render_widget(paragraph, area);
-   }
-*/
 }
 
 fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
@@ -1308,14 +1171,10 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("Q", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("M", Style::default().fg(Color::Cyan)));
-    status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("P", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("O", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Screens "));
-    status_spans.push(Span::styled("S", Style::default().fg(Color::Cyan)));
-    status_spans.push(Span::raw("=Toggle "));
     status_spans.push(Span::styled(
         "Shift+↑/↓",
         Style::default().fg(Color::Yellow),

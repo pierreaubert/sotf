@@ -147,9 +147,6 @@ fn run_app<B: ratatui::backend::Backend>(
     app: &mut App,
     player: &mut Player,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Track previous screen to detect when we switch to/from Spectrum screen
-    let mut previous_screen = app.current_screen;
-
     loop {
         // Draw UI
         terminal.draw(|f| ui::draw(f, app))?;
@@ -163,32 +160,12 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                 }
                 AppEvent::Tick => {
-                    // Enable/disable spectrum monitoring based on current screen
-                    // Do this in Tick to avoid blocking the UI thread
-                    let on_spectrum_screen = app.current_screen == app::Screen::Spectrum;
-                    let was_on_spectrum_screen = previous_screen == app::Screen::Spectrum;
-
-                    if on_spectrum_screen != was_on_spectrum_screen {
-                        if on_spectrum_screen {
-                            let _ = player.enable_spectrum_monitoring();
-                            log::info!("Spectrum analyzer enabled (on Spectrum screen)");
-                        } else {
-                            player.disable_spectrum_monitoring();
-                            log::info!("Spectrum analyzer disabled (left Spectrum screen)");
-                        }
-                        previous_screen = app.current_screen;
-                    }
-
-                    // Get all playback state - no extra locking
-                    // Only request spectrum data when on the Spectrum screen
-                    let state = player.get_playback_state(on_spectrum_screen);
+                    // Get playback state
+                    let state = player.get_playback_state(false);
 
                     // Update app state
                     app.position_secs = state.position_secs;
                     app.loudness_info = state.loudness;
-                    if on_spectrum_screen {
-                        app.spectrum_info = state.spectrum;
-                    }
 
                     // Check if playback ended and auto-advance
                     if app.is_playing && !state.is_playing && app.current_queue_index.is_some() {

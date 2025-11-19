@@ -53,9 +53,8 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Tab => {
             app.current_screen = match app.current_screen {
                 Screen::Library => Screen::DirectoryManager,
-                Screen::Queue => Screen::Spectrum,
-                Screen::Spectrum => Screen::Plugins,
                 Screen::DirectoryManager => Screen::Queue,
+                Screen::Queue => Screen::Plugins,
                 Screen::Plugins => Screen::Devices,
                 Screen::Devices => Screen::Library,
             };
@@ -73,10 +72,6 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Char('Q') => {
             app.current_screen = Screen::Queue;
-            None
-        }
-        KeyCode::Char('M') => {
-            app.current_screen = Screen::Spectrum;
             None
         }
         KeyCode::Char('P') => {
@@ -115,7 +110,6 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             Screen::Library => handle_library_keys(app, key),
             Screen::DirectoryManager => handle_directory_keys(app, key),
             Screen::Queue => handle_queue_keys(app, key),
-            Screen::Spectrum => handle_spectrum_keys(app, key),
             Screen::Plugins => handle_plugins_keys(app, key),
             Screen::Devices => handle_devices_keys(app, key),
         },
@@ -321,12 +315,6 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         _ => None,
     }
-}
-
-fn handle_spectrum_keys(_app: &mut App, _key: KeyEvent) -> Option<PlayerCommand> {
-    // Spectrum screen is mostly passive - no specific controls needed
-    // The 'S' key to toggle spectrum is handled globally
-    None
 }
 
 fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {

@@ -1,7 +1,7 @@
 use crate::library::{Album, MusicLibrary, Track};
 use crate::plugins::{PluginChain, PluginType};
 use sotf_audio::devices::AudioDevice;
-use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};
+use sotf_audio::plugins::LoudnessInfo;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9,7 +9,6 @@ pub enum Screen {
     Library,
     DirectoryManager,
     Queue,
-    Spectrum,
     Plugins,
     Devices,
 }
@@ -130,9 +129,6 @@ pub struct App {
     // Loudness monitoring
     pub loudness_info: Option<LoudnessInfo>,
 
-    // Spectrum analyzer
-    pub spectrum_info: Option<SpectrumInfo>,
-
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
     pub selected_output_device_index: usize,
@@ -193,7 +189,6 @@ impl App {
             volume: 0.1, // Start at 10% volume
             position_secs: 0.0,
             loudness_info: None,
-            spectrum_info: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
