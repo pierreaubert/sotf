@@ -1,8 +1,5 @@
 #![doc = include_str!("../README.md")]
 
-use ndarray::Array1;
-use std::f64::consts::PI;
-
 // Module declarations
 mod iir;
 mod fir;

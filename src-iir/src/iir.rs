@@ -6,7 +6,7 @@ use ndarray::Array1;
 use std::f64::consts::PI;
 use std::fmt;
 
-use crate::{bw2q, q2bw, DEFAULT_Q_HIGH_LOW_PASS, DEFAULT_Q_HIGH_LOW_SHELF};
+use crate::{q2bw, DEFAULT_Q_HIGH_LOW_PASS, DEFAULT_Q_HIGH_LOW_SHELF};
 
 pub type Peq = Vec<(f64, Biquad)>;
 
@@ -353,6 +353,7 @@ pub fn compute_peq_response(freqs: &Array1<f64>, peq: &Peq, _sample_rate: f64) -
 mod tests {
     use super::*;
     use ndarray::array;
+    use crate::bw2q;
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol

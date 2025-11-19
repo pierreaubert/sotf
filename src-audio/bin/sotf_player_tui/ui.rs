@@ -686,14 +686,8 @@ fn draw_spectrum_screen(f: &mut Frame, area: Rect, app: &App) {
             .split(area);
 
         // Info box with spectrum stats
-        let status = if app.spectrum_visible {
-            "Live"
-        } else {
-            "Last Snapshot"
-        };
         let info_text = format!(
-            "[{}] Bins: {} | Freq Range: {:.0}Hz - {:.0}Hz | Press 'S' to toggle",
-            status,
+            "Bins: {} | Freq Range: {:.0}Hz - {:.0}Hz",
             spectrum.frequencies.len(),
             spectrum.frequencies.first().unwrap_or(&0.0),
             spectrum.frequencies.last().unwrap_or(&0.0)
@@ -799,14 +793,11 @@ fn draw_spectrum_screen(f: &mut Frame, area: Rect, app: &App) {
                 );
             }
         }
-    } else {
+    }
+/*
+    else {
         // No spectrum data available - show disabled message
         let message = vec![
-            Line::from(""),
-            Line::from("Spectrum Analyzer Disabled"),
-            Line::from(""),
-            Line::from("Press 'S' to enable spectrum analyzer"),
-            Line::from(""),
             Line::from("Note: Spectrum will show when audio is playing"),
         ];
 
@@ -814,7 +805,8 @@ fn draw_spectrum_screen(f: &mut Frame, area: Rect, app: &App) {
             .block(Block::default().borders(Borders::ALL).title("Spectrum - Disabled"))
             .alignment(Alignment::Center);
         f.render_widget(paragraph, area);
-    }
+   }
+*/
 }
 
 fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {

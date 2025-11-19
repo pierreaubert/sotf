@@ -12,6 +12,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
+const SPIN_MS_RINGBUFFER : u64 = 5;
+const SPIN_MS_SIGNAL : u64 = 10;
+
 /// Playback thread handle
 pub struct PlaybackThread {
     command_tx: Sender<PlaybackCommand>,
@@ -342,12 +345,12 @@ fn run_playback_thread(
 
         if available_space < min_space_required {
             // Ring buffer is mostly full, sleep briefly and let the audio callback drain it
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
             continue;
         }
 
         // Read from message queue (non-blocking since we checked space)
-        match message_rx.recv_timeout(std::time::Duration::from_millis(10)) {
+        match message_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(ProcessingMessage::Frame(frame)) => {
                 // Write to ring buffer (should have space now)
                 let written = state.ring_buffer.lock().write(&frame.data);

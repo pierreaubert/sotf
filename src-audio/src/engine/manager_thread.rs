@@ -12,6 +12,9 @@ use super::{
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 
+const SPIN_MS_SLEEP_MANAGER : u64 = 10;
+const SPIN_MS_CHECK_MANAGER : u64 = 50;
+
 /// Manager thread handle
 pub struct ManagerThread {
     command_tx: Sender<ManagerCommand>,
@@ -127,7 +130,7 @@ fn run_manager_thread(
         let start = std::time::Instant::now();
         let mut output_channels = config.output_channels;
 
-        while start.elapsed() < std::time::Duration::from_millis(500) {
+        while start.elapsed() < std::time::Duration::from_millis(SPIN_MS_CHECK_MANAGER) {
             if let Some(response) = processing_thread.try_recv_response() {
                 match response {
                     super::ProcessingResponse::PluginChainUpdated {
@@ -152,7 +155,7 @@ fn run_manager_thread(
                     }
                 }
             }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
         }
 
         // Update state with actual channel count
@@ -233,7 +236,7 @@ fn run_manager_thread(
         }
 
         // Check for commands (blocking with timeout)
-        match command_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        match command_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_CHECK_MANAGER)) {
             Ok(command) => {
                 let response = handle_command(
                     command,

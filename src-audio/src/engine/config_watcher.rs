@@ -16,6 +16,10 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 use std::time::Duration;
 
+const SPIN_MS_DELAY_WATCHER: u64 = 100;
+const SPIN_MS_INIT_WATCHER: u64 = 100;
+const SPIN_MS_SLEEP_WATCHER: u64 = 1000;
+
 /// Config watcher events
 #[derive(Debug, Clone)]
 pub enum ConfigEvent {
@@ -146,7 +150,7 @@ fn run_config_watcher(
         }
 
         // Check for shutdown request from parent (with short timeout for responsiveness)
-        match shutdown_rx.recv_timeout(Duration::from_millis(100)) {
+        match shutdown_rx.recv_timeout(Duration::from_millis(SPIN_MS_DELAY_WATCHER)) {
             Ok(_) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 log::debug!("[Config Watcher] Shutting down");
                 break;
@@ -254,7 +258,7 @@ mod tests {
         let watcher = ConfigWatcher::new(Some(config_path.clone()), false).unwrap();
 
         // Give watcher time to initialize
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(SPIN_MS_INIT_WATCHER));
 
         // Modify file
         let mut file = fs::OpenOptions::new()
@@ -267,7 +271,7 @@ mod tests {
         drop(file);
 
         // Give watcher time to detect change
-        thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(spin_ms_sleep_watcher));
 
         // Check for event
         let event = watcher.try_recv();

@@ -131,7 +131,6 @@ pub struct App {
     pub loudness_info: Option<LoudnessInfo>,
 
     // Spectrum analyzer
-    pub spectrum_visible: bool,
     pub spectrum_info: Option<SpectrumInfo>,
 
     // Audio devices
@@ -194,7 +193,6 @@ impl App {
             volume: 0.1, // Start at 10% volume
             position_secs: 0.0,
             loudness_info: None,
-            spectrum_visible: false,
             spectrum_info: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,

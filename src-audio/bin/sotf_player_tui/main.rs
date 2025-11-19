@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create app and player
     let mut app = App::new();
-    let player = Player::new();
+    let mut player = Player::new();
 
     // Enable loudness monitoring
     let _ = player.enable_loudness_monitoring();
@@ -96,7 +96,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Auto-scan if:
     // 1. Explicit --scan flag provided, OR
     // 2. Database is empty and we have directories to scan
-    if (args.scan || db_is_empty) && !app.library.directories.is_empty() {
+    let will_scan = (args.scan || db_is_empty) && !app.library.directories.is_empty();
+    if will_scan {
         log::info!(
             "Starting library scan (scan={}, db_empty={}, dirs={})",
             args.scan,
@@ -108,8 +109,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Set initial screen based on queue state (if not scanning)
+    if !will_scan {
+        if !app.queue.is_empty() {
+            app.current_screen = app::Screen::Queue;
+            log::info!("Starting with Queue view (queue has {} items)", app.queue.len());
+        } else {
+            app.current_screen = app::Screen::Library;
+            log::info!("Starting with Library view (queue is empty)");
+        }
+    }
+
     // Main loop
-    let result = run_app(&mut terminal, &mut app, &player);
+    let result = run_app(&mut terminal, &mut app, &mut player);
 
     // Save configuration before exit
     if let Err(e) = app.save_config() {
@@ -133,10 +145,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-    player: &Player,
+    player: &mut Player,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Track previous spectrum visibility state
-    let mut spectrum_was_visible = app.spectrum_visible;
+    // Track previous screen to detect when we switch to/from Spectrum screen
+    let mut previous_screen = app.current_screen;
 
     loop {
         // Draw UI
@@ -151,27 +163,30 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                 }
                 AppEvent::Tick => {
-                    // Enable/disable spectrum monitoring when visibility changes
+                    // Enable/disable spectrum monitoring based on current screen
                     // Do this in Tick to avoid blocking the UI thread
-                    if app.spectrum_visible != spectrum_was_visible {
-                        if app.spectrum_visible {
+                    let on_spectrum_screen = app.current_screen == app::Screen::Spectrum;
+                    let was_on_spectrum_screen = previous_screen == app::Screen::Spectrum;
+
+                    if on_spectrum_screen != was_on_spectrum_screen {
+                        if on_spectrum_screen {
                             let _ = player.enable_spectrum_monitoring();
-                            log::info!("Spectrum analyzer enabled");
+                            log::info!("Spectrum analyzer enabled (on Spectrum screen)");
                         } else {
-                            let _ = player.disable_spectrum_monitoring();
-                            // Keep the last spectrum data to avoid flickering
-                            log::info!("Spectrum analyzer disabled (keeping last data)");
+                            player.disable_spectrum_monitoring();
+                            log::info!("Spectrum analyzer disabled (left Spectrum screen)");
                         }
-                        spectrum_was_visible = app.spectrum_visible;
+                        previous_screen = app.current_screen;
                     }
 
-                    // Get all playback state in ONE lock acquisition to reduce contention
-                    let state = player.get_playback_state(app.spectrum_visible);
+                    // Get all playback state - no extra locking
+                    // Only request spectrum data when on the Spectrum screen
+                    let state = player.get_playback_state(on_spectrum_screen);
 
                     // Update app state
                     app.position_secs = state.position_secs;
                     app.loudness_info = state.loudness;
-                    if app.spectrum_visible {
+                    if on_spectrum_screen {
                         app.spectrum_info = state.spectrum;
                     }
 
@@ -242,7 +257,7 @@ fn run_app<B: ratatui::backend::Backend>(
 }
 
 fn handle_player_command(
-    player: &Player,
+    player: &mut Player,
     app: &mut App,
     cmd: PlayerCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {

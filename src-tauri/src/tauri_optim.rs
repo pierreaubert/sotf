@@ -46,7 +46,7 @@ impl CancellationState {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationParams {
     pub num_filters: usize,
     pub curve_path: Option<String>,
@@ -95,7 +95,7 @@ pub struct OptimizationParams {
     pub crossover_type: Option<String>, // "butterworth2", "linkwitzriley2", "linkwitzriley4"
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationResult {
     pub success: bool,
     pub error_message: Option<String>,

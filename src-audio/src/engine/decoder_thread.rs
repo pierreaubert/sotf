@@ -10,6 +10,8 @@ use crate::plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
+const SPIN_MS_SLEEP_DECODER : u64 = 10;
+
 /// Decoder thread handle
 pub struct DecoderThread {
     command_tx: Sender<DecoderCommand>,
@@ -399,7 +401,7 @@ fn run_decoder_thread(
             }
         } else {
             // Idle: small sleep to avoid busy loop when paused/stopped
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_DECODER));
         }
     }
 

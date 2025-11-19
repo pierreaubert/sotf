@@ -401,7 +401,7 @@ impl Fir {
         }
 
         // Compute magnitude
-        let magnitude = (real.mapv(|x| x * x) + imag.mapv(|x| x * x)).mapv(f64::sqrt);
+        let magnitude = (real.mapv(|x: f64| x * x) + imag.mapv(|x: f64| x * x)).mapv(f64::sqrt);
 
         // Convert to dB
         let min_val = 1.0e-20;

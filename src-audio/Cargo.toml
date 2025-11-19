@@ -9,12 +9,16 @@ name = "sotf_audio"
 path = "src/lib.rs"
 
 [[bin]]
-name = "sotf_player"
-path = "bin/sotf_player.rs"
+name = "sotf_player_cli"
+path = "bin/sotf_player_cli.rs"
 
 [[bin]]
-name = "sotf_recorder"
-path = "bin/sotf_recorder.rs"
+name = "sotf_player_tui"
+path = "bin/sotf_player_tui/main.rs"
+
+[[bin]]
+name = "sotf_recorder_cli"
+path = "bin/sotf_recorder_cli.rs"
 
 [[bin]]
 name = "generate_audio_tests"
@@ -46,24 +50,34 @@ libc = { workspace = true }
 parking_lot = { workspace = true }
 rustfft = { workspace = true }
 log = "0.4"
+env_logger = "0.11"
+directories = "5.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+walkdir = "2"
 autoeq-env = { path = "../src-env" }
 autoeq-iir = { path = "../src-iir" }
 
+# TUI framework
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+
 # Audio decoding/encoding
 symphonia = { workspace = true, default-features = false }
-symphonia-core ={ workspace = true }
-symphonia-metadata ={ workspace = true }
-symphonia-bundle-flac ={ workspace = true }
-symphonia-bundle-mp3 ={ workspace = true }
-symphonia-codec-aac ={ workspace = true }
-symphonia-codec-pcm ={ workspace = true }
-symphonia-codec-vorbis ={ workspace = true }
-symphonia-format-riff ={ workspace = true }
-symphonia-format-ogg ={ workspace = true }
-symphonia-format-isomp4 ={ workspace = true }
+symphonia-core = { workspace = true }
+symphonia-metadata = { workspace = true }
+symphonia-bundle-flac = { workspace = true }
+symphonia-bundle-mp3 = { workspace = true }
+symphonia-codec-aac = { workspace = true }
+symphonia-codec-pcm = { workspace = true }
+symphonia-codec-vorbis = { workspace = true }
+symphonia-format-riff = { workspace = true }
+symphonia-format-ogg = { workspace = true }
+symphonia-format-isomp4 = { workspace = true }
 ebur128 = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
+id3 = { workspace = true }
+metaflac = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

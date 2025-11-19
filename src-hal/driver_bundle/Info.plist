@@ -55,10 +55,10 @@
         <string>SotFHal</string>
 
         <key>Manufacturer</key>
-        <string>Pierre F. Aubert</string>
+        <string>org.spinorama</string>
 
         <key>Version</key>
-        <string>1.0.1</string>
+        <string>1.0.2</string>
     </dict>
 
     <key>NSHumanReadableCopyright</key>

@@ -265,9 +265,7 @@ The plugin host is integrated into the audio decoder thread in `AudioStreamingMa
 ## Future Enhancements
 
 Potential future additions:
-- More built-in plugins (EQ, compressor, limiter, etc.)
 - VST3 wrapper for loading third-party plugins
 - SIMD optimizations for processing loops
 - Latency compensation when chaining plugins
-- Preset management for saving/loading plugin configurations
 - MIDI parameter automation

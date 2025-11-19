@@ -437,8 +437,7 @@ impl ParallelPluginGraph {
     ///
     /// Returns None if the index is out of bounds or if not in chain mode.
     pub fn get_plugin(&self, index: usize) -> Option<&dyn Plugin> {
-        let node_id = self.chain_nodes.get(index)?;
-        let node = self.nodes.get(node_id)?;
+        let _node_id = self.chain_nodes.get(index)?;
         // We can't easily return a reference to the plugin inside Arc<Mutex<>>
         // This is a limitation of the graph architecture
         // For now, return None - users should use the graph API for introspection
@@ -675,7 +674,7 @@ impl ParallelPluginGraph {
         &self,
         node_buffers: &HashMap<NodeId, AudioBuffer>,
         output: &mut [f32],
-        num_frames: usize,
+        _num_frames: usize,
     ) -> Result<(), String> {
         if self.output_nodes.len() == 1 {
             // Single output - direct copy
@@ -879,15 +878,6 @@ impl ParallelPluginGraph {
                 .map(|node| node.name.clone())
                 .collect()
         })
-    }
-}
-
-impl Clone for ProcessContext {
-    fn clone(&self) -> Self {
-        Self {
-            sample_rate: self.sample_rate,
-            num_frames: self.num_frames,
-        }
     }
 }
 

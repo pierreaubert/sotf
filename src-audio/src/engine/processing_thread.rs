@@ -20,6 +20,8 @@ use std::sync::{
     mpsc::{Receiver, Sender, SyncSender},
 };
 
+const SPIN_MS_SIGNAL : u64 = 10;
+
 /// Processing thread handle
 pub struct ProcessingThread {
     command_tx: Sender<ProcessingCommand>,
@@ -518,7 +520,7 @@ fn run_processing_thread(
         }
 
         // Process audio from decoder
-        match decoder_rx.recv_timeout(std::time::Duration::from_millis(10)) {
+        match decoder_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(DecoderMessage::Frame(frame)) => {
                 // Process frame
                 // IMPORTANT: Output buffer size must match plugin chain output channels, not input!

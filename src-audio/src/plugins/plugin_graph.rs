@@ -7,8 +7,7 @@
 
 use super::plugin::{Plugin, ProcessContext};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::{Arc, Barrier, Mutex};
-use std::thread;
+use std::sync::{Arc, Mutex};
 
 // ============================================================================
 // Graph Node - Represents a plugin in the graph
@@ -309,8 +308,11 @@ impl PluginGraph {
             node_buffers.insert(*node_id, Arc::new(AudioBuffer::new(num_frames, channels)));
         }
 
+        // Clone stages to avoid borrow checker issues
+        let stages = self.stages.clone();
+
         // Process each stage
-        for stage in &self.stages {
+        for stage in &stages {
             if stage.nodes.len() == 1 {
                 // Single node - process directly
                 let node_id = stage.nodes[0];
@@ -335,10 +337,7 @@ impl PluginGraph {
         node_buffers: &mut HashMap<NodeId, Arc<AudioBuffer>>,
         context: &ProcessContext,
     ) -> Result<(), String> {
-        let node = self.nodes.get_mut(&node_id)
-            .ok_or_else(|| format!("Node {} not found", node_id))?;
-
-        // Determine input buffer
+        // Determine input buffer (needs immutable borrow)
         let input_data = if self.input_nodes.contains(&node_id) {
             // Input node - use graph input
             graph_input.to_vec()
@@ -346,6 +345,10 @@ impl PluginGraph {
             // Internal node - merge inputs from predecessors
             self.merge_inputs(node_id, node_buffers, context.num_frames)?
         };
+
+        // Get mutable reference to node (needs mutable borrow)
+        let node = self.nodes.get_mut(&node_id)
+            .ok_or_else(|| format!("Node {} not found", node_id))?;
 
         // Allocate output buffer
         let output_channels = node.plugin.output_channels();
@@ -495,7 +498,7 @@ impl PluginGraph {
         &self,
         node_buffers: &HashMap<NodeId, Arc<AudioBuffer>>,
         output: &mut [f32],
-        num_frames: usize,
+        _num_frames: usize,
     ) -> Result<(), String> {
         if self.output_nodes.len() == 1 {
             // Single output - direct copy
@@ -705,19 +708,6 @@ impl PluginGraph {
                 .map(|node| node.name.clone())
                 .collect()
         })
-    }
-}
-
-// ============================================================================
-// ProcessContext needs to be Clone for parallel processing
-// ============================================================================
-
-impl Clone for ProcessContext {
-    fn clone(&self) -> Self {
-        Self {
-            sample_rate: self.sample_rate,
-            num_frames: self.num_frames,
-        }
     }
 }
 

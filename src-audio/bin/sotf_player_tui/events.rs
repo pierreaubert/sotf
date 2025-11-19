@@ -53,9 +53,9 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Tab => {
             app.current_screen = match app.current_screen {
                 Screen::Library => Screen::DirectoryManager,
-                Screen::DirectoryManager => Screen::Queue,
                 Screen::Queue => Screen::Spectrum,
                 Screen::Spectrum => Screen::Plugins,
+                Screen::DirectoryManager => Screen::Queue,
                 Screen::Plugins => Screen::Devices,
                 Screen::Devices => Screen::Library,
             };
@@ -85,12 +85,6 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Char('O') => {
             app.current_screen = Screen::Devices;
-            None
-        }
-
-        // Toggle spectrum analyzer with 'S'
-        KeyCode::Char('S') => {
-            app.spectrum_visible = !app.spectrum_visible;
             None
         }
 

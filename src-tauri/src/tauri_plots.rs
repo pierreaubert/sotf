@@ -9,7 +9,7 @@ use plotly::Plot;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlotData {
     pub frequencies: Vec<f64>,
     pub curves: HashMap<String, Vec<f64>>,

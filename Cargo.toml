@@ -12,7 +12,6 @@ members = [
     "src-iir",
     "src-tauri",
     "src-testfunctions",
-    "src-tui-player"
 ]
 # Default members excludes macOS-only src-hal, src-configbar
 # On macOS, you can still build it explicitly with:
@@ -30,7 +29,6 @@ default-members = [
     "src-iir",
     "src-tauri",
     "src-testfunctions",
-    "src-tui-player"
 ]
 resolver = "3"
 
@@ -99,6 +97,11 @@ build_html = "2.7.0"
 
 # audio
 cpal = "0.16.0"
+ebur128 = "0.1.10"
+hound = "3.5"
+id3 = "1.14"
+metaflac = "0.2"
+rubato = "0.16.2"
 symphonia = { version = "0.5", default-features = false }
 symphonia-core = "0.5"
 symphonia-metadata = "0.5"
@@ -110,15 +113,16 @@ symphonia-codec-vorbis = "0.5"
 symphonia-format-riff = "0.5"
 symphonia-format-ogg = "0.5"
 symphonia-format-isomp4 = "0.5"
-ebur128 = "0.1.10"
-hound = "3.5"
-rubato = "0.16.2"
 
 # tauri
 tauri = { version="2.9", features = [] }
 tauri-plugin-dialog = { version="2.4" }
 tauri-plugin-fs = "2"
 tauri-plugin-devtools = "2.0.1"
+
+# TUI framework
+ratatui = "0.29"
+crossterm = "0.28"
 
 [patch.crates-io]
 webdriver-downloader = { version = "0.16.4", git = "https://github.com/pierreaubert/webdriver-downloader" }

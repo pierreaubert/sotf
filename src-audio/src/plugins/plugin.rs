@@ -18,6 +18,7 @@ pub struct PluginInfo {
 }
 
 /// Processing context passed to plugins
+#[derive(Clone)]
 pub struct ProcessContext {
     /// Sample rate in Hz
     pub sample_rate: u32,
