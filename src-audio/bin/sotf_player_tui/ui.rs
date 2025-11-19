@@ -174,7 +174,7 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(10),  // SOTF title
+            Constraint::Length(10), // SOTF title
             Constraint::Min(0),     // Screen boxes (expandable)
             Constraint::Length(40), // Output device
         ])
@@ -240,16 +240,19 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(Color::White).bg(Color::Black)
         };
 
-	if is_active {
+        if is_active {
             spans.push(Span::raw("("));
-            spans.push(Span::styled(label.chars().nth(0).unwrap().to_string(), style));
+            spans.push(Span::styled(
+                label.chars().nth(0).unwrap().to_string(),
+                style,
+            ));
             spans.push(Span::raw(")"));
             spans.push(Span::styled(label[1..].to_string(), style));
             spans.push(Span::raw(" "));
-	} else {
+        } else {
             spans.push(Span::styled(label.to_string(), style));
             spans.push(Span::raw(" "));
-	}
+        }
     }
 
     let boxes = Paragraph::new(Line::from(spans))
@@ -1181,10 +1184,7 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     status_spans.push(Span::raw("/"));
     status_spans.push(Span::styled("O", Style::default().fg(Color::Cyan)));
     status_spans.push(Span::raw("=Screens "));
-    status_spans.push(Span::styled(
-        "+=/-_",
-        Style::default().fg(Color::Yellow),
-    ));
+    status_spans.push(Span::styled("+=/-_", Style::default().fg(Color::Yellow)));
     status_spans.push(Span::raw("=Volume "));
     status_spans.push(Span::styled("ESC/%-Q", Style::default().fg(Color::Red)));
     status_spans.push(Span::raw("=Quit "));

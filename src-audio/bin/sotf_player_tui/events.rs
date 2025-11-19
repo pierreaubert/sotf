@@ -132,17 +132,17 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
-	    match app.library_view_mode {
+            match app.library_view_mode {
                 LibraryViewMode::Flat => app.select_previous_album(),
                 LibraryViewMode::TreeView => app.select_previous_tree_item(),
-	    }
+            }
             None
         }
         KeyCode::Down | KeyCode::Char('j') => {
-	    match app.library_view_mode {
+            match app.library_view_mode {
                 LibraryViewMode::Flat => app.select_next_album(),
                 LibraryViewMode::TreeView => app.select_next_tree_item(),
-	    }
+            }
             None
         }
         KeyCode::PageUp => {

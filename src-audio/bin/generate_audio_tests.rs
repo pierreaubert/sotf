@@ -432,6 +432,10 @@ fn generate_one(
 
 // WAV writing
 
+fn clip(sample: f32) -> f32 {
+    sample.max(-1.0).min(1.0)
+}
+
 fn write_wav(
     path: &Path,
     interleaved: &[f32],

@@ -25,8 +25,8 @@ use std::sync::Arc;
 
 /*
 const PHASE_SHIFT_0   : Complex<f32> = Complex::new(1.0, 0.0); // +1
-*/
 const PHASE_SHIFT_90: Complex<f32> = Complex::new(0.0, 1.0); // +i
+*/
 const PHASE_SHIFT_180: Complex<f32> = Complex::new(-1.0, 0.0); // -1
 const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
 
@@ -190,6 +190,11 @@ pub struct UpmixerPlugin {
     ambient_right: Vec<Complex<f32>>,
     lfe: Vec<Complex<f32>>,
 
+    // Smoothing buffers for ICC calculation
+    smooth_power_l: Vec<f32>,
+    smooth_power_r: Vec<f32>,
+    smooth_power_cross: Vec<Complex<f32>>,
+
     // Output time-domain buffers (one per output channel, variable length)
     time_out_channels: Vec<Vec<Complex<f32>>>,
 
@@ -279,47 +284,10 @@ impl UpmixerPlugin {
 
         let num_output_channels = speaker_config.total_channels;
 
-        // Calculate panning gains for stereo sources (left at +30°, right at -30°)
-        // TODO need to change if imput is not stereo
-        let left_azimuth = 30.0;
-        let right_azimuth = -30.0;
-
-        let mut panning_gains_left = Vec::with_capacity(num_output_channels);
-        let mut panning_gains_right = Vec::with_capacity(num_output_channels);
-
-        // Calculate initial panning gains
-        for speaker in speaker_config.speakers {
-            if speaker.is_lfe {
-                // LFE gets equal mix from both channels
-                panning_gains_left.push(0.5);
-                panning_gains_right.push(0.5);
-            } else {
-                let left_gain =
-                    calculate_panning_gain(left_azimuth, 0.0, speaker.azimuth, speaker.elevation);
-                let right_gain =
-                    calculate_panning_gain(right_azimuth, 0.0, speaker.azimuth, speaker.elevation);
-                panning_gains_left.push(left_gain);
-                panning_gains_right.push(right_gain);
-            }
-        }
-
-        // Normalize gains using energy-preserving normalization
-        let left_energy: f32 = panning_gains_left.iter().map(|g| g * g).sum();
-        let right_energy: f32 = panning_gains_right.iter().map(|g| g * g).sum();
-
-        if left_energy > 0.0 {
-            let left_scale = 1.0 / left_energy.sqrt();
-            for gain in panning_gains_left.iter_mut() {
-                *gain *= left_scale;
-            }
-        }
-
-        if right_energy > 0.0 {
-            let right_scale = 1.0 / right_energy.sqrt();
-            for gain in panning_gains_right.iter_mut() {
-                *gain *= right_scale;
-            }
-        }
+        // Panning gains will be calculated by recalculate_panning_gains() below
+        // TODO: need to change if input is not stereo
+        let panning_gains_left = Vec::with_capacity(num_output_channels);
+        let panning_gains_right = Vec::with_capacity(num_output_channels);
 
         // Output accumulator holds up to 3*fft_size samples per channel
         let output_accumulator = vec![vec![0.0; fft_size * 3]; num_output_channels];
@@ -327,7 +295,7 @@ impl UpmixerPlugin {
         // Allocate output buffers for each channel
         let time_out_channels = vec![vec![zero_complex; fft_size]; num_output_channels];
 
-        Self {
+        let mut plugin = Self {
             fft_size,
             hop_size,
             sample_rate: 44100, // Will be updated in initialize()
@@ -376,6 +344,9 @@ impl UpmixerPlugin {
             ambient_left: vec![zero_complex; fft_size],
             ambient_right: vec![zero_complex; fft_size],
             lfe: vec![zero_complex; fft_size],
+            smooth_power_l: vec![0.0; fft_size],
+            smooth_power_r: vec![0.0; fft_size],
+            smooth_power_cross: vec![0.0.into(); fft_size],
 
             time_out_channels,
 
@@ -389,7 +360,12 @@ impl UpmixerPlugin {
             output_accumulator_fill: 0,
             next_add_position: 0,
             output_block: vec![0.0; fft_size * num_output_channels],
-        }
+        };
+
+        // Calculate panning gains for stereo sources (left at +30°, right at -30°)
+        plugin.recalculate_panning_gains();
+
+        plugin
     }
 
     /// Create a new upmixer plugin from configuration parameters
@@ -520,7 +496,7 @@ impl UpmixerPlugin {
     }
 
     /// Process one FFT block using VBAP panning
-    fn process_fft_block(&mut self, input: &[f32], output: &mut [f32]) {
+    pub fn process_fft_block(&mut self, input: &[f32], output: &mut [f32]) {
         // Verify sizes
         assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
         assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
@@ -550,7 +526,9 @@ impl UpmixerPlugin {
         // CRITICAL: Window BEFORE FFT to prevent spectral leakage!
         // Standard STFT: window input -> FFT -> process -> IFFT -> overlap-add
         // Optimized for cache locality - process both channels together
-        // TODO: assume input is STEREO
+
+        // Use sequential iterator for windowing and copying to avoid rayon overhead
+        // for small tasks (2048 iterations is small for thread spawning overhead)
         for i in 0..self.fft_size {
             let idx = i * 2;
             let window_val = self.window[i];
@@ -575,45 +553,79 @@ impl UpmixerPlugin {
         let bandpass_bin =
             ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
 
+        // Sequential frequency domain processing
+        // Rayon overhead was too high for this loop
         for i in 0..self.fft_size {
             let left = self.freq_domain_left[i];
             let right = self.freq_domain_right[i];
 
             // Magnitudes for analysis
-            let mag_l = left.norm();
-            let mag_r = right.norm();
+            /*
+                        let mag_l = left.norm();
+                        let mag_r = right.norm();
+            */
             let sum = left + right;
-            let diff = left - right;
             let mag_sum = sum.norm();
+            // Calculate Instantaneous Power
+            let inst_pow_l = left.norm_sqr(); // |L|^2
+            let inst_pow_r = right.norm_sqr(); // |R|^2
+            let inst_cross = left * right.conj(); // L * R* (Complex conjugate)
+
+            // Temporal Smoothing (Exponential Moving Average)
+            // Alpha determines response speed.
+            // 0.1 = Slow/Smooth (good for ambience), 0.8 = Fast (good for transients)
+            let alpha = 0.15;
+
+            self.smooth_power_l[i] = (1.0 - alpha) * self.smooth_power_l[i] + alpha * inst_pow_l;
+
+            self.smooth_power_r[i] = (1.0 - alpha) * self.smooth_power_r[i] + alpha * inst_pow_r;
+
+            self.smooth_power_cross[i] = Complex::new(
+                (1.0 - alpha) * self.smooth_power_cross[i].re + alpha * inst_cross.re,
+                (1.0 - alpha) * self.smooth_power_cross[i].im + alpha * inst_cross.im,
+            );
+
+            // Replace coherence by ICC
+            // Should work better in some cases
+            // Compute ICC (0.0 to 1.0)
+            let power_product = self.smooth_power_l[i] * self.smooth_power_r[i];
+            let icc = if power_product > 1e-9 {
+                // The magnitude of the smoothed cross-power divided by geometric mean of powers
+                self.smooth_power_cross[i].norm() / power_product.sqrt()
+            } else {
+                0.0 // Silence is effectively uncorrelated
+            };
 
             // Calculate Phase Coherence (0.0 to 1.0)
             // 1.0 = Perfect center (In-phase)
             // 0.0 = Hard Panned or Out-of-phase
-            let coherence = if mag_sum > 1e-6 {
-                // "Normalized Projection" of sum onto sum of magnitudes
-                mag_sum / (mag_l + mag_r + 1e-9)
-            } else {
-                0.0
-            };
-            let width_factor = 1.0 - coherence;
+            /*
+                        let coherence = if mag_sum > 1e-6 {
+                            // "Normalized Projection" of sum onto sum of magnitudes
+                            mag_sum / (mag_l + mag_r + 1e-9)
+                        } else {
+                            0.0
+                        };
+            */
 
             // Handle Nyquist folding for real FFT
             let is_lfe_band = i <= lfe_cutoff_bin || i >= (self.fft_size - lfe_cutoff_bin);
 
             // Simple LFE Tapering (Soft knee) to reduce ringing
             let dist_to_cutoff = (lfe_cutoff_bin as isize - i as isize).abs();
-            let lfe_gain = if dist_to_cutoff < 4 {
+            let lfe_gain_val = if dist_to_cutoff < 4 {
                 // Linear fade over 4 bins around cutoff
                 0.5 + 0.5 * (dist_to_cutoff as f32 / 4.0)
             } else {
                 1.0
             };
+
             let is_passthrough_band = (i > lfe_cutoff_bin && i < bandpass_bin)
                 || (i > (self.fft_size - bandpass_bin) && i < (self.fft_size - lfe_cutoff_bin));
 
             if is_lfe_band {
                 // LFE band: low-pass filtered mono sum
-                self.lfe[i] = (left + right) * 0.5 * lfe_gain;
+                self.lfe[i] = (left + right) * 0.5 * lfe_gain_val;
                 self.direct_left[i] = Complex::new(0.0, 0.0);
                 self.direct_right[i] = Complex::new(0.0, 0.0);
                 self.ambient_left[i] = Complex::new(0.0, 0.0);
@@ -627,24 +639,34 @@ impl UpmixerPlugin {
                 self.ambient_right[i] = Complex::new(0.0, 0.0);
             } else {
                 // 1. Direct Extraction: only extract what is common to BOTH channels (Min Magnitude) scaled by how coherent (in-phase) they are.
-                let min_mag = mag_l.min(mag_r);
-                let direct_magnitude = min_mag * coherence;
+                /*
+                                let min_mag = mag_l.min(mag_r);
+                                let direct_magnitude = min_mag * coherence;
+                */
+
+                let center_gain = icc.powf(2.0); // Square it to make center extraction stricter
+                let direct_magnitude = (left + right).norm() * 0.5 * center_gain;
 
                 // Reconstruct Complex Direct Signal
                 // We use the phase of the Sum (L+R) but the magnitude of the extraction
-                self.direct[i] = if mag_sum > 1e-9 {
+                let direct_val = if mag_sum > 1e-9 {
                     sum * (direct_magnitude / mag_sum)
                 } else {
                     Complex::new(0.0, 0.0)
                 };
+                self.direct[i] = direct_val;
 
                 // 2. Smart Ambient Extraction
                 // We boost the ambient signal when the content is "wide" (width_factor is high)
                 // If the sound is centered (vocals), we keep surrounds quiet to keep focus.
-                let width_factor = 1.0 - coherence;
-                let base_gain = 1.0; // TODO parameters
-                let steering_boost = 1.0; // How much extra boost for panned sounds?
-                let current_surround_gain = base_gain + (width_factor * steering_boost);
+                /*
+                                let width_factor = 1.0 - coherence;
+                                let base_gain = 1.0; // TODO parameters
+                                let steering_boost = 1.0; // How much extra boost for panned sounds?
+                                let current_surround_gain = base_gain + (width_factor * steering_boost);
+                */
+                let surround_width = 1.0 - icc;
+                let current_surround_gain = 1.0 + (surround_width * 2.0); // Boost rears when wide
 
                 // 3. Calculate Ambient with dynamic gain
                 // Extract L-R and R-L for proper stereo decorrelation
@@ -656,8 +678,8 @@ impl UpmixerPlugin {
                 // Subtract the extracted direct component from L/R
                 // If stereo_width is 0 (Wide), we subtract nothing.
                 // If stereo_width is 1 (Narrow), we subtract the full direct signal.
-                self.direct_left[i] = left - self.direct[i] * self.stereo_width;
-                self.direct_right[i] = right - self.direct[i] * self.stereo_width;
+                self.direct_left[i] = left - direct_val * self.stereo_width;
+                self.direct_right[i] = right - direct_val * self.stereo_width;
                 self.lfe[i] = Complex::new(0.0, 0.0);
             }
         }
@@ -665,8 +687,6 @@ impl UpmixerPlugin {
         // 4. Apply VBAP panning to distribute to output speakers
         // For each output speaker, calculate frequency-domain signal using panning gains
         let fft_scale = 1.0 / self.fft_size as f32;
-        // VBAP normalization already prevents energy buildup, no additional gain needed
-        let combined_scale = fft_scale;
 
         log::trace!("[UPMIXER]   FFT processing complete, applying VBAP panning");
         log::trace!(
@@ -676,105 +696,93 @@ impl UpmixerPlugin {
             self.height_gain
         );
 
-        for (ch_idx, speaker) in self.speaker_config.speakers.iter().enumerate() {
-            if speaker.is_lfe {
-                // LFE channel: use low-pass filtered signal with gain
-                for i in 0..self.fft_size {
-                    self.time_out_channels[ch_idx][i] = self.lfe[i] * self.lfe_gain;
-                }
-                log::trace!(
-                    "[UPMIXER]     Ch[{}] LFE: gain={:.3}",
-                    ch_idx,
-                    self.lfe_gain
-                );
-            } else {
-                // Regular speaker: pan direct and ambient components using VBAP
-                let panning_gain_left = self.panning_gains_left[ch_idx];
-                let panning_gain_right = self.panning_gains_right[ch_idx];
+        let combined_scale = fft_scale;
 
-                // Determine if this is a front or rear speaker based on azimuth
-                // Front speakers: azimuth between -90° and +90°
-                // Rear speakers: azimuth outside this range
-                let is_front = speaker.azimuth.abs() < 80.0;
-                let is_height = speaker.elevation > 10.0;
-                let is_left = speaker.azimuth > 10.0;
+        // Parallelize over output channels
+        // Each channel is independent until the final overlap-add
+        // Rayon overhead seems to outweigh benefits for small channel counts (e.g. 6)
+        // Reverting to sequential for now to verify baseline
+        self.time_out_channels
+            .iter_mut()
+            .enumerate()
+            .for_each(|(ch_idx, time_out_channel)| {
+                let speaker = &self.speaker_config.speakers[ch_idx];
 
-                log::trace!(
-                    "[UPMIXER]     Ch[{}] az={:>6.1}° el={:>6.1}° pan_L={:.4} pan_R={:.4} is_front={} is_height={} is_left={}",
-                    ch_idx,
-                    speaker.azimuth,
-                    speaker.elevation,
-                    panning_gain_left,
-                    panning_gain_right,
-                    is_front,
-                    is_height,
-                    is_left
-                );
-
-                // Select appropriate gains
-                let (direct_gain, ambient_gain) = if is_front {
-                    (self.gain_front_direct, self.gain_front_ambient)
+                if speaker.is_lfe {
+                    // LFE channel: use low-pass filtered signal with gain
+                    // Vectorized copy/scale
+                    for i in 0..self.fft_size {
+                        time_out_channel[i] = self.lfe[i] * self.lfe_gain;
+                    }
                 } else {
-                    // TODO: sending 10-15% back to simulate a reverb (and make it a parameter)
-                    (0.15, self.gain_rear_ambient) // Rear speakers get no direct, only ambient
-                };
+                    // Regular speaker: pan direct and ambient components using VBAP
+                    let panning_gain_left = self.panning_gains_left[ch_idx];
+                    let panning_gain_right = self.panning_gains_right[ch_idx];
 
-                // Build frequency-domain signal for this speaker
-                for i in 0..self.fft_size {
-                    let signal = if is_height {
-                        // HEIGHT CHANNELS: Use VBAP panning for direct signal, but decorrelate ambient
-                        // This ensures height channels have proper content while maintaining spaciousness
+                    // Determine if this is a front or rear speaker based on azimuth
+                    let is_front = speaker.azimuth.abs() < 80.0;
+                    let is_height = speaker.elevation > 10.0;
+                    let is_left = speaker.azimuth > 10.0;
 
-                        // 1. Direct component: Use VBAP panning (same as floor speakers)
-                        let direct_component = self.direct_left[i] * panning_gain_left
-                            + self.direct_right[i] * panning_gain_right;
-
-                        // 2. Ambient component: Phase-decorrelate for spaciousness
-                        // Front heights: 180° or 270° phase shifts
-                        // Rear heights: swapped decorrelation pattern
-                        let ambient_component = if is_front {
-                            if is_left {
-                                self.ambient_left[i] * PHASE_SHIFT_180
-                                    + self.ambient_right[i] * PHASE_SHIFT_270
-                            } else {
-                                self.ambient_left[i] * PHASE_SHIFT_270
-                                    + self.ambient_right[i] * PHASE_SHIFT_180
-                            }
-                        } else {
-                            // Rear heights: use swapped decorrelation + add late reflections
-                            let decorrelated = if is_left {
-                                self.ambient_left[i] * PHASE_SHIFT_270
-                                    + self.ambient_right[i] * PHASE_SHIFT_180
-                            } else {
-                                self.ambient_left[i] * PHASE_SHIFT_180
-
-                                    + self.ambient_right[i] * PHASE_SHIFT_270
-                            };
-                            // Add small amount of direct signal as late reflections for rear heights
-                            let late_reflection =
-                                (self.direct_left[i] + self.direct_right[i]) * 0.10;
-                            decorrelated + late_reflection
-                        };
-
-                        // Combine direct and ambient with appropriate gains and height gain
-                        (direct_component * direct_gain + ambient_component * ambient_gain)
-                            * self.height_gain
+                    // Select appropriate gains
+                    let (direct_gain, ambient_gain) = if is_front {
+                        (self.gain_front_direct, self.gain_front_ambient)
                     } else {
-                        // FLOOR SPEAKERS: Normal VBAP panning
-                        let direct_component = self.direct_left[i] * panning_gain_left
-                            + self.direct_right[i] * panning_gain_right;
-                        let ambient_component = self.ambient_left[i] * panning_gain_left
-                            + self.ambient_right[i] * panning_gain_right;
-                        direct_component * direct_gain + ambient_component * ambient_gain
+                        (0.15, self.gain_rear_ambient)
                     };
 
-                    self.time_out_channels[ch_idx][i] = signal;
+                    // Build frequency-domain signal for this speaker
+                    // Use iterators for potential vectorization
+                    if is_height {
+                        // HEIGHT CHANNELS
+                        for i in 0..self.fft_size {
+                            // 1. Direct component
+                            let direct_component = self.direct_left[i] * panning_gain_left
+                                + self.direct_right[i] * panning_gain_right;
+
+                            // 2. Ambient component
+                            let ambient_component = if is_front {
+                                if is_left {
+                                    self.ambient_left[i] * PHASE_SHIFT_180
+                                        + self.ambient_right[i] * PHASE_SHIFT_270
+                                } else {
+                                    self.ambient_left[i] * PHASE_SHIFT_270
+                                        + self.ambient_right[i] * PHASE_SHIFT_180
+                                }
+                            } else {
+                                let decorrelated = if is_left {
+                                    self.ambient_left[i] * PHASE_SHIFT_270
+                                        + self.ambient_right[i] * PHASE_SHIFT_180
+                                } else {
+                                    self.ambient_left[i] * PHASE_SHIFT_180
+                                        + self.ambient_right[i] * PHASE_SHIFT_270
+                                };
+                                let late_reflection =
+                                    (self.direct_left[i] + self.direct_right[i]) * 0.10;
+                                decorrelated + late_reflection
+                            };
+
+                            time_out_channel[i] = (direct_component * direct_gain
+                                + ambient_component * ambient_gain)
+                                * self.height_gain;
+                        }
+                    } else {
+                        // FLOOR SPEAKERS
+                        for i in 0..self.fft_size {
+                            let direct_component = self.direct_left[i] * panning_gain_left
+                                + self.direct_right[i] * panning_gain_right;
+                            let ambient_component = self.ambient_left[i] * panning_gain_left
+                                + self.ambient_right[i] * panning_gain_right;
+                            time_out_channel[i] =
+                                direct_component * direct_gain + ambient_component * ambient_gain;
+                        }
+                    }
                 }
-            }
-            // Inverse FFT for this channel
-            self.fft_inverse
-                .process(&mut self.time_out_channels[ch_idx]);
-        }
+
+                // Inverse FFT for this channel
+                // Note: fft_inverse is thread-safe (Arc<dyn Fft>)
+                self.fft_inverse.process(time_out_channel);
+            });
 
         // 5. Extract real parts and apply final scaling
         // IFFT output is already windowed, ready for overlap-add
