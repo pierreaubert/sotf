@@ -354,17 +354,33 @@ impl PluginChain {
     }
 
     pub fn output_channels(&self) -> usize {
-        // Check if there's an upmixer in the chain
-        let has_upmixer = self
-            .plugins
-            .iter()
-            .any(|p| p.enabled && matches!(p.settings, PluginSettings::Upmixer { .. }));
-
-        if has_upmixer {
-            6 // 5.1 surround
-        } else {
-            2 // Stereo
+        // Find the last enabled upmixer in the chain (it determines final output channels)
+        for plugin in self.plugins.iter().rev() {
+            if plugin.enabled {
+                if let PluginSettings::Upmixer { speaker_config, .. } = &plugin.settings {
+                    // Map speaker config to channel count
+                    return match speaker_config.as_str() {
+                        "2.0" => 2,
+                        "5.0" => 5,
+                        "5.1" => 6,
+                        "7.1" => 8,
+                        "5.1.2" => 8,
+                        "5.1.4" => 10,
+                        "7.1.2" => 10,
+                        "7.1.4" => 12,
+                        "9.1.4" => 14,
+                        "9.1.6" => 16,
+                        _ => {
+                            log::warn!("Unknown speaker config '{}', defaulting to 5.1 (6 channels)", speaker_config);
+                            6
+                        }
+                    };
+                }
+            }
         }
+
+        // No upmixer found, return stereo
+        2
     }
 
     /// Save the plugin chain to a JSON file
@@ -418,7 +434,18 @@ mod tests {
         let mut chain = PluginChain::new();
         assert_eq!(chain.output_channels(), 2);
 
+        // Add default upmixer (5.1 = 6 channels)
         chain.add_plugin(&PluginType::Upmixer);
         assert_eq!(chain.output_channels(), 6);
+
+        // Test that speaker_config is correctly mapped
+        let idx = 0;
+        if let Some(plugin) = chain.get_plugin_mut(idx) {
+            plugin.settings = PluginSettings::Upmixer {
+                speaker_config: "7.1".to_string(),
+                lfe_gain: 1.0,
+            };
+        }
+        assert_eq!(chain.output_channels(), 8);
     }
 }

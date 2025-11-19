@@ -16,8 +16,8 @@ crossterm = "0.28"
 sotf_audio = { path = "../src-audio" }
 autoeq-iir = { path = "../src-iir" }
 
-# Async runtime
-tokio = { workspace = true }
+# Synchronous mutex (faster than std::sync::Mutex)
+parking_lot = "0.12"
 
 # Serialization
 serde = { workspace = true }

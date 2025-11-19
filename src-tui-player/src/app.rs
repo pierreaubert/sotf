@@ -255,6 +255,13 @@ impl App {
         self.output_devices.get(self.selected_output_device_index)
     }
 
+    /// Get the maximum output channels supported by the selected device
+    pub fn get_device_max_channels(&self) -> Option<usize> {
+        self.get_selected_output_device()
+            .and_then(|device| device.default_config.as_ref())
+            .map(|config| config.channels as usize)
+    }
+
     pub fn filtered_albums(&self) -> Vec<&Album> {
         if self.search_query.is_empty() {
             self.library.albums.iter().collect()
