@@ -84,10 +84,7 @@ impl HalInputPlugin {
                 );
             }
 
-            Ok(Self {
-                channels,
-                reader,
-            })
+            Ok(Self { channels, reader })
         }
 
         #[cfg(not(target_os = "macos"))]

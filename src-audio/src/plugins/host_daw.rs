@@ -238,7 +238,11 @@ impl DawHost {
     }
 
     /// Add a node to the graph
-    pub fn add_node(&mut self, name: String, mut plugin: Box<dyn Plugin>) -> Result<NodeId, String> {
+    pub fn add_node(
+        &mut self,
+        name: String,
+        mut plugin: Box<dyn Plugin>,
+    ) -> Result<NodeId, String> {
         let node_id = self.next_node_id;
         self.next_node_id += 1;
 
@@ -324,10 +328,17 @@ impl DawHost {
         );
 
         for (i, stage) in self.stages.iter().enumerate() {
-            let node_names: Vec<&str> = stage.nodes.iter()
+            let node_names: Vec<&str> = stage
+                .nodes
+                .iter()
                 .filter_map(|id| self.nodes.get(id).map(|n| n.name.as_str()))
                 .collect();
-            log::info!("[PluginGraph] Stage {}: {} nodes: {:?}", i, stage.nodes.len(), node_names);
+            log::info!(
+                "[PluginGraph] Stage {}: {} nodes: {:?}",
+                i,
+                stage.nodes.len(),
+                node_names
+            );
         }
 
         self.built = true;
@@ -404,7 +415,8 @@ impl DawHost {
         let node_id = self.chain_nodes.remove(index);
 
         // Remove edges connected to this node
-        self.edges.retain(|e| e.from_node != node_id && e.to_node != node_id);
+        self.edges
+            .retain(|e| e.from_node != node_id && e.to_node != node_id);
 
         // Reconnect the chain if needed
         if index > 0 && index < self.chain_nodes.len() {
@@ -414,7 +426,9 @@ impl DawHost {
         }
 
         // Remove the node
-        let node = self.nodes.remove(&node_id)
+        let node = self
+            .nodes
+            .remove(&node_id)
             .ok_or_else(|| format!("Node {} not found", node_id))?;
 
         // Extract the plugin from the Arc<Mutex<>>
@@ -500,7 +514,9 @@ impl DawHost {
         };
 
         // Allocate buffers for each node
-        let node_buffers: HashMap<NodeId, AudioBuffer> = self.nodes.iter()
+        let node_buffers: HashMap<NodeId, AudioBuffer> = self
+            .nodes
+            .iter()
             .map(|(&id, node)| {
                 let buffer = AudioBuffer::new(num_frames, node.output_channels());
                 (id, buffer)
@@ -534,7 +550,9 @@ impl DawHost {
         node_buffers: &HashMap<NodeId, AudioBuffer>,
         context: &ProcessContext,
     ) -> Result<(), String> {
-        let node = self.nodes.get(&node_id)
+        let node = self
+            .nodes
+            .get(&node_id)
             .ok_or_else(|| format!("Node {} not found", node_id))?;
 
         // Determine input buffer
@@ -611,9 +629,8 @@ impl DawHost {
         let input_size = num_frames * input_channels;
 
         // Find all incoming edges
-        let incoming_edges: Vec<&GraphEdge> = self.edges.iter()
-            .filter(|e| e.to_node == node_id)
-            .collect();
+        let incoming_edges: Vec<&GraphEdge> =
+            self.edges.iter().filter(|e| e.to_node == node_id).collect();
 
         if incoming_edges.is_empty() {
             return Err(format!("Node {} has no inputs", node_id));
@@ -726,7 +743,9 @@ impl DawHost {
         let node_latency = plugin.latency_samples();
 
         // Find all incoming edges
-        let incoming: Vec<NodeId> = self.edges.iter()
+        let incoming: Vec<NodeId> = self
+            .edges
+            .iter()
             .filter(|e| e.to_node == node_id)
             .map(|e| e.from_node)
             .collect();
@@ -736,7 +755,8 @@ impl DawHost {
         }
 
         // Find maximum predecessor latency
-        let max_pred_latency = incoming.iter()
+        let max_pred_latency = incoming
+            .iter()
             .map(|&pred_id| self.compute_path_latency(pred_id))
             .max()
             .unwrap_or(0);
@@ -799,12 +819,16 @@ impl DawHost {
             has_outgoing.insert(edge.from_node);
         }
 
-        self.input_nodes = self.nodes.keys()
+        self.input_nodes = self
+            .nodes
+            .keys()
             .filter(|id| !has_incoming.contains(id))
             .copied()
             .collect();
 
-        self.output_nodes = self.nodes.keys()
+        self.output_nodes = self
+            .nodes
+            .keys()
             .filter(|id| !has_outgoing.contains(id))
             .copied()
             .collect();
@@ -874,7 +898,9 @@ impl DawHost {
 
     pub fn stage_info(&self, stage_idx: usize) -> Option<Vec<String>> {
         self.stages.get(stage_idx).map(|stage| {
-            stage.nodes.iter()
+            stage
+                .nodes
+                .iter()
                 .filter_map(|id| self.nodes.get(id))
                 .map(|node| node.name.clone())
                 .collect()
@@ -938,8 +964,18 @@ mod tests {
         let gain1 = GainPlugin::new(2, -6.0);
         let gain2 = GainPlugin::new(2, -6.0);
 
-        let node1 = graph.add_node("gain1".to_string(), Box::new(InPlacePluginAdapter::new(gain1))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(), Box::new(InPlacePluginAdapter::new(gain2))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain1)),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain2)),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.build().unwrap();
@@ -963,8 +999,18 @@ mod tests {
         let gain1 = GainPlugin::new(2, 0.0);
         let gain2 = GainPlugin::new(2, 0.0);
 
-        let node1 = graph.add_node("gain1".to_string(), Box::new(InPlacePluginAdapter::new(gain1))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(), Box::new(InPlacePluginAdapter::new(gain2))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain1)),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain2)),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.add_edge(GraphEdge::new(node2, node1)).unwrap(); // Creates cycle
@@ -983,14 +1029,30 @@ mod tests {
         //
         // gain2 and gain3 can run in parallel
 
-        let node1 = graph.add_node("gain1".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -3.0)))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node3 = graph.add_node("gain3".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node4 = graph.add_node("gain4".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -3.0))),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node3 = graph
+            .add_node(
+                "gain3".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node4 = graph
+            .add_node(
+                "gain4".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.add_edge(GraphEdge::new(node1, node3)).unwrap();
@@ -1022,7 +1084,11 @@ mod tests {
         // Then merge at gain4 (0dB) - this doubles the signal
         // Expected: 0.707 * 2 = 1.414
         for &sample in &output {
-            assert!((sample - 1.414).abs() < 0.05, "Expected ~1.414, got {}", sample);
+            assert!(
+                (sample - 1.414).abs() < 0.05,
+                "Expected ~1.414, got {}",
+                sample
+            );
         }
     }
 
@@ -1038,14 +1104,30 @@ mod tests {
         //
         // Note: We need a single input, so we'll split it
 
-        let node1 = graph.add_node("split".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node2 = graph.add_node("gain1".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0)))).unwrap();
-        let node3 = graph.add_node("gain2".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0)))).unwrap();
-        let node4 = graph.add_node("merge".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let node1 = graph
+            .add_node(
+                "split".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0))),
+            )
+            .unwrap();
+        let node3 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0))),
+            )
+            .unwrap();
+        let node4 = graph
+            .add_node(
+                "merge".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         // Split: node1 -> node2 and node1 -> node3
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
@@ -1079,19 +1161,31 @@ mod tests {
         graph.set_parallel_enabled(true);
 
         // Create multiple parallel paths
-        let node1 = graph.add_node("input".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let node1 = graph
+            .add_node(
+                "input".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         let mut parallel_nodes = Vec::new();
         for i in 0..4 {
-            let node = graph.add_node(format!("parallel_{}", i),
-                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+            let node = graph
+                .add_node(
+                    format!("parallel_{}", i),
+                    Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+                )
+                .unwrap();
             graph.add_edge(GraphEdge::new(node1, node)).unwrap();
             parallel_nodes.push(node);
         }
 
-        let output_node = graph.add_node("output".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let output_node = graph
+            .add_node(
+                "output".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         for &node in &parallel_nodes {
             graph.add_edge(GraphEdge::new(node, output_node)).unwrap();
@@ -1120,12 +1214,24 @@ mod tests {
         let mut graph = DawHost::new(48000);
         graph.set_parallel_enabled(false); // Disable parallel processing
 
-        let node1 = graph.add_node("gain1".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node3 = graph.add_node("gain3".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node3 = graph
+            .add_node(
+                "gain3".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.add_edge(GraphEdge::new(node1, node3)).unwrap();
@@ -1151,10 +1257,18 @@ mod tests {
         // Create a chain with different latencies
         // In real plugins, latency would vary, but GainPlugin has 0 latency
         // This test just verifies the calculation works
-        let node1 = graph.add_node("gain1".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.build().unwrap();
@@ -1167,10 +1281,18 @@ mod tests {
     fn test_reset() {
         let mut graph = DawHost::new(48000);
 
-        let node1 = graph.add_node("gain1".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.build().unwrap();
@@ -1192,8 +1314,12 @@ mod tests {
         let gain1 = GainPlugin::new(2, -6.0);
         let gain2 = GainPlugin::new(2, -6.0);
 
-        graph.add_plugin(Box::new(InPlacePluginAdapter::new(gain1))).unwrap();
-        graph.add_plugin(Box::new(InPlacePluginAdapter::new(gain2))).unwrap();
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(gain1)))
+            .unwrap();
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(gain2)))
+            .unwrap();
 
         assert_eq!(graph.plugin_count(), 2);
         assert_eq!(graph.input_channels(), 2);
@@ -1216,9 +1342,21 @@ mod tests {
         let mut graph = DawHost::new_with_channels(2, 48000);
 
         // Add three plugins
-        graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0)))).unwrap();
-        graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0)))).unwrap();
-        graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -6.0)))).unwrap();
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(
+                2, -6.0,
+            ))))
+            .unwrap();
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(
+                2, -6.0,
+            ))))
+            .unwrap();
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(
+                2, -6.0,
+            ))))
+            .unwrap();
 
         assert_eq!(graph.plugin_count(), 3);
 
@@ -1256,7 +1394,9 @@ mod tests {
         let mut graph = DawHost::new_with_channels(2, 48000);
 
         // Add a 2-channel plugin
-        graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))))
+            .unwrap();
 
         // Try to add a 5-channel plugin - should fail
         let result = graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(5, 0.0))));
@@ -1269,22 +1409,42 @@ mod tests {
         let mut graph = DawHost::new_with_channels(2, 48000);
 
         // Add a plugin using PluginHost API
-        graph.add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, -3.0)))).unwrap();
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(GainPlugin::new(
+                2, -3.0,
+            ))))
+            .unwrap();
 
         // Now add some nodes using graph API for a parallel split
         let last_chain_node = *graph.chain_nodes.last().unwrap();
 
-        let branch_a = graph.add_node("branch_a".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let branch_b = graph.add_node("branch_b".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let merge = graph.add_node("merge".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let branch_a = graph
+            .add_node(
+                "branch_a".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let branch_b = graph
+            .add_node(
+                "branch_b".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let merge = graph
+            .add_node(
+                "merge".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         // Connect: last chain node -> branch_a -> merge
         //          last chain node -> branch_b -> merge
-        graph.add_edge(GraphEdge::new(last_chain_node, branch_a)).unwrap();
-        graph.add_edge(GraphEdge::new(last_chain_node, branch_b)).unwrap();
+        graph
+            .add_edge(GraphEdge::new(last_chain_node, branch_a))
+            .unwrap();
+        graph
+            .add_edge(GraphEdge::new(last_chain_node, branch_b))
+            .unwrap();
         graph.add_edge(GraphEdge::new(branch_a, merge)).unwrap();
         graph.add_edge(GraphEdge::new(branch_b, merge)).unwrap();
 

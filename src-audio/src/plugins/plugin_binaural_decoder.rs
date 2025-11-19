@@ -20,7 +20,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::speaker_config::{get_speaker_config_by_channels, SpeakerConfig, SpeakerPosition};
+use super::speaker_config::{SpeakerConfig, SpeakerPosition, get_speaker_config_by_channels};
 use crate::sofa::{SofaFile, SourcePosition};
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};

@@ -907,7 +907,7 @@ pub fn get_speaker_config_by_channels(num_channels: usize) -> Option<&'static Sp
         2 => Some(&CONFIG_2_0),
         5 => Some(&CONFIG_5_0),
         6 => Some(&CONFIG_5_1),
-        8 => Some(&CONFIG_7_1), // Could also be 5.1.2, prefer 7.1
+        8 => Some(&CONFIG_7_1),    // Could also be 5.1.2, prefer 7.1
         10 => Some(&CONFIG_5_1_4), // Could also be 7.1.2, prefer 5.1.4
         12 => Some(&CONFIG_7_1_4),
         14 => Some(&CONFIG_9_1_4),
@@ -921,7 +921,7 @@ pub fn get_speaker_config_by_channels(num_channels: usize) -> Option<&'static Sp
 // ============================================================================
 
 /// Calculate panning gain for a speaker based on source position
-/// Uses Vector Base Amplitude Panning (VBAP) principles
+/// Uses modified Vector Base Amplitude Panning (VBAP) with improved height handling
 ///
 /// # Arguments
 /// * `source_azimuth` - Source azimuth in degrees
@@ -955,9 +955,22 @@ pub fn calculate_panning_gain(
     // Calculate dot product (cosine of angle between vectors)
     let dot_product = src_x * spk_x + src_y * spk_y + src_z * spk_z;
 
-    // Map from [-1, 1] to [0, 1] with cosine law
-    // Use raised cosine for smoother panning
-    dot_product.max(0.0)
+    // Clamp to [0, 1]
+    let cosine_gain = dot_product.max(0.0);
+
+    // Apply modified panning law for more even distribution
+    // Use power law with exponent 0.5 (square root) for gentler rolloff
+    // This helps height channels receive more signal and reduces "hole in middle" effect
+    // Standard VBAP uses linear (power 1.0), but 0.5-0.7 is more perceptually uniform
+    let gain = cosine_gain.powf(0.5);
+
+    log::trace!(
+        "[VBAP] source=({:>6.1}°, {:>5.1}°) speaker=({:>6.1}°, {:>5.1}°) cosine={:.4} gain={:.4}",
+        source_azimuth, source_elevation, speaker_azimuth, speaker_elevation,
+        cosine_gain, gain
+    );
+
+    gain
 }
 
 #[cfg(test)]
@@ -1011,7 +1024,7 @@ mod tests {
 
     #[test]
     fn test_panning_gain_orthogonal() {
-        // Source at front (0°) and side (90°) should have ~0.707 gain
+        // Source at front (0°) and side (90°) are perpendicular
         let gain = calculate_panning_gain(0.0, 0.0, 90.0, 0.0);
         assert!(gain < 0.1); // Should be very low since they're perpendicular
     }
@@ -1022,7 +1035,32 @@ mod tests {
         let gain = calculate_panning_gain(0.0, 45.0, 0.0, 45.0);
         assert!((gain - 1.0).abs() < 0.001);
 
+        // Source at ear level (0°) to speaker at 45° elevation
+        // cosine_gain = cos(45°) ≈ 0.707, with power 0.5: gain = 0.707^0.5 ≈ 0.841
         let gain = calculate_panning_gain(0.0, 0.0, 0.0, 45.0);
-        assert!(gain > 0.5 && gain < 1.0); // Partial gain due to elevation difference
+        assert!(gain > 0.80 && gain < 0.90, "Expected gain ~0.841, got {}", gain);
+    }
+
+    #[test]
+    fn test_panning_gain_5_1_4_scenario() {
+        // Test realistic 5.1.4 scenario: left source (30°, 0°) to various speakers
+
+        // To FL (30°, 0°) - perfect match
+        let gain_fl = calculate_panning_gain(30.0, 0.0, 30.0, 0.0);
+        assert!((gain_fl - 1.0).abs() < 0.001, "FL should have gain ~1.0, got {}", gain_fl);
+
+        // To TFL (30°, 45°) - same azimuth, 45° elevation difference
+        // cosine_gain = cos(45°) ≈ 0.707, with power 0.5: gain ≈ 0.841
+        let gain_tfl = calculate_panning_gain(30.0, 0.0, 30.0, 45.0);
+        assert!(gain_tfl > 0.80 && gain_tfl < 0.90, "TFL should have gain ~0.841, got {}", gain_tfl);
+
+        // To C (0°, 0°) - 30° azimuth difference
+        // cosine_gain = cos(30°) ≈ 0.866, with power 0.5: gain ≈ 0.930
+        let gain_c = calculate_panning_gain(30.0, 0.0, 0.0, 0.0);
+        assert!(gain_c > 0.90 && gain_c < 0.95, "C should have gain ~0.930, got {}", gain_c);
+
+        // TFL should have reasonable gain compared to FL (not too attenuated)
+        let ratio = gain_tfl / gain_fl;
+        assert!(ratio > 0.75, "Height speaker should have >75% of floor speaker gain, got {:.1}%", ratio * 100.0);
     }
 }

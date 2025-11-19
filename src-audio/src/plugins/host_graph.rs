@@ -191,7 +191,11 @@ impl GraphHost {
     }
 
     /// Add a node to the graph
-    pub fn add_node(&mut self, name: String, mut plugin: Box<dyn Plugin>) -> Result<NodeId, String> {
+    pub fn add_node(
+        &mut self,
+        name: String,
+        mut plugin: Box<dyn Plugin>,
+    ) -> Result<NodeId, String> {
         let node_id = self.next_node_id;
         self.next_node_id += 1;
 
@@ -347,7 +351,9 @@ impl GraphHost {
         };
 
         // Get mutable reference to node (needs mutable borrow)
-        let node = self.nodes.get_mut(&node_id)
+        let node = self
+            .nodes
+            .get_mut(&node_id)
             .ok_or_else(|| format!("Node {} not found", node_id))?;
 
         // Allocate output buffer
@@ -356,7 +362,8 @@ impl GraphHost {
         let mut output_data = vec![0.0; output_size];
 
         // Process
-        node.plugin.process(&input_data, &mut output_data, context)?;
+        node.plugin
+            .process(&input_data, &mut output_data, context)?;
 
         // Write to node buffer
         node_buffers[&node_id].write(&output_data);
@@ -393,8 +400,7 @@ impl GraphHost {
                 let context_clone = context.clone();
 
                 // Get references we need for the thread
-                let node = self.nodes.get_mut(&node_id)
-                    .expect("Node should exist");
+                let node = self.nodes.get_mut(&node_id).expect("Node should exist");
 
                 // We need to process the node in the thread
                 // Since we can't safely share &mut between threads, we process sequentially
@@ -432,9 +438,8 @@ impl GraphHost {
         let input_size = num_frames * input_channels;
 
         // Find all incoming edges
-        let incoming_edges: Vec<&GraphEdge> = self.edges.iter()
-            .filter(|e| e.to_node == node_id)
-            .collect();
+        let incoming_edges: Vec<&GraphEdge> =
+            self.edges.iter().filter(|e| e.to_node == node_id).collect();
 
         if incoming_edges.is_empty() {
             return Err(format!("Node {} has no inputs", node_id));
@@ -548,7 +553,9 @@ impl GraphHost {
         let node_latency = node.plugin.latency_samples();
 
         // Find all incoming edges
-        let incoming: Vec<NodeId> = self.edges.iter()
+        let incoming: Vec<NodeId> = self
+            .edges
+            .iter()
             .filter(|e| e.to_node == node_id)
             .map(|e| e.from_node)
             .collect();
@@ -559,7 +566,8 @@ impl GraphHost {
         }
 
         // Find maximum predecessor latency
-        let max_pred_latency = incoming.iter()
+        let max_pred_latency = incoming
+            .iter()
             .map(|&pred_id| self.compute_path_latency(pred_id))
             .max()
             .unwrap_or(0);
@@ -625,12 +633,16 @@ impl GraphHost {
             has_outgoing.insert(edge.from_node);
         }
 
-        self.input_nodes = self.nodes.keys()
+        self.input_nodes = self
+            .nodes
+            .keys()
             .filter(|id| !has_incoming.contains(id))
             .copied()
             .collect();
 
-        self.output_nodes = self.nodes.keys()
+        self.output_nodes = self
+            .nodes
+            .keys()
             .filter(|id| !has_outgoing.contains(id))
             .copied()
             .collect();
@@ -703,7 +715,9 @@ impl GraphHost {
     /// Get information about a specific stage
     pub fn stage_info(&self, stage_idx: usize) -> Option<Vec<String>> {
         self.stages.get(stage_idx).map(|stage| {
-            stage.nodes.iter()
+            stage
+                .nodes
+                .iter()
                 .filter_map(|id| self.nodes.get(id))
                 .map(|node| node.name.clone())
                 .collect()
@@ -725,8 +739,18 @@ mod tests {
         let gain1 = GainPlugin::new(2, -6.0);
         let gain2 = GainPlugin::new(2, -6.0);
 
-        let node1 = graph.add_node("gain1".to_string(), Box::new(InPlacePluginAdapter::new(gain1))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(), Box::new(InPlacePluginAdapter::new(gain2))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain1)),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain2)),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.build().unwrap();
@@ -750,8 +774,18 @@ mod tests {
         let gain1 = GainPlugin::new(2, 0.0);
         let gain2 = GainPlugin::new(2, 0.0);
 
-        let node1 = graph.add_node("gain1".to_string(), Box::new(InPlacePluginAdapter::new(gain1))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(), Box::new(InPlacePluginAdapter::new(gain2))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain1)),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(gain2)),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.add_edge(GraphEdge::new(node2, node1)).unwrap(); // Creates cycle
@@ -768,14 +802,30 @@ mod tests {
         // gain1          gain4
         //     -> gain3 ->
 
-        let node1 = graph.add_node("gain1".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node2 = graph.add_node("gain2".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node3 = graph.add_node("gain3".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
-        let node4 = graph.add_node("gain4".to_string(),
-            Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0)))).unwrap();
+        let node1 = graph
+            .add_node(
+                "gain1".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node2 = graph
+            .add_node(
+                "gain2".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node3 = graph
+            .add_node(
+                "gain3".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
+        let node4 = graph
+            .add_node(
+                "gain4".to_string(),
+                Box::new(InPlacePluginAdapter::new(GainPlugin::new(2, 0.0))),
+            )
+            .unwrap();
 
         graph.add_edge(GraphEdge::new(node1, node2)).unwrap();
         graph.add_edge(GraphEdge::new(node1, node3)).unwrap();

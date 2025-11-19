@@ -86,10 +86,7 @@ impl HalOutputPlugin {
                 );
             }
 
-            Ok(Self {
-                channels,
-                writer,
-            })
+            Ok(Self { channels, writer })
         }
 
         #[cfg(not(target_os = "macos"))]
