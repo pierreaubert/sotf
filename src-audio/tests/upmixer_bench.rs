@@ -1,5 +1,5 @@
 use rand::Rng;
-use sotf_audio::plugins::{UpmixerPlugin, UpmixerPluginParams};
+use sotf_audio::plugins::UpmixerPlugin;
 use std::time::Instant;
 
 #[test]
@@ -16,6 +16,8 @@ fn benchmark_upmixer_process() {
         300.0, // bandpass_hz
         0.2,   // height_gain
         1.0,   // lfe_gain
+        false, // enable_subharmonic_synth
+        0.5,   // subharmonic_gain
     );
 
     // Generate random input

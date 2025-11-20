@@ -29,8 +29,8 @@ impl PluginType {
 
     pub fn description(&self) -> &str {
         match self {
-            Self::EQ => "Parametric Equalizer (10-band)",
-            Self::Upmixer => "Stereo to 5.1 Surround",
+            Self::EQ => "Parametric Equalizer IIR",
+            Self::Upmixer => "Stereo to Surround 5.1 to 9.1.6",
             Self::Compressor => "Dynamic Range Compressor",
             Self::Limiter => "Peak Limiter",
             Self::Gate => "Noise Gate",
@@ -195,6 +195,8 @@ pub enum PluginSettings {
         bandpass_hz: f64,
         height_gain: f64,
         lfe_gain: f64,
+        enable_subharmonic_synth: bool,
+        subharmonic_gain: f64,
     },
     Compressor {
         threshold_db: f64,
@@ -221,6 +223,9 @@ pub enum PluginSettings {
     BinauralDecoder {
         sofa_file: String,
         input_channels: usize,
+        enable_optimization: bool,
+        externalization: f64,
+        near_field_strength: f64,
     },
 }
 
@@ -270,6 +275,8 @@ impl PluginSettings {
                 bandpass_hz,
                 height_gain,
                 lfe_gain,
+                enable_subharmonic_synth,
+                subharmonic_gain,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -282,6 +289,8 @@ impl PluginSettings {
                     "bandpass_hz": bandpass_hz,
                     "height_gain": height_gain,
                     "lfe_gain": lfe_gain,
+                    "enable_subharmonic_synth": enable_subharmonic_synth,
+                    "subharmonic_gain": subharmonic_gain,
                 }),
             ),
             Self::Compressor {
@@ -339,11 +348,17 @@ impl PluginSettings {
             Self::BinauralDecoder {
                 sofa_file,
                 input_channels,
+                enable_optimization,
+                externalization,
+                near_field_strength,
             } => PluginConfig::new(
                 "binaural_decoder",
                 json!({
                     "sofa_file": sofa_file,
                     "input_channels": input_channels,
+                    "enable_optimization": enable_optimization,
+                    "externalization": externalization,
+                    "near_field_strength": near_field_strength,
                 }),
             ),
         }
@@ -377,6 +392,8 @@ impl PluginSettings {
                 bandpass_hz: 250.0,
                 height_gain: 1.0,
                 lfe_gain: 1.0,
+                enable_subharmonic_synth: false,
+                subharmonic_gain: 0.5,
             },
             PluginType::Compressor => Self::Compressor {
                 threshold_db: -20.0,
@@ -403,6 +420,9 @@ impl PluginSettings {
             PluginType::BinauralDecoder => Self::BinauralDecoder {
                 sofa_file: String::new(),
                 input_channels: 6, // Default to 5.1
+                enable_optimization: true,
+                externalization: 0.0,
+                near_field_strength: 0.0,
             },
         }
     }
@@ -668,11 +688,23 @@ impl PluginChain {
                 };
 
                 // Update the BinauralDecoder with the calculated input channels
-                let sofa_file = sofa_file.clone();
-                self.plugins[i].settings = PluginSettings::BinauralDecoder {
-                    sofa_file,
-                    input_channels,
-                };
+                // Preserve existing settings when updating input channels
+                if let PluginSettings::BinauralDecoder {
+                    enable_optimization,
+                    externalization,
+                    near_field_strength,
+                    ..
+                } = &self.plugins[i].settings
+                {
+                    let sofa_file = sofa_file.clone();
+                    self.plugins[i].settings = PluginSettings::BinauralDecoder {
+                        sofa_file,
+                        input_channels,
+                        enable_optimization: *enable_optimization,
+                        externalization: *externalization,
+                        near_field_strength: *near_field_strength,
+                    };
+                }
             }
         }
     }
@@ -719,6 +751,8 @@ mod tests {
                 bandpass_hz: 250.0,
                 height_gain: 1.0,
                 lfe_gain: 1.0,
+                enable_subharmonic_synth: false,
+                subharmonic_gain: 0.5,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -761,6 +795,8 @@ mod tests {
                 bandpass_hz: 250.0,
                 height_gain: 1.0,
                 lfe_gain: 1.0,
+                enable_subharmonic_synth: false,
+                subharmonic_gain: 0.5,
             };
         }
 

@@ -44,6 +44,8 @@ fn create_upmixer_plugin_config(
     gain_front_direct: f32,
     gain_front_ambient: f32,
     gain_rear_ambient: f32,
+    enable_subharmonic_synth: bool,
+    subharmonic_gain: f32,
 ) -> Result<PluginConfig, String> {
     use serde_json::json;
 
@@ -64,6 +66,8 @@ fn create_upmixer_plugin_config(
         "gain_front_direct": gain_front_direct,
         "gain_front_ambient": gain_front_ambient,
         "gain_rear_ambient": gain_rear_ambient,
+        "enable_subharmonic_synth": enable_subharmonic_synth,
+        "subharmonic_gain": subharmonic_gain,
     });
 
     Ok(PluginConfig {
@@ -99,6 +103,9 @@ fn create_binaural_decoder_plugin_config(
     sofa_file: PathBuf,
     input_channels: usize,
     fft_size: usize,
+    enable_optimization: bool,
+    externalization: f32,
+    near_field_strength: f32,
 ) -> Result<PluginConfig, String> {
     use serde_json::json;
 
@@ -119,6 +126,9 @@ fn create_binaural_decoder_plugin_config(
         "sofa_file": sofa_file.to_string_lossy().to_string(),
         "input_channels": input_channels,
         "fft_size": fft_size,
+        "enable_optimization": enable_optimization,
+        "externalization": externalization,
+        "near_field_strength": near_field_strength,
     });
 
     Ok(PluginConfig {
@@ -256,6 +266,14 @@ enum Commands {
         #[arg(long = "upmixer-gain-rear-ambient", default_value = "1.0")]
         upmixer_gain_rear_ambient: f32,
 
+        /// Enable Upmixer Sub-Harmonic Synthesizer (adds low-end impact)
+        #[arg(long = "upmixer-subharmonic", default_value_t = false)]
+        upmixer_subharmonic: bool,
+
+        /// Upmixer Sub-Harmonic Synthesizer gain (0.0-1.0)
+        #[arg(long = "upmixer-subharmonic-gain", default_value = "0.5")]
+        upmixer_subharmonic_gain: f32,
+
         /// Enable binaural decoder (converts multi-channel to binaural stereo using HRTFs)
         #[arg(long = "binaural", default_value_t = false)]
         binaural: bool,
@@ -267,6 +285,18 @@ enum Commands {
         /// Binaural decoder FFT size (must be power of 2: 2048, 4096, 8192)
         #[arg(long = "binaural-fft-size", default_value = "4096")]
         binaural_fft_size: usize,
+
+        /// Enable Binaural Decoder Sum-Before-IFFT optimization
+        #[arg(long = "binaural-optimization", default_value_t = true)]
+        binaural_optimization: bool,
+
+        /// Binaural Decoder Externalization (0.0-1.0)
+        #[arg(long = "binaural-externalization", default_value = "0.0")]
+        binaural_externalization: f32,
+
+        /// Binaural Decoder Near-Field Strength (0.0-1.0)
+        #[arg(long = "binaural-near-field", default_value = "0.0")]
+        binaural_near_field: f32,
     },
 
     /// Get current playback status
@@ -311,9 +341,14 @@ fn main() {
             upmixer_gain_front_direct,
             upmixer_gain_front_ambient,
             upmixer_gain_rear_ambient,
+            upmixer_subharmonic,
+            upmixer_subharmonic_gain,
             binaural,
             sofa_file,
             binaural_fft_size,
+            binaural_optimization,
+            binaural_externalization,
+            binaural_near_field,
         } => {
             // Parse filters
             let filter_params = match parse_filters(&filters) {
@@ -348,9 +383,14 @@ fn main() {
                 upmixer_gain_front_direct,
                 upmixer_gain_front_ambient,
                 upmixer_gain_rear_ambient,
+                upmixer_subharmonic,
+                upmixer_subharmonic_gain,
                 binaural,
                 sofa_file,
                 binaural_fft_size,
+                binaural_optimization,
+                binaural_externalization,
+                binaural_near_field,
             ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -657,9 +697,14 @@ fn play_stream(
     upmixer_gain_front_direct: f32,
     upmixer_gain_front_ambient: f32,
     upmixer_gain_rear_ambient: f32,
+    enable_subharmonic_synth: bool,
+    subharmonic_gain: f32,
     binaural: bool,
     sofa_file: Option<PathBuf>,
     binaural_fft_size: usize,
+    enable_optimization: bool,
+    externalization: f32,
+    near_field_strength: f32,
 ) -> Result<(), String> {
     println!("Starting streaming playback...");
     println!("  File: {:?}", file);
@@ -732,6 +777,8 @@ fn play_stream(
             upmixer_gain_front_direct,
             upmixer_gain_front_ambient,
             upmixer_gain_rear_ambient,
+            enable_subharmonic_synth,
+            subharmonic_gain,
         )?;
         plugins.push(upmixer_plugin);
         eprintln!(
@@ -759,7 +806,14 @@ fn play_stream(
         println!();
 
         let binaural_plugin =
-            create_binaural_decoder_plugin_config(sofa_path, input_channels, binaural_fft_size)?;
+            create_binaural_decoder_plugin_config(
+                sofa_path, 
+                input_channels, 
+                binaural_fft_size,
+                enable_optimization,
+                externalization,
+                near_field_strength,
+            )?;
         plugins.push(binaural_plugin);
         eprintln!(
             "Added binaural decoder plugin: {}ch -> 2ch (binaural)",

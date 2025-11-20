@@ -15,6 +15,7 @@
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
+use std::f32::consts::PI;
 
 // ============================================================================
 // Configuration
@@ -29,19 +30,35 @@ fn default_ratio() -> f32 {
 }
 
 fn default_attack_ms() -> f32 {
-    10.0
+    5.0
 }
 
 fn default_release_ms() -> f32 {
-    100.0
+    50.0
 }
 
 fn default_knee_db() -> f32 {
-    0.0
+    6.0
 }
 
 fn default_makeup_gain_db() -> f32 {
     0.0
+}
+
+fn default_mix() -> f32 {
+    1.0
+}
+
+fn default_auto_makeup() -> bool {
+    false
+}
+
+fn default_link_channels() -> bool {
+    true
+}
+
+fn default_sidechain_hpf_hz() -> f32 {
+    80.0
 }
 
 /// Configuration parameters for CompressorPlugin
@@ -59,6 +76,14 @@ pub struct CompressorPluginParams {
     pub knee_db: f32,
     #[serde(default = "default_makeup_gain_db")]
     pub makeup_gain_db: f32,
+    #[serde(default = "default_mix")]
+    pub mix: f32,
+    #[serde(default = "default_auto_makeup")]
+    pub auto_makeup: bool,
+    #[serde(default = "default_link_channels")]
+    pub link_channels: bool,
+    #[serde(default = "default_sidechain_hpf_hz")]
+    pub sidechain_hpf_hz: f32,
 }
 
 // ============================================================================
@@ -89,10 +114,25 @@ pub struct CompressorPlugin {
     param_makeup_gain: ParameterId,
     makeup_gain_db: f32,
 
+    param_mix: ParameterId,
+    mix: f32,
+
+    param_auto_makeup: ParameterId,
+    auto_makeup: bool,
+
+    param_link_channels: ParameterId,
+    link_channels: bool,
+
+    param_sidechain_hpf_hz: ParameterId,
+    sidechain_hpf_hz: f32,
+
     // State per channel
     envelope: Vec<f32>, // Current gain reduction envelope per channel
+    sidechain_hpf_prev_input: Vec<f32>,
+    sidechain_hpf_prev_output: Vec<f32>,
     attack_coeff: f32,
     release_coeff: f32,
+    sidechain_hpf_alpha: f32,
 }
 
 impl CompressorPlugin {
@@ -137,15 +177,30 @@ impl CompressorPlugin {
             param_makeup_gain: ParameterId::from("makeup_gain"),
             makeup_gain_db,
 
+            param_mix: ParameterId::from("mix"),
+            mix: 1.0,
+
+            param_auto_makeup: ParameterId::from("auto_makeup"),
+            auto_makeup: false,
+
+            param_link_channels: ParameterId::from("link_channels"),
+            link_channels: true,
+
+            param_sidechain_hpf_hz: ParameterId::from("sidechain_hpf_hz"),
+            sidechain_hpf_hz: 80.0,
+
             envelope: vec![0.0; channels],
+            sidechain_hpf_prev_input: vec![0.0; channels],
+            sidechain_hpf_prev_output: vec![0.0; channels],
             attack_coeff: 0.0,
             release_coeff: 0.0,
+            sidechain_hpf_alpha: 0.0,
         }
     }
 
     /// Create a new compressor plugin from configuration parameters
     pub fn from_params(channels: usize, params: CompressorPluginParams) -> Self {
-        Self::new(
+        let mut plugin = Self::new(
             channels,
             params.threshold_db,
             params.ratio,
@@ -153,7 +208,14 @@ impl CompressorPlugin {
             params.release_ms,
             params.knee_db,
             params.makeup_gain_db,
-        )
+        );
+
+        plugin.mix = params.mix.clamp(0.0, 1.0);
+        plugin.auto_makeup = params.auto_makeup;
+        plugin.link_channels = params.link_channels;
+        plugin.sidechain_hpf_hz = params.sidechain_hpf_hz.max(0.0);
+
+        plugin
     }
 
     /// Calculate time coefficient for envelope follower
@@ -168,7 +230,9 @@ impl CompressorPlugin {
     /// Calculate gain reduction for a given input level
     fn calculate_gain_reduction(&self, input_db: f32) -> f32 {
         let threshold = self.threshold_db;
-        let knee = self.knee_db;
+        let knee = self.knee_db.max(0.0);
+        let ratio = self.ratio.max(1.0);
+        let slope = 1.0 - 1.0 / ratio;
 
         // Handle hard knee (knee = 0) separately
         if knee < 0.1 {
@@ -177,7 +241,7 @@ impl CompressorPlugin {
                 0.0
             } else {
                 let overshoot = input_db - threshold;
-                overshoot * (1.0 - 1.0 / self.ratio)
+                overshoot * slope
             }
         } else {
             // Soft knee compression
@@ -187,12 +251,12 @@ impl CompressorPlugin {
             } else if input_db > threshold + knee / 2.0 {
                 // Above threshold + knee - full compression
                 let overshoot = input_db - threshold;
-                overshoot * (1.0 - 1.0 / self.ratio)
+                overshoot * slope
             } else {
                 // In the knee - smooth transition
                 let overshoot = input_db - threshold + knee / 2.0;
                 let knee_factor = overshoot / knee;
-                knee_factor * knee_factor * knee / 2.0 * (1.0 - 1.0 / self.ratio)
+                knee_factor * knee_factor * knee / 2.0 * slope
             }
         }
     }
@@ -201,6 +265,53 @@ impl CompressorPlugin {
     fn update_coefficients(&mut self) {
         self.attack_coeff = Self::time_to_coeff(self.attack_ms, self.sample_rate);
         self.release_coeff = Self::time_to_coeff(self.release_ms, self.sample_rate);
+
+        let fc = self.sidechain_hpf_hz.max(0.0);
+        if fc > 0.0 && self.sample_rate > 0 {
+            let dt = 1.0 / self.sample_rate as f32;
+            let rc = 1.0 / (2.0 * PI * fc);
+            self.sidechain_hpf_alpha = rc / (rc + dt);
+        } else {
+            self.sidechain_hpf_alpha = 0.0;
+        }
+    }
+
+    fn apply_sidechain_filter(&mut self, channel: usize, sample: f32) -> f32 {
+        if self.sidechain_hpf_alpha <= 0.0 {
+            return sample;
+        }
+
+        let prev_in = self.sidechain_hpf_prev_input[channel];
+        let prev_out = self.sidechain_hpf_prev_output[channel];
+        let alpha = self.sidechain_hpf_alpha;
+
+        let y = alpha * (prev_out + sample - prev_in);
+        self.sidechain_hpf_prev_input[channel] = sample;
+        self.sidechain_hpf_prev_output[channel] = y;
+        y
+    }
+
+    fn apply_gain_for_channel(
+        &mut self,
+        channel: usize,
+        target_gr: f32,
+        makeup_gain_linear: f32,
+        input_sample: f32,
+        dry_mix: f32,
+        wet_mix: f32,
+    ) -> f32 {
+        let coeff = if target_gr > self.envelope[channel] {
+            self.attack_coeff
+        } else {
+            self.release_coeff
+        };
+
+        self.envelope[channel] = target_gr + coeff * (self.envelope[channel] - target_gr);
+
+        let wet_gain_linear = 10.0_f32.powf(-self.envelope[channel] / 20.0) * makeup_gain_linear;
+
+        let wet = input_sample * wet_gain_linear;
+        dry_mix * input_sample + wet_mix * wet
     }
 }
 
@@ -230,8 +341,16 @@ impl InPlacePlugin for CompressorPlugin {
                 .with_description("Release time (ms)"),
             Parameter::new_float("knee", "Knee", 6.0, 0.0, 20.0)
                 .with_description("Soft knee width (dB)"),
-            Parameter::new_float("makeup_gain", "Makeup Gain", 0.0, 0.0, 24.0)
+            Parameter::new_float("makeup_gain", "Makeup Gain", 0.0, -24.0, 24.0)
                 .with_description("Output gain compensation (dB)"),
+            Parameter::new_float("mix", "Mix", 1.0, 0.0, 1.0)
+                .with_description("Dry/wet mix (0 = dry, 1 = compressed)"),
+            Parameter::new_bool("auto_makeup", "Auto Makeup", false)
+                .with_description("Automatically compensate for gain reduction"),
+            Parameter::new_bool("link_channels", "Link Channels", true)
+                .with_description("Use linked sidechain for all channels"),
+            Parameter::new_float("sidechain_hpf_hz", "Sidechain HPF", 80.0, 0.0, 200.0)
+                .with_description("High-pass filter frequency for sidechain (Hz)"),
         ]
     }
 
@@ -239,7 +358,7 @@ impl InPlacePlugin for CompressorPlugin {
         if id == self.param_threshold {
             self.threshold_db = value.as_float().ok_or("Invalid threshold value")?;
         } else if id == self.param_ratio {
-            self.ratio = value.as_float().ok_or("Invalid ratio value")?;
+            self.ratio = value.as_float().ok_or("Invalid ratio value")?.max(1.0);
         } else if id == self.param_attack {
             self.attack_ms = value.as_float().ok_or("Invalid attack value")?;
             self.update_coefficients();
@@ -247,9 +366,21 @@ impl InPlacePlugin for CompressorPlugin {
             self.release_ms = value.as_float().ok_or("Invalid release value")?;
             self.update_coefficients();
         } else if id == self.param_knee {
-            self.knee_db = value.as_float().ok_or("Invalid knee value")?;
+            self.knee_db = value.as_float().ok_or("Invalid knee value")?.max(0.0);
         } else if id == self.param_makeup_gain {
             self.makeup_gain_db = value.as_float().ok_or("Invalid makeup gain value")?;
+        } else if id == self.param_mix {
+            self.mix = value.as_float().ok_or("Invalid mix value")?.clamp(0.0, 1.0);
+        } else if id == self.param_auto_makeup {
+            self.auto_makeup = value.as_bool().ok_or("Invalid auto makeup value")?;
+        } else if id == self.param_link_channels {
+            self.link_channels = value.as_bool().ok_or("Invalid link channels value")?;
+        } else if id == self.param_sidechain_hpf_hz {
+            self.sidechain_hpf_hz = value
+                .as_float()
+                .ok_or("Invalid sidechain high-pass value")?
+                .max(0.0);
+            self.update_coefficients();
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -269,6 +400,14 @@ impl InPlacePlugin for CompressorPlugin {
             Some(ParameterValue::Float(self.knee_db))
         } else if id == &self.param_makeup_gain {
             Some(ParameterValue::Float(self.makeup_gain_db))
+        } else if id == &self.param_mix {
+            Some(ParameterValue::Float(self.mix))
+        } else if id == &self.param_auto_makeup {
+            Some(ParameterValue::Bool(self.auto_makeup))
+        } else if id == &self.param_link_channels {
+            Some(ParameterValue::Bool(self.link_channels))
+        } else if id == &self.param_sidechain_hpf_hz {
+            Some(ParameterValue::Float(self.sidechain_hpf_hz))
         } else {
             None
         }
@@ -282,6 +421,8 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn reset(&mut self) {
         self.envelope.fill(0.0);
+        self.sidechain_hpf_prev_input.fill(0.0);
+        self.sidechain_hpf_prev_output.fill(0.0);
     }
 
     fn process_in_place(
@@ -290,32 +431,68 @@ impl InPlacePlugin for CompressorPlugin {
         context: &ProcessContext,
     ) -> PluginResult<()> {
         let num_frames = context.num_frames;
-        let makeup_gain_linear = 10.0_f32.powf(self.makeup_gain_db / 20.0);
+        let ratio = self.ratio.max(1.0);
+        let compression_slope = 1.0 - 1.0 / ratio;
+        let auto_makeup_db = if self.auto_makeup {
+            let avg_overshoot = (-self.threshold_db).max(0.0) * 0.5;
+            avg_overshoot * compression_slope
+        } else {
+            0.0
+        };
+        let makeup_gain_linear =
+            10.0_f32.powf((self.makeup_gain_db + auto_makeup_db) / 20.0);
+        let dry_mix = 1.0 - self.mix;
+        let wet_mix = self.mix;
 
         for frame in 0..num_frames {
-            for ch in 0..self.channels {
-                let sample_idx = frame * self.channels + ch;
-                let input_sample = buffer[sample_idx];
+            if self.link_channels && self.channels > 1 {
+                let mut detection_level = 0.0_f32;
 
-                // Convert to dB
-                let input_level = input_sample.abs().max(1e-10);
-                let input_db = 20.0 * input_level.log10();
+                for ch in 0..self.channels {
+                    let sample_idx = frame * self.channels + ch;
+                    let input_sample = buffer[sample_idx];
+                    let sidechain_sample = self.apply_sidechain_filter(ch, input_sample);
+                    let level = sidechain_sample.abs();
+                    detection_level = detection_level.max(level);
+                }
 
-                // Calculate target gain reduction
+                let detection_level = detection_level.max(1e-10);
+                let input_db = 20.0 * detection_level.log10();
                 let target_gr = self.calculate_gain_reduction(input_db);
 
-                // Smooth envelope follower
-                let coeff = if target_gr > self.envelope[ch] {
-                    self.attack_coeff
-                } else {
-                    self.release_coeff
-                };
+                for ch in 0..self.channels {
+                    let sample_idx = frame * self.channels + ch;
+                    let input_sample = buffer[sample_idx];
 
-                self.envelope[ch] = target_gr + coeff * (self.envelope[ch] - target_gr);
+                    buffer[sample_idx] = self.apply_gain_for_channel(
+                        ch,
+                        target_gr,
+                        makeup_gain_linear,
+                        input_sample,
+                        dry_mix,
+                        wet_mix,
+                    );
+                }
+            } else {
+                for ch in 0..self.channels {
+                    let sample_idx = frame * self.channels + ch;
+                    let input_sample = buffer[sample_idx];
+                    let sidechain_sample = self.apply_sidechain_filter(ch, input_sample);
 
-                // Apply gain reduction and makeup gain
-                let gain_linear = 10.0_f32.powf(-self.envelope[ch] / 20.0) * makeup_gain_linear;
-                buffer[sample_idx] = input_sample * gain_linear;
+                    let input_level = sidechain_sample.abs().max(1e-10);
+                    let input_db = 20.0 * input_level.log10();
+
+                    let target_gr = self.calculate_gain_reduction(input_db);
+
+                    buffer[sample_idx] = self.apply_gain_for_channel(
+                        ch,
+                        target_gr,
+                        makeup_gain_linear,
+                        input_sample,
+                        dry_mix,
+                        wet_mix,
+                    );
+                }
             }
         }
 

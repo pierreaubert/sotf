@@ -1456,6 +1456,8 @@ impl App {
                     bandpass_hz,
                     height_gain,
                     lfe_gain,
+                    enable_subharmonic_synth,
+                    subharmonic_gain,
                 } => {
                     match param_idx {
                         0 => {
@@ -1491,6 +1493,13 @@ impl App {
                         6 => *bandpass_hz = (*bandpass_hz + delta * 10.0).clamp(100.0, 500.0),
                         7 => *height_gain = (*height_gain + delta * 0.1).clamp(0.0, 2.0),
                         8 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
+                        9 => {
+                            // Toggle subharmonic synth on/off
+                            *enable_subharmonic_synth = !*enable_subharmonic_synth;
+                        }
+                        10 => {
+                            *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(0.0, 1.0)
+                        }
                         _ => return false,
                     }
                     true
@@ -1556,12 +1565,31 @@ impl App {
                     // TODO: Implement full EQ editing with filter type selection
                     false
                 }
-                PluginSettings::BinauralDecoder { input_channels, .. } => {
-                    // Only input_channels can be adjusted (sofa_file is set via 'f' key)
+                PluginSettings::BinauralDecoder {
+                    input_channels,
+                    enable_optimization,
+                    externalization,
+                    near_field_strength,
+                    ..
+                } => {
+                    // sofa_file (param 0) is set via 'f' key and cannot be adjusted here
                     match param_idx {
                         1 => {
                             *input_channels =
                                 (*input_channels as i64 + delta as i64).clamp(2, 16) as usize;
+                            true
+                        }
+                        2 => {
+                            // Toggle optimization on/off
+                            *enable_optimization = !*enable_optimization;
+                            true
+                        }
+                        3 => {
+                            *externalization = (*externalization + delta * 0.05).clamp(0.0, 1.0);
+                            true
+                        }
+                        4 => {
+                            *near_field_strength = (*near_field_strength + delta * 0.05).clamp(0.0, 1.0);
                             true
                         }
                         _ => false,
@@ -1989,12 +2017,12 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
     use crate::plugins::PluginSettings;
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
-        PluginSettings::Upmixer { .. } => 9, // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, lfe_cutoff_hz, stereo_width, bandpass_hz, height_gain, lfe_gain
+        PluginSettings::Upmixer { .. } => 11, // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, lfe_cutoff_hz, stereo_width, bandpass_hz, height_gain, lfe_gain, enable_subharmonic_synth, subharmonic_gain
         PluginSettings::Compressor { .. } => 5, // threshold, ratio, attack, release, knee
         PluginSettings::Limiter { .. } => 2, // threshold, release
         PluginSettings::Gate { .. } => 4,    // threshold, ratio, attack, release
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
-        PluginSettings::BinauralDecoder { .. } => 2, // sofa_file, input_channels
+        PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
     }
 }
 

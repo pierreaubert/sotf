@@ -1422,6 +1422,8 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             bandpass_hz,
             height_gain,
             lfe_gain,
+            enable_subharmonic_synth,
+            subharmonic_gain,
         } => vec![
             ("Speaker Config".to_string(), speaker_config.clone()),
             (
@@ -1441,6 +1443,18 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Bandpass".to_string(), format!("{:.0} Hz", bandpass_hz)),
             ("Height Gain".to_string(), format!("{:.2}x", height_gain)),
             ("LFE Gain".to_string(), format!("{:.2}x", lfe_gain)),
+            (
+                "Subharmonic Synth".to_string(),
+                if *enable_subharmonic_synth {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
+            (
+                "Subharmonic Gain".to_string(),
+                format!("{:.2}x", subharmonic_gain),
+            ),
         ],
         PluginSettings::Compressor {
             threshold_db,
@@ -1507,6 +1521,9 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
         PluginSettings::BinauralDecoder {
             sofa_file,
             input_channels,
+            enable_optimization,
+            externalization,
+            near_field_strength,
         } => vec![
             (
                 "SOFA File".to_string(),
@@ -1517,6 +1534,22 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 },
             ),
             ("Input Channels".to_string(), format!("{}", input_channels)),
+            (
+                "Optimization".to_string(),
+                if *enable_optimization {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
+            (
+                "Externalization".to_string(),
+                format!("{:.2}", externalization),
+            ),
+            (
+                "Near-Field".to_string(),
+                format!("{:.2}", near_field_strength),
+            ),
         ],
     }
 }

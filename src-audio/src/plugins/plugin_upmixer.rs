@@ -74,6 +74,10 @@ fn default_lfe_gain() -> f32 {
     1.0
 }
 
+fn default_subharmonic_gain() -> f32 {
+    0.5
+}
+
 /// Configuration parameters for UpmixerPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpmixerPluginParams {
@@ -114,10 +118,6 @@ pub struct UpmixerPluginParams {
     /// Gain for Sub-Harmonic Synthesis (0.0 to 1.0)
     #[serde(default = "default_subharmonic_gain")]
     pub subharmonic_gain: f32,
-}
-
-fn default_subharmonic_gain() -> f32 {
-    0.5
 }
 
 // ============================================================================
@@ -756,12 +756,12 @@ impl UpmixerPlugin {
                             // For height channels, we want to create a diffuse field.
                             // We use the decorrelated ambient signals and mix them based on position.
                             // We also add a bit of "late reflection" (scaled direct sound) to simulate room height.
-                            
-                            let is_left = speaker.azimuth > 0.0; // Positive azimuth is Left in this coordinate system? 
+
+                            let is_left = speaker.azimuth > 0.0; // Positive azimuth is Left in this coordinate system?
                             // Wait, standard is: +Azimuth = Left, -Azimuth = Right? Or vice versa?
                             // Usually +Azimuth is Left (CCW from front).
                             // Let's assume +Azimuth is Left.
-                            
+
                             let ambient_component = if is_front {
                                 // Front Height: Use decorrelated ambient but keep some L/R separation
                                 if is_left {
@@ -804,25 +804,25 @@ impl UpmixerPlugin {
                 // Inverse FFT
                 self.fft_inverse.process(time_out_channel);
             });
-            
+
         // 5. Sub-Harmonic Synthesis (Time Domain)
         if self.enable_subharmonic_synth {
             if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
                 // Generate subharmonics based on LFE amplitude
                 // We use a simple sine wave at 40Hz (typical rumble) modulated by the LFE envelope
                 let phase_inc = 2.0 * std::f32::consts::PI * 40.0 / self.sample_rate as f32;
-                
+
                 for i in 0..self.fft_size {
                     // Use the real part of the IFFT output as the envelope
                     let lfe_amp = self.time_out_channels[lfe_idx][i].re.abs();
-                    
+
                     // Threshold to avoid rumbling on silence
                     if lfe_amp > 0.001 {
                         self.subharmonic_phase += phase_inc;
                         if self.subharmonic_phase > 2.0 * std::f32::consts::PI {
                             self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
                         }
-                        
+
                         let sub = self.subharmonic_phase.sin() * lfe_amp * self.subharmonic_gain;
                         self.time_out_channels[lfe_idx][i].re += sub;
                     }
@@ -837,28 +837,25 @@ impl UpmixerPlugin {
                 output[idx + ch] = self.time_out_channels[ch][i].re * combined_scale;
             }
         }
-
-        // Debugging RMS (optional, kept for consistency)
-        // ...
     }
 
     /// Calculate ERB bands based on sample rate and FFT size
     fn calculate_erb_bands(&mut self) {
         self.erb_bands.clear();
         let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
-        
+
         // Glasberg and Moore (1990) ERB scale
         // ERB(f) = 24.7 * (4.37 * f / 1000 + 1)
         // We want bands to be roughly 1 ERB wide
-        
+
         let mut current_bin = 0;
         while current_bin < self.fft_size / 2 {
             self.erb_bands.push(current_bin);
-            
+
             let center_freq = current_bin as f32 * freq_per_bin;
             let erb_width = 24.7 * (4.37 * center_freq / 1000.0 + 1.0);
             let bins_width = (erb_width / freq_per_bin).max(1.0).round() as usize;
-            
+
             current_bin += bins_width;
         }
         // Ensure we cover the full spectrum up to Nyquist
@@ -885,8 +882,8 @@ impl UpmixerPlugin {
             let phase_r = rand_f32() * 2.0 * std::f32::consts::PI;
             self.decorrelation_filter_right[i] = Complex::from_polar(1.0, phase_r);
         }
-        
-        // Enforce conjugate symmetry for real FFT if needed? 
+
+        // Enforce conjugate symmetry for real FFT if needed?
         // We are using complex FFT on windowed data, but the signal is real.
         // However, we process positive and negative frequencies?
         // RustFFT `process` does full complex FFT.
@@ -896,7 +893,7 @@ impl UpmixerPlugin {
         // Or we just process 0..N/2 and mirror?
         // The current implementation processes 0..N.
         // So we MUST ensure conjugate symmetry for the decorrelation filters.
-        
+
         for i in 1..self.fft_size / 2 {
             let mirror_idx = self.fft_size - i;
             self.decorrelation_filter_left[mirror_idx] = self.decorrelation_filter_left[i].conj();
@@ -1147,7 +1144,7 @@ impl Plugin for UpmixerPlugin {
 
         // Clear output block
         self.output_block.fill(0.0);
-        
+
         // Reset state vectors
         self.steering_alphas.fill(0.15);
         self.pca_cov_xx.fill(0.0);

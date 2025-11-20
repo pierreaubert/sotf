@@ -97,6 +97,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             plugin.settings = PluginSettings::BinauralDecoder {
                 sofa_file: sofa_file.to_string_lossy().to_string(),
                 input_channels,
+                enable_optimization: true,
+                externalization: 0.0,
+                near_field_strength: 0.0,
             };
             log::info!(
                 "Binaural decoder enabled with {} input channels, SOFA file: {:?}",

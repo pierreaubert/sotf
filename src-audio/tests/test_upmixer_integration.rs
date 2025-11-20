@@ -9,7 +9,7 @@ fn test_upmixer_stereo_to_5ch() {
     let mut host = PluginHost::new(2, 44100);
 
     // Add upmixer plugin (5.1 configuration outputs 6 channels)
-    let upmixer = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+    let upmixer = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
     host.add_plugin(Box::new(upmixer)).unwrap();
 
     // Verify channel counts
@@ -64,7 +64,7 @@ fn test_upmixer_chain_with_gain() {
     let mut host = PluginHost::new(2, 44100);
 
     // Add upmixer (2→6, 5.1 configuration)
-    let upmixer = UpmixerPlugin::new(1024, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0); // Smaller FFT for this test
+    let upmixer = UpmixerPlugin::new(1024, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5); // Smaller FFT for this test
     host.add_plugin(Box::new(upmixer)).unwrap();
 
     // Add gain to the 6-channel output
@@ -96,12 +96,12 @@ fn test_upmixer_chain_with_gain() {
 fn test_upmixer_parameter_adjustment() {
     use sotf_audio::{ParameterId, ParameterValue, Plugin};
 
-    let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+    let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
     plugin.initialize(44100).unwrap();
 
     // Test parameter queries
     let params = plugin.parameters();
-    assert_eq!(params.len(), 9); // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, height_gain, lfe_gain, lfe_cutoff_hz, stereo_width, bandpass_hz
+    assert_eq!(params.len(), 11); // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, height_gain, lfe_gain, lfe_cutoff_hz, stereo_width, bandpass_hz, enable_subharmonic_synth, subharmonic_gain
 
     // Modify gains
     plugin

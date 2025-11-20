@@ -1779,7 +1779,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convexhull3d"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "log",
  "ndarray 0.16.1",
@@ -4036,7 +4036,7 @@ dependencies = [
 
 [[package]]
 name = "head-scanner"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bytemuck",
  "byteorder",
@@ -9201,7 +9201,7 @@ checksum = "19f58d7b0190c7f12df7e8be6b79767a0836059159811b869d5ab55721fe14d0"
 
 [[package]]
 name = "sotf"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "accelerate-src",
  "autoeq",
@@ -9231,7 +9231,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui-player"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "autoeq-iir",
  "clap",
@@ -9263,7 +9263,7 @@ dependencies = [
 
 [[package]]
 name = "sotf_audio"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "autoeq-env",
  "autoeq-iir",
