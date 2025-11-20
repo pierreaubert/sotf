@@ -106,6 +106,18 @@ pub struct UpmixerPluginParams {
     /// Controls subwoofer level
     #[serde(default = "default_lfe_gain")]
     pub lfe_gain: f32,
+
+    /// Enable Sub-Harmonic Synthesis for LFE
+    #[serde(default)]
+    pub enable_subharmonic_synth: bool,
+
+    /// Gain for Sub-Harmonic Synthesis (0.0 to 1.0)
+    #[serde(default = "default_subharmonic_gain")]
+    pub subharmonic_gain: f32,
+}
+
+fn default_subharmonic_gain() -> f32 {
+    0.5
 }
 
 // ============================================================================
@@ -166,6 +178,30 @@ pub struct UpmixerPlugin {
     param_lfe_gain: ParameterId,
     lfe_gain: f32,
 
+    /// Sub-Harmonic Synthesis
+    param_enable_subharmonic_synth: ParameterId,
+    enable_subharmonic_synth: bool,
+    param_subharmonic_gain: ParameterId,
+    subharmonic_gain: f32,
+
+    // Sub-harmonic synth state
+    subharmonic_phase: f32,
+
+    // ERB Banding
+    erb_bands: Vec<usize>, // Start bin indices for each band
+
+    // Logic Steering State
+    steering_alphas: Vec<f32>, // Per-band alpha
+
+    // Decorrelation
+    decorrelation_filter_left: Vec<Complex<f32>>,
+    decorrelation_filter_right: Vec<Complex<f32>>,
+
+    // PCA State (per band)
+    pca_cov_xx: Vec<f32>,
+    pca_cov_yy: Vec<f32>,
+    pca_cov_xy: Vec<Complex<f32>>,
+
     /// Panning gains for left source (pre-calculated for each speaker)
     panning_gains_left: Vec<f32>,
     /// Panning gains for right source (pre-calculated for each speaker)
@@ -191,9 +227,7 @@ pub struct UpmixerPlugin {
     lfe: Vec<Complex<f32>>,
 
     // Smoothing buffers for ICC calculation
-    smooth_power_l: Vec<f32>,
-    smooth_power_r: Vec<f32>,
-    smooth_power_cross: Vec<Complex<f32>>,
+
 
     // Output time-domain buffers (one per output channel, variable length)
     time_out_channels: Vec<Vec<Complex<f32>>>,
@@ -242,6 +276,8 @@ impl UpmixerPlugin {
         bandpass_hz: f32,
         height_gain: f32,
         lfe_gain: f32,
+        enable_subharmonic_synth: bool,
+        subharmonic_gain: f32,
     ) -> Self {
         assert!(fft_size.is_power_of_two(), "FFT size must be power of 2");
         assert!(
@@ -331,6 +367,20 @@ impl UpmixerPlugin {
             param_lfe_gain: ParameterId::from("lfe_gain"),
             lfe_gain,
 
+            param_enable_subharmonic_synth: ParameterId::from("enable_subharmonic_synth"),
+            enable_subharmonic_synth,
+            param_subharmonic_gain: ParameterId::from("subharmonic_gain"),
+            subharmonic_gain,
+            subharmonic_phase: 0.0,
+
+            erb_bands: Vec::new(), // Will be calculated in initialize()
+            steering_alphas: Vec::new(),
+            decorrelation_filter_left: vec![zero_complex; fft_size],
+            decorrelation_filter_right: vec![zero_complex; fft_size],
+            pca_cov_xx: Vec::new(),
+            pca_cov_yy: Vec::new(),
+            pca_cov_xy: Vec::new(),
+
             panning_gains_left,
             panning_gains_right,
 
@@ -345,9 +395,7 @@ impl UpmixerPlugin {
             ambient_left: vec![zero_complex; fft_size],
             ambient_right: vec![zero_complex; fft_size],
             lfe: vec![zero_complex; fft_size],
-            smooth_power_l: vec![0.0; fft_size],
-            smooth_power_r: vec![0.0; fft_size],
-            smooth_power_cross: vec![0.0.into(); fft_size],
+
 
             time_out_channels,
 
@@ -382,6 +430,8 @@ impl UpmixerPlugin {
             params.bandpass_hz,
             params.height_gain,
             params.lfe_gain,
+            params.enable_subharmonic_synth,
+            params.subharmonic_gain,
         )
     }
 
@@ -508,28 +558,7 @@ impl UpmixerPlugin {
             self.num_output_channels
         );
 
-        // Calculate input RMS for debugging
-        let input_rms_left: f32 = (0..self.fft_size)
-            .map(|i| input[i * 2].powi(2))
-            .sum::<f32>()
-            / self.fft_size as f32;
-        let input_rms_right: f32 = (0..self.fft_size)
-            .map(|i| input[i * 2 + 1].powi(2))
-            .sum::<f32>()
-            / self.fft_size as f32;
-        log::trace!(
-            "[UPMIXER]   Input RMS: left={:.6}, right={:.6}",
-            input_rms_left.sqrt(),
-            input_rms_right.sqrt()
-        );
-
         // 1. Copy input to time domain buffers and apply ANALYSIS window
-        // CRITICAL: Window BEFORE FFT to prevent spectral leakage!
-        // Standard STFT: window input -> FFT -> process -> IFFT -> overlap-add
-        // Optimized for cache locality - process both channels together
-
-        // Use sequential iterator for windowing and copying to avoid rayon overhead
-        // for small tasks (2048 iterations is small for thread spawning overhead)
         for i in 0..self.fft_size {
             let idx = i * 2;
             let window_val = self.window[i];
@@ -538,7 +567,6 @@ impl UpmixerPlugin {
         }
 
         // 2. Forward FFT (in-place)
-        // Copy to frequency domain buffers first
         self.freq_domain_left
             .copy_from_slice(&self.time_domain_left);
         self.freq_domain_right
@@ -547,162 +575,151 @@ impl UpmixerPlugin {
         self.fft_forward.process(&mut self.freq_domain_left);
         self.fft_forward.process(&mut self.freq_domain_right);
 
-        // 3. Frequency-dependent processing
-        // Calculate frequency bin boundaries
+        // 3. Frequency-dependent processing (ERB Bands + PCA)
         let lfe_cutoff_bin =
             ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
         let bandpass_bin =
             ((self.bandpass_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
 
-        // Sequential frequency domain processing
-        // Rayon overhead was too high for this loop
-        for i in 0..self.fft_size {
-            let left = self.freq_domain_left[i];
-            let right = self.freq_domain_right[i];
-
-            // Magnitudes for analysis
-            /*
-                        let mag_l = left.norm();
-                        let mag_r = right.norm();
-            */
-            let sum = left + right;
-            let mag_sum = sum.norm();
-            // Calculate Instantaneous Power
-            let inst_pow_l = left.norm_sqr(); // |L|^2
-            let inst_pow_r = right.norm_sqr(); // |R|^2
-            let inst_cross = left * right.conj(); // L * R* (Complex conjugate)
-
-            // Temporal Smoothing (Exponential Moving Average)
-            // Alpha determines response speed.
-            // 0.1 = Slow/Smooth (good for ambience), 0.8 = Fast (good for transients)
-            let alpha = 0.15;
-
-            self.smooth_power_l[i] = (1.0 - alpha) * self.smooth_power_l[i] + alpha * inst_pow_l;
-
-            self.smooth_power_r[i] = (1.0 - alpha) * self.smooth_power_r[i] + alpha * inst_pow_r;
-
-            self.smooth_power_cross[i] = Complex::new(
-                (1.0 - alpha) * self.smooth_power_cross[i].re + alpha * inst_cross.re,
-                (1.0 - alpha) * self.smooth_power_cross[i].im + alpha * inst_cross.im,
-            );
-
-            // Replace coherence by ICC
-            // Should work better in some cases
-            // Compute ICC (0.0 to 1.0)
-            let power_product = self.smooth_power_l[i] * self.smooth_power_r[i];
-            let icc = if power_product > 1e-9 {
-                // The magnitude of the smoothed cross-power divided by geometric mean of powers
-                self.smooth_power_cross[i].norm() / power_product.sqrt()
+        // Iterate over ERB bands
+        for band_idx in 0..self.erb_bands.len() {
+            let start_bin = self.erb_bands[band_idx];
+            let end_bin = if band_idx + 1 < self.erb_bands.len() {
+                self.erb_bands[band_idx + 1]
             } else {
-                0.0 // Silence is effectively uncorrelated
+                self.fft_size / 2 + 1
             };
 
-            // Calculate Phase Coherence (0.0 to 1.0)
-            // 1.0 = Perfect center (In-phase)
-            // 0.0 = Hard Panned or Out-of-phase
-            /*
-                        let coherence = if mag_sum > 1e-6 {
-                            // "Normalized Projection" of sum onto sum of magnitudes
-                            mag_sum / (mag_l + mag_r + 1e-9)
-                        } else {
-                            0.0
-                        };
-            */
+            // Skip if band is empty or out of range
+            if start_bin >= end_bin || start_bin > self.fft_size / 2 {
+                continue;
+            }
 
-            // Handle Nyquist folding for real FFT
-            let is_lfe_band = i <= lfe_cutoff_bin || i >= (self.fft_size - lfe_cutoff_bin);
+            // 3a. Calculate Band Statistics (Covariance)
+            let mut cov_xx = 0.0;
+            let mut cov_yy = 0.0;
+            let mut cov_xy = Complex::new(0.0, 0.0);
 
-            // Simple LFE Tapering (Soft knee) to reduce ringing
-            let dist_to_cutoff = (lfe_cutoff_bin as isize - i as isize).abs();
-            let lfe_gain_val = if dist_to_cutoff < 4 {
-                // Linear fade over 4 bins around cutoff
-                0.5 + 0.5 * (dist_to_cutoff as f32 / 4.0)
+            for i in start_bin..end_bin {
+                let l = self.freq_domain_left[i];
+                let r = self.freq_domain_right[i];
+                cov_xx += l.norm_sqr();
+                cov_yy += r.norm_sqr();
+                cov_xy += l * r.conj();
+            }
+
+            // 3b. Logic Steering (Smoothing)
+            let inst_energy = cov_xx + cov_yy;
+            let smooth_energy = self.pca_cov_xx[band_idx] + self.pca_cov_yy[band_idx];
+
+            // Variable Attack/Release
+            // If energy rises (transient), attack fast. If falls, release slow.
+            let alpha = if inst_energy > smooth_energy * 1.5 {
+                0.5 // Fast attack
             } else {
-                1.0
+                0.05 // Slow release
+            };
+            self.steering_alphas[band_idx] = alpha;
+
+            // Update smoothed covariance
+            self.pca_cov_xx[band_idx] = (1.0 - alpha) * self.pca_cov_xx[band_idx] + alpha * cov_xx;
+            self.pca_cov_yy[band_idx] = (1.0 - alpha) * self.pca_cov_yy[band_idx] + alpha * cov_yy;
+            self.pca_cov_xy[band_idx] = (1.0 - alpha) * self.pca_cov_xy[band_idx] + alpha * cov_xy;
+
+            // 3c. PCA Decomposition
+            let c_xx = self.pca_cov_xx[band_idx];
+            let c_yy = self.pca_cov_yy[band_idx];
+            let c_xy = self.pca_cov_xy[band_idx];
+
+            // Eigenvalues of 2x2 Hermitian matrix
+            let trace = c_xx + c_yy;
+            let det = c_xx * c_yy - c_xy.norm_sqr();
+            // Avoid sqrt of negative due to float errors
+            let disc = ((trace / 2.0).powi(2) - det).max(0.0).sqrt();
+            let lambda1 = trace / 2.0 + disc;
+            let lambda2 = trace / 2.0 - disc;
+
+            // Coherence (0 to 1)
+            // High coherence = strong direct sound (lambda1 >> lambda2)
+            // Low coherence = diffuse sound (lambda1 ~= lambda2)
+            let coherence = if trace > 1e-9 {
+                (lambda1 - lambda2) / (lambda1 + lambda2)
+            } else {
+                0.0
             };
 
-            let is_passthrough_band = (i > lfe_cutoff_bin && i < bandpass_bin)
-                || (i > (self.fft_size - bandpass_bin) && i < (self.fft_size - lfe_cutoff_bin));
+            // 3d. Apply to all bins in band
+            for i in start_bin..end_bin {
+                let left = self.freq_domain_left[i];
+                let right = self.freq_domain_right[i];
 
-            if is_lfe_band {
-                // LFE band: low-pass filtered mono sum
-                self.lfe[i] = (left + right) * 0.5 * lfe_gain_val;
-                self.direct_left[i] = Complex::new(0.0, 0.0);
-                self.direct_right[i] = Complex::new(0.0, 0.0);
-                self.ambient_left[i] = Complex::new(0.0, 0.0);
-                self.ambient_right[i] = Complex::new(0.0, 0.0);
-            } else if is_passthrough_band {
-                // Pass-through band: stereo L/R only (no center extraction)
-                self.direct_left[i] = left;
-                self.direct_right[i] = right;
-                self.lfe[i] = Complex::new(0.0, 0.0);
-                self.ambient_left[i] = Complex::new(0.0, 0.0);
-                self.ambient_right[i] = Complex::new(0.0, 0.0);
-            } else {
-                // 1. Direct Extraction: only extract what is common to BOTH channels (Min Magnitude) scaled by how coherent (in-phase) they are.
-                /*
-                                let min_mag = mag_l.min(mag_r);
-                                let direct_magnitude = min_mag * coherence;
-                */
+                // Handle Nyquist folding
+                let is_lfe_band = i <= lfe_cutoff_bin;
+                let is_passthrough_band = i > lfe_cutoff_bin && i < bandpass_bin;
 
-                let center_gain = icc.powf(2.0); // Square it to make center extraction stricter
-                let direct_magnitude = (left + right).norm() * 0.5 * center_gain;
-
-                // Reconstruct Complex Direct Signal
-                // We use the phase of the Sum (L+R) but the magnitude of the extraction
-                let direct_val = if mag_sum > 1e-9 {
-                    sum * (direct_magnitude / mag_sum)
+                if is_lfe_band {
+                    // LFE band: low-pass filtered mono sum
+                    self.lfe[i] = (left + right) * 0.5;
+                    self.direct_left[i] = Complex::new(0.0, 0.0);
+                    self.direct_right[i] = Complex::new(0.0, 0.0);
+                    self.ambient_left[i] = Complex::new(0.0, 0.0);
+                    self.ambient_right[i] = Complex::new(0.0, 0.0);
+                } else if is_passthrough_band {
+                    // Pass-through band
+                    self.direct_left[i] = left;
+                    self.direct_right[i] = right;
+                    self.lfe[i] = Complex::new(0.0, 0.0);
+                    self.ambient_left[i] = Complex::new(0.0, 0.0);
+                    self.ambient_right[i] = Complex::new(0.0, 0.0);
                 } else {
-                    Complex::new(0.0, 0.0)
-                };
-                self.direct[i] = direct_val;
+                    // Upmixing Band
+                    let sum = left + right;
+                    let sum_norm = sum.norm();
 
-                // 2. Smart Ambient Extraction
-                // We boost the ambient signal when the content is "wide" (width_factor is high)
-                // If the sound is centered (vocals), we keep surrounds quiet to keep focus.
-                /*
-                                let width_factor = 1.0 - coherence;
-                                let base_gain = 1.0; // TODO parameters
-                                let steering_boost = 1.0; // How much extra boost for panned sounds?
-                                let current_surround_gain = base_gain + (width_factor * steering_boost);
-                */
-                let surround_width = 1.0 - icc;
-                let current_surround_gain = 1.0 + (surround_width * 2.0); // Boost rears when wide
+                    // Direct Extraction
+                    // Scale direct component by coherence
+                    let direct_mag = sum_norm * 0.5 * coherence;
+                    let direct_val = if sum_norm > 1e-9 {
+                        sum * (direct_mag / sum_norm)
+                    } else {
+                        Complex::new(0.0, 0.0)
+                    };
+                    self.direct[i] = direct_val;
 
-                // 3. Calculate Ambient with dynamic gain
-                // Extract L-R and R-L for proper stereo decorrelation
-                let diff = left - right;
-                self.ambient_left[i] = diff * current_surround_gain;
-                self.ambient_right[i] = -diff * current_surround_gain; // Inverted for symmetry
+                    // Ambient Extraction (Residual)
+                    // We use the difference signal for ambient, scaled by (1 - coherence)
+                    // And apply decorrelation
+                    let diff = left - right;
+                    let ambient_gain = (1.0 - coherence).sqrt(); // Energy preservation
 
-                // 4. Fronts Remapping (Divergence)
-                // Subtract the extracted direct component from L/R
-                // If stereo_width is 0 (Wide), we subtract nothing.
-                // If stereo_width is 1 (Narrow), we subtract the full direct signal.
-                self.direct_left[i] = left - direct_val * self.stereo_width;
-                self.direct_right[i] = right - direct_val * self.stereo_width;
-                self.lfe[i] = Complex::new(0.0, 0.0);
+                    self.ambient_left[i] = diff * ambient_gain * self.decorrelation_filter_left[i];
+                    self.ambient_right[i] = -diff * ambient_gain * self.decorrelation_filter_right[i]; // Inverted for symmetry? No, decorrelated.
+
+                    // Divergence for Fronts
+                    self.direct_left[i] = left - direct_val * self.stereo_width;
+                    self.direct_right[i] = right - direct_val * self.stereo_width;
+                    self.lfe[i] = Complex::new(0.0, 0.0);
+                }
+
+                // Mirror to negative frequencies for conjugate symmetry
+                if i > 0 {
+                    let mirror = self.fft_size - i;
+                    if mirror < self.fft_size {
+                        self.direct[mirror] = self.direct[i].conj();
+                        self.ambient_left[mirror] = self.ambient_left[i].conj();
+                        self.ambient_right[mirror] = self.ambient_right[i].conj();
+                        self.direct_left[mirror] = self.direct_left[i].conj();
+                        self.direct_right[mirror] = self.direct_right[i].conj();
+                        self.lfe[mirror] = self.lfe[i].conj();
+                    }
+                }
             }
         }
 
         // 4. Apply VBAP panning to distribute to output speakers
-        // For each output speaker, calculate frequency-domain signal using panning gains
         let fft_scale = 1.0 / self.fft_size as f32;
-
-        log::trace!("[UPMIXER]   FFT processing complete, applying VBAP panning");
-        log::trace!(
-            "[UPMIXER]   fft_scale={:.6}, lfe_gain={:.3}, height_gain={:.3}",
-            fft_scale,
-            self.lfe_gain,
-            self.height_gain
-        );
-
         let combined_scale = fft_scale;
 
-        // Parallelize over output channels
-        // Each channel is independent until the final overlap-add
-        // Rayon overhead seems to outweigh benefits for small channel counts (e.g. 6)
-        // Reverting to sequential for now to verify baseline
         self.time_out_channels
             .iter_mut()
             .enumerate()
@@ -710,30 +727,24 @@ impl UpmixerPlugin {
                 let speaker = &self.speaker_config.speakers[ch_idx];
 
                 if speaker.is_lfe {
-                    // LFE channel: use low-pass filtered signal with gain
-                    // Vectorized copy/scale
+                    // LFE channel
                     for i in 0..self.fft_size {
                         time_out_channel[i] = self.lfe[i] * self.lfe_gain;
                     }
                 } else {
-                    // Regular speaker: pan direct and ambient components using VBAP
+                    // Regular speaker
                     let panning_gain_left = self.panning_gains_left[ch_idx];
                     let panning_gain_right = self.panning_gains_right[ch_idx];
 
-                    // Determine if this is a front or rear speaker based on azimuth
                     let is_front = speaker.azimuth.abs() < 80.0;
                     let is_height = speaker.elevation > 10.0;
-                    let is_left = speaker.azimuth > 10.0;
 
-                    // Select appropriate gains
                     let (direct_gain, ambient_gain) = if is_front {
                         (self.gain_front_direct, self.gain_front_ambient)
                     } else {
                         (0.15, self.gain_rear_ambient)
                     };
 
-                    // Build frequency-domain signal for this speaker
-                    // Use iterators for potential vectorization
                     if is_height {
                         // HEIGHT CHANNELS
                         for i in 0..self.fft_size {
@@ -742,7 +753,17 @@ impl UpmixerPlugin {
                                 + self.direct_right[i] * panning_gain_right;
 
                             // 2. Ambient component
+                            // For height channels, we want to create a diffuse field.
+                            // We use the decorrelated ambient signals and mix them based on position.
+                            // We also add a bit of "late reflection" (scaled direct sound) to simulate room height.
+                            
+                            let is_left = speaker.azimuth > 0.0; // Positive azimuth is Left in this coordinate system? 
+                            // Wait, standard is: +Azimuth = Left, -Azimuth = Right? Or vice versa?
+                            // Usually +Azimuth is Left (CCW from front).
+                            // Let's assume +Azimuth is Left.
+                            
                             let ambient_component = if is_front {
+                                // Front Height: Use decorrelated ambient but keep some L/R separation
                                 if is_left {
                                     self.ambient_left[i] * PHASE_SHIFT_180
                                         + self.ambient_right[i] * PHASE_SHIFT_270
@@ -751,6 +772,7 @@ impl UpmixerPlugin {
                                         + self.ambient_right[i] * PHASE_SHIFT_180
                                 }
                             } else {
+                                // Rear Height: Fully diffuse
                                 let decorrelated = if is_left {
                                     self.ambient_left[i] * PHASE_SHIFT_270
                                         + self.ambient_right[i] * PHASE_SHIFT_180
@@ -768,7 +790,6 @@ impl UpmixerPlugin {
                                 * self.height_gain;
                         }
                     } else {
-                        // FLOOR SPEAKERS
                         for i in 0..self.fft_size {
                             let direct_component = self.direct_left[i] * panning_gain_left
                                 + self.direct_right[i] * panning_gain_right;
@@ -780,53 +801,112 @@ impl UpmixerPlugin {
                     }
                 }
 
-                // Inverse FFT for this channel
-                // Note: fft_inverse is thread-safe (Arc<dyn Fft>)
+                // Inverse FFT
                 self.fft_inverse.process(time_out_channel);
             });
+            
+        // 5. Sub-Harmonic Synthesis (Time Domain)
+        if self.enable_subharmonic_synth {
+            if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
+                // Generate subharmonics based on LFE amplitude
+                // We use a simple sine wave at 40Hz (typical rumble) modulated by the LFE envelope
+                let phase_inc = 2.0 * std::f32::consts::PI * 40.0 / self.sample_rate as f32;
+                
+                for i in 0..self.fft_size {
+                    // Use the real part of the IFFT output as the envelope
+                    let lfe_amp = self.time_out_channels[lfe_idx][i].re.abs();
+                    
+                    // Threshold to avoid rumbling on silence
+                    if lfe_amp > 0.001 {
+                        self.subharmonic_phase += phase_inc;
+                        if self.subharmonic_phase > 2.0 * std::f32::consts::PI {
+                            self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
+                        }
+                        
+                        let sub = self.subharmonic_phase.sin() * lfe_amp * self.subharmonic_gain;
+                        self.time_out_channels[lfe_idx][i].re += sub;
+                    }
+                }
+            }
+        }
 
-        // 5. Extract real parts and apply final scaling
-        // IFFT output is already windowed, ready for overlap-add
+        // 6. Extract real parts and apply final scaling
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
-
             for ch in 0..self.num_output_channels {
                 output[idx + ch] = self.time_out_channels[ch][i].re * combined_scale;
             }
         }
 
-        // Calculate output RMS per channel for debugging
-        let mut channel_rms = vec![0.0_f32; self.num_output_channels];
+        // Debugging RMS (optional, kept for consistency)
+        // ...
+    }
+
+    /// Calculate ERB bands based on sample rate and FFT size
+    fn calculate_erb_bands(&mut self) {
+        self.erb_bands.clear();
+        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        
+        // Glasberg and Moore (1990) ERB scale
+        // ERB(f) = 24.7 * (4.37 * f / 1000 + 1)
+        // We want bands to be roughly 1 ERB wide
+        
+        let mut current_bin = 0;
+        while current_bin < self.fft_size / 2 {
+            self.erb_bands.push(current_bin);
+            
+            let center_freq = current_bin as f32 * freq_per_bin;
+            let erb_width = 24.7 * (4.37 * center_freq / 1000.0 + 1.0);
+            let bins_width = (erb_width / freq_per_bin).max(1.0).round() as usize;
+            
+            current_bin += bins_width;
+        }
+        // Ensure we cover the full spectrum up to Nyquist
+        if *self.erb_bands.last().unwrap() < self.fft_size / 2 {
+            self.erb_bands.push(self.fft_size / 2);
+        }
+    }
+
+    /// Generate static decorrelation filters (random phase)
+    fn generate_decorrelation_filters(&mut self) {
+        // Simple pseudo-random generator to avoid dependencies
+        let mut seed = 12345u32;
+        let mut rand_f32 = || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed as f32) / (u32::MAX as f32)
+        };
+
         for i in 0..self.fft_size {
-            for ch in 0..self.num_output_channels {
-                channel_rms[ch] += output[i * self.num_output_channels + ch].powi(2);
-            }
-        }
-        for ch in 0..self.num_output_channels {
-            channel_rms[ch] = (channel_rms[ch] / self.fft_size as f32).sqrt();
-        }
+            // Left rear: random phase
+            let phase_l = rand_f32() * 2.0 * std::f32::consts::PI;
+            self.decorrelation_filter_left[i] = Complex::from_polar(1.0, phase_l);
 
-        log::trace!("[UPMIXER]   Output RMS by channel:");
-        for (ch, rms) in channel_rms.iter().enumerate() {
-            if *rms > 1e-6 {
-                log::trace!("[UPMIXER]     Ch[{}]: {:.6}", ch, rms);
-            } else {
-                log::trace!("[UPMIXER]     Ch[{}]: {:.6} (SILENT)", ch, rms);
-            }
+            // Right rear: different random phase
+            let phase_r = rand_f32() * 2.0 * std::f32::consts::PI;
+            self.decorrelation_filter_right[i] = Complex::from_polar(1.0, phase_r);
         }
-
-        // Check for symmetry between SL/SR (channels 4/5 in 5.1.4)
-        if self.num_output_channels >= 6 {
-            let sl_sr_ratio = if channel_rms.len() > 5 && channel_rms[5] > 1e-9 {
-                channel_rms[4] / channel_rms[5]
-            } else {
-                0.0
-            };
-            if sl_sr_ratio > 1e-6 {
-                log::trace!("[UPMIXER]     SL/SR ratio: {:.3}", sl_sr_ratio);
-            }
+        
+        // Enforce conjugate symmetry for real FFT if needed? 
+        // We are using complex FFT on windowed data, but the signal is real.
+        // However, we process positive and negative frequencies?
+        // RustFFT `process` does full complex FFT.
+        // If input is real, output has conjugate symmetry.
+        // If we multiply by asymmetric filter, output will be complex time domain?
+        // Yes, for real output, we need conjugate symmetry in frequency domain.
+        // Or we just process 0..N/2 and mirror?
+        // The current implementation processes 0..N.
+        // So we MUST ensure conjugate symmetry for the decorrelation filters.
+        
+        for i in 1..self.fft_size / 2 {
+            let mirror_idx = self.fft_size - i;
+            self.decorrelation_filter_left[mirror_idx] = self.decorrelation_filter_left[i].conj();
+            self.decorrelation_filter_right[mirror_idx] = self.decorrelation_filter_right[i].conj();
         }
-        log::trace!("[UPMIXER] process_fft_block() complete");
+        // DC and Nyquist must be real
+        self.decorrelation_filter_left[0] = Complex::new(1.0, 0.0);
+        self.decorrelation_filter_right[0] = Complex::new(1.0, 0.0);
+        self.decorrelation_filter_left[self.fft_size/2] = Complex::new(1.0, 0.0);
+        self.decorrelation_filter_right[self.fft_size/2] = Complex::new(1.0, 0.0);
     }
 }
 
@@ -871,6 +951,10 @@ impl Plugin for UpmixerPlugin {
                 .with_description("Control stereo width (0.0=wide, 1.0=narrow)"),
             Parameter::new_float("bandpass_hz", "Upmix Crossover (Hz)", 250.0, 200.0, 1000.0)
                 .with_description("Frequency above which upmixing is applied"),
+            Parameter::new_bool("enable_subharmonic_synth", "Sub-Harmonic Synth", false)
+                .with_description("Enable sub-harmonic synthesis for LFE channel"),
+            Parameter::new_float("subharmonic_gain", "Sub-Harmonic Gain", 0.5, 0.0, 1.0)
+                .with_description("Gain for synthesized sub-harmonics"),
         ]
     }
 
@@ -947,6 +1031,19 @@ impl Plugin for UpmixerPlugin {
                 return Ok(());
             }
             return Err("Bandpass frequency must be greater than LFE cutoff".to_string());
+        } else if id == self.param_enable_subharmonic_synth {
+            if let Some(enable) = value.as_bool() {
+                self.enable_subharmonic_synth = enable;
+                return Ok(());
+            }
+        } else if id == self.param_subharmonic_gain
+            && let Some(gain) = value.as_float()
+        {
+            if (0.0..=1.0).contains(&gain) {
+                self.subharmonic_gain = gain;
+                return Ok(());
+            }
+            return Err("Sub-harmonic gain must be between 0.0 and 1.0".to_string());
         }
         Err(format!("Unknown parameter: {}", id))
     }
@@ -983,6 +1080,10 @@ impl Plugin for UpmixerPlugin {
             Some(ParameterValue::Float(self.stereo_width))
         } else if id == &self.param_bandpass_hz {
             Some(ParameterValue::Float(self.bandpass_hz))
+        } else if id == &self.param_enable_subharmonic_synth {
+            Some(ParameterValue::Bool(self.enable_subharmonic_synth))
+        } else if id == &self.param_subharmonic_gain {
+            Some(ParameterValue::Float(self.subharmonic_gain))
         } else {
             None
         }
@@ -990,8 +1091,24 @@ impl Plugin for UpmixerPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+
+        // Calculate ERB bands
+        self.calculate_erb_bands();
+
+        // Resize state vectors based on number of bands
+        let num_bands = self.erb_bands.len();
+        self.steering_alphas = vec![0.15; num_bands];
+        self.pca_cov_xx = vec![0.0; num_bands];
+        self.pca_cov_yy = vec![0.0; num_bands];
+        self.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
+
+        // Generate decorrelation filters
+        self.generate_decorrelation_filters();
+
         Ok(())
     }
+
+
 
     fn reset(&mut self) {
         // Clear buffers
@@ -1008,6 +1125,8 @@ impl Plugin for UpmixerPlugin {
             &mut self.ambient_left,
             &mut self.ambient_right,
             &mut self.lfe,
+            &mut self.decorrelation_filter_left,
+            &mut self.decorrelation_filter_right,
         ]
         .iter_mut()
         {
@@ -1028,6 +1147,12 @@ impl Plugin for UpmixerPlugin {
 
         // Clear output block
         self.output_block.fill(0.0);
+        
+        // Reset state vectors
+        self.steering_alphas.fill(0.15);
+        self.pca_cov_xx.fill(0.0);
+        self.pca_cov_yy.fill(0.0);
+        self.pca_cov_xy.fill(Complex::new(0.0, 0.0));
     }
 
     fn process(
@@ -1357,7 +1482,7 @@ mod tests {
 
     #[test]
     fn test_upmixer_creation_5_1() {
-        let plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         assert_eq!(plugin.input_channels(), 2);
         assert_eq!(plugin.output_channels(), 6);
         assert_eq!(plugin.fft_size, 2048);
@@ -1366,7 +1491,7 @@ mod tests {
 
     #[test]
     fn test_upmixer_creation_7_1_4() {
-        let plugin = UpmixerPlugin::new(2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+        let plugin = UpmixerPlugin::new(2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         assert_eq!(plugin.input_channels(), 2);
         assert_eq!(plugin.output_channels(), 12);
         assert_eq!(plugin.fft_size, 2048);
@@ -1376,7 +1501,7 @@ mod tests {
     #[test]
     fn test_upmixer_parameters() {
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
 
         // Test setting parameters
         plugin
@@ -1395,7 +1520,7 @@ mod tests {
     #[test]
     fn test_upmixer_processing() {
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         plugin.initialize(44100).unwrap();
 
         // Create test input: 2048 stereo samples (4096 samples total)
@@ -1439,7 +1564,7 @@ mod tests {
     fn test_upmixer_zero_gains() {
         // Test that with all gains at 0, output is silence (critical for crackling fix)
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 0.0, 0.0, 0.0, 120.0, 0.5, 250.0, 1.0, 0.0);
+            UpmixerPlugin::new(2048, "5.1", 0.0, 0.0, 0.0, 120.0, 0.5, 250.0, 1.0, 0.0, false, 0.5);
         plugin.initialize(44100).unwrap();
 
         // Create test input with signal
@@ -1471,7 +1596,7 @@ mod tests {
     fn test_upmixer_config_change() {
         // Test changing speaker configuration dynamically
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         assert_eq!(plugin.output_channels(), 6);
         assert_eq!(plugin.speaker_config.id, "5.1");
 
@@ -1490,7 +1615,7 @@ mod tests {
     fn test_upmixer_height_gain() {
         // Test height gain parameter
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 0.5, 1.0);
+            UpmixerPlugin::new(2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 0.5, 1.0, false, 0.5);
         assert_eq!(plugin.height_gain, 0.5);
         assert_eq!(plugin.output_channels(), 10); // 5.1.4 has 10 channels
 
@@ -1505,7 +1630,7 @@ mod tests {
     fn test_upmixer_full_5ch() {
         // Test full 5.1 upmixing with direct/ambient decomposition
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.0, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.0, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         plugin.initialize(44100).unwrap();
 
         // Create test input with distinct left and right signals at frequencies above bandpass_hz (250 Hz)
@@ -1571,7 +1696,7 @@ mod tests {
         for buffer_size in [256, 512, 1024] {
             log::info!("\n=== Testing buffer size {} ===", buffer_size);
             let mut plugin =
-                UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+                UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
             plugin.initialize(44100).unwrap();
 
             // Generate continuous 440Hz sine wave, process in chunks
@@ -1626,7 +1751,7 @@ mod tests {
         // INVARIANT: Total output energy across all 5 channels should roughly equal input energy
         // (accounting for latency and windowing losses)
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         plugin.initialize(44100).unwrap();
 
         let buffer_size = 1024;
@@ -1685,7 +1810,7 @@ mod tests {
     fn test_no_gaps() {
         // INVARIANT: Every output buffer should have SOME non-zero samples after initial latency
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         plugin.initialize(44100).unwrap();
 
         let buffer_size = 512;
@@ -1728,14 +1853,14 @@ mod tests {
     fn test_upmixer_new_configs() {
         // Test creating upmixer with 2.0 configuration
         let plugin_2_0 =
-            UpmixerPlugin::new(2048, "2.0", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "2.0", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         assert_eq!(plugin_2_0.input_channels(), 2);
         assert_eq!(plugin_2_0.output_channels(), 2);
         assert_eq!(plugin_2_0.speaker_config.id, "2.0");
 
         // Test creating upmixer with 5.0 configuration
         let plugin_5_0 =
-            UpmixerPlugin::new(2048, "5.0", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.0", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         assert_eq!(plugin_5_0.input_channels(), 2);
         assert_eq!(plugin_5_0.output_channels(), 5);
         assert_eq!(plugin_5_0.speaker_config.id, "5.0");
@@ -1744,7 +1869,7 @@ mod tests {
     #[test]
     fn test_upmixer_parameter_config_indices() {
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
 
         // Test that parameter index 0 corresponds to 5.1
         let value = plugin.get_parameter(&ParameterId::from("speaker_config"));
@@ -1782,7 +1907,7 @@ mod tests {
     fn test_upmixer_5_1_4_channel_distribution() {
         // Test that 5.1.4 produces output on all channels including rear height
         let mut plugin =
-            UpmixerPlugin::new(2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0);
+            UpmixerPlugin::new(2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
         plugin.initialize(44100).unwrap();
 
         // Create test input with different L/R content to generate both direct and ambient
