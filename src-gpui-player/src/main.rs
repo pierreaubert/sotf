@@ -8,6 +8,7 @@ mod ui;
 
 use app::{App, AppState};
 use gpui::*;
+use gpui::AppContext;
 use player::Player;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -22,7 +23,7 @@ fn main() {
 
     log::info!("SOTF GPUI Player starting...");
 
-    gpui::App::new(Assets).run(move |cx| {
+    gpui::Application::new().run(move |cx| {
         // Create window with app state
         cx.open_window(
             WindowOptions {
@@ -40,17 +41,20 @@ fn main() {
                     traffic_light_position: None,
                 }),
                 window_background: WindowBackgroundAppearance::Opaque,
-                focus: Some(true),
-                show: Some(true),
+                focus: true,
+                show: true,
                 kind: WindowKind::Normal,
                 is_movable: true,
-                is_minimizable: Some(true),
-                is_resizable: Some(true),
                 display_id: None,
+                is_minimizable: true,
+                is_resizable: true,
+                tabbing_identifier: None,
+                window_decorations: None,
+                window_min_size: None,
             },
-            |cx| {
+            |_, cx| {
                 // Create application state
-                let app_state = cx.new_model(|cx| {
+                let app_state = cx.new(|_cx| {
                     let mut app = App::new();
 
                     // Load from database
@@ -84,7 +88,7 @@ fn main() {
                 });
 
                 // Build the root view
-                cx.new_view(|cx| ui::PlayerView::new(app_state.clone(), cx))
+                cx.new(|cx| ui::PlayerView::new(app_state.clone(), cx))
             },
         );
     });

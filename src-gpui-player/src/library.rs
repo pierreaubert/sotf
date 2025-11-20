@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,13 +10,19 @@ use walkdir::WalkDir;
 
 use crate::database::MusicDatabase;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryInfo {
     pub path: PathBuf,
     pub file_count: usize,
     pub last_scanned: Option<SystemTime>,
     pub expanded: bool,
     pub subdirectories: Vec<PathBuf>,
+}
+
+impl DirectoryInfo {
+    pub fn display(&self) -> String {
+        self.path.display().to_string()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

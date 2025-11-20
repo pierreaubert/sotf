@@ -111,7 +111,7 @@ pub struct App {
     // Plugin preset selection
     pub available_plugin_presets: Vec<String>, // List of preset filenames
     pub selected_preset_index: usize,
-
+    
     // Library tree view
     pub library_view_mode: LibraryViewMode,
     pub artist_tree: Vec<ArtistNode>,
@@ -180,19 +180,19 @@ impl App {
             search_query: String::new(),
             directory_input: String::new(),
             plugin_file_input: String::new(),
-            selected_album_index: 0,
             selected_directory_index: 0,
             selected_queue_index: 0,
-            selected_plugin_index: 0,
             album_list_offset: 0,
             status_message: None,
             autocomplete_suggestions: Vec::new(),
             autocomplete_index: 0,
             available_plugin_presets: Vec::new(),
             selected_preset_index: 0,
+            selected_album_index: 0,
+            selected_tree_index: 0,
+            selected_plugin_index: 0,
             library_view_mode: LibraryViewMode::Flat,
             artist_tree: Vec::new(),
-            selected_tree_index: 0,
             plugin_chain: PluginChain::new(),
             needs_plugin_update: false,
             editing_plugin_index: None,
@@ -314,23 +314,96 @@ impl App {
         self.is_playing = false;
     }
 
-    // Simplified methods for GPUI version
+    /// Build the artist tree from the current album list
     pub fn rebuild_artist_tree(&mut self) {
-        // TODO: Implement tree building logic if needed
+        use std::collections::HashMap;
+
+        let mut artist_map: HashMap<String, Vec<usize>> = HashMap::new();
+
+        // Group albums by artist
+        for (idx, album) in self.library.albums.iter().enumerate() {
+            artist_map
+                .entry(album.artist.clone())
+                .or_default()
+                .push(idx);
+        }
+
+        // Create artist nodes
+        let mut artists: Vec<_> = artist_map.into_iter().collect();
+        artists.sort_by(|a, b| a.0.cmp(&b.0));
+
+        self.artist_tree = artists
+            .into_iter()
+            .map(|(artist, album_indices)| ArtistNode {
+                artist,
+                album_indices,
+                expanded: false,
+            })
+            .collect();
+
+        self.selected_tree_index = 0;
+    }
+
+    /// Toggle tree view mode
+    pub fn toggle_library_view_mode(&mut self) {
+        self.library_view_mode = match self.library_view_mode {
+            LibraryViewMode::Flat => LibraryViewMode::TreeView,
+            LibraryViewMode::TreeView => LibraryViewMode::Flat,
+        };
+        self.selected_tree_index = 0;
+    }
+
+    /// Toggle expansion of the currently selected artist node
+    pub fn toggle_artist_expansion(&mut self) {
+        if self.library_view_mode != LibraryViewMode::TreeView {
+            return;
+        }
+
+        // Find which artist node we're on
+        let mut current_row = 0;
+        for artist_node in &mut self.artist_tree {
+            if current_row == self.selected_tree_index {
+                artist_node.expanded = !artist_node.expanded;
+                return;
+            }
+            current_row += 1;
+            if artist_node.expanded {
+                current_row += artist_node.album_indices.len();
+            }
+        }
+    }
+
+    /// Get the flattened tree items for rendering (returns artist names or album indices)
+    pub fn get_tree_items(&self) -> Vec<TreeItem> {
+        let mut items = Vec::new();
+
+        for artist_node in &self.artist_tree {
+            items.push(TreeItem::Artist {
+                name: artist_node.artist.clone(),
+                expanded: artist_node.expanded,
+            });
+
+            if artist_node.expanded {
+                for &album_idx in &artist_node.album_indices {
+                    items.push(TreeItem::Album { index: album_idx });
+                }
+            }
+        }
+
+        items
     }
 
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.scan_in_progress = true;
-        self.library.scan_directories()?;
-        self.library.save_to_database()?;
+        self.library.scan()?;
         self.rebuild_artist_tree();
         self.scan_in_progress = false;
         Ok(())
     }
 
     pub fn add_directory_quiet(&mut self, path: PathBuf) {
-        if !self.library.directories.contains(&path) {
-            self.library.directories.push(path);
+        if !self.library.directories.iter().any(|d| d.path == path) {
+            self.library.add_directory(path);
         }
     }
 
@@ -344,7 +417,16 @@ impl App {
         // Restore plugin presets path if we had a last loaded preset
         if let Some(preset_name) = config.last_loaded_plugin_preset {
             self.last_loaded_preset = Some(preset_name.clone());
-            // TODO: Load the preset file
+            // Load the preset file
+             match self.plugin_chain.load_from_file(&preset_name) {
+                Ok(_) => {
+                    self.needs_plugin_update = true;
+                    log::info!("Restored plugin preset: {}", preset_name);
+                }
+                Err(e) => {
+                    log::warn!("Could not restore preset '{}': {}", preset_name, e);
+                }
+            }
         }
 
         Ok(())
@@ -365,5 +447,130 @@ impl App {
             .get(self.selected_output_device_index)
             .and_then(|device| device.default_config.as_ref())
             .map(|config| config.channels as usize)
+    }
+
+    /// Select next item in tree view
+    pub fn select_next_tree_item(&mut self) {
+        if self.library_view_mode != LibraryViewMode::TreeView {
+            return;
+        }
+
+        let tree_items = self.get_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_tree_index = (self.selected_tree_index + 1) % tree_items.len();
+        }
+    }
+
+    /// Select previous item in tree view
+    pub fn select_previous_tree_item(&mut self) {
+        if self.library_view_mode != LibraryViewMode::TreeView {
+            return;
+        }
+
+        let tree_items = self.get_tree_items();
+        if !tree_items.is_empty() {
+            if self.selected_tree_index == 0 {
+                self.selected_tree_index = tree_items.len() - 1;
+            } else {
+                self.selected_tree_index -= 1;
+            }
+        }
+    }
+
+    pub fn select_next_album(&mut self) {
+        let albums = self.filtered_albums();
+        if !albums.is_empty() {
+            self.selected_album_index = (self.selected_album_index + 1) % albums.len();
+        }
+    }
+
+    pub fn select_previous_album(&mut self) {
+        let albums = self.filtered_albums();
+        if !albums.is_empty() {
+            if self.selected_album_index == 0 {
+                self.selected_album_index = albums.len() - 1;
+            } else {
+                self.selected_album_index -= 1;
+            }
+        }
+    }
+
+    pub fn select_next_queue_item(&mut self) {
+        if !self.queue.is_empty() {
+            self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
+        }
+    }
+
+    pub fn select_previous_queue_item(&mut self) {
+        if !self.queue.is_empty() {
+            if self.selected_queue_index == 0 {
+                self.selected_queue_index = self.queue.len() - 1;
+            } else {
+                self.selected_queue_index -= 1;
+            }
+        }
+    }
+
+    pub fn select_next_directory(&mut self) {
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_directory_index = (self.selected_directory_index + 1) % tree_items.len();
+        }
+    }
+
+    pub fn select_previous_directory(&mut self) {
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
+            if self.selected_directory_index == 0 {
+                self.selected_directory_index = tree_items.len() - 1;
+            } else {
+                self.selected_directory_index -= 1;
+            }
+        }
+    }
+
+    pub fn toggle_queue_item_expansion(&mut self) {
+        if self.selected_queue_index < self.expanded_queue_items.len() {
+            self.expanded_queue_items[self.selected_queue_index] =
+                !self.expanded_queue_items[self.selected_queue_index];
+        }
+    }
+
+    pub fn toggle_directory_expansion(&mut self) {
+        // Find which directory in the tree we're selecting
+        let tree_items = self.get_directory_tree_items();
+        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
+            // Only toggle if we're on a main directory (level 0)
+            if *level == 0 {
+                // Find the directory in our list and toggle it
+                if let Some(dir_info) = self
+                    .library
+                    .directories
+                    .iter_mut()
+                    .find(|d| d.path == *path)
+                {
+                    dir_info.expanded = !dir_info.expanded;
+                }
+            }
+            // If we're on a subdirectory (level 1), do nothing - it's already part of the tree
+            // Don't add it as a new main directory or trigger a rescan
+        }
+    }
+
+    /// Get flattened directory tree for display
+    pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
+        let mut items = Vec::new();
+        for dir_info in &self.library.directories {
+            // Add the main directory (level 0)
+            items.push((dir_info.path.clone(), 0, dir_info.expanded));
+
+            // Add subdirectories if expanded (level 1)
+            if dir_info.expanded {
+                for subdir in &dir_info.subdirectories {
+                    items.push((subdir.clone(), 1, false));
+                }
+            }
+        }
+        items
     }
 }

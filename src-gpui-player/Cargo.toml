@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 # GPUI framework
-gpui = { version = "*" }
+gpui = { git = "https://github.com/zed-industries/zed.git" }
 
 # Audio engine
 sotf_audio = { path = "../src-audio" }
@@ -24,7 +24,7 @@ serde_json = { workspace = true }
 
 # File system and utilities
 walkdir = "2"
-id3 = "1.14"
+id3 = "1.16"
 metaflac = "0.2"
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
