@@ -1,6 +1,7 @@
 [package]
 name = "autoeq-iir"
 version = "0.2.21"
+description = "AutoEQ IIR and FIR filters"
 edition = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }
