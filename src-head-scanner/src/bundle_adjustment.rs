@@ -1,60 +1,42 @@
-//! Bundle Adjustment for Structure-from-Motion
-//!
-//! Bundle adjustment is a refinement technique that simultaneously optimizes
-//! camera poses and 3D point positions to minimize reprojection error across
-//! all observations.
-//!
-//! # ⚠️ IMPORTANT: Placeholder Implementation
-//!
-//! This is a **simplified educational implementation** with known limitations:
-//!
-//! - **Jacobian**: Only computes partial derivatives, not full 2x6 camera Jacobian
-//! - **Solver**: Uses diagonal approximation instead of proper sparse solver
-//! - **Rotation**: Camera rotations are NOT optimized (translation only)
-//! - **Accuracy**: Will NOT produce production-quality results
-//!
-//! For production use, consider:
-//! - [ceres-solver](https://crates.io/crates/ceres-solver) bindings
-//! - [g2o](https://github.com/RainerKuemmerle/g2o) via FFI
-//! - Full Jacobian implementation with proper sparse linear solver
-//!
-//! See: Triggs et al., "Bundle Adjustment — A Modern Synthesis" (1999)
+//! Bundle Adjustment - Full Jacobian Implementation
 
-use crate::error::{ScannerError, ScannerResult};
+use crate::error::ScannerResult;
 use crate::reconstruction::{CameraIntrinsics, CameraPose};
-use crate::vision::Feature;
-use nalgebra::{Matrix3, Point2, Point3, Vector3};
+use nalgebra::{
+    DMatrix, DVector, Matrix2x3, Matrix2x6, Matrix3, Matrix3x6, Point2, Point3, Vector3, Vector6,
+};
 use rayon::prelude::*;
+use std::collections::HashMap;
 
-/// A 3D point with observations from multiple cameras
 #[derive(Debug, Clone)]
 pub struct Point3DWithObservations {
-    /// 3D position of the point
     pub position: Point3<f32>,
-
-    /// List of (camera_index, observed_2d_position) pairs
     pub observations: Vec<(usize, Point2<f32>)>,
 }
 
-/// Bundle adjustment optimizer
-///
-/// Uses Levenberg-Marquardt algorithm to minimize reprojection error
 pub struct BundleAdjuster {
-    /// Camera intrinsics (assumed constant)
     intrinsics: CameraIntrinsics,
-
-    /// Maximum number of iterations
     max_iterations: usize,
-
-    /// Convergence threshold for cost function
     convergence_threshold: f32,
-
-    /// Initial damping parameter for Levenberg-Marquardt
     initial_lambda: f32,
 }
 
+fn skew_symmetric(v: &Vector3<f32>) -> Matrix3<f32> {
+    Matrix3::new(0.0, -v.z, v.y, v.z, 0.0, -v.x, -v.y, v.x, 0.0)
+}
+
+fn exp_map(omega: &Vector3<f32>) -> Matrix3<f32> {
+    let theta = omega.norm();
+    if theta < 1e-8 {
+        return Matrix3::identity() + skew_symmetric(omega);
+    }
+    let omega_normalized = omega / theta;
+    let k = skew_symmetric(&omega_normalized);
+    let k_sq = k * k;
+    Matrix3::identity() + k * theta.sin() + k_sq * (1.0 - theta.cos())
+}
+
 impl BundleAdjuster {
-    /// Create a new bundle adjuster
     pub fn new(intrinsics: CameraIntrinsics) -> Self {
         Self {
             intrinsics,
@@ -64,21 +46,16 @@ impl BundleAdjuster {
         }
     }
 
-    /// Set maximum iterations
     pub fn with_max_iterations(mut self, max_iterations: usize) -> Self {
         self.max_iterations = max_iterations;
         self
     }
 
-    /// Set convergence threshold
     pub fn with_convergence_threshold(mut self, threshold: f32) -> Self {
         self.convergence_threshold = threshold;
         self
     }
 
-    /// Optimize camera poses and 3D points
-    ///
-    /// Returns (refined_poses, refined_points)
     pub fn optimize(
         &self,
         poses: &[CameraPose],
@@ -90,32 +67,32 @@ impl BundleAdjuster {
 
         let mut current_poses = poses.to_vec();
         let mut current_points: Vec<Point3<f32>> = points.iter().map(|p| p.position).collect();
-
         let mut lambda = self.initial_lambda;
         let mut prev_cost = self.compute_cost(&current_poses, points, &current_points);
 
         for iteration in 0..self.max_iterations {
-            // Compute Jacobian and residuals
-            let (jacobian, residuals) =
+            let (camera_jacs, point_jacs, residuals) =
                 self.compute_jacobian_and_residuals(&current_poses, points, &current_points);
 
-            // Solve the normal equations (J^T * J + λI) * δ = -J^T * r
-            let delta = self.solve_normal_equations(&jacobian, &residuals, lambda)?;
+            let delta = self.solve_normal_equations(
+                &camera_jacs,
+                &point_jacs,
+                &residuals,
+                current_poses.len(),
+                current_points.len(),
+                lambda,
+            )?;
 
-            // Update parameters
             let (new_poses, new_points) =
                 self.update_parameters(&current_poses, &current_points, &delta, poses.len());
 
             let new_cost = self.compute_cost(&new_poses, points, &new_points);
 
-            // Check if update improved the cost
             if new_cost < prev_cost {
-                // Accept update and decrease damping
                 current_poses = new_poses;
                 current_points = new_points;
                 lambda *= 0.1;
 
-                // Check convergence
                 let cost_change = (prev_cost - new_cost).abs() / prev_cost;
                 if cost_change < self.convergence_threshold {
                     log::info!(
@@ -125,13 +102,9 @@ impl BundleAdjuster {
                     );
                     break;
                 }
-
                 prev_cost = new_cost;
             } else {
-                // Reject update and increase damping
                 lambda *= 10.0;
-
-                // Prevent lambda from growing too large
                 if lambda > 1e10 {
                     log::warn!("Bundle adjustment damping factor too large, stopping");
                     break;
@@ -143,7 +116,6 @@ impl BundleAdjuster {
         Ok((current_poses, current_points))
     }
 
-    /// Compute the total reprojection error cost
     fn compute_cost(
         &self,
         poses: &[CameraPose],
@@ -155,45 +127,38 @@ impl BundleAdjuster {
             .enumerate()
             .map(|(point_idx, point_obs)| {
                 let point_3d = &points_3d[point_idx];
-
                 point_obs
                     .observations
                     .iter()
                     .map(|(cam_idx, observed_2d)| {
                         let pose = &poses[*cam_idx];
-
-                        // Transform point to camera space
                         let point_cam = pose.to_camera(point_3d);
-
-                        // Project to image plane
                         let projected = self.intrinsics.project(&point_cam);
                         let projected_2d = Point2::new(projected.0, projected.1);
-
-                        // Compute reprojection error
                         let error = observed_2d - projected_2d;
                         error.norm_squared()
                     })
                     .sum::<f32>()
             })
             .sum::<f32>()
-            / 2.0 // Standard formulation uses 1/2 * sum(errors^2)
+            / 2.0
     }
 
-    /// Compute Jacobian matrix and residuals
-    ///
-    /// Returns (Jacobian, residuals)
     fn compute_jacobian_and_residuals(
         &self,
         poses: &[CameraPose],
         points_with_obs: &[Point3DWithObservations],
         points_3d: &[Point3<f32>],
-    ) -> (Vec<Vec<f32>>, Vec<f32>) {
+    ) -> (
+        Vec<(usize, usize, Matrix2x6<f32>)>,
+        Vec<(usize, usize, Matrix2x3<f32>)>,
+        Vec<f32>,
+    ) {
         let num_observations: usize = points_with_obs.iter().map(|p| p.observations.len()).sum();
+        let num_residuals = num_observations * 2;
 
-        let num_params = poses.len() * 6 + points_3d.len() * 3; // 6 DOF per camera, 3 per point
-        let num_residuals = num_observations * 2; // 2 residuals per observation (x, y)
-
-        let mut jacobian = vec![vec![0.0; num_params]; num_residuals];
+        let mut camera_jacobians = Vec::new();
+        let mut point_jacobians = Vec::new();
         let mut residuals = vec![0.0; num_residuals];
 
         let mut residual_idx = 0;
@@ -203,140 +168,247 @@ impl BundleAdjuster {
 
             for (cam_idx, observed_2d) in &point_obs.observations {
                 let pose = &poses[*cam_idx];
-
-                // Transform point to camera space
                 let point_cam = pose.to_camera(point_3d);
-
-                // Project to image plane
                 let projected = self.intrinsics.project(&point_cam);
                 let projected_2d = Point2::new(projected.0, projected.1);
 
-                // Residual
                 let error = observed_2d - projected_2d;
                 residuals[residual_idx] = error.x;
                 residuals[residual_idx + 1] = error.y;
 
-                // Compute Jacobian with respect to camera parameters (simplified)
-                // In practice, this would use automatic differentiation or analytical derivatives
-                let cam_param_offset = cam_idx * 6;
-                jacobian[residual_idx][cam_param_offset] = self.compute_cam_jacobian_x(&point_cam);
-                jacobian[residual_idx + 1][cam_param_offset] =
-                    self.compute_cam_jacobian_y(&point_cam);
+                let j_cam = self.compute_camera_jacobian(point_3d, &point_cam, pose);
+                camera_jacobians.push((residual_idx, *cam_idx, j_cam));
 
-                // Compute Jacobian with respect to 3D point
-                let point_param_offset = poses.len() * 6 + point_idx * 3;
-                self.compute_point_jacobian(
-                    &mut jacobian[residual_idx],
-                    &mut jacobian[residual_idx + 1],
-                    point_param_offset,
-                    &point_cam,
-                );
+                let j_point = self.compute_point_jacobian_matrix(&point_cam, pose);
+                point_jacobians.push((residual_idx, point_idx, j_point));
 
                 residual_idx += 2;
             }
         }
 
-        (jacobian, residuals)
+        (camera_jacobians, point_jacobians, residuals)
     }
 
-    /// Compute camera jacobian for x coordinate (simplified)
-    ///
-    /// FIXME: This only computes a single scalar instead of the full 2x6 Jacobian matrix.
-    /// A proper implementation needs:
-    /// - ∂u/∂[tx, ty, tz, rx, ry, rz] (6 partial derivatives for x projection)
-    /// - ∂v/∂[tx, ty, tz, rx, ry, rz] (6 partial derivatives for y projection)
-    fn compute_cam_jacobian_x(&self, point_cam: &Point3<f32>) -> f32 {
-        // PLACEHOLDER: Only partial derivative w.r.t. translation
-        // Real implementation needs rotation derivatives using Lie algebra
-        self.intrinsics.fx / point_cam.z
-    }
-
-    /// Compute camera jacobian for y coordinate (simplified)
-    ///
-    /// FIXME: See compute_cam_jacobian_x - same issue applies here
-    fn compute_cam_jacobian_y(&self, point_cam: &Point3<f32>) -> f32 {
-        self.intrinsics.fy / point_cam.z
-    }
-
-    /// Compute 3D point jacobian
-    fn compute_point_jacobian(
+    fn compute_camera_jacobian(
         &self,
-        jac_x: &mut [f32],
-        jac_y: &mut [f32],
-        offset: usize,
+        point_world: &Point3<f32>,
         point_cam: &Point3<f32>,
-    ) {
-        // Derivative of projection w.r.t. 3D point coordinates
-        // d(u)/d(X) = fx/Z
-        // d(u)/d(Y) = 0
-        // d(u)/d(Z) = -fx*X/Z^2
-        let z_sq = point_cam.z * point_cam.z;
+        pose: &CameraPose,
+    ) -> Matrix2x6<f32> {
+        let fx = self.intrinsics.fx;
+        let fy = self.intrinsics.fy;
+        let x = point_cam.x;
+        let y = point_cam.y;
+        let z = point_cam.z;
+        let z_inv = 1.0 / z;
+        let z_inv_sq = z_inv * z_inv;
 
-        jac_x[offset] = self.intrinsics.fx / point_cam.z; // d(u)/d(X)
-        jac_x[offset + 1] = 0.0; // d(u)/d(Y)
-        jac_x[offset + 2] = -self.intrinsics.fx * point_cam.x / z_sq; // d(u)/d(Z)
+        let j_proj = Matrix2x3::new(
+            fx * z_inv,
+            0.0,
+            -fx * x * z_inv_sq,
+            0.0,
+            fy * z_inv,
+            -fy * y * z_inv_sq,
+        );
 
-        jac_y[offset] = 0.0; // d(v)/d(X)
-        jac_y[offset + 1] = self.intrinsics.fy / point_cam.z; // d(v)/d(Y)
-        jac_y[offset + 2] = -self.intrinsics.fy * point_cam.y / z_sq; // d(v)/d(Z)
+        let r_t = pose.rotation.transpose();
+        let j_trans = -r_t;
+
+        let p_diff = point_world - pose.position;
+        let p_diff_vec = Vector3::new(p_diff.x, p_diff.y, p_diff.z);
+        let skew = skew_symmetric(&p_diff_vec);
+        let j_rot = -r_t * skew;
+
+        let mut j_cam_3x6 = Matrix3x6::zeros();
+        j_cam_3x6.fixed_view_mut::<3, 3>(0, 0).copy_from(&j_trans);
+        j_cam_3x6.fixed_view_mut::<3, 3>(0, 3).copy_from(&j_rot);
+
+        j_proj * j_cam_3x6
     }
 
-    /// Solve normal equations using simplified method
-    ///
-    /// FIXME: This uses diagonal approximation which ignores off-diagonal terms
-    /// in J^T*J. This is mathematically incorrect and produces suboptimal results.
-    ///
-    /// Proper implementation should use:
-    /// - Sparse Cholesky decomposition (nalgebra, faer, or sprs crate)
-    /// - Conjugate Gradient for large problems
-    /// - Schur complement trick to exploit problem structure
-    ///
-    /// The diagonal approximation assumes parameters are independent, which is
-    /// violated in bundle adjustment where camera poses affect multiple points.
+    fn compute_point_jacobian_matrix(
+        &self,
+        point_cam: &Point3<f32>,
+        pose: &CameraPose,
+    ) -> Matrix2x3<f32> {
+        let fx = self.intrinsics.fx;
+        let fy = self.intrinsics.fy;
+        let x = point_cam.x;
+        let y = point_cam.y;
+        let z = point_cam.z;
+        let z_inv = 1.0 / z;
+        let z_inv_sq = z_inv * z_inv;
+
+        let j_proj = Matrix2x3::new(
+            fx * z_inv,
+            0.0,
+            -fx * x * z_inv_sq,
+            0.0,
+            fy * z_inv,
+            -fy * y * z_inv_sq,
+        );
+
+        let r_t = pose.rotation.transpose();
+        j_proj * r_t
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn solve_normal_equations(
         &self,
-        jacobian: &[Vec<f32>],
+        camera_jacs: &[(usize, usize, Matrix2x6<f32>)],
+        point_jacs: &[(usize, usize, Matrix2x3<f32>)],
         residuals: &[f32],
+        num_cameras: usize,
+        num_points: usize,
         lambda: f32,
     ) -> ScannerResult<Vec<f32>> {
-        if jacobian.is_empty() || residuals.is_empty() {
-            return Ok(Vec::new());
+        if camera_jacs.is_empty() || point_jacs.is_empty() {
+            return Ok(vec![0.0; num_cameras * 6 + num_points * 3]);
         }
 
-        let num_params = jacobian[0].len();
+        let cam_params = num_cameras * 6;
+        let point_params = num_points * 3;
 
-        // FIXME: Only computing diagonal of J^T*J, ignoring off-diagonal correlation
-        let mut jtj_diag = vec![lambda; num_params]; // Initialize with damping
+        let mut c_blocks: Vec<Matrix3<f32>> = vec![Matrix3::zeros(); num_points];
+        let mut jtp_r: Vec<Vector3<f32>> = vec![Vector3::zeros(); num_points];
 
-        // Compute J^T * r
-        let mut jtr = vec![0.0; num_params];
-        for (row_idx, jac_row) in jacobian.iter().enumerate() {
-            let r = residuals[row_idx];
-            for (col_idx, &jac_val) in jac_row.iter().enumerate() {
-                jtr[col_idx] -= jac_val * r;
-                jtj_diag[col_idx] += jac_val * jac_val;
+        for (res_idx, point_idx, j_point) in point_jacs {
+            let r_2d = nalgebra::Vector2::new(residuals[*res_idx], residuals[*res_idx + 1]);
+            c_blocks[*point_idx] += j_point.transpose() * j_point;
+            jtp_r[*point_idx] += j_point.transpose() * r_2d;
+        }
+
+        let mut c_inv_blocks: Vec<Matrix3<f32>> = Vec::with_capacity(num_points);
+        for c_block in &c_blocks {
+            let c_damped = c_block + Matrix3::identity() * lambda;
+            match c_damped.try_inverse() {
+                Some(inv) => c_inv_blocks.push(inv),
+                None => {
+                    let c_more_damped = c_block + Matrix3::identity() * (lambda * 10.0);
+                    c_inv_blocks.push(
+                        c_more_damped
+                            .try_inverse()
+                            .unwrap_or_else(|| Matrix3::identity() * 0.001),
+                    );
+                }
             }
         }
 
-        // FIXME: Diagonal solve - mathematically incorrect but fast
-        // Should use: nalgebra::Cholesky::new(jtj_full).solve(&jtr)
-        let mut delta = vec![0.0; num_params];
-        for i in 0..num_params {
-            if jtj_diag[i].abs() > 1e-10 {
-                delta[i] = jtr[i] / jtj_diag[i];
+        let mut a_matrix = DMatrix::zeros(cam_params, cam_params);
+        let mut jtc_r = DVector::zeros(cam_params);
+
+        for (res_idx, cam_idx, j_cam) in camera_jacs {
+            let r_2d = nalgebra::Vector2::new(residuals[*res_idx], residuals[*res_idx + 1]);
+
+            let cam_offset = cam_idx * 6;
+            let jtj = j_cam.transpose() * j_cam;
+            for i in 0..6 {
+                for j in 0..6 {
+                    a_matrix[(cam_offset + i, cam_offset + j)] += jtj[(i, j)];
+                }
             }
+
+            let jtr = j_cam.transpose() * r_2d;
+            for i in 0..6 {
+                jtc_r[cam_offset + i] += jtr[i];
+            }
+        }
+
+        let mut schur_rhs = jtc_r.clone();
+
+        for ((res_idx_c, cam_idx, j_cam), (res_idx_p, point_idx, j_point)) in
+            camera_jacs.iter().zip(point_jacs.iter())
+        {
+            if res_idx_c != res_idx_p {
+                continue;
+            }
+
+            let b = j_cam.transpose() * j_point;
+
+            let c_inv_jtp_r = c_inv_blocks[*point_idx] * jtp_r[*point_idx];
+            let b_c_inv_jtp_r = b * c_inv_jtp_r;
+            let cam_offset = cam_idx * 6;
+            for i in 0..6 {
+                schur_rhs[cam_offset + i] += b_c_inv_jtp_r[i];
+            }
+
+            let b_c_inv = b * c_inv_blocks[*point_idx];
+            let b_c_inv_bt = b_c_inv * b.transpose();
+            for i in 0..6 {
+                for j in 0..6 {
+                    a_matrix[(cam_offset + i, cam_offset + j)] -= b_c_inv_bt[(i, j)];
+                }
+            }
+        }
+
+        for i in 0..cam_params {
+            a_matrix[(i, i)] += lambda;
+        }
+
+        let delta_cam = match a_matrix.clone().cholesky() {
+            Some(chol) => chol.solve(&schur_rhs),
+            None => match a_matrix.clone().lu().solve(&schur_rhs) {
+                Some(sol) => sol,
+                None => {
+                    log::warn!("Failed to solve camera system, using zero update");
+                    DVector::zeros(cam_params)
+                }
+            },
+        };
+
+        let mut delta_points = vec![0.0; point_params];
+
+        let mut point_observations: HashMap<usize, Vec<(usize, usize)>> = HashMap::new();
+        for ((res_idx, cam_idx, _), (_, point_idx, _)) in camera_jacs.iter().zip(point_jacs.iter())
+        {
+            point_observations
+                .entry(*point_idx)
+                .or_default()
+                .push((*res_idx, *cam_idx));
+        }
+
+        for point_idx in 0..num_points {
+            let mut rhs = -jtp_r[point_idx];
+
+            if let Some(observations) = point_observations.get(&point_idx) {
+                for (res_idx, cam_idx) in observations {
+                    let j_cam = camera_jacs
+                        .iter()
+                        .find(|(r, c, _)| r == res_idx && c == cam_idx)
+                        .map(|(_, _, j)| j)
+                        .unwrap();
+                    let j_point = point_jacs
+                        .iter()
+                        .find(|(r, p, _)| r == res_idx && p == &point_idx)
+                        .map(|(_, _, j)| j)
+                        .unwrap();
+
+                    let b = j_cam.transpose() * j_point;
+                    let cam_offset = cam_idx * 6;
+                    let delta_c = Vector6::from_iterator((0..6).map(|i| delta_cam[cam_offset + i]));
+                    rhs -= b.transpose() * delta_c;
+                }
+            }
+
+            let delta_p = c_inv_blocks[point_idx] * rhs;
+            let point_offset = point_idx * 3;
+            delta_points[point_offset] = delta_p[0];
+            delta_points[point_offset + 1] = delta_p[1];
+            delta_points[point_offset + 2] = delta_p[2];
+        }
+
+        let mut delta = vec![0.0; cam_params + point_params];
+        for i in 0..cam_params {
+            delta[i] = delta_cam[i];
+        }
+        for i in 0..point_params {
+            delta[cam_params + i] = delta_points[i];
         }
 
         Ok(delta)
     }
 
-    /// Update camera poses and 3D points with delta
-    ///
-    /// FIXME: Rotation updates are completely skipped! Camera orientations are never optimized.
-    /// Proper implementation needs to:
-    /// - Use SO(3) Lie algebra to update rotations
-    /// - Apply exponential map: R_new = R_old * exp(skew([rx, ry, rz]))
-    /// - See "A tutorial on SE(3) transformation parameterizations" for details
     fn update_parameters(
         &self,
         poses: &[CameraPose],
@@ -347,7 +419,6 @@ impl BundleAdjuster {
         let mut new_poses = poses.to_vec();
         let mut new_points = points.to_vec();
 
-        // Update camera poses (ONLY translation, rotation ignored)
         for (i, pose) in new_poses.iter_mut().enumerate() {
             let offset = i * 6;
             if offset + 5 < delta.len() {
@@ -355,13 +426,12 @@ impl BundleAdjuster {
                 pose.position.y += delta[offset + 1];
                 pose.position.z += delta[offset + 2];
 
-                // FIXME: Rotation updates (offset+3..offset+6) completely skipped!
-                // This means camera orientations are NEVER optimized.
-                // Should use: pose.rotation = pose.rotation * exp_map(delta[offset+3..offset+6])
+                let omega = Vector3::new(delta[offset + 3], delta[offset + 4], delta[offset + 5]);
+                let delta_r = exp_map(&omega);
+                pose.rotation *= delta_r;
             }
         }
 
-        // Update 3D points
         let point_offset = num_poses * 6;
         for (i, point) in new_points.iter_mut().enumerate() {
             let offset = point_offset + i * 3;
@@ -384,7 +454,6 @@ mod tests {
     fn test_bundle_adjuster_creation() {
         let intrinsics = CameraIntrinsics::default_webcam(1280, 720);
         let adjuster = BundleAdjuster::new(intrinsics);
-
         assert_eq!(adjuster.max_iterations, 50);
         assert!(adjuster.convergence_threshold > 0.0);
     }
@@ -393,13 +462,10 @@ mod tests {
     fn test_bundle_adjustment_empty_data() {
         let intrinsics = CameraIntrinsics::default_webcam(1280, 720);
         let adjuster = BundleAdjuster::new(intrinsics);
-
         let poses = vec![];
         let points = vec![];
-
         let result = adjuster.optimize(&poses, &points);
         assert!(result.is_ok());
-
         let (optimized_poses, optimized_points) = result.unwrap();
         assert!(optimized_poses.is_empty());
         assert!(optimized_points.is_empty());
@@ -409,16 +475,38 @@ mod tests {
     fn test_cost_computation() {
         let intrinsics = CameraIntrinsics::default_webcam(1280, 720);
         let adjuster = BundleAdjuster::new(intrinsics);
-
         let poses = vec![CameraPose::identity()];
         let points_3d = vec![Point3::new(0.0, 0.0, 10.0)];
-
         let point_with_obs = Point3DWithObservations {
             position: points_3d[0],
             observations: vec![(0, Point2::new(640.0, 360.0))],
         };
-
         let cost = adjuster.compute_cost(&poses, &[point_with_obs], &points_3d);
-        assert!(cost >= 0.0); // Cost should be non-negative
+        assert!(cost >= 0.0);
+    }
+
+    #[test]
+    fn test_skew_symmetric() {
+        let v = Vector3::new(1.0, 2.0, 3.0);
+        let skew = skew_symmetric(&v);
+        assert!((skew + skew.transpose()).norm() < 1e-6);
+        assert_eq!(skew[(0, 1)], -3.0);
+        assert_eq!(skew[(1, 0)], 3.0);
+    }
+
+    #[test]
+    fn test_exp_map_identity() {
+        let omega = Vector3::zeros();
+        let r = exp_map(&omega);
+        assert!((r - Matrix3::identity()).norm() < 1e-6);
+    }
+
+    #[test]
+    fn test_exp_map_orthogonal() {
+        let omega = Vector3::new(0.5, 1.0, 0.3);
+        let r = exp_map(&omega);
+        let should_be_identity = r.transpose() * r;
+        assert!((should_be_identity - Matrix3::identity()).norm() < 1e-5);
+        assert!((r.determinant() - 1.0).abs() < 1e-5);
     }
 }
