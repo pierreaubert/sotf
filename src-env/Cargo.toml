@@ -1,6 +1,7 @@
 [package]
 name = "autoeq-env"
 version = "0.2.3"
+description = "provide the shared environment for autoeq packages"
 edition = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }
