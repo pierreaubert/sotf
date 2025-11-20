@@ -9,6 +9,7 @@ import type {
   DriverConfig,
   CrossoverConfig,
 } from "../types/roomeq";
+import type { OptimizationParams } from "../types/optimization";
 import { ROOMEQ_PRESETS, CROSSOVER_TYPES } from "../types/roomeq";
 import { RoomEQManager } from "./roomeq-manager";
 import { OPTIMIZATION_DEFAULTS } from "./optimization-constants";
@@ -111,7 +112,7 @@ export class RoomEQWizard {
   private renderStep1_ChannelSetup(state: RoomEQWorkflowState): string {
     const channels = state.channels || [];
     const isMultiWay =
-      state.config_type?.type === "multi_way" ?? false;
+      state.config_type?.type === "multi_way" || false;
 
     return `
       <div class="roomeq-wizard">
@@ -260,7 +261,7 @@ export class RoomEQWizard {
    * Step 2: Optimizer Settings
    */
   private renderStep2_OptimizerSettings(state: RoomEQWorkflowState): string {
-    const params = state.optimizer_params || {};
+    const params: Partial<OptimizationParams> = state.optimizer_params || {};
 
     return `
       <div class="roomeq-wizard">
