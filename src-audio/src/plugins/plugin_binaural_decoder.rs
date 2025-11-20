@@ -265,8 +265,16 @@ impl BinauralDecoderPlugin {
         // Copy IR data (pad with zeros if IR is shorter, truncate if longer)
         // CRITICAL: Truncate to hop_size to avoid circular convolution aliasing
         let copy_len = ir.len().min(self.hop_size);
+        let mut max_val = 0.0f32;
         for i in 0..copy_len {
             buffer[i] = Complex::new(ir[i], 0.0);
+            max_val = max_val.max(ir[i].abs());
+        }
+        
+        if max_val > 0.9 {
+             log::warn!("[BinauralDecoder] HRTF IR peak is very high: {:.4} (near 0dBFS). This might cause clipping.", max_val);
+        } else {
+             log::debug!("[BinauralDecoder] HRTF IR peak: {:.4}", max_val);
         }
 
         // FFT
@@ -473,8 +481,10 @@ impl Plugin for BinauralDecoderPlugin {
 
             if frames_to_drain > 0 {
                 for i in 0..frames_to_drain {
-                    output[output_pos + i * 2] = self.output_accumulator[0][i];
-                    output[output_pos + i * 2 + 1] = self.output_accumulator[1][i];
+                    // Apply Soft Clipper (tanh) to prevent hard clipping
+                    // This limits output to [-1.0, 1.0] range smoothly
+                    output[output_pos + i * 2] = self.output_accumulator[0][i].tanh();
+                    output[output_pos + i * 2 + 1] = self.output_accumulator[1][i].tanh();
                 }
                 output_pos += frames_to_drain * 2;
 
