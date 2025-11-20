@@ -166,7 +166,7 @@ mod tests {
     #[test]
     fn data_dir_builds_expected_path() {
         let p = read::data_dir_for("KEF LS50 Meta");
-        let expected = std::path::Path::new(DATA_CACHED).join("KEF LS50 Meta");
+        let expected = std::path::Path::new(DATA_CACHED).join("org.spinorama/KEF LS50 Meta");
         assert!(p.ends_with(expected));
     }
 }

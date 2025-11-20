@@ -471,10 +471,12 @@ fn bessel_i0(x: f64) -> f64 {
     let mut term = 1.0;
     let mut k = 1.0;
 
-    // Series expansion (converges quickly for typical beta values)
+    let half_x_sq = (x / 2.0) * (x / 2.0);
+
+    // Series expansion: I₀(x) = Σ ((x/2)^k / k!)²
+    // Each term is: term_k = term_{k-1} * (x/2)² / k²
     loop {
-        term *= (x / 2.0) / k;
-        term *= term;
+        term *= half_x_sq / (k * k);
         sum += term;
         if term < 1e-12 * sum {
             break;

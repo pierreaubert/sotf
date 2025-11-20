@@ -6,9 +6,10 @@
 // stereo using Head-Related Transfer Functions (HRTFs) from SOFA files.
 //
 // Algorithm:
-// - Each input channel is convolved with its corresponding HRTF
-// - HRTFs are selected based on speaker positions (azimuth, elevation)
-// - Uses FFT-based fast convolution (overlap-add method)
+// - Uses standard Overlap-Add (OLA) convolution
+// - Input is processed in blocks of 'hop_size' (fft_size / 2)
+// - Input blocks are zero-padded to 'fft_size'
+// - HRTF Impulse Responses are truncated to 'hop_size' to avoid circular convolution aliasing
 // - Output is stereo (left/right ears) suitable for headphone playback
 //
 // Supported input formats (using speaker_config module):
@@ -105,7 +106,6 @@ pub struct BinauralDecoderPlugin {
     temp_output_block: Vec<f32>,
     temp_freq_buffer: Vec<Complex<f32>>,
     temp_time_buffer: Vec<Complex<f32>>,
-    window: Vec<f32>,
 }
 
 impl BinauralDecoderPlugin {
@@ -124,13 +124,6 @@ impl BinauralDecoderPlugin {
         let mut planner = FftPlanner::<f32>::new();
         let fft_forward = planner.plan_fft_forward(fft_size);
         let fft_inverse = planner.plan_fft_inverse(fft_size);
-
-        // Generate Hann window
-        let window: Vec<f32> = (0..fft_size)
-            .map(|i| {
-                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / fft_size as f32).cos())
-            })
-            .collect();
 
         // Determine speaker configuration based on channel count
         let speaker_config = get_speaker_config_by_channels(input_channels)
@@ -175,18 +168,17 @@ impl BinauralDecoderPlugin {
 
             hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); fft_size * 2]; input_channels],
 
-            input_buffer: vec![0.0; fft_size * input_channels], // Interleaved
+            input_buffer: vec![0.0; hop_size * input_channels], // Interleaved, size for one hop
             input_buffer_fill: 0,
 
-            output_accumulator: vec![vec![0.0; fft_size * 3]; 2], // 2 output channels
+            output_accumulator: vec![vec![0.0; fft_size * 2]; 2], // 2 output channels, enough space for overlap
             output_accumulator_fill: 0,
             next_add_position: 0,
 
-            temp_input_block: vec![0.0; fft_size * input_channels], // Interleaved multi-channel input
+            temp_input_block: vec![0.0; hop_size * input_channels], // Interleaved multi-channel input
             temp_output_block: vec![0.0; fft_size * 2], // Stereo output
             temp_freq_buffer: vec![Complex::new(0.0, 0.0); fft_size],
             temp_time_buffer: vec![Complex::new(0.0, 0.0); fft_size],
-            window,
         }
     }
 
@@ -243,7 +235,9 @@ impl BinauralDecoderPlugin {
             );
 
             // Convert HRTFs to frequency domain
-            // We need to pad/truncate IRs to fft_size
+            // We need to pad/truncate IRs to hop_size (NOT fft_size) to ensure
+            // L_input + L_ir - 1 <= N_fft
+            // With L_input = hop_size and N_fft = 2 * hop_size, we need L_ir <= hop_size + 1
             let left_fft = self.ir_to_freq(&hrtf.ir_left);
             let right_fft = self.ir_to_freq(&hrtf.ir_right);
 
@@ -269,7 +263,8 @@ impl BinauralDecoderPlugin {
         let mut buffer = vec![Complex::new(0.0, 0.0); self.fft_size];
 
         // Copy IR data (pad with zeros if IR is shorter, truncate if longer)
-        let copy_len = ir.len().min(self.fft_size);
+        // CRITICAL: Truncate to hop_size to avoid circular convolution aliasing
+        let copy_len = ir.len().min(self.hop_size);
         for i in 0..copy_len {
             buffer[i] = Complex::new(ir[i], 0.0);
         }
@@ -281,9 +276,11 @@ impl BinauralDecoderPlugin {
         freq
     }
 
-    /// Process one FFT block using fast convolution
-    fn process_fft_block(&mut self, input: &[f32], output: &mut [f32]) {
-        assert_eq!(input.len(), self.fft_size * self.input_channels);
+    /// Process one block using standard Overlap-Add
+    /// Input: `hop_size` frames (interleaved)
+    /// Output: `fft_size` frames (stereo, interleaved) - tail is overlap
+    fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
+        assert_eq!(input.len(), self.hop_size * self.input_channels);
         assert_eq!(output.len(), self.fft_size * 2); // Stereo output
 
         output.fill(0.0);
@@ -292,7 +289,8 @@ impl BinauralDecoderPlugin {
         if self.hrtf_filters_freq.is_empty() || self.hrtf_filters_freq[0].len() != self.fft_size * 2
         {
             // No HRTFs loaded - pass through first 2 channels or silence
-            for i in 0..self.fft_size {
+            // Since we are doing OLA, we just copy input to output (padded with zeros)
+            for i in 0..self.hop_size {
                 if self.input_channels >= 1 {
                     output[i * 2] = input[i * self.input_channels]; // Left
                 }
@@ -312,14 +310,14 @@ impl BinauralDecoderPlugin {
 
         // Process each input channel
         for ch in 0..self.input_channels {
-            // 1. Extract channel data and apply window
-            // Note: For overlap-add convolution with 50% overlap and Hann window,
-            // windowing only the input (analysis window) provides perfect reconstruction.
-            // The Hann window satisfies the Constant Overlap-Add (COLA) constraint:
-            // w[n] + w[n + hop_size] = 1 for all n, ensuring no artifacts.
+            // 1. Extract channel data and zero-pad to FFT size
             for i in 0..self.fft_size {
-                let sample = input[i * self.input_channels + ch];
-                self.temp_time_buffer[i] = Complex::new(sample * self.window[i], 0.0);
+                if i < self.hop_size {
+                    let sample = input[i * self.input_channels + ch];
+                    self.temp_time_buffer[i] = Complex::new(sample, 0.0);
+                } else {
+                    self.temp_time_buffer[i] = Complex::new(0.0, 0.0);
+                }
             }
 
             // 2. Forward FFT
@@ -371,7 +369,7 @@ impl Plugin for BinauralDecoderPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "Binaural Decoder".to_string(),
-            version: "1.0.0".to_string(),
+            version: "1.1.0".to_string(),
             author: "AutoEQ".to_string(),
             description: format!(
                 "Converts {}-channel audio to binaural stereo using HRTFs from SOFA file",
@@ -467,7 +465,7 @@ impl Plugin for BinauralDecoderPlugin {
         let mut input_pos = 0;
         let mut output_pos = 0;
 
-        // Main processing loop (similar to upmixer)
+        // Main processing loop
         loop {
             // Step 1: Drain output accumulator
             let frames_available = (output.len() - output_pos) / 2;
@@ -498,21 +496,23 @@ impl Plugin for BinauralDecoderPlugin {
                 }
             }
 
-            // Step 2: Process FFT block if we have enough input and accumulator space
-            let can_process_input = self.input_buffer_fill >= self.fft_size * self.input_channels;
-            let can_process_space = self.next_add_position + self.fft_size <= self.fft_size * 3;
+            // Step 2: Process block if we have enough input (hop_size) and accumulator space
+            let input_needed = self.hop_size * self.input_channels;
+            let can_process_input = self.input_buffer_fill >= input_needed;
+            let can_process_space = self.next_add_position + self.fft_size <= self.fft_size * 2;
 
             if can_process_input && can_process_space {
                 // Copy to temp buffer (direct copy, already interleaved)
-                self.temp_input_block[..self.fft_size * self.input_channels]
-                    .copy_from_slice(&self.input_buffer[..self.fft_size * self.input_channels]);
+                self.temp_input_block[..input_needed]
+                    .copy_from_slice(&self.input_buffer[..input_needed]);
 
                 // Process block
                 // Use std::mem::take to temporarily move buffers out to avoid borrow conflict
                 let input_block = std::mem::take(&mut self.temp_input_block);
                 let mut output_block = std::mem::take(&mut self.temp_output_block);
-                output_block.fill(0.0);
-                self.process_fft_block(&input_block, &mut output_block);
+                
+                self.process_block(&input_block, &mut output_block);
+                
                 // Move buffers back
                 self.temp_input_block = input_block;
                 self.temp_output_block = output_block;
@@ -526,18 +526,17 @@ impl Plugin for BinauralDecoderPlugin {
                 }
 
                 // Update state
-                if self.output_accumulator_fill == 0 {
-                    self.output_accumulator_fill = self.fft_size;
-                    self.next_add_position = self.hop_size;
-                } else {
-                    self.output_accumulator_fill += self.hop_size;
-                    self.next_add_position += self.hop_size;
-                }
+                // In standard OLA, we advance by hop_size
+                self.next_add_position += self.hop_size;
+                
+                // Update fill count.
+                let new_end = (self.next_add_position - self.hop_size) + self.fft_size;
+                self.output_accumulator_fill = self.output_accumulator_fill.max(new_end);
 
                 // Shift input buffer by hop_size (interleaved)
                 let shift_amount = self.hop_size * self.input_channels;
                 self.input_buffer
-                    .copy_within(shift_amount..self.fft_size * self.input_channels, 0);
+                    .copy_within(shift_amount..self.input_buffer_fill, 0);
                 self.input_buffer_fill -= shift_amount;
 
                 continue;
@@ -545,8 +544,9 @@ impl Plugin for BinauralDecoderPlugin {
 
             // Step 3: Fill input buffer
             if input_pos < input.len() {
+                let input_needed = self.hop_size * self.input_channels;
                 let samples_to_copy = (input.len() - input_pos)
-                    .min(self.fft_size * self.input_channels - self.input_buffer_fill);
+                    .min(input_needed - self.input_buffer_fill);
 
                 self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
                     .copy_from_slice(&input[input_pos..input_pos + samples_to_copy]);
@@ -563,8 +563,9 @@ impl Plugin for BinauralDecoderPlugin {
                 break;
             }
 
-            let cant_process = self.input_buffer_fill < self.fft_size * self.input_channels
-                || self.next_add_position + self.fft_size > self.fft_size * 3;
+            let input_needed = self.hop_size * self.input_channels;
+            let cant_process = self.input_buffer_fill < input_needed
+                || self.next_add_position + self.fft_size > self.fft_size * 2;
             let no_data_to_drain = self.output_accumulator_fill == 0;
 
             if input_pos >= input.len() && cant_process && no_data_to_drain {
@@ -576,7 +577,7 @@ impl Plugin for BinauralDecoderPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        self.fft_size
+        self.hop_size
     }
 }
 
@@ -590,6 +591,7 @@ mod tests {
         assert_eq!(plugin.input_channels(), 5);
         assert_eq!(plugin.output_channels(), 2);
         assert_eq!(plugin.fft_size, 4096);
+        assert_eq!(plugin.hop_size, 2048);
     }
 
     #[test]

@@ -11,6 +11,12 @@ use head_scanner::{
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, warn};
+use opencv::{
+    core::{Point as CvPoint, Scalar},
+    highgui, imgproc,
+    imgproc::HersheyFonts::FONT_HERSHEY_SIMPLEX,
+    prelude::*,
+};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -65,6 +71,10 @@ enum Commands {
         /// Path to vision model (ONNX format)
         #[arg(long)]
         model: Option<PathBuf>,
+
+        /// Display camera feed in real-time window
+        #[arg(long, default_value_t = true)]
+        display: bool,
     },
 
     /// Test camera connection
@@ -96,6 +106,7 @@ async fn main() -> ScannerResult<()> {
             bundle_adjustment,
             max_duration,
             model,
+            display,
         } => {
             run_scan(
                 cli.camera,
@@ -107,6 +118,7 @@ async fn main() -> ScannerResult<()> {
                 max_duration,
                 model,
                 output,
+                display,
             )
             .await?;
         }
@@ -131,6 +143,7 @@ async fn run_scan(
     max_duration: u64,
     model_path: Option<PathBuf>,
     output_path: PathBuf,
+    display_video: bool,
 ) -> ScannerResult<()> {
     println!("🎥 Head Scanner CLI");
     println!("==================");
@@ -156,7 +169,16 @@ async fn run_scan(
 
     println!("✓ Camera initialized ({}x{} @ {}fps)", width, height, fps);
     println!("✓ Waiting for head detection...");
+    if display_video {
+        println!("✓ Video display enabled (press 'q' to quit, 'p' to pause)");
+    }
     println!();
+
+    // Create OpenCV window for video display
+    let window_name = "Head Scanner - Live Feed";
+    if display_video {
+        highgui::named_window(window_name, highgui::WINDOW_AUTOSIZE)?;
+    }
 
     // Setup progress bar
     let pb = ProgressBar::new(100);
@@ -190,6 +212,35 @@ async fn run_scan(
 
         let state = scanner.get_state();
         let coverage = scanner.get_coverage();
+
+        // Display video feed if enabled
+        if display_video {
+            if let Ok(frame) = scanner.capture_current_frame() {
+                // Clone the frame so we can draw on it
+                let mut display_frame = frame.mat().try_clone()?;
+                
+                // Draw progress overlay
+                let elapsed = start_time.elapsed().as_secs_f32();
+                if let Err(e) = draw_progress_overlay(&mut display_frame, state, coverage, frame_count, elapsed) {
+                    warn!("Failed to draw overlay: {}", e);
+                }
+                
+                // Display the frame with overlay
+                highgui::imshow(window_name, &display_frame)?;
+                
+                // Check for key press (1ms wait)
+                let key = highgui::wait_key(1)?;
+                if key == 'q' as i32 || key == 27 {
+                    // 'q' or ESC pressed
+                    println!("\nUser requested quit");
+                    break;
+                } else if key == 'p' as i32 {
+                    // 'p' pressed - pause
+                    println!("\nPaused - press any key to continue");
+                    highgui::wait_key(0)?;
+                }
+            }
+        }
 
         // Update progress bar
         let coverage_pct = (coverage * 100.0) as u64;
@@ -276,9 +327,163 @@ async fn run_scan(
     // Stop scanner
     scanner.stop().await?;
 
+    // Close video window if it was opened
+    if display_video {
+        highgui::destroy_window(window_name)?;
+    }
+
     println!();
     println!("✨ Scan complete! Your 3D head model is ready.");
 
+    Ok(())
+}
+
+/// Draw progress overlay on video frame
+fn draw_progress_overlay(
+    frame: &mut opencv::core::Mat,
+    state: ScanState,
+    coverage: f32,
+    frame_count: u32,
+    elapsed_secs: f32,
+) -> ScannerResult<()> {
+    let height = frame.rows();
+    let width = frame.cols();
+    
+    // Draw semi-transparent background at top
+    let overlay_height = 120;
+    imgproc::rectangle(
+        frame,
+        opencv::core::Rect::new(0, 0, width, overlay_height),
+        Scalar::new(0.0, 0.0, 0.0, 0.0),
+        -1, // Filled
+        imgproc::LINE_8,
+        0,
+    )?;
+    
+    // Text properties
+    let font = FONT_HERSHEY_SIMPLEX as i32;
+    let font_scale = 0.7;
+    let thickness = 2;
+    let white = Scalar::new(255.0, 255.0, 255.0, 0.0);
+    let green = Scalar::new(0.0, 255.0, 0.0, 0.0);
+    let yellow = Scalar::new(0.0, 255.0, 255.0, 0.0);
+    let red = Scalar::new(0.0, 0.0, 255.0, 0.0);
+    
+    // Status text
+    let status_text = match state {
+        ScanState::Idle => "Idle",
+        ScanState::Initializing => "Initializing...",
+        ScanState::DetectingHead => "Waiting for head detection",
+        ScanState::Scanning => "Scanning",
+        ScanState::Paused => "Paused",
+        ScanState::Processing => "Processing",
+        ScanState::Complete => "Complete",
+        ScanState::Error => "Error",
+    };
+    
+    let status_color = match state {
+        ScanState::Scanning => green,
+        ScanState::DetectingHead => yellow,
+        ScanState::Error => red,
+        _ => white,
+    };
+    
+    imgproc::put_text(
+        frame,
+        &format!("Status: {}", status_text),
+        CvPoint::new(20, 30),
+        font,
+        font_scale,
+        status_color,
+        thickness,
+        imgproc::LINE_AA,
+        false,
+    )?;
+    
+    // Coverage percentage
+    let coverage_pct = coverage * 100.0;
+    let coverage_color = if coverage_pct >= 85.0 {
+        green
+    } else if coverage_pct >= 50.0 {
+        yellow
+    } else {
+        red
+    };
+    
+    imgproc::put_text(
+        frame,
+        &format!("Coverage: {:.1}%", coverage_pct),
+        CvPoint::new(20, 60),
+        font,
+        font_scale,
+        coverage_color,
+        thickness,
+        imgproc::LINE_AA,
+        false,
+    )?;
+    
+    // Progress bar
+    let bar_x = 20;
+    let bar_y = 70;
+    let bar_width = width - 40;
+    let bar_height = 20;
+    
+    // Background bar (gray)
+    imgproc::rectangle(
+        frame,
+        opencv::core::Rect::new(bar_x, bar_y, bar_width, bar_height),
+        Scalar::new(100.0, 100.0, 100.0, 0.0),
+        -1,
+        imgproc::LINE_8,
+        0,
+    )?;
+    
+    // Progress bar (colored based on coverage)
+    let progress_width = (bar_width as f32 * coverage) as i32;
+    if progress_width > 0 {
+        imgproc::rectangle(
+            frame,
+            opencv::core::Rect::new(bar_x, bar_y, progress_width, bar_height),
+            coverage_color,
+            -1,
+            imgproc::LINE_8,
+            0,
+        )?;
+    }
+    
+    // Frame count and FPS
+    let fps = if elapsed_secs > 0.0 {
+        frame_count as f32 / elapsed_secs
+    } else {
+        0.0
+    };
+    
+    imgproc::put_text(
+        frame,
+        &format!("Frames: {} | FPS: {:.1} | Time: {:.1}s", frame_count, fps, elapsed_secs),
+        CvPoint::new(20, 110),
+        font,
+        0.5,
+        white,
+        1,
+        imgproc::LINE_AA,
+        false,
+    )?;
+    
+    // Controls hint at bottom
+    let hint_y = height - 20;
+    imgproc::put_text(
+        frame,
+        "Press 'q' to quit | 'p' to pause",
+        CvPoint::new(20, hint_y),
+        font,
+        0.5,
+        white,
+        1,
+        imgproc::LINE_AA,
+        false,
+    )?;
+    
     Ok(())
 }
 

@@ -53,6 +53,7 @@ pub mod stereo;
 pub mod texture;
 pub mod vision;
 
+pub use camera::Frame;
 pub use error::{ScannerError, ScannerResult};
 pub use mesh::{Mesh, Triangle, Vertex};
 pub use pointcloud::PointCloud;
@@ -307,6 +308,17 @@ impl HeadScanner {
         *self.camera.write() = None;
         *self.state.write() = ScanState::Idle;
         Ok(())
+    }
+
+    /// Capture and return the current frame from the camera
+    ///
+    /// This is useful for displaying the camera feed in real-time
+    pub fn capture_current_frame(&self) -> ScannerResult<camera::Frame> {
+        let camera_guard = self.camera.read();
+        let camera = camera_guard
+            .as_ref()
+            .ok_or(ScannerError::CameraNotInitialized)?;
+        camera.capture_frame()
     }
 
     /// Filter new points to remove duplicates and points too close to existing ones
