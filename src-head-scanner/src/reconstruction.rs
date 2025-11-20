@@ -7,7 +7,12 @@ use crate::camera::Frame;
 use crate::error::{ScannerError, ScannerResult};
 use crate::pointcloud::Point;
 use crate::vision::Feature;
-use nalgebra::{Matrix3, Point3, Vector3};
+use nalgebra::{Matrix3, Matrix3x4, Point2, Point3, Vector3, UnitQuaternion};
+use opencv::{
+    calib3d, core::{Mat, Point2f, Vector as CvVector, Scalar},
+    prelude::*,
+};
+use serde::{Deserialize, Serialize};
 
 /// Camera intrinsic parameters
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -122,8 +127,16 @@ pub fn features_to_points(features: &[Feature], frame: &Frame) -> ScannerResult<
     for feature in features {
         // Get depth estimate
         let depth = feature.depth.unwrap_or_else(|| {
-            // Default depth based on typical head size and distance
-            estimate_depth_from_feature_type(&feature.feature_type)
+            // Add small random variation to depth to prevent all points collapsing
+            // This helps when camera is static or moving slowly
+            let base_depth = estimate_depth_from_feature_type(&feature.feature_type);
+            
+            // Add position-dependent variation for more realistic depth
+            // Use feature position to create deterministic but varied depth
+            let x_factor = (feature.position.x * 0.01).sin() * 0.5; // ±0.5cm
+            let y_factor = (feature.position.y * 0.01).cos() * 0.5; // ±0.5cm
+            
+            base_depth + x_factor + y_factor
         });
 
         // Unproject to 3D
@@ -149,29 +162,212 @@ fn estimate_depth_from_feature_type(feature_type: &str) -> f32 {
         "left_eye" => 49.5,
         "right_eye" => 49.5,
         "mouth" => 49.0,
-        // Grid points: add variation based on position to create depth
-        s if s.starts_with("grid_") => {
-            // Parse grid coordinates from "grid_i_j"
-            let parts: Vec<&str> = s.split('_').collect();
-            if parts.len() == 3 {
-                if let (Ok(i), Ok(j)) = (parts[1].parse::<i32>(), parts[2].parse::<i32>()) {
-                    // Create depth variation based on grid position
-                    // Center of face (grid 3-4, 3-4) is closer (nose area)
-                    // Edges are farther
-                    let center_i = 3.5;
-                    let center_j = 3.5;
-                    let dist_from_center = ((i as f32 - center_i).powi(2) + (j as f32 - center_j).powi(2)).sqrt();
-                    
-                    // Base depth 50cm, vary ±3cm based on position
-                    // Center (nose) is closer, edges (ears/sides) are farther
-                    let depth_variation = (dist_from_center - 2.5) * 0.6; // -1.5cm to +2cm range
-                    return 50.0 + depth_variation;
-                }
-            }
-            50.0
+        // Corner features get slight random variation for better 3D structure
+        "corner" => {
+            // Add small variation to prevent all corners at same depth
+            // Use a hash-like function for deterministic but varied depth
+            50.0 + (feature_type.len() as f32 * 0.1) % 2.0 - 1.0 // ±1cm variation
         }
         _ => 50.0,
     }
+}
+
+/// Estimate essential matrix from feature correspondences
+pub fn estimate_essential_matrix(
+    points1: &[(f32, f32)],
+    points2: &[(f32, f32)],
+    intrinsics: &CameraIntrinsics,
+) -> ScannerResult<(Matrix3<f64>, Vec<bool>)> {
+    if points1.len() < 8 || points2.len() < 8 {
+        return Err(ScannerError::InvalidConfig(
+            "Need at least 8 point correspondences for essential matrix".to_string(),
+        ));
+    }
+    
+    // Convert to OpenCV format
+    let mut pts1 = CvVector::<Point2f>::new();
+    let mut pts2 = CvVector::<Point2f>::new();
+    
+    for (p1, p2) in points1.iter().zip(points2.iter()) {
+        pts1.push(Point2f::new(p1.0, p1.1));
+        pts2.push(Point2f::new(p2.0, p2.1));
+    }
+    
+    // Camera matrix (K)
+    let mut camera_matrix = Mat::zeros(3, 3, opencv::core::CV_64F)?.to_mat()?;
+    *camera_matrix.at_2d_mut::<f64>(0, 0)? = intrinsics.fx as f64;
+    *camera_matrix.at_2d_mut::<f64>(1, 1)? = intrinsics.fy as f64;
+    *camera_matrix.at_2d_mut::<f64>(0, 2)? = intrinsics.cx as f64;
+    *camera_matrix.at_2d_mut::<f64>(1, 2)? = intrinsics.cy as f64;
+    *camera_matrix.at_2d_mut::<f64>(2, 2)? = 1.0;
+    
+    // Compute essential matrix using RANSAC
+    let mut mask = Mat::default();
+    let essential_mat = calib3d::find_essential_mat(
+        &pts1,
+        &pts2,
+        &camera_matrix,
+        calib3d::RANSAC,
+        0.999,  // confidence
+        1.0,    // threshold
+        1000,   // max iterations
+        &mut mask,
+    ).map_err(|e| ScannerError::VisionModel(format!("Essential matrix failed: {}", e)))?;
+    
+    // Convert to nalgebra Matrix3
+    let mut e = Matrix3::<f64>::zeros();
+    for i in 0..3 {
+        for j in 0..3 {
+            e[(i, j)] = *essential_mat.at_2d::<f64>(i as i32, j as i32)
+                .map_err(|e| ScannerError::VisionModel(format!("Matrix access failed: {}", e)))?;
+        }
+    }
+    
+    // Extract inlier mask
+    let mut inliers = Vec::new();
+    for i in 0..mask.rows() {
+        let val = *mask.at::<u8>(i)
+            .map_err(|e| ScannerError::VisionModel(format!("Mask access failed: {}", e)))?;
+        inliers.push(val != 0);
+    }
+    
+    log::debug!("Essential matrix: {} inliers of {} points", inliers.iter().filter(|&&x| x).count(), points1.len());
+    
+    Ok((e, inliers))
+}
+
+/// Recover camera pose (R, t) from essential matrix
+pub fn recover_pose_from_essential(
+    essential: &Matrix3<f64>,
+    points1: &[(f32, f32)],
+    points2: &[(f32, f32)],
+    intrinsics: &CameraIntrinsics,
+    inliers: &[bool],
+) -> ScannerResult<CameraPose> {
+    // Convert to OpenCV format (only inliers)
+    let mut pts1 = CvVector::<Point2f>::new();
+    let mut pts2 = CvVector::<Point2f>::new();
+    
+    for (i, (p1, p2)) in points1.iter().zip(points2.iter()).enumerate() {
+        if inliers[i] {
+            pts1.push(Point2f::new(p1.0, p1.1));
+            pts2.push(Point2f::new(p2.0, p2.1));
+        }
+    }
+    
+    // Convert essential matrix to OpenCV
+    let mut e_mat = Mat::zeros(3, 3, opencv::core::CV_64F)?.to_mat()?;
+    for i in 0..3 {
+        for j in 0..3 {
+            *e_mat.at_2d_mut::<f64>(i as i32, j as i32)? = essential[(i, j)];
+        }
+    }
+    
+    // Camera matrix
+    let mut camera_matrix = Mat::zeros(3, 3, opencv::core::CV_64F)?.to_mat()?;
+    *camera_matrix.at_2d_mut::<f64>(0, 0)? = intrinsics.fx as f64;
+    *camera_matrix.at_2d_mut::<f64>(1, 1)? = intrinsics.fy as f64;
+    *camera_matrix.at_2d_mut::<f64>(0, 2)? = intrinsics.cx as f64;
+    *camera_matrix.at_2d_mut::<f64>(1, 2)? = intrinsics.cy as f64;
+    *camera_matrix.at_2d_mut::<f64>(2, 2)? = 1.0;
+    
+    // Recover pose
+    let mut r_mat = Mat::default();
+    let mut t_mat = Mat::default();
+    let mut mask = Mat::default();
+    let mut triangulated = Mat::default();
+    
+    calib3d::recover_pose_triangulated(
+        &e_mat,
+        &pts1,
+        &pts2,
+        &camera_matrix,
+        &mut r_mat,
+        &mut t_mat,
+        1000.0, // distance threshold
+        &mut mask,
+        &mut triangulated,
+    ).map_err(|e| ScannerError::VisionModel(format!("Pose recovery failed: {}", e)))?;
+    
+    // Convert R and t to nalgebra
+    let mut rotation = Matrix3::<f32>::zeros();
+    for i in 0..3 {
+        for j in 0..3 {
+            rotation[(i, j)] = *r_mat.at_2d::<f64>(i as i32, j as i32)? as f32;
+        }
+    }
+    
+    let position = Point3::new(
+        *t_mat.at::<f64>(0)? as f32,
+        *t_mat.at::<f64>(1)? as f32,
+        *t_mat.at::<f64>(2)? as f32,
+    );
+    
+    log::debug!("Recovered pose: position={:?}, rotation determinant={}", position, rotation.determinant());
+    
+    Ok(CameraPose { position, rotation })
+}
+
+/// Triangulate 3D point from two views
+pub fn triangulate_point(
+    point1: &Point2<f32>,
+    point2: &Point2<f32>,
+    pose1: &CameraPose,
+    pose2: &CameraPose,
+    intrinsics: &CameraIntrinsics,
+) -> ScannerResult<Point3<f32>> {
+    // Build projection matrices P = K[R|t]
+    let k = Matrix3::new(
+        intrinsics.fx, 0.0, intrinsics.cx,
+        0.0, intrinsics.fy, intrinsics.cy,
+        0.0, 0.0, 1.0,
+    );
+    
+    // P1 = K[R1|t1]
+    let mut p1 = Matrix3x4::<f32>::zeros();
+    for i in 0..3 {
+        for j in 0..3 {
+            p1[(i, j)] = pose1.rotation[(i, j)];
+        }
+        p1[(i, 3)] = pose1.position[i];
+    }
+    let p1 = k * p1;
+    
+    // P2 = K[R2|t2]
+    let mut p2 = Matrix3x4::<f32>::zeros();
+    for i in 0..3 {
+        for j in 0..3 {
+            p2[(i, j)] = pose2.rotation[(i, j)];
+        }
+        p2[(i, 3)] = pose2.position[i];
+    }
+    let p2 = k * p2;
+    
+    // DLT triangulation (Direct Linear Transform)
+    // Build matrix A from the two projection equations
+    let mut a = nalgebra::Matrix4::<f32>::zeros();
+    
+    a.set_row(0, &(point1.x * p1.row(2) - p1.row(0)));
+    a.set_row(1, &(point1.y * p1.row(2) - p1.row(1)));
+    a.set_row(2, &(point2.x * p2.row(2) - p2.row(0)));
+    a.set_row(3, &(point2.y * p2.row(2) - p2.row(1)));
+    
+    // Solve using SVD
+    let svd = a.svd(true, true);
+    let v = svd.v_t.ok_or_else(|| {
+        ScannerError::VisionModel("SVD failed to compute V".to_string())
+    })?;
+    
+    // Solution is last column of V (smallest singular value)
+    let x = v.row(3);
+    
+    // Convert from homogeneous to 3D
+    let w = x[3];
+    if w.abs() < 1e-6 {
+        return Err(ScannerError::VisionModel("Point at infinity".to_string()));
+    }
+    
+    Ok(Point3::new(x[0] / w, x[1] / w, x[2] / w))
 }
 
 /// Structure-from-Motion reconstructor

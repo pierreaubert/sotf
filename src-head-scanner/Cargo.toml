@@ -44,7 +44,7 @@ bytemuck = "1.24"  # For efficient data conversion
 byteorder = "1.5"  # For binary data serialization
 
 # ML inference for vision models (ONNX Runtime)
-ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries"] }
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries", "coreml"] }
 
 # Point cloud and mesh algorithms
 kiddo = "4.2"  # k-d tree for nearest neighbor search
@@ -68,6 +68,10 @@ tempfile = { workspace = true }
 [[bin]]
 name = "head-scanner-cli"
 path = "bin/head_scanner_cli.rs"
+
+[[bin]]
+name = "test-sfm"
+path = "bin/test_sfm.rs"
 
 [[bench]]
 name = "performance"

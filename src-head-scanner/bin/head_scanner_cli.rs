@@ -89,6 +89,26 @@ enum Commands {
         /// Number of smoothing iterations
         #[arg(long, default_value_t = 5)]
         smooth_iterations: usize,
+
+        /// Frame skip interval (process every Nth frame for slower, more precise scanning)
+        #[arg(long, default_value_t = 1)]
+        frame_skip: usize,
+
+        /// Minimum points per frame threshold (skip frames with fewer points)
+        #[arg(long, default_value_t = 10)]
+        min_points_per_frame: usize,
+
+        /// Use Structure-from-Motion for accurate 3D reconstruction
+        #[arg(long)]
+        sfm: bool,
+
+        /// Number of frames to use for SfM (2-10 recommended)
+        #[arg(long, default_value_t = 3)]
+        sfm_frames: usize,
+
+        /// Minimum inliers for valid SfM pose estimation
+        #[arg(long, default_value_t = 20)]
+        sfm_min_inliers: usize,
     },
 
     /// Test camera connection
@@ -151,6 +171,11 @@ async fn main() -> ScannerResult<()> {
             gpu,
             smooth,
             smooth_iterations,
+            frame_skip,
+            min_points_per_frame,
+            sfm,
+            sfm_frames,
+            sfm_min_inliers,
         } => {
             run_scan(
                 cli.camera,
@@ -166,6 +191,11 @@ async fn main() -> ScannerResult<()> {
                 gpu,
                 smooth,
                 smooth_iterations,
+                frame_skip,
+                min_points_per_frame,
+                sfm,
+                sfm_frames,
+                sfm_min_inliers,
             )
             .await?;
         }
@@ -213,6 +243,11 @@ async fn run_scan(
     use_gpu: bool,
     smooth_algorithm: String,
     smooth_iterations: usize,
+    frame_skip: usize,
+    min_points_per_frame: usize,
+    use_sfm: bool,
+    sfm_frame_count: usize,
+    sfm_min_inliers: usize,
 ) -> ScannerResult<()> {
     println!("🎥 Head Scanner CLI");
     println!("==================");
@@ -227,6 +262,9 @@ async fn run_scan(
         min_coverage: min_coverage as f32 / 100.0,
         point_density: 50.0,
         use_gpu,
+        use_sfm,
+        sfm_frame_count,
+        sfm_min_inliers,
         model_path: model_path.map(|p| p.to_string_lossy().to_string()),
     };
 
@@ -237,6 +275,28 @@ async fn run_scan(
     scanner.start().await?;
 
     println!("✓ Camera initialized ({}x{} @ {}fps)", width, height, fps);
+    
+    if use_sfm {
+        println!("✨ Structure-from-Motion (SfM) mode ENABLED");
+        println!("   • Using {} frame history for triangulation", sfm_frame_count);
+        println!("   • Minimum {} inliers required for pose estimation", sfm_min_inliers);
+        println!("   • Real 3D coordinates from geometric constraints");
+    } else {
+        println!("⚠️  Classical mode (estimated depth)");
+        println!("   • Consider using --sfm for higher quality");
+    }
+    
+    println!();
+    println!("📋 IMPORTANT: For best 3D reconstruction:");
+    println!("   • Move the camera slowly around your head");
+    println!("   • Or rotate your head slowly while keeping camera still");
+    println!("   • Multiple viewpoints are essential for accurate 3D data");
+    if use_sfm {
+        println!("   • SfM REQUIRES camera movement for triangulation");
+    } else {
+        println!("   • Static camera = poor quality mesh");
+    }
+    println!();
     println!("✓ Waiting for head detection...");
     if display_video {
         println!("✓ Video display enabled (press 'q' to quit, 'p' to pause)");
@@ -261,6 +321,7 @@ async fn run_scan(
     let start_time = Instant::now();
     let max_duration_secs = Duration::from_secs(max_duration);
     let mut frame_count = 0;
+    let mut processed_frame_count = 0;
     let mut last_state = ScanState::Idle;
 
     // Collect camera poses and 3D points for bundle adjustment
@@ -275,9 +336,54 @@ async fn run_scan(
             break;
         }
 
-        // Process frame
-        scanner.process_frame().await?;
         frame_count += 1;
+
+        // Frame skipping for quality control
+        if frame_skip > 1 && frame_count % frame_skip != 0 {
+            // Skip this frame, but still capture for display
+            if display_video {
+                if let Ok(frame) = scanner.capture_current_frame() {
+                    let mut display_frame = frame.mat().try_clone()?;
+                    let state = scanner.get_state();
+                    let coverage = scanner.get_coverage();
+                    let elapsed = start_time.elapsed().as_secs_f32();
+                    let using_gpu = scanner.is_using_gpu();
+                    
+                    if let Err(e) = draw_progress_overlay(
+                        &mut display_frame,
+                        state,
+                        coverage,
+                        processed_frame_count,
+                        elapsed,
+                        using_gpu,
+                    ) {
+                        warn!("Failed to draw overlay: {}", e);
+                    }
+                    
+                    highgui::imshow(window_name, &display_frame)?;
+                    let key = highgui::wait_key(1)?;
+                    if key == 'q' as i32 || key == 27 {
+                        println!("\nUser requested quit");
+                        break;
+                    }
+                }
+            }
+            continue; // Skip processing this frame
+        }
+
+        // Process frame
+        let point_cloud_size_before = scanner.get_point_cloud_size();
+        scanner.process_frame().await?;
+        let point_cloud_size_after = scanner.get_point_cloud_size();
+        let points_added = point_cloud_size_after.saturating_sub(point_cloud_size_before);
+        
+        // Skip frames that don't add enough points (poor quality)
+        if points_added < min_points_per_frame && scanner.get_state() == ScanState::Scanning {
+            log::debug!("Skipping frame with only {} points (threshold: {})", points_added, min_points_per_frame);
+            continue;
+        }
+        
+        processed_frame_count += 1;
 
         let state = scanner.get_state();
         let coverage = scanner.get_coverage();
@@ -295,7 +401,7 @@ async fn run_scan(
                     &mut display_frame,
                     state,
                     coverage,
-                    frame_count,
+                    processed_frame_count as u32,
                     elapsed,
                     using_gpu,
                 ) {
@@ -357,9 +463,11 @@ async fn run_scan(
 
     println!();
     println!("📊 Scan Statistics:");
-    println!("   Frames processed: {}", frame_count);
+    println!("   Frames captured: {}", frame_count);
+    println!("   Frames processed: {} ({:.1}%)", processed_frame_count, (processed_frame_count as f32 / frame_count as f32) * 100.0);
     println!("   Duration: {:.1}s", start_time.elapsed().as_secs_f32());
     println!("   Coverage: {:.1}%", scanner.get_coverage() * 100.0);
+    println!("   Points collected: {}", scanner.get_point_cloud_size());
     println!();
 
     // Generate mesh

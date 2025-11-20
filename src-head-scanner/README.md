@@ -827,6 +827,7 @@ pkg-config --libs opencv4
 ### Calibration Issues
 
 **"Checkerboard not detected"**
+
 - Ensure good lighting
 - Check pattern is flat and fully visible
 - Verify correct board size parameters
@@ -834,6 +835,7 @@ pkg-config --libs opencv4
 - Clean camera lens
 
 **"High RMS error"**
+
 - Recalibrate with more frames
 - Verify square size measurement
 - Use better quality printout
@@ -842,17 +844,20 @@ pkg-config --libs opencv4
 ### Scanning Issues
 
 **"Low coverage warning"**
+
 - Move camera around subject more
 - Increase scan duration: `--max-duration 180`
 - Lower coverage requirement: `--min-coverage 70`
 
 **"No features detected"**
+
 - Improve lighting conditions
 - Ensure subject is visible
 - Try different ML model
 - Use classical CV: remove `--model` flag
 
 **"Mesh quality poor"**
+
 - Calibrate camera first
 - Enable bundle adjustment: `--bundle-adjustment`
 - Use mesh smoothing: `--smooth taubin`
@@ -862,11 +867,13 @@ pkg-config --libs opencv4
 ### Performance Issues
 
 **"Slow inference"**
+
 - Use smaller model (MobileNet, TinyYOLO)
 - Reduce camera resolution
 - Enable GPU acceleration (when available)
 
 **"High memory usage"**
+
 - Reduce scan duration
 - Lower camera resolution
 - Limit point cloud size
