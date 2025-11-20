@@ -1,11 +1,11 @@
 [package]
 name = "autoeq-de"
 version = "0.2.52"
+description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
 edition = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
-description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
 
 [dependencies]
 # Core numerical computing
@@ -18,8 +18,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 plotly = { workspace = true }
-autoeq-testfunctions = { path = "../src-testfunctions" }
-autoeq-env = { path = "../src-env" }
+autoeq-testfunctions = { path = "../src-testfunctions", version="0.2" }
+autoeq-env = { path = "../src-env", version="0.2" }
 nlopt = { workspace = true, optional = true }
 plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"], optional = true }
 
