@@ -10,7 +10,7 @@ license = { workspace = true }
 [dependencies]
 ndarray = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
-autoeq-env = { path = "../src-env"}
+autoeq-env = { path = "../src-env", version="0.2"}
 serde = { workspace = true}
 serde_json = { workspace = true}
 regex = { workspace = true}
