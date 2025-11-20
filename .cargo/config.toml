@@ -11,8 +11,11 @@ rustflags = [
   "-C", 'target-cpu=native',
   "-C", 'target-feature=+neon',
   "-C", "link-arg=-mmacosx-version-min=15.0",
+  # cargo does not find them by default
   "-C", "link-arg=-framework",
   "-C", "link-arg=Accelerate",
+  "-C", "link-arg=-L /Applications/Xcode.app/Contents/Frameworks",
+  # for clang but why?
   "-C", "link-arg=-L /opt/homebrew/Cellar/llvm/21.1.5/lib"
 ]
 

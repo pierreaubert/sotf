@@ -93,7 +93,11 @@ impl TexturedMesh {
 
         // Write vertices
         for vertex in self.mesh.vertices() {
-            writeln!(obj_file, "v {} {} {}", vertex.x, vertex.y, vertex.z)?;
+            writeln!(
+                obj_file,
+                "v {} {} {}",
+                vertex.position.x, vertex.position.y, vertex.position.z
+            )?;
         }
         writeln!(obj_file)?;
 
@@ -109,12 +113,12 @@ impl TexturedMesh {
             writeln!(
                 obj_file,
                 "f {}/{} {}/{} {}/{}",
-                triangle.v0 + 1,
-                triangle.v0 + 1,
-                triangle.v1 + 1,
-                triangle.v1 + 1,
-                triangle.v2 + 1,
-                triangle.v2 + 1
+                triangle.indices[0] + 1,
+                triangle.indices[0] + 1,
+                triangle.indices[1] + 1,
+                triangle.indices[1] + 1,
+                triangle.indices[2] + 1,
+                triangle.indices[2] + 1
             )?;
         }
 
@@ -191,8 +195,7 @@ impl TextureMapper {
 
         for vertex in mesh.vertices() {
             // Transform vertex to camera space
-            let vertex_3d = Point3::new(vertex.x, vertex.y, vertex.z);
-            let camera_space = camera_pose.to_camera(&vertex_3d);
+            let camera_space = camera_pose.to_camera(&vertex.position);
 
             // Project to image plane (normalized [0, 1])
             let u = (camera_space.x / camera_space.z + 1.0) / 2.0;
@@ -208,12 +211,18 @@ impl TextureMapper {
     fn generate_spherical_uv(&self, mesh: &Mesh) -> Vec<UVCoord> {
         let mut uv_coords = Vec::new();
 
-        // Find mesh center
-        let center = mesh.compute_centroid();
+        // Find mesh center (centroid)
+        let center = {
+            let sum = mesh
+                .vertices()
+                .iter()
+                .fold(nalgebra::Vector3::zeros(), |acc, v| acc + v.position.coords);
+            Point3::from(sum / mesh.vertices().len() as f32)
+        };
 
         for vertex in mesh.vertices() {
             // Vector from center to vertex
-            let dir = Point3::new(vertex.x, vertex.y, vertex.z) - center;
+            let dir = vertex.position - center;
             let dir_normalized = dir.normalize();
 
             // Convert to spherical coordinates
@@ -240,14 +249,14 @@ impl TextureMapper {
 
         for triangle in mesh.triangles() {
             // Get triangle vertices
-            let v0 = &mesh.vertices()[triangle.v0];
-            let v1 = &mesh.vertices()[triangle.v1];
-            let v2 = &mesh.vertices()[triangle.v2];
+            let v0 = &mesh.vertices()[triangle.indices[0]];
+            let v1 = &mesh.vertices()[triangle.indices[1]];
+            let v2 = &mesh.vertices()[triangle.indices[2]];
 
             // Compute triangle normal
-            let p0 = Point3::new(v0.x, v0.y, v0.z);
-            let p1 = Point3::new(v1.x, v1.y, v1.z);
-            let p2 = Point3::new(v2.x, v2.y, v2.z);
+            let p0 = v0.position;
+            let p1 = v1.position;
+            let p2 = v2.position;
 
             let edge1 = p1 - p0;
             let edge2 = p2 - p0;
@@ -294,9 +303,9 @@ impl TextureMapper {
             let (frame, _pose) = &frames[camera_idx];
 
             // Get UV coordinates for triangle vertices
-            let uv0 = uv_coords[triangle.v0];
-            let uv1 = uv_coords[triangle.v1];
-            let uv2 = uv_coords[triangle.v2];
+            let uv0 = uv_coords[triangle.indices[0]];
+            let uv1 = uv_coords[triangle.indices[1]];
+            let uv2 = uv_coords[triangle.indices[2]];
 
             // Rasterize triangle in texture space and sample from frame
             self.rasterize_triangle_texture(texture, frame, &uv0, &uv1, &uv2)?;

@@ -95,7 +95,7 @@ impl CameraPose {
     /// Transform a point from world space to camera space
     pub fn to_camera(&self, point_world: &Point3<f32>) -> Point3<f32> {
         let translated = point_world - self.position;
-        Point3::from(self.rotation.transpose() * translated.coords)
+        Point3::from(self.rotation.transpose() * translated)
     }
 }
 

@@ -250,13 +250,13 @@ impl StereoDepthEstimator {
                 let disp_raw = disparity.at_2d::<i16>(y as i32, x as i32)?;
 
                 // Check for invalid disparity marker (OpenCV uses negative values)
-                if disp_raw < 0 {
+                if *disp_raw < 0 {
                     depths[y][x] = 0.0;
                     continue;
                 }
 
                 // Convert from fixed-point (divide by 16)
-                let disp_val = disp_raw as f32 / 16.0;
+                let disp_val = *disp_raw as f32 / 16.0;
 
                 // Convert to depth using stereo formula
                 // Add small epsilon to avoid division by zero

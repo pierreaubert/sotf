@@ -3,7 +3,12 @@
 #	  cargo install just
 # ----------------------------------------------------------------------
 
+# you need to define the path
 autoeq_dir := env('AUTOEQ_DIR')
+# should be done automatically
+dyld_fallback_library_path := '/Applications/Xcode.app/Contents/Framework'
+# opencv
+opencv_haarcascades_path := '/opt/homebrew/Cellar/opencv/4.12.0_15/share/opencv4/haarcascades'
 
 default:
 	just --list
@@ -15,7 +20,7 @@ default:
 download-once: download-spinorama download-sofa
 
 download-spinorama:
-	cargo run --bin `autoeq_download_speakers --release
+	cargo run --bin autoeq_download_speakers --release
 
 download-sofa:
 	mkdir -p data_cached/org.sofacoustics/mit
@@ -236,9 +241,9 @@ install-rustup:
 	curl https://sh.rustup.rs -sSf > ./scripts/install-rustup
 	chmod +x ./scripts/install-rustup
 	./scripts/install-rustup -y
-	source ~/.cargo/env
-	cargo install just
-	cargo install cargo-wizard
+	~/.cargo/bin/rustup default stable
+	~/.cargo/bin/cargo install just
+	~/.cargo/bin/cargo install cargo-wizard
 
 # ----------------------------------------------------------------------
 # Install macos
@@ -290,8 +295,6 @@ install-ubuntu-common:
 			 cmake \
 			 ninja-build \
 			 perl \
-			 rustup \
-			 just \
 			 libglib2.0-dev \
 			 libgtk-3-dev \
 			 libwebkit2gtk-4.1-dev \
@@ -318,7 +321,7 @@ install-ubuntu-arm64-driver :
 install-ubuntu-node:
 		# use nvm
 		curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-		NVM_DIR=$HOME/.nvm && nvm install stable
+		$HOME/.nvm/bin/nvm install stable
 
 install-ubuntu-x86: install-ubuntu-common install-ubuntu-x86-driver install-ubuntu-node
 
@@ -419,11 +422,11 @@ post-install-npm:
 	cd src-ui-frontend && npm install .
 
 post-install-rust:
-	rustup default stable
-	cargo install just
-	cargo install tauri-cli
-	cargo check
-	cd src-tauri && cargo tauri icon
+	$HOME/.cargo/bin/rustup default stable
+	$HOME/.cargo/bin/cargo install just
+	$HOME/.cargo/bin/cargo install tauri-cli
+	$HOME/.cargo/bin/cargo check
+	cd src-tauri && $HOME/.cargo/bin/cargo tauri icon
 
 post-install: post-install-rust post-install-npm
 

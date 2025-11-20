@@ -5,7 +5,7 @@
 
 use crate::error::{ScannerError, ScannerResult};
 use opencv::{
-    core::{Mat, Size, Vector},
+    core::{AlgorithmHint, Mat, Size, Vector},
     imgproc,
     prelude::*,
     videoio::{self, VideoCapture, VideoCaptureTrait},
@@ -48,7 +48,13 @@ impl Frame {
     /// Convert frame to RGB format
     pub fn to_rgb(&self) -> ScannerResult<Mat> {
         let mut rgb = Mat::default();
-        imgproc::cvt_color(&self.data, &mut rgb, imgproc::COLOR_BGR2RGB, 0)?;
+        imgproc::cvt_color(
+            &self.data,
+            &mut rgb,
+            imgproc::COLOR_BGR2RGB,
+            0,
+            AlgorithmHint::ALGO_HINT_DEFAULT,
+        )?;
         Ok(rgb)
     }
 
@@ -71,7 +77,13 @@ impl Frame {
     /// Convert frame to grayscale
     pub fn to_gray(&self) -> ScannerResult<Mat> {
         let mut gray = Mat::default();
-        imgproc::cvt_color(&self.data, &mut gray, imgproc::COLOR_BGR2GRAY, 0)?;
+        imgproc::cvt_color(
+            &self.data,
+            &mut gray,
+            imgproc::COLOR_BGR2GRAY,
+            0,
+            AlgorithmHint::ALGO_HINT_DEFAULT,
+        )?;
         Ok(gray)
     }
 }

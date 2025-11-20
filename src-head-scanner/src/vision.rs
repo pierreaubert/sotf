@@ -9,9 +9,8 @@ use opencv::{
     features2d, imgproc, objdetect,
     prelude::*,
 };
-use ort::{Environment, ExecutionProvider, Session, SessionBuilder, Value};
+use ort::{session::Session, value::Value};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 /// A detected facial or head feature
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,53 +47,76 @@ impl Feature {
 /// Vision model for advanced feature detection using ONNX
 pub struct VisionModel {
     session: Session,
-    environment: Arc<Environment>,
 }
 
 impl VisionModel {
     /// Load a vision model from an ONNX file
     pub fn load(model_path: &str) -> ScannerResult<Self> {
-        let environment = Arc::new(
-            Environment::builder()
-                .with_name("head_scanner")
-                .build()
-                .map_err(|e| {
-                    ScannerError::VisionModel(format!("Failed to create ONNX environment: {}", e))
-                })?,
-        );
+        // In ort 2.0, load model using commit_from_file on the builder
+        let model_bytes = std::fs::read(model_path)
+            .map_err(|e| ScannerError::VisionModel(format!("Failed to read model file: {}", e)))?;
 
-        let session = SessionBuilder::new(&environment)?
-            .with_execution_providers([ExecutionProvider::CPU])?
-            .with_model_from_file(model_path)?;
+        let session = Session::builder()
+            .map_err(|e| {
+                ScannerError::VisionModel(format!("Failed to create session builder: {}", e))
+            })?
+            .commit_from_memory(&model_bytes)
+            .map_err(|e| ScannerError::VisionModel(format!("Failed to load model: {}", e)))?;
 
-        Ok(Self {
-            session,
-            environment,
-        })
+        // Log model input information
+        if let Some(input) = session.inputs.first() {
+            log::info!("Model input: name='{}', shape={:?}", input.name, input.input_type);
+        }
+
+        Ok(Self { session })
     }
 
     /// Detect features in a frame using the neural network
-    pub fn detect_features(&self, frame: &Frame) -> ScannerResult<Vec<Feature>> {
+    pub fn detect_features(&mut self, frame: &Frame) -> ScannerResult<Vec<Feature>> {
+        // Get model input shape to determine preprocessing
+        let (target_height, target_width, channels_last) = if let Some(input) = self.session.inputs.first() {
+            // Parse shape from input type
+            let shape_str = format!("{:?}", input.input_type);
+            log::debug!("Model input shape: {}", shape_str);
+            
+            // Try to detect if model expects NHWC (channels last) or NCHW (channels first)
+            // YOLOv4 typically uses NHWC: [batch, height, width, channels]
+            // Most PyTorch models use NCHW: [batch, channels, height, width]
+            
+            // Heuristic: if last dimension is 3, it's likely NHWC
+            let channels_last = shape_str.contains(", 3]") || shape_str.ends_with("3)");
+            
+            // Try to extract dimensions (default to 416x416 for YOLO, 224x224 for others)
+            let (h, w) = if shape_str.contains("416") {
+                (416, 416)
+            } else {
+                (224, 224)
+            };
+            
+            (h, w, channels_last)
+        } else {
+            (224, 224, false) // Default to NCHW format
+        };
+
+        log::debug!("Preprocessing for {}x{}, channels_last={}", target_width, target_height, channels_last);
+
         // Preprocess image for the model
-        let input_tensor = self.preprocess_image(frame)?;
+        let input_tensor = preprocess_image_for_model(frame, target_width, target_height, channels_last)?;
 
         // Run inference
         let outputs = self
             .session
-            .run(vec![input_tensor])
+            .run(ort::inputs![input_tensor])
             .map_err(|e| ScannerError::VisionModel(format!("Inference failed: {}", e)))?;
 
         // Post-process outputs to extract features
-        self.postprocess_outputs(outputs, frame)
-    }
-
-    fn preprocess_image(&self, frame: &Frame) -> ScannerResult<Value> {
-        preprocess_image_for_model(frame, 224, 224)
+        // In ort 2.0, outputs are accessed by index or name
+        postprocess_model_outputs(outputs, frame.width, frame.height)
     }
 
     fn postprocess_outputs(
         &self,
-        outputs: Vec<Value>,
+        outputs: ort::session::SessionOutputs,
         frame: &Frame,
     ) -> ScannerResult<Vec<Feature>> {
         postprocess_model_outputs(outputs, frame.width, frame.height)
@@ -152,7 +174,7 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
         ))
     })?;
 
-    if face_cascade.empty() {
+    if face_cascade.empty()? {
         return Err(ScannerError::VisionModel(
             "Face cascade is empty - check the cascade file path".to_string(),
         ));
@@ -314,10 +336,12 @@ impl Default for FeatureTracker {
 /// - Normalization to [0, 1] or ImageNet mean/std
 /// - Channel ordering (RGB)
 /// - Batch dimension
+/// - Support for both NCHW and NHWC formats
 pub fn preprocess_image_for_model(
     frame: &Frame,
     target_width: i32,
     target_height: i32,
+    channels_last: bool,
 ) -> ScannerResult<Value> {
     // Convert to RGB
     let rgb = frame.to_rgb()?;
@@ -348,26 +372,41 @@ pub fn preprocess_image_for_model(
         }
     }
 
-    // Reshape to NCHW format (batch, channels, height, width) for ONNX
-    let mut nchw_data = vec![0.0f32; channels * height * width];
-    for c in 0..channels {
-        for y in 0..height {
-            for x in 0..width {
-                let src_idx = (y * width + x) * channels + c;
-                let dst_idx = c * (height * width) + y * width + x;
-                nchw_data[dst_idx] = data[src_idx];
+    let final_data = if channels_last {
+        // NHWC format: [batch, height, width, channels]
+        // Data is already in HWC format, just keep it
+        data
+    } else {
+        // NCHW format: [batch, channels, height, width]
+        // Reshape from HWC to CHW
+        let mut nchw_data = vec![0.0f32; channels * height * width];
+        for c in 0..channels {
+            for y in 0..height {
+                for x in 0..width {
+                    let src_idx = (y * width + x) * channels + c;
+                    let dst_idx = c * (height * width) + y * width + x;
+                    nchw_data[dst_idx] = data[src_idx];
+                }
             }
         }
-    }
+        nchw_data
+    };
 
-    // Create ndarray with shape [1, C, H, W]
-    let array = Array::from_shape_vec((1, channels, height, width), nchw_data)
-        .map_err(|e| ScannerError::VisionModel(format!("Failed to create ndarray: {}", e)))?;
-
-    // Convert to ONNX Value
+    // Convert to ONNX Value with appropriate shape
+    // ort 2.0 uses (dimensions, Vec<T>) format instead of ndarray
     // Note: This creates a CPU tensor. For GPU, use CUDAExecutionProvider
-    Value::from_array(array)
-        .map_err(|e| ScannerError::VisionModel(format!("Failed to create ONNX tensor: {}", e)))
+    let dimensions = if channels_last {
+        // NHWC: [batch, height, width, channels]
+        vec![1, height as i64, width as i64, channels as i64]
+    } else {
+        // NCHW: [batch, channels, height, width]
+        vec![1, channels as i64, height as i64, width as i64]
+    };
+    
+    let tensor_value = Value::from_array((dimensions.as_slice(), final_data))
+        .map_err(|e| ScannerError::VisionModel(format!("Failed to create ONNX tensor: {}", e)))?;
+
+    Ok(tensor_value.into_dyn())
 }
 
 /// Postprocess model outputs to extract features
@@ -377,40 +416,92 @@ pub fn preprocess_image_for_model(
 /// - Keypoint detection: (x, y, confidence) tuples
 /// - Segmentation: feature maps
 pub fn postprocess_model_outputs(
-    outputs: Vec<Value>,
+    outputs: ort::session::SessionOutputs,
     image_width: u32,
     image_height: u32,
 ) -> ScannerResult<Vec<Feature>> {
-    if outputs.is_empty() {
-        return Ok(Vec::new());
-    }
-
     let mut features = Vec::new();
 
     // Extract first output tensor
-    let output = &outputs[0];
+    // SessionOutputs is an iterator over (name, value) pairs
+    let (_name, output) = outputs
+        .iter()
+        .next()
+        .ok_or_else(|| ScannerError::VisionModel("No output tensors from model".to_string()))?;
 
     // Try to interpret as tensor
-    let tensor = output
+    let (shape, data) = output
         .try_extract_tensor::<f32>()
         .map_err(|e| ScannerError::VisionModel(format!("Failed to extract tensor: {}", e)))?;
 
-    let shape = tensor.shape();
-
     // Handle different output formats
     match shape.len() {
+        // YOLOv4 format: [batch, grid_h, grid_w, num_anchors, 85]
+        // 85 = 4 (bbox: x, y, w, h) + 1 (objectness) + 80 (COCO classes)
+        5 if shape[4] == 85 || shape[4] > 80 => {
+            log::info!("Detected YOLOv4 output format: {:?}", shape);
+            let grid_h = shape[1] as usize;
+            let grid_w = shape[2] as usize;
+            let num_anchors = shape[3] as usize;
+            let num_attrs = shape[4] as usize;
+            
+            let confidence_threshold = 0.5;
+            
+            for h in 0..grid_h {
+                for w in 0..grid_w {
+                    for a in 0..num_anchors {
+                        let base_idx = ((h * grid_w + w) * num_anchors + a) * num_attrs;
+                        
+                        // Extract bbox and objectness
+                        let x_center = data[base_idx];
+                        let y_center = data[base_idx + 1];
+                        let objectness = data[base_idx + 4];
+                        
+                        // Find best class
+                        let mut max_class_score = 0.0f32;
+                        let mut best_class = 0;
+                        for c in 0..80 {
+                            let class_score = data[base_idx + 5 + c];
+                            if class_score > max_class_score {
+                                max_class_score = class_score;
+                                best_class = c;
+                            }
+                        }
+                        
+                        // Combined confidence = objectness * class_score
+                        let confidence = objectness * max_class_score;
+                        
+                        if confidence > confidence_threshold {
+                            // Convert from grid coordinates to image coordinates
+                            let x = (w as f32 + x_center) / grid_w as f32 * image_width as f32;
+                            let y = (h as f32 + y_center) / grid_h as f32 * image_height as f32;
+                            
+                            features.push(Feature::new(
+                                x,
+                                y,
+                                format!("yolo_class_{}", best_class),
+                                confidence,
+                            ));
+                        }
+                    }
+                }
+            }
+            
+            log::info!("Extracted {} features from YOLOv4 output", features.len());
+        }
+
         // [batch, num_detections, 6] format (x, y, w, h, confidence, class)
         3 if shape[2] >= 5 => {
-            let num_detections = shape[1];
-            let detection_size = shape[2];
+            let num_detections = shape[1] as usize;
+            let detection_size = shape[2] as usize;
 
             for i in 0..num_detections {
                 let offset = i * detection_size;
-                let x_center = tensor[offset] * image_width as f32;
-                let y_center = tensor[offset + 1] * image_height as f32;
-                let confidence = tensor[offset + 4];
+                let x_center = data[offset] * image_width as f32;
+                let y_center = data[offset + 1] * image_height as f32;
+                let confidence = data[offset + 4];
                 let class_id = if detection_size > 5 {
-                    tensor[offset + 5] as usize
+                    data[offset + 5] as usize
                 } else {
                     0
                 };
@@ -429,13 +520,13 @@ pub fn postprocess_model_outputs(
 
         // [batch, num_keypoints, 3] format (x, y, confidence)
         3 if shape[2] == 3 => {
-            let num_keypoints = shape[1];
+            let num_keypoints = shape[1] as usize;
 
             for i in 0..num_keypoints {
                 let offset = i * 3;
-                let x = tensor[offset] * image_width as f32;
-                let y = tensor[offset + 1] * image_height as f32;
-                let confidence = tensor[offset + 2];
+                let x = data[offset] * image_width as f32;
+                let y = data[offset + 1] * image_height as f32;
+                let confidence = data[offset + 2];
 
                 if confidence > 0.3 {
                     features.push(Feature::new(x, y, format!("keypoint_{}", i), confidence));

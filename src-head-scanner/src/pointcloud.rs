@@ -2,6 +2,7 @@
 
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 
 /// A 3D point with optional color and normal information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,14 +142,18 @@ impl PointCloud {
         let mut tree: KdTree<f32, 3> = KdTree::new();
         for (idx, point) in self.points.iter().enumerate() {
             let pos = point.position;
-            tree.add(&[pos.x, pos.y, pos.z], idx);
+            tree.add(
+                &[pos.x, pos.y, pos.z],
+                u64::try_from(idx).expect("point index exceeds u64 range"),
+            );
         }
 
         // Compute mean distance to k nearest neighbors for each point
         let mut distances = Vec::with_capacity(self.points.len());
         for point in &self.points {
             let pos = point.position;
-            let neighbors = tree.nearest_n(&[pos.x, pos.y, pos.z], k_neighbors + 1);
+            let neighbors =
+                tree.nearest_n::<kiddo::SquaredEuclidean>(&[pos.x, pos.y, pos.z], k_neighbors + 1);
 
             let mean_dist = neighbors
                 .iter()
@@ -259,18 +264,23 @@ impl PointCloud {
         let mut tree: KdTree<f32, 3> = KdTree::new();
         for (idx, point) in self.points.iter().enumerate() {
             let pos = point.position;
-            tree.add(&[pos.x, pos.y, pos.z], idx);
+            tree.add(
+                &[pos.x, pos.y, pos.z],
+                u64::try_from(idx).expect("point index exceeds u64 range"),
+            );
         }
 
         // Estimate normal for each point
         for i in 0..self.points.len() {
             let pos = self.points[i].position;
-            let neighbors = tree.nearest_n(&[pos.x, pos.y, pos.z], k_neighbors);
+            let neighbors =
+                tree.nearest_n::<kiddo::SquaredEuclidean>(&[pos.x, pos.y, pos.z], k_neighbors);
 
             // Collect neighbor positions
             let neighbor_points: Vec<Point3<f32>> = neighbors
                 .iter()
-                .map(|n| self.points[n.item].position)
+                .filter_map(|n| usize::try_from(n.item).ok())
+                .filter_map(|index| self.points.get(index).map(|p| p.position))
                 .collect();
 
             // Compute covariance matrix and find normal via PCA
@@ -354,8 +364,10 @@ impl PointCloud {
         self.bbox_min = None;
         self.bbox_max = None;
 
-        for point in &self.points {
-            self.update_bbox(&point.position);
+        // Collect positions first to avoid borrow checker issues
+        let positions: Vec<_> = self.points.iter().map(|p| p.position).collect();
+        for position in &positions {
+            self.update_bbox(position);
         }
     }
 }
@@ -430,5 +442,19 @@ mod tests {
         let (min, max) = cloud.bounding_box().unwrap();
         assert_eq!(min, Point3::new(-1.0, -2.0, -3.0));
         assert_eq!(max, Point3::new(4.0, 5.0, 6.0));
+    }
+
+    #[test]
+    fn test_kd_tree_index_conversion() {
+        let mut cloud = PointCloud::new();
+        cloud.add_point(Point::new(0.0, 0.0, 0.0));
+        cloud.add_point(Point::new(1.0, 0.0, 0.0));
+        cloud.add_point(Point::new(0.0, 1.0, 0.0));
+        cloud.add_point(Point::new(1.0, 1.0, 0.0));
+
+        cloud.remove_outliers(3, 1.0);
+        cloud.estimate_normals(3);
+
+        assert!(cloud.points().iter().all(|point| point.normal.is_some()));
     }
 }

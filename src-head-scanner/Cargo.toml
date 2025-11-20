@@ -38,6 +38,7 @@ imageproc = "0.25"
 
 # 3D geometry and mesh processing
 nalgebra = { version = "0.33", features = ["serde-serialize"] }
+nalgebra-sparse = "0.10"  # Sparse matrix support for bundle adjustment
 parry3d = "0.17"  # Modern replacement for deprecated ncollide3d
 bytemuck = "1.24"  # For efficient data conversion
 byteorder = "1.5"  # For binary data serialization
@@ -57,8 +58,16 @@ futures = { workspace = true }
 log = "0.4"
 env_logger = "0.11"
 
+# CLI
+clap = { version = "4.5", features = ["derive", "cargo"] }
+indicatif = "0.17"  # Progress bars and spinners
+
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[[bin]]
+name = "head-scanner-cli"
+path = "bin/head_scanner_cli.rs"
 
 [[bench]]
 name = "performance"

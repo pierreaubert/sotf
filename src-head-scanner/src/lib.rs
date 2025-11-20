@@ -208,7 +208,7 @@ impl HeadScanner {
                 };
 
                 // Detect head features
-                let features = if let Some(ref model) = *self.vision_model.read() {
+                let features = if let Some(ref mut model) = *self.vision_model.write() {
                     model.detect_features(&frame)?
                 } else {
                     vision::detect_features_classical(&frame)?
@@ -317,7 +317,7 @@ impl HeadScanner {
         existing_cloud: &PointCloud,
         new_points: Vec<pointcloud::Point>,
     ) -> Vec<pointcloud::Point> {
-        use kiddo::KdTree;
+        use kiddo::{KdTree, SquaredEuclidean};
 
         if existing_cloud.is_empty() {
             return new_points;
@@ -327,7 +327,7 @@ impl HeadScanner {
         let mut tree: KdTree<f32, 3> = KdTree::new();
         for (idx, point) in existing_cloud.points().iter().enumerate() {
             let pos = point.position;
-            tree.add(&[pos.x, pos.y, pos.z], idx);
+            tree.add(&[pos.x, pos.y, pos.z], idx as u64);
         }
 
         // Minimum distance threshold (in cm) - points closer than this are considered duplicates
@@ -340,7 +340,7 @@ impl HeadScanner {
             let pos = point.position;
 
             // Find nearest existing point
-            let nearest = tree.nearest_one(&[pos.x, pos.y, pos.z]);
+            let nearest = tree.nearest_one::<SquaredEuclidean>(&[pos.x, pos.y, pos.z]);
 
             // Only add if far enough from existing points
             if nearest.distance > min_distance_sq {
