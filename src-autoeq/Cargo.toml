@@ -1,6 +1,6 @@
 [package]
 name = "autoeq"
-version = { workspace = true }
+version = "0.2.250"
 description = "Automatic equalization for speakers, headphones and rooms!"
 edition = { workspace = true }
 repository = { workspace = true }

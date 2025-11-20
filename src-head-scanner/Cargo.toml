@@ -24,20 +24,23 @@ parking_lot = { workspace = true }
 convexhull3d = { path = "../src-convexhull3d" }
 
 # Computer vision and image processing
-opencv = { version = "0.92", default-features = false, features = [
+# export DYLD_FALLBACK_LIBRARY_PATH=/Applications/Xcode.app/Contents/Framework
+opencv = { version = "0.97", default-features = false, features = [
     "videoio",
     "imgproc",
     "calib3d",
     "features2d",
-    "highgui"
+    "highgui",
+    "objdetect"
 ] }
 image = "0.25"
 imageproc = "0.25"
 
 # 3D geometry and mesh processing
-nalgebra = "0.33"
+nalgebra = { version = "0.33", features = ["serde-serialize"] }
 parry3d = "0.17"  # Modern replacement for deprecated ncollide3d
 bytemuck = "1.24"  # For efficient data conversion
+byteorder = "1.5"  # For binary data serialization
 
 # ML inference for vision models (ONNX Runtime)
 ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries"] }

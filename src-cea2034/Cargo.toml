@@ -1,6 +1,6 @@
 [package]
 name = "autoeq-cea2034"
-version = { workspace = true }
+version = "0.2.190"
 edition = { workspace = true }
 repository = { workspace = true }
 authors = { workspace = true }
