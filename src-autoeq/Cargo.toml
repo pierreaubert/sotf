@@ -24,10 +24,10 @@ tokio = { workspace = true }
 urlencoding = { workspace = true }
 
 # AutoEQ crates
-autoeq-iir = { path = "../src-iir" }
-autoeq-de = { path = "../src-de" }
-autoeq-cea2034 = { path = "../src-cea2034" }
-autoeq-env = { path = "../src-env" }
+autoeq-iir = { path = "../src-iir", version="0.2" }
+autoeq-de = { path = "../src-de", version="0.2" }
+autoeq-cea2034 = { path = "../src-cea2034", version="0.2" }
+autoeq-env = { path = "../src-env", version="0.2" }
 
 # Core numerical computing
 ndarray = { workspace = true }
