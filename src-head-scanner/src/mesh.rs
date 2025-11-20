@@ -4,7 +4,7 @@ use crate::convexhull::ConvexHull3D;
 use crate::error::{ScannerError, ScannerResult};
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -454,10 +454,9 @@ impl Mesh {
         Ok(())
     }
 
-    /// Generic export method that chooses format based on file extension
+    /// Export mesh to a file (format determined by extension)
     pub fn export(&self, path: &str) -> ScannerResult<()> {
         let path_lower = path.to_lowercase();
-
         if path_lower.ends_with(".obj") {
             self.export_obj(path)
         } else if path_lower.ends_with(".ply") {
@@ -466,10 +465,278 @@ impl Mesh {
             self.export_stl(path)
         } else {
             Err(ScannerError::InvalidConfig(format!(
-                "Unsupported mesh format: {}. Supported formats: OBJ, PLY, STL",
+                "Unsupported mesh format: {}",
                 path
             )))
         }
+    }
+
+    /// Build adjacency information for mesh smoothing
+    fn build_adjacency(&self) -> Vec<HashSet<usize>> {
+        let mut adjacency = vec![HashSet::new(); self.vertices.len()];
+
+        for triangle in &self.triangles {
+            let [i0, i1, i2] = triangle.indices;
+
+            // Each vertex is adjacent to the other two in the triangle
+            adjacency[i0].insert(i1);
+            adjacency[i0].insert(i2);
+            adjacency[i1].insert(i0);
+            adjacency[i1].insert(i2);
+            adjacency[i2].insert(i0);
+            adjacency[i2].insert(i1);
+        }
+
+        adjacency
+    }
+
+    /// Apply Laplacian smoothing to the mesh
+    ///
+    /// This is a simple smoothing algorithm that moves each vertex towards
+    /// the average position of its neighbors.
+    ///
+    /// # Arguments
+    /// * `iterations` - Number of smoothing iterations
+    /// * `lambda` - Smoothing factor (0.0 = no smoothing, 1.0 = full smoothing)
+    pub fn smooth_laplacian(&mut self, iterations: usize, lambda: f32) {
+        let adjacency = self.build_adjacency();
+
+        for _ in 0..iterations {
+            let mut new_positions = Vec::with_capacity(self.vertices.len());
+
+            for (i, vertex) in self.vertices.iter().enumerate() {
+                let neighbors = &adjacency[i];
+
+                if neighbors.is_empty() {
+                    new_positions.push(vertex.position);
+                    continue;
+                }
+
+                // Compute average position of neighbors
+                let mut avg = Vector3::zeros();
+                for &neighbor_idx in neighbors {
+                    avg += self.vertices[neighbor_idx].position.coords;
+                }
+                avg /= neighbors.len() as f32;
+
+                // Move vertex towards average position
+                let current = vertex.position.coords;
+                let new_pos = current + lambda * (avg - current);
+                new_positions.push(Point3::from(new_pos));
+            }
+
+            // Update vertex positions
+            for (vertex, new_pos) in self.vertices.iter_mut().zip(new_positions.iter()) {
+                vertex.position = *new_pos;
+            }
+        }
+
+        // Recompute normals after smoothing
+        self.compute_normals();
+    }
+
+    /// Apply Taubin smoothing to the mesh
+    ///
+    /// Taubin smoothing is a two-step process that prevents mesh shrinkage
+    /// by alternating between smoothing and inflation steps.
+    ///
+    /// # Arguments
+    /// * `iterations` - Number of smoothing iterations
+    /// * `lambda` - Smoothing factor (typically 0.5-0.7)
+    /// * `mu` - Inflation factor (typically -0.5 to -0.7, slightly larger than -lambda)
+    pub fn smooth_taubin(&mut self, iterations: usize, lambda: f32, mu: f32) {
+        let adjacency = self.build_adjacency();
+
+        for _ in 0..iterations {
+            // Smoothing step (lambda)
+            self.apply_laplacian_step(&adjacency, lambda);
+
+            // Inflation step (mu, typically negative)
+            self.apply_laplacian_step(&adjacency, mu);
+        }
+
+        // Recompute normals after smoothing
+        self.compute_normals();
+    }
+
+    /// Apply a single Laplacian smoothing step
+    fn apply_laplacian_step(&mut self, adjacency: &[HashSet<usize>], factor: f32) {
+        let mut new_positions = Vec::with_capacity(self.vertices.len());
+
+        for (i, vertex) in self.vertices.iter().enumerate() {
+            let neighbors = &adjacency[i];
+
+            if neighbors.is_empty() {
+                new_positions.push(vertex.position);
+                continue;
+            }
+
+            // Compute average position of neighbors
+            let mut avg = Vector3::zeros();
+            for &neighbor_idx in neighbors {
+                avg += self.vertices[neighbor_idx].position.coords;
+            }
+            avg /= neighbors.len() as f32;
+
+            // Move vertex towards/away from average position
+            let current = vertex.position.coords;
+            let new_pos = current + factor * (avg - current);
+            new_positions.push(Point3::from(new_pos));
+        }
+
+        // Update vertex positions
+        for (vertex, new_pos) in self.vertices.iter_mut().zip(new_positions.iter()) {
+            vertex.position = *new_pos;
+        }
+    }
+
+    /// Apply feature-preserving smoothing using bilateral filtering
+    ///
+    /// This algorithm preserves sharp features while smoothing flat regions.
+    ///
+    /// # Arguments
+    /// * `iterations` - Number of smoothing iterations
+    /// * `spatial_sigma` - Spatial distance weight (larger = more smoothing)
+    /// * `normal_sigma` - Normal similarity weight (smaller = preserve features better)
+    pub fn smooth_bilateral(&mut self, iterations: usize, spatial_sigma: f32, normal_sigma: f32) {
+        let adjacency = self.build_adjacency();
+
+        // Ensure normals are computed
+        self.compute_normals();
+
+        for _ in 0..iterations {
+            let mut new_positions = Vec::with_capacity(self.vertices.len());
+
+            for (i, vertex) in self.vertices.iter().enumerate() {
+                let neighbors = &adjacency[i];
+
+                if neighbors.is_empty() || vertex.normal.is_none() {
+                    new_positions.push(vertex.position);
+                    continue;
+                }
+
+                let vertex_normal = vertex.normal.unwrap();
+                let vertex_pos = vertex.position;
+
+                let mut weighted_sum = Vector3::zeros();
+                let mut weight_sum = 0.0;
+
+                for &neighbor_idx in neighbors {
+                    let neighbor = &self.vertices[neighbor_idx];
+                    let neighbor_pos = neighbor.position;
+
+                    // Spatial distance weight
+                    let spatial_dist = (neighbor_pos - vertex_pos).magnitude();
+                    let spatial_weight = (-spatial_dist.powi(2) / (2.0 * spatial_sigma.powi(2))).exp();
+
+                    // Normal similarity weight (feature preservation)
+                    let normal_weight = if let Some(neighbor_normal) = neighbor.normal {
+                        let normal_diff = (vertex_normal - neighbor_normal).magnitude();
+                        (-normal_diff.powi(2) / (2.0 * normal_sigma.powi(2))).exp()
+                    } else {
+                        1.0
+                    };
+
+                    let total_weight = spatial_weight * normal_weight;
+                    weighted_sum += neighbor_pos.coords * total_weight;
+                    weight_sum += total_weight;
+                }
+
+                // Include the vertex itself
+                weighted_sum += vertex_pos.coords;
+                weight_sum += 1.0;
+
+                let new_pos = Point3::from(weighted_sum / weight_sum);
+                new_positions.push(new_pos);
+            }
+
+            // Update vertex positions
+            for (vertex, new_pos) in self.vertices.iter_mut().zip(new_positions.iter()) {
+                vertex.position = *new_pos;
+            }
+
+            // Recompute normals for next iteration
+            self.compute_normals();
+        }
+    }
+
+    /// Apply HC (Humphrey's Classes) smoothing
+    ///
+    /// This is a more advanced smoothing algorithm that better preserves volume.
+    ///
+    /// # Arguments
+    /// * `iterations` - Number of smoothing iterations
+    /// * `alpha` - Smoothing parameter (0.0-1.0, typically 0.5)
+    /// * `beta` - Volume preservation parameter (0.0-1.0, typically 0.5-0.75)
+    pub fn smooth_hc(&mut self, iterations: usize, alpha: f32, beta: f32) {
+        let adjacency = self.build_adjacency();
+
+        for _ in 0..iterations {
+            // Step 1: Compute Laplacian smoothing
+            let mut smoothed_positions = Vec::with_capacity(self.vertices.len());
+
+            for (i, vertex) in self.vertices.iter().enumerate() {
+                let neighbors = &adjacency[i];
+
+                if neighbors.is_empty() {
+                    smoothed_positions.push(vertex.position);
+                    continue;
+                }
+
+                let mut avg = Vector3::zeros();
+                for &neighbor_idx in neighbors {
+                    avg += self.vertices[neighbor_idx].position.coords;
+                }
+                avg /= neighbors.len() as f32;
+
+                let current = vertex.position.coords;
+                let smoothed = current + alpha * (avg - current);
+                smoothed_positions.push(Point3::from(smoothed));
+            }
+
+            // Step 2: Compute displacement vectors
+            let mut displacements = Vec::with_capacity(self.vertices.len());
+            for (original, smoothed) in self.vertices.iter().zip(smoothed_positions.iter()) {
+                displacements.push(smoothed.coords - original.position.coords);
+            }
+
+            // Step 3: Apply volume-preserving correction
+            let mut new_positions = Vec::with_capacity(self.vertices.len());
+
+            for (i, vertex) in self.vertices.iter().enumerate() {
+                let neighbors = &adjacency[i];
+
+                if neighbors.is_empty() {
+                    new_positions.push(smoothed_positions[i]);
+                    continue;
+                }
+
+                // Average displacement of neighbors
+                let mut avg_displacement = Vector3::zeros();
+                for &neighbor_idx in neighbors {
+                    avg_displacement += displacements[neighbor_idx];
+                }
+                avg_displacement /= neighbors.len() as f32;
+
+                // Apply correction
+                let correction = displacements[i] - avg_displacement;
+                let final_pos = smoothed_positions[i].coords - beta * correction;
+                new_positions.push(Point3::from(final_pos));
+            }
+
+            // Update vertex positions
+            for (vertex, new_pos) in self.vertices.iter_mut().zip(new_positions.iter()) {
+                vertex.position = *new_pos;
+            }
+        }
+
+        // Recompute normals after smoothing
+        self.compute_normals();
+    }
+
+    /// Get mutable access to vertices (for advanced operations)
+    pub fn vertices_mut(&mut self) -> &mut [Vertex] {
+        &mut self.vertices
     }
 }
 

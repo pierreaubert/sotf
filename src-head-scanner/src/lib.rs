@@ -42,6 +42,7 @@
 //! ```
 
 pub mod bundle_adjustment;
+pub mod calibration;
 pub mod camera;
 pub mod convexhull;
 pub mod coverage;
@@ -185,7 +186,7 @@ impl HeadScanner {
                 )));
             }
 
-            let model = vision::VisionModel::load(model_path)?;
+            let model = vision::VisionModel::load_with_gpu(model_path, self.config.use_gpu)?;
             *self.vision_model.write() = Some(model);
         }
 
@@ -319,6 +320,16 @@ impl HeadScanner {
             .as_ref()
             .ok_or(ScannerError::CameraNotInitialized)?;
         camera.capture_frame()
+    }
+
+    /// Check if GPU acceleration is enabled for ML inference
+    pub fn is_using_gpu(&self) -> bool {
+        let model_guard = self.vision_model.read();
+        if let Some(model) = model_guard.as_ref() {
+            model.is_using_gpu()
+        } else {
+            false
+        }
     }
 
     /// Filter new points to remove duplicates and points too close to existing ones

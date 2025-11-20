@@ -47,19 +47,66 @@ impl Feature {
 /// Vision model for advanced feature detection using ONNX
 pub struct VisionModel {
     session: Session,
+    use_gpu: bool,
 }
 
 impl VisionModel {
-    /// Load a vision model from an ONNX file
+    /// Load a vision model from an ONNX file with optional GPU acceleration
     pub fn load(model_path: &str) -> ScannerResult<Self> {
+        Self::load_with_gpu(model_path, true)
+    }
+
+    /// Load a vision model with explicit GPU preference
+    pub fn load_with_gpu(model_path: &str, prefer_gpu: bool) -> ScannerResult<Self> {
         // In ort 2.0, load model using commit_from_file on the builder
         let model_bytes = std::fs::read(model_path)
             .map_err(|e| ScannerError::VisionModel(format!("Failed to read model file: {}", e)))?;
 
-        let session = Session::builder()
+        let mut builder = Session::builder()
             .map_err(|e| {
                 ScannerError::VisionModel(format!("Failed to create session builder: {}", e))
-            })?
+            })?;
+
+        // Try to enable GPU execution providers
+        let mut use_gpu = false;
+        if prefer_gpu {
+            // Note: GPU execution providers require additional setup
+            // For now, we'll use CPU but mark GPU as "requested"
+            // Future: Add CUDA, CoreML, DirectML when ort crate supports them
+            
+            #[cfg(target_os = "macos")]
+            {
+                // Apple Silicon has Neural Engine support via CoreML
+                log::info!("GPU acceleration requested (CoreML/Neural Engine on Apple Silicon)");
+                // TODO: Enable when ort 2.0 stable supports CoreML
+                use_gpu = false; // Will be true when CoreML is available
+            }
+            
+            #[cfg(target_os = "windows")]
+            {
+                // Windows can use DirectML for GPU acceleration
+                log::info!("GPU acceleration requested (DirectML on Windows)");
+                // TODO: Enable when ort 2.0 stable supports DirectML
+                use_gpu = false; // Will be true when DirectML is available
+            }
+            
+            #[cfg(target_os = "linux")]
+            {
+                // Linux can use CUDA for NVIDIA GPUs
+                log::info!("GPU acceleration requested (CUDA on Linux)");
+                // TODO: Enable when ort 2.0 stable supports CUDA
+                use_gpu = false; // Will be true when CUDA is available
+            }
+
+            if !use_gpu {
+                log::info!("GPU execution providers not yet available in ort 2.0-rc.10, using optimized CPU");
+                log::info!("Note: ONNX Runtime will still use CPU optimizations (SIMD, multi-threading)");
+            }
+        } else {
+            log::info!("GPU acceleration disabled, using CPU");
+        }
+
+        let session = builder
             .commit_from_memory(&model_bytes)
             .map_err(|e| ScannerError::VisionModel(format!("Failed to load model: {}", e)))?;
 
@@ -68,7 +115,12 @@ impl VisionModel {
             log::info!("Model input: name='{}', shape={:?}", input.name, input.input_type);
         }
 
-        Ok(Self { session })
+        Ok(Self { session, use_gpu })
+    }
+
+    /// Check if GPU acceleration is enabled
+    pub fn is_using_gpu(&self) -> bool {
+        self.use_gpu
     }
 
     /// Detect features in a frame using the neural network
