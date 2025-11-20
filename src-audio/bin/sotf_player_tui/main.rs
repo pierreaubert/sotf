@@ -32,6 +32,14 @@ struct Args {
     /// Auto-scan on startup
     #[arg(short, long)]
     scan: bool,
+
+    /// Enable binaural decoder plugin
+    #[arg(long)]
+    binaural: bool,
+
+    /// Path to SOFA file for binaural decoder
+    #[arg(long)]
+    sofa_file: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -65,6 +73,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Enable loudness monitoring
     let _ = player.enable_loudness_monitoring();
+
+    // Configure binaural decoder if requested
+    if args.binaural {
+        use plugins::{PluginSettings, PluginType};
+
+        // Validate that SOFA file is provided
+        let sofa_file = args.sofa_file.clone().ok_or(
+            "Binaural decoder requires --sofa-file to be specified"
+        )?;
+
+        // Determine input channels from existing plugin chain
+        // This allows proper configuration when used after an upmixer
+        let input_channels = app.plugin_chain.output_channels();
+
+        // Add binaural decoder plugin to the chain
+        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
+
+        // Configure the plugin with SOFA file path and detected input channels
+        if let Some(plugin) = app.plugin_chain.get_plugin_mut(plugin_idx) {
+            plugin.settings = PluginSettings::BinauralDecoder {
+                sofa_file: sofa_file.to_string_lossy().to_string(),
+                input_channels,
+            };
+            log::info!(
+                "Binaural decoder enabled with {} input channels, SOFA file: {:?}",
+                input_channels,
+                sofa_file
+            );
+        }
+    }
 
     // Load available output devices
     app.load_output_devices();

@@ -94,6 +94,42 @@ fn create_loudness_compensation_plugin_config(
     })
 }
 
+/// Create binaural decoder PluginConfig from parameters
+fn create_binaural_decoder_plugin_config(
+    sofa_file: PathBuf,
+    input_channels: usize,
+    fft_size: usize,
+) -> Result<PluginConfig, String> {
+    use serde_json::json;
+
+    // Validate FFT size
+    if !fft_size.is_power_of_two() {
+        return Err(format!(
+            "Binaural decoder FFT size must be power of 2, got {}",
+            fft_size
+        ));
+    }
+
+    // Validate that SOFA file exists
+    if !sofa_file.exists() {
+        return Err(format!(
+            "SOFA file does not exist: {:?}",
+            sofa_file
+        ));
+    }
+
+    let parameters = json!({
+        "sofa_file": sofa_file.to_string_lossy().to_string(),
+        "input_channels": input_channels,
+        "fft_size": fft_size,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "binaural_decoder".to_string(),
+        parameters,
+    })
+}
+
 /// Convert Biquad filters to PluginConfig for EQ plugin
 fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
     use serde_json::json;
@@ -222,6 +258,18 @@ enum Commands {
         /// Upmixer rear ambient gain (0.0-2.0)
         #[arg(long = "upmixer-gain-rear-ambient", default_value = "1.0")]
         upmixer_gain_rear_ambient: f32,
+
+        /// Enable binaural decoder (converts multi-channel to binaural stereo using HRTFs)
+        #[arg(long = "binaural", default_value_t = false)]
+        binaural: bool,
+
+        /// Path to SOFA file for binaural decoder (required when --binaural is enabled)
+        #[arg(long = "sofa-file")]
+        sofa_file: Option<PathBuf>,
+
+        /// Binaural decoder FFT size (must be power of 2: 2048, 4096, 8192)
+        #[arg(long = "binaural-fft-size", default_value = "4096")]
+        binaural_fft_size: usize,
     },
 
     /// Get current playback status
@@ -266,6 +314,9 @@ fn main() {
             upmixer_gain_front_direct,
             upmixer_gain_front_ambient,
             upmixer_gain_rear_ambient,
+            binaural,
+            sofa_file,
+            binaural_fft_size,
         } => {
             // Parse filters
             let filter_params = match parse_filters(&filters) {
@@ -300,6 +351,9 @@ fn main() {
                 upmixer_gain_front_direct,
                 upmixer_gain_front_ambient,
                 upmixer_gain_rear_ambient,
+                binaural,
+                sofa_file,
+                binaural_fft_size,
             ) {
                 eprintln!("Error: {}", e);
                 std::process::exit(1);
@@ -606,6 +660,9 @@ fn play_stream(
     upmixer_gain_front_direct: f32,
     upmixer_gain_front_ambient: f32,
     upmixer_gain_rear_ambient: f32,
+    binaural: bool,
+    sofa_file: Option<PathBuf>,
+    binaural_fft_size: usize,
 ) -> Result<(), String> {
     println!("Starting streaming playback...");
     println!("  File: {:?}", file);
@@ -687,6 +744,39 @@ fn play_stream(
         output_channel_count
     } else {
         audio_info.spec.channels as usize
+    };
+
+    // Binaural decoder (if enabled, must come after upmixer)
+    let output_channels = if binaural {
+        // Validate that SOFA file is provided
+        let sofa_path = sofa_file.ok_or(
+            "Binaural decoder requires --sofa-file to be specified"
+        )?;
+
+        // Input channels come from previous plugin (upmixer or original audio)
+        let input_channels = output_channels;
+
+        println!("Enabling binaural decoder plugin:");
+        println!("  Input channels: {}", input_channels);
+        println!("  Output channels: 2 (binaural stereo)");
+        println!("  SOFA file: {:?}", sofa_path);
+        println!("  FFT size: {}", binaural_fft_size);
+        println!();
+
+        let binaural_plugin = create_binaural_decoder_plugin_config(
+            sofa_path,
+            input_channels,
+            binaural_fft_size,
+        )?;
+        plugins.push(binaural_plugin);
+        eprintln!(
+            "Added binaural decoder plugin: {}ch -> 2ch (binaural)",
+            input_channels
+        );
+
+        2 // Binaural always outputs stereo
+    } else {
+        output_channels
     };
 
     // Loudness compensation (before channel mapping)

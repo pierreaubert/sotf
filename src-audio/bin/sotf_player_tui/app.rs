@@ -571,37 +571,47 @@ impl App {
     pub fn toggle_directory_expansion(&mut self) {
         // Find which directory in the tree we're selecting
         let tree_items = self.get_directory_tree_items();
-        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
-            // Only toggle if we're on a main directory (level 0)
-            if *level == 0 {
-                // Find the directory in our list and toggle it
-                if let Some(dir_info) = self
-                    .library
-                    .directories
-                    .iter_mut()
-                    .find(|d| d.path == *path)
-                {
-                    dir_info.expanded = !dir_info.expanded;
+        if let Some((path, _, _)) = tree_items.get(self.selected_directory_index) {
+            // Helper to find and toggle directory recursively
+            fn toggle_recursive(directories: &mut [crate::library::DirectoryInfo], target_path: &std::path::Path) -> bool {
+                for dir in directories {
+                    if dir.path == target_path {
+                        dir.expanded = !dir.expanded;
+                        return true;
+                    }
+                    if dir.expanded {
+                        if toggle_recursive(&mut dir.subdirectories, target_path) {
+                            return true;
+                        }
+                    }
                 }
+                false
             }
-            // If we're on a subdirectory (level 1), do nothing - it's already part of the tree
-            // Don't add it as a new main directory or trigger a rescan
+
+            toggle_recursive(&mut self.library.directories, path);
         }
     }
 
     /// Get flattened directory tree for display
     pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
         let mut items = Vec::new();
-        for dir_info in &self.library.directories {
-            // Add the main directory (level 0)
-            items.push((dir_info.path.clone(), 0, dir_info.expanded));
-
-            // Add subdirectories if expanded (level 1)
+        
+        fn add_recursive(
+            items: &mut Vec<(PathBuf, usize, bool)>, 
+            dir_info: &crate::library::DirectoryInfo, 
+            level: usize
+        ) {
+            items.push((dir_info.path.clone(), level, dir_info.expanded));
+            
             if dir_info.expanded {
                 for subdir in &dir_info.subdirectories {
-                    items.push((subdir.clone(), 1, false));
+                    add_recursive(items, subdir, level + 1);
                 }
             }
+        }
+
+        for dir_info in &self.library.directories {
+            add_recursive(&mut items, dir_info, 0);
         }
         items
     }

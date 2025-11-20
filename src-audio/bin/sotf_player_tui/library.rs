@@ -13,9 +13,10 @@ use crate::database::MusicDatabase;
 pub struct DirectoryInfo {
     pub path: PathBuf,
     pub file_count: usize,
+    pub album_count: usize,
     pub last_scanned: Option<SystemTime>,
     pub expanded: bool,
-    pub subdirectories: Vec<PathBuf>,
+    pub subdirectories: Vec<DirectoryInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,6 +30,7 @@ pub struct Track {
 
 #[derive(Debug, Clone)]
 pub struct Album {
+    pub id: Option<i64>,
     pub artist: String,
     pub title: String,
     pub year: Option<u32>,
@@ -168,25 +170,30 @@ impl MusicLibrary {
             self.directories.retain(|d| !to_remove.contains(&d.path));
         }
 
-        // Get immediate subdirectories
-        let subdirectories = std::fs::read_dir(&path)
-            .ok()
-            .map(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.path().is_dir())
-                    .map(|e| e.path())
-                    .collect()
-            })
-            .unwrap_or_default();
+        // Helper to recursively build directory info
+        fn build_directory_info(path: PathBuf) -> DirectoryInfo {
+            let mut subdirectories = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&path) {
+                for entry in entries.filter_map(|e| e.ok()) {
+                    if entry.path().is_dir() {
+                        subdirectories.push(build_directory_info(entry.path()));
+                    }
+                }
+            }
+            // Sort subdirectories by name
+            subdirectories.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
 
-        self.directories.push(DirectoryInfo {
-            path,
-            file_count: 0,
-            last_scanned: None,
-            expanded: false,
-            subdirectories,
-        });
+            DirectoryInfo {
+                path,
+                file_count: 0,
+                album_count: 0,
+                last_scanned: None,
+                expanded: false,
+                subdirectories,
+            }
+        }
+
+        self.directories.push(build_directory_info(path));
 
         Ok(true) // New directory added, scan needed
     }
@@ -241,15 +248,28 @@ impl MusicLibrary {
         let scan_time = SystemTime::now();
         let mut last_progress_report = SystemTime::now();
 
-        // Create a map of directory index to file count
-        let mut dir_file_counts: HashMap<usize, usize> = HashMap::new();
+        // Create a map of directory path to (file count, album count)
+        let mut dir_stats: HashMap<PathBuf, (usize, usize)> = HashMap::new();
 
-        for (dir_idx, dir_info) in self.directories.clone().iter().enumerate() {
+        for dir_info in &self.directories {
+            // We need to scan recursively and aggregate stats
+            // But scan_directory already does a recursive walk
+            // We need scan_directory to return stats per subdirectory?
+            // Or we can just scan the whole tree and then attribute files to directories?
+            
+            // Actually, scan_directory walks the whole tree.
+            // We can modify scan_directory to return a map of directory -> stats?
+            // Or just let it return total stats and we figure out the rest?
+            
+            // The issue is we want to show stats for each subdirectory in the tree.
+            // So we need to know how many tracks/albums are in each subdirectory.
+            
+            // Let's modify scan_directory to take a mutable map of directory stats
             let (tracks, scanned) =
-                self.scan_directory(&dir_info.path, &mut album_map, incremental)?;
+                self.scan_directory(&dir_info.path, &mut album_map, incremental, &mut dir_stats)?;
+            
             total_tracks += tracks;
             scanned_tracks += scanned;
-            dir_file_counts.insert(dir_idx, tracks);
 
             // Report progress after each directory and every 30 seconds
             let now = SystemTime::now();
@@ -267,12 +287,73 @@ impl MusicLibrary {
         // Final progress report
         progress_callback(total_tracks, album_map.len());
 
-        // Update directory info with file counts and scan time
-        for (dir_idx, file_count) in dir_file_counts {
-            if let Some(dir_info) = self.directories.get_mut(dir_idx) {
-                dir_info.file_count = file_count;
-                dir_info.last_scanned = Some(scan_time);
+        // Calculate album counts per directory
+        // We use a temporary map to store sets of album keys per directory to ensure uniqueness
+        let mut dir_albums: HashMap<PathBuf, std::collections::HashSet<(String, String)>> = HashMap::new();
+
+        for ((artist, title), album) in &album_map {
+            let key = (artist.clone(), title.clone());
+            for track in &album.tracks {
+                if let Some(parent) = track.path.parent() {
+                    dir_albums
+                        .entry(parent.to_path_buf())
+                        .or_default()
+                        .insert(key.clone());
+                }
             }
+        }
+
+        // Update dir_stats with album counts
+        for (dir_path, albums) in dir_albums {
+            let stats = dir_stats.entry(dir_path).or_insert((0, 0));
+            stats.1 = albums.len();
+        }
+
+        // Helper to update directory info recursively
+        fn update_dir_info(
+            info: &mut DirectoryInfo, 
+            stats: &HashMap<PathBuf, (usize, usize)>,
+            scan_time: SystemTime
+        ) {
+            // Aggregate stats from this directory and all subdirectories
+            // Or does stats already contain aggregated data?
+            // If scan_directory walks everything, we can just look up the path in stats?
+            // But scan_directory might not have entries for intermediate directories if they have no files directly?
+            
+            // Let's assume stats contains counts for each directory that has files.
+            // We want the count to be recursive (files in this dir + subdirs).
+            
+            // Actually, let's make scan_directory populate stats for every directory it encounters.
+            
+            // For now, let's just try to update from the map if it exists
+            // But we need to aggregate for the tree view?
+            // Usually "tracks in this folder" means recursive.
+            
+            // Let's do a post-order traversal to aggregate counts
+            let mut my_files = 0;
+            let mut my_albums = 0;
+            
+            // First recurse
+            for subdir in &mut info.subdirectories {
+                update_dir_info(subdir, stats, scan_time);
+                my_files += subdir.file_count;
+                my_albums += subdir.album_count;
+            }
+            
+            // Then add own files (from stats map)
+            if let Some((files, albums)) = stats.get(&info.path) {
+                my_files += files;
+                my_albums += albums;
+            }
+            
+            info.file_count = my_files;
+            info.album_count = my_albums;
+            info.last_scanned = Some(scan_time);
+        }
+
+        // Update directory info with file counts and scan time
+        for dir_info in &mut self.directories {
+            update_dir_info(dir_info, &dir_stats, scan_time);
         }
 
         // Merge with existing albums if we have a database
@@ -337,10 +418,16 @@ impl MusicLibrary {
         dir: &Path,
         album_map: &mut HashMap<(String, String), Album>,
         incremental: bool,
+        dir_stats: &mut HashMap<PathBuf, (usize, usize)>,
     ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
-
+        
+        // We need to track albums found in each directory to avoid double counting
+        // But an album might be split across directories?
+        // For simplicity, let's count unique albums found in this directory (non-recursive)
+        // We'll use a local map for this directory's albums
+        
         for entry in WalkDir::new(dir)
             .follow_links(true)
             .into_iter()
@@ -358,6 +445,16 @@ impl MusicLibrary {
                     "flac" | "mp3" | "m4a" | "aac" | "ogg" | "opus" | "wav"
                 ) {
                     total_tracks += 1;
+                    
+                    // Update stats for the parent directory of this file
+                    if let Some(parent) = path.parent() {
+                        let stats = dir_stats.entry(parent.to_path_buf()).or_insert((0, 0));
+                        stats.0 += 1;
+                        // We'll update album count later or try to track it here?
+                        // Tracking unique albums per directory is tricky if we process file by file.
+                        // Let's just count tracks for now in the stats map, and maybe estimate albums?
+                        // Or we can track unique albums per directory in a separate map?
+                    }
 
                     // Check if we should skip this file in incremental mode
                     if incremental && let Some(db) = &self.db {
@@ -380,8 +477,16 @@ impl MusicLibrary {
                             .album
                             .unwrap_or_else(|| "Unknown Album".to_string());
                         let key = (artist.clone(), album_title.clone());
+                        
+                        // Track that this album is present in this directory
+                        if let Some(_parent) = path.parent() {
+                            // This is getting complicated to track unique albums per directory efficiently
+                            // without storing a set for each directory.
+                            // But we can do it.
+                        }
 
                         let album = album_map.entry(key).or_insert_with(|| Album {
+                            id: None,
                             artist,
                             title: album_title,
                             year: metadata.year,
@@ -402,11 +507,40 @@ impl MusicLibrary {
                 }
             }
         }
+        
+        // Post-process to count unique albums per directory
+        // This is expensive if we iterate everything again.
+        // Maybe we can just iterate the album_map at the end?
+        // For each album, look at its tracks, find their parent directories, and update the set of albums for that directory.
+        
+        // Let's do that in scan_incremental_with_progress instead of here.
+        // So here we just update track counts.
 
         Ok((total_tracks, scanned_tracks))
     }
 
     pub fn search_albums(&self, query: &str) -> Vec<&Album> {
+        // Try to use FTS5 search if database is available
+        if let Some(db) = &self.db {
+            if let Ok(album_ids) = db.search_library(query) {
+                if !album_ids.is_empty() {
+                    return self
+                        .albums
+                        .iter()
+                        .filter(|album| {
+                            if let Some(id) = album.id {
+                                album_ids.contains(&id)
+                            } else {
+                                false
+                            }
+                        })
+                        .collect();
+                }
+            }
+        }
+
+        // Fallback to legacy search if DB search fails or returns no results
+        // (or if we just want to support in-memory search as well)
         let query = query.to_lowercase();
         self.albums
             .iter()

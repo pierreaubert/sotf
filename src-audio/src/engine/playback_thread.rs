@@ -157,6 +157,7 @@ struct PlaybackState {
     volume: Arc<parking_lot::RwLock<f32>>,
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
+    last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
 }
 
 impl PlaybackState {
@@ -166,6 +167,7 @@ impl PlaybackState {
             volume: Arc::new(parking_lot::RwLock::new(1.0)),
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
+            last_buffer_level: Arc::new(AtomicU64::new(100)), // Start at 100%
         }
     }
 }
@@ -402,15 +404,54 @@ fn build_output_stream(
                 {
                     let mut ring_buffer = state_clone.ring_buffer.lock();
                     let available = ring_buffer.available_read();
+                    let capacity = ring_buffer.capacity;
+                    let requested = data.len();
+
+                    // Calculate buffer fill percentage
+                    let fill_percent = if capacity > 0 {
+                        (available * 100) / capacity
+                    } else {
+                        0
+                    };
+
+                    // Track buffer level changes (log when it drops below certain thresholds)
+                    let last_level = state_clone.last_buffer_level.load(Ordering::Relaxed);
+                    state_clone.last_buffer_level.store(fill_percent as u64, Ordering::Relaxed);
+
+                    // Log buffer level warnings
+                    if fill_percent < 25 && last_level >= 25 {
+                        log::warn!(
+                            "[Playback] Buffer low: {}% ({}/{} samples, requested: {})",
+                            fill_percent,
+                            available,
+                            capacity,
+                            requested
+                        );
+                    } else if fill_percent < 10 && last_level >= 10 {
+                        log::warn!(
+                            "[Playback] Buffer critical: {}% ({}/{} samples, requested: {})",
+                            fill_percent,
+                            available,
+                            capacity,
+                            requested
+                        );
+                    }
 
                     // Detect underrun
-                    if available < data.len() {
+                    if available < requested {
                         let current_underruns =
                             state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
                         if current_underruns != last_underrun_count {
                             event_tx.send(ThreadEvent::PlaybackUnderrun).ok();
                             last_underrun_count = current_underruns;
                         }
+                        log::warn!(
+                            "[Playback] UNDERRUN #{}: buffer has {} samples but need {} ({}% full)",
+                            current_underruns + 1,
+                            available,
+                            requested,
+                            fill_percent
+                        );
                     }
 
                     ring_buffer.read(data);
@@ -429,7 +470,7 @@ fn build_output_stream(
                 }
             },
             |err| {
-                log::debug!("[Playback Thread] Stream error: {}", err);
+                log::warn!("[Playback Thread] Stream error: {}", err);
             },
             None,
         )

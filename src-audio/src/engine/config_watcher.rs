@@ -16,7 +16,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 use std::time::Duration;
 
-const SPIN_MS_DELAY_WATCHER: u64 = 100;
+const SPIN_MS_DELAY_WATCHER: u64 = 300;
 
 /// Config watcher events
 #[derive(Debug, Clone)]

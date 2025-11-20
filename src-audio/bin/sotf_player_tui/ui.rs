@@ -600,33 +600,56 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
                     .unwrap_or_else(|| path.display().to_string())
             };
 
-            // For main directories (level 0), add track count and last scan time
-            let info_str = if *level == 0 {
-                // Find the directory info
-                if let Some(dir_info) = app.library.directories.iter().find(|d| d.path == *path) {
-                    let track_count = dir_info.file_count;
-                    let last_scan = if let Some(time) = dir_info.last_scanned {
-                        // Format as relative time (e.g., "2 days ago")
-                        if let Ok(elapsed) = time.elapsed() {
-                            let secs = elapsed.as_secs();
-                            if secs < 60 {
-                                "just now".to_string()
-                            } else if secs < 3600 {
-                                format!("{} min ago", secs / 60)
-                            } else if secs < 86400 {
-                                format!("{} hrs ago", secs / 3600)
-                            } else {
-                                format!("{} days ago", secs / 86400)
-                            }
+            // For all directories, add track/album count and last scan time
+            // We need to find the DirectoryInfo corresponding to this path
+            // Since we flattened the tree, we can't easily look it up by index in the original list
+            // But we can search by path in the flattened list or just search the whole tree?
+            // Actually, get_directory_tree_items returns (PathBuf, level, expanded)
+            // It doesn't return the DirectoryInfo itself.
+            // We should probably update get_directory_tree_items to return more info or look it up here.
+            // Looking up by path in the recursive structure is expensive if we do it for every item.
+            // But for a TUI it might be fine.
+            
+            // Helper to find directory info by path
+            fn find_dir_info<'a>(directories: &'a [crate::library::DirectoryInfo], path: &std::path::Path) -> Option<&'a crate::library::DirectoryInfo> {
+                for dir in directories {
+                    if dir.path == path {
+                        return Some(dir);
+                    }
+                    if let Some(found) = find_dir_info(&dir.subdirectories, path) {
+                        return Some(found);
+                    }
+                }
+                None
+            }
+
+            let info_str = if let Some(dir_info) = find_dir_info(&app.library.directories, path) {
+                let track_count = dir_info.file_count;
+                let album_count = dir_info.album_count;
+                let last_scan = if let Some(time) = dir_info.last_scanned {
+                    // Format as relative time (e.g., "2 days ago")
+                    if let Ok(elapsed) = time.elapsed() {
+                        let secs = elapsed.as_secs();
+                        if secs < 60 {
+                            "just now".to_string()
+                        } else if secs < 3600 {
+                            format!("{} min ago", secs / 60)
+                        } else if secs < 86400 {
+                            format!("{} hrs ago", secs / 3600)
                         } else {
-                            "never".to_string()
+                            format!("{} days ago", secs / 86400)
                         }
                     } else {
                         "never".to_string()
-                    };
-                    format!(" [{} tracks, {}]", track_count, last_scan)
+                    }
                 } else {
-                    String::new()
+                    "never".to_string()
+                };
+                
+                if *level == 0 {
+                    format!(" [{} tracks, {} albums, {}]", track_count, album_count, last_scan)
+                } else {
+                    format!(" [{} tracks, {} albums]", track_count, album_count)
                 }
             } else {
                 String::new()

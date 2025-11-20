@@ -51,7 +51,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 2;
+        const LATEST_VERSION: i64 = 3;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -220,7 +220,159 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 3: Add FTS5 virtual table for search
+        migrations.insert(
+            3,
+            Migration {
+                description: "Add FTS5 virtual table for full-text search",
+                apply: |db| {
+                    // Create FTS5 virtual table
+                    // We include album_id as UNINDEXED so we can retrieve it but it's not part of the full-text index
+                    db.conn.execute(
+                        "CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(
+                            artist,
+                            album_title,
+                            track_title,
+                            album_id UNINDEXED
+                        )",
+                        [],
+                    )?;
+
+                    // Create triggers to keep FTS index in sync with albums and tracks
+                    
+                    // Trigger for inserting new albums (initially no tracks, so just artist/album)
+                    // Note: We primarily index tracks, but we want to find albums even if we search for artist/album name
+                    // The strategy here is:
+                    // 1. When a track is inserted, we insert a row into library_fts
+                    // 2. When an album is inserted, we don't necessarily need to insert into FTS immediately 
+                    //    because the tracks will be inserted shortly after.
+                    //    However, to ensure we can find albums by artist/title even without tracks (edge case),
+                    //    or to simplify, we can just index based on tracks.
+                    
+                    // Actually, a better approach for "search albums" is to index each album once?
+                    // Or index each track?
+                    // The requirement is "search albums".
+                    // If we search for a track title, we want to find the album containing it.
+                    // So we should index each track, and store the album_id.
+                    
+                    // Trigger: After Insert Track
+                    db.conn.execute(
+                        "CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
+                            INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                            SELECT 
+                                a.artist, 
+                                a.title, 
+                                new.title, 
+                                new.album_id
+                            FROM albums a WHERE a.id = new.album_id;
+                        END;",
+                        [],
+                    )?;
+
+                    // Trigger: After Delete Track
+                    // We need to delete entries from FTS where album_id matches and track_title matches?
+                    // FTS5 doesn't support simple deletes easily without rowid if we don't manage it.
+                    // But we can delete by album_id and track_title.
+                    // Wait, FTS5 delete is usually done by inserting into the 'delete' table or just DELETE FROM table.
+                    db.conn.execute(
+                        "CREATE TRIGGER IF NOT EXISTS tracks_ad AFTER DELETE ON tracks BEGIN
+                            DELETE FROM library_fts WHERE album_id = old.album_id AND track_title = old.title;
+                        END;",
+                        [],
+                    )?;
+
+                    // Trigger: After Update Track (title changed)
+                    db.conn.execute(
+                        "CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
+                            DELETE FROM library_fts WHERE album_id = old.album_id AND track_title = old.title;
+                            INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                            SELECT 
+                                a.artist, 
+                                a.title, 
+                                new.title, 
+                                new.album_id
+                            FROM albums a WHERE a.id = new.album_id;
+                        END;",
+                        [],
+                    )?;
+
+                    // Trigger: After Update Album (artist or title changed)
+                    // This is tricky because changing album details affects all tracks in FTS.
+                    db.conn.execute(
+                        "CREATE TRIGGER IF NOT EXISTS albums_au AFTER UPDATE ON albums BEGIN
+                            DELETE FROM library_fts WHERE album_id = old.id;
+                            INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                            SELECT 
+                                new.artist, 
+                                new.title, 
+                                t.title, 
+                                t.album_id
+                            FROM tracks t WHERE t.album_id = new.id;
+                        END;",
+                        [],
+                    )?;
+
+                    // Populate FTS table with existing data
+                    db.conn.execute(
+                        "INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                         SELECT 
+                            a.artist, 
+                            a.title, 
+                            t.title, 
+                            t.album_id
+                         FROM tracks t
+                         JOIN albums a ON t.album_id = a.id",
+                        [],
+                    )?;
+
+                    log::info!("Created FTS5 index and populated with existing data");
+                    Ok(())
+                },
+            },
+        );
+
         migrations
+    }
+
+    /// Search for albums using FTS5
+    pub fn search_library(&self, query: &str) -> SqlResult<Vec<i64>> {
+        // Sanitize query for FTS5
+        // We want to treat the query as a prefix search for the last term usually, 
+        // or just standard FTS match.
+        // Simple approach: wrap in quotes if it contains spaces, or just pass as is?
+        // FTS5 syntax: https://www.sqlite.org/fts5.html
+        // Let's try a simple match first.
+        
+        // If query is empty, return empty
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Prepare query: append * to the last word for prefix matching
+        // e.g. "pink fl" -> "pink fl*"
+        // But we need to be careful with syntax.
+        // Let's just use the raw query for now, maybe wrapped in double quotes if needed?
+        // Actually, standard FTS5 query string usually works well.
+        // Let's try to make it a bit more robust: split by space, append * to each term?
+        // "pink floyd" -> "pink* floyd*"
+        
+        let terms: Vec<String> = query
+            .split_whitespace()
+            .map(|s| format!("\"{}\"*", s.replace("\"", ""))) // Escape quotes and add wildcard
+            .collect();
+        
+        let fts_query = terms.join(" AND ");
+
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT album_id FROM library_fts WHERE library_fts MATCH ?1 ORDER BY rank"
+        )?;
+
+        let album_ids = stmt.query_map(params![fts_query], |row| {
+            row.get::<_, i64>(0)
+        })?
+        .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(album_ids)
     }
 
     /// Get the file modification time for a track by path
@@ -280,6 +432,7 @@ impl MusicDatabase {
                 .collect::<SqlResult<Vec<_>>>()?;
 
             albums.push(Album {
+                id: Some(album_id),
                 artist,
                 title,
                 year: year.map(|y| y as u32),

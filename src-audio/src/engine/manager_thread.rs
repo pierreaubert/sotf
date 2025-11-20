@@ -300,8 +300,9 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
         ThreadEvent::PlaybackUnderrun => {
             let mut state = state.lock().unwrap();
             state.underruns += 1;
-            if state.underruns % 100 == 1 {
-                log::debug!("[Manager] Playback underrun (total: {})", state.underruns);
+            // Log summary every 50 underruns to track overall pattern
+            if state.underruns % 50 == 1 {
+                log::warn!("[Manager] Playback underrun count: {}", state.underruns);
             }
         }
         ThreadEvent::ProcessingError(err) => {

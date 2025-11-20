@@ -504,10 +504,14 @@ impl PluginChain {
     }
 
     pub fn output_channels(&self) -> usize {
-        // Find the last enabled upmixer in the chain (it determines final output channels)
+        // Walk backwards through the chain to find the last channel-count-changing plugin
         for plugin in self.plugins.iter().rev() {
-            if plugin.enabled
-                && let PluginSettings::Upmixer { speaker_config, .. } = &plugin.settings {
+            if !plugin.enabled {
+                continue;
+            }
+
+            match &plugin.settings {
+                PluginSettings::Upmixer { speaker_config, .. } => {
                     // Map speaker config to channel count
                     return match speaker_config.as_str() {
                         "2.0" => 2,
@@ -529,9 +533,15 @@ impl PluginChain {
                         }
                     };
                 }
+                PluginSettings::BinauralDecoder { .. } => {
+                    // Binaural decoder always outputs stereo
+                    return 2;
+                }
+                _ => continue,
+            }
         }
 
-        // No upmixer found, return stereo
+        // No channel-changing plugin found, return stereo
         2
     }
 
