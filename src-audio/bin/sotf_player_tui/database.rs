@@ -51,7 +51,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 3;
+        const LATEST_VERSION: i64 = 4;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -79,11 +79,11 @@ impl MusicDatabase {
 
     /// Get the current schema version
     fn get_schema_version(&self) -> SqlResult<i64> {
-        let result = self.conn.query_row(
-            "SELECT MAX(version) FROM schema_version",
-            [],
-            |row| row.get::<_, Option<i64>>(0),
-        );
+        let result = self
+            .conn
+            .query_row("SELECT MAX(version) FROM schema_version", [], |row| {
+                row.get::<_, Option<i64>>(0)
+            });
 
         match result {
             Ok(Some(version)) => Ok(version),
@@ -107,17 +107,18 @@ impl MusicDatabase {
     #[allow(dead_code)]
     pub fn get_migration_history(&self) -> SqlResult<Vec<(i64, u64, String)>> {
         let mut stmt = self.conn.prepare(
-            "SELECT version, applied_at, description FROM schema_version ORDER BY version"
+            "SELECT version, applied_at, description FROM schema_version ORDER BY version",
         )?;
 
-        let history = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, i64>(1)? as u64,
-                row.get::<_, String>(2)?,
-            ))
-        })?
-        .collect::<SqlResult<Vec<_>>>()?;
+        let history = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)? as u64,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
 
         Ok(history)
     }
@@ -209,7 +210,8 @@ impl MusicDatabase {
                         .is_ok();
 
                     if !has_channels {
-                        db.conn.execute("ALTER TABLE tracks ADD COLUMN channels INTEGER", [])?;
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN channels INTEGER", [])?;
                         log::info!("Added channels column to tracks table");
                     } else {
                         log::info!("Channels column already exists, skipping");
@@ -239,30 +241,29 @@ impl MusicDatabase {
                     )?;
 
                     // Create triggers to keep FTS index in sync with albums and tracks
-                    
                     // Trigger for inserting new albums (initially no tracks, so just artist/album)
                     // Note: We primarily index tracks, but we want to find albums even if we search for artist/album name
                     // The strategy here is:
                     // 1. When a track is inserted, we insert a row into library_fts
-                    // 2. When an album is inserted, we don't necessarily need to insert into FTS immediately 
+                    // 2. When an album is inserted, we don't necessarily need to insert into FTS immediately
                     //    because the tracks will be inserted shortly after.
                     //    However, to ensure we can find albums by artist/title even without tracks (edge case),
                     //    or to simplify, we can just index based on tracks.
-                    
+
                     // Actually, a better approach for "search albums" is to index each album once?
                     // Or index each track?
                     // The requirement is "search albums".
                     // If we search for a track title, we want to find the album containing it.
                     // So we should index each track, and store the album_id.
-                    
+
                     // Trigger: After Insert Track
                     db.conn.execute(
                         "CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
                             INSERT INTO library_fts(artist, album_title, track_title, album_id)
-                            SELECT 
-                                a.artist, 
-                                a.title, 
-                                new.title, 
+                            SELECT
+                                a.artist,
+                                a.title,
+                                new.title,
                                 new.album_id
                             FROM albums a WHERE a.id = new.album_id;
                         END;",
@@ -286,10 +287,10 @@ impl MusicDatabase {
                         "CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
                             DELETE FROM library_fts WHERE album_id = old.album_id AND track_title = old.title;
                             INSERT INTO library_fts(artist, album_title, track_title, album_id)
-                            SELECT 
-                                a.artist, 
-                                a.title, 
-                                new.title, 
+                            SELECT
+                                a.artist,
+                                a.title,
+                                new.title,
                                 new.album_id
                             FROM albums a WHERE a.id = new.album_id;
                         END;",
@@ -302,10 +303,10 @@ impl MusicDatabase {
                         "CREATE TRIGGER IF NOT EXISTS albums_au AFTER UPDATE ON albums BEGIN
                             DELETE FROM library_fts WHERE album_id = old.id;
                             INSERT INTO library_fts(artist, album_title, track_title, album_id)
-                            SELECT 
-                                new.artist, 
-                                new.title, 
-                                t.title, 
+                            SELECT
+                                new.artist,
+                                new.title,
+                                t.title,
                                 t.album_id
                             FROM tracks t WHERE t.album_id = new.id;
                         END;",
@@ -315,10 +316,10 @@ impl MusicDatabase {
                     // Populate FTS table with existing data
                     db.conn.execute(
                         "INSERT INTO library_fts(artist, album_title, track_title, album_id)
-                         SELECT 
-                            a.artist, 
-                            a.title, 
-                            t.title, 
+                         SELECT
+                            a.artist,
+                            a.title,
+                            t.title,
                             t.album_id
                          FROM tracks t
                          JOIN albums a ON t.album_id = a.id",
@@ -331,46 +332,82 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 4: Add ReplayGain columns to tracks table
+        migrations.insert(
+            4,
+            Migration {
+                description: "Add ReplayGain gain and peak columns to tracks table",
+                apply: |db| {
+                    // Check if columns already exist
+                    let has_replay_gain = db
+                        .conn
+                        .prepare("SELECT replay_gain FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_replay_gain {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN replay_gain REAL", [])?;
+                        log::info!("Added replay_gain column to tracks table");
+                    } else {
+                        log::info!("replay_gain column already exists, skipping");
+                    }
+
+                    let has_replay_peak = db
+                        .conn
+                        .prepare("SELECT replay_peak FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_replay_peak {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN replay_peak REAL", [])?;
+                        log::info!("Added replay_peak column to tracks table");
+                    } else {
+                        log::info!("replay_peak column already exists, skipping");
+                    }
+
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
     /// Search for albums using FTS5
     pub fn search_library(&self, query: &str) -> SqlResult<Vec<i64>> {
-        // Sanitize query for FTS5
-        // We want to treat the query as a prefix search for the last term usually, 
-        // or just standard FTS match.
-        // Simple approach: wrap in quotes if it contains spaces, or just pass as is?
-        // FTS5 syntax: https://www.sqlite.org/fts5.html
-        // Let's try a simple match first.
-        
         // If query is empty, return empty
         if query.trim().is_empty() {
             return Ok(Vec::new());
         }
 
-        // Prepare query: append * to the last word for prefix matching
-        // e.g. "pink fl" -> "pink fl*"
-        // But we need to be careful with syntax.
-        // Let's just use the raw query for now, maybe wrapped in double quotes if needed?
-        // Actually, standard FTS5 query string usually works well.
-        // Let's try to make it a bit more robust: split by space, append * to each term?
-        // "pink floyd" -> "pink* floyd*"
-        
+        // Build FTS5 query with prefix matching on each term
+        // e.g. "pink floyd" -> "pink* AND floyd*"
+        // This allows partial matches and is more user-friendly
         let terms: Vec<String> = query
             .split_whitespace()
-            .map(|s| format!("\"{}\"*", s.replace("\"", ""))) // Escape quotes and add wildcard
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                // Escape double quotes and add wildcard for prefix matching
+                let escaped = s.replace("\"", "\"\"");
+                format!("{}*", escaped)
+            })
             .collect();
-        
-        let fts_query = terms.join(" AND ");
+
+        if terms.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Join with OR for more flexible search (any term matches)
+        // Use AND if you want all terms to match
+        let fts_query = terms.join(" OR ");
 
         let mut stmt = self.conn.prepare(
-            "SELECT DISTINCT album_id FROM library_fts WHERE library_fts MATCH ?1 ORDER BY rank"
+            "SELECT DISTINCT album_id FROM library_fts WHERE library_fts MATCH ?1 ORDER BY rank",
         )?;
 
-        let album_ids = stmt.query_map(params![fts_query], |row| {
-            row.get::<_, i64>(0)
-        })?
-        .collect::<SqlResult<Vec<_>>>()?;
+        let album_ids = stmt
+            .query_map(params![fts_query], |row| row.get::<_, i64>(0))?
+            .collect::<SqlResult<Vec<_>>>()?;
 
         Ok(album_ids)
     }
@@ -553,8 +590,47 @@ impl MusicDatabase {
         Ok(result.map(|t| t as u64))
     }
 
+    /// Get all scanned directories with their latest scan statistics
+    /// Returns (directory_path, tracks_found, albums_found, last_scanned_at)
+    pub fn get_scanned_directories(&self) -> SqlResult<Vec<(PathBuf, usize, usize, u64)>> {
+        // Get the most recent scan for each unique directory
+        let mut stmt = self.conn.prepare(
+            "SELECT directory, tracks_found, albums_found, scanned_at
+             FROM scan_history
+             WHERE (directory, scanned_at) IN (
+                 SELECT directory, MAX(scanned_at)
+                 FROM scan_history
+                 GROUP BY directory
+             )
+             ORDER BY directory",
+        )?;
+
+        let directories = stmt
+            .query_map([], |row| {
+                Ok((
+                    PathBuf::from(row.get::<_, String>(0)?),
+                    row.get::<_, i64>(1)? as usize,
+                    row.get::<_, i64>(2)? as usize,
+                    row.get::<_, i64>(3)? as u64,
+                ))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(directories)
+    }
+
     /// Remove tracks that no longer exist on disk
     pub fn clean_missing_files(&mut self) -> SqlResult<usize> {
+        self.clean_missing_files_with_progress(|_, _| {})
+    }
+
+    pub fn clean_missing_files_with_progress<F>(
+        &mut self,
+        mut progress_callback: F,
+    ) -> SqlResult<usize>
+    where
+        F: FnMut(usize, usize),
+    {
         // Collect all tracks first to avoid borrowing issues
         let tracks: Vec<(i64, String)> = {
             let mut stmt = self.conn.prepare("SELECT id, path FROM tracks")?;
@@ -562,11 +638,18 @@ impl MusicDatabase {
                 .collect::<SqlResult<Vec<_>>>()?
         }; // stmt is dropped here, releasing the immutable borrow
 
+        let total = tracks.len();
         let mut to_delete = Vec::new();
-        for (id, path_str) in tracks {
+
+        for (checked, (id, path_str)) in tracks.into_iter().enumerate() {
             let path = PathBuf::from(&path_str);
             if !path.exists() {
                 to_delete.push(id);
+            }
+
+            // Report progress every 100 tracks or at the end
+            if checked % 100 == 0 || checked == total - 1 {
+                progress_callback(checked + 1, total);
             }
         }
 
@@ -585,7 +668,49 @@ impl MusicDatabase {
             )?;
         }
 
+        // Final progress report
+        progress_callback(total, total);
+
         Ok(count)
+    }
+
+    /// Update ReplayGain values for a track
+    pub fn update_replay_gain(&self, path: &Path, gain: f64, peak: f64) -> SqlResult<()> {
+        self.conn.execute(
+            "UPDATE tracks SET replay_gain = ?1, replay_peak = ?2 WHERE path = ?3",
+            params![gain, peak, path.to_str().unwrap()],
+        )?;
+        Ok(())
+    }
+
+    /// Get tracks that don't have ReplayGain values yet
+    pub fn get_tracks_without_replay_gain(&self) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path FROM tracks WHERE replay_gain IS NULL OR replay_peak IS NULL")?;
+
+        let paths = stmt
+            .query_map([], |row| {
+                let path_str: String = row.get(0)?;
+                Ok(PathBuf::from(path_str))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
+    /// Get all track paths from the database
+    pub fn get_all_track_paths(&self) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare("SELECT path FROM tracks")?;
+
+        let paths = stmt
+            .query_map([], |row| {
+                let path_str: String = row.get(0)?;
+                Ok(PathBuf::from(path_str))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
     }
 }
 

@@ -46,12 +46,12 @@ pub enum LibrarySortOrder {
 /// Channel filter options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelFilter {
-    All,            // Show all albums
-    Mono,           // Only 1-channel albums
-    Stereo,         // Only 2-channel albums
-    Multichannel,   // Only albums with > 2 channels
-    Mixed,          // Only albums with mixed channel counts
-    Specific(u32),  // Only albums with specific channel count
+    All,           // Show all albums
+    Mono,          // Only 1-channel albums
+    Stereo,        // Only 2-channel albums
+    Multichannel,  // Only albums with > 2 channels
+    Mixed,         // Only albums with mixed channel counts
+    Specific(u32), // Only albums with specific channel count
 }
 
 /// Artist node in tree view
@@ -171,6 +171,19 @@ pub struct App {
     pub scan_progress_tracks: usize,
     pub scan_progress_albums: usize,
 
+    // Maintenance progress
+    pub maintenance_in_progress: bool,
+    pub maintenance_progress_checked: usize,
+    pub maintenance_progress_total: usize,
+
+    // ReplayGain scanner progress
+    pub replay_gain_scanner: Option<Arc<crate::replay_gain_scanner::ReplayGainScanner>>,
+    pub replay_gain_in_progress: bool,
+    pub replay_gain_total: usize,
+    pub replay_gain_processed: usize,
+    pub replay_gain_succeeded: usize,
+    pub replay_gain_failed: usize,
+
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
 }
@@ -229,6 +242,15 @@ impl App {
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
+            maintenance_in_progress: false,
+            maintenance_progress_checked: 0,
+            maintenance_progress_total: 0,
+            replay_gain_scanner: None,
+            replay_gain_in_progress: false,
+            replay_gain_total: 0,
+            replay_gain_processed: 0,
+            replay_gain_succeeded: 0,
+            replay_gain_failed: 0,
             last_loaded_preset: None,
         }
     }
@@ -298,21 +320,22 @@ impl App {
         };
 
         // Apply channel filter
-        albums.retain(|album| {
-            match self.channel_filter {
-                ChannelFilter::All => true,
-                ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
-                ChannelFilter::Stereo => {
-                    matches!(album.channel_type(), Some(AlbumChannelType::Stereo))
-                }
-                ChannelFilter::Multichannel => {
-                    matches!(album.channel_type(), Some(AlbumChannelType::Multichannel(_)))
-                }
-                ChannelFilter::Mixed => {
-                    matches!(album.channel_type(), Some(AlbumChannelType::Mixed))
-                }
-                ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
+        albums.retain(|album| match self.channel_filter {
+            ChannelFilter::All => true,
+            ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
+            ChannelFilter::Stereo => {
+                matches!(album.channel_type(), Some(AlbumChannelType::Stereo))
             }
+            ChannelFilter::Multichannel => {
+                matches!(
+                    album.channel_type(),
+                    Some(AlbumChannelType::Multichannel(_))
+                )
+            }
+            ChannelFilter::Mixed => {
+                matches!(album.channel_type(), Some(AlbumChannelType::Mixed))
+            }
+            ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
         });
 
         // Sort albums based on current sort order
@@ -516,6 +539,21 @@ impl App {
         }
     }
 
+    pub fn page_down_directories(&mut self, page_size: usize) {
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_directory_index =
+                (self.selected_directory_index + page_size).min(tree_items.len() - 1);
+        }
+    }
+
+    pub fn page_up_directories(&mut self, page_size: usize) {
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_directory_index = self.selected_directory_index.saturating_sub(page_size);
+        }
+    }
+
     pub fn select_next_queue_item(&mut self) {
         if !self.queue.is_empty() {
             self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
@@ -573,7 +611,10 @@ impl App {
         let tree_items = self.get_directory_tree_items();
         if let Some((path, _, _)) = tree_items.get(self.selected_directory_index) {
             // Helper to find and toggle directory recursively
-            fn toggle_recursive(directories: &mut [crate::library::DirectoryInfo], target_path: &std::path::Path) -> bool {
+            fn toggle_recursive(
+                directories: &mut [crate::library::DirectoryInfo],
+                target_path: &std::path::Path,
+            ) -> bool {
                 for dir in directories {
                     if dir.path == target_path {
                         dir.expanded = !dir.expanded;
@@ -595,14 +636,14 @@ impl App {
     /// Get flattened directory tree for display
     pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
         let mut items = Vec::new();
-        
+
         fn add_recursive(
-            items: &mut Vec<(PathBuf, usize, bool)>, 
-            dir_info: &crate::library::DirectoryInfo, 
-            level: usize
+            items: &mut Vec<(PathBuf, usize, bool)>,
+            dir_info: &crate::library::DirectoryInfo,
+            level: usize,
         ) {
             items.push((dir_info.path.clone(), level, dir_info.expanded));
-            
+
             if dir_info.expanded {
                 for subdir in &dir_info.subdirectories {
                     add_recursive(items, subdir, level + 1);
@@ -700,7 +741,176 @@ impl App {
     }
 
     pub fn clean_library_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
-        self.library.clean_database()
+        self.maintenance_in_progress = true;
+        self.maintenance_progress_checked = 0;
+        self.maintenance_progress_total = 0;
+        self.status_message = Some("Starting database maintenance...".to_string());
+
+        // Create shared progress state
+        let progress_checked = Arc::new(Mutex::new(0usize));
+        let progress_total = Arc::new(Mutex::new(0usize));
+
+        let progress_checked_clone = Arc::clone(&progress_checked);
+        let progress_total_clone = Arc::clone(&progress_total);
+
+        // Use progress callback to update shared progress
+        let result = self
+            .library
+            .clean_database_with_progress(move |checked, total| {
+                if let Ok(mut pc) = progress_checked_clone.lock() {
+                    *pc = checked;
+                }
+                if let Ok(mut pt) = progress_total_clone.lock() {
+                    *pt = total;
+                }
+            });
+
+        // Update app state with final progress
+        if let Ok(pc) = progress_checked.lock() {
+            self.maintenance_progress_checked = *pc;
+        }
+        if let Ok(pt) = progress_total.lock() {
+            self.maintenance_progress_total = *pt;
+        }
+
+        self.maintenance_in_progress = false;
+
+        match &result {
+            Ok(removed) => {
+                if *removed > 0 {
+                    self.status_message =
+                        Some(format!("Cleaned {} missing tracks from database", removed));
+                    log::info!("Database maintenance: removed {} missing tracks", removed);
+                } else {
+                    self.status_message =
+                        Some("Database is clean - no missing tracks found".to_string());
+                    log::info!("Database maintenance: no missing tracks found");
+                }
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Database maintenance failed: {}", e));
+                log::error!("Database maintenance failed: {}", e);
+            }
+        }
+
+        self.rebuild_artist_tree();
+
+        result
+    }
+
+    /// Start ReplayGain scanner for tracks without ReplayGain values
+    pub fn start_replay_gain_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if self.replay_gain_in_progress {
+            return Ok(()); // Already scanning
+        }
+
+        // Get database path
+        let db_path = crate::database::MusicDatabase::default_path()
+            .ok_or("Could not determine database path")?;
+
+        // Get tracks that need ReplayGain analysis
+        let db = crate::database::MusicDatabase::open(&db_path)?;
+        let tracks = db.get_tracks_without_replay_gain()?;
+
+        if tracks.is_empty() {
+            self.status_message = Some("All tracks already have ReplayGain values".to_string());
+            return Ok(());
+        }
+
+        let total = tracks.len();
+        log::info!("Starting ReplayGain scan for {} tracks", total);
+
+        // Determine number of threads (use CPU count or max 4)
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get().min(4))
+            .unwrap_or(2);
+
+        // Create scanner
+        let scanner = Arc::new(crate::replay_gain_scanner::ReplayGainScanner::new(
+            num_threads,
+            db_path,
+        ));
+
+        // Queue all tracks
+        scanner.scan_tracks(tracks);
+
+        // Store scanner and initialize progress
+        self.replay_gain_scanner = Some(scanner);
+        self.replay_gain_in_progress = true;
+        self.replay_gain_total = total;
+        self.replay_gain_processed = 0;
+        self.replay_gain_succeeded = 0;
+        self.replay_gain_failed = 0;
+        self.status_message = Some(format!("Analyzing {} tracks for ReplayGain...", total));
+
+        Ok(())
+    }
+
+    /// Check for ReplayGain scanner progress updates
+    pub fn check_replay_gain_progress(&mut self) {
+        if !self.replay_gain_in_progress {
+            return;
+        }
+
+        // Clone the Arc to avoid borrowing self
+        let scanner = match &self.replay_gain_scanner {
+            Some(s) => Arc::clone(s),
+            None => return,
+        };
+
+        // Process all pending messages
+        while let Some(msg) = scanner.try_recv() {
+            use crate::replay_gain_scanner::ScanMessage;
+
+            match msg {
+                ScanMessage::Started { .. } => {
+                    // Track started, no action needed
+                }
+                ScanMessage::Success { .. } => {
+                    self.replay_gain_processed += 1;
+                    self.replay_gain_succeeded += 1;
+                }
+                ScanMessage::Error { path, error } => {
+                    self.replay_gain_processed += 1;
+                    self.replay_gain_failed += 1;
+                    log::error!("ReplayGain scan failed for {}: {}", path.display(), error);
+                }
+                ScanMessage::Complete {
+                    total,
+                    succeeded,
+                    failed,
+                } => {
+                    self.replay_gain_in_progress = false;
+                    self.replay_gain_scanner = None;
+                    self.status_message = Some(format!(
+                        "ReplayGain scan complete: {}/{} succeeded, {} failed",
+                        succeeded, total, failed
+                    ));
+                    log::info!(
+                        "ReplayGain scan complete: {}/{} succeeded, {} failed",
+                        succeeded,
+                        total,
+                        failed
+                    );
+                }
+            }
+        }
+
+        // Check if all tracks have been processed
+        if self.replay_gain_in_progress && self.replay_gain_processed >= self.replay_gain_total {
+            self.replay_gain_in_progress = false;
+            self.replay_gain_scanner = None;
+            self.status_message = Some(format!(
+                "ReplayGain scan complete: {}/{} succeeded, {} failed",
+                self.replay_gain_succeeded, self.replay_gain_total, self.replay_gain_failed
+            ));
+            log::info!(
+                "ReplayGain scan complete: {}/{} succeeded, {} failed",
+                self.replay_gain_succeeded,
+                self.replay_gain_total,
+                self.replay_gain_failed
+            );
+        }
     }
 
     /// Save current app state to config file
@@ -775,6 +985,9 @@ impl App {
             // Use the plugin chain's own load method (handles path construction and validation)
             match self.plugin_chain.load_from_file(preset_name) {
                 Ok(_) => {
+                    // Update BinauralDecoder input channels after loading
+                    self.plugin_chain.update_binaural_decoder_channels();
+
                     self.last_loaded_preset = Some(preset_name.clone());
                     self.needs_plugin_update = true;
                     log::info!("Restored plugin preset: {}", preset_name);
@@ -1118,6 +1331,8 @@ impl App {
     // Plugin management
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
         self.plugin_chain.add_plugin(plugin_type);
+        // Update BinauralDecoder input channels after adding
+        self.plugin_chain.update_binaural_decoder_channels();
         self.needs_plugin_update = true;
     }
 
@@ -1126,11 +1341,15 @@ impl App {
         if self.selected_plugin_index >= self.plugin_chain.len() && self.selected_plugin_index > 0 {
             self.selected_plugin_index = self.plugin_chain.len() - 1;
         }
+        // Update BinauralDecoder input channels after removal
+        self.plugin_chain.update_binaural_decoder_channels();
         self.needs_plugin_update = true;
     }
 
     pub fn toggle_plugin(&mut self, index: usize) {
         self.plugin_chain.toggle_plugin(index);
+        // Update BinauralDecoder input channels after toggle
+        self.plugin_chain.update_binaural_decoder_channels();
         self.needs_plugin_update = true;
     }
 
@@ -1138,6 +1357,8 @@ impl App {
         if index > 0 {
             self.plugin_chain.move_plugin(index, index - 1);
             self.selected_plugin_index = index - 1;
+            // Update BinauralDecoder input channels after move
+            self.plugin_chain.update_binaural_decoder_channels();
             self.needs_plugin_update = true;
         }
     }
@@ -1146,6 +1367,8 @@ impl App {
         if index < self.plugin_chain.len() - 1 {
             self.plugin_chain.move_plugin(index, index + 1);
             self.selected_plugin_index = index + 1;
+            // Update BinauralDecoder input channels after move
+            self.plugin_chain.update_binaural_decoder_channels();
             self.needs_plugin_update = true;
         }
     }
@@ -1219,8 +1442,9 @@ impl App {
         use crate::plugins::PluginSettings;
 
         let param_idx = self.plugin_param_selection;
+        let mut channel_count_changed = false;
 
-        if let Some(plugin) = self.get_editing_plugin_mut() {
+        let result = if let Some(plugin) = self.get_editing_plugin_mut() {
             match &mut plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
@@ -1250,6 +1474,7 @@ impl App {
                                 (current_idx + configs.len() - 1) % configs.len()
                             };
                             *speaker_config = configs[new_idx].to_string();
+                            channel_count_changed = true; // Upmixer changed channel count
                         }
                         1 => {
                             *gain_front_direct = (*gain_front_direct + delta * 0.1).clamp(0.0, 2.0)
@@ -1335,8 +1560,8 @@ impl App {
                     // Only input_channels can be adjusted (sofa_file is set via 'f' key)
                     match param_idx {
                         1 => {
-                            *input_channels = (*input_channels as i64 + delta as i64)
-                                .clamp(2, 16) as usize;
+                            *input_channels =
+                                (*input_channels as i64 + delta as i64).clamp(2, 16) as usize;
                             true
                         }
                         _ => false,
@@ -1345,7 +1570,14 @@ impl App {
             }
         } else {
             false
+        };
+
+        // If speaker config changed, update downstream BinauralDecoder plugins
+        if channel_count_changed {
+            self.plugin_chain.update_binaural_decoder_channels();
         }
+
+        result
     }
 
     /// Save plugin chain to file
@@ -1387,6 +1619,9 @@ impl App {
         // Load using the plugin chain's own load method (handles path, extension, etc.)
         match self.plugin_chain.load_from_file(&self.plugin_file_input) {
             Ok(_) => {
+                // Update BinauralDecoder input channels after loading
+                self.plugin_chain.update_binaural_decoder_channels();
+
                 // Get the final filename (with .json appended if needed)
                 let filename = if self.plugin_file_input.ends_with(".json") {
                     self.plugin_file_input.clone()
@@ -1467,6 +1702,9 @@ impl App {
             // Use the plugin chain's own load method (handles path construction)
             match self.plugin_chain.load_from_file(preset_filename) {
                 Ok(_) => {
+                    // Update BinauralDecoder input channels after loading
+                    self.plugin_chain.update_binaural_decoder_channels();
+
                     self.status_message = Some(format!("Loaded preset: {}", preset_filename));
                     self.needs_plugin_update = true;
                     self.last_loaded_preset = Some(preset_filename.clone());
@@ -1732,8 +1970,7 @@ impl App {
         // Update the currently selected plugin if it's a binaural decoder
         if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
             if let PluginSettings::BinauralDecoder {
-                ref mut sofa_file,
-                ..
+                ref mut sofa_file, ..
             } = plugin.settings
             {
                 *sofa_file = self.sofa_file_input.clone();
@@ -1764,5 +2001,193 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
 impl Default for App {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::library::DirectoryInfo;
+
+    fn create_test_directory_info(path: &str) -> DirectoryInfo {
+        DirectoryInfo {
+            path: PathBuf::from(path),
+            file_count: 10,
+            album_count: 2,
+            last_scanned: None,
+            expanded: false,
+            subdirectories: vec![],
+        }
+    }
+
+    fn create_test_app_with_directories(num_dirs: usize) -> App {
+        let mut app = App::new();
+        for i in 0..num_dirs {
+            app.library
+                .directories
+                .push(create_test_directory_info(&format!("/test/dir{}", i)));
+        }
+        app
+    }
+
+    #[test]
+    fn test_select_next_directory() {
+        let mut app = create_test_app_with_directories(3);
+
+        assert_eq!(app.selected_directory_index, 0);
+
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 1);
+
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 2);
+
+        // Should wrap around to 0
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 0);
+    }
+
+    #[test]
+    fn test_select_previous_directory() {
+        let mut app = create_test_app_with_directories(3);
+
+        assert_eq!(app.selected_directory_index, 0);
+
+        // Should wrap around to last item
+        app.select_previous_directory();
+        assert_eq!(app.selected_directory_index, 2);
+
+        app.select_previous_directory();
+        assert_eq!(app.selected_directory_index, 1);
+
+        app.select_previous_directory();
+        assert_eq!(app.selected_directory_index, 0);
+    }
+
+    #[test]
+    fn test_page_down_directories() {
+        let mut app = create_test_app_with_directories(30);
+
+        assert_eq!(app.selected_directory_index, 0);
+
+        // Page down by 20
+        app.page_down_directories(20);
+        assert_eq!(app.selected_directory_index, 20);
+
+        // Page down by 20 again - should stop at max (29)
+        app.page_down_directories(20);
+        assert_eq!(app.selected_directory_index, 29);
+
+        // Should stay at max
+        app.page_down_directories(20);
+        assert_eq!(app.selected_directory_index, 29);
+    }
+
+    #[test]
+    fn test_page_up_directories() {
+        let mut app = create_test_app_with_directories(30);
+
+        // Start at the end
+        app.selected_directory_index = 29;
+
+        // Page up by 20
+        app.page_up_directories(20);
+        assert_eq!(app.selected_directory_index, 9);
+
+        // Page up by 20 again - should stop at 0
+        app.page_up_directories(20);
+        assert_eq!(app.selected_directory_index, 0);
+
+        // Should stay at 0
+        app.page_up_directories(20);
+        assert_eq!(app.selected_directory_index, 0);
+    }
+
+    #[test]
+    fn test_navigation_with_empty_directories() {
+        let mut app = App::new();
+        assert_eq!(app.selected_directory_index, 0);
+
+        // Should not crash with empty directories
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 0);
+
+        app.select_previous_directory();
+        assert_eq!(app.selected_directory_index, 0);
+
+        app.page_down_directories(20);
+        assert_eq!(app.selected_directory_index, 0);
+
+        app.page_up_directories(20);
+        assert_eq!(app.selected_directory_index, 0);
+    }
+
+    #[test]
+    fn test_navigation_with_expanded_directories() {
+        let mut app = create_test_app_with_directories(2);
+
+        // Add subdirectories to first directory
+        app.library.directories[0].subdirectories = vec![
+            create_test_directory_info("/test/dir0/subdir1"),
+            create_test_directory_info("/test/dir0/subdir2"),
+        ];
+
+        // Initially collapsed - tree has 2 items
+        assert_eq!(app.get_directory_tree_items().len(), 2);
+        assert_eq!(app.selected_directory_index, 0);
+
+        // Expand first directory
+        app.toggle_directory_expansion();
+
+        // Now tree has 4 items: dir0, subdir1, subdir2, dir1
+        let tree_items = app.get_directory_tree_items();
+        assert_eq!(tree_items.len(), 4);
+
+        // Navigate through expanded tree
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 1); // subdir1
+
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 2); // subdir2
+
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 3); // dir1
+
+        app.select_next_directory();
+        assert_eq!(app.selected_directory_index, 0); // wrap to dir0
+    }
+
+    #[test]
+    fn test_get_directory_tree_items() {
+        let mut app = create_test_app_with_directories(1);
+
+        // Add subdirectories
+        app.library.directories[0].subdirectories = vec![
+            create_test_directory_info("/test/dir0/subdir1"),
+            create_test_directory_info("/test/dir0/subdir2"),
+        ];
+
+        // Collapsed - should only show root
+        let tree_items = app.get_directory_tree_items();
+        assert_eq!(tree_items.len(), 1);
+        assert_eq!(tree_items[0].0, PathBuf::from("/test/dir0"));
+        assert_eq!(tree_items[0].1, 0); // level
+        assert_eq!(tree_items[0].2, false); // not expanded
+
+        // Expand
+        app.toggle_directory_expansion();
+
+        // Should show root + 2 subdirectories
+        let tree_items = app.get_directory_tree_items();
+        assert_eq!(tree_items.len(), 3);
+        assert_eq!(tree_items[0].0, PathBuf::from("/test/dir0"));
+        assert_eq!(tree_items[0].1, 0); // level
+        assert_eq!(tree_items[0].2, true); // expanded
+
+        assert_eq!(tree_items[1].0, PathBuf::from("/test/dir0/subdir1"));
+        assert_eq!(tree_items[1].1, 1); // level
+
+        assert_eq!(tree_items[2].0, PathBuf::from("/test/dir0/subdir2"));
+        assert_eq!(tree_items[2].1, 1); // level
     }
 }

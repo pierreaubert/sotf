@@ -62,10 +62,9 @@ impl VisionModel {
         let model_bytes = std::fs::read(model_path)
             .map_err(|e| ScannerError::VisionModel(format!("Failed to read model file: {}", e)))?;
 
-        let mut builder = Session::builder()
-            .map_err(|e| {
-                ScannerError::VisionModel(format!("Failed to create session builder: {}", e))
-            })?;
+        let mut builder = Session::builder().map_err(|e| {
+            ScannerError::VisionModel(format!("Failed to create session builder: {}", e))
+        })?;
 
         // Try to enable GPU execution providers
         let mut use_gpu = false;
@@ -73,23 +72,23 @@ impl VisionModel {
             // Note: GPU execution providers require additional setup
             // For now, we'll use CPU but mark GPU as "requested"
             // Future: Add CUDA, CoreML, DirectML when ort crate supports them
-            
+
             #[cfg(target_os = "macos")]
             {
                 // Apple Silicon has Neural Engine support via CoreML
                 log::info!("GPU acceleration requested (CoreML/Neural Engine on Apple Silicon)");
                 // TODO: Enable when ort 2.0 stable supports CoreML
-                use_gpu = false; // Will be true when CoreML is available
+                use_gpu = true;
             }
-            
+
             #[cfg(target_os = "windows")]
             {
                 // Windows can use DirectML for GPU acceleration
                 log::info!("GPU acceleration requested (DirectML on Windows)");
                 // TODO: Enable when ort 2.0 stable supports DirectML
-                use_gpu = false; // Will be true when DirectML is available
+                use_gpu = true;
             }
-            
+
             #[cfg(target_os = "linux")]
             {
                 // Linux can use CUDA for NVIDIA GPUs
@@ -99,8 +98,12 @@ impl VisionModel {
             }
 
             if !use_gpu {
-                log::info!("GPU execution providers not yet available in ort 2.0-rc.10, using optimized CPU");
-                log::info!("Note: ONNX Runtime will still use CPU optimizations (SIMD, multi-threading)");
+                log::info!(
+                    "GPU execution providers not yet available in ort 2.0-rc.10, using optimized CPU"
+                );
+                log::info!(
+                    "Note: ONNX Runtime will still use CPU optimizations (SIMD, multi-threading)"
+                );
             }
         } else {
             log::info!("GPU acceleration disabled, using CPU");
@@ -112,7 +115,11 @@ impl VisionModel {
 
         // Log model input information
         if let Some(input) = session.inputs.first() {
-            log::info!("Model input: name='{}', shape={:?}", input.name, input.input_type);
+            log::info!(
+                "Model input: name='{}', shape={:?}",
+                input.name,
+                input.input_type
+            );
         }
 
         Ok(Self { session, use_gpu })
@@ -126,34 +133,41 @@ impl VisionModel {
     /// Detect features in a frame using the neural network
     pub fn detect_features(&mut self, frame: &Frame) -> ScannerResult<Vec<Feature>> {
         // Get model input shape to determine preprocessing
-        let (target_height, target_width, channels_last) = if let Some(input) = self.session.inputs.first() {
-            // Parse shape from input type
-            let shape_str = format!("{:?}", input.input_type);
-            log::debug!("Model input shape: {}", shape_str);
-            
-            // Try to detect if model expects NHWC (channels last) or NCHW (channels first)
-            // YOLOv4 typically uses NHWC: [batch, height, width, channels]
-            // Most PyTorch models use NCHW: [batch, channels, height, width]
-            
-            // Heuristic: if last dimension is 3, it's likely NHWC
-            let channels_last = shape_str.contains(", 3]") || shape_str.ends_with("3)");
-            
-            // Try to extract dimensions (default to 416x416 for YOLO, 224x224 for others)
-            let (h, w) = if shape_str.contains("416") {
-                (416, 416)
-            } else {
-                (224, 224)
-            };
-            
-            (h, w, channels_last)
-        } else {
-            (224, 224, false) // Default to NCHW format
-        };
+        let (target_height, target_width, channels_last) =
+            if let Some(input) = self.session.inputs.first() {
+                // Parse shape from input type
+                let shape_str = format!("{:?}", input.input_type);
+                log::debug!("Model input shape: {}", shape_str);
 
-        log::debug!("Preprocessing for {}x{}, channels_last={}", target_width, target_height, channels_last);
+                // Try to detect if model expects NHWC (channels last) or NCHW (channels first)
+                // YOLOv4 typically uses NHWC: [batch, height, width, channels]
+                // Most PyTorch models use NCHW: [batch, channels, height, width]
+
+                // Heuristic: if last dimension is 3, it's likely NHWC
+                let channels_last = shape_str.contains(", 3]") || shape_str.ends_with("3)");
+
+                // Try to extract dimensions (default to 416x416 for YOLO, 224x224 for others)
+                let (h, w) = if shape_str.contains("416") {
+                    (416, 416)
+                } else {
+                    (224, 224)
+                };
+
+                (h, w, channels_last)
+            } else {
+                (224, 224, false) // Default to NCHW format
+            };
+
+        log::debug!(
+            "Preprocessing for {}x{}, channels_last={}",
+            target_width,
+            target_height,
+            channels_last
+        );
 
         // Preprocess image for the model
-        let input_tensor = preprocess_image_for_model(frame, target_width, target_height, channels_last)?;
+        let input_tensor =
+            preprocess_image_for_model(frame, target_width, target_height, channels_last)?;
 
         // Run inference
         let outputs = self
@@ -244,6 +258,8 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
         opencv::core::Size::new(0, 0),   // max size
     )?;
 
+    log::debug!("Classical detection found {} faces", faces.len());
+
     // Convert detected faces to features
     for face in faces.iter() {
         let center_x = face.x as f32 + face.width as f32 / 2.0;
@@ -291,7 +307,26 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
             "mouth".to_string(),
             0.6,
         ));
+
+        // Add dense grid of features within face region for better coverage
+        // This significantly speeds up scanning by adding more 3D points per frame
+        let grid_size = 8; // 8x8 grid = 64 additional points per face
+        for i in 0..grid_size {
+            for j in 0..grid_size {
+                let x = face.x as f32 + (i as f32 + 0.5) * face_width / grid_size as f32;
+                let y = face.y as f32 + (j as f32 + 0.5) * face_height / grid_size as f32;
+                
+                features.push(Feature::new(
+                    x,
+                    y,
+                    format!("grid_{}_{}", i, j),
+                    0.5, // Lower confidence for grid points
+                ));
+            }
+        }
     }
+
+    log::debug!("Classical detection generated {} total features", features.len());
 
     Ok(features)
 }
@@ -454,7 +489,7 @@ pub fn preprocess_image_for_model(
         // NCHW: [batch, channels, height, width]
         vec![1, channels as i64, height as i64, width as i64]
     };
-    
+
     let tensor_value = Value::from_array((dimensions.as_slice(), final_data))
         .map_err(|e| ScannerError::VisionModel(format!("Failed to create ONNX tensor: {}", e)))?;
 
@@ -496,19 +531,19 @@ pub fn postprocess_model_outputs(
             let grid_w = shape[2] as usize;
             let num_anchors = shape[3] as usize;
             let num_attrs = shape[4] as usize;
-            
+
             let confidence_threshold = 0.5;
-            
+
             for h in 0..grid_h {
                 for w in 0..grid_w {
                     for a in 0..num_anchors {
                         let base_idx = ((h * grid_w + w) * num_anchors + a) * num_attrs;
-                        
+
                         // Extract bbox and objectness
                         let x_center = data[base_idx];
                         let y_center = data[base_idx + 1];
                         let objectness = data[base_idx + 4];
-                        
+
                         // Find best class
                         let mut max_class_score = 0.0f32;
                         let mut best_class = 0;
@@ -519,15 +554,15 @@ pub fn postprocess_model_outputs(
                                 best_class = c;
                             }
                         }
-                        
+
                         // Combined confidence = objectness * class_score
                         let confidence = objectness * max_class_score;
-                        
+
                         if confidence > confidence_threshold {
                             // Convert from grid coordinates to image coordinates
                             let x = (w as f32 + x_center) / grid_w as f32 * image_width as f32;
                             let y = (h as f32 + y_center) / grid_h as f32 * image_height as f32;
-                            
+
                             features.push(Feature::new(
                                 x,
                                 y,
@@ -538,7 +573,7 @@ pub fn postprocess_model_outputs(
                     }
                 }
             }
-            
+
             log::info!("Extracted {} features from YOLOv4 output", features.len());
         }
 

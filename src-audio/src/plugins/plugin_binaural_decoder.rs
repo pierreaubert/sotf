@@ -176,7 +176,7 @@ impl BinauralDecoderPlugin {
             next_add_position: 0,
 
             temp_input_block: vec![0.0; hop_size * input_channels], // Interleaved multi-channel input
-            temp_output_block: vec![0.0; fft_size * 2], // Stereo output
+            temp_output_block: vec![0.0; fft_size * 2],             // Stereo output
             temp_freq_buffer: vec![Complex::new(0.0, 0.0); fft_size],
             temp_time_buffer: vec![Complex::new(0.0, 0.0); fft_size],
         }
@@ -244,7 +244,8 @@ impl BinauralDecoderPlugin {
             // Store both left and right HRTFs
             // IMPORTANT: Explicit type annotation is required here to avoid type inference bug
             // in release builds that can cause the wrong vector type to be created
-            let combined: Vec<Complex<f32>> = left_fft.into_iter().chain(right_fft.into_iter()).collect();
+            let combined: Vec<Complex<f32>> =
+                left_fft.into_iter().chain(right_fft.into_iter()).collect();
 
             debug_assert_eq!(
                 combined.len(),
@@ -270,11 +271,14 @@ impl BinauralDecoderPlugin {
             buffer[i] = Complex::new(ir[i], 0.0);
             max_val = max_val.max(ir[i].abs());
         }
-        
+
         if max_val > 0.9 {
-             log::warn!("[BinauralDecoder] HRTF IR peak is very high: {:.4} (near 0dBFS). This might cause clipping.", max_val);
+            log::warn!(
+                "[BinauralDecoder] HRTF IR peak is very high: {:.4} (near 0dBFS). This might cause clipping.",
+                max_val
+            );
         } else {
-             log::debug!("[BinauralDecoder] HRTF IR peak: {:.4}", max_val);
+            log::debug!("[BinauralDecoder] HRTF IR peak: {:.4}", max_val);
         }
 
         // FFT
@@ -416,14 +420,15 @@ impl Plugin for BinauralDecoderPlugin {
 
             // Check sample rate match
             if let Some(sofa) = &self.sofa
-                && (sofa.sample_rate - sample_rate as f32).abs() > 1.0 {
-                    log::info!(
-                        "[BinauralDecoder] Warning: SOFA sample rate ({} Hz) differs from engine rate ({} Hz). \
+                && (sofa.sample_rate - sample_rate as f32).abs() > 1.0
+            {
+                log::info!(
+                    "[BinauralDecoder] Warning: SOFA sample rate ({} Hz) differs from engine rate ({} Hz). \
                          This may cause incorrect spatialization. Consider resampling the SOFA file.",
-                        sofa.sample_rate,
-                        sample_rate
-                    );
-                }
+                    sofa.sample_rate,
+                    sample_rate
+                );
+            }
         } else {
             log::debug!(
                 "[BinauralDecoder] Warning: No SOFA file specified, plugin will pass through audio"
@@ -520,9 +525,9 @@ impl Plugin for BinauralDecoderPlugin {
                 // Use std::mem::take to temporarily move buffers out to avoid borrow conflict
                 let input_block = std::mem::take(&mut self.temp_input_block);
                 let mut output_block = std::mem::take(&mut self.temp_output_block);
-                
+
                 self.process_block(&input_block, &mut output_block);
-                
+
                 // Move buffers back
                 self.temp_input_block = input_block;
                 self.temp_output_block = output_block;
@@ -538,7 +543,7 @@ impl Plugin for BinauralDecoderPlugin {
                 // Update state
                 // In standard OLA, we advance by hop_size
                 self.next_add_position += self.hop_size;
-                
+
                 // Update fill count.
                 let new_end = (self.next_add_position - self.hop_size) + self.fft_size;
                 self.output_accumulator_fill = self.output_accumulator_fill.max(new_end);
@@ -555,8 +560,8 @@ impl Plugin for BinauralDecoderPlugin {
             // Step 3: Fill input buffer
             if input_pos < input.len() {
                 let input_needed = self.hop_size * self.input_channels;
-                let samples_to_copy = (input.len() - input_pos)
-                    .min(input_needed - self.input_buffer_fill);
+                let samples_to_copy =
+                    (input.len() - input_pos).min(input_needed - self.input_buffer_fill);
 
                 self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
                     .copy_from_slice(&input[input_pos..input_pos + samples_to_copy]);

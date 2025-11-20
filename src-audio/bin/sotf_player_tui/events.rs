@@ -126,7 +126,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::{ChannelFilter, LibraryViewMode, LibrarySortOrder};
+    use crate::app::{ChannelFilter, LibrarySortOrder, LibraryViewMode};
 
     const PAGE_SIZE: usize = 20;
 
@@ -259,6 +259,8 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    const PAGE_SIZE: usize = 20;
+
     match key.code {
         KeyCode::Char('a') => {
             app.input_mode = InputMode::AddDirectory;
@@ -271,6 +273,14 @@ fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         }
         KeyCode::Down | KeyCode::Char('j') => {
             app.select_next_directory();
+            None
+        }
+        KeyCode::PageUp => {
+            app.page_up_directories(PAGE_SIZE);
+            None
+        }
+        KeyCode::PageDown => {
+            app.page_down_directories(PAGE_SIZE);
             None
         }
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
@@ -288,23 +298,13 @@ fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
         }
         KeyCode::Char('m') => {
             // Maintenance: clean up database
-            match app.clean_library_database() {
-                Ok(removed) => {
-                    if removed > 0 {
-                        app.status_message =
-                            Some(format!("Cleaned {} missing tracks from database", removed));
-                        log::info!("Database maintenance: removed {} missing tracks", removed);
-                    } else {
-                        app.status_message =
-                            Some("Database is clean - no missing tracks found".to_string());
-                        log::info!("Database maintenance: no missing tracks found");
-                    }
-                }
-                Err(e) => {
-                    app.status_message = Some(format!("Database maintenance failed: {}", e));
-                    log::error!("Database maintenance failed: {}", e);
-                }
-            }
+            // The method handles all progress tracking and status messages
+            let _ = app.clean_library_database();
+            None
+        }
+        KeyCode::Char('r') => {
+            // Start ReplayGain scan for all tracks
+            let _ = app.start_replay_gain_scan();
             None
         }
         _ => None,
@@ -632,7 +632,8 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
                     app.input_mode = InputMode::LoadApoFile;
                     app.status_message = Some("Enter path to APO file:".to_string());
                 } else {
-                    app.status_message = Some("APO files can only be loaded for EQ plugins".to_string());
+                    app.status_message =
+                        Some("APO files can only be loaded for EQ plugins".to_string());
                 }
             }
             None
@@ -645,7 +646,9 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
                     app.input_mode = InputMode::LoadSofaFile;
                     app.status_message = Some("Enter path to SOFA file:".to_string());
                 } else {
-                    app.status_message = Some("SOFA files can only be loaded for Binaural Decoder plugins".to_string());
+                    app.status_message = Some(
+                        "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
+                    );
                 }
             }
             None

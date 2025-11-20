@@ -143,7 +143,12 @@ impl PlayerView {
         self.switch_screen(Screen::Devices, cx);
     }
 
-    fn toggle_library_view(&mut self, _: &ToggleLibraryView, _: &mut Window, cx: &mut Context<Self>) {
+    fn toggle_library_view(
+        &mut self,
+        _: &ToggleLibraryView,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             state.app.toggle_library_view_mode();
         });
@@ -151,8 +156,8 @@ impl PlayerView {
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            match state.app.current_screen {
+        self.state
+            .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.select_next_tree_item();
@@ -163,14 +168,13 @@ impl PlayerView {
                 Screen::Queue => state.app.select_next_queue_item(),
                 Screen::DirectoryManager => state.app.select_next_directory(),
                 _ => {}
-            }
-        });
+            });
         cx.notify();
     }
 
     fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            match state.app.current_screen {
+        self.state
+            .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.select_previous_tree_item();
@@ -181,8 +185,7 @@ impl PlayerView {
                 Screen::Queue => state.app.select_previous_queue_item(),
                 Screen::DirectoryManager => state.app.select_previous_directory(),
                 _ => {}
-            }
-        });
+            });
         cx.notify();
     }
 
@@ -201,7 +204,10 @@ impl PlayerView {
 
     fn update_playback_state(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
-            let playback_state = state.player.lock().get_playback_state(state.app.spectrum_visible);
+            let playback_state = state
+                .player
+                .lock()
+                .get_playback_state(state.app.spectrum_visible);
 
             state.app.position_secs = playback_state.position_secs;
             state.app.loudness_info = playback_state.loudness;
@@ -241,7 +247,10 @@ impl PlayerView {
             // Add album to queue and start playing
             let albums = state.app.filtered_albums();
             if let Some(album) = albums.get(index).cloned() {
-                state.app.queue.push(crate::app::QueueItem::new(album.clone()));
+                state
+                    .app
+                    .queue
+                    .push(crate::app::QueueItem::new(album.clone()));
                 state.app.expanded_queue_items.push(false);
 
                 if let Some(path) = state.app.start_queue() {
@@ -270,10 +279,10 @@ impl PlayerView {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         // Add tree selection to queue
                         if let Some(path) = state.app.add_album_to_queue() {
-                             Self::play_track(state, path);
+                            Self::play_track(state, path);
                         }
                     } else {
-                         // Add album to queue
+                        // Add album to queue
                         if let Some(path) = state.app.add_album_to_queue() {
                             Self::play_track(state, path);
                         }
@@ -396,16 +405,24 @@ impl PlayerView {
             button
                 .bg(rgb(0x3e3e3e))
                 .hover(|style| style.bg(rgb(0x505050)))
-                .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.switch_screen(screen, cx);
-                }))
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                        view.switch_screen(screen, cx);
+                    }),
+                )
         }
     }
 
     fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (library_view_mode, albums_count, search_query, scan_in_progress) = {
             let state = self.state.read(cx);
-            (state.app.library_view_mode, state.app.library.albums.len(), state.app.search_query.clone(), state.app.scan_in_progress)
+            (
+                state.app.library_view_mode,
+                state.app.library.albums.len(),
+                state.app.search_query.clone(),
+                state.app.scan_in_progress,
+            )
         };
 
         let content = if library_view_mode == crate::app::LibraryViewMode::TreeView {
@@ -540,16 +557,22 @@ impl PlayerView {
                     .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
                     .hover(|style| style.bg(rgb(0x3e3e3e)))
                     .cursor_pointer()
-                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                        view.state.update(cx, |state, cx| state.app.selected_album_index = idx);
-                        cx.notify();
-                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                            view.state
+                                .update(cx, |state, cx| state.app.selected_album_index = idx);
+                            cx.notify();
+                        }),
+                    )
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .child(
-                                div().font_weight(FontWeight::SEMIBOLD).child(album.title.clone()),
+                                div()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(album.title.clone()),
                             )
                             .child(
                                 div()
@@ -578,30 +601,31 @@ impl PlayerView {
             .flex_1()
             .children(tree_items.iter().enumerate().map(|(idx, item)| {
                 let is_selected = state.app.selected_tree_index == idx;
-                
+
                 match item {
-                    crate::app::TreeItem::Artist { name, expanded } => {
-                        div()
-                            .p_2()
-                            .rounded_md()
-                            .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                            .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                            .cursor_pointer()
-                            .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                    crate::app::TreeItem::Artist { name, expanded } => div()
+                        .p_2()
+                        .rounded_md()
+                        .when(is_selected, |div| div.bg(rgb(0x007acc)))
+                        .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                        .cursor_pointer()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, cx| {
                                     state.app.selected_tree_index = idx;
                                     state.app.toggle_artist_expansion();
                                 });
                                 cx.notify();
-                            }))
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .child(if *expanded { "▼" } else { "▶" })
-                                    .child(name.clone())
-                            )
-                    },
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .child(if *expanded { "▼" } else { "▶" })
+                                .child(name.clone()),
+                        ),
                     crate::app::TreeItem::Album { index } => {
                         let album = &state.app.library.albums[*index];
                         div()
@@ -611,10 +635,15 @@ impl PlayerView {
                             .when(is_selected, |div| div.bg(rgb(0x007acc)))
                             .when(!is_selected, |div| div.bg(rgb(0x252525))) // Slightly darker for albums
                             .cursor_pointer()
-                            .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, cx| state.app.selected_tree_index = idx);
-                                cx.notify();
-                            }))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, cx| {
+                                        state.app.selected_tree_index = idx
+                                    });
+                                    cx.notify();
+                                }),
+                            )
                             .child(album.title.clone())
                     }
                 }
@@ -646,65 +675,65 @@ impl PlayerView {
                             .bg(rgb(0x2d2d2d))
                             .hover(|style| style.bg(rgb(0x8e2e2e)))
                             .cursor_pointer()
-                            .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, cx| {
-                                    state.app.clear_queue();
-                                });
-                                cx.notify();
-                            }))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, cx| {
+                                        state.app.clear_queue();
+                                    });
+                                    cx.notify();
+                                }),
+                            )
                             .child("Clear"),
                     ),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                            .flex_1()
-                    .children(state.app.queue.iter().enumerate().map(|(idx, item)| {
-                        let is_current = state.app.current_queue_index == Some(idx);
-                        div()
-                            .p_3()
-                            .rounded_md()
-                            .when(is_current, |div| div.bg(rgb(0x007acc)))
-
-                            .when(!is_current, |div| div.bg(rgb(0x2d2d2d)))
-                            .hover(|style| style.bg(rgb(0x3e3e3e)))
-                            .cursor_pointer()
-                            .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+            .child(div().flex().flex_col().gap_2().flex_1().children(
+                state.app.queue.iter().enumerate().map(|(idx, item)| {
+                    let is_current = state.app.current_queue_index == Some(idx);
+                    div()
+                        .p_3()
+                        .rounded_md()
+                        .when(is_current, |div| div.bg(rgb(0x007acc)))
+                        .when(!is_current, |div| div.bg(rgb(0x2d2d2d)))
+                        .hover(|style| style.bg(rgb(0x3e3e3e)))
+                        .cursor_pointer()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, cx| {
                                     state.app.current_queue_index = Some(idx);
-                                    if let Some(path) = state.app.queue[idx].current_track().map(|t| t.path.clone()) {
+                                    if let Some(path) =
+                                        state.app.queue[idx].current_track().map(|t| t.path.clone())
+                                    {
                                         Self::play_track(state, path);
                                     }
                                 });
                                 cx.notify();
-                            }))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .child(
-                                        div()
-                                            .font_weight(FontWeight::SEMIBOLD)
-                                            .child(item.album.title.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(rgb(0x999999))
-                                            .child(item.album.artist.clone()),
-                                    )
-                                    .child(div().text_xs().text_color(rgb(0x666666)).child(
-                                        format!(
-                                            "Track {}/{}",
-                                            item.current_track_index + 1,
-                                            item.album.tracks.len()
-                                        ),
-                                    )),
-                            )
-                    })),
-            )
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(item.album.title.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(rgb(0x999999))
+                                        .child(item.album.artist.clone()),
+                                )
+                                .child(div().text_xs().text_color(rgb(0x666666)).child(format!(
+                                    "Track {}/{}",
+                                    item.current_track_index + 1,
+                                    item.album.tracks.len()
+                                ))),
+                        )
+                }),
+            ))
     }
 
     fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -770,10 +799,14 @@ impl PlayerView {
                     .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
                     .hover(|style| style.bg(rgb(0x3e3e3e)))
                     .cursor_pointer()
-                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                        view.state.update(cx, |state, cx| state.app.selected_plugin_index = idx);
-                        cx.notify();
-                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                            view.state
+                                .update(cx, |state, cx| state.app.selected_plugin_index = idx);
+                            cx.notify();
+                        }),
+                    )
                     .child(
                         div()
                             .flex()
@@ -786,15 +819,22 @@ impl PlayerView {
                                     .rounded_sm()
                                     .border_1()
                                     .border_color(rgb(0x999999))
-                                    .bg(if enabled { rgb(0x00ff00) } else { rgb(0x000000) })
+                                    .bg(if enabled {
+                                        rgb(0x00ff00)
+                                    } else {
+                                        rgb(0x000000)
+                                    })
                                     .cursor_pointer()
-                                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                        view.state.update(cx, |state, cx| {
-                                            state.app.plugin_chain.toggle_plugin(idx);
-                                            state.app.needs_plugin_update = true;
-                                        });
-                                        cx.notify();
-                                    })),
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, cx| {
+                                                state.app.plugin_chain.toggle_plugin(idx);
+                                                state.app.needs_plugin_update = true;
+                                            });
+                                            cx.notify();
+                                        }),
+                                    ),
                             )
                             .child(name),
                     )
@@ -816,31 +856,43 @@ impl PlayerView {
                     .bg(rgb(0x4e4e4e))
                     .rounded_md()
                     .cursor_pointer()
-                    .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                         view.state.update(cx, |state, cx| {
-                             // Add Upmixer by default for now, or show menu
-                             // For simplicity, let's cycle or add a specific one
-                             state.app.plugin_chain.add_plugin(&crate::plugins::PluginType::Upmixer);
-                             state.app.needs_plugin_update = true;
-                         });
-                         cx.notify();
-                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, cx| {
+                                // Add Upmixer by default for now, or show menu
+                                // For simplicity, let's cycle or add a specific one
+                                state
+                                    .app
+                                    .plugin_chain
+                                    .add_plugin(&crate::plugins::PluginType::Upmixer);
+                                state.app.needs_plugin_update = true;
+                            });
+                            cx.notify();
+                        }),
+                    )
                     .child("+ Upmixer"),
             )
-             .child(
+            .child(
                 div()
                     .px_2()
                     .py_1()
                     .bg(rgb(0x4e4e4e))
                     .rounded_md()
                     .cursor_pointer()
-                    .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                         view.state.update(cx, |state, cx| {
-                             state.app.plugin_chain.add_plugin(&crate::plugins::PluginType::EQ);
-                             state.app.needs_plugin_update = true;
-                         });
-                         cx.notify();
-                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, cx| {
+                                state
+                                    .app
+                                    .plugin_chain
+                                    .add_plugin(&crate::plugins::PluginType::EQ);
+                                state.app.needs_plugin_update = true;
+                            });
+                            cx.notify();
+                        }),
+                    )
                     .child("+ EQ"),
             )
             .child(
@@ -850,39 +902,68 @@ impl PlayerView {
                     .bg(rgb(0x8e2e2e))
                     .rounded_md()
                     .cursor_pointer()
-                    .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                         view.state.update(cx, |state, cx| {
-                             let idx = state.app.selected_plugin_index;
-                             state.app.plugin_chain.remove_plugin(idx);
-                             if state.app.selected_plugin_index >= state.app.plugin_chain.len() && state.app.plugin_chain.len() > 0 {
-                                 state.app.selected_plugin_index = state.app.plugin_chain.len() - 1;
-                             }
-                             state.app.needs_plugin_update = true;
-                         });
-                         cx.notify();
-                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, cx| {
+                                let idx = state.app.selected_plugin_index;
+                                state.app.plugin_chain.remove_plugin(idx);
+                                if state.app.selected_plugin_index >= state.app.plugin_chain.len()
+                                    && state.app.plugin_chain.len() > 0
+                                {
+                                    state.app.selected_plugin_index =
+                                        state.app.plugin_chain.len() - 1;
+                                }
+                                state.app.needs_plugin_update = true;
+                            });
+                            cx.notify();
+                        }),
+                    )
                     .child("Remove"),
             )
     }
 
     fn render_plugin_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        if let Some(plugin) = state.app.plugin_chain.get_plugin(state.app.selected_plugin_index) {
-             match &plugin.settings {
-                crate::plugins::PluginSettings::Upmixer { speaker_config, lfe_gain } => {
-                    div().p_4().flex().flex_col().gap_4()
-                        .child(format!("Speaker Config: {}", speaker_config))
-                        .child(format!("LFE Gain: {:.2}", lfe_gain))
-                        .child(div().text_sm().text_color(rgb(0x999999)).child("Editing not yet implemented"))
-                }
-                crate::plugins::PluginSettings::EQ { filters } => {
-                     div().p_4().flex().flex_col().gap_2()
-                        .child(format!("EQ ({} bands)", filters.len()))
-                        .children(filters.iter().enumerate().map(|(i, f)| {
-                            div().child(format!("Band {}: {:.0} Hz, {:.1} dB", i+1, f.frequency, f.gain_db))
-                        }))
-                }
-                _ => div().p_4().child("Settings not available for this plugin type"),
+        if let Some(plugin) = state
+            .app
+            .plugin_chain
+            .get_plugin(state.app.selected_plugin_index)
+        {
+            match &plugin.settings {
+                crate::plugins::PluginSettings::Upmixer {
+                    speaker_config,
+                    lfe_gain,
+                } => div()
+                    .p_4()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    .child(format!("Speaker Config: {}", speaker_config))
+                    .child(format!("LFE Gain: {:.2}", lfe_gain))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x999999))
+                            .child("Editing not yet implemented"),
+                    ),
+                crate::plugins::PluginSettings::EQ { filters } => div()
+                    .p_4()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(format!("EQ ({} bands)", filters.len()))
+                    .children(filters.iter().enumerate().map(|(i, f)| {
+                        div().child(format!(
+                            "Band {}: {:.0} Hz, {:.1} dB",
+                            i + 1,
+                            f.frequency,
+                            f.gain_db
+                        ))
+                    })),
+                _ => div()
+                    .p_4()
+                    .child("Settings not available for this plugin type"),
             }
         } else {
             div().p_4().child("No plugin selected")
@@ -920,27 +1001,38 @@ impl PlayerView {
                                 .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
                                 .hover(|style| style.bg(rgb(0x3e3e3e)))
                                 .cursor_pointer()
-                                .on_mouse_up(MouseButton::Left, cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, cx| {
-                                        state.app.selected_output_device_index = idx;
-                                        if let Some(device) = state.app.output_devices.get(idx) {
-                                            state.app.current_output_device_name = Some(device.name.clone());
-                                            
-                                            // If playing, restart track with new device
-                                            if state.app.is_playing {
-                                                if let Some(queue_idx) = state.app.current_queue_index {
-                                                    if let Some(item) = state.app.queue.get(queue_idx) {
-                                                        if let Some(track) = item.current_track() {
-                                                            let path = track.path.clone();
-                                                            Self::play_track(state, path);
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        view.state.update(cx, |state, cx| {
+                                            state.app.selected_output_device_index = idx;
+                                            if let Some(device) = state.app.output_devices.get(idx)
+                                            {
+                                                state.app.current_output_device_name =
+                                                    Some(device.name.clone());
+
+                                                // If playing, restart track with new device
+                                                if state.app.is_playing {
+                                                    if let Some(queue_idx) =
+                                                        state.app.current_queue_index
+                                                    {
+                                                        if let Some(item) =
+                                                            state.app.queue.get(queue_idx)
+                                                        {
+                                                            if let Some(track) =
+                                                                item.current_track()
+                                                            {
+                                                                let path = track.path.clone();
+                                                                Self::play_track(state, path);
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
-                                    });
-                                    cx.notify();
-                                }))
+                                        });
+                                        cx.notify();
+                                    }),
+                                )
                                 .child(
                                     div()
                                         .flex()
@@ -995,10 +1087,12 @@ impl PlayerView {
 
                             div()
                                 .w_full()
-                                .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(normalized)))
+                                .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                    normalized,
+                                )))
                                 .bg(color)
                                 .rounded_t_sm()
-                        }))
+                        })),
                 )
                 .child(
                     div()
@@ -1009,7 +1103,7 @@ impl PlayerView {
                         .text_color(rgb(0x999999))
                         .child("20 Hz")
                         .child("1 kHz")
-                        .child("20 kHz")
+                        .child("20 kHz"),
                 )
         } else {
             div()

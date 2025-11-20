@@ -1,13 +1,13 @@
-use crate::app::{App, InputMode, Screen, LibraryViewMode, TreeItem};
+use crate::app::{App, InputMode, LibraryViewMode, Screen, TreeItem};
 use crate::plugins::{PluginSettings, PluginType};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
-
+use sotf_audio::plugins::get_speaker_config_by_channels;
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
 fn format_channel_count(n: u32) -> String {
@@ -195,6 +195,16 @@ pub fn draw(f: &mut Frame, app: &App) {
         draw_scan_progress_dialog(f, app);
     }
 
+    // Maintenance progress dialog
+    if app.maintenance_in_progress {
+        draw_maintenance_progress_dialog(f, app);
+    }
+
+    // ReplayGain progress dialog
+    if app.replay_gain_in_progress {
+        draw_replay_gain_progress_dialog(f, app);
+    }
+
     // Help modal
     if app.input_mode == InputMode::ShowHelp {
         draw_help_modal(f, app);
@@ -325,7 +335,7 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
         format!("Search: {}", app.search_query)
     };
 
-    // Display current sort order
+    // Display current sort order (will be rendered in green)
     let sort_order_str = match app.library_sort_order {
         LibrarySortOrder::Artist => "Artist",
         LibrarySortOrder::Album => "Album",
@@ -333,7 +343,7 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
         LibrarySortOrder::Year => "Year",
     };
 
-    // Display current channel filter
+    // Display current channel filter (will be rendered in green)
     let filter_str = match app.channel_filter {
         ChannelFilter::All => "All".to_string(),
         ChannelFilter::Mono => "Mono".to_string(),
@@ -348,35 +358,28 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     let counts_str = if available_counts.is_empty() {
         String::new()
     } else {
-        // Determine which channel count is currently active (if any)
-        let active_count = match app.channel_filter {
-            ChannelFilter::Mono => Some(1),
-            ChannelFilter::Stereo => Some(2),
-            ChannelFilter::Specific(n) => Some(n),
-            _ => None, // All, Multichannel, Mixed don't have specific counts
-        };
-
+        // Note: We'll show all available counts without brackets
+        // The current filter is already shown in green in the title
         format!(
             " | Available: {}",
             available_counts
                 .iter()
-                .map(|&n| {
-                    let formatted = format_channel_count(n);
-                    if Some(n) == active_count {
-                        format!("[{}]", formatted)
-                    } else {
-                        formatted
-                    }
-                })
+                .map(|&n| format_channel_count(n))
                 .collect::<Vec<_>>()
                 .join(", ")
         )
     };
 
-    let title = format!(
-        "Search Albums ('/' search | Sort: {} [s/1-4] | Filter: {} [c/5-9]{})",
-        sort_order_str, filter_str, counts_str
-    );
+    // Build title with colored sorting and filtering
+    let suffix = format!(" [c/5-9]{})", counts_str);
+    let title_spans = vec![
+        Span::raw("Search Albums ('/' search | Sort: "),
+        Span::styled(sort_order_str, Style::default().fg(Color::Green)),
+        Span::raw(" [s/1-4] | Filter: "),
+        Span::styled(&filter_str, Style::default().fg(Color::Green)),
+        Span::raw(suffix),
+    ];
+    let title = Line::from(title_spans);
 
     let search_box = Paragraph::new(search_text)
         .style(input_style)
@@ -426,7 +429,7 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
 
             let list = List::new(items)
                 .block(Block::default().borders(Borders::ALL).title(format!(
-                    "Albums ({}) - 'a' to add, 't' to toggle tree view, 'm' for maintenance",
+                    "Albums ({}) - 'a' to add, 't' to toggle tree view",
                     albums.len()
                 )))
                 .highlight_style(
@@ -609,9 +612,12 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
             // We should probably update get_directory_tree_items to return more info or look it up here.
             // Looking up by path in the recursive structure is expensive if we do it for every item.
             // But for a TUI it might be fine.
-            
+
             // Helper to find directory info by path
-            fn find_dir_info<'a>(directories: &'a [crate::library::DirectoryInfo], path: &std::path::Path) -> Option<&'a crate::library::DirectoryInfo> {
+            fn find_dir_info<'a>(
+                directories: &'a [crate::library::DirectoryInfo],
+                path: &std::path::Path,
+            ) -> Option<&'a crate::library::DirectoryInfo> {
                 for dir in directories {
                     if dir.path == path {
                         return Some(dir);
@@ -645,9 +651,12 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
                 } else {
                     "never".to_string()
                 };
-                
+
                 if *level == 0 {
-                    format!(" [{} tracks, {} albums, {}]", track_count, album_count, last_scan)
+                    format!(
+                        " [{} tracks, {} albums, {}]",
+                        track_count, album_count, last_scan
+                    )
                 } else {
                     format!(" [{} tracks, {} albums]", track_count, album_count)
                 }
@@ -685,15 +694,27 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         if msg.contains("Scan complete") {
             format!("Directories - {}", msg)
         } else {
-            "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'a'=add".to_string()
+            "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
         }
     } else {
-        "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'a'=add".to_string()
+        "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
     };
 
-    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
+    let list = List::new(items)
+        .block(Block::default().borders(Borders::ALL).title(title))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        );
 
-    f.render_widget(list, chunks[2]);
+    // Use stateful widget for proper scrolling
+    let mut state = ListState::default();
+    state.select(Some(app.selected_directory_index));
+
+    use ratatui::widgets::StatefulWidget;
+    StatefulWidget::render(list, chunks[2], f.buffer_mut(), &mut state);
 }
 
 fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
@@ -1121,8 +1142,20 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                 },
             );
 
-            // Draw channel label at bottom
-            let label = format!("{}", ch_idx + 1);
+            // Draw channel label at bottom using speaker config
+            let label = if let Some(config) = get_speaker_config_by_channels(num_channels) {
+                // Find speaker by channel index
+                config
+                    .speakers
+                    .iter()
+                    .find(|s| s.channel == ch_idx)
+                    .map(|s| s.label.to_string())
+                    .unwrap_or_else(|| format!("{}", ch_idx + 1))
+            } else {
+                // Fallback to channel number if no config found
+                format!("{}", ch_idx + 1)
+            };
+
             f.render_widget(
                 Paragraph::new(label)
                     .style(Style::default().fg(Color::Cyan))
@@ -1704,9 +1737,10 @@ fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
             Span::styled("_", Style::default().fg(Color::Green)),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Supported format:", Style::default().fg(Color::Yellow)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Supported format:",
+            Style::default().fg(Color::Yellow),
+        )]),
         Line::from("  Filter 1: ON PK Fc 100 Hz Gain -2.0 dB Q 1.41"),
         Line::from("  Filter 2: ON LSC Fc 105 Hz Gain 4.1 dB Q 0.71"),
         Line::from(""),
@@ -1806,22 +1840,200 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
 
     let lines = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled("Scanning directories for audio files...", Style::default().fg(Color::Yellow)),
-        ]),
+        Line::from(vec![Span::styled(
+            "Scanning directories for audio files...",
+            Style::default().fg(Color::Yellow),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::raw("Tracks found: "),
-            Span::styled(format!("{}", app.scan_progress_tracks), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", app.scan_progress_tracks),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::raw("Albums found: "),
-            Span::styled(format!("{}", app.scan_progress_albums), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{}", app.scan_progress_albums),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Please wait...",
+            Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::ITALIC),
+        )]),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default())
+        .alignment(Alignment::Left);
+
+    f.render_widget(paragraph, inner);
+}
+
+fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
+    // Create a centered dialog
+    let area = f.area();
+    let dialog_width = (area.width as f32 * 0.5) as u16;
+    let dialog_height = 10;
+    let dialog_x = (area.width - dialog_width) / 2;
+    let dialog_y = (area.height - dialog_height) / 2;
+
+    let dialog_area = Rect {
+        x: dialog_x,
+        y: dialog_y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear background
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .style(Style::default().bg(Color::Black))
+        .title("Database Maintenance");
+
+    f.render_widget(Clear, dialog_area);
+    f.render_widget(block, dialog_area);
+
+    // Inner area for text
+    let inner = Rect {
+        x: dialog_area.x + 2,
+        y: dialog_area.y + 2,
+        width: dialog_area.width.saturating_sub(4),
+        height: dialog_area.height.saturating_sub(4),
+    };
+
+    let progress_pct = if app.maintenance_progress_total > 0 {
+        (app.maintenance_progress_checked as f32 / app.maintenance_progress_total as f32 * 100.0)
+            as u32
+    } else {
+        0
+    };
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Checking database for missing files...",
+            Style::default().fg(Color::Yellow),
+        )]),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("Progress: "),
+            Span::styled(
+                format!(
+                    "{} / {} ({}%)",
+                    app.maintenance_progress_checked, app.maintenance_progress_total, progress_pct
+                ),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Please wait...",
+            Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::ITALIC),
+        )]),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default())
+        .alignment(Alignment::Left);
+
+    f.render_widget(paragraph, inner);
+}
+
+fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
+    // Create a centered dialog
+    let area = f.area();
+    let dialog_width = (area.width as f32 * 0.6) as u16;
+    let dialog_height = 12;
+    let dialog_x = (area.width - dialog_width) / 2;
+    let dialog_y = (area.height - dialog_height) / 2;
+
+    let dialog_area = Rect {
+        x: dialog_x,
+        y: dialog_y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear background
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .style(Style::default().bg(Color::Black))
+        .title("ReplayGain Analysis");
+
+    f.render_widget(Clear, dialog_area);
+    f.render_widget(block, dialog_area);
+
+    // Inner area for text
+    let inner = Rect {
+        x: dialog_area.x + 2,
+        y: dialog_area.y + 2,
+        width: dialog_area.width.saturating_sub(4),
+        height: dialog_area.height.saturating_sub(4),
+    };
+
+    let progress_pct = if app.replay_gain_total > 0 {
+        (app.replay_gain_processed as f32 / app.replay_gain_total as f32 * 100.0) as u32
+    } else {
+        0
+    };
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Analyzing tracks for ReplayGain...",
+            Style::default().fg(Color::Yellow),
+        )]),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("Progress: "),
+            Span::styled(
+                format!(
+                    "{} / {} ({}%)",
+                    app.replay_gain_processed, app.replay_gain_total, progress_pct
+                ),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Please wait...", Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC)),
+            Span::raw("Succeeded: "),
+            Span::styled(
+                format!("{}", app.replay_gain_succeeded),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  Failed: "),
+            Span::styled(
+                format!("{}", app.replay_gain_failed),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
         ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "Please wait...",
+            Style::default()
+                .fg(Color::Gray)
+                .add_modifier(Modifier::ITALIC),
+        )]),
     ];
 
     let paragraph = Paragraph::new(lines)
@@ -1851,7 +2063,8 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .style(Style::default().bg(Color::Black))
-        .title(format!("Help - {} Screen (Press ESC or ? to close)",
+        .title(format!(
+            "Help - {} Screen (Press ESC or ? to close)",
             match app.current_screen {
                 Screen::Library => "Library",
                 Screen::DirectoryManager => "Directories",
@@ -1879,9 +2092,12 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
     let mut lines = vec![];
 
     // Global keybindings
-    lines.push(Line::from(vec![
-        Span::styled("GLOBAL KEYBINDINGS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-    ]));
+    lines.push(Line::from(vec![Span::styled(
+        "GLOBAL KEYBINDINGS",
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    )]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  TAB", Style::default().fg(Color::Cyan)),
@@ -1914,8 +2130,9 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
     lines.push(Line::from(""));
 
     // Screen-specific keybindings
-    lines.push(Line::from(vec![
-        Span::styled(format!("{} KEYBINDINGS",
+    lines.push(Line::from(vec![Span::styled(
+        format!(
+            "{} KEYBINDINGS",
             match app.current_screen {
                 Screen::Library => "LIBRARY",
                 Screen::DirectoryManager => "DIRECTORIES",
@@ -1923,8 +2140,11 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
                 Screen::Plugins => "PLUGINS",
                 Screen::Devices => "DEVICES",
             }
-        ), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
-    ]));
+        ),
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+    )]));
     lines.push(Line::from(""));
 
     for (key, description) in keybindings {
@@ -1953,15 +2173,16 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("c or 5/6/7/8/9", "Filter: All/Mono/Stereo/Multi/Mixed"),
             ("a or Enter", "Add album to queue"),
             ("q", "Go to queue screen"),
-            ("m", "Database maintenance (clean missing files)"),
         ],
         Screen::DirectoryManager => vec![
             ("↑/↓ or k/j", "Navigate directories"),
+            ("PageUp/PageDown", "Jump by page"),
             ("Enter/→/l", "Expand/collapse directory"),
             ("a", "Add directory"),
             ("d/Delete", "Remove selected directory"),
             ("s", "Scan library"),
             ("m", "Database maintenance (clean missing files)"),
+            ("r", "Analyze ReplayGain for all tracks"),
         ],
         Screen::Queue => vec![
             ("↑/↓ or k/j", "Navigate queue items"),
@@ -1977,7 +2198,10 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         Screen::Plugins => vec![
             ("↑/↓ or k/j", "Navigate plugin chain"),
             ("a", "Add plugin (default)"),
-            ("1/2/3/4/5/6/7", "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural"),
+            (
+                "1/2/3/4/5/6/7",
+                "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural",
+            ),
             ("e or Enter", "Edit selected plugin"),
             ("t", "Toggle plugin enabled/disabled"),
             ("d/Delete", "Remove plugin"),

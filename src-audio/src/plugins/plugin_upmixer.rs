@@ -1152,7 +1152,7 @@ impl Plugin for UpmixerPlugin {
                     "[UPMIXER] After drain: accum_fill={}, next_add_pos={}, output_pos={}",
                     self.output_accumulator_fill,
                     self.next_add_position,
-                    output_pos / 5
+                    output_pos / self.num_output_channels
                 );
             }
 
@@ -1292,7 +1292,7 @@ impl Plugin for UpmixerPlugin {
         );
 
         // Final drain of any remaining output
-        let frames_available = (output.len() - output_pos) / 5;
+        let frames_available = (output.len() - output_pos) / self.num_output_channels;
         let frames_to_drain = self.output_accumulator_fill.min(frames_available);
 
         if frames_to_drain > 0 {
@@ -1334,13 +1334,13 @@ impl Plugin for UpmixerPlugin {
                 "[UPMIXER] After final drain: accum_fill={}, next_add_pos={}, total_output={}",
                 self.output_accumulator_fill,
                 self.next_add_position,
-                output_pos / 5
+                output_pos / self.num_output_channels
             );
         }
 
         log::info!(
             "[UPMIXER] process() complete: returned {} frames\n",
-            output_pos / 5
+            output_pos / self.num_output_channels
         );
 
         Ok(())

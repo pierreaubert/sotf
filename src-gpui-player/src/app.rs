@@ -111,7 +111,7 @@ pub struct App {
     // Plugin preset selection
     pub available_plugin_presets: Vec<String>, // List of preset filenames
     pub selected_preset_index: usize,
-    
+
     // Library tree view
     pub library_view_mode: LibraryViewMode,
     pub artist_tree: Vec<ArtistNode>,
@@ -418,7 +418,7 @@ impl App {
         if let Some(preset_name) = config.last_loaded_plugin_preset {
             self.last_loaded_preset = Some(preset_name.clone());
             // Load the preset file
-             match self.plugin_chain.load_from_file(&preset_name) {
+            match self.plugin_chain.load_from_file(&preset_name) {
                 Ok(_) => {
                     self.needs_plugin_update = true;
                     log::info!("Restored plugin preset: {}", preset_name);

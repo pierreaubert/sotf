@@ -216,26 +216,35 @@ impl HeadScanner {
                     vision::detect_features_classical(&frame)?
                 };
 
+                log::debug!("Detected {} features in frame", features.len());
+
                 // If we detected a head, start scanning
                 if state == ScanState::DetectingHead && !features.is_empty() {
                     *self.state.write() = ScanState::Scanning;
+                    log::info!("Head detected with {} features, starting scan", features.len());
                 }
 
                 // Add points to the point cloud
                 if state == ScanState::Scanning {
                     let points = reconstruction::features_to_points(&features, &frame)?;
+                    log::debug!("Converted {} features to {} 3D points", features.len(), points.len());
 
                     // Deduplicate and filter points before adding
                     let mut point_cloud = self.point_cloud.write();
+                    let initial_count = point_cloud.len();
                     let filtered_points = self.filter_new_points(&point_cloud, points);
 
                     if !filtered_points.is_empty() {
                         point_cloud.add_points(&filtered_points);
+                        let new_count = point_cloud.len();
+                        log::debug!("Added {} new points (total: {} -> {})", filtered_points.len(), initial_count, new_count);
 
                         // Periodically downsample to control memory usage
                         if point_cloud.len() % 1000 == 0 {
                             point_cloud.voxel_downsample(self.config.point_density / 100.0);
                         }
+                    } else {
+                        log::debug!("No new points added (all filtered out)");
                     }
 
                     drop(point_cloud); // Release lock before updating coverage
@@ -354,7 +363,8 @@ impl HeadScanner {
         }
 
         // Minimum distance threshold (in cm) - points closer than this are considered duplicates
-        let min_distance = self.config.point_density / 20.0; // e.g., 2.5mm for 50 points/cm²
+        // Relaxed threshold to allow more points through for faster coverage
+        let min_distance = self.config.point_density / 50.0; // e.g., 1mm for 50 points/cm²
         let min_distance_sq = min_distance * min_distance;
 
         // Filter out points that are too close to existing points

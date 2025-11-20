@@ -12,6 +12,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
+#[cfg(target_os = "macos")]
+use sotf_hal::HalOutputWriter;
+
 const SPIN_MS_RINGBUFFER: u64 = 5;
 const SPIN_MS_SIGNAL: u64 = 10;
 
@@ -158,16 +161,29 @@ struct PlaybackState {
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
+
+    #[cfg(target_os = "macos")]
+    hal_writer: parking_lot::Mutex<Option<HalOutputWriter>>,
 }
 
 impl PlaybackState {
     fn new(buffer_frames: usize, channels: usize) -> Self {
+        #[cfg(target_os = "macos")]
+        let hal_writer = HalOutputWriter::new();
+
+        #[cfg(target_os = "macos")]
+        if hal_writer.is_none() {
+            log::warn!("[Playback Thread] Failed to initialize HAL output writer");
+        }
+
         Self {
             ring_buffer: parking_lot::Mutex::new(RingBuffer::new(buffer_frames, channels)),
             volume: Arc::new(parking_lot::RwLock::new(1.0)),
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)), // Start at 100%
+            #[cfg(target_os = "macos")]
+            hal_writer: parking_lot::Mutex::new(hal_writer),
         }
     }
 }
@@ -416,7 +432,9 @@ fn build_output_stream(
 
                     // Track buffer level changes (log when it drops below certain thresholds)
                     let last_level = state_clone.last_buffer_level.load(Ordering::Relaxed);
-                    state_clone.last_buffer_level.store(fill_percent as u64, Ordering::Relaxed);
+                    state_clone
+                        .last_buffer_level
+                        .store(fill_percent as u64, Ordering::Relaxed);
 
                     // Log buffer level warnings
                     if fill_percent < 25 && last_level >= 25 {
@@ -466,6 +484,18 @@ fn build_output_stream(
                 } else if (volume - 1.0).abs() > 0.001 {
                     for sample in data.iter_mut() {
                         *sample *= volume;
+                    }
+                }
+
+                // Write to HAL (loopback)
+                #[cfg(target_os = "macos")]
+                {
+                    let mut writer_guard = state_clone.hal_writer.lock();
+                    if let Some(writer) = &mut *writer_guard {
+                        let written = writer.write(data);
+                        if written < data.len() {
+                            // Optional: log trace if needed, but avoid spamming audio callback
+                        }
                     }
                 }
             },

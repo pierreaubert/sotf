@@ -145,8 +145,8 @@ impl EQFilter {
     /// Filter 2: ON LSC Fc 105 Hz Gain 4.1 dB Q 0.71
     /// ```
     pub fn from_apo_file(path: &std::path::Path) -> Result<Vec<Self>, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read file: {}", e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {}", e))?;
 
         let mut filters = Vec::new();
 
@@ -560,13 +560,14 @@ impl PluginChain {
 
         // Check if user specified a non-json extension
         if let Some(ext) = extension
-            && ext != "json" {
-                return Err(format!(
-                    "Only .json files are supported. Please use .json extension instead of .{}",
-                    ext
-                )
-                .into());
-            }
+            && ext != "json"
+        {
+            return Err(format!(
+                "Only .json files are supported. Please use .json extension instead of .{}",
+                ext
+            )
+            .into());
+        }
 
         // Auto-append .json if no extension provided
         let filename = if extension.is_none() {
@@ -625,6 +626,56 @@ impl PluginChain {
         log::info!("Loaded plugin chain from {}", full_path.display());
         Ok(())
     }
+
+    /// Update BinauralDecoder input_channels based on the output of plugins before them
+    /// This should be called after any plugin chain modification (add, remove, move, toggle)
+    pub fn update_binaural_decoder_channels(&mut self) {
+        for i in 0..self.plugins.len() {
+            if let PluginSettings::BinauralDecoder { sofa_file, .. } = &self.plugins[i].settings {
+                // Calculate output channels from all plugins before this one
+                let input_channels = if i == 0 {
+                    2 // Stereo input by default
+                } else {
+                    // Create a temporary view of plugins before this one
+                    let mut channels = 2; // Start with stereo
+                    for j in 0..i {
+                        if !self.plugins[j].enabled {
+                            continue;
+                        }
+                        match &self.plugins[j].settings {
+                            PluginSettings::Upmixer { speaker_config, .. } => {
+                                channels = match speaker_config.as_str() {
+                                    "2.0" => 2,
+                                    "5.0" => 5,
+                                    "5.1" => 6,
+                                    "7.1" => 8,
+                                    "5.1.2" => 8,
+                                    "5.1.4" => 10,
+                                    "7.1.2" => 10,
+                                    "7.1.4" => 12,
+                                    "9.1.4" => 14,
+                                    "9.1.6" => 16,
+                                    _ => 6, // Default to 5.1
+                                };
+                            }
+                            PluginSettings::BinauralDecoder { .. } => {
+                                channels = 2; // Binaural outputs stereo
+                            }
+                            _ => {} // Other plugins don't change channel count
+                        }
+                    }
+                    channels
+                };
+
+                // Update the BinauralDecoder with the calculated input channels
+                let sofa_file = sofa_file.clone();
+                self.plugins[i].settings = PluginSettings::BinauralDecoder {
+                    sofa_file,
+                    input_channels,
+                };
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -671,5 +722,67 @@ mod tests {
             };
         }
         assert_eq!(chain.output_channels(), 8);
+    }
+
+    #[test]
+    fn test_binaural_decoder_channel_update() {
+        let mut chain = PluginChain::new();
+
+        // Add upmixer (5.1 = 6 channels) and binaural decoder
+        chain.add_plugin(&PluginType::Upmixer);
+        chain.add_plugin(&PluginType::BinauralDecoder);
+
+        // Initially, BinauralDecoder should have default 6 channels (from default_for)
+        if let Some(plugin) = chain.get_plugin(1) {
+            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+                assert_eq!(input_channels, 6); // Default value
+            }
+        }
+
+        // Update binaural decoder channels
+        chain.update_binaural_decoder_channels();
+
+        // Now it should be correctly set to 6 (output of upmixer)
+        if let Some(plugin) = chain.get_plugin(1) {
+            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+                assert_eq!(input_channels, 6);
+            }
+        }
+
+        // Change upmixer to 7.1 (8 channels)
+        if let Some(plugin) = chain.get_plugin_mut(0) {
+            plugin.settings = PluginSettings::Upmixer {
+                speaker_config: "7.1".to_string(),
+                gain_front_direct: 1.0,
+                gain_front_ambient: 0.5,
+                gain_rear_ambient: 1.0,
+                lfe_cutoff_hz: 120.0,
+                stereo_width: 0.5,
+                bandpass_hz: 250.0,
+                height_gain: 1.0,
+                lfe_gain: 1.0,
+            };
+        }
+
+        // Update binaural decoder channels
+        chain.update_binaural_decoder_channels();
+
+        // Now BinauralDecoder should have 8 input channels
+        if let Some(plugin) = chain.get_plugin(1) {
+            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+                assert_eq!(input_channels, 8);
+            }
+        }
+
+        // Remove the upmixer
+        chain.remove_plugin(0);
+        chain.update_binaural_decoder_channels();
+
+        // Now BinauralDecoder should have 2 input channels (stereo)
+        if let Some(plugin) = chain.get_plugin(0) {
+            if let PluginSettings::BinauralDecoder { input_channels, .. } = plugin.settings {
+                assert_eq!(input_channels, 2);
+            }
+        }
     }
 }

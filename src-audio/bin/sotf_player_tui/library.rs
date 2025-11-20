@@ -40,9 +40,9 @@ pub struct Album {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlbumChannelType {
-    Stereo,          // All tracks are 2 channels
+    Stereo,            // All tracks are 2 channels
     Multichannel(u32), // All tracks have same channel count > 2
-    Mixed,           // Tracks have different channel counts
+    Mixed,             // Tracks have different channel counts
 }
 
 impl Album {
@@ -53,11 +53,7 @@ impl Album {
         }
 
         // Get channel counts from all tracks that have the info
-        let channel_counts: Vec<u32> = self
-            .tracks
-            .iter()
-            .filter_map(|t| t.channels)
-            .collect();
+        let channel_counts: Vec<u32> = self.tracks.iter().filter_map(|t| t.channels).collect();
 
         if channel_counts.is_empty() {
             return None;
@@ -131,7 +127,87 @@ impl MusicLibrary {
     /// Load library from database
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(db) = &self.db {
+            // Load albums
             self.albums = db.load_library()?;
+
+            // Compute directory stats from the loaded albums
+            // This gives us stats for every directory that contains tracks
+            let stats_map = compute_directory_stats(&self.albums);
+
+            // Load previously scanned directories with their stats
+            let mut scanned_dirs = db.get_scanned_directories()?;
+
+            // Filter to only keep directories that exist on disk
+            scanned_dirs.retain(|(path, _, _, _)| path.exists());
+
+            // Canonicalize paths to handle case sensitivity and symlinks
+            // Build a map of canonical path -> (original path, stats)
+            let mut canonical_map: std::collections::HashMap<
+                PathBuf,
+                (PathBuf, usize, usize, u64),
+            > = std::collections::HashMap::new();
+
+            for (dir_path, track_count, album_count, last_scan) in scanned_dirs {
+                if let Ok(canonical) = dir_path.canonicalize() {
+                    // If we already have this canonical path, keep the one with more recent scan time
+                    canonical_map
+                        .entry(canonical.clone())
+                        .and_modify(|e| {
+                            if last_scan > e.3 {
+                                *e = (dir_path.clone(), track_count, album_count, last_scan);
+                            }
+                        })
+                        .or_insert((dir_path, track_count, album_count, last_scan));
+                }
+            }
+
+            // Convert back to vec for sorting
+            let mut canonical_dirs: Vec<(PathBuf, PathBuf, usize, usize, u64)> = canonical_map
+                .into_iter()
+                .map(|(canonical, (original, track, album, scan))| {
+                    (canonical, original, track, album, scan)
+                })
+                .collect();
+
+            // Sort by path depth (shorter paths first) to ensure we keep parents
+            canonical_dirs.sort_by_key(|(canonical, _, _, _, _)| canonical.components().count());
+
+            // Remove subdirectories - only keep top-level parents
+            let mut filtered_dirs: Vec<(PathBuf, PathBuf, usize, usize, u64)> = Vec::new();
+            for (canonical, original, track_count, album_count, last_scan) in canonical_dirs {
+                // Check if this directory is a subtree of any already-added directory
+                let is_subtree = filtered_dirs.iter().any(|(parent_canonical, _, _, _, _)| {
+                    canonical.starts_with(parent_canonical) && canonical != *parent_canonical
+                });
+
+                if !is_subtree {
+                    // This is a new top-level directory, add it
+                    filtered_dirs.push((canonical, original, track_count, album_count, last_scan));
+                }
+            }
+
+            // Build directory info structures for filtered directories
+            // Only build tree from what exists on disk NOW (don't include dirs that were in DB but deleted)
+            for (canonical_path, _original_path, _track_count, _album_count, last_scan) in
+                filtered_dirs
+            {
+                let last_scanned =
+                    Some(std::time::UNIX_EPOCH + std::time::Duration::from_secs(last_scan));
+
+                // Build directory tree from disk
+                // Stats will be computed from the albums in the database
+                let mut dir_info = build_directory_tree_from_disk(
+                    canonical_path,
+                    0, // Will be updated from stats_map
+                    0, // Will be updated from stats_map
+                    last_scanned,
+                );
+
+                // Update stats from the computed map
+                update_directory_stats_from_map(&mut dir_info, &stats_map);
+
+                self.directories.push(dir_info);
+            }
         }
         Ok(())
     }
@@ -168,29 +244,6 @@ impl MusicLibrary {
                 to_remove.len()
             );
             self.directories.retain(|d| !to_remove.contains(&d.path));
-        }
-
-        // Helper to recursively build directory info
-        fn build_directory_info(path: PathBuf) -> DirectoryInfo {
-            let mut subdirectories = Vec::new();
-            if let Ok(entries) = std::fs::read_dir(&path) {
-                for entry in entries.filter_map(|e| e.ok()) {
-                    if entry.path().is_dir() {
-                        subdirectories.push(build_directory_info(entry.path()));
-                    }
-                }
-            }
-            // Sort subdirectories by name
-            subdirectories.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
-
-            DirectoryInfo {
-                path,
-                file_count: 0,
-                album_count: 0,
-                last_scanned: None,
-                expanded: false,
-                subdirectories,
-            }
         }
 
         self.directories.push(build_directory_info(path));
@@ -256,28 +309,28 @@ impl MusicLibrary {
             // But scan_directory already does a recursive walk
             // We need scan_directory to return stats per subdirectory?
             // Or we can just scan the whole tree and then attribute files to directories?
-            
+
             // Actually, scan_directory walks the whole tree.
             // We can modify scan_directory to return a map of directory -> stats?
             // Or just let it return total stats and we figure out the rest?
-            
+
             // The issue is we want to show stats for each subdirectory in the tree.
             // So we need to know how many tracks/albums are in each subdirectory.
-            
+
             // Let's modify scan_directory to take a mutable map of directory stats
             let (tracks, scanned) =
                 self.scan_directory(&dir_info.path, &mut album_map, incremental, &mut dir_stats)?;
-            
+
             total_tracks += tracks;
             scanned_tracks += scanned;
 
-            // Report progress after each directory and every 30 seconds
+            // Report progress after each directory and every 5 seconds
             let now = SystemTime::now();
             if now
                 .duration_since(last_progress_report)
                 .unwrap_or_default()
                 .as_secs()
-                >= 30
+                >= 5
             {
                 progress_callback(total_tracks, album_map.len());
                 last_progress_report = now;
@@ -289,7 +342,8 @@ impl MusicLibrary {
 
         // Calculate album counts per directory
         // We use a temporary map to store sets of album keys per directory to ensure uniqueness
-        let mut dir_albums: HashMap<PathBuf, std::collections::HashSet<(String, String)>> = HashMap::new();
+        let mut dir_albums: HashMap<PathBuf, std::collections::HashSet<(String, String)>> =
+            HashMap::new();
 
         for ((artist, title), album) in &album_map {
             let key = (artist.clone(), title.clone());
@@ -311,41 +365,41 @@ impl MusicLibrary {
 
         // Helper to update directory info recursively
         fn update_dir_info(
-            info: &mut DirectoryInfo, 
+            info: &mut DirectoryInfo,
             stats: &HashMap<PathBuf, (usize, usize)>,
-            scan_time: SystemTime
+            scan_time: SystemTime,
         ) {
             // Aggregate stats from this directory and all subdirectories
             // Or does stats already contain aggregated data?
             // If scan_directory walks everything, we can just look up the path in stats?
             // But scan_directory might not have entries for intermediate directories if they have no files directly?
-            
+
             // Let's assume stats contains counts for each directory that has files.
             // We want the count to be recursive (files in this dir + subdirs).
-            
+
             // Actually, let's make scan_directory populate stats for every directory it encounters.
-            
+
             // For now, let's just try to update from the map if it exists
             // But we need to aggregate for the tree view?
             // Usually "tracks in this folder" means recursive.
-            
+
             // Let's do a post-order traversal to aggregate counts
             let mut my_files = 0;
             let mut my_albums = 0;
-            
+
             // First recurse
             for subdir in &mut info.subdirectories {
                 update_dir_info(subdir, stats, scan_time);
                 my_files += subdir.file_count;
                 my_albums += subdir.album_count;
             }
-            
+
             // Then add own files (from stats map)
             if let Some((files, albums)) = stats.get(&info.path) {
                 my_files += files;
                 my_albums += albums;
             }
-            
+
             info.file_count = my_files;
             info.album_count = my_albums;
             info.last_scanned = Some(scan_time);
@@ -403,8 +457,20 @@ impl MusicLibrary {
 
     /// Clean up database by removing tracks for files that no longer exist
     pub fn clean_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        self.clean_database_with_progress(|_, _| {})
+    }
+
+    /// Clean up database with progress callback
+    /// The callback is called periodically with (checked, total)
+    pub fn clean_database_with_progress<F>(
+        &mut self,
+        progress_callback: F,
+    ) -> Result<usize, Box<dyn std::error::Error>>
+    where
+        F: FnMut(usize, usize),
+    {
         if let Some(db) = &mut self.db {
-            let removed = db.clean_missing_files()?;
+            let removed = db.clean_missing_files_with_progress(progress_callback)?;
             // Reload library after cleanup
             self.load_from_database()?;
             Ok(removed)
@@ -422,12 +488,12 @@ impl MusicLibrary {
     ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
-        
+
         // We need to track albums found in each directory to avoid double counting
         // But an album might be split across directories?
         // For simplicity, let's count unique albums found in this directory (non-recursive)
         // We'll use a local map for this directory's albums
-        
+
         for entry in WalkDir::new(dir)
             .follow_links(true)
             .into_iter()
@@ -445,7 +511,7 @@ impl MusicLibrary {
                     "flac" | "mp3" | "m4a" | "aac" | "ogg" | "opus" | "wav"
                 ) {
                     total_tracks += 1;
-                    
+
                     // Update stats for the parent directory of this file
                     if let Some(parent) = path.parent() {
                         let stats = dir_stats.entry(parent.to_path_buf()).or_insert((0, 0));
@@ -477,7 +543,7 @@ impl MusicLibrary {
                             .album
                             .unwrap_or_else(|| "Unknown Album".to_string());
                         let key = (artist.clone(), album_title.clone());
-                        
+
                         // Track that this album is present in this directory
                         if let Some(_parent) = path.parent() {
                             // This is getting complicated to track unique albums per directory efficiently
@@ -507,12 +573,12 @@ impl MusicLibrary {
                 }
             }
         }
-        
+
         // Post-process to count unique albums per directory
         // This is expensive if we iterate everything again.
         // Maybe we can just iterate the album_map at the end?
         // For each album, look at its tracks, find their parent directories, and update the set of albums for that directory.
-        
+
         // Let's do that in scan_incremental_with_progress instead of here.
         // So here we just update track counts.
 
@@ -673,6 +739,125 @@ fn get_file_mtime(path: &Path) -> Option<u64> {
         .map(|duration| duration.as_secs())
 }
 
+/// Build directory info recursively without stats (for new directories)
+fn build_directory_info(path: PathBuf) -> DirectoryInfo {
+    let mut subdirectories = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&path) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            if entry.path().is_dir() {
+                subdirectories.push(build_directory_info(entry.path()));
+            }
+        }
+    }
+    // Sort subdirectories by name
+    subdirectories.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+
+    DirectoryInfo {
+        path,
+        file_count: 0,
+        album_count: 0,
+        last_scanned: None,
+        expanded: false,
+        subdirectories,
+    }
+}
+
+/// Build directory tree from disk (for loading from database)
+/// Computes subdirectory stats from the albums and tracks in the database
+fn build_directory_tree_from_disk(
+    path: PathBuf,
+    file_count: usize,
+    album_count: usize,
+    last_scanned: Option<SystemTime>,
+) -> DirectoryInfo {
+    let mut subdirectories = Vec::new();
+
+    // Read immediate subdirectories from disk
+    if let Ok(entries) = std::fs::read_dir(&path) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let entry_path = entry.path();
+            if entry_path.is_dir() {
+                // Recursively build subdirectory tree
+                // Stats will be 0 for subdirectories (they need to be scanned)
+                subdirectories.push(build_directory_tree_from_disk(entry_path, 0, 0, None));
+            }
+        }
+    }
+
+    // Sort subdirectories by name
+    subdirectories.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+
+    DirectoryInfo {
+        path,
+        file_count,
+        album_count,
+        last_scanned,
+        expanded: false,
+        subdirectories,
+    }
+}
+
+/// Compute directory stats from albums in the library
+/// Returns a map of directory path -> (track count, album count)
+fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)> {
+    let mut dir_track_counts: HashMap<PathBuf, usize> = HashMap::new();
+    let mut dir_album_sets: HashMap<PathBuf, std::collections::HashSet<(String, String)>> =
+        HashMap::new();
+
+    for album in albums {
+        let album_key = (album.artist.clone(), album.title.clone());
+
+        for track in &album.tracks {
+            // Get the parent directory of this track
+            if let Some(parent) = track.path.parent() {
+                // Count tracks for this directory
+                *dir_track_counts.entry(parent.to_path_buf()).or_insert(0) += 1;
+
+                // Add album to set for this directory (to count unique albums)
+                dir_album_sets
+                    .entry(parent.to_path_buf())
+                    .or_default()
+                    .insert(album_key.clone());
+            }
+        }
+    }
+
+    // Combine track counts and album counts
+    let mut result = HashMap::new();
+    for (dir, track_count) in dir_track_counts {
+        let album_count = dir_album_sets.get(&dir).map(|set| set.len()).unwrap_or(0);
+        result.insert(dir, (track_count, album_count));
+    }
+
+    result
+}
+
+/// Update directory info with stats computed from albums
+/// Recursively aggregates stats from subdirectories
+fn update_directory_stats_from_map(
+    dir_info: &mut DirectoryInfo,
+    stats_map: &HashMap<PathBuf, (usize, usize)>,
+) {
+    // First, recursively update all subdirectories
+    for subdir in &mut dir_info.subdirectories {
+        update_directory_stats_from_map(subdir, stats_map);
+    }
+
+    // Then compute this directory's stats
+    // Start with direct files in this directory
+    let (mut my_tracks, mut my_albums) = stats_map.get(&dir_info.path).cloned().unwrap_or((0, 0));
+
+    // Add stats from all subdirectories
+    for subdir in &dir_info.subdirectories {
+        my_tracks += subdir.file_count;
+        my_albums += subdir.album_count;
+    }
+
+    // Update this directory's stats
+    dir_info.file_count = my_tracks;
+    dir_info.album_count = my_albums;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -716,5 +901,166 @@ mod tests {
         let sibling = PathBuf::from("/tmp/videos");
         assert!(lib.add_directory(sibling).is_ok());
         assert_eq!(lib.directories.len(), 2);
+    }
+
+    #[test]
+    fn test_search_albums_empty_library() {
+        let lib = MusicLibrary::new();
+        let results = lib.search_albums("test");
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_search_albums_in_memory() {
+        let mut lib = MusicLibrary::new();
+
+        // Add some test albums
+        lib.albums.push(Album {
+            id: None,
+            artist: "Pink Floyd".to_string(),
+            title: "The Dark Side of the Moon".to_string(),
+            year: Some(1973),
+            tracks: vec![],
+            album_art_path: None,
+        });
+
+        lib.albums.push(Album {
+            id: None,
+            artist: "The Beatles".to_string(),
+            title: "Abbey Road".to_string(),
+            year: Some(1969),
+            tracks: vec![],
+            album_art_path: None,
+        });
+
+        lib.albums.push(Album {
+            id: None,
+            artist: "Led Zeppelin".to_string(),
+            title: "IV".to_string(),
+            year: Some(1971),
+            tracks: vec![],
+            album_art_path: None,
+        });
+
+        // Search by artist (case insensitive)
+        let results = lib.search_albums("pink");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].artist, "Pink Floyd");
+
+        // Search by album title
+        let results = lib.search_albums("abbey");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Abbey Road");
+
+        // Search by partial match
+        let results = lib.search_albums("ze");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].artist, "Led Zeppelin");
+
+        // Search with no results
+        let results = lib.search_albums("nonexistent");
+        assert_eq!(results.len(), 0);
+
+        // Empty search should return all albums
+        let results = lib.search_albums("");
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_search_albums_case_insensitive() {
+        let mut lib = MusicLibrary::new();
+
+        lib.albums.push(Album {
+            id: None,
+            artist: "Metallica".to_string(),
+            title: "Master of Puppets".to_string(),
+            year: Some(1986),
+            tracks: vec![],
+            album_art_path: None,
+        });
+
+        // Test various case combinations
+        assert_eq!(lib.search_albums("metallica").len(), 1);
+        assert_eq!(lib.search_albums("METALLICA").len(), 1);
+        assert_eq!(lib.search_albums("MeTaLLiCa").len(), 1);
+        assert_eq!(lib.search_albums("master").len(), 1);
+        assert_eq!(lib.search_albums("MASTER").len(), 1);
+    }
+
+    #[test]
+    fn test_load_directories_from_database() {
+        use crate::database::MusicDatabase;
+        use tempfile::TempDir;
+
+        // Create a temporary directory for the test database
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test_music.db");
+
+        // Create and populate database
+        {
+            let db = MusicDatabase::open(&db_path).unwrap();
+
+            // Simulate a scan by recording scan history
+            db.record_scan(&PathBuf::from("/music/rock"), 50, 5)
+                .unwrap();
+            db.record_scan(&PathBuf::from("/music/jazz"), 30, 3)
+                .unwrap();
+        }
+
+        // Create library with the test database
+        let mut lib = MusicLibrary {
+            directories: Vec::new(),
+            albums: Vec::new(),
+            db: Some(MusicDatabase::open(&db_path).unwrap()),
+        };
+
+        // Load from database
+        lib.load_from_database().unwrap();
+
+        // Note: directories will only be loaded if they exist on disk
+        // In this test, they don't exist, so directories should be empty
+        // In a real scenario where the paths exist, they would be loaded
+        assert_eq!(lib.directories.len(), 0); // Paths don't exist
+    }
+
+    #[test]
+    fn test_load_directories_filters_subtrees() {
+        use crate::database::MusicDatabase;
+        use tempfile::TempDir;
+
+        // Create actual temporary directories on disk
+        let temp_root = TempDir::new().unwrap();
+        let parent_dir = temp_root.path().join("music");
+        let child_dir = parent_dir.join("rock");
+
+        std::fs::create_dir_all(&parent_dir).unwrap();
+        std::fs::create_dir_all(&child_dir).unwrap();
+
+        // Create database
+        let db_path = temp_root.path().join("test_music.db");
+        {
+            let db = MusicDatabase::open(&db_path).unwrap();
+
+            // Record scans for both parent and child
+            db.record_scan(&parent_dir, 100, 10).unwrap();
+            db.record_scan(&child_dir, 50, 5).unwrap();
+        }
+
+        // Create library and load from database
+        let mut lib = MusicLibrary {
+            directories: Vec::new(),
+            albums: Vec::new(),
+            db: Some(MusicDatabase::open(&db_path).unwrap()),
+        };
+
+        lib.load_from_database().unwrap();
+
+        // Should only have 1 directory (the parent), not the child
+        assert_eq!(lib.directories.len(), 1);
+
+        // Verify it's the parent directory
+        let canonical_parent = parent_dir.canonicalize().unwrap();
+        let loaded_path = lib.directories[0].path.canonicalize().unwrap();
+        assert_eq!(loaded_path, canonical_parent);
     }
 }

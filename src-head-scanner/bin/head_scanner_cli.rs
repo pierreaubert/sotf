@@ -5,11 +5,11 @@
 
 use clap::{Parser, Subcommand};
 use head_scanner::{
+    HeadScanner, ScanState, ScannerConfig, ScannerResult,
     bundle_adjustment::{BundleAdjuster, Point3DWithObservations},
     calibration::{CalibrationSession, CheckerboardPattern},
     camera::Camera,
     reconstruction::{CameraIntrinsics, CameraPose},
-    HeadScanner, ScanState, ScannerConfig, ScannerResult,
 };
 use indicatif::{ProgressBar, ProgressStyle};
 use log::{info, warn};
@@ -287,17 +287,24 @@ async fn run_scan(
             if let Ok(frame) = scanner.capture_current_frame() {
                 // Clone the frame so we can draw on it
                 let mut display_frame = frame.mat().try_clone()?;
-                
+
                 // Draw progress overlay
                 let elapsed = start_time.elapsed().as_secs_f32();
                 let using_gpu = scanner.is_using_gpu();
-                if let Err(e) = draw_progress_overlay(&mut display_frame, state, coverage, frame_count, elapsed, using_gpu) {
+                if let Err(e) = draw_progress_overlay(
+                    &mut display_frame,
+                    state,
+                    coverage,
+                    frame_count,
+                    elapsed,
+                    using_gpu,
+                ) {
                     warn!("Failed to draw overlay: {}", e);
                 }
-                
+
                 // Display the frame with overlay
                 highgui::imshow(window_name, &display_frame)?;
-                
+
                 // Check for key press (1ms wait)
                 let key = highgui::wait_key(1)?;
                 if key == 'q' as i32 || key == 27 {
@@ -393,24 +400,36 @@ async fn run_scan(
     if smooth_algo != "none" && smooth_iterations > 0 {
         println!();
         println!("✨ Applying mesh smoothing ({})...", smooth_algo);
-        
+
         let start = std::time::Instant::now();
         match smooth_algo.as_str() {
             "laplacian" => {
                 mesh.smooth_laplacian(smooth_iterations, 0.5);
-                println!("   ✓ Laplacian smoothing applied ({} iterations)", smooth_iterations);
+                println!(
+                    "   ✓ Laplacian smoothing applied ({} iterations)",
+                    smooth_iterations
+                );
             }
             "taubin" => {
                 mesh.smooth_taubin(smooth_iterations, 0.6, -0.63);
-                println!("   ✓ Taubin smoothing applied ({} iterations)", smooth_iterations);
+                println!(
+                    "   ✓ Taubin smoothing applied ({} iterations)",
+                    smooth_iterations
+                );
             }
             "bilateral" => {
                 mesh.smooth_bilateral(smooth_iterations, 0.5, 0.3);
-                println!("   ✓ Bilateral smoothing applied ({} iterations)", smooth_iterations);
+                println!(
+                    "   ✓ Bilateral smoothing applied ({} iterations)",
+                    smooth_iterations
+                );
             }
             "hc" => {
                 mesh.smooth_hc(smooth_iterations, 0.5, 0.65);
-                println!("   ✓ HC smoothing applied ({} iterations)", smooth_iterations);
+                println!(
+                    "   ✓ HC smoothing applied ({} iterations)",
+                    smooth_iterations
+                );
             }
             _ => {
                 warn!("Unknown smoothing algorithm: {}", smooth_algo);
@@ -451,7 +470,7 @@ fn draw_progress_overlay(
 ) -> ScannerResult<()> {
     let height = frame.rows();
     let width = frame.cols();
-    
+
     // Draw semi-transparent background at top
     let overlay_height = 120;
     imgproc::rectangle(
@@ -462,7 +481,7 @@ fn draw_progress_overlay(
         imgproc::LINE_8,
         0,
     )?;
-    
+
     // Text properties
     let font = FONT_HERSHEY_SIMPLEX as i32;
     let font_scale = 0.7;
@@ -471,7 +490,7 @@ fn draw_progress_overlay(
     let green = Scalar::new(0.0, 255.0, 0.0, 0.0);
     let yellow = Scalar::new(0.0, 255.0, 255.0, 0.0);
     let red = Scalar::new(0.0, 0.0, 255.0, 0.0);
-    
+
     // Status text
     let status_text = match state {
         ScanState::Idle => "Idle",
@@ -483,14 +502,14 @@ fn draw_progress_overlay(
         ScanState::Complete => "Complete",
         ScanState::Error => "Error",
     };
-    
+
     let status_color = match state {
         ScanState::Scanning => green,
         ScanState::DetectingHead => yellow,
         ScanState::Error => red,
         _ => white,
     };
-    
+
     imgproc::put_text(
         frame,
         &format!("Status: {}", status_text),
@@ -502,7 +521,7 @@ fn draw_progress_overlay(
         imgproc::LINE_AA,
         false,
     )?;
-    
+
     // Coverage percentage
     let coverage_pct = coverage * 100.0;
     let coverage_color = if coverage_pct >= 85.0 {
@@ -512,7 +531,7 @@ fn draw_progress_overlay(
     } else {
         red
     };
-    
+
     imgproc::put_text(
         frame,
         &format!("Coverage: {:.1}%", coverage_pct),
@@ -524,13 +543,13 @@ fn draw_progress_overlay(
         imgproc::LINE_AA,
         false,
     )?;
-    
+
     // Progress bar
     let bar_x = 20;
     let bar_y = 70;
     let bar_width = width - 40;
     let bar_height = 20;
-    
+
     // Background bar (gray)
     imgproc::rectangle(
         frame,
@@ -540,7 +559,7 @@ fn draw_progress_overlay(
         imgproc::LINE_8,
         0,
     )?;
-    
+
     // Progress bar (colored based on coverage)
     let progress_width = (bar_width as f32 * coverage) as i32;
     if progress_width > 0 {
@@ -553,20 +572,23 @@ fn draw_progress_overlay(
             0,
         )?;
     }
-    
+
     // Frame count, FPS, and GPU status
     let fps = if elapsed_secs > 0.0 {
         frame_count as f32 / elapsed_secs
     } else {
         0.0
     };
-    
+
     let gpu_indicator = if using_gpu { "🚀 GPU" } else { "CPU" };
     let gpu_color = if using_gpu { green } else { white };
-    
+
     imgproc::put_text(
         frame,
-        &format!("Frames: {} | FPS: {:.1} | Time: {:.1}s | {}", frame_count, fps, elapsed_secs, gpu_indicator),
+        &format!(
+            "Frames: {} | FPS: {:.1} | Time: {:.1}s | {}",
+            frame_count, fps, elapsed_secs, gpu_indicator
+        ),
         CvPoint::new(20, 110),
         font,
         0.5,
@@ -575,7 +597,7 @@ fn draw_progress_overlay(
         imgproc::LINE_AA,
         false,
     )?;
-    
+
     // Controls hint at bottom
     let hint_y = height - 20;
     imgproc::put_text(
@@ -589,7 +611,7 @@ fn draw_progress_overlay(
         imgproc::LINE_AA,
         false,
     )?;
-    
+
     Ok(())
 }
 
@@ -652,16 +674,25 @@ async fn run_calibration(
     println!("📐 Camera Calibration");
     println!("====================");
     println!();
-    println!("Checkerboard: {}x{} (inner corners)", board_width, board_height);
+    println!(
+        "Checkerboard: {}x{} (inner corners)",
+        board_width, board_height
+    );
     println!("Square size: {}mm", square_size);
     println!("Target frames: {}-{}", min_frames, max_frames);
     println!();
     println!("Instructions:");
-    println!("  1. Print a {}x{} checkerboard pattern", board_width, board_height);
+    println!(
+        "  1. Print a {}x{} checkerboard pattern",
+        board_width, board_height
+    );
     println!("  2. Show the checkerboard to the camera from different angles");
     println!("  3. Keep the pattern flat and fully visible");
     println!("  4. Move slowly to capture clear images");
-    println!("  5. Press 'q' to finish early (after {} frames)", min_frames);
+    println!(
+        "  5. Press 'q' to finish early (after {} frames)",
+        min_frames
+    );
     println!();
 
     // Initialize camera
@@ -783,15 +814,23 @@ async fn run_calibration(
     println!("✓ Calibration successful!");
     println!();
     println!("Results:");
-    println!("  Focal length (fx, fy): {:.2}, {:.2}", result.intrinsics.fx, result.intrinsics.fy);
-    println!("  Principal point (cx, cy): {:.2}, {:.2}", result.intrinsics.cx, result.intrinsics.cy);
+    println!(
+        "  Focal length (fx, fy): {:.2}, {:.2}",
+        result.intrinsics.fx, result.intrinsics.fy
+    );
+    println!(
+        "  Principal point (cx, cy): {:.2}, {:.2}",
+        result.intrinsics.cx, result.intrinsics.cy
+    );
     println!("  RMS error: {:.4} pixels", result.rms_error);
     println!("  Frames used: {}", result.num_frames);
 
     if let Some(dist) = result.intrinsics.distortion {
         println!("  Distortion coefficients:");
-        println!("    k1={:.6}, k2={:.6}, p1={:.6}, p2={:.6}, k3={:.6}",
-            dist[0], dist[1], dist[2], dist[3], dist[4]);
+        println!(
+            "    k1={:.6}, k2={:.6}, p1={:.6}, p2={:.6}, k3={:.6}",
+            dist[0], dist[1], dist[2], dist[3], dist[4]
+        );
     }
 
     // Save calibration data
@@ -823,7 +862,10 @@ async fn show_camera_info(camera_index: u32) -> ScannerResult<()> {
     scanner.start().await?;
 
     println!("Status: ✓ Available");
-    println!("Default Resolution: {}x{}", config.frame_width, config.frame_height);
+    println!(
+        "Default Resolution: {}x{}",
+        config.frame_width, config.frame_height
+    );
     println!("Default FPS: {}", config.fps);
 
     scanner.stop().await?;

@@ -10,6 +10,9 @@ use crate::plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 
+#[cfg(target_os = "macos")]
+use sotf_hal::HalInputReader;
+
 const SPIN_MS_SLEEP_DECODER: u64 = 10;
 
 /// Decoder thread handle
@@ -80,6 +83,9 @@ struct DecoderState {
     current_file: Option<PathBuf>,
     spec: Option<AudioSpec>,
     silent_source: bool, // For HAL input plugins (no file source)
+
+    #[cfg(target_os = "macos")]
+    hal_reader: Option<HalInputReader>,
 }
 
 impl DecoderState {
@@ -92,6 +98,8 @@ impl DecoderState {
             current_file: None,
             spec: None,
             silent_source: false,
+            #[cfg(target_os = "macos")]
+            hal_reader: None,
         }
     }
 
@@ -139,6 +147,11 @@ impl DecoderState {
         self.paused = false;
         self.current_file = Some(path);
         self.spec = Some(spec);
+
+        #[cfg(target_os = "macos")]
+        {
+            self.hal_reader = None;
+        }
 
         Ok(())
     }
@@ -281,27 +294,60 @@ impl DecoderState {
         self.current_file = None;
         self.spec = None;
         self.silent_source = false;
+        #[cfg(target_os = "macos")]
+        {
+            self.hal_reader = None;
+        }
     }
 
     /// Start silent source mode (for HAL input plugins)
     fn start_silent_source(&mut self) {
         self.stop(); // Clear any existing decoder
         self.silent_source = true;
-        log::info!("[Decoder Thread] Started silent source mode for HAL input");
+
+        #[cfg(target_os = "macos")]
+        {
+            self.hal_reader = HalInputReader::new();
+            if self.hal_reader.is_some() {
+                log::info!("[Decoder Thread] Started HAL input reader");
+            } else {
+                log::warn!("[Decoder Thread] Failed to initialize HAL input reader");
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        log::info!("[Decoder Thread] Started silent source mode (HAL input not supported)");
     }
 
-    /// Generate a silent frame (0 channels, no data)
-    /// Used for HAL input plugins that act as audio sources
-    fn generate_silent_frame(
+    /// Read from HAL input or generate silent frame
+    fn process_hal_input(
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,
         frame_size: usize,
         sample_rate: u32,
     ) -> Result<(), String> {
-        // Send empty frame (0 samples, 0 channels)
-        // The HAL input plugin will generate audio from this
-        let frame = AudioFrame::new(vec![], frame_size, 0, sample_rate);
+        #[cfg(target_os = "macos")]
+        if let Some(reader) = &mut self.hal_reader {
+            // Read from HAL
+            // HAL usually provides 2 channels
+            let channels = 2;
+            let mut buffer = vec![0.0; frame_size * channels];
+            let samples_read = reader.read(&mut buffer);
 
+            if samples_read < buffer.len() {
+                // Zero-fill remaining
+                buffer[samples_read..].fill(0.0);
+            }
+
+            let frame = AudioFrame::new(buffer, frame_size, channels, sample_rate);
+            message_tx
+                .send(DecoderMessage::Frame(frame))
+                .map_err(|_| "Failed to send HAL frame")?;
+
+            return Ok(());
+        }
+
+        // Fallback to silent frame if no reader (or not macOS)
+        let frame = AudioFrame::new(vec![], frame_size, 0, sample_rate);
         message_tx
             .send(DecoderMessage::Frame(frame))
             .map_err(|_| "Failed to send silent frame")?;
@@ -376,13 +422,15 @@ fn run_decoder_thread(
 
         // Generate frames based on mode
         if state.silent_source && !state.paused {
-            // Silent source mode: generate empty frames for HAL input plugins
-            if let Err(e) = state.generate_silent_frame(&message_tx, frame_size, target_sample_rate)
-            {
-                log::debug!("[Decoder Thread] Silent frame error: {}", e);
+            // HAL Input / Silent Source mode
+            if let Err(e) = state.process_hal_input(&message_tx, frame_size, target_sample_rate) {
+                log::debug!("[Decoder Thread] HAL input error: {}", e);
                 state.stop();
             }
             // Sleep to maintain target frame rate (e.g., ~21ms for 1024 samples @ 48kHz)
+            // Note: If HAL read blocks, this sleep might be redundant or need adjustment,
+            // but HalInputReader is typically non-blocking or fast enough.
+            // Ideally we should sync with HAL, but for now simple sleep is safer to avoid busy loop.
             let frame_duration_ms = (frame_size as f64 / target_sample_rate as f64 * 1000.0) as u64;
             std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms));
         } else if state.decoder.is_some() && !state.paused {

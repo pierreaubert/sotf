@@ -144,10 +144,32 @@ pub fn features_to_points(features: &[Feature], frame: &Frame) -> ScannerResult<
 fn estimate_depth_from_feature_type(feature_type: &str) -> f32 {
     match feature_type {
         "face" => 50.0, // 50cm typical distance
-        "nose" => 48.0, // Slightly closer
+        "nose" => 48.0, // Slightly closer (nose protrudes)
         "ear" => 52.0,  // Slightly farther
-        "eye" => 49.0,
+        "left_eye" => 49.5,
+        "right_eye" => 49.5,
         "mouth" => 49.0,
+        // Grid points: add variation based on position to create depth
+        s if s.starts_with("grid_") => {
+            // Parse grid coordinates from "grid_i_j"
+            let parts: Vec<&str> = s.split('_').collect();
+            if parts.len() == 3 {
+                if let (Ok(i), Ok(j)) = (parts[1].parse::<i32>(), parts[2].parse::<i32>()) {
+                    // Create depth variation based on grid position
+                    // Center of face (grid 3-4, 3-4) is closer (nose area)
+                    // Edges are farther
+                    let center_i = 3.5;
+                    let center_j = 3.5;
+                    let dist_from_center = ((i as f32 - center_i).powi(2) + (j as f32 - center_j).powi(2)).sqrt();
+                    
+                    // Base depth 50cm, vary ±3cm based on position
+                    // Center (nose) is closer, edges (ears/sides) are farther
+                    let depth_variation = (dist_from_center - 2.5) * 0.6; // -1.5cm to +2cm range
+                    return 50.0 + depth_variation;
+                }
+            }
+            50.0
+        }
         _ => 50.0,
     }
 }

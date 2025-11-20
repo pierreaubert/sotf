@@ -627,7 +627,8 @@ impl Mesh {
 
                     // Spatial distance weight
                     let spatial_dist = (neighbor_pos - vertex_pos).magnitude();
-                    let spatial_weight = (-spatial_dist.powi(2) / (2.0 * spatial_sigma.powi(2))).exp();
+                    let spatial_weight =
+                        (-spatial_dist.powi(2) / (2.0 * spatial_sigma.powi(2))).exp();
 
                     // Normal similarity weight (feature preservation)
                     let normal_weight = if let Some(neighbor_normal) = neighbor.normal {

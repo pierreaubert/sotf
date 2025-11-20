@@ -7,8 +7,8 @@ mod plugins;
 mod ui;
 
 use app::{App, AppState};
-use gpui::*;
 use gpui::AppContext;
+use gpui::*;
 use player::Player;
 use std::path::PathBuf;
 use std::sync::Arc;

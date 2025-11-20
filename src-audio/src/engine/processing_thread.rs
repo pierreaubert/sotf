@@ -303,9 +303,10 @@ impl ProcessingState {
 
                 // Recreate analyzers for new channel count
                 if old_channels != self.channels
-                    && let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
-                        log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
-                    }
+                    && let Err(e) = self.recreate_analyzers_for_channels(self.channels)
+                {
+                    log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                }
 
                 // Process with new host
                 self.host.process(input, output)?;
@@ -344,9 +345,10 @@ impl ProcessingState {
 
                     // Recreate analyzers if channel count changed (shouldn't happen in crossfade path, but be safe)
                     if old_channels != self.channels
-                        && let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
-                            log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
-                        }
+                        && let Err(e) = self.recreate_analyzers_for_channels(self.channels)
+                    {
+                        log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                    }
                 }
             }
         } else {

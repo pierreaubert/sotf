@@ -661,28 +661,30 @@ fn find_device_by_name(
 
     for device in &devices_vec {
         if let Ok(name) = device.name()
-            && name.to_lowercase() == target_pattern {
-                log::info!(
-                    "[find_device_by_name] Found {} device (exact match): {}",
-                    device_type,
-                    name
-                );
-                return Ok(device.clone());
-            }
+            && name.to_lowercase() == target_pattern
+        {
+            log::info!(
+                "[find_device_by_name] Found {} device (exact match): {}",
+                device_type,
+                name
+            );
+            return Ok(device.clone());
+        }
     }
 
     // Second pass: try partial match (contains)
     for device in &devices_vec {
         if let Ok(name) = device.name()
-            && name.to_lowercase().contains(&target_pattern) {
-                log::info!(
-                    "[find_device_by_name] Found {} device (partial match): {} (matched by '{}')",
-                    device_type,
-                    name,
-                    device_name
-                );
-                return Ok(device.clone());
-            }
+            && name.to_lowercase().contains(&target_pattern)
+        {
+            log::info!(
+                "[find_device_by_name] Found {} device (partial match): {} (matched by '{}')",
+                device_type,
+                name,
+                device_name
+            );
+            return Ok(device.clone());
+        }
     }
 
     // Device not found - provide helpful error message with available devices

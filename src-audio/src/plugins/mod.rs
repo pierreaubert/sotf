@@ -74,7 +74,7 @@ pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
 pub use speaker_config::{
     SpeakerConfig, SpeakerPosition, calculate_panning_gain, get_available_configs,
-    get_speaker_config,
+    get_speaker_config, get_speaker_config_by_channels,
 };
 
 #[allow(unused_imports)]

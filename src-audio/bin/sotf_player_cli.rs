@@ -112,10 +112,7 @@ fn create_binaural_decoder_plugin_config(
 
     // Validate that SOFA file exists
     if !sofa_file.exists() {
-        return Err(format!(
-            "SOFA file does not exist: {:?}",
-            sofa_file
-        ));
+        return Err(format!("SOFA file does not exist: {:?}", sofa_file));
     }
 
     let parameters = json!({
@@ -749,9 +746,7 @@ fn play_stream(
     // Binaural decoder (if enabled, must come after upmixer)
     let output_channels = if binaural {
         // Validate that SOFA file is provided
-        let sofa_path = sofa_file.ok_or(
-            "Binaural decoder requires --sofa-file to be specified"
-        )?;
+        let sofa_path = sofa_file.ok_or("Binaural decoder requires --sofa-file to be specified")?;
 
         // Input channels come from previous plugin (upmixer or original audio)
         let input_channels = output_channels;
@@ -763,11 +758,8 @@ fn play_stream(
         println!("  FFT size: {}", binaural_fft_size);
         println!();
 
-        let binaural_plugin = create_binaural_decoder_plugin_config(
-            sofa_path,
-            input_channels,
-            binaural_fft_size,
-        )?;
+        let binaural_plugin =
+            create_binaural_decoder_plugin_config(sofa_path, input_channels, binaural_fft_size)?;
         plugins.push(binaural_plugin);
         eprintln!(
             "Added binaural decoder plugin: {}ch -> 2ch (binaural)",

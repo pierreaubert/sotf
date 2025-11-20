@@ -19,10 +19,10 @@ use opencv::{
 pub struct CheckerboardPattern {
     /// Number of inner corners in width
     pub width: i32,
-    
+
     /// Number of inner corners in height
     pub height: i32,
-    
+
     /// Size of each square in real-world units (e.g., mm or cm)
     pub square_size: f32,
 }
@@ -30,7 +30,7 @@ pub struct CheckerboardPattern {
 impl Default for CheckerboardPattern {
     fn default() -> Self {
         Self {
-            width: 9,   // 9x6 is common for calibration
+            width: 9, // 9x6 is common for calibration
             height: 6,
             square_size: 25.0, // 25mm squares
         }
@@ -73,13 +73,13 @@ impl CheckerboardPattern {
 pub struct CalibrationResult {
     /// Camera intrinsic parameters
     pub intrinsics: CameraIntrinsics,
-    
+
     /// Reprojection error (RMS)
     pub rms_error: f64,
-    
+
     /// Number of frames used
     pub num_frames: usize,
-    
+
     /// Image size used for calibration
     pub image_size: (u32, u32),
 }
@@ -128,11 +128,8 @@ impl CameraCalibrator {
         }
 
         // Refine corner positions to sub-pixel accuracy
-        let term_criteria = core::TermCriteria::new(
-            core::TermCriteria_EPS + core::TermCriteria_COUNT,
-            30,
-            0.001,
-        )?;
+        let term_criteria =
+            core::TermCriteria::new(core::TermCriteria_EPS + core::TermCriteria_COUNT, 30, 0.001)?;
 
         imgproc::corner_sub_pix(
             &gray,
@@ -157,11 +154,14 @@ impl CameraCalibrator {
             // Add object points (same for all frames)
             let obj_points = self.pattern.object_points();
             self.object_points.push(Vector::from_iter(obj_points));
-            
+
             // Add image points
             self.image_points.push(Vector::from_iter(corners));
-            
-            log::info!("Calibration frame added ({} total)", self.object_points.len());
+
+            log::info!(
+                "Calibration frame added ({} total)",
+                self.object_points.len()
+            );
             Ok(true)
         } else {
             Ok(false)
@@ -187,9 +187,9 @@ impl CameraCalibrator {
             )));
         }
 
-        let image_size = self.image_size.ok_or_else(|| {
-            ScannerError::InvalidConfig("No image size available".to_string())
-        })?;
+        let image_size = self
+            .image_size
+            .ok_or_else(|| ScannerError::InvalidConfig("No image size available".to_string()))?;
 
         // Prepare output matrices
         let mut camera_matrix = Mat::default();
@@ -198,8 +198,10 @@ impl CameraCalibrator {
         let mut tvecs = Vector::<Mat>::new();
 
         // Convert to proper OpenCV types
-        let obj_points_vec: Vector<Vector<Point3f>> = Vector::from_iter(self.object_points.iter().cloned());
-        let img_points_vec: Vector<Vector<Point2f>> = Vector::from_iter(self.image_points.iter().cloned());
+        let obj_points_vec: Vector<Vector<Point3f>> =
+            Vector::from_iter(self.object_points.iter().cloned());
+        let img_points_vec: Vector<Vector<Point2f>> =
+            Vector::from_iter(self.image_points.iter().cloned());
 
         // Run calibration
         let rms_error = calib3d::calibrate_camera(
@@ -211,11 +213,7 @@ impl CameraCalibrator {
             &mut rvecs,
             &mut tvecs,
             0, // flags
-            core::TermCriteria::new(
-                core::TermCriteria_EPS + core::TermCriteria_COUNT,
-                30,
-                1e-6,
-            )?,
+            core::TermCriteria::new(core::TermCriteria_EPS + core::TermCriteria_COUNT, 30, 1e-6)?,
         )?;
 
         // Extract camera parameters
@@ -255,14 +253,9 @@ impl CameraCalibrator {
     /// Draw detected corners on a frame for visualization
     pub fn draw_corners(&self, frame: &Frame, corners: &[Point2f]) -> ScannerResult<Mat> {
         let mut display = frame.mat().try_clone()?;
-        
+
         let corners_vec: Vector<Point2f> = Vector::from_iter(corners.iter().cloned());
-        calib3d::draw_chessboard_corners(
-            &mut display,
-            self.pattern.size(),
-            &corners_vec,
-            true,
-        )?;
+        calib3d::draw_chessboard_corners(&mut display, self.pattern.size(), &corners_vec, true)?;
 
         Ok(display)
     }
@@ -363,7 +356,7 @@ mod tests {
         let pattern = CheckerboardPattern::new(9, 6, 25.0);
         assert_eq!(pattern.width, 9);
         assert_eq!(pattern.height, 6);
-        
+
         let points = pattern.object_points();
         assert_eq!(points.len(), 54); // 9 * 6
     }

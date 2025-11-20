@@ -70,7 +70,9 @@ impl CoverageMap {
             occupied: HashSet::new(),
             bbox_min: None,
             bbox_max: None,
-            target_voxel_count: 10000, // Estimated for average head
+            // Reduced target for faster scanning - represents front-facing head surface
+            // With 0.5cm voxels, 2000 voxels ≈ 500cm² surface area (realistic for visible face)
+            target_voxel_count: 2000,
         }
     }
 

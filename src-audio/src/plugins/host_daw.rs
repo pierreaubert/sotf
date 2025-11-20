@@ -802,10 +802,9 @@ impl DawHost {
         rec_stack.insert(node_id);
 
         for edge in &self.edges {
-            if edge.from_node == node_id
-                && self.has_cycle_util(edge.to_node, visited, rec_stack) {
-                    return true;
-                }
+            if edge.from_node == node_id && self.has_cycle_util(edge.to_node, visited, rec_stack) {
+                return true;
+            }
         }
 
         rec_stack.remove(&node_id);

@@ -5,6 +5,7 @@ mod events;
 mod library;
 mod player;
 mod plugins;
+mod replay_gain_scanner;
 mod ui;
 
 use app::App;
@@ -79,9 +80,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         use plugins::{PluginSettings, PluginType};
 
         // Validate that SOFA file is provided
-        let sofa_file = args.sofa_file.clone().ok_or(
-            "Binaural decoder requires --sofa-file to be specified"
-        )?;
+        let sofa_file = args
+            .sofa_file
+            .clone()
+            .ok_or("Binaural decoder requires --sofa-file to be specified")?;
 
         // Determine input channels from existing plugin chain
         // This allows proper configuration when used after an upmixer
@@ -220,15 +222,16 @@ fn run_app<B: ratatui::backend::Backend>(
 
                             // Validate output channels against device max
                             if let Some(max_channels) = app.get_device_max_channels()
-                                && output_channels > max_channels {
-                                    log::error!(
-                                        "[TUI] Plugin chain outputs {} channels but device only supports {}",
-                                        output_channels,
-                                        max_channels
-                                    );
-                                    app.is_playing = false;
-                                    continue;
-                                }
+                                && output_channels > max_channels
+                            {
+                                log::error!(
+                                    "[TUI] Plugin chain outputs {} channels but device only supports {}",
+                                    output_channels,
+                                    max_channels
+                                );
+                                app.is_playing = false;
+                                continue;
+                            }
 
                             if let Err(e) = player.load_and_play(
                                 path,
@@ -258,6 +261,9 @@ fn run_app<B: ratatui::backend::Backend>(
                             log::error!("Failed to scan library: {}", e);
                         }
                     }
+
+                    // Check ReplayGain scan progress
+                    app.check_replay_gain_progress();
                 }
                 AppEvent::Resize => {
                     // Terminal resized, will redraw on next iteration
@@ -287,14 +293,15 @@ fn handle_player_command(
 
             // Validate output channels against device max
             if let Some(max_channels) = app.get_device_max_channels()
-                && output_channels > max_channels {
-                    let error_msg = format!(
-                        "Plugin chain outputs {} channels but device only supports {}",
-                        output_channels, max_channels
-                    );
-                    log::error!("{}", error_msg);
-                    return Err(error_msg.into());
-                }
+                && output_channels > max_channels
+            {
+                let error_msg = format!(
+                    "Plugin chain outputs {} channels but device only supports {}",
+                    output_channels, max_channels
+                );
+                log::error!("{}", error_msg);
+                return Err(error_msg.into());
+            }
 
             player.load_and_play(
                 path,
