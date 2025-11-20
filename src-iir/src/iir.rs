@@ -1731,6 +1731,8 @@ pub fn peq_format_aupreset(peq: &Peq, name: &str) -> String {
         data_section, name, len_peq
     )
 }
+
+#[cfg(test)]
 mod format_tests {
     use super::*;
 

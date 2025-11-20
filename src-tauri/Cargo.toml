@@ -20,7 +20,7 @@ reqwest = { workspace=true }
 serde = { workspace=true }
 serde_json = { workspace=true }
 urlencoding = { workspace=true }
-zip = "4.0"
+zip = "4.6"
 chrono = "0.4"
 hound = "3.5"
 

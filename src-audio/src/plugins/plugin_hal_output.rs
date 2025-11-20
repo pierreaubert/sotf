@@ -135,7 +135,7 @@ impl InPlacePlugin for HalOutputPlugin {
 
         if id == param_channels {
             if let Some(channels) = value.as_int() {
-                if channels < 1 || channels > 16 {
+                if !(1..=16).contains(&channels) {
                     return Err("Channels must be between 1 and 16".to_string());
                 }
                 self.channels = channels as usize;

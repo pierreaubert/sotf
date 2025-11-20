@@ -28,6 +28,9 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         InputMode::EditPlugin => handle_edit_plugin_mode(app, key),
         InputMode::SavePlugins => handle_save_plugins_mode(app, key),
         InputMode::LoadPlugins => handle_load_plugins_mode(app, key),
+        InputMode::LoadApoFile => handle_load_apo_file_mode(app, key),
+        InputMode::LoadSofaFile => handle_load_sofa_file_mode(app, key),
+        InputMode::ShowHelp => handle_help_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
     }
 }
@@ -83,6 +86,12 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
 
+        // Help
+        KeyCode::Char('?') => {
+            app.input_mode = InputMode::ShowHelp;
+            None
+        }
+
         // Volume controls (in case Shift+Arrow doesn't work)
         KeyCode::Char('+') | KeyCode::Char('=') => {
             app.increase_volume();
@@ -117,7 +126,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 }
 
 fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
-    use crate::app::LibraryViewMode;
+    use crate::app::{ChannelFilter, LibraryViewMode, LibrarySortOrder};
 
     const PAGE_SIZE: usize = 20;
 
@@ -129,6 +138,67 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('t') => {
             // Toggle between flat and tree view
             app.toggle_library_view_mode();
+            None
+        }
+        KeyCode::Char('s') => {
+            // Cycle through sort orders
+            let next_order = match app.library_sort_order {
+                LibrarySortOrder::Artist => LibrarySortOrder::Album,
+                LibrarySortOrder::Album => LibrarySortOrder::Title,
+                LibrarySortOrder::Title => LibrarySortOrder::Year,
+                LibrarySortOrder::Year => LibrarySortOrder::Artist,
+            };
+            app.set_library_sort_order(next_order);
+            None
+        }
+        KeyCode::Char('c') => {
+            // Cycle through channel filters
+            app.cycle_channel_filter();
+            None
+        }
+        KeyCode::Char('1') => {
+            // Sort by artist
+            app.set_library_sort_order(LibrarySortOrder::Artist);
+            None
+        }
+        KeyCode::Char('2') => {
+            // Sort by album
+            app.set_library_sort_order(LibrarySortOrder::Album);
+            None
+        }
+        KeyCode::Char('3') => {
+            // Sort by title
+            app.set_library_sort_order(LibrarySortOrder::Title);
+            None
+        }
+        KeyCode::Char('4') => {
+            // Sort by year
+            app.set_library_sort_order(LibrarySortOrder::Year);
+            None
+        }
+        KeyCode::Char('5') => {
+            // Filter: Show all
+            app.set_channel_filter(ChannelFilter::All);
+            None
+        }
+        KeyCode::Char('6') => {
+            // Filter: Mono only
+            app.set_channel_filter(ChannelFilter::Mono);
+            None
+        }
+        KeyCode::Char('7') => {
+            // Filter: Stereo only
+            app.set_channel_filter(ChannelFilter::Stereo);
+            None
+        }
+        KeyCode::Char('8') => {
+            // Filter: Multichannel only
+            app.set_channel_filter(ChannelFilter::Multichannel);
+            None
+        }
+        KeyCode::Char('9') => {
+            // Filter: Mixed channels only
+            app.set_channel_filter(ChannelFilter::Mixed);
             None
         }
         KeyCode::Up | KeyCode::Char('k') => {
@@ -180,27 +250,6 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             };
             path.map(PlayerCommand::Play)
         }
-        KeyCode::Char('m') => {
-            // Maintenance: clean up database
-            match app.clean_library_database() {
-                Ok(removed) => {
-                    if removed > 0 {
-                        app.status_message =
-                            Some(format!("Cleaned {} missing tracks from database", removed));
-                        log::info!("Database maintenance: removed {} missing tracks", removed);
-                    } else {
-                        app.status_message =
-                            Some("Database is clean - no missing tracks found".to_string());
-                        log::info!("Database maintenance: no missing tracks found");
-                    }
-                }
-                Err(e) => {
-                    app.status_message = Some(format!("Database maintenance failed: {}", e));
-                    log::error!("Database maintenance failed: {}", e);
-                }
-            }
-            None
-        }
         KeyCode::Char('q') => {
             app.current_screen = Screen::Queue;
             None
@@ -234,8 +283,27 @@ fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
             None
         }
         KeyCode::Char('s') => {
-            if let Err(e) = app.scan_library() {
-                log::error!("Failed to scan library: {}", e);
+            app.start_library_scan();
+            None
+        }
+        KeyCode::Char('m') => {
+            // Maintenance: clean up database
+            match app.clean_library_database() {
+                Ok(removed) => {
+                    if removed > 0 {
+                        app.status_message =
+                            Some(format!("Cleaned {} missing tracks from database", removed));
+                        log::info!("Database maintenance: removed {} missing tracks", removed);
+                    } else {
+                        app.status_message =
+                            Some("Database is clean - no missing tracks found".to_string());
+                        log::info!("Database maintenance: no missing tracks found");
+                    }
+                }
+                Err(e) => {
+                    app.status_message = Some(format!("Database maintenance failed: {}", e));
+                    log::error!("Database maintenance failed: {}", e);
+                }
             }
             None
         }
@@ -482,6 +550,11 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.add_plugin(&PluginType::Compressor);
             Some(PlayerCommand::UpdatePlugins)
         }
+        KeyCode::Char('4') => {
+            // Quick add Gate
+            app.add_plugin(&PluginType::Gate);
+            Some(PlayerCommand::UpdatePlugins)
+        }
         KeyCode::Char('5') => {
             // Quick add Limiter
             app.add_plugin(&PluginType::Limiter);
@@ -490,6 +563,11 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('6') => {
             // Quick add Loudness Compensation
             app.add_plugin(&PluginType::LoudnessCompensation);
+            Some(PlayerCommand::UpdatePlugins)
+        }
+        KeyCode::Char('7') => {
+            // Quick add Binaural Decoder
+            app.add_plugin(&PluginType::BinauralDecoder);
             Some(PlayerCommand::UpdatePlugins)
         }
         _ => None,
@@ -546,6 +624,32 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
                 None
             }
         }
+        KeyCode::Char('a') => {
+            // Load APO file (for EQ plugins)
+            use crate::plugins::PluginSettings;
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+                if matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                    app.input_mode = InputMode::LoadApoFile;
+                    app.status_message = Some("Enter path to APO file:".to_string());
+                } else {
+                    app.status_message = Some("APO files can only be loaded for EQ plugins".to_string());
+                }
+            }
+            None
+        }
+        KeyCode::Char('f') => {
+            // Load SOFA file (for Binaural Decoder plugins)
+            use crate::plugins::PluginSettings;
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+                if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
+                    app.input_mode = InputMode::LoadSofaFile;
+                    app.status_message = Some("Enter path to SOFA file:".to_string());
+                } else {
+                    app.status_message = Some("SOFA files can only be loaded for Binaural Decoder plugins".to_string());
+                }
+            }
+            None
+        }
         _ => None,
     }
 }
@@ -579,6 +683,7 @@ fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
             app.plugin_file_input.clear();
+            app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
@@ -589,11 +694,26 @@ fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
                 app.load_plugin_chain();
             }
             app.input_mode = InputMode::Normal;
+            app.clear_autocomplete();
             if app.needs_plugin_update {
                 Some(PlayerCommand::UpdatePlugins)
             } else {
                 None
             }
+        }
+        KeyCode::Tab => {
+            // Autocomplete file path (only if user typed something)
+            if !app.plugin_file_input.is_empty() {
+                if app.autocomplete_suggestions.is_empty() {
+                    app.generate_autocomplete_suggestions_for_plugin_file();
+                    if !app.autocomplete_suggestions.is_empty() {
+                        app.apply_autocomplete_to_plugin_file();
+                    }
+                } else {
+                    app.next_autocomplete_for_plugin_file();
+                }
+            }
+            None
         }
         KeyCode::Up | KeyCode::Char('k') => {
             // Navigate through presets
@@ -611,10 +731,118 @@ fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
         }
         KeyCode::Char(c) => {
             app.plugin_file_input.push(c);
+            app.clear_autocomplete();
             None
         }
         KeyCode::Backspace => {
             app.plugin_file_input.pop();
+            app.clear_autocomplete();
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.apo_file_input.clear();
+            app.clear_autocomplete();
+            None
+        }
+        KeyCode::Enter => {
+            match app.load_apo_file() {
+                Ok(()) => {
+                    app.status_message = Some("APO file loaded successfully".to_string());
+                    app.needs_plugin_update = true;
+                }
+                Err(e) => {
+                    app.status_message = Some(format!("Failed to load APO file: {}", e));
+                }
+            }
+            app.input_mode = InputMode::Normal;
+            app.apo_file_input.clear();
+            app.clear_autocomplete();
+            if app.needs_plugin_update {
+                Some(PlayerCommand::UpdatePlugins)
+            } else {
+                None
+            }
+        }
+        KeyCode::Tab => {
+            // Autocomplete file path
+            if app.autocomplete_suggestions.is_empty() {
+                app.generate_autocomplete_suggestions_for_apo_file();
+                if !app.autocomplete_suggestions.is_empty() {
+                    app.apply_autocomplete_to_apo_file();
+                }
+            } else {
+                app.next_autocomplete_for_apo_file();
+            }
+            None
+        }
+        KeyCode::Char(c) => {
+            app.apo_file_input.push(c);
+            app.clear_autocomplete();
+            None
+        }
+        KeyCode::Backspace => {
+            app.apo_file_input.pop();
+            app.clear_autocomplete();
+            None
+        }
+        _ => None,
+    }
+}
+
+fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.sofa_file_input.clear();
+            app.clear_autocomplete();
+            None
+        }
+        KeyCode::Enter => {
+            match app.load_sofa_file() {
+                Ok(()) => {
+                    app.status_message = Some("SOFA file path set successfully".to_string());
+                    app.needs_plugin_update = true;
+                }
+                Err(e) => {
+                    app.status_message = Some(format!("Failed to set SOFA file: {}", e));
+                }
+            }
+            app.input_mode = InputMode::Normal;
+            app.sofa_file_input.clear();
+            app.clear_autocomplete();
+            if app.needs_plugin_update {
+                Some(PlayerCommand::UpdatePlugins)
+            } else {
+                None
+            }
+        }
+        KeyCode::Tab => {
+            // Autocomplete file path
+            if app.autocomplete_suggestions.is_empty() {
+                app.generate_autocomplete_suggestions_for_sofa_file();
+                if !app.autocomplete_suggestions.is_empty() {
+                    app.apply_autocomplete_to_sofa_file();
+                }
+            } else {
+                app.next_autocomplete_for_sofa_file();
+            }
+            None
+        }
+        KeyCode::Char(c) => {
+            app.sofa_file_input.push(c);
+            app.clear_autocomplete();
+            None
+        }
+        KeyCode::Backspace => {
+            app.sofa_file_input.pop();
+            app.clear_autocomplete();
             None
         }
         _ => None,
@@ -635,6 +863,16 @@ fn handle_devices_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Apply device change
             app.get_selected_output_device()
                 .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
+        }
+        _ => None,
+    }
+}
+
+fn handle_help_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+            app.input_mode = InputMode::Normal;
+            None
         }
         _ => None,
     }

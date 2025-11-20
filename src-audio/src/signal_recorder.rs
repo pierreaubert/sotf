@@ -236,6 +236,7 @@ pub fn generate_output_filenames(
 ///
 /// Plays back a signal to a specific output channel while simultaneously
 /// recording from a specific input channel, then analyzes the result.
+#[allow(clippy::too_many_arguments)]
 pub fn record_and_analyze(
     temp_wav_path: &Path,
     recorded_wav_path: &Path,
@@ -659,8 +660,8 @@ fn find_device_by_name(
     // First pass: try exact match
 
     for device in &devices_vec {
-        if let Ok(name) = device.name() {
-            if name.to_lowercase() == target_pattern {
+        if let Ok(name) = device.name()
+            && name.to_lowercase() == target_pattern {
                 log::info!(
                     "[find_device_by_name] Found {} device (exact match): {}",
                     device_type,
@@ -668,13 +669,12 @@ fn find_device_by_name(
                 );
                 return Ok(device.clone());
             }
-        }
     }
 
     // Second pass: try partial match (contains)
     for device in &devices_vec {
-        if let Ok(name) = device.name() {
-            if name.to_lowercase().contains(&target_pattern) {
+        if let Ok(name) = device.name()
+            && name.to_lowercase().contains(&target_pattern) {
                 log::info!(
                     "[find_device_by_name] Found {} device (partial match): {} (matched by '{}')",
                     device_type,
@@ -683,7 +683,6 @@ fn find_device_by_name(
                 );
                 return Ok(device.clone());
             }
-        }
     }
 
     // Device not found - provide helpful error message with available devices

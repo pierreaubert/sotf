@@ -24,6 +24,7 @@ pub struct Track {
     pub title: Option<String>,
     pub track_number: Option<u32>,
     pub duration_secs: Option<u64>,
+    pub channels: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +34,56 @@ pub struct Album {
     pub year: Option<u32>,
     pub tracks: Vec<Track>,
     pub album_art_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlbumChannelType {
+    Stereo,          // All tracks are 2 channels
+    Multichannel(u32), // All tracks have same channel count > 2
+    Mixed,           // Tracks have different channel counts
+}
+
+impl Album {
+    /// Determine the channel configuration of this album
+    pub fn channel_type(&self) -> Option<AlbumChannelType> {
+        if self.tracks.is_empty() {
+            return None;
+        }
+
+        // Get channel counts from all tracks that have the info
+        let channel_counts: Vec<u32> = self
+            .tracks
+            .iter()
+            .filter_map(|t| t.channels)
+            .collect();
+
+        if channel_counts.is_empty() {
+            return None;
+        }
+
+        // Check if all tracks have the same channel count
+        let first_channels = channel_counts[0];
+        let all_same = channel_counts.iter().all(|&c| c == first_channels);
+
+        if all_same {
+            if first_channels == 2 {
+                Some(AlbumChannelType::Stereo)
+            } else {
+                Some(AlbumChannelType::Multichannel(first_channels))
+            }
+        } else {
+            Some(AlbumChannelType::Mixed)
+        }
+    }
+
+    /// Get the channel count if all tracks have the same number of channels
+    pub fn uniform_channel_count(&self) -> Option<u32> {
+        match self.channel_type()? {
+            AlbumChannelType::Stereo => Some(2),
+            AlbumChannelType::Multichannel(n) => Some(n),
+            AlbumChannelType::Mixed => None,
+        }
+    }
 }
 
 impl Album {
@@ -83,28 +134,61 @@ impl MusicLibrary {
         Ok(())
     }
 
-    pub fn add_directory(&mut self, path: PathBuf) {
-        if !self.directories.iter().any(|d| d.path == path) {
-            // Get immediate subdirectories
-            let subdirectories = std::fs::read_dir(&path)
-                .ok()
-                .map(|entries| {
-                    entries
-                        .filter_map(|e| e.ok())
-                        .filter(|e| e.path().is_dir())
-                        .map(|e| e.path())
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            self.directories.push(DirectoryInfo {
-                path,
-                file_count: 0,
-                last_scanned: None,
-                expanded: false,
-                subdirectories,
-            });
+    pub fn add_directory(&mut self, path: PathBuf) -> Result<bool, String> {
+        // Check if this exact path already exists
+        if self.directories.iter().any(|d| d.path == path) {
+            return Ok(false); // Already exists, no scan needed
         }
+
+        // Check if this path is a subtree of an existing directory
+        for existing in &self.directories {
+            if path.starts_with(&existing.path) {
+                return Err(format!(
+                    "Directory is already covered by existing directory: {}",
+                    existing.path.display()
+                ));
+            }
+        }
+
+        // Check if any existing directories are subtrees of this new path
+        // If so, we should remove them since this new path covers them
+        let to_remove: Vec<PathBuf> = self
+            .directories
+            .iter()
+            .filter(|d| d.path.starts_with(&path))
+            .map(|d| d.path.clone())
+            .collect();
+
+        if !to_remove.is_empty() {
+            log::info!(
+                "New directory {} covers {} existing directories, removing them",
+                path.display(),
+                to_remove.len()
+            );
+            self.directories.retain(|d| !to_remove.contains(&d.path));
+        }
+
+        // Get immediate subdirectories
+        let subdirectories = std::fs::read_dir(&path)
+            .ok()
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.path().is_dir())
+                    .map(|e| e.path())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        self.directories.push(DirectoryInfo {
+            path,
+            file_count: 0,
+            last_scanned: None,
+            expanded: false,
+            subdirectories,
+        });
+
+        Ok(true) // New directory added, scan needed
     }
 
     pub fn remove_directory(&mut self, index: usize) -> Option<PathBuf> {
@@ -310,6 +394,7 @@ impl MusicLibrary {
                             title: metadata.title,
                             track_number: metadata.track_number,
                             duration_secs: metadata.duration_secs,
+                            channels: metadata.channels,
                         };
 
                         album.tracks.push(track);
@@ -353,6 +438,7 @@ struct TrackMetadata {
     pub track_number: Option<u32>,
     pub year: Option<u32>,
     pub duration_secs: Option<u64>,
+    pub channels: Option<u32>,
 }
 
 /// Create a custom probe with all supported format readers registered
@@ -392,13 +478,20 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
 
     let mut metadata = TrackMetadata::default();
 
-    // Extract duration from the format
-    if let Some(track) = probed.format.default_track()
-        && let Some(time_base) = track.codec_params.time_base
-        && let Some(n_frames) = track.codec_params.n_frames
-    {
-        let duration = time_base.calc_time(n_frames);
-        metadata.duration_secs = Some(duration.seconds);
+    // Extract duration and channel count from the format
+    if let Some(track) = probed.format.default_track() {
+        // Get duration
+        if let Some(time_base) = track.codec_params.time_base
+            && let Some(n_frames) = track.codec_params.n_frames
+        {
+            let duration = time_base.calc_time(n_frames);
+            metadata.duration_secs = Some(duration.seconds);
+        }
+
+        // Get channel count
+        if let Some(channels) = track.codec_params.channels {
+            metadata.channels = Some(channels.count() as u32);
+        }
     }
 
     // Extract metadata tags
@@ -462,10 +555,32 @@ mod tests {
         let mut lib = MusicLibrary::new();
         let path = PathBuf::from("/tmp/music");
 
-        lib.add_directory(path.clone());
+        let result = lib.add_directory(path.clone());
+        assert!(result.is_ok());
         assert_eq!(lib.directories.len(), 1);
 
         lib.remove_directory(0);
         assert_eq!(lib.directories.len(), 0);
+    }
+
+    #[test]
+    fn test_add_directory_subtree_detection() {
+        let mut lib = MusicLibrary::new();
+
+        // Add parent directory
+        let parent = PathBuf::from("/tmp/music");
+        assert!(lib.add_directory(parent.clone()).is_ok());
+        assert_eq!(lib.directories.len(), 1);
+
+        // Try to add a subdirectory - should fail
+        let child = PathBuf::from("/tmp/music/jazz");
+        let result = lib.add_directory(child);
+        assert!(result.is_err());
+        assert_eq!(lib.directories.len(), 1); // Still just the parent
+
+        // Add a sibling directory - should succeed
+        let sibling = PathBuf::from("/tmp/videos");
+        assert!(lib.add_directory(sibling).is_ok());
+        assert_eq!(lib.directories.len(), 2);
     }
 }

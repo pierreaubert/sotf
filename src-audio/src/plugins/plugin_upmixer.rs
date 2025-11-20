@@ -230,6 +230,7 @@ impl UpmixerPlugin {
     /// * `gain_rear_ambient` - Gain for ambient sound in rear channels (default: 1.0)
     /// * `height_gain` - Gain for height channels (default: 1.0)
     /// * `lfe_gain` - Gain for LFE/subwoofer channel (default: 1.0)
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         fft_size: usize,
         speaker_config_id: &str,

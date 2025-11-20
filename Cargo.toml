@@ -85,7 +85,7 @@ metaheuristics-nature = "10.1"
 rayon = "1.11"
 nlopt = "0.8.1"
 blas-src = {version="0.14"}
-rustfft = "6.2"
+rustfft = "6.4"
 autoeq = { path = "src-autoeq" }
 
 # Plotting and visualization
@@ -99,7 +99,7 @@ build_html = "2.7.0"
 cpal = "0.16.0"
 ebur128 = "0.1.10"
 hound = "3.5"
-id3 = "1.14"
+id3 = "1.16"
 metaflac = "0.2"
 rubato = "0.16.2"
 symphonia = { version = "0.5", default-features = false }

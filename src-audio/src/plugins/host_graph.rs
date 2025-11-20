@@ -125,6 +125,7 @@ impl AudioBuffer {
         output.copy_from_slice(&buffer);
     }
 
+    #[allow(dead_code)]
     fn mix(&self, data: &[f32]) {
         let mut buffer = self.data.lock().unwrap();
         for (dst, &src) in buffer.iter_mut().zip(data.iter()) {
@@ -132,11 +133,13 @@ impl AudioBuffer {
         }
     }
 
+    #[allow(dead_code)]
     fn clear(&self) {
         let mut buffer = self.data.lock().unwrap();
         buffer.fill(0.0);
     }
 
+    #[allow(dead_code)]
     fn size(&self) -> usize {
         self.num_frames * self.num_channels
     }
@@ -393,14 +396,14 @@ impl GraphHost {
         // Use scoped threads for parallel processing
         let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
-        std::thread::scope(|scope| {
+        std::thread::scope(|_scope| {
             for &node_id in &stage.nodes {
-                let errors_clone = Arc::clone(&errors);
-                let graph_input_slice = graph_input;
-                let context_clone = context.clone();
+                let _errors_clone = Arc::clone(&errors);
+                let _graph_input_slice = graph_input;
+                let _context_clone = context.clone();
 
                 // Get references we need for the thread
-                let node = self.nodes.get_mut(&node_id).expect("Node should exist");
+                let _node = self.nodes.get_mut(&node_id).expect("Node should exist");
 
                 // We need to process the node in the thread
                 // Since we can't safely share &mut between threads, we process sequentially
@@ -612,11 +615,10 @@ impl GraphHost {
 
         // Check all successors
         for edge in &self.edges {
-            if edge.from_node == node_id {
-                if self.has_cycle_util(edge.to_node, visited, rec_stack) {
+            if edge.from_node == node_id
+                && self.has_cycle_util(edge.to_node, visited, rec_stack) {
                     return true;
                 }
-            }
         }
 
         rec_stack.remove(&node_id);

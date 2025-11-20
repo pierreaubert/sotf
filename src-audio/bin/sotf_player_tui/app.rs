@@ -3,6 +3,7 @@ use crate::plugins::{PluginChain, PluginType};
 use sotf_audio::devices::AudioDevice;
 use sotf_audio::plugins::LoudnessInfo;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -21,6 +22,9 @@ pub enum InputMode {
     EditPlugin,
     SavePlugins,
     LoadPlugins,
+    LoadApoFile,
+    LoadSofaFile,
+    ShowHelp,
 }
 
 /// Tree view mode for library
@@ -28,6 +32,26 @@ pub enum InputMode {
 pub enum LibraryViewMode {
     Flat,     // Original list view
     TreeView, // Hierarchical artist → albums
+}
+
+/// Library sort order
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LibrarySortOrder {
+    Artist,
+    Album,
+    Title,
+    Year,
+}
+
+/// Channel filter options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelFilter {
+    All,            // Show all albums
+    Mono,           // Only 1-channel albums
+    Stereo,         // Only 2-channel albums
+    Multichannel,   // Only albums with > 2 channels
+    Mixed,          // Only albums with mixed channel counts
+    Specific(u32),  // Only albums with specific channel count
 }
 
 /// Artist node in tree view
@@ -94,6 +118,8 @@ pub struct App {
     pub search_query: String,
     pub directory_input: String,
     pub plugin_file_input: String, // For save/load plugin chain
+    pub apo_file_input: String,    // For loading APO EQ files
+    pub sofa_file_input: String,   // For loading SOFA HRTF files
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
@@ -111,6 +137,8 @@ pub struct App {
 
     // Library tree view
     pub library_view_mode: LibraryViewMode,
+    pub library_sort_order: LibrarySortOrder,
+    pub channel_filter: ChannelFilter,
     pub artist_tree: Vec<ArtistNode>,
     pub selected_tree_index: usize, // Index in flattened tree (artists + visible albums)
 
@@ -167,6 +195,8 @@ impl App {
             search_query: String::new(),
             directory_input: String::new(),
             plugin_file_input: String::new(),
+            apo_file_input: String::new(),
+            sofa_file_input: String::new(),
             selected_album_index: 0,
             selected_directory_index: 0,
             selected_queue_index: 0,
@@ -178,6 +208,8 @@ impl App {
             available_plugin_presets: Vec::new(),
             selected_preset_index: 0,
             library_view_mode: LibraryViewMode::Flat,
+            library_sort_order: LibrarySortOrder::Artist,
+            channel_filter: ChannelFilter::All,
             artist_tree: Vec::new(),
             selected_tree_index: 0,
             plugin_chain: PluginChain::new(),
@@ -257,11 +289,71 @@ impl App {
     }
 
     pub fn filtered_albums(&self) -> Vec<&Album> {
-        if self.search_query.is_empty() {
+        use crate::library::AlbumChannelType;
+
+        let mut albums: Vec<&Album> = if self.search_query.is_empty() {
             self.library.albums.iter().collect()
         } else {
             self.library.search_albums(&self.search_query)
+        };
+
+        // Apply channel filter
+        albums.retain(|album| {
+            match self.channel_filter {
+                ChannelFilter::All => true,
+                ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
+                ChannelFilter::Stereo => {
+                    matches!(album.channel_type(), Some(AlbumChannelType::Stereo))
+                }
+                ChannelFilter::Multichannel => {
+                    matches!(album.channel_type(), Some(AlbumChannelType::Multichannel(_)))
+                }
+                ChannelFilter::Mixed => {
+                    matches!(album.channel_type(), Some(AlbumChannelType::Mixed))
+                }
+                ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
+            }
+        });
+
+        // Sort albums based on current sort order
+        match self.library_sort_order {
+            LibrarySortOrder::Artist => {
+                albums.sort_by(|a, b| {
+                    a.artist
+                        .cmp(&b.artist)
+                        .then(a.title.cmp(&b.title))
+                        .then(a.year.cmp(&b.year))
+                });
+            }
+            LibrarySortOrder::Album => {
+                albums.sort_by(|a, b| {
+                    a.title
+                        .cmp(&b.title)
+                        .then(a.artist.cmp(&b.artist))
+                        .then(a.year.cmp(&b.year))
+                });
+            }
+            LibrarySortOrder::Title => {
+                // Same as Album - sort by album title
+                albums.sort_by(|a, b| {
+                    a.title
+                        .cmp(&b.title)
+                        .then(a.artist.cmp(&b.artist))
+                        .then(a.year.cmp(&b.year))
+                });
+            }
+            LibrarySortOrder::Year => {
+                albums.sort_by(|a, b| {
+                    // Sort by year descending (newest first), then artist, then title
+                    b.year
+                        .cmp(&a.year)
+                        .then(a.artist.cmp(&b.artist))
+                        .then(a.title.cmp(&b.title))
+                });
+            }
         }
+
+        albums
     }
 
     pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
@@ -441,13 +533,24 @@ impl App {
     }
 
     pub fn add_directory(&mut self, path: PathBuf) {
-        self.library.add_directory(path);
-        self.needs_rescan = true;
+        match self.library.add_directory(path) {
+            Ok(needs_scan) => {
+                if needs_scan {
+                    self.needs_rescan = true;
+                    self.status_message = Some("Directory added. Press 's' to scan.".to_string());
+                } else {
+                    self.status_message = Some("Directory already exists.".to_string());
+                }
+            }
+            Err(msg) => {
+                self.status_message = Some(msg);
+            }
+        }
     }
 
     /// Add a directory without triggering rescan (for startup initialization)
     pub fn add_directory_quiet(&mut self, path: PathBuf) {
-        self.library.add_directory(path);
+        let _ = self.library.add_directory(path);
     }
 
     pub fn remove_selected_directory(&mut self) {
@@ -503,16 +606,58 @@ impl App {
         items
     }
 
+    /// Start library scan (non-blocking, sets up progress tracking)
+    pub fn start_library_scan(&mut self) {
+        self.scan_in_progress = true;
+        self.scan_progress_tracks = 0;
+        self.scan_progress_albums = 0;
+        self.status_message = Some("Starting library scan...".to_string());
+    }
+
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
         self.status_message = Some("Scanning library...".to_string());
 
-        // Use progress callback to log progress
-        let result = self.library.scan_with_progress(|tracks, albums| {
-            log::info!("Scan progress: {} tracks, {} albums found", tracks, albums);
+        // Create shared progress state
+        let progress_tracks = Arc::new(Mutex::new(0usize));
+        let progress_albums = Arc::new(Mutex::new(0usize));
+        let last_update_tracks = Arc::new(Mutex::new(0usize));
+
+        let progress_tracks_clone = Arc::clone(&progress_tracks);
+        let progress_albums_clone = Arc::clone(&progress_albums);
+        let last_update_clone = Arc::clone(&last_update_tracks);
+
+        // Use progress callback to update shared progress
+        let result = self.library.scan_with_progress(move |tracks, albums| {
+            let should_update = if let Ok(last) = last_update_clone.lock() {
+                tracks - *last >= 1000 || tracks == 0
+            } else {
+                false
+            };
+
+            if should_update {
+                if let Ok(mut pt) = progress_tracks_clone.lock() {
+                    *pt = tracks;
+                }
+                if let Ok(mut pa) = progress_albums_clone.lock() {
+                    *pa = albums;
+                }
+                if let Ok(mut last) = last_update_clone.lock() {
+                    *last = tracks;
+                }
+                log::info!("Scan progress: {} tracks, {} albums found", tracks, albums);
+            }
         });
+
+        // Update app state with final progress
+        if let Ok(pt) = progress_tracks.lock() {
+            self.scan_progress_tracks = *pt;
+        }
+        if let Ok(pa) = progress_albums.lock() {
+            self.scan_progress_albums = *pa;
+        }
 
         self.scan_in_progress = false;
         self.needs_rescan = false;
@@ -676,6 +821,91 @@ impl App {
             LibraryViewMode::TreeView => LibraryViewMode::Flat,
         };
         self.selected_tree_index = 0;
+    }
+
+    /// Set library sort order
+    pub fn set_library_sort_order(&mut self, order: LibrarySortOrder) {
+        self.library_sort_order = order;
+        // Reset selection to top when changing sort order
+        self.selected_album_index = 0;
+        self.selected_tree_index = 0;
+        // Rebuild tree view if active (as sort order affects tree structure)
+        if self.library_view_mode == LibraryViewMode::TreeView {
+            self.rebuild_artist_tree();
+        }
+    }
+
+    /// Set channel filter
+    pub fn set_channel_filter(&mut self, filter: ChannelFilter) {
+        self.channel_filter = filter;
+        // Reset selection to top when changing filter
+        self.selected_album_index = 0;
+        self.selected_tree_index = 0;
+        // Rebuild tree view if active
+        if self.library_view_mode == LibraryViewMode::TreeView {
+            self.rebuild_artist_tree();
+        }
+    }
+
+    /// Get unique channel counts present in the library
+    pub fn get_unique_channel_counts(&self) -> Vec<u32> {
+        use std::collections::HashSet;
+
+        let mut channel_counts = HashSet::new();
+
+        for album in &self.library.albums {
+            if let Some(count) = album.uniform_channel_count() {
+                channel_counts.insert(count);
+            }
+        }
+
+        let mut counts: Vec<u32> = channel_counts.into_iter().collect();
+        counts.sort();
+        counts
+    }
+
+    /// Cycle to next channel filter
+    pub fn cycle_channel_filter(&mut self) {
+        // Get available channel counts in library (excluding mono and stereo since they have their own filters)
+        let specific_counts: Vec<u32> = self
+            .get_unique_channel_counts()
+            .into_iter()
+            .filter(|&count| count > 2)
+            .collect();
+
+        self.channel_filter = match self.channel_filter {
+            ChannelFilter::All => ChannelFilter::Mono,
+            ChannelFilter::Mono => ChannelFilter::Stereo,
+            ChannelFilter::Stereo => ChannelFilter::Multichannel,
+            ChannelFilter::Multichannel => ChannelFilter::Mixed,
+            ChannelFilter::Mixed => {
+                // Cycle to first specific count if available, otherwise back to All
+                if let Some(&first_count) = specific_counts.first() {
+                    ChannelFilter::Specific(first_count)
+                } else {
+                    ChannelFilter::All
+                }
+            }
+            ChannelFilter::Specific(current) => {
+                // Find next specific count in the list
+                if let Some(pos) = specific_counts.iter().position(|&c| c == current) {
+                    if pos + 1 < specific_counts.len() {
+                        ChannelFilter::Specific(specific_counts[pos + 1])
+                    } else {
+                        ChannelFilter::All
+                    }
+                } else {
+                    ChannelFilter::All
+                }
+            }
+        };
+        // Reset selection
+        self.selected_album_index = 0;
+        self.selected_tree_index = 0;
+        // Rebuild tree view if active
+        if self.library_view_mode == LibraryViewMode::TreeView {
+            self.rebuild_artist_tree();
+        }
     }
 
     /// Toggle expansion of the currently selected artist node
@@ -1091,6 +1321,17 @@ impl App {
                     // TODO: Implement full EQ editing with filter type selection
                     false
                 }
+                PluginSettings::BinauralDecoder { input_channels, .. } => {
+                    // Only input_channels can be adjusted (sofa_file is set via 'f' key)
+                    match param_idx {
+                        1 => {
+                            *input_channels = (*input_channels as i64 + delta as i64)
+                                .clamp(2, 16) as usize;
+                            true
+                        }
+                        _ => false,
+                    }
+                }
             }
         } else {
             false
@@ -1319,6 +1560,181 @@ impl App {
         self.autocomplete_suggestions.clear();
         self.autocomplete_index = 0;
     }
+
+    /// Generate autocomplete suggestions for plugin file input
+    pub fn generate_autocomplete_suggestions_for_plugin_file(&mut self) {
+        self.generate_autocomplete_suggestions_for_input(&self.plugin_file_input.clone());
+    }
+
+    /// Apply autocomplete to plugin file input
+    pub fn apply_autocomplete_to_plugin_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
+            self.plugin_file_input = suggestion.clone();
+        }
+    }
+
+    /// Cycle to next autocomplete for plugin file input
+    pub fn next_autocomplete_for_plugin_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.apply_autocomplete_to_plugin_file();
+        }
+    }
+
+    /// Generate autocomplete suggestions for APO file input
+    pub fn generate_autocomplete_suggestions_for_apo_file(&mut self) {
+        self.generate_autocomplete_suggestions_for_input(&self.apo_file_input.clone());
+    }
+
+    /// Apply autocomplete to APO file input
+    pub fn apply_autocomplete_to_apo_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
+            self.apo_file_input = suggestion.clone();
+        }
+    }
+
+    /// Cycle to next autocomplete for APO file input
+    pub fn next_autocomplete_for_apo_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.apply_autocomplete_to_apo_file();
+        }
+    }
+
+    /// Generate autocomplete suggestions for SOFA file input
+    pub fn generate_autocomplete_suggestions_for_sofa_file(&mut self) {
+        self.generate_autocomplete_suggestions_for_input(&self.sofa_file_input.clone());
+    }
+
+    /// Apply autocomplete to SOFA file input
+    pub fn apply_autocomplete_to_sofa_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
+            self.sofa_file_input = suggestion.clone();
+        }
+    }
+
+    /// Cycle to next autocomplete for SOFA file input
+    pub fn next_autocomplete_for_sofa_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.apply_autocomplete_to_sofa_file();
+        }
+    }
+
+    /// Generic autocomplete suggestions generator for any file input
+    fn generate_autocomplete_suggestions_for_input(&mut self, input: &str) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
+
+        let input = if input.is_empty() { "./" } else { input };
+
+        // Expand tilde to home directory
+        let expanded_input = if input.starts_with('~') {
+            if let Ok(home) = std::env::var("HOME") {
+                input.replacen('~', &home, 1)
+            } else {
+                input.to_string()
+            }
+        } else {
+            input.to_string()
+        };
+
+        let path = std::path::Path::new(&expanded_input);
+
+        // Determine the directory to search and the prefix to match
+        let (search_dir, prefix) = if path.is_dir() && expanded_input.ends_with('/') {
+            // User typed a complete directory with trailing slash
+            (path.to_path_buf(), String::new())
+        } else if let Some(parent) = path.parent() {
+            // User is typing a partial name
+            let prefix = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (parent.to_path_buf(), prefix)
+        } else {
+            // Fallback to current directory
+            (std::path::PathBuf::from("."), expanded_input.clone())
+        };
+
+        // Read directory and find matching entries
+        if let Ok(entries) = std::fs::read_dir(&search_dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string() {
+                    // Skip hidden files unless prefix starts with '.'
+                    if file_name.starts_with('.') && !prefix.starts_with('.') {
+                        continue;
+                    }
+
+                    // Check if filename starts with prefix
+                    if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                        let mut full_path = search_dir.join(&file_name);
+
+                        // Add trailing slash for directories
+                        if entry.path().is_dir() {
+                            full_path = full_path.join("");
+                        }
+
+                        let suggestion = full_path.to_string_lossy().to_string();
+                        self.autocomplete_suggestions.push(suggestion);
+                    }
+                }
+            }
+        }
+
+        // Sort suggestions
+        self.autocomplete_suggestions.sort();
+    }
+
+    /// Load APO file and update the currently selected EQ plugin
+    pub fn load_apo_file(&mut self) -> Result<(), String> {
+        use crate::plugins::{EQFilter, PluginSettings};
+        use std::path::Path;
+
+        let path = Path::new(&self.apo_file_input);
+
+        // Load filters from APO file
+        let filters = EQFilter::from_apo_file(path)?;
+
+        // Update the currently selected plugin if it's an EQ
+        if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
+            if matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                plugin.settings = PluginSettings::EQ { filters };
+                Ok(())
+            } else {
+                Err("Selected plugin is not an EQ".to_string())
+            }
+        } else {
+            Err("No plugin selected".to_string())
+        }
+    }
+
+    /// Update SOFA file path for the currently selected binaural decoder plugin
+    pub fn load_sofa_file(&mut self) -> Result<(), String> {
+        use crate::plugins::PluginSettings;
+
+        // Update the currently selected plugin if it's a binaural decoder
+        if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
+            if let PluginSettings::BinauralDecoder {
+                ref mut sofa_file,
+                ..
+            } = plugin.settings
+            {
+                *sofa_file = self.sofa_file_input.clone();
+                Ok(())
+            } else {
+                Err("Selected plugin is not a Binaural Decoder".to_string())
+            }
+        } else {
+            Err("No plugin selected".to_string())
+        }
+    }
 }
 
 // Helper function to get parameter count for a plugin
@@ -1331,6 +1747,7 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
         PluginSettings::Limiter { .. } => 2, // threshold, release
         PluginSettings::Gate { .. } => 4,    // threshold, ratio, attack, release
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
+        PluginSettings::BinauralDecoder { .. } => 2, // sofa_file, input_channels
     }
 }
 

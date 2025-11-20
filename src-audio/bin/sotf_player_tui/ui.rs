@@ -1,12 +1,30 @@
-use crate::app::{App, InputMode, Screen};
+use crate::app::{App, InputMode, Screen, LibraryViewMode, TreeItem};
 use crate::plugins::{PluginSettings, PluginType};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, BorderType, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
+
+
+/// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
+fn format_channel_count(n: u32) -> String {
+    match n {
+        1 => "Mono".to_string(),
+        2 => "2.0".to_string(),
+        4 => "4.0".to_string(),
+        5 => "5.0".to_string(),
+        6 => "5.1".to_string(),
+        8 => "7.1".to_string(),
+        10 => "7.1.2".to_string(),
+        12 => "7.1.4".to_string(),
+        14 => "9.1.4".to_string(),
+        16 => "9.1.6".to_string(),
+        _ => format!("{}ch", n),
+    }
+}
 
 /// Clean up track/song titles by:
 /// - Trimming ALL leading/trailing whitespace
@@ -166,6 +184,20 @@ pub fn draw(f: &mut Frame, app: &App) {
         draw_save_plugins_dialog(f, app);
     } else if app.input_mode == InputMode::LoadPlugins {
         draw_load_plugins_dialog(f, app);
+    } else if app.input_mode == InputMode::LoadApoFile {
+        draw_load_apo_file_dialog(f, app);
+    } else if app.input_mode == InputMode::LoadSofaFile {
+        draw_load_sofa_file_dialog(f, app);
+    }
+
+    // Scan progress popup
+    if app.scan_in_progress {
+        draw_scan_progress_dialog(f, app);
+    }
+
+    // Help modal
+    if app.input_mode == InputMode::ShowHelp {
+        draw_help_modal(f, app);
     }
 }
 
@@ -221,7 +253,7 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
         (Screen::DirectoryManager, "Directories"),
         (Screen::Queue, "Queue"),
         (Screen::Plugins, "Plugins"),
-        (Screen::Devices, "Devices"),
+        (Screen::Devices, "Output Devices"),
     ];
 
     // Create spans for each screen box
@@ -241,16 +273,16 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
         };
 
         if is_active {
+            spans.push(Span::styled(label.to_string(), style));
+            spans.push(Span::raw(" "));
+        } else {
             spans.push(Span::raw("("));
             spans.push(Span::styled(
-                label.chars().nth(0).unwrap().to_string(),
+                label.chars().next().unwrap().to_string(),
                 style,
             ));
             spans.push(Span::raw(")"));
             spans.push(Span::styled(label[1..].to_string(), style));
-            spans.push(Span::raw(" "));
-        } else {
-            spans.push(Span::styled(label.to_string(), style));
             spans.push(Span::raw(" "));
         }
     }
@@ -279,6 +311,8 @@ fn draw_library_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::{ChannelFilter, LibrarySortOrder};
+
     let input_style = if app.input_mode == InputMode::Search {
         Style::default().fg(Color::Yellow)
     } else {
@@ -291,18 +325,68 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
         format!("Search: {}", app.search_query)
     };
 
-    let search_box = Paragraph::new(search_text).style(input_style).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Search Albums (Press '/' to search, ESC to exit search)"),
+    // Display current sort order
+    let sort_order_str = match app.library_sort_order {
+        LibrarySortOrder::Artist => "Artist",
+        LibrarySortOrder::Album => "Album",
+        LibrarySortOrder::Title => "Title",
+        LibrarySortOrder::Year => "Year",
+    };
+
+    // Display current channel filter
+    let filter_str = match app.channel_filter {
+        ChannelFilter::All => "All".to_string(),
+        ChannelFilter::Mono => "Mono".to_string(),
+        ChannelFilter::Stereo => "2.0".to_string(),
+        ChannelFilter::Multichannel => "Multi".to_string(),
+        ChannelFilter::Mixed => "Mixed".to_string(),
+        ChannelFilter::Specific(n) => format_channel_count(n),
+    };
+
+    // Get available channel counts for help text
+    let available_counts = app.get_unique_channel_counts();
+    let counts_str = if available_counts.is_empty() {
+        String::new()
+    } else {
+        // Determine which channel count is currently active (if any)
+        let active_count = match app.channel_filter {
+            ChannelFilter::Mono => Some(1),
+            ChannelFilter::Stereo => Some(2),
+            ChannelFilter::Specific(n) => Some(n),
+            _ => None, // All, Multichannel, Mixed don't have specific counts
+        };
+
+        format!(
+            " | Available: {}",
+            available_counts
+                .iter()
+                .map(|&n| {
+                    let formatted = format_channel_count(n);
+                    if Some(n) == active_count {
+                        format!("[{}]", formatted)
+                    } else {
+                        formatted
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+
+    let title = format!(
+        "Search Albums ('/' search | Sort: {} [s/1-4] | Filter: {} [c/5-9]{})",
+        sort_order_str, filter_str, counts_str
     );
+
+    let search_box = Paragraph::new(search_text)
+        .style(input_style)
+        .block(Block::default().borders(Borders::ALL).title(title));
 
     f.render_widget(search_box, area);
 }
 
 fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
-    use crate::app::{LibraryViewMode, TreeItem};
-    use ratatui::widgets::{ListState, StatefulWidget};
+    use ratatui::widgets::StatefulWidget;
 
     // Calculate channel count for truncation logic
     let num_channels = app
@@ -1364,6 +1448,20 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             }
             params
         }
+        PluginSettings::BinauralDecoder {
+            sofa_file,
+            input_channels,
+        } => vec![
+            (
+                "SOFA File".to_string(),
+                if sofa_file.is_empty() {
+                    "[not set - press 'f' to load]".to_string()
+                } else {
+                    sofa_file.clone()
+                },
+            ),
+            ("Input Channels".to_string(), format!("{}", input_channels)),
+        ],
     }
 }
 
@@ -1540,5 +1638,342 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
             .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, inner);
+    }
+}
+
+fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
+    // Create a centered dialog
+    let area = f.area();
+    let dialog_width = (area.width as f32 * 0.6) as u16;
+    let dialog_height = 10;
+    let dialog_x = (area.width - dialog_width) / 2;
+    let dialog_y = (area.height - dialog_height) / 2;
+
+    let dialog_area = Rect {
+        x: dialog_x,
+        y: dialog_y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear background
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black))
+        .title("Load APO EQ File");
+
+    f.render_widget(block, dialog_area);
+
+    // Inner area for text
+    let inner = Rect {
+        x: dialog_area.x + 1,
+        y: dialog_area.y + 1,
+        width: dialog_area.width.saturating_sub(2),
+        height: dialog_area.height.saturating_sub(2),
+    };
+
+    let lines = vec![
+        Line::from("Enter path to APO file:"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::raw(&app.apo_file_input),
+            Span::styled("_", Style::default().fg(Color::Green)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Supported format:", Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from("  Filter 1: ON PK Fc 100 Hz Gain -2.0 dB Q 1.41"),
+        Line::from("  Filter 2: ON LSC Fc 105 Hz Gain 4.1 dB Q 0.71"),
+        Line::from(""),
+        Line::from("Press Enter to load, ESC to cancel"),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default())
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(paragraph, inner);
+}
+
+fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
+    // Create a centered dialog
+    let area = f.area();
+    let dialog_width = (area.width as f32 * 0.6) as u16;
+    let dialog_height = 8;
+    let dialog_x = (area.width - dialog_width) / 2;
+    let dialog_y = (area.height - dialog_height) / 2;
+
+    let dialog_area = Rect {
+        x: dialog_x,
+        y: dialog_y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear background
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(Color::Black))
+        .title("Load SOFA HRTF File");
+
+    f.render_widget(block, dialog_area);
+
+    // Inner area for text
+    let inner = Rect {
+        x: dialog_area.x + 1,
+        y: dialog_area.y + 1,
+        width: dialog_area.width.saturating_sub(2),
+        height: dialog_area.height.saturating_sub(2),
+    };
+
+    let lines = vec![
+        Line::from("Enter path to SOFA file containing HRTFs:"),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::raw(&app.sofa_file_input),
+            Span::styled("_", Style::default().fg(Color::Green)),
+        ]),
+        Line::from(""),
+        Line::from("SOFA format contains Head-Related Transfer Functions"),
+        Line::from("Press Enter to set path, ESC to cancel"),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default())
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(paragraph, inner);
+}
+
+fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
+    // Create a centered dialog
+    let area = f.area();
+    let dialog_width = (area.width as f32 * 0.5) as u16;
+    let dialog_height = 10;
+    let dialog_x = (area.width - dialog_width) / 2;
+    let dialog_y = (area.height - dialog_height) / 2;
+
+    let dialog_area = Rect {
+        x: dialog_x,
+        y: dialog_y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear background
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .style(Style::default().bg(Color::Black))
+        .title("Scanning Library");
+
+    f.render_widget(Clear, dialog_area);
+    f.render_widget(block, dialog_area);
+
+    // Inner area for text
+    let inner = Rect {
+        x: dialog_area.x + 2,
+        y: dialog_area.y + 2,
+        width: dialog_area.width.saturating_sub(4),
+        height: dialog_area.height.saturating_sub(4),
+    };
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Scanning directories for audio files...", Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("Tracks found: "),
+            Span::styled(format!("{}", app.scan_progress_tracks), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::raw("Albums found: "),
+            Span::styled(format!("{}", app.scan_progress_albums), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Please wait...", Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC)),
+        ]),
+    ];
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default())
+        .alignment(Alignment::Left);
+
+    f.render_widget(paragraph, inner);
+}
+
+fn draw_help_modal(f: &mut Frame, app: &App) {
+    // Create a centered modal (80% width, 90% height)
+    let area = f.area();
+    let modal_width = (area.width as f32 * 0.8) as u16;
+    let modal_height = (area.height as f32 * 0.9) as u16;
+    let modal_x = (area.width - modal_width) / 2;
+    let modal_y = (area.height - modal_height) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Clear background
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .style(Style::default().bg(Color::Black))
+        .title(format!("Help - {} Screen (Press ESC or ? to close)",
+            match app.current_screen {
+                Screen::Library => "Library",
+                Screen::DirectoryManager => "Directories",
+                Screen::Queue => "Queue",
+                Screen::Plugins => "Plugins",
+                Screen::Devices => "Devices",
+            }
+        ));
+
+    f.render_widget(Clear, modal_area);
+    f.render_widget(block, modal_area);
+
+    // Inner area for content
+    let inner = Rect {
+        x: modal_area.x + 2,
+        y: modal_area.y + 1,
+        width: modal_area.width.saturating_sub(4),
+        height: modal_area.height.saturating_sub(2),
+    };
+
+    // Get keybindings for current screen
+    let keybindings = get_keybindings_for_screen(app.current_screen);
+
+    // Build help text
+    let mut lines = vec![];
+
+    // Global keybindings
+    lines.push(Line::from(vec![
+        Span::styled("GLOBAL KEYBINDINGS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  TAB", Style::default().fg(Color::Cyan)),
+        Span::raw("  Next screen"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  L/D/Q/P/O", Style::default().fg(Color::Cyan)),
+        Span::raw("  Jump to Library/Directories/Queue/Plugins/Devices"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  +/=", Style::default().fg(Color::Cyan)),
+        Span::raw("  Increase volume"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  -/_", Style::default().fg(Color::Cyan)),
+        Span::raw("  Decrease volume"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Ctrl+Left/Right", Style::default().fg(Color::Cyan)),
+        Span::raw("  Select output device"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  ?", Style::default().fg(Color::Cyan)),
+        Span::raw("  Show this help"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  ESC/Ctrl+Q/Cmd+Q", Style::default().fg(Color::Cyan)),
+        Span::raw("  Quit"),
+    ]));
+    lines.push(Line::from(""));
+
+    // Screen-specific keybindings
+    lines.push(Line::from(vec![
+        Span::styled(format!("{} KEYBINDINGS",
+            match app.current_screen {
+                Screen::Library => "LIBRARY",
+                Screen::DirectoryManager => "DIRECTORIES",
+                Screen::Queue => "QUEUE",
+                Screen::Plugins => "PLUGINS",
+                Screen::Devices => "DEVICES",
+            }
+        ), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)),
+    ]));
+    lines.push(Line::from(""));
+
+    for (key, description) in keybindings {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {:<18}", key), Style::default().fg(Color::Cyan)),
+            Span::raw(description),
+        ]));
+    }
+
+    let paragraph = Paragraph::new(lines)
+        .block(Block::default())
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(paragraph, inner);
+}
+
+fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
+    match screen {
+        Screen::Library => vec![
+            ("↑/↓ or k/j", "Navigate albums/artists"),
+            ("PageUp/PageDown", "Jump by page"),
+            ("/", "Search albums"),
+            ("t", "Toggle tree view / flat view"),
+            ("h/l or ←/→", "Collapse/expand artists in tree view"),
+            ("s or 1/2/3/4", "Sort by Artist/Album/Title/Year"),
+            ("c or 5/6/7/8/9", "Filter: All/Mono/Stereo/Multi/Mixed"),
+            ("a or Enter", "Add album to queue"),
+            ("q", "Go to queue screen"),
+            ("m", "Database maintenance (clean missing files)"),
+        ],
+        Screen::DirectoryManager => vec![
+            ("↑/↓ or k/j", "Navigate directories"),
+            ("Enter/→/l", "Expand/collapse directory"),
+            ("a", "Add directory"),
+            ("d/Delete", "Remove selected directory"),
+            ("s", "Scan library"),
+            ("m", "Database maintenance (clean missing files)"),
+        ],
+        Screen::Queue => vec![
+            ("↑/↓ or k/j", "Navigate queue items"),
+            ("Enter", "Play selected album from start"),
+            ("h/l or ←/→", "Expand/collapse album tracks"),
+            ("p", "Play/resume from current position"),
+            ("Space", "Pause/resume"),
+            ("n or >", "Next track"),
+            ("b or <", "Previous track"),
+            ("d/Delete", "Remove from queue"),
+            ("c", "Clear entire queue"),
+        ],
+        Screen::Plugins => vec![
+            ("↑/↓ or k/j", "Navigate plugin chain"),
+            ("a", "Add plugin (default)"),
+            ("1/2/3/4/5/6/7", "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural"),
+            ("e or Enter", "Edit selected plugin"),
+            ("t", "Toggle plugin enabled/disabled"),
+            ("d/Delete", "Remove plugin"),
+            ("u/U", "Move plugin up in chain"),
+            ("n/N", "Move plugin down in chain"),
+            ("s", "Save plugin chain to file"),
+            ("l", "Load plugin chain from file"),
+            ("", ""),
+            ("EDIT MODE:", "(when editing a plugin)"),
+            ("↑/↓ or k/j", "Navigate parameters"),
+            ("←/→ or h/l", "Adjust parameter value (small)"),
+            ("[/]", "Adjust parameter value (large)"),
+            ("a", "Load APO file (EQ plugins only)"),
+            ("f", "Load SOFA file (Binaural Decoder only)"),
+            ("ESC", "Exit edit mode"),
+        ],
+        Screen::Devices => vec![
+            ("↑/↓ or k/j", "Navigate output devices"),
+            ("Enter/Space", "Select output device"),
+        ],
     }
 }

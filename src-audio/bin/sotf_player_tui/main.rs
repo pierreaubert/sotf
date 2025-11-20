@@ -181,8 +181,8 @@ fn run_app<B: ratatui::backend::Backend>(
                             let output_channels = app.plugin_chain.output_channels();
 
                             // Validate output channels against device max
-                            if let Some(max_channels) = app.get_device_max_channels() {
-                                if output_channels > max_channels {
+                            if let Some(max_channels) = app.get_device_max_channels()
+                                && output_channels > max_channels {
                                     log::error!(
                                         "[TUI] Plugin chain outputs {} channels but device only supports {}",
                                         output_channels,
@@ -191,7 +191,6 @@ fn run_app<B: ratatui::backend::Backend>(
                                     app.is_playing = false;
                                     continue;
                                 }
-                            }
 
                             if let Err(e) = player.load_and_play(
                                 path,
@@ -249,8 +248,8 @@ fn handle_player_command(
             let output_channels = app.plugin_chain.output_channels();
 
             // Validate output channels against device max
-            if let Some(max_channels) = app.get_device_max_channels() {
-                if output_channels > max_channels {
+            if let Some(max_channels) = app.get_device_max_channels()
+                && output_channels > max_channels {
                     let error_msg = format!(
                         "Plugin chain outputs {} channels but device only supports {}",
                         output_channels, max_channels
@@ -258,7 +257,6 @@ fn handle_player_command(
                     log::error!("{}", error_msg);
                     return Err(error_msg.into());
                 }
-            }
 
             player.load_and_play(
                 path,

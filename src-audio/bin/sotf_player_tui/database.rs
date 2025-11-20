@@ -5,6 +5,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::config;
 use crate::library::{Album, Track};
 
+/// A database migration with description and apply function
+struct Migration {
+    description: &'static str,
+    apply: fn(&MusicDatabase) -> SqlResult<()>,
+}
+
 /// Database manager for persistent music library storage
 #[derive(Debug)]
 pub struct MusicDatabase {
@@ -28,68 +34,193 @@ impl MusicDatabase {
         Ok(db)
     }
 
-    /// Initialize database schema
+    /// Initialize database schema and apply migrations
     fn initialize_schema(&self) -> SqlResult<()> {
-        // Albums table
+        // Create schema_version table if it doesn't exist
         self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS albums (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                artist TEXT NOT NULL,
-                title TEXT NOT NULL,
-                year INTEGER,
-                album_art_path TEXT,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                UNIQUE(artist, title)
+            "CREATE TABLE IF NOT EXISTS schema_version (
+                version INTEGER PRIMARY KEY,
+                applied_at INTEGER NOT NULL,
+                description TEXT NOT NULL
             )",
             [],
         )?;
 
-        // Tracks table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS tracks (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                album_id INTEGER NOT NULL,
-                path TEXT NOT NULL UNIQUE,
-                title TEXT,
-                track_number INTEGER,
-                duration_secs INTEGER,
-                file_mtime INTEGER NOT NULL,
-                scanned_at INTEGER NOT NULL,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE
-            )",
-            [],
-        )?;
+        // Get current schema version
+        let current_version = self.get_schema_version()?;
+        log::info!("Current database schema version: {}", current_version);
 
-        // Scan history table
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS scan_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                directory TEXT NOT NULL,
-                scanned_at INTEGER NOT NULL,
-                tracks_found INTEGER NOT NULL,
-                albums_found INTEGER NOT NULL
-            )",
-            [],
-        )?;
+        // Define all migrations
+        const LATEST_VERSION: i64 = 2;
+        let migrations = self.get_migrations();
 
-        // Create indexes for performance
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON tracks(album_id)",
-            [],
-        )?;
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path)",
-            [],
-        )?;
-        self.conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_scan_history_directory ON scan_history(directory)",
-            [],
-        )?;
+        // Apply migrations sequentially from current version to latest
+        for version in (current_version + 1)..=LATEST_VERSION {
+            log::info!("Applying migration to version {}...", version);
+            if let Some(migration) = migrations.get(&version) {
+                (migration.apply)(self)?;
+                self.update_schema_version(version, migration.description)?;
+                log::info!("Successfully applied migration to version {}", version);
+            } else {
+                log::error!("Migration for version {} not found", version);
+            }
+        }
+
+        if current_version < LATEST_VERSION {
+            log::info!(
+                "Database schema updated from version {} to {}",
+                current_version,
+                LATEST_VERSION
+            );
+        }
 
         Ok(())
+    }
+
+    /// Get the current schema version
+    fn get_schema_version(&self) -> SqlResult<i64> {
+        let result = self.conn.query_row(
+            "SELECT MAX(version) FROM schema_version",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        );
+
+        match result {
+            Ok(Some(version)) => Ok(version),
+            Ok(None) => Ok(0), // Fresh database, no version yet
+            Err(rusqlite::Error::SqliteFailure(_, _)) => Ok(0), // Table doesn't exist yet
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Update schema version after successful migration
+    fn update_schema_version(&self, version: i64, description: &str) -> SqlResult<()> {
+        let now = current_timestamp();
+        self.conn.execute(
+            "INSERT INTO schema_version (version, applied_at, description) VALUES (?1, ?2, ?3)",
+            params![version, now, description],
+        )?;
+        Ok(())
+    }
+
+    /// Get migration history for debugging/inspection
+    #[allow(dead_code)]
+    pub fn get_migration_history(&self) -> SqlResult<Vec<(i64, u64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT version, applied_at, description FROM schema_version ORDER BY version"
+        )?;
+
+        let history = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)? as u64,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(history)
+    }
+
+    /// Define all database migrations
+    fn get_migrations(&self) -> std::collections::HashMap<i64, Migration> {
+        let mut migrations = std::collections::HashMap::new();
+
+        // Migration 1: Initial schema
+        migrations.insert(
+            1,
+            Migration {
+                description: "Initial schema with albums, tracks, and scan_history tables",
+                apply: |db| {
+                    // Albums table
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS albums (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            artist TEXT NOT NULL,
+                            title TEXT NOT NULL,
+                            year INTEGER,
+                            album_art_path TEXT,
+                            created_at INTEGER NOT NULL,
+                            updated_at INTEGER NOT NULL,
+                            UNIQUE(artist, title)
+                        )",
+                        [],
+                    )?;
+
+                    // Tracks table (without channels column initially)
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS tracks (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            album_id INTEGER NOT NULL,
+                            path TEXT NOT NULL UNIQUE,
+                            title TEXT,
+                            track_number INTEGER,
+                            duration_secs INTEGER,
+                            file_mtime INTEGER NOT NULL,
+                            scanned_at INTEGER NOT NULL,
+                            created_at INTEGER NOT NULL,
+                            updated_at INTEGER NOT NULL,
+                            FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE
+                        )",
+                        [],
+                    )?;
+
+                    // Scan history table
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS scan_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            directory TEXT NOT NULL,
+                            scanned_at INTEGER NOT NULL,
+                            tracks_found INTEGER NOT NULL,
+                            albums_found INTEGER NOT NULL
+                        )",
+                        [],
+                    )?;
+
+                    // Create indexes for performance
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON tracks(album_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_scan_history_directory ON scan_history(directory)",
+                        [],
+                    )?;
+
+                    Ok(())
+                },
+            },
+        );
+
+        // Migration 2: Add channels column to tracks table
+        migrations.insert(
+            2,
+            Migration {
+                description: "Add channels column to tracks table for channel count filtering",
+                apply: |db| {
+                    // Check if column already exists (for databases created with channels)
+                    let has_channels = db
+                        .conn
+                        .prepare("SELECT channels FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_channels {
+                        db.conn.execute("ALTER TABLE tracks ADD COLUMN channels INTEGER", [])?;
+                        log::info!("Added channels column to tracks table");
+                    } else {
+                        log::info!("Channels column already exists, skipping");
+                    }
+
+                    Ok(())
+                },
+            },
+        );
+
+        migrations
     }
 
     /// Get the file modification time for a track by path
@@ -130,7 +261,7 @@ impl MusicDatabase {
 
             // Load tracks for this album
             let mut tracks_stmt = self.conn.prepare(
-                "SELECT path, title, track_number, duration_secs
+                "SELECT path, title, track_number, duration_secs, channels
                  FROM tracks
                  WHERE album_id = ?1
                  ORDER BY track_number",
@@ -143,6 +274,7 @@ impl MusicDatabase {
                         title: row.get::<_, Option<String>>(1)?,
                         track_number: row.get::<_, Option<i64>>(2)?.map(|n| n as u32),
                         duration_secs: row.get::<_, Option<i64>>(3)?.map(|n| n as u64),
+                        channels: row.get::<_, Option<i64>>(4)?.map(|n| n as u32),
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -198,14 +330,15 @@ impl MusicDatabase {
                 let file_mtime = get_file_mtime(&track.path).unwrap_or(0);
 
                 tx.execute(
-                    "INSERT INTO tracks (album_id, path, title, track_number, duration_secs,
+                    "INSERT INTO tracks (album_id, path, title, track_number, duration_secs, channels,
                                         file_mtime, scanned_at, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(path) DO UPDATE SET
                      album_id = excluded.album_id,
                      title = excluded.title,
                      track_number = excluded.track_number,
                      duration_secs = excluded.duration_secs,
+                     channels = excluded.channels,
                      file_mtime = excluded.file_mtime,
                      scanned_at = excluded.scanned_at,
                      updated_at = excluded.updated_at",
@@ -215,6 +348,7 @@ impl MusicDatabase {
                         track.title,
                         track.track_number.map(|n| n as i64),
                         track.duration_secs.map(|n| n as i64),
+                        track.channels.map(|n| n as i64),
                         file_mtime as i64,
                         now,
                         now,

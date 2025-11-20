@@ -20,6 +20,7 @@ pub type NodeId = usize;
 /// A node in the plugin graph (thread-safe)
 pub struct GraphNode {
     /// Node identifier
+    #[allow(dead_code)]
     pub id: NodeId,
     /// The plugin instance (wrapped in Mutex for thread safety)
     pub plugin: Arc<Mutex<Box<dyn Plugin>>>,
@@ -123,6 +124,7 @@ struct AudioBuffer {
     /// Audio data (interleaved)
     data: Arc<Mutex<Vec<f32>>>,
     /// Number of frames
+    #[allow(dead_code)]
     num_frames: usize,
     /// Number of channels
     num_channels: usize,
@@ -147,6 +149,7 @@ impl AudioBuffer {
         buffer.clone()
     }
 
+    #[allow(dead_code)]
     fn mix(&self, data: &[f32]) {
         let mut buffer = self.data.lock().unwrap();
         for (dst, &src) in buffer.iter_mut().zip(data.iter()) {
@@ -154,11 +157,13 @@ impl AudioBuffer {
         }
     }
 
+    #[allow(dead_code)]
     fn clear(&self) {
         let mut buffer = self.data.lock().unwrap();
         buffer.fill(0.0);
     }
 
+    #[allow(dead_code)]
     fn size(&self) -> usize {
         self.num_frames * self.num_channels
     }
@@ -594,8 +599,6 @@ impl DawHost {
         std::thread::scope(|scope| {
             for &node_id in &stage.nodes {
                 let errors = Arc::clone(&errors);
-                let node_buffers = node_buffers;
-                let context = context;
 
                 scope.spawn(move || {
                     if let Err(e) = self.process_node(node_id, graph_input, node_buffers, context) {
@@ -799,11 +802,10 @@ impl DawHost {
         rec_stack.insert(node_id);
 
         for edge in &self.edges {
-            if edge.from_node == node_id {
-                if self.has_cycle_util(edge.to_node, visited, rec_stack) {
+            if edge.from_node == node_id
+                && self.has_cycle_util(edge.to_node, visited, rec_stack) {
                     return true;
                 }
-            }
         }
 
         rec_stack.remove(&node_id);

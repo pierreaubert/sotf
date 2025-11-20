@@ -383,8 +383,8 @@ impl Plugin for BinauralDecoderPlugin {
                 .map_err(|e| format!("Failed to load SOFA file: {}", e))?;
 
             // Check sample rate match
-            if let Some(sofa) = &self.sofa {
-                if (sofa.sample_rate - sample_rate as f32).abs() > 1.0 {
+            if let Some(sofa) = &self.sofa
+                && (sofa.sample_rate - sample_rate as f32).abs() > 1.0 {
                     log::info!(
                         "[BinauralDecoder] Warning: SOFA sample rate ({} Hz) differs from engine rate ({} Hz). \
                          This may cause incorrect spatialization. Consider resampling the SOFA file.",
@@ -392,7 +392,6 @@ impl Plugin for BinauralDecoderPlugin {
                         sample_rate
                     );
                 }
-            }
         } else {
             log::debug!(
                 "[BinauralDecoder] Warning: No SOFA file specified, plugin will pass through audio"
