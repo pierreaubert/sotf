@@ -70,6 +70,24 @@ impl SourcePosition {
 
         c.to_degrees()
     }
+
+    /// Convert to Cartesian unit vector (x, y, z)
+    /// Coordinate system: x=front, y=left, z=up
+    pub fn to_cartesian_unit_vector(&self) -> [f32; 3] {
+        let az = self.azimuth.to_radians();
+        let el = self.elevation.to_radians();
+
+        // Standard conversion
+        // x = cos(el) * cos(az)
+        // y = cos(el) * sin(az)
+        // z = sin(el)
+        
+        let x = el.cos() * az.cos();
+        let y = el.cos() * az.sin();
+        let z = el.sin();
+        
+        [x, y, z]
+    }
 }
 
 /// HRTF data for a single source position
@@ -236,6 +254,32 @@ impl SofaFile {
         }
 
         (min_idx, min_dist)
+    }
+
+    /// Find the 3 nearest HRTF measurements for a given source position
+    ///
+    /// # Arguments
+    /// * `target` - Target source position
+    ///
+    /// # Returns
+    /// * Array of 3 tuples (index, distance) sorted by distance
+    pub fn find_three_nearest(&self, target: &SourcePosition) -> [(usize, f32); 3] {
+        let mut candidates: Vec<(usize, f32)> = self.positions
+            .iter()
+            .enumerate()
+            .map(|(i, pos)| (i, pos.angular_distance(target)))
+            .collect();
+
+        // Sort by distance
+        // Note: partial_cmp can fail for NaN, but distances shouldn't be NaN
+        candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Return top 3
+        [
+            candidates[0],
+            candidates.get(1).cloned().unwrap_or(candidates[0]),
+            candidates.get(2).cloned().unwrap_or(candidates[0]),
+        ]
     }
 
     /// Get HRTF for a specific position (uses nearest neighbor for now)
