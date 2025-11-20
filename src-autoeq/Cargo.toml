@@ -85,7 +85,7 @@ name = "benchmark_autoeq_speaker"
 path = "bin/autoeq_benchmark_speaker.rs"
 
 [[bin]]
-name = "download"
+name = "autoeq_download_speakers"
 path = "bin/autoeq_download_speaker.rs"
 
 [[bin]]
@@ -97,4 +97,4 @@ name = "autoeq"
 path = "src/lib.rs"
 
 [dev-dependencies]
-tempfile = "3.13"
+tempfile = "3.23"

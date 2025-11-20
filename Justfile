@@ -12,8 +12,15 @@ default:
 # TEST
 # ----------------------------------------------------------------------
 
-download-once:
-	cargo run --bin download
+download-once: download-spinorama download-sofa
+
+download-spinorama:
+	cargo run --bin `autoeq_download_speakers --release
+
+download-sofa:
+	mkdir -p data_cached/org.sofacoustics/mit
+	wget -O data_cached/org.sofacoustics/mit/kemar_normal_pinna.sofa https://sofacoustics.org/data/database/mit/mit_kemar_normal_pinna.sofa
+	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
 
 test-generate-audio-tests: prod-generate-audio-tests
 	cargo run --bin prod-generate-audio-tests --release
