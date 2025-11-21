@@ -32,18 +32,21 @@ export class LimiterPlugin extends BasePlugin {
   private ceiling: number = -0.1; // dB (max output level)
   private release: number = 100.0; // ms
   private lookahead: number = 5.0; // ms
+  private mix: number = 1.0; // 0 = dry, 1 = fully limited
 
   // Parameter metadata for keyboard control
-  protected parameterOrder = ["ceiling", "release", "lookahead"];
+  protected parameterOrder = ["ceiling", "release", "lookahead", "mix"];
   protected parameterLabels = {
     ceiling: "Ceiling",
     release: "Release",
     lookahead: "Lookahead",
+    mix: "Mix",
   };
   private parameterRanges = {
     ceiling: { min: -12, max: 0, step: 0.1 },
     release: { min: 10, max: 1000, step: 10 },
     lookahead: { min: 0, max: 10, step: 0.5 },
+    mix: { min: 0, max: 1, step: 0.05 },
   };
 
   // State
@@ -70,14 +73,14 @@ export class LimiterPlugin extends BasePlugin {
     const formattedLabel = this.getFormattedLabel(paramName);
 
     // Format value display
-    let displayValue = value.toFixed(paramName === "ceiling" ? 2 : 1);
+    let displayValue = value.toFixed(paramName === "ceiling" ? 2 : paramName === "mix" ? 2 : 1);
     displayValue = `${displayValue} ${unit}`;
 
     // Generate 6 legend values from max to min
     const legendValues = [];
     for (let i = 0; i < 6; i++) {
       const legendValue = range.max - (i * (range.max - range.min)) / 5;
-      const formatted = legendValue.toFixed(paramName === "ceiling" ? 2 : 1);
+      const formatted = legendValue.toFixed(paramName === "ceiling" || paramName === "mix" ? 2 : 1);
       legendValues.push(formatted);
     }
 
@@ -118,14 +121,17 @@ export class LimiterPlugin extends BasePlugin {
               <div class="box" style="height: 100%; margin: 0 !important; background: #2a2a2a; border: none; border-right: 1px solid #404040; border-radius: 0;">
                 <h4 class="title is-6 has-text-light">Limiter Settings</h4>
                 <div class="columns is-gapless">
-                  <div class="column is-4">
+                  <div class="column is-3">
                     ${this.renderParameter("ceiling", 0, "dB")}
                   </div>
-                  <div class="column is-4">
+                  <div class="column is-3">
                     ${this.renderParameter("release", 1, "ms")}
                   </div>
-                  <div class="column is-4">
+                  <div class="column is-3">
                     ${this.renderParameter("lookahead", 2, "ms")}
+                  </div>
+                  <div class="column is-3">
+                    ${this.renderParameter("mix", 3, "")}
                   </div>
                 </div>
               </div>
@@ -417,8 +423,8 @@ export class LimiterPlugin extends BasePlugin {
 
     const label = field.querySelector(".param-value");
     if (label) {
-      const precision = param === "ceiling" ? 2 : 1;
-      const unit = param === "ceiling" ? "dB" : "ms";
+      const precision = param === "ceiling" || param === "mix" ? 2 : 1;
+      const unit = param === "ceiling" ? "dB" : param === "mix" ? "" : "ms";
       label.textContent = `${value.toFixed(precision)} ${unit}`;
     }
 
@@ -728,6 +734,7 @@ export class LimiterPlugin extends BasePlugin {
       ceiling: this.ceiling,
       release: this.release,
       lookahead: this.lookahead,
+      mix: this.mix,
     };
   }
 
@@ -739,11 +746,13 @@ export class LimiterPlugin extends BasePlugin {
       ceiling: number;
       release: number;
       lookahead: number;
+      mix: number;
     }>,
   ): void {
     if (params.ceiling !== undefined) this.ceiling = params.ceiling;
     if (params.release !== undefined) this.release = params.release;
     if (params.lookahead !== undefined) this.lookahead = params.lookahead;
+    if (params.mix !== undefined) this.mix = params.mix;
 
     // Re-render if already initialized
     if (this.container) {
@@ -769,7 +778,7 @@ export class LimiterPlugin extends BasePlugin {
    */
   getShortcuts() {
     return [
-      { key: "1-3", description: "Select parameter" },
+      { key: "1-4", description: "Select parameter" },
       { key: "Esc", description: "Clear selection" },
       { key: "Shift+←→", description: "Adjust value" },
     ];
