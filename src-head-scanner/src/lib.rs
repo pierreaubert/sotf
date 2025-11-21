@@ -54,6 +54,7 @@ pub mod guidance;
 pub mod mesh;
 pub mod pointcloud;
 pub mod reconstruction;
+pub mod scanner; // Simplified scanner interface for FFI
 pub mod stereo;
 pub mod texture;
 pub mod vision;

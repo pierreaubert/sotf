@@ -385,7 +385,7 @@ pub extern "C" fn mesh_triangle_count(mesh: *const Mesh) -> u32 {
         return 0;
     }
 
-    let mesh = unsafe & *mesh };
+    let mesh = unsafe { &*mesh };
     mesh.triangle_count() as u32
 }
 
@@ -560,26 +560,4 @@ pub extern "C" fn scanner_last_error() -> *const c_char {
     })
 }
 
-// Note: Scanner::process_frame method needs to be added to scanner.rs
-// This is a simplified interface for the FFI
-impl Scanner {
-    pub fn process_frame(
-        &mut self,
-        _rgb: &[u8],
-        _depth: &[f32],
-        _width: u32,
-        _height: u32,
-        _position: Point3<f32>,
-        _rotation: UnitQuaternion<f32>,
-    ) -> ScannerResult<()> {
-        // This would integrate with the existing scanner pipeline
-        // For now, return Ok as placeholder
-        Ok(())
-    }
-
-    pub fn get_mesh(&self) -> ScannerResult<Mesh> {
-        // This would return the reconstructed mesh
-        // For now, return a placeholder
-        Ok(Mesh::default())
-    }
-}
+// Scanner::process_frame and Scanner::get_mesh are now implemented in scanner.rs
