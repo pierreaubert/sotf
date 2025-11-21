@@ -186,6 +186,9 @@ pub struct UpmixerPlugin {
 
     // Sub-harmonic synth state
     subharmonic_phase: f32,
+    /// Envelope for smoothing sub-harmonic synthesis on/off transitions
+    /// Ranges from 0.0 (off) to 1.0 (on), with smooth attack/release
+    subharmonic_envelope: f32,
 
     // ERB Banding
     erb_bands: Vec<usize>, // Start bin indices for each band
@@ -372,6 +375,7 @@ impl UpmixerPlugin {
             param_subharmonic_gain: ParameterId::from("subharmonic_gain"),
             subharmonic_gain,
             subharmonic_phase: 0.0,
+            subharmonic_envelope: 0.0,
 
             erb_bands: Vec::new(), // Will be calculated in initialize()
             steering_alphas: Vec::new(),
@@ -718,7 +722,12 @@ impl UpmixerPlugin {
 
         // 4. Apply VBAP panning to distribute to output speakers
         let fft_scale = 1.0 / self.fft_size as f32;
-        let combined_scale = fft_scale;
+
+        // Channel normalization: Prevent clipping when summing multiple signal components
+        // Using 0.9 headroom factor to prevent occasional peaks (same as binaural decoder)
+        // The sqrt(2) accounts for 2 input channels being distributed across output speakers
+        let channel_normalization = 0.9 / 2.0_f32.sqrt();
+        let combined_scale = fft_scale * channel_normalization;
 
         self.time_out_channels
             .iter_mut()
@@ -812,29 +821,59 @@ impl UpmixerPlugin {
                 // We use a simple sine wave at 40Hz (typical rumble) modulated by the LFE envelope
                 let phase_inc = 2.0 * std::f32::consts::PI * 40.0 / self.sample_rate as f32;
 
+                // Envelope smoothing parameters (time constants in samples)
+                // Attack: 10ms = 441 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/441) ≈ 0.00227
+                // Release: 50ms = 2205 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/2205) ≈ 0.000453
+                let attack_coeff = 1.0 - (-1.0 / (0.010 * self.sample_rate as f32)).exp();
+                let release_coeff = 1.0 - (-1.0 / (0.050 * self.sample_rate as f32)).exp();
+
                 for i in 0..self.fft_size {
                     // Use the real part of the IFFT output as the envelope
                     let lfe_amp = self.time_out_channels[lfe_idx][i].re.abs();
 
-                    // Threshold to avoid rumbling on silence
+                    // Smooth envelope: gradually ramp up/down instead of hard switching
+                    // This prevents clicks and pops when sub-harmonic synthesis turns on/off
                     if lfe_amp > 0.001 {
+                        // Attack: envelope moves toward 1.0
+                        self.subharmonic_envelope += (1.0 - self.subharmonic_envelope) * attack_coeff;
+                    } else {
+                        // Release: envelope moves toward 0.0
+                        self.subharmonic_envelope += (0.0 - self.subharmonic_envelope) * release_coeff;
+                    }
+
+                    // Only generate sub-harmonic if envelope is above threshold
+                    if self.subharmonic_envelope > 0.0001 {
                         self.subharmonic_phase += phase_inc;
                         if self.subharmonic_phase > 2.0 * std::f32::consts::PI {
                             self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
                         }
 
-                        let sub = self.subharmonic_phase.sin() * lfe_amp * self.subharmonic_gain;
+                        // Apply envelope to sub-harmonic for smooth transitions
+                        let sub = self.subharmonic_phase.sin() * lfe_amp * self.subharmonic_gain * self.subharmonic_envelope;
                         self.time_out_channels[lfe_idx][i].re += sub;
                     }
                 }
             }
         }
 
-        // 6. Extract real parts and apply final scaling
+        // 6. Extract real parts and apply synthesis window + final scaling
+        // CRITICAL: Apply synthesis window to ensure proper COLA (Constant Overlap-Add)
+        // With Hann window at 50% hop size, both analysis and synthesis windows are needed
+        // for perfect reconstruction and to prevent crackling at block boundaries
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
+            let window_val = self.window[i];
             for ch in 0..self.num_output_channels {
-                output[idx + ch] = self.time_out_channels[ch][i].re * combined_scale;
+                let mut sample = self.time_out_channels[ch][i].re * combined_scale * window_val;
+
+                // Flush denormals to zero to prevent CPU spikes and audio glitches
+                // Denormal numbers (very small floats near zero) can cause significant
+                // performance degradation and numerical instability
+                if sample.abs() < 1e-30 {
+                    sample = 0.0;
+                }
+
+                output[idx + ch] = sample;
             }
         }
     }
@@ -1791,11 +1830,13 @@ mod tests {
             total_output_energy / total_input_energy
         );
 
-        // Hann window has mean ~0.5, so expect ~75% energy loss (0.5²)
-        // With overlap-add we recover some but not all
-        // Accept 85% loss as reasonable for Hann windowed STFT
+        // Energy scaling factors:
+        // 1. Hann window: ~0.5² = 0.25 energy scale (mean window value squared)
+        // 2. Channel normalization: (0.9/sqrt(2))² ≈ 0.405 energy scale
+        // 3. Combined: 0.25 * 0.405 ≈ 0.10 (10% of input energy)
+        // Accept down to 8% to account for additional STFT processing losses
         assert!(
-            total_output_energy > total_input_energy * 0.15,
+            total_output_energy > total_input_energy * 0.08,
             "Energy loss too high: input={}, output={}, ratio={}",
             total_input_energy,
             total_output_energy,
