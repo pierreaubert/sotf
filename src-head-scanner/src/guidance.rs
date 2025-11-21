@@ -271,6 +271,10 @@ pub struct ScanGuidance {
     /// Recent pose updates (for motion blur estimation)
     /// Stores last N (timestamp, ViewAngle) pairs
     recent_poses: std::collections::VecDeque<(std::time::Instant, ViewAngle)>,
+
+    /// Reprojection errors from feature tracking (for reconstruction quality)
+    /// Stores recent reprojection errors in pixels
+    reprojection_errors: std::collections::VecDeque<f32>,
 }
 
 impl ScanGuidance {
@@ -284,6 +288,7 @@ impl ScanGuidance {
             quality_metrics: QualityMetrics::default(),
             angle_threshold: 20.0, // 20° threshold for "similar" angles
             recent_poses: std::collections::VecDeque::with_capacity(30), // Track last 30 poses
+            reprojection_errors: std::collections::VecDeque::with_capacity(100), // Track last 100 errors
         }
     }
 
@@ -361,6 +366,126 @@ impl ScanGuidance {
         }
     }
 
+    /// Record a reprojection error for reconstruction quality tracking
+    ///
+    /// # Arguments
+    /// * `error_px` - Reprojection error in pixels
+    ///
+    /// This should be called after feature matching/tracking to track reconstruction quality
+    pub fn record_reprojection_error(&mut self, error_px: f32) {
+        if error_px.is_finite() && error_px >= 0.0 {
+            self.reprojection_errors.push_back(error_px);
+
+            // Keep only last 100 errors
+            while self.reprojection_errors.len() > 100 {
+                self.reprojection_errors.pop_front();
+            }
+        }
+    }
+
+    /// Compute motion blur score from recent camera movement
+    ///
+    /// Returns a score from 0.0 (no blur) to 1.0 (severe blur)
+    ///
+    /// Algorithm:
+    /// 1. Calculate angular velocity from recent poses
+    /// 2. High angular velocity → high blur
+    /// 3. Threshold: ~60°/second is acceptable, >180°/second is severe blur
+    fn compute_blur_score(&self) -> f32 {
+        if self.recent_poses.len() < 2 {
+            return 0.0; // Not enough data
+        }
+
+        // Calculate angular velocities between consecutive poses
+        let mut angular_velocities = Vec::new();
+
+        for i in 1..self.recent_poses.len() {
+            let (time1, angle1) = &self.recent_poses[i - 1];
+            let (time2, angle2) = &self.recent_poses[i];
+
+            let time_diff = time2.duration_since(*time1).as_secs_f32();
+
+            if time_diff > 0.0 && time_diff < 1.0 {
+                // Only consider poses within 1 second
+                let angular_dist = angle1.angular_distance(angle2);
+                let angular_velocity = angular_dist / time_diff; // degrees per second
+
+                angular_velocities.push(angular_velocity);
+            }
+        }
+
+        if angular_velocities.is_empty() {
+            return 0.0;
+        }
+
+        // Use 90th percentile angular velocity (ignore outliers)
+        angular_velocities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let percentile_90 = angular_velocities[(angular_velocities.len() * 9 / 10).min(angular_velocities.len() - 1)];
+
+        // Map angular velocity to blur score
+        // 0-60°/s → 0.0 (no blur)
+        // 60-180°/s → 0.0-0.8 (moderate blur)
+        // >180°/s → 0.8-1.0 (severe blur)
+        const LOW_THRESHOLD: f32 = 60.0;   // degrees/second - acceptable motion
+        const HIGH_THRESHOLD: f32 = 180.0; // degrees/second - severe blur
+
+        if percentile_90 < LOW_THRESHOLD {
+            0.0
+        } else if percentile_90 < HIGH_THRESHOLD {
+            // Linear mapping from 0.0 to 0.8
+            (percentile_90 - LOW_THRESHOLD) / (HIGH_THRESHOLD - LOW_THRESHOLD) * 0.8
+        } else {
+            // Saturate at 1.0 for very high velocities
+            ((percentile_90 - HIGH_THRESHOLD) / 120.0 + 0.8).min(1.0)
+        }
+    }
+
+    /// Compute reconstruction error from reprojection errors
+    ///
+    /// Returns normalized error score from 0.0 (perfect) to 1.0 (poor quality)
+    ///
+    /// Algorithm:
+    /// 1. Use median reprojection error (robust to outliers)
+    /// 2. Good reconstruction: < 1 pixel error
+    /// 3. Acceptable: 1-3 pixels
+    /// 4. Poor: > 3 pixels
+    fn compute_reconstruction_error(&self) -> f32 {
+        if self.reprojection_errors.is_empty() {
+            return 0.0; // No data yet, assume good
+        }
+
+        // Calculate median reprojection error (robust to outliers)
+        let mut errors: Vec<f32> = self.reprojection_errors.iter().copied().collect();
+        errors.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+        let median_error = if errors.len() % 2 == 0 {
+            (errors[errors.len() / 2 - 1] + errors[errors.len() / 2]) / 2.0
+        } else {
+            errors[errors.len() / 2]
+        };
+
+        // Map median error to normalized score
+        // 0-1 px → 0.0-0.2 (excellent)
+        // 1-3 px → 0.2-0.6 (acceptable)
+        // >3 px → 0.6-1.0 (poor)
+        const EXCELLENT_THRESHOLD: f32 = 1.0; // pixels
+        const ACCEPTABLE_THRESHOLD: f32 = 3.0; // pixels
+        const POOR_THRESHOLD: f32 = 10.0; // pixels
+
+        if median_error < EXCELLENT_THRESHOLD {
+            // Linear mapping from 0.0 to 0.2
+            median_error / EXCELLENT_THRESHOLD * 0.2
+        } else if median_error < ACCEPTABLE_THRESHOLD {
+            // Linear mapping from 0.2 to 0.6
+            0.2 + (median_error - EXCELLENT_THRESHOLD) / (ACCEPTABLE_THRESHOLD - EXCELLENT_THRESHOLD) * 0.4
+        } else if median_error < POOR_THRESHOLD {
+            // Linear mapping from 0.6 to 1.0
+            0.6 + (median_error - ACCEPTABLE_THRESHOLD) / (POOR_THRESHOLD - ACCEPTABLE_THRESHOLD) * 0.4
+        } else {
+            1.0 // Cap at 1.0 for very poor quality
+        }
+    }
+
     /// Compute quality metrics
     pub fn compute_quality(
         &mut self,
@@ -384,11 +509,13 @@ impl ScanGuidance {
             0.0
         };
 
-        // Blur score: placeholder for now (would need actual image analysis)
-        let blur_score = 0.0; // TODO: Implement motion blur detection
+        // Blur score: compute from recent camera motion
+        // 0.0 = no blur, 1.0 = severe motion blur
+        let blur_score = self.compute_blur_score();
 
-        // Reconstruction error: placeholder
-        let reconstruction_error = 0.0; // TODO: Implement from bundle adjustment
+        // Reconstruction error: compute from reprojection errors
+        // 0.0 = perfect reconstruction, 1.0 = poor quality
+        let reconstruction_error = self.compute_reconstruction_error();
 
         self.quality_metrics = QualityMetrics {
             coverage_percentage,
@@ -572,6 +699,210 @@ mod tests {
         let score = metrics.overall_score();
         assert!(score > 0.8);
     }
+
+    #[test]
+    fn test_blur_score_calculation() {
+        use std::time::{Duration, Instant};
+
+        let mut guidance = ScanGuidance::new();
+
+        // Simulate slow camera movement (low blur)
+        let start_time = Instant::now();
+        for i in 0..10 {
+            let angle = ViewAngle::new(i as f32 * 5.0, 0.0, 50.0); // 5° increments
+            let time = start_time + Duration::from_millis(i * 100); // 100ms apart
+            guidance.recent_poses.push_back((time, angle));
+        }
+
+        let blur_score = guidance.compute_blur_score();
+        assert!(blur_score < 0.3, "Slow movement should have low blur score, got {}", blur_score);
+
+        // Simulate fast camera movement (high blur)
+        guidance.recent_poses.clear();
+        let start_time = Instant::now();
+        for i in 0..10 {
+            let angle = ViewAngle::new(i as f32 * 30.0, 0.0, 50.0); // 30° increments
+            let time = start_time + Duration::from_millis(i * 50); // 50ms apart = 600°/s
+            guidance.recent_poses.push_back((time, angle));
+        }
+
+        let blur_score_fast = guidance.compute_blur_score();
+        assert!(blur_score_fast > 0.8, "Fast movement should have high blur score, got {}", blur_score_fast);
+    }
+
+    #[test]
+    fn test_blur_score_thresholds() {
+        use std::time::{Duration, Instant};
+
+        let mut guidance = ScanGuidance::new();
+        let start_time = Instant::now();
+
+        // Test at LOW_THRESHOLD (60°/s) - should be ~0.0
+        guidance.recent_poses.clear();
+        for i in 0..10 {
+            let angle = ViewAngle::new(i as f32 * 6.0, 0.0, 50.0); // 6° per 100ms = 60°/s
+            let time = start_time + Duration::from_millis(i * 100);
+            guidance.recent_poses.push_back((time, angle));
+        }
+        let blur_low = guidance.compute_blur_score();
+        assert!(blur_low < 0.1, "At 60°/s threshold, blur should be near 0.0, got {}", blur_low);
+
+        // Test at HIGH_THRESHOLD (180°/s) - should be ~0.8
+        guidance.recent_poses.clear();
+        for i in 0..10 {
+            let angle = ViewAngle::new(i as f32 * 18.0, 0.0, 50.0); // 18° per 100ms = 180°/s
+            let time = start_time + Duration::from_millis(i * 100);
+            guidance.recent_poses.push_back((time, angle));
+        }
+        let blur_high = guidance.compute_blur_score();
+        assert!(blur_high > 0.7 && blur_high < 0.9, "At 180°/s threshold, blur should be ~0.8, got {}", blur_high);
+    }
+
+    #[test]
+    fn test_reconstruction_error_calculation() {
+        let mut guidance = ScanGuidance::new();
+
+        // Excellent reconstruction (< 1 pixel)
+        for _ in 0..20 {
+            guidance.record_reprojection_error(0.5);
+        }
+        let error_excellent = guidance.compute_reconstruction_error();
+        assert!(error_excellent < 0.2, "Excellent reconstruction should have low error, got {}", error_excellent);
+
+        // Acceptable reconstruction (1-3 pixels)
+        guidance.reprojection_errors.clear();
+        for _ in 0..20 {
+            guidance.record_reprojection_error(2.0);
+        }
+        let error_acceptable = guidance.compute_reconstruction_error();
+        assert!(error_acceptable > 0.2 && error_acceptable < 0.6,
+                "Acceptable reconstruction should have moderate error, got {}", error_acceptable);
+
+        // Poor reconstruction (> 3 pixels)
+        guidance.reprojection_errors.clear();
+        for _ in 0..20 {
+            guidance.record_reprojection_error(5.0);
+        }
+        let error_poor = guidance.compute_reconstruction_error();
+        assert!(error_poor > 0.6, "Poor reconstruction should have high error, got {}", error_poor);
+    }
+
+    #[test]
+    fn test_reconstruction_error_median() {
+        let mut guidance = ScanGuidance::new();
+
+        // Add errors with outliers - median should be robust
+        guidance.record_reprojection_error(0.5);
+        guidance.record_reprojection_error(0.6);
+        guidance.record_reprojection_error(0.7);
+        guidance.record_reprojection_error(0.8);
+        guidance.record_reprojection_error(100.0); // Outlier
+
+        let error = guidance.compute_reconstruction_error();
+        // Median should be ~0.7, not affected by 100.0 outlier
+        assert!(error < 0.2, "Median should ignore outliers, got {}", error);
+    }
+
+    #[test]
+    fn test_reprojection_error_recording() {
+        let mut guidance = ScanGuidance::new();
+
+        // Test normal error recording
+        guidance.record_reprojection_error(1.5);
+        assert_eq!(guidance.reprojection_errors.len(), 1);
+
+        // Test NaN rejection
+        guidance.record_reprojection_error(f32::NAN);
+        assert_eq!(guidance.reprojection_errors.len(), 1, "NaN should be rejected");
+
+        // Test negative rejection
+        guidance.record_reprojection_error(-1.0);
+        assert_eq!(guidance.reprojection_errors.len(), 1, "Negative should be rejected");
+
+        // Test infinity rejection
+        guidance.record_reprojection_error(f32::INFINITY);
+        assert_eq!(guidance.reprojection_errors.len(), 1, "Infinity should be rejected");
+
+        // Test buffer limit (max 100)
+        for i in 0..150 {
+            guidance.record_reprojection_error(i as f32);
+        }
+        assert_eq!(guidance.reprojection_errors.len(), 100, "Should cap at 100 errors");
+    }
+
+    #[test]
+    fn test_blur_score_insufficient_data() {
+        let guidance = ScanGuidance::new();
+
+        // No poses - should return 0.0
+        let blur = guidance.compute_blur_score();
+        assert_eq!(blur, 0.0, "No data should return 0.0 blur");
+
+        // Only 1 pose - should return 0.0
+        let mut guidance_one = ScanGuidance::new();
+        guidance_one.recent_poses.push_back((std::time::Instant::now(), ViewAngle::new(0.0, 0.0, 50.0)));
+        let blur_one = guidance_one.compute_blur_score();
+        assert_eq!(blur_one, 0.0, "One pose should return 0.0 blur");
+    }
+
+    #[test]
+    fn test_reconstruction_error_no_data() {
+        let guidance = ScanGuidance::new();
+
+        // No errors - should return 0.0 (assume good)
+        let error = guidance.compute_reconstruction_error();
+        assert_eq!(error, 0.0, "No data should return 0.0 error");
+    }
+
+    #[test]
+    fn test_quality_metrics_integration() {
+        use crate::coverage::CoverageMap;
+        use crate::reconstruction::CameraPose;
+        use nalgebra::{Point3, UnitQuaternion};
+        use std::time::{Duration, Instant};
+
+        let mut guidance = ScanGuidance::new();
+        let mut coverage = CoverageMap::new(100);
+
+        // Add some coverage
+        for i in 0..50 {
+            coverage.add_point(&Point3::new(i as f32, 0.0, 0.0));
+        }
+
+        // Simulate camera movement with moderate speed
+        let start_time = Instant::now();
+        for i in 0..20 {
+            let angle = ViewAngle::new(i as f32 * 10.0, 0.0, 50.0);
+            let time = start_time + Duration::from_millis(i * 100);
+            guidance.recent_poses.push_back((time, angle));
+        }
+
+        // Add some reprojection errors
+        for _ in 0..30 {
+            guidance.record_reprojection_error(1.5);
+        }
+
+        // Update poses
+        let pose = CameraPose {
+            position: Point3::new(0.0, 0.0, 50.0),
+            rotation: UnitQuaternion::identity(),
+        };
+        guidance.update_pose(&pose, 50);
+
+        // Compute quality
+        let metrics = guidance.compute_quality(&coverage, 50);
+
+        // Verify all metrics are computed
+        assert!(metrics.coverage_percentage > 0.0);
+        assert!(metrics.blur_score >= 0.0 && metrics.blur_score <= 1.0);
+        assert!(metrics.reconstruction_error >= 0.0 && metrics.reconstruction_error <= 1.0);
+
+        println!("Quality metrics:");
+        println!("  Coverage: {:.1}%", metrics.coverage_percentage * 100.0);
+        println!("  Blur score: {:.2}", metrics.blur_score);
+        println!("  Reconstruction error: {:.2}", metrics.reconstruction_error);
+    }
+}
 
     #[test]
     fn test_guidance_system() {
