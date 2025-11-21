@@ -55,6 +55,18 @@ blas-src = { version = "0.14", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
 signal-hook-tokio = { workspace = true }
 
+# Linux x86_64 musl configuration (static linking)
+[target.'cfg(all(target_os = "linux", target_arch="x86_64", target_env="musl"))'.dependencies]
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "static"] }
+signal-hook-tokio = { workspace = true }
+
+# Linux ARM64 musl configuration (static linking)
+[target.'cfg(all(target_os = "linux", target_arch="aarch64", target_env="musl"))'.dependencies]
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "static"] }
+signal-hook-tokio = { workspace = true }
+
 [target.'cfg(all(target_os = "windows", target_arch="x86_64"))'.dependencies]
 # blas folklore
 blas-src = { version = "0.14", features = ["intel-mkl-dynamic-parallel"] }

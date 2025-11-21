@@ -1,12 +1,15 @@
 FROM messense/rust-musl-cross:x86_64-musl
 
 # Install additional dependencies for audio and build tools
+# gfortran is needed for OpenBLAS static compilation
 RUN apt-get update && \
     apt-get install -y \
     cmake \
     ninja-build \
     perl \
     pkg-config \
+    gfortran \
+    make \
     && rm -rf /var/lib/apt/lists/*
 
 # Install just (command runner)

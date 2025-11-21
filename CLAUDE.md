@@ -285,12 +285,43 @@ just cross-static-macos           # macOS universal binary
 just build-static-local
 ```
 
-**Platform Notes:**
-- **Linux**: Truly static binaries using musl libc - no runtime dependencies
-- **Windows**: Static CRT linkage with minimal dependencies
-- **macOS**: Universal binary (Intel + Apple Silicon) - limited static linking due to Apple restrictions
+**Platform Details:**
 
-See [docs/STATIC_BUILDS.md](docs/STATIC_BUILDS.md) for detailed documentation.
+- **Linux (musl)**: Truly static binaries with ZERO runtime dependencies
+  - Uses musl libc instead of glibc
+  - OpenBLAS statically linked
+  - Portable across all Linux distributions
+  - Verify with: `ldd target/x86_64-unknown-linux-musl/release/sotf_player_tui` (should show "not a dynamic executable")
+
+- **Windows (MSVC)**: Static CRT linkage with minimal dependencies
+  - Static C runtime library
+  - Minimal system DLL dependencies
+  - Compatible with Windows 10 and later
+
+- **macOS**: Universal binary (Intel + Apple Silicon)
+  - **NOT fully static** - Apple requires dynamic linking to system frameworks
+  - CoreAudio, CoreFoundation, and other frameworks dynamically linked
+  - Supports both x86_64 and ARM64 in a single binary
+  - Requires macOS 15.0+ (deployment target)
+
+**Verification Steps:**
+
+```bash
+# Linux - check for dynamic dependencies
+ldd target/x86_64-unknown-linux-musl/release/sotf_player_tui
+
+# Check binary size
+ls -lh target/*/release/sotf_player_tui*
+
+# Test the binary
+./target/x86_64-unknown-linux-musl/release/sotf_player_tui --help
+```
+
+**Technical Notes:**
+- BLAS support via static OpenBLAS (compiled from source by openblas-src crate)
+- Audio dependencies (cpal, symphonia) compiled directly into binary
+- Larger binary size (~15-50MB) compared to dynamic linking
+- Build time longer due to static compilation of dependencies
 
 ### npm Commands (Frontend)
 
