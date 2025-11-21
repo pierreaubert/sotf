@@ -47,6 +47,7 @@ pub mod camera;
 pub mod convexhull;
 pub mod coverage;
 pub mod error;
+pub mod guidance;
 pub mod mesh;
 pub mod pointcloud;
 pub mod reconstruction;
@@ -153,12 +154,15 @@ pub struct HeadScanner {
     point_cloud: Arc<RwLock<PointCloud>>,
     coverage: Arc<RwLock<coverage::CoverageMap>>,
     vision_model: Arc<RwLock<Option<vision::VisionModel>>>,
-    
+
     // SfM components
     orb_detector: Arc<RwLock<Option<vision::ORBDetector>>>,
     frame_history: Arc<RwLock<std::collections::VecDeque<SfMFrame>>>,
     pose_history: Arc<RwLock<Vec<reconstruction::CameraPose>>>,
     intrinsics: reconstruction::CameraIntrinsics,
+
+    // Scan guidance system
+    guidance: Arc<RwLock<guidance::ScanGuidance>>,
 }
 
 /// Frame data for Structure-from-Motion
@@ -191,6 +195,7 @@ impl HeadScanner {
             frame_history: Arc::new(RwLock::new(std::collections::VecDeque::new())),
             pose_history: Arc::new(RwLock::new(Vec::new())),
             intrinsics,
+            guidance: Arc::new(RwLock::new(guidance::ScanGuidance::new())),
         })
     }
 
@@ -442,6 +447,10 @@ impl HeadScanner {
         // Add pose to history
         self.pose_history.write().push(pose.clone());
 
+        // Update scan guidance with new pose
+        let point_count = self.point_cloud.read().len();
+        self.guidance.write().update_pose(&pose, point_count);
+
         // Get previous pose (or identity for first frame)
         let pose1 = if self.pose_history.read().len() > 1 {
             let poses = self.pose_history.read();
@@ -580,6 +589,30 @@ impl HeadScanner {
     /// Get the current size of the point cloud
     pub fn get_point_cloud_size(&self) -> usize {
         self.point_cloud.read().len()
+    }
+
+    /// Get the scan guidance system (for reading guidance instructions)
+    pub fn get_guidance(&self) -> guidance::ScanGuidance {
+        self.guidance.read().clone()
+    }
+
+    /// Get quality metrics for the current scan
+    pub fn get_quality_metrics(&self) -> guidance::QualityMetrics {
+        let point_count = self.get_point_cloud_size();
+        let coverage_map = self.coverage.read();
+        self.guidance
+            .write()
+            .compute_quality(&coverage_map, point_count)
+    }
+
+    /// Get next scan guidance instruction
+    pub fn get_next_guidance(&self) -> Option<guidance::GuidanceInstruction> {
+        self.guidance.read().compute_next_target()
+    }
+
+    /// Get quality improvement suggestions
+    pub fn get_suggestions(&self) -> Vec<String> {
+        self.guidance.read().suggest_improvements()
     }
 
     /// Filter new points to remove duplicates and points too close to existing ones

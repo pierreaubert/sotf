@@ -70,41 +70,60 @@ impl VisionModel {
         // Try to enable GPU execution providers
         let mut use_gpu = false;
         if prefer_gpu {
-            // Note: GPU execution providers require additional setup
-            // For now, we'll use CPU but mark GPU as "requested"
-            // Future: Add CUDA, CoreML, DirectML when ort crate supports them
-
             #[cfg(target_os = "macos")]
             {
                 // Apple Silicon has Neural Engine support via CoreML
-                log::info!("GPU acceleration requested (CoreML/Neural Engine on Apple Silicon)");
-                // TODO: Enable when ort 2.0 stable supports CoreML
-                use_gpu = true;
+                log::info!("Enabling CoreML execution provider for Apple Neural Engine");
+
+                match Self::enable_coreml(&mut builder) {
+                    Ok(_) => {
+                        use_gpu = true;
+                        log::info!("✓ CoreML execution provider enabled successfully");
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to enable CoreML: {}. Falling back to CPU.", e);
+                        log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
+                    }
+                }
             }
 
             #[cfg(target_os = "windows")]
             {
                 // Windows can use DirectML for GPU acceleration
-                log::info!("GPU acceleration requested (DirectML on Windows)");
-                // TODO: Enable when ort 2.0 stable supports DirectML
-                use_gpu = true;
+                log::info!("Attempting to enable DirectML execution provider");
+
+                match Self::enable_directml(&mut builder) {
+                    Ok(_) => {
+                        use_gpu = true;
+                        log::info!("✓ DirectML execution provider enabled successfully");
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to enable DirectML: {}. Falling back to CPU.", e);
+                        log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
+                    }
+                }
             }
 
             #[cfg(target_os = "linux")]
             {
                 // Linux can use CUDA for NVIDIA GPUs
-                log::info!("GPU acceleration requested (CUDA on Linux)");
-                // TODO: Enable when ort 2.0 stable supports CUDA
-                use_gpu = false; // Will be true when CUDA is available
+                log::info!("Attempting to enable CUDA execution provider");
+
+                match Self::enable_cuda(&mut builder) {
+                    Ok(_) => {
+                        use_gpu = true;
+                        log::info!("✓ CUDA execution provider enabled successfully");
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to enable CUDA: {}. Falling back to CPU.", e);
+                        log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
+                    }
+                }
             }
 
-            if !use_gpu {
-                log::info!(
-                    "GPU execution providers not yet available in ort 2.0-rc.10, using optimized CPU"
-                );
-                log::info!(
-                    "Note: ONNX Runtime will still use CPU optimizations (SIMD, multi-threading)"
-                );
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            {
+                log::info!("GPU acceleration not configured for this platform, using CPU");
             }
         } else {
             log::info!("GPU acceleration disabled, using CPU");
@@ -129,6 +148,42 @@ impl VisionModel {
     /// Check if GPU acceleration is enabled
     pub fn is_using_gpu(&self) -> bool {
         self.use_gpu
+    }
+
+    /// Enable CoreML execution provider (macOS)
+    #[cfg(target_os = "macos")]
+    fn enable_coreml(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
+        use ort::ExecutionProvider;
+
+        builder
+            .with_execution_providers([ExecutionProvider::CoreML(Default::default())])
+            .map_err(|e| ScannerError::VisionModel(format!("CoreML setup failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Enable DirectML execution provider (Windows)
+    #[cfg(target_os = "windows")]
+    fn enable_directml(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
+        use ort::ExecutionProvider;
+
+        builder
+            .with_execution_providers([ExecutionProvider::DirectML(Default::default())])
+            .map_err(|e| ScannerError::VisionModel(format!("DirectML setup failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Enable CUDA execution provider (Linux)
+    #[cfg(target_os = "linux")]
+    fn enable_cuda(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
+        use ort::ExecutionProvider;
+
+        builder
+            .with_execution_providers([ExecutionProvider::CUDA(Default::default())])
+            .map_err(|e| ScannerError::VisionModel(format!("CUDA setup failed: {}", e)))?;
+
+        Ok(())
     }
 
     /// Detect features in a frame using the neural network

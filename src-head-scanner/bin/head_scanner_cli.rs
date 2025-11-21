@@ -9,6 +9,7 @@ use head_scanner::{
     bundle_adjustment::{BundleAdjuster, Point3DWithObservations},
     calibration::{CalibrationSession, CheckerboardPattern},
     camera::Camera,
+    guidance,
     reconstruction::{CameraIntrinsics, CameraPose},
 };
 use indicatif::{ProgressBar, ProgressStyle};
@@ -356,6 +357,7 @@ async fn run_scan(
                         processed_frame_count,
                         elapsed,
                         using_gpu,
+                        &scanner,
                     ) {
                         warn!("Failed to draw overlay: {}", e);
                     }
@@ -404,6 +406,7 @@ async fn run_scan(
                     processed_frame_count as u32,
                     elapsed,
                     using_gpu,
+                    &scanner,
                 ) {
                     warn!("Failed to draw overlay: {}", e);
                 }
@@ -567,7 +570,7 @@ async fn run_scan(
     Ok(())
 }
 
-/// Draw progress overlay on video frame
+/// Draw progress overlay on video frame with scan guidance
 fn draw_progress_overlay(
     frame: &mut opencv::core::Mat,
     state: ScanState,
@@ -575,12 +578,13 @@ fn draw_progress_overlay(
     frame_count: u32,
     elapsed_secs: f32,
     using_gpu: bool,
+    scanner: &HeadScanner,
 ) -> ScannerResult<()> {
     let height = frame.rows();
     let width = frame.cols();
 
     // Draw semi-transparent background at top
-    let overlay_height = 120;
+    let overlay_height = 200; // Increased to fit guidance info
     imgproc::rectangle(
         frame,
         opencv::core::Rect::new(0, 0, width, overlay_height),
@@ -705,6 +709,79 @@ fn draw_progress_overlay(
         imgproc::LINE_AA,
         false,
     )?;
+
+    // Draw scan guidance information
+    if state == ScanState::Scanning {
+        // Get quality metrics
+        let quality = scanner.get_quality_metrics();
+
+        // Display angular coverage
+        imgproc::put_text(
+            frame,
+            &format!(
+                "Angular coverage: {:.0}% ({} angles)",
+                quality.angular_coverage * 100.0,
+                quality.unique_angles
+            ),
+            CvPoint::new(20, 140),
+            font,
+            0.6,
+            white,
+            1,
+            imgproc::LINE_AA,
+            false,
+        )?;
+
+        // Display quality score
+        let quality_score = quality.overall_score();
+        let quality_color = if quality_score > 0.85 {
+            green
+        } else if quality_score > 0.7 {
+            yellow
+        } else {
+            red
+        };
+
+        imgproc::put_text(
+            frame,
+            &format!("Quality score: {:.0}%", quality_score * 100.0),
+            CvPoint::new(20, 165),
+            font,
+            0.6,
+            quality_color,
+            1,
+            imgproc::LINE_AA,
+            false,
+        )?;
+
+        // Display next guidance instruction
+        if let Some(instruction) = scanner.get_next_guidance() {
+            imgproc::put_text(
+                frame,
+                &format!("➜ {}", instruction.direction),
+                CvPoint::new(20, 190),
+                font,
+                0.7,
+                Scalar::new(0.0, 255.0, 255.0, 0.0), // Cyan for instructions
+                2,
+                imgproc::LINE_AA,
+                false,
+            )?;
+        } else {
+            // All regions covered!
+            imgproc::put_text(
+                frame,
+                "✓ All angles captured!",
+                CvPoint::new(20, 190),
+                font,
+                0.7,
+                green,
+                2,
+                imgproc::LINE_AA,
+                false,
+            )?;
+        }
+    }
 
     // Controls hint at bottom
     let hint_y = height - 20;
