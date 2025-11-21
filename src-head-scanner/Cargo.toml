@@ -56,6 +56,8 @@ kiddo = "4.2"  # k-d tree for nearest neighbor search
 delaunator = "1.0"  # Delaunay triangulation
 
 # SOFA file generation (HDF5)
+# Using hdf5 0.8 instead of workspace version to avoid conflicts with netcdf 0.11 (which uses hdf5-metno-sys 0.9)
+# This is a known limitation - SOFA generation requires a different HDF5 version than the BEM solver
 hdf5 = { version = "0.8", optional = true }
 chrono = "0.4"  # For timestamps in SOFA files
 
