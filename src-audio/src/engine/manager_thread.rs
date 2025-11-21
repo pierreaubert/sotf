@@ -9,11 +9,106 @@ use super::{
     ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
     ProcessingCommand, ProcessingThread, ThreadEvent,
 };
+use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
 
 const SPIN_MS_SLEEP_MANAGER: u64 = 10;
 const SPIN_MS_CHECK_MANAGER: u64 = 50;
+const MAX_CONFIG_QUEUE_SIZE: usize = 5; // Maximum pending config updates
+
+/// Helper function to safely lock a mutex, handling poisoned mutexes
+/// by recovering the data instead of panicking
+fn safe_lock<T>(mutex: &Arc<Mutex<T>>) -> Result<std::sync::MutexGuard<'_, T>, String> {
+    match mutex.lock() {
+        Ok(guard) => Ok(guard),
+        Err(poisoned) => {
+            log::warn!("[Manager] Mutex was poisoned, recovering data");
+            // Recover the data from the poisoned mutex
+            Ok(poisoned.into_inner())
+        }
+    }
+}
+
+/// Pending config update
+#[derive(Debug)]
+struct PendingConfigUpdate {
+    plugins: Vec<super::PluginConfig>,
+    timestamp: std::time::Instant,
+}
+
+/// Config update queue manager
+struct ConfigUpdateQueue {
+    queue: VecDeque<PendingConfigUpdate>,
+    update_in_progress: bool,
+}
+
+impl ConfigUpdateQueue {
+    fn new() -> Self {
+        Self {
+            queue: VecDeque::new(),
+            update_in_progress: false,
+        }
+    }
+
+    /// Add a config update to the queue
+    /// Returns true if added, false if queue is full (drops oldest)
+    fn enqueue(&mut self, plugins: Vec<super::PluginConfig>) -> bool {
+        let update = PendingConfigUpdate {
+            plugins,
+            timestamp: std::time::Instant::now(),
+        };
+
+        if self.queue.len() >= MAX_CONFIG_QUEUE_SIZE {
+            log::warn!(
+                "[Manager] Config update queue full ({} items), dropping oldest update",
+                self.queue.len()
+            );
+            self.queue.pop_front(); // Drop oldest update
+        }
+
+        self.queue.push_back(update);
+        log::debug!("[Manager] Config update queued (queue size: {})", self.queue.len());
+        true
+    }
+
+    /// Check if we can start processing the next update
+    fn can_process_next(&self) -> bool {
+        !self.update_in_progress && !self.queue.is_empty()
+    }
+
+    /// Start processing the next update in queue
+    fn start_processing(&mut self) -> Option<Vec<super::PluginConfig>> {
+        if self.update_in_progress {
+            return None;
+        }
+
+        if let Some(update) = self.queue.pop_front() {
+            self.update_in_progress = true;
+            log::debug!(
+                "[Manager] Starting config update (queued for {:?}, {} remaining in queue)",
+                update.timestamp.elapsed(),
+                self.queue.len()
+            );
+            Some(update.plugins)
+        } else {
+            None
+        }
+    }
+
+    /// Mark current update as completed
+    fn complete_processing(&mut self) {
+        if self.update_in_progress {
+            self.update_in_progress = false;
+            log::debug!("[Manager] Config update completed");
+        }
+    }
+
+    /// Check if currently processing an update
+    fn is_processing(&self) -> bool {
+        self.update_in_progress
+    }
+}
 
 /// Manager thread handle
 pub struct ManagerThread {
@@ -70,7 +165,12 @@ impl ManagerThread {
 
     /// Get current state
     pub fn get_state(&self) -> AudioEngineState {
-        self.state.lock().unwrap().clone()
+        safe_lock(&self.state)
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|e| {
+                log::error!("[Manager] Failed to lock state: {}", e);
+                AudioEngineState::default()
+            })
     }
 
     /// Shutdown the manager thread
@@ -96,6 +196,9 @@ fn run_manager_thread(
     state: Arc<Mutex<AudioEngineState>>,
 ) -> Result<(), String> {
     log::debug!("[Manager Thread] Starting with config: {:?}", config);
+
+    // Create config update queue for serializing plugin updates
+    let mut config_update_queue = ConfigUpdateQueue::new();
 
     // Create bounded queues for backpressure
     // Queue capacity based on buffer_ms to provide proper flow control
@@ -159,8 +262,7 @@ fn run_manager_thread(
         }
 
         // Update state with actual channel count
-        {
-            let mut state_lock = state.lock().unwrap();
+        if let Ok(mut state_lock) = safe_lock(&state) {
             state_lock.num_channels = output_channels;
         }
 
@@ -222,7 +324,12 @@ fn run_manager_thread(
         if let Some(ref watcher) = config_watcher
             && let Some(config_event) = watcher.try_recv()
         {
-            match handle_config_event(config_event, &config, &mut processing_thread, &state) {
+            match handle_config_event(
+                config_event,
+                &config,
+                &mut config_update_queue,
+                &state,
+            ) {
                 Ok(should_exit) => {
                     if should_exit {
                         log::debug!("[Manager Thread] Shutdown requested via signal");
@@ -235,6 +342,19 @@ fn run_manager_thread(
             }
         }
 
+        // Process pending config updates (one at a time)
+        if config_update_queue.can_process_next() {
+            if let Some(plugins) = config_update_queue.start_processing() {
+                log::debug!("[Manager Thread] Processing queued config update");
+                if let Err(e) =
+                    apply_plugin_update(&mut processing_thread, &mut playback_thread, &state, plugins)
+                {
+                    log::error!("[Manager Thread] Failed to apply config update: {}", e);
+                }
+                config_update_queue.complete_processing();
+            }
+        }
+
         // Check for commands (blocking with timeout)
         match command_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_CHECK_MANAGER)) {
             Ok(command) => {
@@ -244,14 +364,16 @@ fn run_manager_thread(
                     &mut processing_thread,
                     &mut playback_thread,
                     &state,
+                    &mut config_update_queue,
                 );
 
                 if let ManagerResponse::Ok = response {
                     // Check if shutdown
-                    let should_exit = {
-                        let state = state.lock().unwrap();
-                        state.playback_state == PlaybackState::Stopped
+                    let should_exit = if let Ok(state_guard) = safe_lock(&state) {
+                        state_guard.playback_state == PlaybackState::Stopped
                             && matches!(response, ManagerResponse::Ok)
+                    } else {
+                        false
                     };
 
                     response_tx.send(response).ok();
@@ -289,20 +411,23 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
     match event {
         ThreadEvent::DecoderEndOfStream => {
             log::debug!("[Manager] Decoder end of stream");
-            let mut state = state.lock().unwrap();
-            state.playback_state = PlaybackState::Stopped;
+            if let Ok(mut state) = safe_lock(state) {
+                state.playback_state = PlaybackState::Stopped;
+            }
         }
         ThreadEvent::DecoderError(err) => {
             log::debug!("[Manager] Decoder error: {}", err);
-            let mut state = state.lock().unwrap();
-            state.playback_state = PlaybackState::Stopped;
+            if let Ok(mut state) = safe_lock(state) {
+                state.playback_state = PlaybackState::Stopped;
+            }
         }
         ThreadEvent::PlaybackUnderrun => {
-            let mut state = state.lock().unwrap();
-            state.underruns += 1;
-            // Log summary every 50 underruns to track overall pattern
-            if state.underruns % 50 == 1 {
-                log::warn!("[Manager] Playback underrun count: {}", state.underruns);
+            if let Ok(mut state) = safe_lock(state) {
+                state.underruns += 1;
+                // Log summary every 50 underruns to track overall pattern
+                if state.underruns % 50 == 1 {
+                    log::warn!("[Manager] Playback underrun count: {}", state.underruns);
+                }
             }
         }
         ThreadEvent::ProcessingError(err) => {
@@ -312,8 +437,9 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
             log::debug!("[Manager] Thread panicked: {}", thread_name);
         }
         ThreadEvent::PositionUpdate(position) => {
-            let mut state = state.lock().unwrap();
-            state.position = position;
+            if let Ok(mut state) = safe_lock(state) {
+                state.position = position;
+            }
         }
     }
 }
@@ -323,7 +449,7 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
 fn handle_config_event(
     event: ConfigEvent,
     config: &EngineConfig,
-    processing: &mut ProcessingThread,
+    config_queue: &mut ConfigUpdateQueue,
     state: &Arc<Mutex<AudioEngineState>>,
 ) -> Result<bool, String> {
     match event {
@@ -337,58 +463,10 @@ fn handle_config_event(
                 // Load and parse config file
                 match load_config_file(config_path) {
                     Ok(new_config) => {
-                        log::debug!("[Manager] Config loaded, updating plugin chain");
+                        log::debug!("[Manager] Config loaded, enqueuing plugin update");
 
-                        // Update plugin chain with seamless crossfade
-                        if let Err(e) = processing
-                            .send_command(ProcessingCommand::UpdatePlugins(new_config.plugins))
-                        {
-                            log::debug!("[Manager] Failed to update plugins: {}", e);
-                        } else {
-                            // Wait for response to update channel count
-                            if let Some(response) = processing.try_recv_response() {
-                                match response {
-                                    super::ProcessingResponse::PluginChainUpdated {
-                                        output_channels,
-                                    } => {
-                                        log::info!(
-                                            "[Manager] Plugin chain updated, output channels: {}",
-                                            output_channels
-                                        );
-
-                                        // Get old channel count before updating
-                                        let old_channels = {
-                                            let state = state.lock().unwrap();
-                                            state.num_channels
-                                        };
-
-                                        // Update state with new channel count
-                                        let mut state = state.lock().unwrap();
-                                        state.num_channels = output_channels;
-                                        drop(state);
-
-                                        // TODO: Update playback thread channel count
-                                        // (requires playback thread reference in this function)
-                                        if output_channels != old_channels {
-                                            log::info!(
-                                                "[Manager] Channel count changed {}→{} (playback will need restart)",
-                                                old_channels,
-                                                output_channels
-                                            );
-                                        }
-                                    }
-                                    super::ProcessingResponse::Error(e) => {
-                                        log::debug!("[Manager] Plugin update error: {}", e);
-                                    }
-                                    _ => {
-                                        log::info!(
-                                            "[Manager] Unexpected response from processing thread"
-                                        );
-                                    }
-                                }
-                            }
-                            log::debug!("[Manager] Plugin chain updated successfully");
-                        }
+                        // Enqueue the update instead of applying immediately
+                        config_queue.enqueue(new_config.plugins);
                     }
                     Err(e) => {
                         log::debug!("[Manager] Failed to load config: {}", e);
@@ -404,14 +482,78 @@ fn handle_config_event(
             log::debug!("[Manager] Shutdown signal received");
 
             // Update state to Stopped so applications can detect shutdown
-            {
-                let mut state_lock = state.lock().unwrap();
+            if let Ok(mut state_lock) = safe_lock(state) {
                 state_lock.playback_state = PlaybackState::Stopped;
             }
 
             Ok(true)
         }
     }
+}
+
+/// Apply a plugin update with proper synchronization
+/// Waits for confirmation from processing thread and updates playback thread if needed
+fn apply_plugin_update(
+    processing: &mut ProcessingThread,
+    playback: &mut PlaybackThread,
+    state: &Arc<Mutex<AudioEngineState>>,
+    plugins: Vec<super::PluginConfig>,
+) -> Result<(), String> {
+    // Send update command to processing thread
+    processing.send_command(ProcessingCommand::UpdatePlugins(plugins))?;
+
+    // Wait for response with longer timeout to allow crossfade to complete
+    let timeout = std::time::Duration::from_millis(500); // 500ms should be enough for crossfade
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout {
+        if let Some(response) = processing.try_recv_response() {
+            match response {
+                super::ProcessingResponse::PluginChainUpdated { output_channels } => {
+                    log::info!(
+                        "[Manager] Plugin chain updated, output channels: {}",
+                        output_channels
+                    );
+
+                    // Get old channel count before updating
+                    let old_channels = if let Ok(state_guard) = safe_lock(state) {
+                        state_guard.num_channels
+                    } else {
+                        return Err("Failed to lock state".to_string());
+                    };
+
+                    // Update state with new channel count
+                    if let Ok(mut state_guard) = safe_lock(state) {
+                        state_guard.num_channels = output_channels;
+                    }
+
+                    // If channel count changed, update playback thread
+                    if output_channels != old_channels {
+                        log::info!(
+                            "[Manager] Channel count changed {}→{}, updating playback thread",
+                            old_channels,
+                            output_channels
+                        );
+
+                        // Send update command (fire-and-forget)
+                        // Playback thread will handle channel update asynchronously
+                        playback.send_command(PlaybackCommand::UpdateChannels(output_channels))?;
+                    }
+
+                    return Ok(());
+                }
+                super::ProcessingResponse::Error(e) => {
+                    return Err(format!("Plugin update error: {}", e));
+                }
+                _ => {
+                    return Err("Unexpected response from processing thread".to_string());
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+    }
+
+    Err("Timeout waiting for plugin update response".to_string())
 }
 
 /// Load config from YAML file
@@ -432,17 +574,17 @@ fn handle_command(
     processing: &mut ProcessingThread,
     playback: &mut PlaybackThread,
     state: &Arc<Mutex<AudioEngineState>>,
+    config_queue: &mut ConfigUpdateQueue,
 ) -> ManagerResponse {
     match command {
         ManagerCommand::Play(path) => {
             log::debug!("[Manager] Play: {:?}", path);
 
             // Update state
-            {
-                let mut state = state.lock().unwrap();
-                state.current_file = Some(path.clone());
-                state.playback_state = PlaybackState::Playing;
-                state.position = 0.0;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.current_file = Some(path.clone());
+                state_guard.playback_state = PlaybackState::Playing;
+                state_guard.position = 0.0;
             }
 
             // Send to decoder
@@ -455,9 +597,8 @@ fn handle_command(
         ManagerCommand::Pause => {
             log::debug!("[Manager] Pause");
 
-            {
-                let mut state = state.lock().unwrap();
-                state.playback_state = PlaybackState::Paused;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Paused;
             }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Pause) {
@@ -469,9 +610,8 @@ fn handle_command(
         ManagerCommand::Resume => {
             log::debug!("[Manager] Resume");
 
-            {
-                let mut state = state.lock().unwrap();
-                state.playback_state = PlaybackState::Playing;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Playing;
             }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Resume) {
@@ -483,11 +623,10 @@ fn handle_command(
         ManagerCommand::Stop => {
             log::debug!("[Manager] Stop");
 
-            {
-                let mut state = state.lock().unwrap();
-                state.playback_state = PlaybackState::Stopped;
-                state.current_file = None;
-                state.position = 0.0;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Stopped;
+                state_guard.current_file = None;
+                state_guard.position = 0.0;
             }
 
             decoder.send_command(DecoderCommand::Stop).ok();
@@ -498,9 +637,8 @@ fn handle_command(
         ManagerCommand::Seek(position) => {
             log::debug!("[Manager] Seek to {:.2}s", position);
 
-            {
-                let mut state = state.lock().unwrap();
-                state.position = position;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.position = position;
             }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Seek(position)) {
@@ -512,9 +650,8 @@ fn handle_command(
         ManagerCommand::SetVolume(volume) => {
             log::debug!("[Manager] Set volume: {:.2}", volume);
 
-            {
-                let mut state = state.lock().unwrap();
-                state.volume = volume;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.volume = volume;
             }
 
             if let Err(e) = playback.send_command(PlaybackCommand::SetVolume(volume)) {
@@ -526,9 +663,8 @@ fn handle_command(
         ManagerCommand::Mute(muted) => {
             log::debug!("[Manager] Mute: {}", muted);
 
-            {
-                let mut state = state.lock().unwrap();
-                state.muted = muted;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.muted = muted;
             }
 
             if let Err(e) = playback.send_command(PlaybackCommand::Mute(muted)) {
@@ -540,52 +676,17 @@ fn handle_command(
         ManagerCommand::UpdatePluginChain(plugins) => {
             log::debug!("[Manager] Update plugin chain ({} plugins)", plugins.len());
 
-            if let Err(e) = processing.send_command(ProcessingCommand::UpdatePlugins(plugins)) {
-                return ManagerResponse::Error(e);
+            // If a config update is already in progress, enqueue this one
+            if config_queue.is_processing() {
+                log::debug!("[Manager] Config update in progress, enqueuing new update");
+                config_queue.enqueue(plugins);
+                return ManagerResponse::Ok;
             }
 
-            // Wait for response to get the output channel count
-            if let Some(response) = processing.try_recv_response() {
-                match response {
-                    super::ProcessingResponse::PluginChainUpdated { output_channels } => {
-                        log::info!(
-                            "[Manager] Plugin chain updated, output channels: {}",
-                            output_channels
-                        );
-
-                        // Get old channel count before updating
-                        let old_channels = {
-                            let state = state.lock().unwrap();
-                            state.num_channels
-                        };
-
-                        // Update state with new channel count
-                        {
-                            let mut state = state.lock().unwrap();
-                            state.num_channels = output_channels;
-                        }
-
-                        // If channel count changed, update playback thread
-                        if output_channels != old_channels {
-                            log::info!(
-                                "[Manager] Channel count changed {}→{}, updating playback thread",
-                                old_channels,
-                                output_channels
-                            );
-                            playback
-                                .send_command(PlaybackCommand::UpdateChannels(output_channels))
-                                .ok();
-                        }
-
-                        ManagerResponse::Ok
-                    }
-                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
-                    _ => ManagerResponse::Error(
-                        "Unexpected response from processing thread".to_string(),
-                    ),
-                }
-            } else {
-                ManagerResponse::Error("No response from processing thread".to_string())
+            // Otherwise, apply immediately using the synchronized apply function
+            match apply_plugin_update(processing, playback, state, plugins) {
+                Ok(()) => ManagerResponse::Ok,
+                Err(e) => ManagerResponse::Error(e),
             }
         }
         ManagerCommand::SetPluginParameter {
@@ -613,9 +714,8 @@ fn handle_command(
         ManagerCommand::BypassProcessing(bypass) => {
             log::debug!("[Manager] Bypass processing: {}", bypass);
 
-            {
-                let mut state = state.lock().unwrap();
-                state.processing_bypassed = bypass;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.processing_bypassed = bypass;
             }
 
             if let Err(e) = processing.send_command(ProcessingCommand::Bypass(bypass)) {
@@ -691,12 +791,18 @@ fn handle_command(
             }
         }
         ManagerCommand::GetState => {
-            let state = state.lock().unwrap().clone();
-            ManagerResponse::State(state)
+            if let Ok(state_guard) = safe_lock(state) {
+                ManagerResponse::State(state_guard.clone())
+            } else {
+                ManagerResponse::Error("Failed to lock state".to_string())
+            }
         }
         ManagerCommand::GetPosition => {
-            let position = state.lock().unwrap().position;
-            ManagerResponse::Position(position)
+            if let Ok(state_guard) = safe_lock(state) {
+                ManagerResponse::Position(state_guard.position)
+            } else {
+                ManagerResponse::Error("Failed to lock state".to_string())
+            }
         }
         ManagerCommand::GetAnalyzerData(analyzer_id) => {
             // log::debug!("[Manager] Get analyzer data: {}", analyzer_id);
@@ -727,9 +833,8 @@ fn handle_command(
         ManagerCommand::Shutdown => {
             log::debug!("[Manager] Shutdown requested");
 
-            {
-                let mut state = state.lock().unwrap();
-                state.playback_state = PlaybackState::Stopped;
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Stopped;
             }
 
             // Signal threads to shutdown
