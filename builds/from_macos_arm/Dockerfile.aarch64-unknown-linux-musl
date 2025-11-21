@@ -1,0 +1,21 @@
+FROM messense/rust-musl-cross:aarch64-musl
+
+# Install additional dependencies for audio and build tools
+RUN apt-get update && \
+    apt-get install -y \
+    cmake \
+    ninja-build \
+    perl \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up environment for static linking
+ENV RUSTFLAGS="-C target-feature=+crt-static"
+ENV PKG_CONFIG_ALL_STATIC=1
+ENV PKG_CONFIG_ALLOW_CROSS=1
+
+# Use vendored OpenSSL for static linking
+ENV OPENSSL_STATIC=1
+ENV OPENSSL_VENDORED=1
+
+WORKDIR /project

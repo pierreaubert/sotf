@@ -267,6 +267,31 @@ Or use the automated script:
 
 This creates `dist/` with binaries for all platforms.
 
+### Static Binary Builds
+
+Build standalone static binaries of `sotf_player_tui` for distribution:
+
+```bash
+# Build all static binaries (Linux, Windows, macOS)
+just cross-static-all
+
+# Build individual platforms
+just cross-static-linux-x86       # Linux x86_64 (musl)
+just cross-static-linux-arm64     # Linux ARM64 (musl)
+just cross-static-windows-x86     # Windows x86_64 (static CRT)
+just cross-static-macos           # macOS universal binary
+
+# Build for current platform
+just build-static-local
+```
+
+**Platform Notes:**
+- **Linux**: Truly static binaries using musl libc - no runtime dependencies
+- **Windows**: Static CRT linkage with minimal dependencies
+- **macOS**: Universal binary (Intel + Apple Silicon) - limited static linking due to Apple restrictions
+
+See [docs/STATIC_BUILDS.md](docs/STATIC_BUILDS.md) for detailed documentation.
+
 ### npm Commands (Frontend)
 
 ```bash
