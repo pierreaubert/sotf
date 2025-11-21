@@ -123,6 +123,8 @@ impl EqPlugin {
         sample_rate: u32,
         params: EqPluginParams,
     ) -> Result<Self, String> {
+        log::debug!("[EqPlugin] Creating EQ for {} channels, {}Hz", num_channels, sample_rate);
+
         // Helper function to convert BiquadFilterConfig to Biquad
         let config_to_biquad = |f: &BiquadFilterConfig| -> Result<Biquad, String> {
             use autoeq_iir::BiquadFilterType;

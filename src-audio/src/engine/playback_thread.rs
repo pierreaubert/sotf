@@ -358,11 +358,13 @@ fn run_playback_thread(
             ring_buffer.available_write()
         };
 
-        // Only pull from queue if we have significant space available
-        let min_space_required = buffer_frames * channels / 2; // 50% of capacity
+        // Only pull from queue if we have space for at least a few frames
+        // Previously we kept it at 50% capacity, which caused unnecessary backpressure and underrun risk.
+        // Now we allow filling it almost completely.
+        let min_space_required = 1024 * channels * 2; // Space for ~2 frames (assuming 1024 size)
 
         if available_space < min_space_required {
-            // Ring buffer is mostly full, sleep briefly and let the audio callback drain it
+            // Ring buffer is full, sleep briefly and let the audio callback drain it
             std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
             continue;
         }
@@ -370,13 +372,19 @@ fn run_playback_thread(
         // Read from message queue (non-blocking since we checked space)
         match message_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(ProcessingMessage::Frame(frame)) => {
-                // Write to ring buffer (should have space now)
-                let written = state.ring_buffer.lock().write(&frame.data);
-                if written < frame.data.len() {
-                    log::info!(
-                        "[Playback Thread] Ring buffer full, dropped {} samples",
-                        frame.data.len() - written
-                    );
+                // Write to ring buffer, handling partial writes
+                let mut data_slice = &frame.data[..];
+                
+                while !data_slice.is_empty() {
+                    let written = state.ring_buffer.lock().write(data_slice);
+                    
+                    if written < data_slice.len() {
+                        // Buffer full, sleep briefly to let audio callback consume
+                        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                    }
+                    
+                    // Advance slice
+                    data_slice = &data_slice[written..];
                 }
             }
             Ok(ProcessingMessage::EndOfStream) => {

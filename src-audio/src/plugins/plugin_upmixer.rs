@@ -723,11 +723,16 @@ impl UpmixerPlugin {
         // 4. Apply VBAP panning to distribute to output speakers
         let fft_scale = 1.0 / self.fft_size as f32;
 
+        // COLA (Constant Overlap-Add) compensation for Hann window at 50% overlap
+        // Hann window has mean value ≈ 0.5, so we need to scale by 2.0 to compensate
+        // when using single-window STFT (analysis window only, no synthesis window)
+        let cola_scale = 2.0;
+
         // Channel normalization: Prevent clipping when summing multiple signal components
         // Using 0.9 headroom factor to prevent occasional peaks (same as binaural decoder)
         // The sqrt(2) accounts for 2 input channels being distributed across output speakers
         let channel_normalization = 0.9 / 2.0_f32.sqrt();
-        let combined_scale = fft_scale * channel_normalization;
+        let combined_scale = fft_scale * cola_scale * channel_normalization;
 
         self.time_out_channels
             .iter_mut()
@@ -856,15 +861,15 @@ impl UpmixerPlugin {
             }
         }
 
-        // 6. Extract real parts and apply synthesis window + final scaling
-        // CRITICAL: Apply synthesis window to ensure proper COLA (Constant Overlap-Add)
-        // With Hann window at 50% hop size, both analysis and synthesis windows are needed
-        // for perfect reconstruction and to prevent crackling at block boundaries
+        // 6. Extract real parts and apply final scaling
+        // Note: With Hann window at 50% hop size, COLA (Constant Overlap-Add) is achieved by:
+        // 1. Applying window ONCE during analysis (before FFT) - done at line 569-570
+        // 2. Overlap-add with hop_size = fft_size/2
+        // Applying window again here would break COLA and cause amplitude modulation artifacts
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
-            let window_val = self.window[i];
             for ch in 0..self.num_output_channels {
-                let mut sample = self.time_out_channels[ch][i].re * combined_scale * window_val;
+                let mut sample = self.time_out_channels[ch][i].re * combined_scale;
 
                 // Flush denormals to zero to prevent CPU spikes and audio glitches
                 // Denormal numbers (very small floats near zero) can cause significant
@@ -1831,12 +1836,13 @@ mod tests {
         );
 
         // Energy scaling factors:
-        // 1. Hann window: ~0.5² = 0.25 energy scale (mean window value squared)
-        // 2. Channel normalization: (0.9/sqrt(2))² ≈ 0.405 energy scale
-        // 3. Combined: 0.25 * 0.405 ≈ 0.10 (10% of input energy)
-        // Accept down to 8% to account for additional STFT processing losses
+        // 1. Hann window applied once during analysis: ~0.5 mean value
+        // 2. With 50% overlap-add, window energy is properly recovered
+        // 3. Channel normalization: (0.9/sqrt(2))² ≈ 0.405 energy scale
+        // 4. FFT processing and STFT overhead cause some additional loss
+        // Accept down to 35% to account for channel spreading and processing losses
         assert!(
-            total_output_energy > total_input_energy * 0.08,
+            total_output_energy > total_input_energy * 0.35,
             "Energy loss too high: input={}, output={}, ratio={}",
             total_input_energy,
             total_output_energy,

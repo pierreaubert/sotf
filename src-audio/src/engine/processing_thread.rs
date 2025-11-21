@@ -113,31 +113,43 @@ struct ProcessingState {
     crossfade_frames: usize,
     /// Current crossfade frame
     crossfade_current: usize,
+    // Reusable buffers to avoid allocations
+    process_buffer: Vec<f32>,
+    crossfade_buffer_old: Vec<f32>,
+    crossfade_buffer_new: Vec<f32>,
 }
 
 impl ProcessingState {
-    fn new(sample_rate: u32, channels: usize) -> Self {
+    fn new(channels: usize, sample_rate: u32) -> Self {
         Self {
             host: PluginHost::new(channels, sample_rate),
             next_host: None,
-            analyzers: HashMap::new(),
-            sample_rate,
             channels,
             bypassed: false,
             crossfade_pos: 0.0,
-            crossfade_frames: 4096, // ~85ms at 48kHz
+            crossfade_frames: (0.1 * sample_rate as f32) as usize, // 100ms crossfade
             crossfade_current: 0,
+            process_buffer: Vec::new(),
+            crossfade_buffer_old: Vec::new(),
+            crossfade_buffer_new: Vec::new(),
+            sample_rate,
+            analyzers: HashMap::new(),
         }
     }
 
     /// Start plugin chain update (hot-reload)
     fn start_reload(&mut self, new_host: PluginHost) {
+        let old_channels = self.host.output_channels();
+        let new_channels = new_host.output_channels();
+        
         self.next_host = Some(new_host);
         self.crossfade_pos = 0.0;
         self.crossfade_current = 0;
         log::info!(
-            "[Processing Thread] Starting plugin hot-reload (crossfade {} frames)",
-            self.crossfade_frames
+            "[Processing Thread] Starting plugin hot-reload (crossfade {} frames). Channels: {} -> {}",
+            self.crossfade_frames,
+            old_channels,
+            new_channels
         );
     }
 
@@ -272,7 +284,17 @@ impl ProcessingState {
     }
 
     /// Process a frame with seamless crossfade
-    fn process_frame(&mut self, input: &[f32], output: &mut [f32]) -> Result<(), String> {
+    fn process_frame(&mut self, input: &[f32], output: &mut Vec<f32>) -> Result<(), String> {
+        // Apply analyzers to input
+        let context = ProcessContext {
+            sample_rate: self.sample_rate,
+            num_frames: input.len() / self.channels,
+        };
+        
+        for analyzer in self.analyzers.values_mut() {
+             analyzer.process(input, &context).ok();
+        }
+
         if self.bypassed {
             // Bypass - just copy
             output.copy_from_slice(input);
@@ -302,39 +324,62 @@ impl ProcessingState {
                 );
 
                 // Recreate analyzers for new channel count
-                if old_channels != self.channels
-                    && let Err(e) = self.recreate_analyzers_for_channels(self.channels)
-                {
-                    log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                if old_channels != self.channels {
+                    if let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
+                        log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                    }
                 }
 
                 // Process with new host
                 self.host.process(input, output)?;
             } else {
                 // Crossfading between old and new plugin chains (same channel count)
-                let num_frames = input.len() / self.host.input_channels();
-                let output_samples = num_frames * self.host.output_channels();
-                let mut output_old = vec![0.0; output_samples];
-                let mut output_new = vec![0.0; output_samples];
+                let output_samples = output.len(); // Should be num_frames * channels
+                
+                // Resize reusable buffers if needed
+                if self.crossfade_buffer_old.len() != output_samples {
+                    self.crossfade_buffer_old.resize(output_samples, 0.0);
+                }
+                if self.crossfade_buffer_new.len() != output_samples {
+                    self.crossfade_buffer_new.resize(output_samples, 0.0);
+                }
+                
+                // Clear buffers (optional if process overwrites, but safer)
+                // self.crossfade_buffer_old.fill(0.0);
+                // self.crossfade_buffer_new.fill(0.0);
 
                 // Process with both hosts
-                self.host.process(input, &mut output_old)?;
-                next_host.process(input, &mut output_new)?;
+                self.host.process(input, &mut self.crossfade_buffer_old)?;
+                next_host.process(input, &mut self.crossfade_buffer_new)?;
 
-                // Calculate crossfade coefficient
-                self.crossfade_current += num_frames;
-                self.crossfade_pos =
-                    (self.crossfade_current as f32 / self.crossfade_frames as f32).min(1.0);
+                // Mix
+                let frames = output_samples / self.channels;
+                let step = 1.0 / self.crossfade_frames as f32;
 
-                // Apply crossfade
-                for i in 0..output.len() {
-                    output[i] = output_old[i] * (1.0 - self.crossfade_pos)
-                        + output_new[i] * self.crossfade_pos;
+                for i in 0..frames {
+                    let t = self.crossfade_pos;
+                    // Constant power crossfade (approximate)
+                    // t goes from 0.0 (old) to 1.0 (new)
+                    let gain_old = (std::f32::consts::PI * 0.5 * (1.0 - t)).cos();
+                    let gain_new = (std::f32::consts::PI * 0.5 * t).sin();
+
+                    for c in 0..self.channels {
+                        let idx = i * self.channels + c;
+                        output[idx] = self.crossfade_buffer_old[idx] * gain_old
+                            + self.crossfade_buffer_new[idx] * gain_new;
+                    }
+
+                    self.crossfade_pos += step;
+                    if self.crossfade_pos > 1.0 {
+                        self.crossfade_pos = 1.0;
+                    }
                 }
 
+                self.crossfade_current += frames;
+
                 // Check if crossfade complete
-                if self.crossfade_pos >= 1.0 {
-                    log::debug!("[Processing Thread] Hot-reload complete");
+                if self.crossfade_current >= self.crossfade_frames {
+                    log::info!("[Processing Thread] Crossfade complete");
                     // Swap in the new host
                     let old_channels = self.channels;
                     std::mem::swap(&mut self.host, next_host);
@@ -344,10 +389,10 @@ impl ProcessingState {
                     self.crossfade_current = 0;
 
                     // Recreate analyzers if channel count changed (shouldn't happen in crossfade path, but be safe)
-                    if old_channels != self.channels
-                        && let Err(e) = self.recreate_analyzers_for_channels(self.channels)
-                    {
-                        log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                    if old_channels != self.channels {
+                        if let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
+                            log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
+                        }
                     }
                 }
             }
@@ -356,21 +401,13 @@ impl ProcessingState {
             self.host.process(input, output)?;
         }
 
-        // Feed audio to analyzer plugins
-        if !self.analyzers.is_empty() {
-            // Use actual host output channels, not cached self.channels
-            let output_channels = self.host.output_channels();
-            let num_frames = output.len() / output_channels;
-            let context = ProcessContext {
-                sample_rate: self.sample_rate,
-                num_frames,
-            };
-
-            for (id, analyzer) in self.analyzers.iter_mut() {
-                if let Err(e) = analyzer.process(output, &context) {
-                    log::debug!("[Processing Thread] Analyzer '{}' error: {}", id, e);
-                }
-            }
+        // Apply analyzers to output
+        let output_context = ProcessContext {
+            sample_rate: self.sample_rate,
+            num_frames: output.len() / self.channels,
+        };
+        for analyzer in self.analyzers.values_mut() {
+            analyzer.process(output, &output_context).ok();
         }
 
         Ok(())
@@ -387,7 +424,7 @@ fn run_processing_thread(
     sample_rate: u32,
     channels: usize,
 ) -> Result<(), String> {
-    let mut state = ProcessingState::new(sample_rate, channels);
+    let mut state = ProcessingState::new(channels, sample_rate);
 
     log::info!(
         "[Processing Thread] Started - {}Hz, {} channels",
@@ -525,30 +562,49 @@ fn run_processing_thread(
             Ok(DecoderMessage::Frame(frame)) => {
                 // Process frame
                 // IMPORTANT: Output buffer size must match plugin chain output channels, not input!
-                // Use output_channels() which accounts for pending hot-reload with channel changes
-                let output_channels = state.output_channels();
-                let output_samples = frame.num_frames * output_channels;
-                let mut output = vec![0.0; output_samples];
+                // Use output_channels() which accounts for pending                    // Process audio frame
+                    let output_channels = state.output_channels();
+                    let output_samples = frame.num_frames * output_channels;
+                    
+                    // Use reusable buffer
+                    // Temporarily take buffer out of state to avoid double mutable borrow
+                    let mut process_buffer = std::mem::take(&mut state.process_buffer);
+                    
+                    if process_buffer.len() != output_samples {
+                        process_buffer.resize(output_samples, 0.0);
+                    }
 
-                match state.process_frame(&frame.data, &mut output) {
-                    Ok(_) => {
-                        // Send processed frame with correct output channel count
-                        let processed_frame = super::AudioFrame::new(
-                            output,
-                            frame.num_frames,
-                            output_channels,
-                            frame.sample_rate,
-                        );
-                        message_tx
-                            .send(ProcessingMessage::Frame(processed_frame))
-                            .ok();
+                    let start_time = std::time::Instant::now();
+                    match state.process_frame(&frame.data, &mut process_buffer) {
+                        Ok(_) => {
+                            let elapsed = start_time.elapsed();
+                            if elapsed > std::time::Duration::from_millis(5) {
+                                log::warn!(
+                                    "[Processing Thread] Slow processing: {:.2}ms for {} frames",
+                                    elapsed.as_secs_f64() * 1000.0,
+                                    frame.num_frames
+                                );
+                            }
+
+                            // Send processed frame with correct output channel count
+                            let processed_frame = super::AudioFrame::new(
+                                process_buffer.clone(),
+                                frame.num_frames,
+                                output_channels,
+                                frame.sample_rate,
+                            );
+                            message_tx
+                                .send(ProcessingMessage::Frame(processed_frame))
+                                .ok();
+                        }
+                        Err(e) => {
+                            log::debug!("[Processing Thread] Processing error: {}", e);
+                            event_tx.send(ThreadEvent::ProcessingError(e)).ok();
+                        }
                     }
-                    Err(e) => {
-                        log::debug!("[Processing Thread] Processing error: {}", e);
-                        event_tx.send(ThreadEvent::ProcessingError(e)).ok();
-                    }
-                }
-            }
+                    
+                    // Put buffer back
+                    state.process_buffer = process_buffer;          }
             Ok(DecoderMessage::EndOfStream) => {
                 message_tx.send(ProcessingMessage::EndOfStream).ok();
             }
@@ -820,3 +876,4 @@ fn create_plugin(
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }
+

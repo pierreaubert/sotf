@@ -85,9 +85,21 @@ pub trait AudioDecoder {
     /// Get the audio format
     fn format(&self) -> AudioFormat;
 
-    /// Decode the next chunk of audio data
+    /// Decode the next chunk of audio data into the provided buffer
+    /// Returns the number of frames decoded (0 indicates end of stream)
+    fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize>;
+
+    /// Decode the next chunk of audio data (allocates new buffer)
     /// Returns None when the stream ends
-    fn decode_next(&mut self) -> AudioDecoderResult<Option<DecodedAudio>>;
+    fn decode_next(&mut self) -> AudioDecoderResult<Option<DecodedAudio>> {
+        let mut dest = DecodedAudio::new(self.spec().clone());
+        let frames = self.decode_into(&mut dest)?;
+        if frames == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(dest))
+        }
+    }
 
     /// Seek to a specific frame position
     fn seek(&mut self, frame_position: u64) -> AudioDecoderResult<()>;

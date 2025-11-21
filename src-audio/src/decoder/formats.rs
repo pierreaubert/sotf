@@ -227,94 +227,93 @@ impl SymphoniaDecoder {
         })
     }
 
-    /// Convert audio buffer to normalized f32 samples
-    fn convert_audio_buffer_static(audio_buf: AudioBufferRef) -> AudioDecoderResult<Vec<f32>> {
-        let mut samples = Vec::new();
+    /// Convert audio buffer to normalized f32 samples and append to output vector
+    fn convert_audio_buffer_into(audio_buf: AudioBufferRef, samples: &mut Vec<f32>) -> AudioDecoderResult<()> {
         let channels_count = audio_buf.spec().channels.count();
         let duration = audio_buf.frames();
+        let total_samples = duration * channels_count;
+        
+        // Resize to fit new samples (appending)
+        let current_len = samples.len();
+        samples.resize(current_len + total_samples, 0.0);
+        
+        // Get mutable slice to write into
+        let output = &mut samples[current_len..];
 
         match audio_buf {
             AudioBufferRef::U8(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = buf.chan(ch)[frame] as f32 / 128.0 - 1.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 128.0 - 1.0;
                     }
                 }
             }
             AudioBufferRef::U16(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = buf.chan(ch)[frame] as f32 / 32768.0 - 1.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 32768.0 - 1.0;
                     }
                 }
             }
             AudioBufferRef::U24(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = (buf.chan(ch)[frame].inner() as f32) / 8388608.0 - 1.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = (buf.chan(ch)[frame].inner() as f32) / 8388608.0 - 1.0;
                     }
                 }
             }
             AudioBufferRef::U32(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = buf.chan(ch)[frame] as f32 / 2147483648.0 - 1.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 2147483648.0 - 1.0;
                     }
                 }
             }
             AudioBufferRef::S8(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = buf.chan(ch)[frame] as f32 / 128.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 128.0;
                     }
                 }
             }
             AudioBufferRef::S16(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = buf.chan(ch)[frame] as f32 / 32768.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 32768.0;
                     }
                 }
             }
             AudioBufferRef::S24(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = (buf.chan(ch)[frame].inner() as f32) / 8388608.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = (buf.chan(ch)[frame].inner() as f32) / 8388608.0;
                     }
                 }
             }
             AudioBufferRef::S32(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        let sample = buf.chan(ch)[frame] as f32 / 2147483648.0;
-                        samples.push(sample);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 2147483648.0;
                     }
                 }
             }
             AudioBufferRef::F32(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        samples.push(buf.chan(ch)[frame]);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame];
                     }
                 }
             }
             AudioBufferRef::F64(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        samples.push(buf.chan(ch)[frame] as f32);
+                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32;
                     }
                 }
             }
         }
 
-        Ok(samples)
+        Ok(())
     }
 }
 
@@ -327,50 +326,55 @@ impl AudioDecoder for SymphoniaDecoder {
         self.format
     }
 
-    fn decode_next(&mut self) -> AudioDecoderResult<Option<DecodedAudio>> {
+    fn decode_into(&mut self, dest: &mut DecodedAudio) -> AudioDecoderResult<usize> {
         if self.eof {
-            return Ok(None);
+            return Ok(0);
         }
 
-        // Read the next packet
-        let packet = match self.format_reader.next_packet() {
-            Ok(packet) => packet,
-            Err(SymphoniaError::IoError(ref err))
-                if err.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                self.eof = true;
-                return Ok(None);
-            }
-            Err(err) => {
-                self.eof = true;
-                return Err(AudioDecoderError::from(err));
-            }
-        };
+        // Clear destination samples but keep capacity
+        dest.samples.clear();
+        dest.frame_position = self.position;
+        dest.spec = self.spec.clone(); // Ensure spec matches
 
-        // Skip packets that don't belong to our track
-        if packet.track_id() != self.track_id {
-            return self.decode_next(); // Recursively try next packet
+        loop {
+            // Read the next packet
+            let packet = match self.format_reader.next_packet() {
+                Ok(packet) => packet,
+                Err(SymphoniaError::IoError(ref err))
+                    if err.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    self.eof = true;
+                    return Ok(0);
+                }
+                Err(err) => {
+                    self.eof = true;
+                    return Err(AudioDecoderError::from(err));
+                }
+            };
+
+            // Skip packets that don't belong to our track
+            if packet.track_id() != self.track_id {
+                continue;
+            }
+
+            // Decode the packet
+            let decoded_audio_buf = self.decoder.decode(&packet).map_err(|e| {
+                AudioDecoderError::DecodingFailed(format!(
+                    "Failed to decode {} packet: {:?}",
+                    self.format.as_str(),
+                    e
+                ))
+            })?;
+
+            let frame_count = decoded_audio_buf.frames() as u64;
+            
+            // Convert directly into destination buffer
+            Self::convert_audio_buffer_into(decoded_audio_buf, &mut dest.samples)?;
+
+            self.position += frame_count;
+
+            return Ok(frame_count as usize);
         }
-
-        // Decode the packet
-        let decoded_audio_buf = self.decoder.decode(&packet).map_err(|e| {
-            AudioDecoderError::DecodingFailed(format!(
-                "Failed to decode {} packet: {:?}",
-                self.format.as_str(),
-                e
-            ))
-        })?;
-
-        let frame_count = decoded_audio_buf.frames() as u64;
-        let samples = Self::convert_audio_buffer_static(decoded_audio_buf)?;
-
-        let mut decoded = DecodedAudio::new(self.spec.clone());
-        decoded.samples = samples;
-        decoded.frame_position = self.position;
-
-        self.position += frame_count;
-
-        Ok(Some(decoded))
     }
 
     fn seek(&mut self, frame_position: u64) -> AudioDecoderResult<()> {

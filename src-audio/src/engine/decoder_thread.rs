@@ -5,10 +5,11 @@
 // Decodes audio files using Symphonia and resamples if needed.
 
 use super::{AudioFrame, DecoderCommand, DecoderMessage, ThreadEvent};
-use crate::decoder::{AudioDecoder, AudioSpec, create_decoder};
+use crate::decoder::{AudioDecoder, AudioSpec, DecodedAudio, create_decoder};
 use crate::plugins::{Plugin, ProcessContext, ResamplerPlugin};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
 use sotf_hal::HalInputReader;
@@ -83,6 +84,9 @@ struct DecoderState {
     current_file: Option<PathBuf>,
     spec: Option<AudioSpec>,
     silent_source: bool, // For HAL input plugins (no file source)
+    decode_buffer: Option<DecodedAudio>,
+    resample_output_buffer: Vec<f32>,
+    hal_input_buffer: Vec<f32>,
 
     #[cfg(target_os = "macos")]
     hal_reader: Option<HalInputReader>,
@@ -98,6 +102,9 @@ impl DecoderState {
             current_file: None,
             spec: None,
             silent_source: false,
+            decode_buffer: None,
+            resample_output_buffer: Vec::new(),
+            hal_input_buffer: Vec::new(),
             #[cfg(target_os = "macos")]
             hal_reader: None,
         }
@@ -167,15 +174,28 @@ impl DecoderState {
         let decoder = self.decoder.as_mut().ok_or("No decoder")?;
         let spec = self.spec.as_ref().ok_or("No spec")?;
 
+        // Use internal buffer for decoding
+        if self.decode_buffer.is_none() {
+            self.decode_buffer = Some(DecodedAudio::new(spec.clone()));
+        }
+        let decode_buffer = self.decode_buffer.as_mut().unwrap();
+
+        let decode_start = Instant::now();
         // Decode next chunk
-        match decoder.decode_next() {
-            Ok(Some(decoded)) => {
+        match decoder.decode_into(decode_buffer) {
+            Ok(frames_decoded) if frames_decoded > 0 => {
+                let decode_time = decode_start.elapsed();
+                log::trace!("[Decoder Thread] Decode time: {:?}", decode_time);
+
                 let channels = spec.channels as usize;
                 let source_sample_rate = spec.sample_rate;
 
+                let mut total_resample_time = Duration::ZERO;
+                let mut total_send_time = Duration::ZERO;
+
                 // Add to resampler buffer if we're resampling
                 if let Some(resampler) = &mut self.resampler {
-                    self.resampler_buffer.extend_from_slice(&decoded.samples);
+                    self.resampler_buffer.extend_from_slice(&decode_buffer.samples);
 
                     // Process resampler buffer in frame_size chunks
                     while self.resampler_buffer.len() >= frame_size * channels {
@@ -186,37 +206,70 @@ impl DecoderState {
 
                         // Resample
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
-                        let mut output = vec![0.0; max_output_frames * channels];
+                        let output_len = max_output_frames * channels;
+
+                        if self.resample_output_buffer.len() != output_len {
+                            self.resample_output_buffer.resize(output_len, 0.0);
+                        }
 
                         let context = ProcessContext {
                             sample_rate: source_sample_rate,
                             num_frames: frame_size,
                         };
 
+                        let r_start = Instant::now();
                         resampler
-                            .process(&chunk, &mut output, &context)
+                            .process(&chunk, &mut self.resample_output_buffer, &context)
                             .map_err(|e| format!("Resampling failed: {}", e))?;
+                        total_resample_time += r_start.elapsed();
 
                         // Calculate actual output frames
                         let expected_frames =
                             (frame_size as f64 * resampler.ratio()).ceil() as usize;
-                        output.truncate(expected_frames * channels);
 
-                        // Send resampled frame
+                        // Send resampled frame - cloning from reusable buffer
+                        let frame_data = self.resample_output_buffer[..expected_frames * channels].to_vec();
+
                         let frame =
-                            AudioFrame::new(output, expected_frames, channels, target_sample_rate);
+                            AudioFrame::new(frame_data, expected_frames, channels, target_sample_rate);
+
+                        let s_start = Instant::now();
                         message_tx
                             .send(DecoderMessage::Frame(frame))
                             .map_err(|_| "Failed to send frame")?;
+                        total_send_time += s_start.elapsed();
                     }
                 } else {
                     // No resampling - send decoded samples directly as frames
-                    let num_frames = decoded.samples.len() / channels;
+                    let num_frames = decode_buffer.samples.len() / channels;
                     let frame =
-                        AudioFrame::new(decoded.samples, num_frames, channels, source_sample_rate);
+                        AudioFrame::new(decode_buffer.samples.clone(), num_frames, channels, source_sample_rate);
+
+                    let s_start = Instant::now();
                     message_tx
                         .send(DecoderMessage::Frame(frame))
                         .map_err(|_| "Failed to send frame")?;
+                    total_send_time += s_start.elapsed();
+                }
+
+                let processing_time = decode_time + total_resample_time;
+
+                // Warn if actual processing is slow
+                if processing_time > Duration::from_millis(10) {
+                    log::warn!(
+                        "[Decoder Thread] Slow processing: {:?} (Decode: {:?}, Resample: {:?})",
+                        processing_time,
+                        decode_time,
+                        total_resample_time
+                    );
+                }
+
+                // Log backpressure at debug level
+                if total_send_time > Duration::from_millis(10) {
+                    log::debug!(
+                        "[Decoder Thread] Backpressure (channel full): {:?} wait time",
+                        total_send_time
+                    );
                 }
 
                 // Update position
@@ -227,7 +280,7 @@ impl DecoderState {
 
                 Ok(true)
             }
-            Ok(None) => {
+            Ok(0) => {
                 // End of stream
                 log::debug!("[Decoder Thread] End of stream");
 
@@ -256,6 +309,7 @@ impl DecoderState {
                     .ok();
                 Err(err_msg)
             }
+            Ok(_) => unreachable!("decode_into returned negative frames?"),
         }
     }
 
@@ -330,15 +384,20 @@ impl DecoderState {
             // Read from HAL
             // HAL usually provides 2 channels
             let channels = 2;
-            let mut buffer = vec![0.0; frame_size * channels];
-            let samples_read = reader.read(&mut buffer);
+            let buffer_len = frame_size * channels;
 
-            if samples_read < buffer.len() {
-                // Zero-fill remaining
-                buffer[samples_read..].fill(0.0);
+            if self.hal_input_buffer.len() != buffer_len {
+                self.hal_input_buffer.resize(buffer_len, 0.0);
             }
 
-            let frame = AudioFrame::new(buffer, frame_size, channels, sample_rate);
+            let samples_read = reader.read(&mut self.hal_input_buffer);
+
+            if samples_read < buffer_len {
+                // Zero-fill remaining
+                self.hal_input_buffer[samples_read..].fill(0.0);
+            }
+
+            let frame = AudioFrame::new(self.hal_input_buffer.clone(), frame_size, channels, sample_rate);
             message_tx
                 .send(DecoderMessage::Frame(frame))
                 .map_err(|_| "Failed to send HAL frame")?;

@@ -609,6 +609,29 @@ impl Plugin for BinauralDecoderPlugin {
 
         output.fill(0.0);
 
+        // If no SOFA file is loaded, act as passthrough
+        if self.sofa.is_none() {
+            for frame in 0..context.num_frames {
+                if self.input_channels == 1 {
+                    // Mono -> Stereo: duplicate to both channels
+                    let sample = input[frame];
+                    output[frame * 2] = sample;
+                    output[frame * 2 + 1] = sample;
+                } else if self.input_channels == 2 {
+                    // Stereo -> Stereo: direct copy
+                    output[frame * 2] = input[frame * 2];
+                    output[frame * 2 + 1] = input[frame * 2 + 1];
+                } else {
+                    // Multi-channel -> Stereo: take first two channels
+                    output[frame * 2] = input[frame * self.input_channels];
+                    output[frame * 2 + 1] = input[frame * self.input_channels + 1];
+                }
+            }
+            return Ok(());
+        }
+
+        let start_time = std::time::Instant::now();
+
         let mut input_pos = 0;
         let mut output_pos = 0;
 
@@ -810,6 +833,15 @@ impl Plugin for BinauralDecoderPlugin {
                 break;
             }
         }
+        
+        let elapsed = start_time.elapsed();
+        if elapsed > std::time::Duration::from_millis(3) {
+            log::warn!(
+                "[BinauralDecoder] Slow processing: {:.2}ms for {} input frames",
+                elapsed.as_secs_f64() * 1000.0,
+                context.num_frames
+            );
+        }
 
         Ok(())
     }
@@ -864,5 +896,71 @@ mod tests {
 
         let config_5_1 = get_speaker_config("5.1").unwrap();
         assert_eq!(config_5_1.total_channels, 6);
+    }
+
+    #[test]
+    fn test_passthrough_without_sofa() {
+        // Test stereo passthrough
+        let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0);
+        plugin.initialize(48000).unwrap();
+
+        let input = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6]; // 3 stereo frames
+        let mut output = vec![0.0; 6];
+        let context = ProcessContext {
+            num_frames: 3,
+            sample_rate: 48000,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Should pass through directly
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_passthrough_mono_to_stereo() {
+        // Test mono to stereo passthrough
+        let mut plugin = BinauralDecoderPlugin::new(1, 2048, None, true, 0.0, 0.0);
+        plugin.initialize(48000).unwrap();
+
+        let input = vec![0.1, 0.2, 0.3]; // 3 mono frames
+        let mut output = vec![0.0; 6]; // 3 stereo frames
+        let context = ProcessContext {
+            num_frames: 3,
+            sample_rate: 48000,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Mono should be duplicated to both channels
+        assert_eq!(output[0], 0.1);
+        assert_eq!(output[1], 0.1);
+        assert_eq!(output[2], 0.2);
+        assert_eq!(output[3], 0.2);
+        assert_eq!(output[4], 0.3);
+        assert_eq!(output[5], 0.3);
+    }
+
+    #[test]
+    fn test_passthrough_multichannel_to_stereo() {
+        // Test 5.0 to stereo passthrough (takes first 2 channels)
+        let mut plugin = BinauralDecoderPlugin::new(5, 2048, None, true, 0.0, 0.0);
+        plugin.initialize(48000).unwrap();
+
+        // 2 frames of 5-channel audio: [FL, FR, C, SL, SR, FL, FR, C, SL, SR]
+        let input = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+        let mut output = vec![0.0; 4]; // 2 stereo frames
+        let context = ProcessContext {
+            num_frames: 2,
+            sample_rate: 48000,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Should take first 2 channels (FL, FR)
+        assert_eq!(output[0], 0.1); // Frame 0, FL
+        assert_eq!(output[1], 0.2); // Frame 0, FR
+        assert_eq!(output[2], 0.6); // Frame 1, FL
+        assert_eq!(output[3], 0.7); // Frame 1, FR
     }
 }
