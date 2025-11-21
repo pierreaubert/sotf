@@ -88,4 +88,9 @@ sotf_hal = { path = "../src-hal" }
 
 [dev-dependencies]
 rand = { workspace = true }
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "binaural_decoder"
+harness = false
 
