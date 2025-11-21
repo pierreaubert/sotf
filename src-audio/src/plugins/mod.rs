@@ -42,6 +42,7 @@ mod plugin_loudness_compensation;
 mod plugin_matrix;
 mod plugin_resampler;
 mod plugin_upmixer;
+mod simd;
 mod speaker_config;
 
 // HAL plugins (macOS only)
