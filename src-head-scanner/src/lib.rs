@@ -41,6 +41,7 @@
 //! # }
 //! ```
 
+pub mod acoustics;
 pub mod bundle_adjustment;
 pub mod calibration;
 pub mod camera;

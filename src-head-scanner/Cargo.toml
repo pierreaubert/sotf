@@ -7,6 +7,10 @@ edition = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
 
+[features]
+default = ["sofa"]
+sofa = ["hdf5"]  # Enable SOFA file generation
+
 [lib]
 name = "head_scanner"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -49,6 +53,10 @@ ort = { version = "2.0.0-rc.10", default-features = false, features = ["download
 # Point cloud and mesh algorithms
 kiddo = "4.2"  # k-d tree for nearest neighbor search
 delaunator = "1.0"  # Delaunay triangulation
+
+# SOFA file generation (HDF5)
+hdf5 = { version = "0.8", optional = true }
+chrono = "0.4"  # For timestamps in SOFA files
 
 # Async and parallelism
 rayon = { workspace = true }

@@ -110,6 +110,30 @@ enum Commands {
         /// Minimum inliers for valid SfM pose estimation
         #[arg(long, default_value_t = 20)]
         sfm_min_inliers: usize,
+
+        /// Generate SOFA file for HRTF
+        #[arg(long)]
+        generate_sofa: bool,
+
+        /// SOFA output file path
+        #[arg(long, default_value = "head_scan.sofa")]
+        sofa_output: PathBuf,
+
+        /// SOFA sample rate (Hz)
+        #[arg(long, default_value_t = 44100.0)]
+        sofa_sample_rate: f32,
+
+        /// SOFA azimuth resolution (number of angles, e.g. 72 = 5° spacing)
+        #[arg(long, default_value_t = 72)]
+        sofa_azimuth: usize,
+
+        /// SOFA elevation resolution (number of angles, e.g. 36 = 5° spacing)
+        #[arg(long, default_value_t = 36)]
+        sofa_elevation: usize,
+
+        /// SOFA source distance (cm, e.g. 100 = 1m)
+        #[arg(long, default_value_t = 100.0)]
+        sofa_distance: f32,
     },
 
     /// Test camera connection
@@ -177,6 +201,12 @@ async fn main() -> ScannerResult<()> {
             sfm,
             sfm_frames,
             sfm_min_inliers,
+            generate_sofa,
+            sofa_output,
+            sofa_sample_rate,
+            sofa_azimuth,
+            sofa_elevation,
+            sofa_distance,
         } => {
             run_scan(
                 cli.camera,
@@ -197,6 +227,12 @@ async fn main() -> ScannerResult<()> {
                 sfm,
                 sfm_frames,
                 sfm_min_inliers,
+                generate_sofa,
+                sofa_output,
+                sofa_sample_rate,
+                sofa_azimuth,
+                sofa_elevation,
+                sofa_distance,
             )
             .await?;
         }
@@ -249,6 +285,12 @@ async fn run_scan(
     use_sfm: bool,
     sfm_frame_count: usize,
     sfm_min_inliers: usize,
+    generate_sofa: bool,
+    sofa_output: PathBuf,
+    sofa_sample_rate: f32,
+    sofa_azimuth: usize,
+    sofa_elevation: usize,
+    sofa_distance: f32,
 ) -> ScannerResult<()> {
     println!("🎥 Head Scanner CLI");
     println!("==================");
@@ -555,6 +597,45 @@ async fn run_scan(
     println!("💾 Exporting mesh to {:?}...", output_path);
     mesh.export(&output_path.to_string_lossy())?;
     println!("   ✓ Mesh exported successfully");
+
+    // Generate SOFA file if requested
+    if generate_sofa {
+        println!();
+        println!("🎧 Generating SOFA file for HRTF...");
+
+        #[cfg(feature = "sofa")]
+        {
+            use head_scanner::acoustics;
+
+            let result = acoustics::generate_sofa_analytical(
+                &mesh,
+                &sofa_output.to_string_lossy(),
+                sofa_sample_rate,
+                sofa_azimuth,
+                sofa_elevation,
+                sofa_distance,
+            );
+
+            match result {
+                Ok(_) => {
+                    println!("   ✓ SOFA file generated: {:?}", sofa_output);
+                    println!("   Grid: {}az × {}el = {} positions",
+                        sofa_azimuth, sofa_elevation, sofa_azimuth * sofa_elevation);
+                    println!("   Sample rate: {} Hz", sofa_sample_rate);
+                }
+                Err(e) => {
+                    println!("   ⚠ SOFA generation failed: {}", e);
+                    println!("   Note: Ear detection may have failed - ensure scan covers both ears");
+                }
+            }
+        }
+
+        #[cfg(not(feature = "sofa"))]
+        {
+            println!("   ⚠ SOFA support not enabled");
+            println!("   Rebuild with: cargo build --features sofa");
+        }
+    }
 
     // Stop scanner
     scanner.stop().await?;
