@@ -1,0 +1,27 @@
+FROM messense/rust-musl-cross:aarch64-musl
+
+# Install additional dependencies for audio and build tools
+# gfortran is needed for OpenBLAS static compilation
+RUN apt-get update && \
+    apt-get install -y \
+    cmake \
+    ninja-build \
+    perl \
+    pkg-config \
+    gfortran \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install just (command runner)
+RUN cargo install just --locked
+
+# Set up environment for static linking
+ENV RUSTFLAGS="-C target-feature=+crt-static"
+ENV PKG_CONFIG_ALL_STATIC=1
+ENV PKG_CONFIG_ALLOW_CROSS=1
+
+# Use vendored OpenSSL for static linking
+ENV OPENSSL_STATIC=1
+ENV OPENSSL_VENDORED=1
+
+WORKDIR /project

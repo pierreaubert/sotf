@@ -24,6 +24,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Add the target
 RUN rustup target add x86_64-unknown-linux-gnu
 
+# Install just (command runner)
+RUN cargo install just --locked
+
 # Install GTK and WebKit dependencies for Tauri
 RUN apt-get update && \
     apt-get install -y \

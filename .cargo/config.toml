@@ -73,3 +73,17 @@ rustflags = [
   # For MinGW/MSYS2 with OpenBLAS
   "-C", "link-arg=-lopenblas"
 ]
+
+# Linux x86_64 musl configuration (static linking)
+[target.x86_64-unknown-linux-musl]
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  "-C", "target-feature=+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2",
+]
+
+# Linux ARM64 musl configuration (static linking)
+[target.aarch64-unknown-linux-musl]
+rustflags = [
+  "-C", "target-feature=+crt-static",
+  "-C", "target-feature=+neon",
+]

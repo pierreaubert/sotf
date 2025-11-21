@@ -13,6 +13,15 @@ pre-build = []
 dockerfile = "./from_macos_arm/Dockerfile.aarch64-unknown-linux-gnu"
 pre-build = []
 
+# Static musl targets for Linux
+[target.x86_64-unknown-linux-musl]
+dockerfile = "./from_macos_arm/Dockerfile.x86_64-unknown-linux-musl"
+pre-build = []
+
+[target.aarch64-unknown-linux-musl]
+dockerfile = "./from_macos_arm/Dockerfile.aarch64-unknown-linux-musl"
+pre-build = []
+
 [target.x86_64-pc-windows-gnu]
 image = "ghcr.io/cross-rs/aarch64-pc-windows-gnu:main"
 

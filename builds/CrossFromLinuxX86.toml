@@ -5,12 +5,21 @@ passthrough = [
 ]
 
 [target.x86_64-unknown-linux-gnu]
-dockerfile = "./builds/Dockerfile.x86_64-unknown-linux-gnu"
+dockerfile = "./from_linux_x86/Dockerfile.x86_64-unknown-linux-gnu"
 # Force use of Docker
 pre-build = []
 
 [target.aarch64-unknown-linux-gnu]
-dockerfile = "./builds/Dockerfile.aarch64-unknown-linux-gnu"
+dockerfile = "./from_linux_x86/Dockerfile.aarch64-unknown-linux-gnu"
+pre-build = []
+
+# Static musl targets for Linux
+[target.x86_64-unknown-linux-musl]
+dockerfile = "./from_linux_x86/Dockerfile.x86_64-unknown-linux-musl"
+pre-build = []
+
+[target.aarch64-unknown-linux-musl]
+dockerfile = "./from_linux_x86/Dockerfile.aarch64-unknown-linux-musl"
 pre-build = []
 
 [target.x86_64-pc-windows-gnu]
@@ -18,3 +27,6 @@ image = "ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
 
 [target.aarch64-pc-windows-gnu]
 image = "ghcr.io/cross-rs/aarch64-pc-windows-gnu:main"
+
+[target.x86_64-pc-windows-msvc]
+image = "ghcr.io/cross-rs/x86_64-pc-windows-msvc:main"

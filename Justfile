@@ -232,6 +232,73 @@ cross-macos-arm-2-win-arm-gnu :
 cross-macos-arm-2-win-arm-msvc :
 	echo "This is not supported!"
 
+# ----------------------------------------------------------------------
+# STATIC BINARY CROSS-COMPILATION
+# ----------------------------------------------------------------------
+
+# Build static binaries for all platforms
+cross-static-all: cross-static-linux-x86 cross-static-linux-arm64 cross-static-windows-x86 cross-static-macos
+
+# Linux x86_64 static binary (musl)
+cross-static-linux-x86:
+	@echo "Building static Linux x86_64 binary..."
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-unknown-linux-musl --bin sotf_player_tui
+	@echo "Done! Binary at: target/x86_64-unknown-linux-musl/release/sotf_player_tui"
+
+# Linux ARM64 static binary (musl)
+cross-static-linux-arm64:
+	@echo "Building static Linux ARM64 binary..."
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target aarch64-unknown-linux-musl --bin sotf_player_tui
+	@echo "Done! Binary at: target/aarch64-unknown-linux-musl/release/sotf_player_tui"
+
+# Windows x86_64 static binary (MSVC with static CRT)
+cross-static-windows-x86:
+	@echo "Building static Windows x86_64 binary..."
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-msvc --bin sotf_player_tui
+	@echo "Done! Binary at: target/x86_64-pc-windows-msvc/release/sotf_player_tui.exe"
+
+# macOS universal binary (NOT fully static - limited by macOS system restrictions)
+# Apple requires dynamic linking to system frameworks (CoreAudio, CoreFoundation, etc.)
+# This creates a universal binary supporting both Intel (x86_64) and Apple Silicon (ARM64)
+cross-static-macos:
+	@echo "Building macOS binaries..."
+	@echo "Note: macOS binaries cannot be fully static due to Apple's security policies"
+	@echo "      System frameworks (CoreAudio, etc.) will be dynamically linked"
+	cargo build --release --target x86_64-apple-darwin --bin sotf_player_tui
+	cargo build --release --target aarch64-apple-darwin --bin sotf_player_tui
+	@echo "Creating universal binary (Intel + Apple Silicon)..."
+	lipo -create \
+		target/x86_64-apple-darwin/release/sotf_player_tui \
+		target/aarch64-apple-darwin/release/sotf_player_tui \
+		-output target/sotf_player_tui-macos-universal
+	@echo "✓ Done! Universal binary at: target/sotf_player_tui-macos-universal"
+
+# Build static binary for current platform
+# Note: Requires bash/sh shell. On Linux, builds musl static binary.
+# On macOS, builds regular binary (static linking limited by Apple).
+build-static-local:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building static binary for current platform..."
+	if [ "$(uname)" = "Linux" ]; then
+		if [ "$(uname -m)" = "x86_64" ]; then
+			cargo build --release --target x86_64-unknown-linux-musl --bin sotf_player_tui
+			echo "✓ Built: target/x86_64-unknown-linux-musl/release/sotf_player_tui"
+		elif [ "$(uname -m)" = "aarch64" ]; then
+			cargo build --release --target aarch64-unknown-linux-musl --bin sotf_player_tui
+			echo "✓ Built: target/aarch64-unknown-linux-musl/release/sotf_player_tui"
+		else
+			echo "❌ Unsupported Linux architecture: $(uname -m)"
+			exit 1
+		fi
+	elif [ "$(uname)" = "Darwin" ]; then
+		cargo build --release --bin sotf_player_tui
+		echo "✓ Built: target/release/sotf_player_tui"
+		echo "Note: macOS binaries have limited static linking due to Apple restrictions"
+	else
+		echo "❌ Unsupported platform: $(uname)"
+		exit 1
+	fi
 
 # ----------------------------------------------------------------------
 # Install rustup

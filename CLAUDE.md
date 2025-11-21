@@ -267,6 +267,62 @@ Or use the automated script:
 
 This creates `dist/` with binaries for all platforms.
 
+### Static Binary Builds
+
+Build standalone static binaries of `sotf_player_tui` for distribution:
+
+```bash
+# Build all static binaries (Linux, Windows, macOS)
+just cross-static-all
+
+# Build individual platforms
+just cross-static-linux-x86       # Linux x86_64 (musl)
+just cross-static-linux-arm64     # Linux ARM64 (musl)
+just cross-static-windows-x86     # Windows x86_64 (static CRT)
+just cross-static-macos           # macOS universal binary
+
+# Build for current platform
+just build-static-local
+```
+
+**Platform Details:**
+
+- **Linux (musl)**: Truly static binaries with ZERO runtime dependencies
+  - Uses musl libc instead of glibc
+  - OpenBLAS statically linked
+  - Portable across all Linux distributions
+  - Verify with: `ldd target/x86_64-unknown-linux-musl/release/sotf_player_tui` (should show "not a dynamic executable")
+
+- **Windows (MSVC)**: Static CRT linkage with minimal dependencies
+  - Static C runtime library
+  - Minimal system DLL dependencies
+  - Compatible with Windows 10 and later
+
+- **macOS**: Universal binary (Intel + Apple Silicon)
+  - **NOT fully static** - Apple requires dynamic linking to system frameworks
+  - CoreAudio, CoreFoundation, and other frameworks dynamically linked
+  - Supports both x86_64 and ARM64 in a single binary
+  - Requires macOS 15.0+ (deployment target)
+
+**Verification Steps:**
+
+```bash
+# Linux - check for dynamic dependencies
+ldd target/x86_64-unknown-linux-musl/release/sotf_player_tui
+
+# Check binary size
+ls -lh target/*/release/sotf_player_tui*
+
+# Test the binary
+./target/x86_64-unknown-linux-musl/release/sotf_player_tui --help
+```
+
+**Technical Notes:**
+- BLAS support via static OpenBLAS (compiled from source by openblas-src crate)
+- Audio dependencies (cpal, symphonia) compiled directly into binary
+- Larger binary size (~15-50MB) compared to dynamic linking
+- Build time longer due to static compilation of dependencies
+
 ### npm Commands (Frontend)
 
 ```bash
