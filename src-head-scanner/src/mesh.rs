@@ -2,46 +2,13 @@
 
 use crate::convexhull::ConvexHull3D;
 use crate::error::{ScannerError, ScannerResult};
+use crate::security;
 use nalgebra::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-
-/// Validate and sanitize file path to prevent path traversal attacks
-fn validate_export_path(path: &str) -> ScannerResult<()> {
-    let path_obj = Path::new(path);
-
-    // Check for path traversal attempts
-    if path.contains("..") {
-        return Err(ScannerError::InvalidConfig(
-            "Path traversal detected in export path".to_string(),
-        ));
-    }
-
-    // Check for absolute paths in untrusted contexts (optional, depends on use case)
-    // For now, we allow both relative and absolute paths
-
-    // Ensure the path is valid UTF-8
-    if path_obj.to_str().is_none() {
-        return Err(ScannerError::InvalidConfig(
-            "Invalid UTF-8 in file path".to_string(),
-        ));
-    }
-
-    // Check parent directory exists (if path has a parent)
-    if let Some(parent) = path_obj.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            return Err(ScannerError::InvalidConfig(format!(
-                "Parent directory does not exist: {:?}",
-                parent
-            )));
-        }
-    }
-
-    Ok(())
-}
 
 /// A 3D vertex with position, normal, and optional texture coordinates
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,10 +225,10 @@ impl Mesh {
 
     /// Export mesh to Wavefront OBJ format
     pub fn export_obj(&self, path: &str) -> ScannerResult<()> {
-        // Validate path for security
-        validate_export_path(path)?;
+        // Validate path for security (prevents path traversal, symlink attacks, etc.)
+        let validated_path = security::validate_export_path(path, None)?;
 
-        let mut file = File::create(path).map_err(|e| ScannerError::Io(e))?;
+        let mut file = File::create(&validated_path).map_err(|e| ScannerError::Io(e))?;
 
         writeln!(file, "# Head Scanner Mesh")?;
         writeln!(file, "# Vertices: {}", self.vertices.len())?;
@@ -342,10 +309,10 @@ impl Mesh {
 
     /// Export mesh to PLY format
     pub fn export_ply(&self, path: &str) -> ScannerResult<()> {
-        // Validate path for security
-        validate_export_path(path)?;
+        // Validate path for security (prevents path traversal, symlink attacks, etc.)
+        let validated_path = security::validate_export_path(path, None)?;
 
-        let mut file = File::create(path)?;
+        let mut file = File::create(&validated_path)?;
 
         let has_normals = self.vertices.iter().any(|v| v.normal.is_some());
         let has_colors = self.vertices.iter().any(|v| v.color.is_some());
@@ -415,12 +382,12 @@ impl Mesh {
 
     /// Export mesh to STL format (binary)
     pub fn export_stl(&self, path: &str) -> ScannerResult<()> {
-        // Validate path for security
-        validate_export_path(path)?;
+        // Validate path for security (prevents path traversal, symlink attacks, etc.)
+        let validated_path = security::validate_export_path(path, None)?;
 
         use byteorder::{LittleEndian, WriteBytesExt};
 
-        let mut file = File::create(path)?;
+        let mut file = File::create(&validated_path)?;
 
         // Write 80-byte header
         let header =

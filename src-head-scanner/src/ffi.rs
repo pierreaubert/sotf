@@ -159,21 +159,86 @@ pub extern "C" fn scanner_process_frame(
     height: u32,
     pose: *const CameraPose,
 ) -> ScannerResultCode {
+    // Validate pointers
     if scanner.is_null() || rgb_data.is_null() || depth_data.is_null() || pose.is_null() {
         set_last_error("Null pointer provided".to_string());
         return ScannerResultCode::InvalidInput;
     }
 
+    // Validate dimensions to prevent integer overflow and excessive memory access
+    const MAX_DIMENSION: u32 = 16384; // 16K resolution max
+    const MIN_DIMENSION: u32 = 64;     // Minimum reasonable resolution
+
+    if width < MIN_DIMENSION || width > MAX_DIMENSION {
+        set_last_error(format!("Invalid width: {} (must be {}-{})", width, MIN_DIMENSION, MAX_DIMENSION));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    if height < MIN_DIMENSION || height > MAX_DIMENSION {
+        set_last_error(format!("Invalid height: {} (must be {}-{})", height, MIN_DIMENSION, MAX_DIMENSION));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    // Check for potential integer overflow in buffer size calculation
+    let pixel_count = match (width as u64).checked_mul(height as u64) {
+        Some(count) if count <= (usize::MAX as u64) => count as usize,
+        _ => {
+            set_last_error(format!("Dimensions too large: {}x{} would overflow", width, height));
+            return ScannerResultCode::InvalidInput;
+        }
+    };
+
+    let rgb_size = match pixel_count.checked_mul(3) {
+        Some(size) => size,
+        None => {
+            set_last_error("RGB buffer size would overflow".to_string());
+            return ScannerResultCode::InvalidInput;
+        }
+    };
+
     let scanner = unsafe { &mut *scanner };
     let pose = unsafe { &*pose };
 
-    // Convert RGB data
-    let rgb_size = (width * height * 3) as usize;
+    // Validate pose values are not NaN or infinity
+    if !pose.position.x.is_finite() || !pose.position.y.is_finite() || !pose.position.z.is_finite() {
+        set_last_error("Invalid position: contains NaN or infinity".to_string());
+        return ScannerResultCode::InvalidInput;
+    }
+
+    if !pose.rotation.x.is_finite() || !pose.rotation.y.is_finite() ||
+       !pose.rotation.z.is_finite() || !pose.rotation.w.is_finite() {
+        set_last_error("Invalid rotation: contains NaN or infinity".to_string());
+        return ScannerResultCode::InvalidInput;
+    }
+
+    // Check quaternion is normalized (within tolerance)
+    let quat_len_sq = pose.rotation.x * pose.rotation.x +
+                       pose.rotation.y * pose.rotation.y +
+                       pose.rotation.z * pose.rotation.z +
+                       pose.rotation.w * pose.rotation.w;
+    if (quat_len_sq - 1.0).abs() > 0.01 {
+        set_last_error(format!("Quaternion not normalized: length^2 = {}", quat_len_sq));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    // Convert RGB data (now with validated size)
     let rgb = unsafe { std::slice::from_raw_parts(rgb_data, rgb_size) };
 
     // Convert depth data
-    let depth_size = (width * height) as usize;
-    let depth = unsafe { std::slice::from_raw_parts(depth_data, depth_size) };
+    let depth = unsafe { std::slice::from_raw_parts(depth_data, pixel_count) };
+
+    // Validate depth data (quick spot check to prevent garbage data)
+    const MAX_DEPTH: f32 = 100.0; // 100 meters maximum
+    let mut valid_depth_count = 0;
+    for (i, &d) in depth.iter().enumerate().take(100) { // Check first 100 samples
+        if d.is_finite() && d >= 0.0 && d <= MAX_DEPTH {
+            valid_depth_count += 1;
+        }
+    }
+    if valid_depth_count == 0 {
+        set_last_error("Depth data appears invalid (all samples out of range or NaN)".to_string());
+        return ScannerResultCode::InvalidInput;
+    }
 
     // Convert pose
     let position = Point3::new(pose.position.x, pose.position.y, pose.position.z);
@@ -327,11 +392,12 @@ pub extern "C" fn mesh_triangle_count(mesh: *const Mesh) -> u32 {
 #[no_mangle]
 pub extern "C" fn mesh_export_obj(mesh: *const Mesh, path: *const c_char) -> ScannerResultCode {
     if mesh.is_null() || path.is_null() {
+        set_last_error("Null pointer provided to mesh_export_obj".to_string());
         return ScannerResultCode::InvalidInput;
     }
 
     let mesh = unsafe { &*mesh };
-    let path = unsafe {
+    let path_str = unsafe {
         match CStr::from_ptr(path).to_str() {
             Ok(s) => s,
             Err(_) => {
@@ -341,7 +407,20 @@ pub extern "C" fn mesh_export_obj(mesh: *const Mesh, path: *const c_char) -> Sca
         }
     };
 
-    match mesh.export_obj(path) {
+    // Validate path length
+    const MAX_PATH_LENGTH: usize = 4096;
+    if path_str.len() > MAX_PATH_LENGTH {
+        set_last_error(format!("Path too long: {} bytes (max {})", path_str.len(), MAX_PATH_LENGTH));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    // Check for null bytes in path (security)
+    if path_str.contains('\0') {
+        set_last_error("Null byte in path".to_string());
+        return ScannerResultCode::InvalidInput;
+    }
+
+    match mesh.export_obj(path_str) {
         Ok(_) => ScannerResultCode::Ok,
         Err(e) => {
             set_last_error(format!("{:?}", e));
@@ -361,26 +440,94 @@ pub extern "C" fn scanner_generate_sofa(
     elevation_resolution: u32,
     distance: f32,
 ) -> ScannerResultCode {
+    // Validate pointers
     if mesh.is_null() || output_path.is_null() {
+        set_last_error("Null pointer provided to scanner_generate_sofa".to_string());
         return ScannerResultCode::InvalidInput;
     }
 
     let mesh = unsafe { &*mesh };
-    let path = unsafe {
+    let path_str = unsafe {
         match CStr::from_ptr(output_path).to_str() {
             Ok(s) => s,
             Err(_) => {
-                set_last_error("Invalid UTF-8 in path".to_string());
+                set_last_error("Invalid UTF-8 in output path".to_string());
                 return ScannerResultCode::InvalidInput;
             }
         }
     };
 
+    // Validate path
+    const MAX_PATH_LENGTH: usize = 4096;
+    if path_str.len() > MAX_PATH_LENGTH {
+        set_last_error(format!("Path too long: {} bytes (max {})", path_str.len(), MAX_PATH_LENGTH));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    if path_str.contains('\0') {
+        set_last_error("Null byte in path".to_string());
+        return ScannerResultCode::InvalidInput;
+    }
+
+    // Validate sample rate
+    if !sample_rate.is_finite() || sample_rate <= 0.0 {
+        set_last_error(format!("Invalid sample rate: {}", sample_rate));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    const MIN_SAMPLE_RATE: f32 = 8000.0;   // 8 kHz minimum
+    const MAX_SAMPLE_RATE: f32 = 192000.0; // 192 kHz maximum
+
+    if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+        set_last_error(format!(
+            "Sample rate out of range: {} (must be {}-{})",
+            sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE
+        ));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    // Validate resolutions
+    const MIN_RESOLUTION: u32 = 1;
+    const MAX_RESOLUTION: u32 = 3600; // 0.1 degree resolution max
+
+    if azimuth_resolution < MIN_RESOLUTION || azimuth_resolution > MAX_RESOLUTION {
+        set_last_error(format!(
+            "Azimuth resolution out of range: {} (must be {}-{})",
+            azimuth_resolution, MIN_RESOLUTION, MAX_RESOLUTION
+        ));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    if elevation_resolution < MIN_RESOLUTION || elevation_resolution > MAX_RESOLUTION {
+        set_last_error(format!(
+            "Elevation resolution out of range: {} (must be {}-{})",
+            elevation_resolution, MIN_RESOLUTION, MAX_RESOLUTION
+        ));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    // Validate distance
+    if !distance.is_finite() || distance <= 0.0 {
+        set_last_error(format!("Invalid distance: {}", distance));
+        return ScannerResultCode::InvalidInput;
+    }
+
+    const MIN_DISTANCE: f32 = 0.1;  // 10 cm minimum
+    const MAX_DISTANCE: f32 = 100.0; // 100 m maximum
+
+    if distance < MIN_DISTANCE || distance > MAX_DISTANCE {
+        set_last_error(format!(
+            "Distance out of range: {} (must be {}-{})",
+            distance, MIN_DISTANCE, MAX_DISTANCE
+        ));
+        return ScannerResultCode::InvalidInput;
+    }
+
     #[cfg(feature = "sofa")]
     {
         match crate::acoustics::generate_sofa_analytical(
             mesh,
-            path,
+            path_str,
             sample_rate,
             azimuth_resolution as usize,
             elevation_resolution as usize,

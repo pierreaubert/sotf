@@ -57,6 +57,27 @@ impl VisionModel {
         Self::load_with_gpu(model_path, true)
     }
 
+    /// Helper function to try enabling a GPU provider and log results
+    fn try_enable_gpu_provider(
+        builder: &mut ort::SessionBuilder,
+        provider_name: &str,
+        enable_fn: impl FnOnce(&mut ort::SessionBuilder) -> ScannerResult<()>,
+    ) -> bool {
+        log::info!("Attempting to enable {} execution provider", provider_name);
+
+        match enable_fn(builder) {
+            Ok(_) => {
+                log::info!("✓ {} execution provider enabled successfully", provider_name);
+                true
+            }
+            Err(e) => {
+                log::warn!("Failed to enable {}: {}. Falling back to CPU.", provider_name, e);
+                log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
+                false
+            }
+        }
+    }
+
     /// Load a vision model with explicit GPU preference
     pub fn load_with_gpu(model_path: &str, prefer_gpu: bool) -> ScannerResult<Self> {
         // In ort 2.0, load model using commit_from_file on the builder
@@ -72,53 +93,17 @@ impl VisionModel {
         if prefer_gpu {
             #[cfg(target_os = "macos")]
             {
-                // Apple Silicon has Neural Engine support via CoreML
-                log::info!("Enabling CoreML execution provider for Apple Neural Engine");
-
-                match Self::enable_coreml(&mut builder) {
-                    Ok(_) => {
-                        use_gpu = true;
-                        log::info!("✓ CoreML execution provider enabled successfully");
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to enable CoreML: {}. Falling back to CPU.", e);
-                        log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
-                    }
-                }
+                use_gpu = Self::try_enable_gpu_provider(&mut builder, "CoreML", Self::enable_coreml);
             }
 
             #[cfg(target_os = "windows")]
             {
-                // Windows can use DirectML for GPU acceleration
-                log::info!("Attempting to enable DirectML execution provider");
-
-                match Self::enable_directml(&mut builder) {
-                    Ok(_) => {
-                        use_gpu = true;
-                        log::info!("✓ DirectML execution provider enabled successfully");
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to enable DirectML: {}. Falling back to CPU.", e);
-                        log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
-                    }
-                }
+                use_gpu = Self::try_enable_gpu_provider(&mut builder, "DirectML", Self::enable_directml);
             }
 
             #[cfg(target_os = "linux")]
             {
-                // Linux can use CUDA for NVIDIA GPUs
-                log::info!("Attempting to enable CUDA execution provider");
-
-                match Self::enable_cuda(&mut builder) {
-                    Ok(_) => {
-                        use_gpu = true;
-                        log::info!("✓ CUDA execution provider enabled successfully");
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to enable CUDA: {}. Falling back to CPU.", e);
-                        log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
-                    }
-                }
+                use_gpu = Self::try_enable_gpu_provider(&mut builder, "CUDA", Self::enable_cuda);
             }
 
             #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]

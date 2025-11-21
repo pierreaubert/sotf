@@ -49,6 +49,7 @@ pub mod convexhull;
 pub mod coverage;
 pub mod error;
 pub mod ffi; // FFI bindings for iOS/Swift
+pub mod security; // Security utilities for path validation
 pub mod guidance;
 pub mod mesh;
 pub mod pointcloud;
@@ -92,6 +93,10 @@ pub struct ScannerConfig {
     /// Path to the vision model (ONNX format)
     pub model_path: Option<String>,
 
+    /// Allowed base directories for model files (for security)
+    /// If empty, any directory is allowed (less secure)
+    pub model_base_dirs: Vec<std::path::PathBuf>,
+
     /// Use Structure-from-Motion for accurate 3D reconstruction
     pub use_sfm: bool,
 
@@ -113,6 +118,7 @@ impl Default for ScannerConfig {
             point_density: 50.0, // 50 points per square cm
             use_gpu: true,
             model_path: None,
+            model_base_dirs: Vec::new(), // Empty = allow any directory (less secure)
             use_sfm: false,      // Disabled by default for compatibility
             sfm_frame_count: 3,  // Use 3 frames for SfM
             sfm_min_inliers: 20, // Minimum 20 inliers for valid pose
@@ -216,22 +222,19 @@ impl HeadScanner {
 
         // Initialize vision model if path provided
         if let Some(ref model_path) = self.config.model_path {
-            // Validate model path for security
-            use std::path::Path;
-            let path = Path::new(model_path);
-            if model_path.contains("..") {
-                return Err(ScannerError::InvalidConfig(
-                    "Path traversal detected in model path".to_string(),
-                ));
-            }
-            if !path.exists() {
-                return Err(ScannerError::InvalidConfig(format!(
-                    "Model file does not exist: {}",
-                    model_path
-                )));
-            }
+            // Validate model path for security (prevents path traversal, symlink attacks, etc.)
+            let validated_path = if self.config.model_base_dirs.is_empty() {
+                // No base directories specified - just validate the path exists and is safe
+                security::validate_model_path(model_path, &[])?
+            } else {
+                // Validate path is within one of the allowed base directories
+                security::validate_model_path(model_path, &self.config.model_base_dirs)?
+            };
 
-            let model = vision::VisionModel::load_with_gpu(model_path, self.config.use_gpu)?;
+            let model = vision::VisionModel::load_with_gpu(
+                validated_path.to_str().unwrap(),
+                self.config.use_gpu,
+            )?;
             *self.vision_model.write() = Some(model);
         }
 

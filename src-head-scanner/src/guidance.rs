@@ -265,7 +265,12 @@ pub struct ScanGuidance {
     quality_metrics: QualityMetrics,
 
     /// Angular similarity threshold (degrees)
+    /// This determines when two viewing angles are considered too similar
     angle_threshold: f32,
+
+    /// Recent pose updates (for motion blur estimation)
+    /// Stores last N (timestamp, ViewAngle) pairs
+    recent_poses: std::collections::VecDeque<(std::time::Instant, ViewAngle)>,
 }
 
 impl ScanGuidance {
@@ -273,11 +278,12 @@ impl ScanGuidance {
     pub fn new() -> Self {
         Self {
             head_center: None,
-            head_radius: 25.0, // Default ~25cm head radius
+            head_radius: 25.0, // Default ~25cm head radius (typical adult head)
             captured_angles: Vec::new(),
             covered_regions: HashSet::new(),
             quality_metrics: QualityMetrics::default(),
             angle_threshold: 20.0, // 20° threshold for "similar" angles
+            recent_poses: std::collections::VecDeque::with_capacity(30), // Track last 30 poses
         }
     }
 
@@ -290,6 +296,15 @@ impl ScanGuidance {
 
         // Compute viewing angle from pose
         let angle = self.estimate_viewing_angle(pose);
+
+        // Track recent poses for motion blur estimation
+        let now = std::time::Instant::now();
+        self.recent_poses.push_back((now, angle));
+
+        // Keep only last 30 poses (approx 1 second at 30fps)
+        while self.recent_poses.len() > 30 {
+            self.recent_poses.pop_front();
+        }
 
         // Check if this is a new unique angle
         let is_new_angle = !self
