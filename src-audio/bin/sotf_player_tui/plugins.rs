@@ -180,6 +180,22 @@ impl EQFilter {
     }
 }
 
+fn default_limiter_mix() -> f64 {
+    0.95
+}
+
+fn default_gate_mix() -> f64 {
+    0.95
+}
+
+fn default_gate_link_channels() -> bool {
+    true
+}
+
+fn default_gate_sidechain_hpf_hz() -> f64 {
+    0.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
@@ -204,16 +220,29 @@ pub enum PluginSettings {
         attack_ms: f64,
         release_ms: f64,
         knee_db: f64,
+        makeup_gain_db: f64,
+        mix: f64,
+        auto_makeup: bool,
+        link_channels: bool,
+        sidechain_hpf_hz: f64,
     },
     Limiter {
         threshold_db: f64,
         release_ms: f64,
+        #[serde(default = "default_limiter_mix")]
+        mix: f64,
     },
     Gate {
         threshold_db: f64,
         ratio: f64,
         attack_ms: f64,
         release_ms: f64,
+        #[serde(default = "default_gate_mix")]
+        mix: f64,
+        #[serde(default = "default_gate_link_channels")]
+        link_channels: bool,
+        #[serde(default = "default_gate_sidechain_hpf_hz")]
+        sidechain_hpf_hz: f64,
     },
     LoudnessCompensation {
         target_lufs: f64,
@@ -299,6 +328,11 @@ impl PluginSettings {
                 attack_ms,
                 release_ms,
                 knee_db,
+                makeup_gain_db,
+                mix,
+                auto_makeup,
+                link_channels,
+                sidechain_hpf_hz,
             } => PluginConfig::new(
                 "compressor",
                 json!({
@@ -307,16 +341,23 @@ impl PluginSettings {
                     "attack_ms": attack_ms,
                     "release_ms": release_ms,
                     "knee_db": knee_db,
+                    "makeup_gain_db": makeup_gain_db,
+                    "mix": mix,
+                    "auto_makeup": auto_makeup,
+                    "link_channels": link_channels,
+                    "sidechain_hpf_hz": sidechain_hpf_hz,
                 }),
             ),
             Self::Limiter {
                 threshold_db,
                 release_ms,
+                mix,
             } => PluginConfig::new(
                 "limiter",
                 json!({
                     "threshold_db": threshold_db,
                     "release_ms": release_ms,
+                    "mix": mix,
                 }),
             ),
             Self::Gate {
@@ -324,6 +365,9 @@ impl PluginSettings {
                 ratio,
                 attack_ms,
                 release_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
             } => PluginConfig::new(
                 "gate",
                 json!({
@@ -331,6 +375,9 @@ impl PluginSettings {
                     "ratio": ratio,
                     "attack_ms": attack_ms,
                     "release_ms": release_ms,
+                    "mix": mix,
+                    "link_channels": link_channels,
+                    "sidechain_hpf_hz": sidechain_hpf_hz,
                 }),
             ),
             Self::LoudnessCompensation {
@@ -401,16 +448,25 @@ impl PluginSettings {
                 attack_ms: 5.0,
                 release_ms: 100.0,
                 knee_db: 3.0,
+                makeup_gain_db: 0.0,
+                mix: 0.95,
+                auto_makeup: false,
+                link_channels: true,
+                sidechain_hpf_hz: 80.0,
             },
             PluginType::Limiter => Self::Limiter {
                 threshold_db: -1.0,
                 release_ms: 50.0,
+                mix: default_limiter_mix(),
             },
             PluginType::Gate => Self::Gate {
                 threshold_db: -40.0,
                 ratio: 10.0,
                 attack_ms: 1.0,
                 release_ms: 100.0,
+                mix: default_gate_mix(),
+                link_channels: default_gate_link_channels(),
+                sidechain_hpf_hz: default_gate_sidechain_hpf_hz(),
             },
             PluginType::LoudnessCompensation => Self::LoudnessCompensation {
                 target_lufs: -18.0,

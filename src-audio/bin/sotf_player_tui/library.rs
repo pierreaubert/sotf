@@ -115,6 +115,9 @@ impl MusicLibrary {
         let db_path =
             MusicDatabase::default_path().ok_or("Could not determine config directory")?;
 
+        // Create a timestamped backup of the existing database before opening it
+        crate::database::backup_existing_database(&db_path)?;
+
         let db = MusicDatabase::open(&db_path)?;
 
         Ok(Self {

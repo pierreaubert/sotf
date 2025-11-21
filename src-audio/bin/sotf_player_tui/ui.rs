@@ -1091,7 +1091,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                 // Bottom 20%: -60 to -40 dB
                 ((peak_db + 60.0) / 20.0) * 0.2
             };
-            let fill_ratio = fill_ratio.clamp(0.0, 1.0);
+            let fill_ratio = fill_ratio.clamp(0.0_f64, 1.0_f64);
             let filled_rows = (fill_ratio * meter_height as f64).round() as usize;
 
             let ch_x = meters_start_x + (ch_idx * channel_width) as u16;
@@ -1462,30 +1462,78 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             attack_ms,
             release_ms,
             knee_db,
+            makeup_gain_db,
+            mix,
+            auto_makeup,
+            link_channels,
+            sidechain_hpf_hz,
         } => vec![
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
             ("Release".to_string(), format!("{:.1} ms", release_ms)),
             ("Knee".to_string(), format!("{:.1} dB", knee_db)),
+            (
+                "Makeup Gain".to_string(),
+                format!("{:.1} dB", makeup_gain_db),
+            ),
+            ("Mix".to_string(), format!("{:.2}", mix)),
+            (
+                "Auto Makeup".to_string(),
+                if *auto_makeup { "On" } else { "Off" }.to_string(),
+            ),
+            (
+                "Link Channels".to_string(),
+                if *link_channels {
+                    "Linked".to_string()
+                } else {
+                    "Unlinked".to_string()
+                },
+            ),
+            (
+                "Sidechain HPF".to_string(),
+                format!("{:.0} Hz", sidechain_hpf_hz),
+            ),
         ],
         PluginSettings::Limiter {
             threshold_db,
             release_ms,
+            mix,
         } => vec![
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Release".to_string(), format!("{:.1} ms", release_ms)),
+            ("Mix".to_string(), format!("{:.2}", mix)),
         ],
         PluginSettings::Gate {
             threshold_db,
             ratio,
             attack_ms,
             release_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
         } => vec![
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
             ("Release".to_string(), format!("{:.1} ms", release_ms)),
+            ("Mix".to_string(), format!("{:.2}", mix)),
+            (
+                "Link Channels".to_string(),
+                if *link_channels {
+                    "Linked".to_string()
+                } else {
+                    "Unlinked".to_string()
+                },
+            ),
+            (
+                "Sidechain HPF".to_string(),
+                if *sidechain_hpf_hz <= 0.0 {
+                    "Off".to_string()
+                } else {
+                    format!("{:.0} Hz", sidechain_hpf_hz)
+                },
+            ),
         ],
         PluginSettings::LoudnessCompensation {
             target_lufs,

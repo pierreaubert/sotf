@@ -535,6 +535,10 @@ fn apply_plugin_update(
                             output_channels
                         );
 
+                        // Clear ring buffer first to flush any pending frames with old channel count
+                        // This prevents audio corruption from channel count mismatches during hot-reload
+                        playback.send_command(PlaybackCommand::Stop)?;
+
                         // Send update command (fire-and-forget)
                         // Playback thread will handle channel update asynchronously
                         playback.send_command(PlaybackCommand::UpdateChannels(output_channels))?;

@@ -1259,18 +1259,16 @@ impl App {
     }
 
     pub fn next_track(&mut self) -> Option<PathBuf> {
-        if let Some(idx) = self.current_queue_index
-            && let Some(item) = self.queue.get_mut(idx)
-        {
-            if let Some(track) = item.next_track() {
-                return Some(track.path.clone());
-            } else {
-                // Move to next album in queue
-                if idx + 1 < self.queue.len() {
-                    self.current_queue_index = Some(idx + 1);
-                    return self.current_track_path();
+        if let Some(idx) = self.current_queue_index {
+            if let Some(item) = self.queue.get_mut(idx) {
+                if let Some(track) = item.next_track() {
+                    return Some(track.path.clone());
                 }
             }
+
+            // Album finished (or entry missing), remove it and move to next
+            self.remove_from_queue(idx);
+            return self.current_track_path();
         }
         None
     }
@@ -1510,6 +1508,11 @@ impl App {
                     attack_ms,
                     release_ms,
                     knee_db,
+                    makeup_gain_db,
+                    mix,
+                    auto_makeup,
+                    link_channels,
+                    sidechain_hpf_hz,
                 } => {
                     match param_idx {
                         0 => *threshold_db = (*threshold_db + delta).clamp(-60.0, 0.0),
@@ -1517,6 +1520,19 @@ impl App {
                         2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
                         3 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
                         4 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 12.0),
+                        5 => *makeup_gain_db = (*makeup_gain_db + delta * 0.1).clamp(-20.0, 20.0),
+                        6 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                        7 => {
+                            if delta.abs() > 0.1 {
+                                *auto_makeup = !*auto_makeup;
+                            }
+                        }
+                        8 => {
+                            if delta.abs() > 0.1 {
+                                *link_channels = !*link_channels;
+                            }
+                        }
+                        9 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(20.0, 500.0),
                         _ => return false,
                     }
                     true
@@ -1524,10 +1540,12 @@ impl App {
                 PluginSettings::Limiter {
                     threshold_db,
                     release_ms,
+                    mix,
                 } => {
                     match param_idx {
                         0 => *threshold_db = (*threshold_db + delta * 0.1).clamp(-20.0, 0.0),
                         1 => *release_ms = (*release_ms + delta).clamp(1.0, 500.0),
+                        2 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
                         _ => return false,
                     }
                     true
@@ -1537,12 +1555,25 @@ impl App {
                     ratio,
                     attack_ms,
                     release_ms,
+                    mix,
+                    link_channels,
+                    sidechain_hpf_hz,
                 } => {
                     match param_idx {
                         0 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
                         1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 100.0),
                         2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
                         3 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
+                        4 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
+                        5 => {
+                            // Toggle linked / unlinked sidechain detection
+                            *link_channels = !*link_channels;
+                        }
+                        6 => {
+                            // Adjust sidechain HPF cutoff in Hz
+                            *sidechain_hpf_hz =
+                                (*sidechain_hpf_hz + delta * 5.0).clamp(0.0, 200.0);
+                        }
                         _ => return false,
                     }
                     true
@@ -1560,10 +1591,65 @@ impl App {
                     }
                     true
                 }
-                PluginSettings::EQ { .. } => {
-                    // EQ is more complex - we'll implement basic support for now
-                    // TODO: Implement full EQ editing with filter type selection
-                    false
+                PluginSettings::EQ { filters } => {
+                    if filters.is_empty() {
+                        return false;
+                    }
+
+                    let total_params = filters.len() * 4;
+                    if param_idx >= total_params {
+                        return false;
+                    }
+
+                    let filter_idx = param_idx / 4;
+                    let field_idx = param_idx % 4;
+
+                    if let Some(filter) = filters.get_mut(filter_idx) {
+                        match field_idx {
+                            0 => {
+                                filter.frequency = (filter.frequency + delta * 10.0)
+                                    .clamp(20.0, 20_000.0);
+                                true
+                            }
+                            1 => {
+                                filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0);
+                                true
+                            }
+                            2 => {
+                                filter.gain_db =
+                                    (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0);
+                                true
+                            }
+                            3 => {
+                                use autoeq_iir::BiquadFilterType;
+
+                                let types = [
+                                    BiquadFilterType::Peak,
+                                    BiquadFilterType::Lowshelf,
+                                    BiquadFilterType::Highshelf,
+                                    BiquadFilterType::Lowpass,
+                                    BiquadFilterType::Highpass,
+                                    BiquadFilterType::Bandpass,
+                                    BiquadFilterType::Notch,
+                                ];
+
+                                let current_idx = types
+                                    .iter()
+                                    .position(|t| *t == filter.filter_type)
+                                    .unwrap_or(0);
+                                let new_idx = if delta > 0.0 {
+                                    (current_idx + 1) % types.len()
+                                } else {
+                                    (current_idx + types.len() - 1) % types.len()
+                                };
+                                filter.filter_type = types[new_idx];
+                                true
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
                 }
                 PluginSettings::BinauralDecoder {
                     input_channels,
@@ -2018,9 +2104,9 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Upmixer { .. } => 11, // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, lfe_cutoff_hz, stereo_width, bandpass_hz, height_gain, lfe_gain, enable_subharmonic_synth, subharmonic_gain
-        PluginSettings::Compressor { .. } => 5, // threshold, ratio, attack, release, knee
-        PluginSettings::Limiter { .. } => 2, // threshold, release
-        PluginSettings::Gate { .. } => 4,    // threshold, ratio, attack, release
+        PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
+        PluginSettings::Limiter { .. } => 3, // threshold, release, mix
+        PluginSettings::Gate { .. } => 7,    // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
     }
@@ -2035,7 +2121,9 @@ impl Default for App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::DirectoryInfo;
+    use crate::library::{Album, DirectoryInfo, Track};
+    use crate::plugins::{PluginSettings, PluginType};
+    use std::path::PathBuf;
 
     fn create_test_directory_info(path: &str) -> DirectoryInfo {
         DirectoryInfo {
@@ -2217,5 +2305,446 @@ mod tests {
 
         assert_eq!(tree_items[2].0, PathBuf::from("/test/dir0/subdir2"));
         assert_eq!(tree_items[2].1, 1); // level
+    }
+
+    fn create_test_album(artist: &str, title: &str, base_path: &str, track_count: usize) -> Album {
+        let mut tracks = Vec::new();
+        for i in 0..track_count {
+            tracks.push(Track {
+                path: PathBuf::from(format!("{}/track{}.flac", base_path, i)),
+                title: None,
+                track_number: Some(i as u32),
+                duration_secs: None,
+                channels: None,
+            });
+        }
+        Album {
+            id: None,
+            artist: artist.to_string(),
+            title: title.to_string(),
+            year: None,
+            tracks,
+            album_art_path: None,
+        }
+    }
+
+    #[test]
+    fn test_next_track_removes_finished_album_and_advances() {
+        let mut app = App::new();
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+
+        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.expanded_queue_items = vec![false, false];
+        app.current_queue_index = Some(0);
+        app.is_playing = true;
+
+        let first_path = app.current_track_path().unwrap();
+        assert!(first_path.to_string_lossy().contains("track0.flac"));
+
+        let second_path = app.next_track().unwrap();
+        assert!(second_path.to_string_lossy().contains("track1.flac"));
+        assert_eq!(app.queue.len(), 2);
+        assert_eq!(app.current_queue_index, Some(0));
+
+        let third_path = app.next_track().unwrap();
+        assert!(third_path
+            .to_string_lossy()
+            .contains("album2/track0.flac"));
+        assert_eq!(app.queue.len(), 1);
+        assert_eq!(app.current_queue_index, Some(0));
+
+        let fourth_path = app.next_track().unwrap();
+        assert!(fourth_path
+            .to_string_lossy()
+            .contains("album2/track1.flac"));
+
+        let none = app.next_track();
+        assert!(none.is_none());
+        assert!(app.queue.is_empty());
+        assert!(app.current_queue_index.is_none());
+        assert!(!app.is_playing);
+    }
+
+    #[test]
+    fn test_adjust_eq_parameters() {
+        let mut app = App::new();
+        app.plugin_chain.add_plugin(&PluginType::EQ);
+        app.editing_plugin_index = Some(0);
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let filters = match &plugin.settings {
+            PluginSettings::EQ { filters } => filters,
+            _ => panic!("Expected EQ plugin"),
+        };
+        assert!(!filters.is_empty());
+
+        let orig_freq = filters[0].frequency;
+        let orig_q = filters[0].q;
+        let orig_gain = filters[0].gain_db;
+        let orig_type = filters[0].filter_type;
+
+        // Frequency
+        app.plugin_param_selection = 0;
+        assert!(app.adjust_selected_param(1.0));
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let filters = match &plugin.settings {
+            PluginSettings::EQ { filters } => filters,
+            _ => panic!("Expected EQ plugin"),
+        };
+        assert_ne!(filters[0].frequency, orig_freq);
+
+        // Q
+        app.plugin_param_selection = 1;
+        assert!(app.adjust_selected_param(1.0));
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let filters = match &plugin.settings {
+            PluginSettings::EQ { filters } => filters,
+            _ => panic!("Expected EQ plugin"),
+        };
+        assert_ne!(filters[0].q, orig_q);
+
+        // Gain
+        app.plugin_param_selection = 2;
+        assert!(app.adjust_selected_param(1.0));
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let filters = match &plugin.settings {
+            PluginSettings::EQ { filters } => filters,
+            _ => panic!("Expected EQ plugin"),
+        };
+        assert_ne!(filters[0].gain_db, orig_gain);
+
+        // Type
+        app.plugin_param_selection = 3;
+        assert!(app.adjust_selected_param(1.0));
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let filters = match &plugin.settings {
+            PluginSettings::EQ { filters } => filters,
+            _ => panic!("Expected EQ plugin"),
+        };
+        assert_ne!(filters[0].filter_type, orig_type);
+    }
+
+    #[test]
+    fn test_adjust_upmixer_parameters() {
+        let mut app = App::new();
+        app.plugin_chain.add_plugin(&PluginType::Upmixer);
+        app.editing_plugin_index = Some(0);
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let (orig_speaker_config, orig_front_direct, orig_front_ambient, orig_rear_ambient,
+             orig_lfe_cutoff, orig_stereo_width, orig_bandpass, orig_height_gain,
+             orig_lfe_gain, orig_enable_subharm, orig_subharm_gain) = match &plugin.settings {
+            PluginSettings::Upmixer {
+                speaker_config,
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                lfe_cutoff_hz,
+                stereo_width,
+                bandpass_hz,
+                height_gain,
+                lfe_gain,
+                enable_subharmonic_synth,
+                subharmonic_gain,
+            } => (
+                speaker_config.clone(),
+                *gain_front_direct,
+                *gain_front_ambient,
+                *gain_rear_ambient,
+                *lfe_cutoff_hz,
+                *stereo_width,
+                *bandpass_hz,
+                *height_gain,
+                *lfe_gain,
+                *enable_subharmonic_synth,
+                *subharmonic_gain,
+            ),
+            _ => panic!("Expected Upmixer plugin"),
+        };
+
+        for idx in 0..11 {
+            app.plugin_param_selection = idx;
+            assert!(app.adjust_selected_param(1.0));
+        }
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        if let PluginSettings::Upmixer {
+            speaker_config,
+            gain_front_direct,
+            gain_front_ambient,
+            gain_rear_ambient,
+            lfe_cutoff_hz,
+            stereo_width,
+            bandpass_hz,
+            height_gain,
+            lfe_gain,
+            enable_subharmonic_synth,
+            subharmonic_gain,
+        } = &plugin.settings
+        {
+            assert_ne!(*speaker_config, orig_speaker_config);
+            assert_ne!(*gain_front_direct, orig_front_direct);
+            assert_ne!(*gain_front_ambient, orig_front_ambient);
+            assert_ne!(*gain_rear_ambient, orig_rear_ambient);
+            assert_ne!(*lfe_cutoff_hz, orig_lfe_cutoff);
+            assert_ne!(*stereo_width, orig_stereo_width);
+            assert_ne!(*bandpass_hz, orig_bandpass);
+            assert_ne!(*height_gain, orig_height_gain);
+            assert_ne!(*lfe_gain, orig_lfe_gain);
+            assert_ne!(*enable_subharmonic_synth, orig_enable_subharm);
+            assert_ne!(*subharmonic_gain, orig_subharm_gain);
+        } else {
+            panic!("Expected Upmixer plugin");
+        }
+    }
+
+    #[test]
+    fn test_adjust_compressor_limiter_gate_loudness_parameters() {
+        // Compressor
+        let mut app = App::new();
+        app.plugin_chain.add_plugin(&PluginType::Compressor);
+        app.editing_plugin_index = Some(0);
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let (
+            orig_thresh,
+            orig_ratio,
+            orig_attack,
+            orig_release,
+            orig_knee,
+            orig_makeup,
+            orig_mix,
+            orig_auto_makeup,
+            orig_link_channels,
+            orig_sidechain_hpf,
+        ) = match &plugin.settings {
+            PluginSettings::Compressor {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                makeup_gain_db,
+                mix,
+                auto_makeup,
+                link_channels,
+                sidechain_hpf_hz,
+            } => (
+                *threshold_db,
+                *ratio,
+                *attack_ms,
+                *release_ms,
+                *knee_db,
+                *makeup_gain_db,
+                *mix,
+                *auto_makeup,
+                *link_channels,
+                *sidechain_hpf_hz,
+            ),
+            _ => panic!("Expected Compressor plugin"),
+        };
+
+        for idx in 0..10 {
+            app.plugin_param_selection = idx;
+            assert!(app.adjust_selected_param(1.0));
+        }
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        if let PluginSettings::Compressor {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            makeup_gain_db,
+            mix,
+            auto_makeup,
+            link_channels,
+            sidechain_hpf_hz,
+        } = &plugin.settings
+        {
+            assert_ne!(*threshold_db, orig_thresh);
+            assert_ne!(*ratio, orig_ratio);
+            assert_ne!(*attack_ms, orig_attack);
+            assert_ne!(*release_ms, orig_release);
+            assert_ne!(*knee_db, orig_knee);
+            assert_ne!(*makeup_gain_db, orig_makeup);
+            assert_ne!(*mix, orig_mix);
+            assert_ne!(*auto_makeup, orig_auto_makeup);
+            assert_ne!(*link_channels, orig_link_channels);
+            assert_ne!(*sidechain_hpf_hz, orig_sidechain_hpf);
+        }
+
+        // Limiter
+        let mut app = App::new();
+        app.plugin_chain.add_plugin(&PluginType::Limiter);
+        app.editing_plugin_index = Some(0);
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let (orig_thresh, orig_rel, orig_mix) = match &plugin.settings {
+            PluginSettings::Limiter {
+                threshold_db,
+                release_ms,
+                mix,
+            } => (*threshold_db, *release_ms, *mix),
+            _ => panic!("Expected Limiter plugin"),
+        };
+        for idx in 0..3 {
+            app.plugin_param_selection = idx;
+            assert!(app.adjust_selected_param(1.0));
+        }
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        if let PluginSettings::Limiter {
+            threshold_db,
+            release_ms,
+            mix,
+        } = &plugin.settings
+        {
+            assert_ne!(*threshold_db, orig_thresh);
+            assert_ne!(*release_ms, orig_rel);
+            assert_ne!(*mix, orig_mix);
+        }
+
+        // Gate
+        let mut app = App::new();
+        app.plugin_chain.add_plugin(&PluginType::Gate);
+        app.editing_plugin_index = Some(0);
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let (orig_thresh, orig_ratio, orig_attack, orig_release, orig_mix,
+             orig_link, orig_hpf) = match &plugin.settings {
+            PluginSettings::Gate {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+            } => (
+                *threshold_db,
+                *ratio,
+                *attack_ms,
+                *release_ms,
+                *mix,
+                *link_channels,
+                *sidechain_hpf_hz,
+            ),
+            _ => panic!("Expected Gate plugin"),
+        };
+        for idx in 0..7 {
+            app.plugin_param_selection = idx;
+            assert!(app.adjust_selected_param(1.0));
+        }
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        if let PluginSettings::Gate {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
+        } = &plugin.settings
+        {
+            assert_ne!(*threshold_db, orig_thresh);
+            assert_ne!(*ratio, orig_ratio);
+            assert_ne!(*attack_ms, orig_attack);
+            assert_ne!(*release_ms, orig_release);
+            assert_ne!(*mix, orig_mix);
+            assert_ne!(*link_channels, orig_link);
+            assert_ne!(*sidechain_hpf_hz, orig_hpf);
+        }
+
+        // Loudness compensation
+        let mut app = App::new();
+        app.plugin_chain.add_plugin(&PluginType::LoudnessCompensation);
+        app.editing_plugin_index = Some(0);
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let (orig_target, orig_min, orig_max) = match &plugin.settings {
+            PluginSettings::LoudnessCompensation {
+                target_lufs,
+                min_gain_db,
+                max_gain_db,
+            } => (*target_lufs, *min_gain_db, *max_gain_db),
+            _ => panic!("Expected LoudnessCompensation plugin"),
+        };
+        for idx in 0..3 {
+            app.plugin_param_selection = idx;
+            assert!(app.adjust_selected_param(1.0));
+        }
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        if let PluginSettings::LoudnessCompensation {
+            target_lufs,
+            min_gain_db,
+            max_gain_db,
+        } = &plugin.settings
+        {
+            assert_ne!(*target_lufs, orig_target);
+            assert_ne!(*min_gain_db, orig_min);
+            assert_ne!(*max_gain_db, orig_max);
+        }
+    }
+
+    #[test]
+    fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
+        let mut app = App::new();
+        app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
+        app.editing_plugin_index = Some(0);
+        app.selected_plugin_index = 0;
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        let (orig_sofa, orig_channels, orig_opt, orig_ext, orig_near) =
+            match &plugin.settings {
+                PluginSettings::BinauralDecoder {
+                    sofa_file,
+                    input_channels,
+                    enable_optimization,
+                    externalization,
+                    near_field_strength,
+                } => (
+                    sofa_file.clone(),
+                    *input_channels,
+                    *enable_optimization,
+                    *externalization,
+                    *near_field_strength,
+                ),
+                _ => panic!("Expected BinauralDecoder plugin"),
+            };
+
+        // Adjust numeric / boolean parameters via adjust_selected_param
+        for idx in 1..5 {
+            app.plugin_param_selection = idx;
+            assert!(app.adjust_selected_param(1.0));
+        }
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        if let PluginSettings::BinauralDecoder {
+            sofa_file,
+            input_channels,
+            enable_optimization,
+            externalization,
+            near_field_strength,
+        } = &plugin.settings
+        {
+            assert_eq!(*sofa_file, orig_sofa); // unchanged by adjust_selected_param
+            assert_ne!(*input_channels, orig_channels);
+            assert_ne!(*enable_optimization, orig_opt);
+            assert_ne!(*externalization, orig_ext);
+            assert_ne!(*near_field_strength, orig_near);
+        } else {
+            panic!("Expected BinauralDecoder plugin");
+        }
+
+        // Now set SOFA file via load_sofa_file path
+        app.sofa_file_input = "/tmp/test.sofa".to_string();
+        app.load_sofa_file().unwrap();
+
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        if let PluginSettings::BinauralDecoder { sofa_file, .. } = &plugin.settings {
+            assert_eq!(sofa_file, "/tmp/test.sofa");
+        } else {
+            panic!("Expected BinauralDecoder plugin");
+        }
     }
 }

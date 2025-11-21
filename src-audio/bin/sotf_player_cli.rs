@@ -5,6 +5,7 @@ use sotf_audio::{AudioStreamingManager, PluginConfig, StreamingState};
 use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
+use std::fs::OpenOptions;
 
 fn parse_loudness_compensation(vals: &Vec<f64>) -> Result<Option<LoudnessCompensation>, String> {
     let (ref_level, low, high) = match vals.as_slice() {
@@ -306,22 +307,37 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
 
+    let log_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("sotf_cli_player.log")
+        .expect("Failed to open log file");
+
+    env_logger::Builder::from_default_env()
+        .target(env_logger::Target::Pipe(Box::new(log_file)))
+        .filter_level(log::LevelFilter::Debug)
+        // Log all modules including Symphonia at debug level
+        .filter_module("symphonia_core", log::LevelFilter::Debug)
+        .init();
+
+    log::info!("SOTF CLI Player starting...");
+
     match cli.command {
         Commands::Devices => {
             if let Err(e) = list_devices() {
-                eprintln!("Error: {}", e);
+                log::error!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         Commands::ReplayGain { file } => match sotf_audio::replaygain::analyze_file(&file) {
             Ok(info) => {
-                println!("ReplayGain analysis:");
-                println!("  File: {:?}", file);
-                println!("  Gain: {:+.2} dB", info.gain);
-                println!("  Peak: {:.6}", info.peak);
+                log::info!("ReplayGain analysis:");
+                log::info!("  File: {:?}", file);
+                log::info!("  Gain: {:+.2} dB", info.gain);
+                log::info!("  Peak: {:.6}", info.peak);
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                log::error!("Error: {}", e);
                 std::process::exit(1);
             }
         },
@@ -354,7 +370,7 @@ fn main() {
             let filter_params = match parse_filters(&filters) {
                 Ok(params) => params,
                 Err(e) => {
-                    eprintln!("Error parsing filters: {}", e);
+                    log::error!("Error parsing filters: {}", e);
                     std::process::exit(1);
                 }
             };
@@ -362,7 +378,7 @@ fn main() {
             // Parse loudness compensation
             let loudness: Option<LoudnessCompensation> = match loudness_compensation {
                 Some(ref vals) => parse_loudness_compensation(vals).unwrap_or_else(|e| {
-                    eprintln!("Error in --loudness-compensation: {}", e);
+                    log::error!("Error in --loudness-compensation: {}", e);
                     std::process::exit(1);
                 }),
                 None => None,
@@ -392,26 +408,26 @@ fn main() {
                 binaural_externalization,
                 binaural_near_field,
             ) {
-                eprintln!("Error: {}", e);
+                log::error!("Error: {}", e);
                 std::process::exit(1);
             }
         }
         Commands::Status => {
-            println!("Status command not yet implemented (requires running manager instance)");
+            log::info!("Status command not yet implemented (requires running manager instance)");
         }
     }
 }
 
 fn list_devices() -> Result<(), String> {
-    println!("Enumerating audio devices...\n");
+    log::info!("Enumerating audio devices...\n");
 
     let devices = sotf_audio::devices::get_audio_devices()
         .map_err(|e| format!("Failed to get devices: {}", e))?;
 
     // Print input devices
     if let Some(input_devices) = devices.get("input") {
-        println!("Input Devices:");
-        println!("{}", "=".repeat(80));
+        log::info!("Input Devices:");
+        log::info!("{}", "=".repeat(80));
         for (idx, device) in input_devices.iter().enumerate() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
 
@@ -428,7 +444,7 @@ fn list_devices() -> Result<(), String> {
                     )
                 };
 
-                println!(
+                log::info!(
                     "  [{}] {}{} - {} ch, {} (current: {} Hz), {}",
                     idx + 1,
                     device.name,
@@ -439,16 +455,16 @@ fn list_devices() -> Result<(), String> {
                     config.sample_format
                 );
             } else {
-                println!("  [{}] {}{}", idx + 1, device.name, default_marker);
+                log::info!("  [{}] {}{}", idx + 1, device.name, default_marker);
             }
         }
-        println!();
+        log::info!("");
     }
 
     // Print output devices
     if let Some(output_devices) = devices.get("output") {
-        println!("Output Devices:");
-        println!("{}", "=".repeat(80));
+        log::info!("Output Devices:");
+        log::info!("{}", "=".repeat(80));
         for (idx, device) in output_devices.iter().enumerate() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
 
@@ -465,7 +481,7 @@ fn list_devices() -> Result<(), String> {
                     )
                 };
 
-                println!(
+                log::info!(
                     "  [{}] {}{} - {} ch, {} (current: {} Hz), {}",
                     idx + 1,
                     device.name,
@@ -476,10 +492,10 @@ fn list_devices() -> Result<(), String> {
                     config.sample_format
                 );
             } else {
-                println!("  [{}] {}{}", idx + 1, device.name, default_marker);
+                log::info!("  [{}] {}{}", idx + 1, device.name, default_marker);
             }
         }
-        println!();
+        log::info!("");
     }
 
     Ok(())
@@ -706,18 +722,18 @@ fn play_stream(
     externalization: f32,
     near_field_strength: f32,
 ) -> Result<(), String> {
-    println!("Starting streaming playback...");
-    println!("  File: {:?}", file);
-    println!("  Device: {:?}", device.as_deref().unwrap_or("default"));
+    log::info!("Starting streaming playback...");
+    log::info!("  File: {:?}", file);
+    log::info!("  Device: {:?}", device.as_deref().unwrap_or("default"));
     if start_time > 0.0 {
-        println!("  Start time: {:.2}s", start_time);
+        log::info!("  Start time: {:.2}s", start_time);
     }
-    println!("  Filters: {}", filters.len());
+    log::info!("  Filters: {}", filters.len());
 
     if !filters.is_empty() {
-        println!("\nEQ Filters:");
+        log::info!("\nEQ Filters:");
         for (idx, filter) in filters.iter().enumerate() {
-            println!(
+            log::info!(
                 "  [{}] {} Hz, Q={:.2}, Gain={:.1} dB",
                 idx + 1,
                 filter.freq,
@@ -726,7 +742,7 @@ fn play_stream(
             );
         }
     }
-    println!();
+    log::info!("");
 
     // Create streaming manager with signal watching enabled (manager handles Ctrl+C)
     let mut streaming_manager = AudioStreamingManager::with_signal_watching(true);
@@ -736,15 +752,15 @@ fn play_stream(
         .load_file(&file)
         .map_err(|e| format!("Failed to load audio file: {}", e))?;
 
-    println!("Loaded audio file:");
-    println!("  Format: {}", audio_info.format);
-    println!("  Sample rate: {}Hz", audio_info.spec.sample_rate);
-    println!("  Channels: {}", audio_info.spec.channels);
-    println!("  Bits per sample: {}", audio_info.spec.bits_per_sample);
+    log::info!("Loaded audio file:");
+    log::info!("  Format: {}", audio_info.format);
+    log::info!("  Sample rate: {}Hz", audio_info.spec.sample_rate);
+    log::info!("  Channels: {}", audio_info.spec.channels);
+    log::info!("  Bits per sample: {}", audio_info.spec.bits_per_sample);
     if let Some(duration_secs) = audio_info.duration_seconds {
-        println!("  Duration: {:.2}s", duration_secs);
+        log::info!("  Duration: {:.2}s", duration_secs);
     }
-    println!();
+    log::info!("");
 
     // Build plugin chain
     let mut plugins = Vec::new();
@@ -762,14 +778,14 @@ fn play_stream(
         // Get channel count for the configuration
         let output_channel_count = get_speaker_config_channels(&upmixer_config)?;
 
-        println!("Enabling stereo-to-{} upmixer plugin:", upmixer_config);
-        println!("  Speaker configuration: {}", upmixer_config);
-        println!("  Output channels: {}", output_channel_count);
-        println!("  FFT size: {}", upmixer_fft_size);
-        println!("  Front direct gain: {:.2}", upmixer_gain_front_direct);
-        println!("  Front ambient gain: {:.2}", upmixer_gain_front_ambient);
-        println!("  Rear ambient gain: {:.2}", upmixer_gain_rear_ambient);
-        println!();
+        log::info!("Enabling stereo-to-{} upmixer plugin:", upmixer_config);
+        log::info!("  Speaker configuration: {}", upmixer_config);
+        log::info!("  Output channels: {}", output_channel_count);
+        log::info!("  FFT size: {}", upmixer_fft_size);
+        log::info!("  Front direct gain: {:.2}", upmixer_gain_front_direct);
+        log::info!("  Front ambient gain: {:.2}", upmixer_gain_front_ambient);
+        log::info!("  Rear ambient gain: {:.2}", upmixer_gain_rear_ambient);
+        log::info!("");
 
         let upmixer_plugin = create_upmixer_plugin_config(
             upmixer_config.clone(),
@@ -781,7 +797,7 @@ fn play_stream(
             subharmonic_gain,
         )?;
         plugins.push(upmixer_plugin);
-        eprintln!(
+        log::debug!(
             "Added upmixer plugin: 2ch -> {}ch ({})",
             output_channel_count, upmixer_config
         );
@@ -798,24 +814,24 @@ fn play_stream(
         // Input channels come from previous plugin (upmixer or original audio)
         let input_channels = output_channels;
 
-        println!("Enabling binaural decoder plugin:");
-        println!("  Input channels: {}", input_channels);
-        println!("  Output channels: 2 (binaural stereo)");
-        println!("  SOFA file: {:?}", sofa_path);
-        println!("  FFT size: {}", binaural_fft_size);
-        println!();
+        log::info!("Enabling binaural decoder plugin:");
+        log::info!("  Input channels: {}", input_channels);
+        log::info!("  Output channels: 2 (binaural stereo)");
+        log::info!("  SOFA file: {:?}", sofa_path);
+        log::info!("  FFT size: {}", binaural_fft_size);
+        log::info!("");
 
         let binaural_plugin =
             create_binaural_decoder_plugin_config(
-                sofa_path, 
-                input_channels, 
+                sofa_path,
+                input_channels,
                 binaural_fft_size,
                 enable_optimization,
                 externalization,
                 near_field_strength,
             )?;
         plugins.push(binaural_plugin);
-        eprintln!(
+        log::debug!(
             "Added binaural decoder plugin: {}ch -> 2ch (binaural)",
             input_channels
         );
@@ -829,14 +845,14 @@ fn play_stream(
     if let Some(ref lc) = loudness {
         let lc_plugin = create_loudness_compensation_plugin_config(lc)?;
         plugins.push(lc_plugin);
-        eprintln!("Added loudness compensation plugin");
+        log::debug!("Added loudness compensation plugin");
     }
 
     // EQ filters (assuming it is room eq)
     if !filters.is_empty() {
         let eq_plugin = create_eq_plugin_config(&filters)?;
         plugins.push(eq_plugin);
-        eprintln!("Added EQ plugin with {} filters", filters.len());
+        log::debug!("Added EQ plugin with {} filters", filters.len());
     }
 
     // 4. Channel mapping to hardware (last plugin before output)
@@ -856,17 +872,17 @@ fn play_stream(
         let max_hw_ch = output_channel_map.iter().max().map(|&v| v + 1).unwrap_or(0);
         let logical_output_channels = output_channel_map.len();
 
-        println!("\nChannel mapping enabled:");
-        println!("  Mapping: {}", mapping_str);
-        println!("  Logical input channels: {}", input_channel_map.len());
-        println!("  Logical output channels: {}", logical_output_channels);
-        println!("  Physical output channels: {:?}", output_channel_map);
-        println!("  Max HW channel: {}", max_hw_ch);
+        log::info!("\nChannel mapping enabled:");
+        log::info!("  Mapping: {}", mapping_str);
+        log::info!("  Logical input channels: {}", input_channel_map.len());
+        log::info!("  Logical output channels: {}", logical_output_channels);
+        log::info!("  Physical output channels: {:?}", output_channel_map);
+        log::info!("  Max HW channel: {}", max_hw_ch);
 
         let matrix_plugin =
             create_matrix_plugin_config(input_channel_map, output_channel_map, matrix)?;
         plugins.push(matrix_plugin);
-        eprintln!(
+        log::debug!(
             "Added matrix plugin: {}ch (logical) -> {} HW channels",
             logical_output_channels, max_hw_ch
         );
@@ -886,19 +902,19 @@ fn play_stream(
         streaming_manager
             .enable_loudness_monitoring()
             .map_err(|e| format!("Failed to enable loudness monitoring: {}", e))?;
-        println!("Real-time LUFS monitoring enabled");
+        log::info!("Real-time LUFS monitoring enabled");
     }
 
     // Seek to start time if specified
     if start_time > 0.0 {
-        println!("Seeking to {:.2}s...", start_time);
+        log::info!("Seeking to {:.2}s...", start_time);
         streaming_manager
             .seek(start_time)
             .map_err(|e| format!("Failed to seek: {}", e))?;
     }
 
-    println!("Streaming playback started successfully!");
-    println!("Press Ctrl+C to stop\n");
+    log::info!("Streaming playback started successfully!");
+    log::info!("Press Ctrl+C to stop\n");
 
     // Monitor playback
     let start_time_instant = std::time::Instant::now();
@@ -914,18 +930,18 @@ fn play_stream(
         // Print state changes
         if current_state != last_state {
             match current_state {
-                StreamingState::Loading => println!("State: Loading..."),
-                StreamingState::Ready => println!("State: Ready"),
-                StreamingState::Playing => println!("State: Playing"),
-                StreamingState::Paused => println!("State: Paused"),
-                StreamingState::Seeking => println!("State: Seeking..."),
+                StreamingState::Loading => log::info!("State: Loading..."),
+                StreamingState::Ready => log::info!("State: Ready"),
+                StreamingState::Playing => log::info!("State: Playing"),
+                StreamingState::Paused => log::info!("State: Paused"),
+                StreamingState::Seeking => log::info!("State: Seeking..."),
                 StreamingState::Error => {
-                    println!("State: Error!");
+                    log::error!("State: Error!");
                     break;
                 }
                 StreamingState::Idle => {
                     if last_state == StreamingState::Playing {
-                        println!("\nPlayback finished");
+                        log::info!("\nPlayback finished");
                     }
                     break;
                 }
@@ -956,18 +972,17 @@ fn play_stream(
                 };
                 // Dynamic ReplayGain relative to -18.0 LUFS reference
                 let rg = if st.is_infinite() { 0.0 } else { -18.0 - st };
-                print!(
-                    "\rLUFS: M={} S={}  RG={:+4.1} dB  Peak={:.3}  ",
+                log::debug!(
+                    "LUFS: M={} S={}  RG={:+4.1} dB  Peak={:.3}",
                     momentary_str, shortterm_str, rg, loudness.peak
                 );
-                std::io::Write::flush(&mut std::io::stdout()).ok();
                 last_shortterm = Some(st);
             }
         }
 
         // Check duration
         if duration > 0 && start_time_instant.elapsed().as_secs() >= duration {
-            println!("\n\nDuration reached, stopping...");
+            log::info!("\n\nDuration reached, stopping...");
             break;
         }
 
@@ -977,6 +992,6 @@ fn play_stream(
     // Manager handles its own cleanup via Drop
     // If stopped by signal, threads are already shut down
     // If stopped naturally (end of stream/duration), cleanup happens on drop
-    println!("Streaming playback stopped successfully");
+    log::info!("Streaming playback stopped successfully");
     Ok(())
 }

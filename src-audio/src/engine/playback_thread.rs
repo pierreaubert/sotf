@@ -372,6 +372,18 @@ fn run_playback_thread(
         // Read from message queue (non-blocking since we checked space)
         match message_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(ProcessingMessage::Frame(frame)) => {
+                // Validate channel count matches current configuration
+                // This prevents audio corruption during hot-reload when channel count changes
+                if frame.num_channels != channels {
+                    log::warn!(
+                        "[Playback Thread] Dropping frame with mismatched channels: \
+                         frame has {}, expected {} (hot-reload in progress)",
+                        frame.num_channels,
+                        channels
+                    );
+                    continue; // Discard this frame and wait for UpdateChannels command
+                }
+
                 // Write to ring buffer, handling partial writes
                 let mut data_slice = &frame.data[..];
                 

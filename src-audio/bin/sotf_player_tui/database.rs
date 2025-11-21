@@ -2,6 +2,8 @@ use rusqlite::{Connection, Result as SqlResult, params};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use chrono::{Datelike, Local, NaiveDateTime};
+
 use crate::config;
 use crate::library::{Album, Track};
 
@@ -714,6 +716,115 @@ impl MusicDatabase {
     }
 }
 
+/// Create a timestamped backup of an existing database file and prune old backups
+/// Backup files are named music-YYYYMMDD-HHMMSS.sqlite in the same directory
+pub fn backup_existing_database<P: AsRef<Path>>(
+    db_path: P,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let db_path = db_path.as_ref();
+
+    // Nothing to do if the database does not exist yet
+    if !db_path.exists() {
+        return Ok(());
+    }
+
+    let dir = match db_path.parent() {
+        Some(d) => d.to_path_buf(),
+        None => return Ok(()),
+    };
+
+    let now = Local::now().naive_local();
+    let filename = format!("music-{}.sqlite", now.format("%Y%m%d-%H%M%S"));
+    let backup_path = dir.join(filename);
+
+    std::fs::copy(db_path, &backup_path)?;
+
+    // Best-effort pruning; log on error but keep the freshly created backup
+    if let Err(e) = prune_old_backups(&dir) {
+        log::warn!("Failed to prune old database backups: {}", e);
+    }
+
+    Ok(())
+}
+
+fn parse_backup_timestamp(path: &Path) -> Option<NaiveDateTime> {
+    let file_name = path.file_name()?.to_str()?;
+    if !file_name.starts_with("music-") || !file_name.ends_with(".sqlite") {
+        return None;
+    }
+
+    let ts_part = &file_name["music-".len()..file_name.len() - ".sqlite".len()];
+    NaiveDateTime::parse_from_str(ts_part, "%Y%m%d-%H%M%S").ok()
+}
+
+/// Apply retention policy to backup files in the given directory:
+/// - Keep up to 3 backups per day
+/// - Then keep up to 1 per ISO week
+/// - Then keep up to 1 per month
+fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
+    use std::collections::HashMap;
+
+    let mut backups: Vec<(PathBuf, NaiveDateTime)> = Vec::new();
+
+    for entry in std::fs::read_dir(dir)? {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(dt) = parse_backup_timestamp(&path) {
+            backups.push((path, dt));
+        }
+    }
+
+    // Newest first so that recent backups are preferred
+    backups.sort_by_key(|(_, dt)| *dt);
+    backups.reverse();
+
+    let mut per_day: HashMap<(i32, u32, u32), usize> = HashMap::new();
+    let mut per_week: HashMap<(i32, u32), usize> = HashMap::new();
+    let mut per_month: HashMap<(i32, u32), usize> = HashMap::new();
+    let mut to_delete: Vec<PathBuf> = Vec::new();
+
+    for (path, dt) in backups {
+        let date = dt.date();
+        let day_key = (date.year(), date.month(), date.day());
+        let week = date.iso_week();
+        let week_key = (week.year(), week.week());
+        let month_key = (date.year(), date.month());
+
+        if per_day.get(&day_key).copied().unwrap_or(0) < 3 {
+            *per_day.entry(day_key).or_insert(0) += 1;
+            // Also count this backup towards week and month quotas
+            *per_week.entry(week_key).or_insert(0) += 1;
+            *per_month.entry(month_key).or_insert(0) += 1;
+            continue;
+        }
+
+        if per_week.get(&week_key).copied().unwrap_or(0) < 1 {
+            *per_week.entry(week_key).or_insert(0) += 1;
+            *per_month.entry(month_key).or_insert(0) += 1;
+            continue;
+        }
+
+        if per_month.get(&month_key).copied().unwrap_or(0) < 1 {
+            *per_month.entry(month_key).or_insert(0) += 1;
+            continue;
+        }
+
+        to_delete.push(path);
+    }
+
+    for path in to_delete {
+        let _ = std::fs::remove_file(path);
+    }
+
+    Ok(())
+}
+
 /// Get current Unix timestamp
 fn current_timestamp() -> i64 {
     SystemTime::now()
@@ -729,4 +840,63 @@ fn get_file_mtime(path: &Path) -> Option<u64> {
         .and_then(|meta| meta.modified().ok())
         .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_backup_existing_database_creates_backup_file() {
+        let temp = TempDir::new().unwrap();
+        let db_path = temp.path().join("music.db");
+        std::fs::write(&db_path, b"test").unwrap();
+
+        backup_existing_database(&db_path).unwrap();
+
+        let mut backups = Vec::new();
+        for entry in std::fs::read_dir(temp.path()).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().into_string().unwrap();
+            if name.starts_with("music-") && name.ends_with(".sqlite") {
+                backups.push(name);
+            }
+        }
+
+        assert_eq!(backups.len(), 1);
+    }
+
+    #[test]
+    fn test_prune_old_backups_limits_to_three_per_day() {
+        let temp = TempDir::new().unwrap();
+
+        // Create 5 backups for the same day
+        let ts = [
+            "20250101-010000",
+            "20250101-020000",
+            "20250101-030000",
+            "20250101-040000",
+            "20250101-050000",
+        ];
+
+        for t in &ts {
+            let path = temp.path().join(format!("music-{}.sqlite", t));
+            std::fs::write(path, b"test").unwrap();
+        }
+
+        prune_old_backups(temp.path()).unwrap();
+
+        let mut remaining = Vec::new();
+        for entry in std::fs::read_dir(temp.path()).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().into_string().unwrap();
+            if name.starts_with("music-") && name.ends_with(".sqlite") {
+                remaining.push(name);
+            }
+        }
+
+        // Only 3 backups for that day should remain
+        assert_eq!(remaining.len(), 3);
+    }
 }
