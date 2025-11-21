@@ -36,6 +36,9 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Add the target
 RUN rustup target add aarch64-unknown-linux-gnu
 
+# Install just (command runner)
+RUN cargo install just --locked
+
 RUN mkdir -p /root/bin && curl -s -L https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux-aarch64.tar.gz | tar -xzf - -C /root/bin && chmod 755 /root/bin/geckodriver
 
 # Set up cross-compilation environment

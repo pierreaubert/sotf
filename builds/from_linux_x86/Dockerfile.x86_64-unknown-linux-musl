@@ -9,6 +9,9 @@ RUN apt-get update && \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
+# Install just (command runner)
+RUN cargo install just --locked
+
 # Set up environment for static linking
 ENV RUSTFLAGS="-C target-feature=+crt-static"
 ENV PKG_CONFIG_ALL_STATIC=1
