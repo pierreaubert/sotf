@@ -10,6 +10,7 @@
 // - release: Time to return to unity gain (ms)
 // - lookahead: Lookahead time for predictive limiting (ms)
 // - soft: Enable soft limiting with saturation curve (more musical)
+// - mix: Dry/wet mix between unprocessed and limited signal (0.0 = dry, 1.0 = limited)
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -36,6 +37,10 @@ fn default_soft() -> bool {
     true
 }
 
+fn default_mix() -> f32 {
+    1.0
+}
+
 /// Configuration parameters for LimiterPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LimiterPluginParams {
@@ -47,6 +52,8 @@ pub struct LimiterPluginParams {
     pub lookahead_ms: f32,
     #[serde(default = "default_soft")]
     pub soft: bool,
+    #[serde(default = "default_mix")]
+    pub mix: f32,
 }
 
 // ============================================================================
@@ -70,6 +77,9 @@ pub struct LimiterPlugin {
 
     param_soft: ParameterId,
     soft: bool,
+
+    param_mix: ParameterId,
+    mix: f32,
 
     // State
     envelope: f32,                   // Current gain reduction envelope
@@ -110,6 +120,9 @@ impl LimiterPlugin {
             param_soft: ParameterId::from("soft"),
             soft,
 
+            param_mix: ParameterId::from("mix"),
+            mix: 1.0,
+
             envelope: 0.0,
             release_coeff: 0.0,
             lookahead_buffer: VecDeque::new(),
@@ -119,13 +132,17 @@ impl LimiterPlugin {
 
     /// Create a new limiter plugin from configuration parameters
     pub fn from_params(channels: usize, params: LimiterPluginParams) -> Self {
-        Self::new(
+        let mut plugin = Self::new(
             channels,
             params.threshold_db,
-            params.release_ms,
-            params.lookahead_ms,
+            params.release_ms.max(1.0),
+            params.lookahead_ms.max(0.0),
             params.soft,
-        )
+        );
+
+        plugin.mix = params.mix.clamp(0.0, 1.0);
+
+        plugin
     }
 
     /// Calculate time coefficient for envelope follower
@@ -157,10 +174,11 @@ impl LimiterPlugin {
     /// This provides a more musical limiting with smooth transition into saturation
     fn apply_soft_limit(&self, sample: f32, threshold_linear: f32) -> f32 {
         if self.soft {
-            // Use tanh for smooth saturation curve
-            // Normalize by threshold, apply tanh, scale back
+            // Use tanh for smooth saturation curve.
+            // Normalize by threshold, apply gentle drive, then scale back.
             let normalized = sample / threshold_linear;
-            threshold_linear * normalized.tanh()
+            let driven = normalized * 0.75;
+            threshold_linear * driven.tanh()
         } else {
             // Hard limiting (clamp to threshold)
             sample.clamp(-threshold_linear, threshold_linear)
@@ -193,6 +211,8 @@ impl InPlacePlugin for LimiterPlugin {
                 .with_description("Lookahead time for predictive limiting (ms)"),
             Parameter::new_bool("soft", "Soft", false)
                 .with_description("Enable soft limiting with saturation curve (more musical)"),
+            Parameter::new_float("mix", "Mix", 1.0, 0.0, 1.0)
+                .with_description("Dry/wet mix (0 = dry, 1 = limited)"),
         ]
     }
 
@@ -200,13 +220,18 @@ impl InPlacePlugin for LimiterPlugin {
         if id == self.param_threshold {
             self.threshold_db = value.as_float().ok_or("Invalid threshold value")?;
         } else if id == self.param_release {
-            self.release_ms = value.as_float().ok_or("Invalid release value")?;
+            self.release_ms = value.as_float().ok_or("Invalid release value")?.max(1.0);
             self.update_coefficients();
         } else if id == self.param_lookahead {
-            self.lookahead_ms = value.as_float().ok_or("Invalid lookahead value")?;
+            self.lookahead_ms = value.as_float().ok_or("Invalid lookahead value")?.max(0.0);
             self.update_coefficients();
         } else if id == self.param_soft {
             self.soft = value.as_bool().ok_or("Invalid soft value")?;
+        } else if id == self.param_mix {
+            self.mix = value
+                .as_float()
+                .ok_or("Invalid mix value")?
+                .clamp(0.0, 1.0);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -222,6 +247,8 @@ impl InPlacePlugin for LimiterPlugin {
             Some(ParameterValue::Float(self.lookahead_ms))
         } else if id == &self.param_soft {
             Some(ParameterValue::Bool(self.soft))
+        } else if id == &self.param_mix {
+            Some(ParameterValue::Float(self.mix))
         } else {
             None
         }
@@ -246,6 +273,8 @@ impl InPlacePlugin for LimiterPlugin {
     ) -> PluginResult<()> {
         let num_frames = context.num_frames;
         let threshold_linear = 10.0_f32.powf(self.threshold_db / 20.0);
+        let dry_mix = 1.0 - self.mix;
+        let wet_mix = self.mix;
 
         for frame in 0..num_frames {
             // Process all channels for this frame
@@ -298,8 +327,12 @@ impl InPlacePlugin for LimiterPlugin {
                     // Apply gain to delayed sample
                     let limited_sample = delayed_sample * gain;
 
-                    // Apply soft limiting if enabled (provides additional saturation)
-                    buffer[sample_idx] = self.apply_soft_limit(limited_sample, threshold_linear);
+                    // Apply soft/hard limiting to obtain wet signal
+                    let wet = self.apply_soft_limit(limited_sample, threshold_linear);
+                    let dry = delayed_sample;
+
+                    // Dry/wet mix
+                    buffer[sample_idx] = dry_mix * dry + wet_mix * wet;
                 } else {
                     buffer[sample_idx] = 0.0;
                 }
@@ -344,4 +377,49 @@ mod tests {
             assert!(sample.abs() <= 1.0, "Sample {} exceeds 1.0", sample);
         }
     }
+
+	#[test]
+	fn test_limiter_additional_parameters_defaults() {
+		let limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
+
+		assert_eq!(limiter.mix, 1.0);
+	}
+
+	#[test]
+	fn test_limiter_mix_parameter_set_get() {
+		let mut limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
+		limiter.initialize(48000).unwrap();
+
+		limiter
+			.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+			.unwrap();
+
+		let mix = limiter.get_parameter(&ParameterId::from("mix"));
+		assert_eq!(mix, Some(ParameterValue::Float(0.5)));
+	}
+
+	#[test]
+	fn test_limiter_soft_vs_hard_behaviour() {
+		let mut hard = LimiterPlugin::new(1, 0.0, 50.0, 0.0, false);
+		let mut soft = LimiterPlugin::new(1, 0.0, 50.0, 0.0, true);
+		hard.initialize(48000).unwrap();
+		soft.initialize(48000).unwrap();
+
+		let context = ProcessContext {
+			num_frames: 1,
+			sample_rate: 48000,
+		};
+
+		let mut hard_buf = vec![2.0_f32];
+		let mut soft_buf = vec![2.0_f32];
+
+		hard.process_in_place(&mut hard_buf, &context).unwrap();
+		soft.process_in_place(&mut soft_buf, &context).unwrap();
+
+		assert!(hard_buf[0].abs() <= 1.0);
+		assert!(soft_buf[0].abs() <= 1.0);
+		// Soft limiter should not produce a larger peak than the hard limiter
+		// for the same hot input, ensuring a safe, rounded response.
+		assert!(soft_buf[0].abs() <= hard_buf[0].abs());
+	}
 }
