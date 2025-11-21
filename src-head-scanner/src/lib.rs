@@ -48,6 +48,7 @@ pub mod camera;
 pub mod convexhull;
 pub mod coverage;
 pub mod error;
+pub mod ffi; // FFI bindings for iOS/Swift
 pub mod guidance;
 pub mod mesh;
 pub mod pointcloud;
