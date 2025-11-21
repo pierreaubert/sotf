@@ -10,6 +10,7 @@ repository = { workspace = true }
 [features]
 default = ["sofa"]
 sofa = ["hdf5"]  # Enable SOFA file generation
+bem = ["netcdf", "rustfft"]  # Enable BEM solver integration
 
 [lib]
 name = "head_scanner"
@@ -57,6 +58,11 @@ delaunator = "1.0"  # Delaunay triangulation
 # SOFA file generation (HDF5)
 hdf5 = { version = "0.8", optional = true }
 chrono = "0.4"  # For timestamps in SOFA files
+
+# BEM solver integration (NetCDF + FFT)
+netcdf = { version = "0.9", optional = true }  # NetCDF file parsing
+rustfft = { version = "6.2", optional = true }  # FFT for frequency → time domain conversion
+num-complex = "0.4"  # Complex numbers for FFT
 
 # Async and parallelism
 rayon = { workspace = true }

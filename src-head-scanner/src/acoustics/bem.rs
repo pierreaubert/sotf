@@ -270,15 +270,224 @@ impl BEMSolver {
             )));
         }
 
-        // TODO: Implement NetCDF parsing and IFFT
-        // This requires:
-        // 1. NetCDF library (netcdf or hdf5)
-        // 2. FFT library (rustfft)
-        // 3. Conversion from frequency domain to time domain
+        #[cfg(feature = "bem")]
+        {
+            self.parse_netcdf_and_convert(&hrtf_file, target_sample_rate)
+        }
 
-        Err(ScannerError::InvalidConfig(
-            "BEM result import not yet implemented. Use analytical HRTF for now.".to_string(),
-        ))
+        #[cfg(not(feature = "bem"))]
+        {
+            Err(ScannerError::InvalidConfig(
+                "BEM support not enabled. Rebuild with --features bem".to_string(),
+            ))
+        }
+    }
+
+    /// Parse NetCDF file and convert to impulse responses
+    #[cfg(feature = "bem")]
+    fn parse_netcdf_and_convert(
+        &self,
+        netcdf_path: &Path,
+        target_sample_rate: f32,
+    ) -> ScannerResult<(Vec<Point3<f32>>, Vec<Vec<Vec<f32>>>)> {
+        use netcdf::File as NetCDFFile;
+
+        log::info!("Parsing NetCDF file...");
+
+        // Open NetCDF file
+        let file = NetCDFFile::open(netcdf_path)
+            .map_err(|e| ScannerError::Io(format!("Failed to open NetCDF file: {}", e)))?;
+
+        // Read source positions
+        let source_positions = self.read_source_positions(&file)?;
+        log::info!("  Sources: {}", source_positions.len());
+
+        // Read frequency-domain HRTFs
+        let frequency_hrtfs = self.read_frequency_hrtfs(&file)?;
+        log::info!("  Frequencies: {}", frequency_hrtfs[0][0].len());
+
+        // Convert to time domain using IFFT
+        log::info!("Converting to time domain (IFFT)...");
+        let impulse_responses = self.convert_to_time_domain(frequency_hrtfs, target_sample_rate)?;
+
+        log::info!("✓ BEM results imported successfully");
+
+        Ok((source_positions, impulse_responses))
+    }
+
+    /// Read source positions from NetCDF file
+    #[cfg(feature = "bem")]
+    fn read_source_positions(&self, file: &netcdf::File) -> ScannerResult<Vec<Point3<f32>>> {
+        // MESH2HRTF typically stores source positions in a variable named "sourcePosition"
+        // with dimensions [num_sources, 3]
+
+        let var = file
+            .variable("sourcePosition")
+            .ok_or_else(|| {
+                ScannerError::InvalidConfig("sourcePosition variable not found in NetCDF".to_string())
+            })?;
+
+        let data: Vec<f32> = var
+            .values::<f32, _>(None, None)
+            .map_err(|e| ScannerError::Io(format!("Failed to read source positions: {}", e)))?
+            .into_iter()
+            .collect();
+
+        // Convert flat array to Vec<Point3>
+        let num_sources = data.len() / 3;
+        let mut positions = Vec::with_capacity(num_sources);
+
+        for i in 0..num_sources {
+            let x = data[i * 3] * 100.0; // Convert m to cm
+            let y = data[i * 3 + 1] * 100.0;
+            let z = data[i * 3 + 2] * 100.0;
+            positions.push(Point3::new(x, y, z));
+        }
+
+        Ok(positions)
+    }
+
+    /// Read frequency-domain HRTFs from NetCDF file
+    #[cfg(feature = "bem")]
+    fn read_frequency_hrtfs(&self, file: &netcdf::File) -> ScannerResult<Vec<Vec<Vec<(f32, f32)>>>> {
+        use num_complex::Complex;
+
+        // MESH2HRTF stores complex transfer functions
+        // Typically: "transferFunction" variable with dimensions [num_sources, num_receivers, num_frequencies, 2]
+        // Last dimension is [real, imag]
+
+        let var = file
+            .variable("transferFunction")
+            .ok_or_else(|| {
+                ScannerError::InvalidConfig("transferFunction variable not found in NetCDF".to_string())
+            })?;
+
+        let shape = var.shape();
+        if shape.len() < 4 {
+            return Err(ScannerError::InvalidConfig(
+                "Invalid transferFunction shape in NetCDF".to_string(),
+            ));
+        }
+
+        let num_sources = shape[0];
+        let num_receivers = shape[1];
+        let num_frequencies = shape[2];
+
+        log::info!(
+            "  NetCDF shape: {} sources × {} receivers × {} frequencies",
+            num_sources,
+            num_receivers,
+            num_frequencies
+        );
+
+        let data: Vec<f32> = var
+            .values::<f32, _>(None, None)
+            .map_err(|e| ScannerError::Io(format!("Failed to read transfer functions: {}", e)))?
+            .into_iter()
+            .collect();
+
+        // Convert to nested structure: [source][receiver][frequency] = (real, imag)
+        let mut hrtfs = vec![vec![vec![(0.0f32, 0.0f32); num_frequencies]; num_receivers]; num_sources];
+
+        for src in 0..num_sources {
+            for rec in 0..num_receivers {
+                for freq in 0..num_frequencies {
+                    let idx = ((src * num_receivers + rec) * num_frequencies + freq) * 2;
+                    let real = data[idx];
+                    let imag = data[idx + 1];
+                    hrtfs[src][rec][freq] = (real, imag);
+                }
+            }
+        }
+
+        Ok(hrtfs)
+    }
+
+    /// Convert frequency-domain HRTFs to time-domain impulse responses using IFFT
+    #[cfg(feature = "bem")]
+    fn convert_to_time_domain(
+        &self,
+        frequency_hrtfs: Vec<Vec<Vec<(f32, f32)>>>,
+        target_sample_rate: f32,
+    ) -> ScannerResult<Vec<Vec<Vec<f32>>>> {
+        use num_complex::Complex;
+        use rustfft::{FftPlanner, num_complex::Complex as FftComplex};
+
+        let num_sources = frequency_hrtfs.len();
+        let num_receivers = frequency_hrtfs[0].len();
+        let num_frequencies = frequency_hrtfs[0][0].len();
+
+        // Determine IFFT size (power of 2, typically 2x frequency points for Nyquist)
+        let fft_size = (num_frequencies * 2).next_power_of_two();
+
+        log::info!("  IFFT size: {} samples", fft_size);
+
+        // Create IFFT planner
+        let mut planner = FftPlanner::new();
+        let ifft = planner.plan_fft_inverse(fft_size);
+
+        // Convert each HRTF
+        let mut impulse_responses = Vec::with_capacity(num_sources);
+
+        for (src_idx, source_hrtfs) in frequency_hrtfs.iter().enumerate() {
+            let mut source_irs = Vec::with_capacity(num_receivers);
+
+            for receiver_hrtf in source_hrtfs {
+                // Prepare frequency-domain data
+                let mut freq_data: Vec<FftComplex<f32>> = vec![FftComplex::new(0.0, 0.0); fft_size];
+
+                // Copy frequency data (assuming first half is positive frequencies)
+                for (i, &(real, imag)) in receiver_hrtf.iter().enumerate() {
+                    freq_data[i] = FftComplex::new(real, imag);
+                }
+
+                // Mirror for negative frequencies (Hermitian symmetry for real signals)
+                for i in 1..num_frequencies {
+                    let conj = freq_data[i].conj();
+                    freq_data[fft_size - i] = conj;
+                }
+
+                // Perform IFFT
+                ifft.process(&mut freq_data);
+
+                // Extract real part and normalize
+                let normalization = 1.0 / fft_size as f32;
+                let ir: Vec<f32> = freq_data
+                    .iter()
+                    .map(|c| c.re * normalization)
+                    .collect();
+
+                // Truncate or pad to desired length (512 samples standard)
+                let target_length = 512;
+                let mut final_ir = vec![0.0f32; target_length];
+                let copy_length = ir.len().min(target_length);
+                final_ir[..copy_length].copy_from_slice(&ir[..copy_length]);
+
+                // Apply windowing to reduce artifacts
+                self.apply_window(&mut final_ir);
+
+                source_irs.push(final_ir);
+            }
+
+            impulse_responses.push(source_irs);
+
+            if (src_idx + 1) % 100 == 0 {
+                log::info!("  Processed {}/{} sources", src_idx + 1, num_sources);
+            }
+        }
+
+        Ok(impulse_responses)
+    }
+
+    /// Apply Hann window to reduce IFFT artifacts
+    #[cfg(feature = "bem")]
+    fn apply_window(&self, ir: &mut [f32]) {
+        let n = ir.len();
+        for (i, sample) in ir.iter_mut().enumerate() {
+            // Hann window: 0.5 * (1 - cos(2π * i / (N-1)))
+            let window = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos());
+            *sample *= window;
+        }
     }
 }
 
