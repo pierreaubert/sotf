@@ -60,8 +60,8 @@ hdf5 = { version = "0.8", optional = true }
 chrono = "0.4"  # For timestamps in SOFA files
 
 # BEM solver integration (NetCDF + FFT)
-netcdf = { version = "0.9", optional = true }  # NetCDF file parsing
-rustfft = { version = "6.2", optional = true }  # FFT for frequency → time domain conversion
+netcdf = { workspace = true, optional = true }  # NetCDF file parsing
+rustfft = { workspace = true, optional = true }  # FFT for frequency → time domain conversion
 num-complex = "0.4"  # Complex numbers for FFT
 
 # Async and parallelism
