@@ -220,7 +220,7 @@ fn test_compressor_parameters() {
 
     // Test parameter queries
     let params = compressor.parameters();
-    assert_eq!(params.len(), 6);
+    assert_eq!(params.len(), 10);
 
     // Modify threshold
     compressor
