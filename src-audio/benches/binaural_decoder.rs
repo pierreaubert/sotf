@@ -23,6 +23,7 @@ fn create_decoder(input_channels: usize, fft_size: usize, optimization: bool) ->
 /// Benchmark audio processing with different channel configurations
 fn bench_process_channels(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_process_channels");
+    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
 
     let sample_rate = 48000;
     let block_size = 512;
@@ -62,6 +63,7 @@ fn bench_process_channels(c: &mut Criterion) {
 /// Benchmark different FFT sizes
 fn bench_process_fft_sizes(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_fft_sizes");
+    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
 
     let sample_rate = 48000;
     let block_size = 512;
@@ -101,6 +103,7 @@ fn bench_process_fft_sizes(c: &mut Criterion) {
 /// Benchmark optimization enabled vs disabled
 fn bench_optimization_comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_optimization");
+    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
 
     let sample_rate = 48000;
     let block_size = 512;
@@ -143,6 +146,7 @@ fn bench_optimization_comparison(c: &mut Criterion) {
 /// Benchmark externalization effect overhead
 fn bench_externalization(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_externalization");
+    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
 
     let sample_rate = 48000;
     let block_size = 512;
@@ -190,6 +194,7 @@ fn bench_large_blocks(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_large_blocks");
     group.sample_size(20); // Fewer samples for large blocks
     group.measurement_time(Duration::from_secs(10));
+    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
 
     let sample_rate = 48000;
     let fft_size = 2048;
@@ -229,6 +234,7 @@ fn bench_large_blocks(c: &mut Criterion) {
 /// Benchmark passthrough mode (no SOFA)
 fn bench_passthrough(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_passthrough");
+    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
 
     let sample_rate = 48000;
     let block_size = 512;
@@ -269,6 +275,7 @@ fn bench_passthrough(c: &mut Criterion) {
 fn bench_atmos_7_1_4(c: &mut Criterion) {
     let mut group = c.benchmark_group("binaural_atmos_7_1_4");
     group.sample_size(30);
+    group.warm_up_time(Duration::from_secs(3)); // Warm up to stabilize SIMD and cache
 
     let sample_rate = 48000;
     let block_size = 512;

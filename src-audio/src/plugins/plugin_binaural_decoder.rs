@@ -90,10 +90,14 @@ impl std::error::Error for BinauralError {}
 //
 // Platform support:
 // - x86-64: AVX2 (processes 4 complex f32 at once using 256-bit registers)
-// - aarch64: NEON (processes 4 complex f32 at once using 128-bit registers)
+// - aarch64: NEON (processes 2 complex f32 at once using 128-bit registers)
 // - fallback: Scalar implementation for all other platforms
 //
 // Performance gains: 2-4x speedup on supported platforms for FFT sizes >= 512
+
+// AVX2 shuffle constant for swapping re/im pairs
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+const SHUFFLE_SWAP_RE_IM: i32 = 0b10110001; // Swaps: [re, im] -> [im, re]
 
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 #[inline]
@@ -106,36 +110,41 @@ unsafe fn complex_mul_add_simd_chunk(
     use std::arch::x86_64::*;
 
     // Process 4 complex numbers (8 floats) at once using AVX2
-    let src_ptr = src.as_ptr().add(start) as *const __m256;
-    let hrtf_ptr = hrtf.as_ptr().add(start) as *const __m256;
-    let dst_ptr = dst.as_mut_ptr().add(start) as *mut __m256;
+    // Input layout: [re0, im0, re1, im1, re2, im2, re3, im3]
+    let src_ptr = src.as_ptr().add(start) as *const f32;
+    let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
+    let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
 
-    // Load 4 complex numbers: [re0, im0, re1, im1, re2, im2, re3, im3]
-    let a = _mm256_loadu_ps(src_ptr as *const f32);
-    let b = _mm256_loadu_ps(hrtf_ptr as *const f32);
-    let dst_val = _mm256_loadu_ps(dst_ptr as *const f32);
+    // Load 4 complex numbers
+    let a = _mm256_loadu_ps(src_ptr);
+    let b = _mm256_loadu_ps(hrtf_ptr);
+    let dst_val = _mm256_loadu_ps(dst_ptr);
 
-    // Complex multiplication using AVX2
-    // (a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re)
+    // Complex multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
 
-    // Duplicate real and imaginary parts: [re0, re0, re1, re1, ...]
-    let a_re = _mm256_shuffle_ps(a, a, 0b10100000); // [re, re, re, re, ...]
-    let a_im = _mm256_shuffle_ps(a, a, 0b11110101); // [im, im, im, im, ...]
+    // Duplicate real and imaginary parts correctly:
+    // moveldup: duplicates even elements [0, 0, 2, 2, 4, 4, 6, 6] -> [re0, re0, re1, re1, ...]
+    // movehdup: duplicates odd elements  [1, 1, 3, 3, 5, 5, 7, 7] -> [im0, im0, im1, im1, ...]
+    let a_re = _mm256_moveldup_ps(a);
+    let a_im = _mm256_movehdup_ps(a);
 
-    // Multiply: a.re * b
-    let ac_bc = _mm256_mul_ps(a_re, b); // [a.re*b.re, a.re*b.im, ...]
+    // Compute: a.re * b = [re*re, re*im, ...] = [ac, ad, ...]
+    let ac_ad = _mm256_mul_ps(a_re, b);
 
-    // Multiply: a.im * b, then swap re/im
-    let b_swapped = _mm256_shuffle_ps(b, b, 0b10110001); // [im, re, im, re, ...]
-    let ad_bd = _mm256_mul_ps(a_im, b_swapped); // [a.im*b.im, a.im*b.re, ...]
+    // Swap b's re/im: [im, re, im, re, ...] = [d, c, ...]
+    let b_swapped = _mm256_shuffle_ps(b, b, SHUFFLE_SWAP_RE_IM);
 
-    // Combine: (ac - bd, bc + ad) by using addsub
-    let result = _mm256_addsub_ps(ac_bc, ad_bd);
+    // Compute: a.im * b_swapped = [im*im, im*re, ...] = [bd, bc, ...]
+    let bd_bc = _mm256_mul_ps(a_im, b_swapped);
+
+    // Combine using addsub: performs [a[0]-b[0], a[1]+b[1], a[2]-b[2], a[3]+b[3], ...]
+    // This gives us: [(ac - bd), (ad + bc), ...] = [result.re, result.im, ...]
+    let result = _mm256_addsub_ps(ac_ad, bd_bc);
 
     // Add to destination (accumulate)
     let final_result = _mm256_add_ps(dst_val, result);
 
-    _mm256_storeu_ps(dst_ptr as *mut f32, final_result);
+    _mm256_storeu_ps(dst_ptr, final_result);
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -149,37 +158,51 @@ unsafe fn complex_mul_add_simd_chunk(
     use std::arch::aarch64::*;
 
     // Process 2 complex numbers (4 floats) at once using NEON
-    let src_ptr = src.as_ptr().add(start) as *const float32x4_t;
-    let hrtf_ptr = hrtf.as_ptr().add(start) as *const float32x4_t;
-    let dst_ptr = dst.as_mut_ptr().add(start) as *mut float32x4_t;
+    // Input layout: [re0, im0, re1, im1]
+    let src_ptr = src.as_ptr().add(start) as *const f32;
+    let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
+    let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
 
-    // Load 2 complex numbers: [re0, im0, re1, im1]
-    let a = vld1q_f32(src_ptr as *const f32);
-    let b = vld1q_f32(hrtf_ptr as *const f32);
-    let dst_val = vld1q_f32(dst_ptr as *const f32);
+    // Load 2 complex numbers
+    let a = vld1q_f32(src_ptr);
+    let b = vld1q_f32(hrtf_ptr);
+    let dst_val = vld1q_f32(dst_ptr);
 
-    // Complex multiplication using NEON
-    // Extract real and imaginary parts
-    let a_re = vdupq_laneq_f32::<0>(a); // [a0.re, a0.re, a0.re, a0.re]
-    let a_im = vdupq_laneq_f32::<1>(a); // [a0.im, a0.im, a0.im, a0.im]
+    // Complex multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
 
-    // Multiply and combine
-    let ac_bc = vmulq_f32(a_re, b); // [a.re*b.re, a.re*b.im, ...]
+    // Duplicate real and imaginary parts properly for 2 complex numbers:
+    // vtrn1q_f32 extracts elements [0, 2, 0, 2] from both inputs (when both are same)
+    // vtrn2q_f32 extracts elements [1, 3, 1, 3] from both inputs (when both are same)
+    // This gives us [re0, re0, re1, re1] and [im0, im0, im1, im1]
+    let a_re = vtrn1q_f32(a, a); // [re0, re0, re1, re1]
+    let a_im = vtrn2q_f32(a, a); // [im0, im0, im1, im1]
 
-    // Swap b's re/im: [im, re, im, re]
+    // Compute: a.re * b = [re*re, re*im, ...] = [ac, ad, ...]
+    let ac_ad = vmulq_f32(a_re, b);
+
+    // Swap b's re/im using vrev64: [re0, im0, re1, im1] -> [im0, re0, im1, re1]
     let b_swapped = vrev64q_f32(b);
-    let ad_bd = vmulq_f32(a_im, b_swapped);
 
-    // Complex mul: (ac - bd, bc + ad)
-    let neg_mask = vreinterpretq_f32_u32(vsetq_lane_u32(0x80000000, vdupq_n_u32(0), 0));
-    let ad_bd_negated = vreinterpretq_f32_u32(veorq_u32(vreinterpretq_u32_f32(ad_bd), vreinterpretq_u32_f32(neg_mask)));
+    // Compute: a.im * b_swapped = [im*im, im*re, ...] = [bd, bc, ...]
+    let bd_bc = vmulq_f32(a_im, b_swapped);
 
-    let result = vaddq_f32(ac_bc, ad_bd_negated);
+    // Combine: (ac - bd, ad + bc)
+    // Create alternating negation mask: [0x80000000, 0, 0x80000000, 0] for [-, +, -, +]
+    let sign_bit: u32 = 0x80000000;
+    let neg_mask = vreinterpretq_f32_u32(
+        vsetq_lane_u32::<2>(sign_bit, vsetq_lane_u32::<0>(sign_bit, vdupq_n_u32(0)))
+    );
 
-    // Add to destination
+    // Apply alternating negation to bd_bc, then add to ac_ad
+    let bd_bc_negated = vreinterpretq_f32_u32(
+        veorq_u32(vreinterpretq_u32_f32(bd_bc), vreinterpretq_u32_f32(neg_mask))
+    );
+    let result = vaddq_f32(ac_ad, bd_bc_negated);
+
+    // Add to destination (accumulate)
     let final_result = vaddq_f32(dst_val, result);
 
-    vst1q_f32(dst_ptr as *mut f32, final_result);
+    vst1q_f32(dst_ptr, final_result);
 }
 
 #[cfg(not(any(
@@ -412,6 +435,21 @@ impl BinauralDecoderPlugin {
 
         let hop_size = fft_size / 2;
 
+        // Overflow checks for buffer allocations
+        // These prevent integer overflow when creating large buffers
+        let input_buffer_size = hop_size.checked_mul(input_channels)
+            .expect("Buffer size overflow: hop_size * input_channels too large");
+        let hrtf_buffer_per_channel = fft_size.checked_mul(2)
+            .expect("Buffer size overflow: fft_size * 2 too large");
+        let _hrtf_total_size = hrtf_buffer_per_channel.checked_mul(input_channels)
+            .expect("Buffer size overflow: HRTF buffer total size too large");
+        let output_acc_size = fft_size.checked_mul(2)
+            .expect("Buffer size overflow: output accumulator size too large");
+
+        // Additional sanity checks
+        assert!(input_buffer_size <= 1 << 24, "Input buffer size unreasonably large (> 16MB)");
+        assert!(fft_size <= 1 << 16, "FFT size unreasonably large (> 65536)");
+
         let mut planner = FftPlanner::<f32>::new();
         let fft_forward = planner.plan_fft_forward(fft_size);
         let fft_inverse = planner.plan_fft_inverse(fft_size);
@@ -467,18 +505,18 @@ impl BinauralDecoderPlugin {
             fft_forward,
             fft_inverse,
 
-            hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); fft_size * 2]; input_channels],
+            hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); hrtf_buffer_per_channel]; input_channels],
             lfe_channels,
 
-            input_buffer: vec![0.0; hop_size * input_channels], // Interleaved, size for one hop
+            input_buffer: vec![0.0; input_buffer_size], // Interleaved, size for one hop
             input_buffer_fill: 0,
 
-            output_accumulator: vec![vec![0.0; fft_size * 2]; 2], // 2 output channels, enough space for overlap
+            output_accumulator: vec![vec![0.0; output_acc_size]; 2], // 2 output channels, enough space for overlap
             output_accumulator_fill: 0,
             next_add_position: 0,
 
-            temp_input_block: vec![0.0; hop_size * input_channels], // Interleaved multi-channel input
-            temp_output_block: vec![0.0; fft_size * 2],             // Stereo output
+            temp_input_block: vec![0.0; input_buffer_size], // Interleaved multi-channel input
+            temp_output_block: vec![0.0; output_acc_size],  // Stereo output
             temp_freq_buffer: vec![Complex::new(0.0, 0.0); fft_size],
             temp_time_buffer: vec![Complex::new(0.0, 0.0); fft_size],
 
@@ -990,6 +1028,7 @@ impl BinauralDecoderPlugin {
     /// Takes hop_size samples from input_buffer, applies HRTF convolution,
     /// and adds result to output_accumulator using overlap-add
     fn process_audio_block(&mut self) {
+        // Note: This multiplication is safe - overflow is checked during initialization in new()
         let input_needed = self.hop_size * self.input_channels;
 
         // Copy input block
@@ -1119,6 +1158,7 @@ impl BinauralDecoderPlugin {
         self.output_accumulator_fill = self.output_accumulator_fill.max(new_end);
 
         // Shift input buffer
+        // Note: This multiplication is safe - overflow is checked during initialization in new()
         let shift_amount = self.hop_size * self.input_channels;
         self.input_buffer.copy_within(shift_amount..self.input_buffer_fill, 0);
         self.input_buffer_fill -= shift_amount;
@@ -1128,6 +1168,7 @@ impl BinauralDecoderPlugin {
     ///
     /// Returns number of samples consumed from input
     fn fill_input_buffer(&mut self, input: &[f32], input_pos: usize) -> usize {
+        // Note: This multiplication is safe - overflow is checked during initialization in new()
         let input_needed = self.hop_size * self.input_channels;
         let samples_to_copy = (input.len() - input_pos).min(input_needed - self.input_buffer_fill);
 
@@ -1525,5 +1566,260 @@ mod tests {
         assert_eq!(output[1], 0.2); // Frame 0, FR
         assert_eq!(output[2], 0.6); // Frame 1, FL
         assert_eq!(output[3], 0.7); // Frame 1, FR
+    }
+
+    // ============================================================================
+    // SIMD Correctness Tests
+    // ============================================================================
+    //
+    // These tests verify that SIMD-optimized complex multiplication produces
+    // identical results to scalar computation
+
+    #[test]
+    fn test_simd_complex_mul_add_correctness() {
+        // Test SIMD complex multiply-accumulate against scalar reference
+        use rustfft::num_complex::Complex;
+
+        // Test with 8 complex numbers (to test both AVX2 and NEON code paths)
+        let src = vec![
+            Complex::new(1.0, 2.0),
+            Complex::new(3.0, 4.0),
+            Complex::new(-1.0, 0.5),
+            Complex::new(0.0, -2.0),
+            Complex::new(2.5, -1.5),
+            Complex::new(-3.5, 2.5),
+            Complex::new(1.1, -0.9),
+            Complex::new(-0.8, 1.2),
+        ];
+
+        let hrtf = vec![
+            Complex::new(0.5, 0.25),
+            Complex::new(-1.0, 1.5),
+            Complex::new(2.0, -0.5),
+            Complex::new(0.75, 0.75),
+            Complex::new(-0.5, 2.0),
+            Complex::new(1.5, -1.0),
+            Complex::new(0.9, 0.3),
+            Complex::new(-1.1, 0.7),
+        ];
+
+        let initial = vec![
+            Complex::new(0.1, 0.2),
+            Complex::new(0.3, 0.4),
+            Complex::new(0.5, 0.6),
+            Complex::new(0.7, 0.8),
+            Complex::new(0.9, 1.0),
+            Complex::new(1.1, 1.2),
+            Complex::new(1.3, 1.4),
+            Complex::new(1.5, 1.6),
+        ];
+
+        // Scalar reference computation
+        let mut expected = initial.clone();
+        for i in 0..src.len() {
+            expected[i] += src[i] * hrtf[i];
+        }
+
+        // SIMD computation
+        let mut result = initial.clone();
+        complex_mul_add_simd(&mut result, &src, &hrtf);
+
+        // Compare results with tolerance for floating point errors
+        const EPSILON: f32 = 1e-6;
+        for i in 0..src.len() {
+            assert!(
+                (result[i].re - expected[i].re).abs() < EPSILON,
+                "SIMD result[{}].re = {}, expected = {} (diff = {})",
+                i,
+                result[i].re,
+                expected[i].re,
+                (result[i].re - expected[i].re).abs()
+            );
+            assert!(
+                (result[i].im - expected[i].im).abs() < EPSILON,
+                "SIMD result[{}].im = {}, expected = {} (diff = {})",
+                i,
+                result[i].im,
+                expected[i].im,
+                (result[i].im - expected[i].im).abs()
+            );
+        }
+    }
+
+    #[test]
+    fn test_simd_complex_mul_correctness() {
+        // Test SIMD complex multiplication (without accumulation)
+        use rustfft::num_complex::Complex;
+
+        let src = vec![
+            Complex::new(2.0, 3.0),
+            Complex::new(-1.5, 2.5),
+            Complex::new(0.5, -1.0),
+            Complex::new(4.0, -2.0),
+        ];
+
+        let hrtf = vec![
+            Complex::new(1.0, 0.5),
+            Complex::new(2.0, -1.0),
+            Complex::new(-0.5, 1.5),
+            Complex::new(0.75, 0.25),
+        ];
+
+        // Scalar reference
+        let expected: Vec<Complex<f32>> = src.iter().zip(hrtf.iter()).map(|(a, b)| a * b).collect();
+
+        // SIMD computation
+        let mut result = vec![Complex::new(0.0, 0.0); src.len()];
+        complex_mul_simd(&mut result, &src, &hrtf);
+
+        // Compare
+        const EPSILON: f32 = 1e-6;
+        for i in 0..src.len() {
+            assert!(
+                (result[i].re - expected[i].re).abs() < EPSILON,
+                "SIMD result[{}].re = {}, expected = {}",
+                i,
+                result[i].re,
+                expected[i].re
+            );
+            assert!(
+                (result[i].im - expected[i].im).abs() < EPSILON,
+                "SIMD result[{}].im = {}, expected = {}",
+                i,
+                result[i].im,
+                expected[i].im
+            );
+        }
+    }
+
+    #[test]
+    fn test_simd_edge_cases() {
+        // Test edge cases: zeros, ones, conjugates
+        use rustfft::num_complex::Complex;
+
+        // Test 1: Multiply by zero
+        let src = vec![
+            Complex::new(1.0, 2.0),
+            Complex::new(3.0, 4.0),
+            Complex::new(5.0, 6.0),
+            Complex::new(7.0, 8.0),
+        ];
+        let zero = vec![Complex::new(0.0, 0.0); 4];
+        let mut result = src.clone();
+        complex_mul_simd(&mut result, &result.clone(), &zero);
+        for i in 0..4 {
+            assert_eq!(result[i].re, 0.0);
+            assert_eq!(result[i].im, 0.0);
+        }
+
+        // Test 2: Multiply by one (identity)
+        let one = vec![Complex::new(1.0, 0.0); 4];
+        let mut result = vec![Complex::new(0.0, 0.0); 4];
+        complex_mul_simd(&mut result, &src, &one);
+        for i in 0..4 {
+            assert!((result[i].re - src[i].re).abs() < 1e-6);
+            assert!((result[i].im - src[i].im).abs() < 1e-6);
+        }
+
+        // Test 3: Multiply by conjugate (should give real result)
+        let a = Complex::new(3.0, 4.0);
+        let a_conj = Complex::new(3.0, -4.0);
+        let src = vec![a, a, a, a];
+        let conj = vec![a_conj, a_conj, a_conj, a_conj];
+        let mut result = vec![Complex::new(0.0, 0.0); 4];
+        complex_mul_simd(&mut result, &src, &conj);
+
+        // a * conj(a) = |a|^2 = 3^2 + 4^2 = 25
+        for i in 0..4 {
+            assert!((result[i].re - 25.0).abs() < 1e-5);
+            assert!(result[i].im.abs() < 1e-5); // Should be approximately zero
+        }
+    }
+
+    #[test]
+    fn test_simd_large_buffer() {
+        // Test with realistic FFT buffer sizes
+        use rustfft::num_complex::Complex;
+
+        for fft_size in [512, 1024, 2048, 4096] {
+            let mut src = Vec::with_capacity(fft_size);
+            let mut hrtf = Vec::with_capacity(fft_size);
+
+            // Fill with test pattern
+            for i in 0..fft_size {
+                let phase = (i as f32) * 0.01;
+                src.push(Complex::new(phase.cos(), phase.sin()));
+                hrtf.push(Complex::new(0.5, 0.25));
+            }
+
+            // Scalar reference
+            let mut expected = vec![Complex::new(0.1, 0.2); fft_size];
+            for i in 0..fft_size {
+                expected[i] += src[i] * hrtf[i];
+            }
+
+            // SIMD computation
+            let mut result = vec![Complex::new(0.1, 0.2); fft_size];
+            complex_mul_add_simd(&mut result, &src, &hrtf);
+
+            // Verify all elements match
+            for i in 0..fft_size {
+                assert!(
+                    (result[i].re - expected[i].re).abs() < 1e-5,
+                    "FFT size {}, index {}: SIMD mismatch",
+                    fft_size,
+                    i
+                );
+                assert!(
+                    (result[i].im - expected[i].im).abs() < 1e-5,
+                    "FFT size {}, index {}: SIMD mismatch",
+                    fft_size,
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_simd_unaligned_sizes() {
+        // Test with buffer sizes that don't align to SIMD width
+        // This ensures the scalar remainder loop works correctly
+        use rustfft::num_complex::Complex;
+
+        for size in [1, 3, 5, 7, 9, 13, 17] {
+            let src: Vec<Complex<f32>> = (0..size)
+                .map(|i| Complex::new(i as f32, (i as f32) * 0.5))
+                .collect();
+            let hrtf: Vec<Complex<f32>> = (0..size)
+                .map(|i| Complex::new(0.5, (i as f32) * 0.1))
+                .collect();
+
+            // Scalar reference
+            let expected: Vec<Complex<f32>> = src
+                .iter()
+                .zip(hrtf.iter())
+                .map(|(a, b)| a * b)
+                .collect();
+
+            // SIMD computation
+            let mut result = vec![Complex::new(0.0, 0.0); size];
+            complex_mul_simd(&mut result, &src, &hrtf);
+
+            // Verify
+            for i in 0..size {
+                assert!(
+                    (result[i].re - expected[i].re).abs() < 1e-6,
+                    "Size {}, index {}: re mismatch",
+                    size,
+                    i
+                );
+                assert!(
+                    (result[i].im - expected[i].im).abs() < 1e-6,
+                    "Size {}, index {}: im mismatch",
+                    size,
+                    i
+                );
+            }
+        }
     }
 }
