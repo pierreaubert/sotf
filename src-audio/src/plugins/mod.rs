@@ -31,6 +31,7 @@ mod parameters;
 mod plugin;
 mod plugin_binaural_decoder;
 mod plugin_compressor;
+mod plugin_convolution;
 mod plugin_crossover;
 mod plugin_delay;
 mod plugin_eq;
@@ -60,6 +61,7 @@ pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, Proces
 
 pub use plugin_binaural_decoder::{BinauralDecoderParams, BinauralDecoderPlugin};
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
+pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
