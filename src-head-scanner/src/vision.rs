@@ -5,7 +5,7 @@ use crate::error::{ScannerError, ScannerResult};
 use nalgebra::Point2;
 use ndarray::{Array, Array4};
 use opencv::{
-    core::{Mat, Point2f, TermCriteria, Vector, DMatch, KeyPoint},
+    core::{DMatch, KeyPoint, Mat, Point2f, TermCriteria, Vector},
     features2d::{self, DescriptorMatcher, Feature2D, ORB},
     imgproc, objdetect,
     prelude::*,
@@ -313,7 +313,7 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
         // These are high-quality feature points that are easy to track
         let face_roi = Mat::roi(&gray, face)?;
         let mut corners = Vector::<Point2f>::new();
-        
+
         imgproc::good_features_to_track(
             &face_roi,
             &mut corners,
@@ -321,16 +321,16 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
             0.01, // quality level
             10.0, // min distance between corners
             &Mat::default(),
-            3,    // block size
+            3,     // block size
             false, // use Harris detector
             0.04,
         )?;
-        
+
         // Convert corners to features with face offset
         for corner in corners.iter() {
             let global_x = face.x as f32 + corner.x;
             let global_y = face.y as f32 + corner.y;
-            
+
             features.push(Feature::new(
                 global_x,
                 global_y,
@@ -338,11 +338,14 @@ pub fn detect_features_classical(frame: &Frame) -> ScannerResult<Vec<Feature>> {
                 0.9, // High confidence for Shi-Tomasi corners
             ));
         }
-        
+
         log::debug!("Added {} Shi-Tomasi corners for face", corners.len());
     }
 
-    log::debug!("Classical detection generated {} total features", features.len());
+    log::debug!(
+        "Classical detection generated {} total features",
+        features.len()
+    );
 
     Ok(features)
 }
@@ -365,7 +368,7 @@ pub fn estimate_depth(frame: &Frame, features: &[Feature]) -> ScannerResult<Vec<
 pub struct FeatureTracker {
     /// Previous frame (grayscale)
     previous_frame: Option<Mat>,
-    
+
     /// Previous frame feature points
     previous_points: Vector<Point2f>,
 
@@ -384,10 +387,14 @@ impl FeatureTracker {
 
     /// Track features using simple nearest-neighbor matching
     /// (Optical flow would be better but requires video module)
-    pub fn track_features(&mut self, _current_frame: &Frame, features: &[Feature]) -> ScannerResult<Vec<(Feature, Feature)>> {
+    pub fn track_features(
+        &mut self,
+        _current_frame: &Frame,
+        features: &[Feature],
+    ) -> ScannerResult<Vec<(Feature, Feature)>> {
         // Store features for next frame
         self.previous_points = features_to_points2f(features);
-        
+
         // Simple tracking not implemented - would need optical flow
         // Return empty for now
         Ok(Vec::new())
@@ -432,40 +439,43 @@ impl ORBDetector {
     pub fn new() -> ScannerResult<Self> {
         // Create ORB detector with 1000 features
         let detector = ORB::create(
-            1000,  // max features
-            1.2,   // scale factor
-            8,     // nlevels
-            31,    // edge threshold
-            0,     // first level
-            2,     // WTA_K
+            1000, // max features
+            1.2,  // scale factor
+            8,    // nlevels
+            31,   // edge threshold
+            0,    // first level
+            2,    // WTA_K
             features2d::ORB_ScoreType::HARRIS_SCORE,
-            31,    // patch size
-            20,    // fast threshold
-        ).map_err(|e| ScannerError::VisionModel(format!("Failed to create ORB: {}", e)))?;
-        
+            31, // patch size
+            20, // fast threshold
+        )
+        .map_err(|e| ScannerError::VisionModel(format!("Failed to create ORB: {}", e)))?;
+
         Ok(Self { detector })
     }
-    
+
     /// Detect ORB keypoints and compute descriptors
     pub fn detect_and_compute(&mut self, frame: &Frame) -> ScannerResult<(Vector<KeyPoint>, Mat)> {
         let gray = frame.to_gray()?;
-        
+
         let mut keypoints = Vector::<KeyPoint>::new();
         let mut descriptors = Mat::default();
-        
-        self.detector.detect_and_compute(
-            &gray,
-            &Mat::default(),
-            &mut keypoints,
-            &mut descriptors,
-            false,
-        ).map_err(|e| ScannerError::VisionModel(format!("ORB detect failed: {}", e)))?;
-        
+
+        self.detector
+            .detect_and_compute(
+                &gray,
+                &Mat::default(),
+                &mut keypoints,
+                &mut descriptors,
+                false,
+            )
+            .map_err(|e| ScannerError::VisionModel(format!("ORB detect failed: {}", e)))?;
+
         log::debug!("Detected {} ORB keypoints", keypoints.len());
-        
+
         Ok((keypoints, descriptors))
     }
-    
+
     /// Match features between two frames using brute-force matching with ratio test
     /// Returns indices of matched keypoints: (index_in_kp1, index_in_kp2)
     pub fn match_features(
@@ -476,19 +486,19 @@ impl ORBDetector {
         if descriptors1.empty() || descriptors2.empty() {
             return Ok(Vec::new());
         }
-        
+
         let mut matches = Vec::new();
-        
+
         // Brute-force matching with Hamming distance for binary descriptors
         for i in 0..descriptors1.rows() {
             let mut best_dist = u32::MAX;
             let mut second_best_dist = u32::MAX;
             let mut best_idx = 0;
-            
+
             // Find two best matches
             for j in 0..descriptors2.rows() {
                 let dist = compute_hamming_distance(descriptors1, i, descriptors2, j)?;
-                
+
                 if dist < best_dist {
                     second_best_dist = best_dist;
                     best_dist = dist;
@@ -497,7 +507,7 @@ impl ORBDetector {
                     second_best_dist = dist;
                 }
             }
-            
+
             // Lowe's ratio test: accept match if best is significantly better than second best
             if second_best_dist > 0 {
                 let ratio = best_dist as f32 / second_best_dist as f32;
@@ -506,24 +516,23 @@ impl ORBDetector {
                 }
             }
         }
-        
-        log::debug!("Matched {} of {} features (ratio test)", matches.len(), descriptors1.rows());
-        
+
+        log::debug!(
+            "Matched {} of {} features (ratio test)",
+            matches.len(),
+            descriptors1.rows()
+        );
+
         Ok(matches)
     }
-    
+
     /// Convert keypoints to Feature objects
     pub fn keypoints_to_features(keypoints: &Vector<KeyPoint>) -> Vec<Feature> {
         let mut features = Vec::new();
         for i in 0..keypoints.len() {
             if let Ok(kp) = keypoints.get(i) {
                 let pt = kp.pt();
-                features.push(Feature::new(
-                    pt.x,
-                    pt.y,
-                    "orb".to_string(),
-                    kp.response(),
-                ));
+                features.push(Feature::new(pt.x, pt.y, "orb".to_string(), kp.response()));
             }
         }
         features
@@ -544,21 +553,23 @@ fn compute_hamming_distance(
     row2: i32,
 ) -> ScannerResult<u32> {
     if desc1_mat.cols() != desc2_mat.cols() {
-        return Err(ScannerError::VisionModel("Descriptor size mismatch".to_string()));
+        return Err(ScannerError::VisionModel(
+            "Descriptor size mismatch".to_string(),
+        ));
     }
-    
+
     let mut distance = 0u32;
-    
+
     // ORB descriptors are typically 32 bytes (256 bits)
     for col in 0..desc1_mat.cols() {
         let b1 = *desc1_mat.at_2d::<u8>(row1, col)?;
         let b2 = *desc2_mat.at_2d::<u8>(row2, col)?;
-        
+
         // Count differing bits using XOR and popcount
         let xor = b1 ^ b2;
         distance += xor.count_ones();
     }
-    
+
     Ok(distance)
 }
 

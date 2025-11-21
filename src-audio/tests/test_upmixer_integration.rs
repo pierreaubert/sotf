@@ -9,7 +9,9 @@ fn test_upmixer_stereo_to_5ch() {
     let mut host = PluginHost::new(2, 44100);
 
     // Add upmixer plugin (5.1 configuration outputs 6 channels)
-    let upmixer = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
+    let upmixer = UpmixerPlugin::new(
+        2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+    );
     host.add_plugin(Box::new(upmixer)).unwrap();
 
     // Verify channel counts
@@ -64,7 +66,9 @@ fn test_upmixer_chain_with_gain() {
     let mut host = PluginHost::new(2, 44100);
 
     // Add upmixer (2→6, 5.1 configuration)
-    let upmixer = UpmixerPlugin::new(1024, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5); // Smaller FFT for this test
+    let upmixer = UpmixerPlugin::new(
+        1024, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+    ); // Smaller FFT for this test
     host.add_plugin(Box::new(upmixer)).unwrap();
 
     // Add gain to the 6-channel output
@@ -96,12 +100,14 @@ fn test_upmixer_chain_with_gain() {
 fn test_upmixer_parameter_adjustment() {
     use sotf_audio::{ParameterId, ParameterValue, Plugin};
 
-    let mut plugin = UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
+    let mut plugin = UpmixerPlugin::new(
+        2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+    );
     plugin.initialize(44100).unwrap();
 
     // Test parameter queries
     let params = plugin.parameters();
-    assert_eq!(params.len(), 11); // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, height_gain, lfe_gain, lfe_cutoff_hz, stereo_width, bandpass_hz, enable_subharmonic_synth, subharmonic_gain
+    assert_eq!(params.len(), 12); // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, height_gain, lfe_gain, lfe_cutoff_hz, stereo_width, center_spread, bandpass_hz, enable_subharmonic_synth, subharmonic_gain
 
     // Modify gains
     plugin
@@ -138,7 +144,7 @@ fn test_upmixer_synthesis_windowing_no_crackling() {
     let sample_rate = 44100;
 
     let mut plugin = UpmixerPlugin::new(
-        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5
+        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
     plugin.initialize(sample_rate).unwrap();
 
@@ -160,7 +166,9 @@ fn test_upmixer_synthesis_windowing_no_crackling() {
         sample_rate,
         num_frames: total_samples,
     };
-    plugin.process(&continuous_input, &mut output, &context).unwrap();
+    plugin
+        .process(&continuous_input, &mut output, &context)
+        .unwrap();
 
     // Check for discontinuities at expected block boundaries
     // Measure the maximum derivative (difference between consecutive samples)
@@ -179,7 +187,10 @@ fn test_upmixer_synthesis_windowing_no_crackling() {
         }
     }
 
-    println!("Max derivative: {:.6} at sample {}", max_derivative, max_derivative_position);
+    println!(
+        "Max derivative: {:.6} at sample {}",
+        max_derivative, max_derivative_position
+    );
 
     // With proper synthesis windowing, the maximum derivative should be reasonable
     // For a 1kHz sine at 44.1kHz, max derivative ≈ 2π*1000*0.3/44100 ≈ 0.043
@@ -194,7 +205,11 @@ fn test_upmixer_synthesis_windowing_no_crackling() {
     // Note: After channel normalization (0.9/sqrt(2) ≈ 0.636), energy is reduced
     // Energy scales with amplitude squared, so we expect ~0.4x of original energy
     let total_energy: f32 = output.iter().map(|x| x * x).sum();
-    assert!(total_energy > 20.0, "Output should have significant energy (got {:.2})", total_energy);
+    assert!(
+        total_energy > 20.0,
+        "Output should have significant energy (got {:.2})",
+        total_energy
+    );
 
     println!("✓ Synthesis windowing test passed: no crackling detected");
 }
@@ -210,7 +225,7 @@ fn test_upmixer_channel_normalization_no_clipping() {
     let sample_rate = 44100;
 
     let mut plugin = UpmixerPlugin::new(
-        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5
+        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
     plugin.initialize(sample_rate).unwrap();
 
@@ -222,12 +237,11 @@ fn test_upmixer_channel_normalization_no_clipping() {
     for i in 0..num_samples {
         let t = i as f32 / sample_rate as f32;
         // Mix of frequencies with high amplitude
-        let signal = 0.95 * (
-            (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.4 +
-            (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3 +
-            (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.2 +
-            (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.1
-        );
+        let signal = 0.95
+            * ((2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.4
+                + (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3
+                + (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.2
+                + (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.1);
         input[i * 2] = signal;
         input[i * 2 + 1] = signal;
     }
@@ -294,7 +308,7 @@ fn test_upmixer_denormal_flushing() {
     let sample_rate = 44100;
 
     let mut plugin = UpmixerPlugin::new(
-        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5
+        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
     plugin.initialize(sample_rate).unwrap();
 
@@ -370,7 +384,7 @@ fn test_upmixer_subharmonic_smoothing() {
 
     // Enable sub-harmonic synthesis
     let mut plugin = UpmixerPlugin::new(
-        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, true, 0.5
+        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, true, 0.5,
     );
     plugin.initialize(sample_rate).unwrap();
 
@@ -415,13 +429,17 @@ fn test_upmixer_subharmonic_smoothing() {
     let mut max_derivative_release = 0.0_f32;
 
     // Attack region (first 100 samples after signal starts)
-    for i in transition_attack_start..(transition_attack_start + check_window).min(lfe_samples.len() - 1) {
+    for i in
+        transition_attack_start..(transition_attack_start + check_window).min(lfe_samples.len() - 1)
+    {
         let derivative = (lfe_samples[i + 1] - lfe_samples[i]).abs();
         max_derivative_attack = max_derivative_attack.max(derivative);
     }
 
     // Release region (first 100 samples after signal ends)
-    for i in transition_release_start..(transition_release_start + check_window).min(lfe_samples.len() - 1) {
+    for i in transition_release_start
+        ..(transition_release_start + check_window).min(lfe_samples.len() - 1)
+    {
         let derivative = (lfe_samples[i + 1] - lfe_samples[i]).abs();
         max_derivative_release = max_derivative_release.max(derivative);
     }

@@ -386,15 +386,15 @@ fn run_playback_thread(
 
                 // Write to ring buffer, handling partial writes
                 let mut data_slice = &frame.data[..];
-                
+
                 while !data_slice.is_empty() {
                     let written = state.ring_buffer.lock().write(data_slice);
-                    
+
                     if written < data_slice.len() {
                         // Buffer full, sleep briefly to let audio callback consume
                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
                     }
-                    
+
                     // Advance slice
                     data_slice = &data_slice[written..];
                 }

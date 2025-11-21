@@ -275,17 +275,23 @@ async fn run_scan(
     scanner.start().await?;
 
     println!("✓ Camera initialized ({}x{} @ {}fps)", width, height, fps);
-    
+
     if use_sfm {
         println!("✨ Structure-from-Motion (SfM) mode ENABLED");
-        println!("   • Using {} frame history for triangulation", sfm_frame_count);
-        println!("   • Minimum {} inliers required for pose estimation", sfm_min_inliers);
+        println!(
+            "   • Using {} frame history for triangulation",
+            sfm_frame_count
+        );
+        println!(
+            "   • Minimum {} inliers required for pose estimation",
+            sfm_min_inliers
+        );
         println!("   • Real 3D coordinates from geometric constraints");
     } else {
         println!("⚠️  Classical mode (estimated depth)");
         println!("   • Consider using --sfm for higher quality");
     }
-    
+
     println!();
     println!("📋 IMPORTANT: For best 3D reconstruction:");
     println!("   • Move the camera slowly around your head");
@@ -348,7 +354,7 @@ async fn run_scan(
                     let coverage = scanner.get_coverage();
                     let elapsed = start_time.elapsed().as_secs_f32();
                     let using_gpu = scanner.is_using_gpu();
-                    
+
                     if let Err(e) = draw_progress_overlay(
                         &mut display_frame,
                         state,
@@ -359,7 +365,7 @@ async fn run_scan(
                     ) {
                         warn!("Failed to draw overlay: {}", e);
                     }
-                    
+
                     highgui::imshow(window_name, &display_frame)?;
                     let key = highgui::wait_key(1)?;
                     if key == 'q' as i32 || key == 27 {
@@ -376,13 +382,17 @@ async fn run_scan(
         scanner.process_frame().await?;
         let point_cloud_size_after = scanner.get_point_cloud_size();
         let points_added = point_cloud_size_after.saturating_sub(point_cloud_size_before);
-        
+
         // Skip frames that don't add enough points (poor quality)
         if points_added < min_points_per_frame && scanner.get_state() == ScanState::Scanning {
-            log::debug!("Skipping frame with only {} points (threshold: {})", points_added, min_points_per_frame);
+            log::debug!(
+                "Skipping frame with only {} points (threshold: {})",
+                points_added,
+                min_points_per_frame
+            );
             continue;
         }
-        
+
         processed_frame_count += 1;
 
         let state = scanner.get_state();
@@ -464,7 +474,11 @@ async fn run_scan(
     println!();
     println!("📊 Scan Statistics:");
     println!("   Frames captured: {}", frame_count);
-    println!("   Frames processed: {} ({:.1}%)", processed_frame_count, (processed_frame_count as f32 / frame_count as f32) * 100.0);
+    println!(
+        "   Frames processed: {} ({:.1}%)",
+        processed_frame_count,
+        (processed_frame_count as f32 / frame_count as f32) * 100.0
+    );
     println!("   Duration: {:.1}s", start_time.elapsed().as_secs_f32());
     println!("   Coverage: {:.1}%", scanner.get_coverage() * 100.0);
     println!("   Points collected: {}", scanner.get_point_cloud_size());

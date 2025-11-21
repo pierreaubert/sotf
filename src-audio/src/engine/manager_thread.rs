@@ -68,7 +68,10 @@ impl ConfigUpdateQueue {
         }
 
         self.queue.push_back(update);
-        log::debug!("[Manager] Config update queued (queue size: {})", self.queue.len());
+        log::debug!(
+            "[Manager] Config update queued (queue size: {})",
+            self.queue.len()
+        );
         true
     }
 
@@ -324,12 +327,7 @@ fn run_manager_thread(
         if let Some(ref watcher) = config_watcher
             && let Some(config_event) = watcher.try_recv()
         {
-            match handle_config_event(
-                config_event,
-                &config,
-                &mut config_update_queue,
-                &state,
-            ) {
+            match handle_config_event(config_event, &config, &mut config_update_queue, &state) {
                 Ok(should_exit) => {
                     if should_exit {
                         log::debug!("[Manager Thread] Shutdown requested via signal");
@@ -346,9 +344,12 @@ fn run_manager_thread(
         if config_update_queue.can_process_next() {
             if let Some(plugins) = config_update_queue.start_processing() {
                 log::debug!("[Manager Thread] Processing queued config update");
-                if let Err(e) =
-                    apply_plugin_update(&mut processing_thread, &mut playback_thread, &state, plugins)
-                {
+                if let Err(e) = apply_plugin_update(
+                    &mut processing_thread,
+                    &mut playback_thread,
+                    &state,
+                    plugins,
+                ) {
                     log::error!("[Manager Thread] Failed to apply config update: {}", e);
                 }
                 config_update_queue.complete_processing();

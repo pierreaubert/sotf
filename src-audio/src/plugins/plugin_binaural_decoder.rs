@@ -23,7 +23,9 @@ use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, SpeakerPosition, get_speaker_config_by_channels};
 use crate::sofa::{SofaFile, SourcePosition};
-use rubato::{SincFixedIn, InterpolationParameters, InterpolationType, WindowFunction, Resampler};
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 use rustfft::num_complex::Complex;
 use rustfft::{Fft, FftPlanner};
 use serde::{Deserialize, Serialize};
@@ -59,20 +61,33 @@ impl std::fmt::Display for BinauralError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BinauralError::SofaNotLoaded => write!(f, "SOFA file not loaded"),
-            BinauralError::SampleRateMismatch { sofa_rate, engine_rate } => {
-                write!(f, "Sample rate mismatch: SOFA={}Hz, engine={}Hz", sofa_rate, engine_rate)
+            BinauralError::SampleRateMismatch {
+                sofa_rate,
+                engine_rate,
+            } => {
+                write!(
+                    f,
+                    "Sample rate mismatch: SOFA={}Hz, engine={}Hz",
+                    sofa_rate, engine_rate
+                )
             }
             BinauralError::InvalidFftSize(size) => {
                 write!(f, "Invalid FFT size: {} (must be power of 2)", size)
             }
             BinauralError::SofaLoadError(msg) => write!(f, "SOFA load error: {}", msg),
             BinauralError::ResamplingError(msg) => write!(f, "Resampling error: {}", msg),
-            BinauralError::HrtfPreparationError(msg) => write!(f, "HRTF preparation error: {}", msg),
+            BinauralError::HrtfPreparationError(msg) => {
+                write!(f, "HRTF preparation error: {}", msg)
+            }
             BinauralError::InvalidParameter { name, value } => {
                 write!(f, "Invalid parameter '{}': {}", name, value)
             }
             BinauralError::BufferSizeMismatch { expected, got } => {
-                write!(f, "Buffer size mismatch: expected {}, got {}", expected, got)
+                write!(
+                    f,
+                    "Buffer size mismatch: expected {}, got {}",
+                    expected, got
+                )
             }
         }
     }
@@ -189,14 +204,16 @@ unsafe fn complex_mul_add_simd_chunk(
     // Combine: (ac - bd, ad + bc)
     // Create alternating negation mask: [0x80000000, 0, 0x80000000, 0] for [-, +, -, +]
     let sign_bit: u32 = 0x80000000;
-    let neg_mask = vreinterpretq_f32_u32(
-        vsetq_lane_u32::<2>(sign_bit, vsetq_lane_u32::<0>(sign_bit, vdupq_n_u32(0)))
-    );
+    let neg_mask = vreinterpretq_f32_u32(vsetq_lane_u32::<2>(
+        sign_bit,
+        vsetq_lane_u32::<0>(sign_bit, vdupq_n_u32(0)),
+    ));
 
     // Apply alternating negation to bd_bc, then add to ac_ad
-    let bd_bc_negated = vreinterpretq_f32_u32(
-        veorq_u32(vreinterpretq_u32_f32(bd_bc), vreinterpretq_u32_f32(neg_mask))
-    );
+    let bd_bc_negated = vreinterpretq_f32_u32(veorq_u32(
+        vreinterpretq_u32_f32(bd_bc),
+        vreinterpretq_u32_f32(neg_mask),
+    ));
     let result = vaddq_f32(ac_ad, bd_bc_negated);
 
     // Add to destination (accumulate)
@@ -229,11 +246,7 @@ fn complex_mul_add_simd_chunk(
 /// - NEON on aarch64 (2 complex at once)
 /// - Scalar fallback with auto-vectorization hints
 #[inline]
-fn complex_mul_add_simd(
-    dst: &mut [Complex<f32>],
-    src: &[Complex<f32>],
-    hrtf: &[Complex<f32>],
-) {
+fn complex_mul_add_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[Complex<f32>]) {
     let len = dst.len();
 
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
@@ -286,11 +299,7 @@ fn complex_mul_add_simd(
 ///
 /// Computes: dst[i] = src[i] * hrtf[i] for all i
 #[inline]
-fn complex_mul_simd(
-    dst: &mut [Complex<f32>],
-    src: &[Complex<f32>],
-    hrtf: &[Complex<f32>],
-) {
+fn complex_mul_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[Complex<f32>]) {
     let len = dst.len();
 
     // For non-accumulating version, just use scalar with auto-vectorization
@@ -437,17 +446,24 @@ impl BinauralDecoderPlugin {
 
         // Overflow checks for buffer allocations
         // These prevent integer overflow when creating large buffers
-        let input_buffer_size = hop_size.checked_mul(input_channels)
+        let input_buffer_size = hop_size
+            .checked_mul(input_channels)
             .expect("Buffer size overflow: hop_size * input_channels too large");
-        let hrtf_buffer_per_channel = fft_size.checked_mul(2)
+        let hrtf_buffer_per_channel = fft_size
+            .checked_mul(2)
             .expect("Buffer size overflow: fft_size * 2 too large");
-        let _hrtf_total_size = hrtf_buffer_per_channel.checked_mul(input_channels)
+        let _hrtf_total_size = hrtf_buffer_per_channel
+            .checked_mul(input_channels)
             .expect("Buffer size overflow: HRTF buffer total size too large");
-        let output_acc_size = fft_size.checked_mul(2)
+        let output_acc_size = fft_size
+            .checked_mul(2)
             .expect("Buffer size overflow: output accumulator size too large");
 
         // Additional sanity checks
-        assert!(input_buffer_size <= 1 << 24, "Input buffer size unreasonably large (> 16MB)");
+        assert!(
+            input_buffer_size <= 1 << 24,
+            "Input buffer size unreasonably large (> 16MB)"
+        );
         assert!(fft_size <= 1 << 16, "FFT size unreasonably large (> 65536)");
 
         let mut planner = FftPlanner::<f32>::new();
@@ -481,7 +497,11 @@ impl BinauralDecoderPlugin {
             fft_size
         );
         for speaker in speaker_config.speakers {
-            let lfe_marker = if speaker.is_lfe { " [LFE - no HRTF]" } else { "" };
+            let lfe_marker = if speaker.is_lfe {
+                " [LFE - no HRTF]"
+            } else {
+                ""
+            };
             log::info!(
                 "[BinauralDecoder]   Ch{}: {} at az={:.1}°, el={:.1}°{}",
                 speaker.channel,
@@ -505,7 +525,10 @@ impl BinauralDecoderPlugin {
             fft_forward,
             fft_inverse,
 
-            hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); hrtf_buffer_per_channel]; input_channels],
+            hrtf_filters_freq: vec![
+                vec![Complex::new(0.0, 0.0); hrtf_buffer_per_channel];
+                input_channels
+            ],
             lfe_channels,
 
             input_buffer: vec![0.0; input_buffer_size], // Interleaved, size for one hop
@@ -551,8 +574,8 @@ impl BinauralDecoderPlugin {
     pub fn load_sofa(&mut self, path: PathBuf) -> Result<(), String> {
         log::debug!("[BinauralDecoder] Loading SOFA file: {:?}", path);
 
-        let mut sofa = SofaFile::load(&path)
-            .map_err(|e| BinauralError::SofaLoadError(e).to_string())?;
+        let mut sofa =
+            SofaFile::load(&path).map_err(|e| BinauralError::SofaLoadError(e).to_string())?;
 
         log::info!(
             "[BinauralDecoder] SOFA loaded: {} measurements, IR length: {}, sample rate: {} Hz",
@@ -607,21 +630,22 @@ impl BinauralDecoderPlugin {
 
         // Create high-quality sinc resampler
         // Parameters optimized for HRTF resampling
-        let params = InterpolationParameters {
-            sinc_len: 256,                    // High quality filter
-            f_cutoff: 0.95,                   // Preserve high frequencies
-            interpolation: InterpolationType::Linear,
+        let params = SincInterpolationParameters {
+            sinc_len: 256,  // High quality filter
+            f_cutoff: 0.95, // Preserve high frequencies
+            interpolation: SincInterpolationType::Linear,
             oversampling_factor: 256,
             window: WindowFunction::BlackmanHarris2,
         };
 
         let mut resampler = SincFixedIn::<f32>::new(
             ratio,
-            2.0,  // Maximum ratio change (not used for fixed resampler)
+            2.0, // Maximum ratio change (not used for fixed resampler)
             params,
             sofa.ir_length,
-            2,    // Stereo (left and right channels per measurement)
-        ).map_err(|e| format!("Failed to create resampler: {:?}", e))?;
+            2, // Stereo (left and right channels per measurement)
+        )
+        .map_err(|e| format!("Failed to create resampler: {:?}", e))?;
 
         // Resample each measurement
         let mut resampled_data = Vec::with_capacity(sofa.num_measurements * 2 * new_ir_length);
@@ -630,18 +654,20 @@ impl BinauralDecoderPlugin {
             // Extract left and right IRs for this measurement
             let offset = m * 2 * sofa.ir_length;
             let ir_left = &sofa.impulse_responses[offset..offset + sofa.ir_length];
-            let ir_right = &sofa.impulse_responses[offset + sofa.ir_length..offset + 2 * sofa.ir_length];
+            let ir_right =
+                &sofa.impulse_responses[offset + sofa.ir_length..offset + 2 * sofa.ir_length];
 
             // Prepare input in channel-major format [[left samples], [right samples]]
             let input = vec![ir_left.to_vec(), ir_right.to_vec()];
 
             // Resample
-            let output = resampler.process(&input, None)
+            let output = resampler
+                .process(&input, None)
                 .map_err(|e| format!("Resampling failed for measurement {}: {:?}", m, e))?;
 
             // Append resampled data (interleaved: left then right)
-            resampled_data.extend_from_slice(&output[0]);  // Left channel
-            resampled_data.extend_from_slice(&output[1]);  // Right channel
+            resampled_data.extend_from_slice(&output[0]); // Left channel
+            resampled_data.extend_from_slice(&output[1]); // Right channel
 
             // Reset resampler for next measurement
             resampler.reset();
@@ -652,7 +678,10 @@ impl BinauralDecoderPlugin {
         sofa.ir_length = new_ir_length;
         sofa.sample_rate = target_sample_rate as f32;
 
-        log::info!("[BinauralDecoder] Resampling complete: new IR length = {}", new_ir_length);
+        log::info!(
+            "[BinauralDecoder] Resampling complete: new IR length = {}",
+            new_ir_length
+        );
 
         Ok(())
     }
@@ -674,28 +703,31 @@ impl BinauralDecoderPlugin {
             }
 
             let target_pos = speaker_to_source_position(speaker);
-            
+
             // Find 3 nearest HRTFs
             let nearest = sofa.find_three_nearest(&target_pos);
-            
+
             // Calculate VBAP gains
             let gains = Self::calculate_vbap_gains(&target_pos, &nearest, sofa);
-            
+
             log::info!(
                 "[BinauralDecoder] Speaker {}: {} (az={:.1}°, el={:.1}°) -> VBAP: {:.2}*[{}] + {:.2}*[{}] + {:.2}*[{}]",
                 i,
                 speaker.name,
                 speaker.azimuth,
                 speaker.elevation,
-                gains[0], nearest[0].0,
-                gains[1], nearest[1].0,
-                gains[2], nearest[2].0
+                gains[0],
+                nearest[0].0,
+                gains[1],
+                nearest[1].0,
+                gains[2],
+                nearest[2].0
             );
 
             // Interpolate HRTF
             let mut ir_left = vec![0.0; self.hop_size];
             let mut ir_right = vec![0.0; self.hop_size];
-            
+
             for (k, (idx, _)) in nearest.iter().enumerate() {
                 if let Some(hrtf) = sofa.get_hrtf(*idx) {
                     // Add weighted contribution
@@ -780,9 +812,7 @@ impl BinauralDecoderPlugin {
         };
 
         // Helper to compute dot product
-        let dot = |a: [f32; 3], b: [f32; 3]| -> f32 {
-            a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-        };
+        let dot = |a: [f32; 3], b: [f32; 3]| -> f32 { a[0] * b[0] + a[1] * b[1] + a[2] * b[2] };
 
         // Compute edge vectors
         let v01 = [v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]];
@@ -817,7 +847,9 @@ impl BinauralDecoderPlugin {
             // This can happen with sparse HRTF measurements
             log::debug!(
                 "[BinauralDecoder] Target outside triangle: weights=[{:.3}, {:.3}, {:.3}], clamping to boundary",
-                w0, w1, w2
+                w0,
+                w1,
+                w2
             );
 
             // Clamp negative weights to zero
@@ -1007,7 +1039,9 @@ impl BinauralDecoderPlugin {
             for ch in 0..2 {
                 self.output_accumulator[ch]
                     .copy_within(frames_to_drain..self.output_accumulator_fill, 0);
-                for i in (self.output_accumulator_fill - frames_to_drain)..self.output_accumulator_fill {
+                for i in
+                    (self.output_accumulator_fill - frames_to_drain)..self.output_accumulator_fill
+                {
                     self.output_accumulator[ch][i] = 0.0;
                 }
             }
@@ -1055,7 +1089,8 @@ impl BinauralDecoderPlugin {
 
                 // Extract channel and FFT
                 for i in 0..self.hop_size {
-                    self.temp_time_buffer[i] = Complex::new(input_block[i * self.input_channels + ch], 0.0);
+                    self.temp_time_buffer[i] =
+                        Complex::new(input_block[i * self.input_channels + ch], 0.0);
                 }
                 for i in self.hop_size..self.fft_size {
                     self.temp_time_buffer[i] = Complex::new(0.0, 0.0);
@@ -1065,8 +1100,16 @@ impl BinauralDecoderPlugin {
 
                 // Multiply and accumulate (SIMD-optimized hot path)
                 let hrtf = &self.hrtf_filters_freq[ch];
-                complex_mul_add_simd(&mut sum_left, &self.temp_time_buffer, &hrtf[0..self.fft_size]);
-                complex_mul_add_simd(&mut sum_right, &self.temp_time_buffer, &hrtf[self.fft_size..]);
+                complex_mul_add_simd(
+                    &mut sum_left,
+                    &self.temp_time_buffer,
+                    &hrtf[0..self.fft_size],
+                );
+                complex_mul_add_simd(
+                    &mut sum_right,
+                    &self.temp_time_buffer,
+                    &hrtf[self.fft_size..],
+                );
             }
 
             // IFFT and scale
@@ -1090,7 +1133,8 @@ impl BinauralDecoderPlugin {
 
                 // Extract channel
                 for i in 0..self.hop_size {
-                    self.temp_time_buffer[i] = Complex::new(input_block[i * self.input_channels + ch], 0.0);
+                    self.temp_time_buffer[i] =
+                        Complex::new(input_block[i * self.input_channels + ch], 0.0);
                 }
                 for i in self.hop_size..self.fft_size {
                     self.temp_time_buffer[i] = Complex::new(0.0, 0.0);
@@ -1102,7 +1146,7 @@ impl BinauralDecoderPlugin {
                 complex_mul_simd(
                     &mut self.temp_freq_buffer,
                     &self.temp_time_buffer,
-                    &self.hrtf_filters_freq[ch][0..self.fft_size]
+                    &self.hrtf_filters_freq[ch][0..self.fft_size],
                 );
                 self.fft_inverse.process(&mut self.temp_freq_buffer);
 
@@ -1115,7 +1159,7 @@ impl BinauralDecoderPlugin {
                 complex_mul_simd(
                     &mut self.temp_freq_buffer,
                     &self.temp_time_buffer,
-                    &self.hrtf_filters_freq[ch][self.fft_size..]
+                    &self.hrtf_filters_freq[ch][self.fft_size..],
                 );
                 self.fft_inverse.process(&mut self.temp_freq_buffer);
 
@@ -1149,7 +1193,8 @@ impl BinauralDecoderPlugin {
         // Accumulate output (overlap-add)
         for i in 0..self.fft_size {
             self.output_accumulator[0][self.next_add_position + i] += self.temp_output_block[i * 2];
-            self.output_accumulator[1][self.next_add_position + i] += self.temp_output_block[i * 2 + 1];
+            self.output_accumulator[1][self.next_add_position + i] +=
+                self.temp_output_block[i * 2 + 1];
         }
 
         // Update state
@@ -1160,7 +1205,8 @@ impl BinauralDecoderPlugin {
         // Shift input buffer
         // Note: This multiplication is safe - overflow is checked during initialization in new()
         let shift_amount = self.hop_size * self.input_channels;
-        self.input_buffer.copy_within(shift_amount..self.input_buffer_fill, 0);
+        self.input_buffer
+            .copy_within(shift_amount..self.input_buffer_fill, 0);
         self.input_buffer_fill -= shift_amount;
     }
 
@@ -1197,12 +1243,12 @@ impl BinauralDecoderPlugin {
         // Each reflection: (delay_ms, gain_db, left_gain, right_gain)
         // left_gain and right_gain allow for asymmetric reflections
         let reflections = [
-            (8.0, -12.0, 0.9, 1.0),   // Front wall
-            (15.0, -15.0, 0.7, 0.9),  // Side wall (left bias)
-            (18.0, -15.0, 1.0, 0.7),  // Side wall (right bias)
-            (22.0, -18.0, 0.8, 0.8),  // Back wall
-            (12.0, -20.0, 1.0, 1.0),  // Floor
-            (14.0, -20.0, 1.0, 1.0),  // Ceiling
+            (8.0, -12.0, 0.9, 1.0),  // Front wall
+            (15.0, -15.0, 0.7, 0.9), // Side wall (left bias)
+            (18.0, -15.0, 1.0, 0.7), // Side wall (right bias)
+            (22.0, -18.0, 0.8, 0.8), // Back wall
+            (12.0, -20.0, 1.0, 1.0), // Floor
+            (14.0, -20.0, 1.0, 1.0), // Ceiling
         ];
 
         for &(delay_ms, gain_db, left_mul, right_mul) in &reflections {
@@ -1240,7 +1286,6 @@ impl BinauralDecoderPlugin {
             }
         }
     }
-
 }
 
 impl Plugin for BinauralDecoderPlugin {
@@ -1294,7 +1339,8 @@ impl Plugin for BinauralDecoderPlugin {
                     self.near_field_strength = v;
                     // Re-calculate filters to apply shadowing
                     if self.sofa.is_some() {
-                        self.prepare_hrtf_filters().map_err(|e| format!("Failed to update filters: {}", e))?;
+                        self.prepare_hrtf_filters()
+                            .map_err(|e| format!("Failed to update filters: {}", e))?;
                     }
                     return Ok(());
                 }
@@ -1325,9 +1371,7 @@ impl Plugin for BinauralDecoderPlugin {
 
             // Note: Sample rate mismatch is now handled automatically via resampling in load_sofa()
         } else {
-            log::debug!(
-                "[BinauralDecoder] No SOFA file specified, plugin will pass through audio"
-            );
+            log::debug!("[BinauralDecoder] No SOFA file specified, plugin will pass through audio");
         }
 
         Ok(())
@@ -1374,20 +1418,33 @@ impl Plugin for BinauralDecoderPlugin {
         // Passthrough mode if no SOFA file loaded
         if self.sofa.is_none() {
             for frame in 0..context.num_frames {
-                if self.input_channels == 1 {
+                let (mut left, mut right) = if self.input_channels == 1 {
                     // Mono -> Stereo: duplicate to both channels
                     let sample = input[frame];
-                    output[frame * 2] = sample;
-                    output[frame * 2 + 1] = sample;
+                    (sample, sample)
                 } else if self.input_channels == 2 {
                     // Stereo -> Stereo: direct copy
-                    output[frame * 2] = input[frame * 2];
-                    output[frame * 2 + 1] = input[frame * 2 + 1];
+                    let l = input[frame * 2];
+                    let r = input[frame * 2 + 1];
+                    (l, r)
                 } else {
                     // Multi-channel -> Stereo: take first two channels
-                    output[frame * 2] = input[frame * self.input_channels];
-                    output[frame * 2 + 1] = input[frame * self.input_channels + 1];
+                    let l = input[frame * self.input_channels];
+                    let r = input[frame * self.input_channels + 1];
+                    (l, r)
+                };
+
+                // Flush denormals to zero to avoid CPU spikes and satisfy
+                // denormal-flushing invariants in tests.
+                if left.abs() < 1e-30 {
+                    left = 0.0;
                 }
+                if right.abs() < 1e-30 {
+                    right = 0.0;
+                }
+
+                output[frame * 2] = left;
+                output[frame * 2 + 1] = right;
             }
             return Ok(());
         }
@@ -1474,17 +1531,32 @@ mod tests {
     #[test]
     fn test_binaural_decoder_parameters() {
         let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0);
-        
+
         // Test optimization
-        plugin.set_parameter(ParameterId::from("enable_optimization"), ParameterValue::Bool(false)).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("enable_optimization"),
+                ParameterValue::Bool(false),
+            )
+            .unwrap();
         assert_eq!(plugin.enable_optimization, false);
-        
+
         // Test externalization
-        plugin.set_parameter(ParameterId::from("externalization"), ParameterValue::Float(0.5)).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("externalization"),
+                ParameterValue::Float(0.5),
+            )
+            .unwrap();
         assert_eq!(plugin.externalization, 0.5);
-        
+
         // Test near-field
-        plugin.set_parameter(ParameterId::from("near_field_strength"), ParameterValue::Float(0.8)).unwrap();
+        plugin
+            .set_parameter(
+                ParameterId::from("near_field_strength"),
+                ParameterValue::Float(0.8),
+            )
+            .unwrap();
         assert_eq!(plugin.near_field_strength, 0.8);
     }
 
@@ -1706,7 +1778,8 @@ mod tests {
         ];
         let zero = vec![Complex::new(0.0, 0.0); 4];
         let mut result = src.clone();
-        complex_mul_simd(&mut result, &result.clone(), &zero);
+        let input = result.clone();
+        complex_mul_simd(&mut result, &input, &zero);
         for i in 0..4 {
             assert_eq!(result[i].re, 0.0);
             assert_eq!(result[i].im, 0.0);
@@ -1795,11 +1868,8 @@ mod tests {
                 .collect();
 
             // Scalar reference
-            let expected: Vec<Complex<f32>> = src
-                .iter()
-                .zip(hrtf.iter())
-                .map(|(a, b)| a * b)
-                .collect();
+            let expected: Vec<Complex<f32>> =
+                src.iter().zip(hrtf.iter()).map(|(a, b)| a * b).collect();
 
             // SIMD computation
             let mut result = vec![Complex::new(0.0, 0.0); size];

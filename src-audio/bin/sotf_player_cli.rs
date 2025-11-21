@@ -2,10 +2,10 @@ use autoeq_iir::{Biquad, BiquadFilterType};
 use clap::{Parser, Subcommand};
 use sotf_audio::LoudnessCompensation;
 use sotf_audio::{AudioStreamingManager, PluginConfig, StreamingState};
+use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::thread::sleep;
 use std::time::Duration;
-use std::fs::OpenOptions;
 
 fn parse_loudness_compensation(vals: &Vec<f64>) -> Result<Option<LoudnessCompensation>, String> {
     let (ref_level, low, high) = match vals.as_slice() {
@@ -799,7 +799,8 @@ fn play_stream(
         plugins.push(upmixer_plugin);
         log::debug!(
             "Added upmixer plugin: 2ch -> {}ch ({})",
-            output_channel_count, upmixer_config
+            output_channel_count,
+            upmixer_config
         );
         output_channel_count
     } else {
@@ -821,15 +822,14 @@ fn play_stream(
         log::info!("  FFT size: {}", binaural_fft_size);
         log::info!("");
 
-        let binaural_plugin =
-            create_binaural_decoder_plugin_config(
-                sofa_path,
-                input_channels,
-                binaural_fft_size,
-                enable_optimization,
-                externalization,
-                near_field_strength,
-            )?;
+        let binaural_plugin = create_binaural_decoder_plugin_config(
+            sofa_path,
+            input_channels,
+            binaural_fft_size,
+            enable_optimization,
+            externalization,
+            near_field_strength,
+        )?;
         plugins.push(binaural_plugin);
         log::debug!(
             "Added binaural decoder plugin: {}ch -> 2ch (binaural)",
@@ -884,7 +884,8 @@ fn play_stream(
         plugins.push(matrix_plugin);
         log::debug!(
             "Added matrix plugin: {}ch (logical) -> {} HW channels",
-            logical_output_channels, max_hw_ch
+            logical_output_channels,
+            max_hw_ch
         );
 
         max_hw_ch // Hardware will need this many channels
@@ -974,7 +975,10 @@ fn play_stream(
                 let rg = if st.is_infinite() { 0.0 } else { -18.0 - st };
                 log::debug!(
                     "LUFS: M={} S={}  RG={:+4.1} dB  Peak={:.3}",
-                    momentary_str, shortterm_str, rg, loudness.peak
+                    momentary_str,
+                    shortterm_str,
+                    rg,
+                    loudness.peak
                 );
                 last_shortterm = Some(st);
             }

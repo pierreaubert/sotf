@@ -81,11 +81,11 @@ impl SourcePosition {
         // x = cos(el) * cos(az)
         // y = cos(el) * sin(az)
         // z = sin(el)
-        
+
         let x = el.cos() * az.cos();
         let y = el.cos() * az.sin();
         let z = el.sin();
-        
+
         [x, y, z]
     }
 }
@@ -264,7 +264,8 @@ impl SofaFile {
     /// # Returns
     /// * Array of 3 tuples (index, distance) sorted by distance
     pub fn find_three_nearest(&self, target: &SourcePosition) -> [(usize, f32); 3] {
-        let mut candidates: Vec<(usize, f32)> = self.positions
+        let mut candidates: Vec<(usize, f32)> = self
+            .positions
             .iter()
             .enumerate()
             .map(|(i, pos)| (i, pos.angular_distance(target)))

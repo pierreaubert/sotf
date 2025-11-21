@@ -44,17 +44,17 @@ fn default_release_ms() -> f32 {
     100.0
 }
 
- fn default_mix() -> f32 {
-     1.0
- }
+fn default_mix() -> f32 {
+    1.0
+}
 
- fn default_link_channels() -> bool {
-     true
- }
+fn default_link_channels() -> bool {
+    true
+}
 
- fn default_sidechain_hpf_hz() -> f32 {
-     0.0
- }
+fn default_sidechain_hpf_hz() -> f32 {
+    0.0
+}
 
 /// Configuration parameters for GatePlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -301,14 +301,9 @@ impl InPlacePlugin for GatePlugin {
             self.release_ms = value.as_float().ok_or("Invalid release value")?;
             self.update_coefficients();
         } else if id == self.param_mix {
-            self.mix = value
-                .as_float()
-                .ok_or("Invalid mix value")?
-                .clamp(0.0, 1.0);
+            self.mix = value.as_float().ok_or("Invalid mix value")?.clamp(0.0, 1.0);
         } else if id == self.param_link_channels {
-            self.link_channels = value
-                .as_bool()
-                .ok_or("Invalid link channels value")?;
+            self.link_channels = value.as_bool().ok_or("Invalid link channels value")?;
         } else if id == self.param_sidechain_hpf_hz {
             self.sidechain_hpf_hz = value
                 .as_float()

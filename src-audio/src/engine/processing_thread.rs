@@ -9,10 +9,12 @@ use super::{
     ThreadEvent,
 };
 use crate::plugins::{
-    AnalyzerPlugin, CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin,
-    DelayPluginParams, EqPluginParams, GainPluginParams, GatePluginParams, Host,
-    LimiterPluginParams, LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext,
-    UpmixerPluginParams,
+    AnalyzerPlugin, CompressorPlugin, CompressorPluginParams, ConvolutionPlugin,
+    ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin,
+    DelayPluginParams, EqPlugin, EqPluginParams, GainPlugin, GainPluginParams, GatePlugin,
+    GatePluginParams, Host, InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams,
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, MatrixPlugin, Plugin, PluginHost,
+    ProcessContext, UpmixerPlugin, UpmixerPluginParams,
 };
 
 use std::collections::HashMap;
@@ -141,7 +143,7 @@ impl ProcessingState {
     fn start_reload(&mut self, new_host: PluginHost) {
         let old_channels = self.host.output_channels();
         let new_channels = new_host.output_channels();
-        
+
         self.next_host = Some(new_host);
         self.crossfade_pos = 0.0;
         self.crossfade_current = 0;
@@ -290,9 +292,9 @@ impl ProcessingState {
             sample_rate: self.sample_rate,
             num_frames: input.len() / self.channels,
         };
-        
+
         for analyzer in self.analyzers.values_mut() {
-             analyzer.process(input, &context).ok();
+            analyzer.process(input, &context).ok();
         }
 
         if self.bypassed {
@@ -335,7 +337,7 @@ impl ProcessingState {
             } else {
                 // Crossfading between old and new plugin chains (same channel count)
                 let output_samples = output.len(); // Should be num_frames * channels
-                
+
                 // Resize reusable buffers if needed
                 if self.crossfade_buffer_old.len() != output_samples {
                     self.crossfade_buffer_old.resize(output_samples, 0.0);
@@ -343,7 +345,7 @@ impl ProcessingState {
                 if self.crossfade_buffer_new.len() != output_samples {
                     self.crossfade_buffer_new.resize(output_samples, 0.0);
                 }
-                
+
                 // Clear buffers (optional if process overwrites, but safer)
                 // self.crossfade_buffer_old.fill(0.0);
                 // self.crossfade_buffer_new.fill(0.0);
@@ -563,48 +565,49 @@ fn run_processing_thread(
                 // Process frame
                 // IMPORTANT: Output buffer size must match plugin chain output channels, not input!
                 // Use output_channels() which accounts for pending                    // Process audio frame
-                    let output_channels = state.output_channels();
-                    let output_samples = frame.num_frames * output_channels;
-                    
-                    // Use reusable buffer
-                    // Temporarily take buffer out of state to avoid double mutable borrow
-                    let mut process_buffer = std::mem::take(&mut state.process_buffer);
-                    
-                    if process_buffer.len() != output_samples {
-                        process_buffer.resize(output_samples, 0.0);
-                    }
+                let output_channels = state.output_channels();
+                let output_samples = frame.num_frames * output_channels;
 
-                    let start_time = std::time::Instant::now();
-                    match state.process_frame(&frame.data, &mut process_buffer) {
-                        Ok(_) => {
-                            let elapsed = start_time.elapsed();
-                            if elapsed > std::time::Duration::from_millis(5) {
-                                log::warn!(
-                                    "[Processing Thread] Slow processing: {:.2}ms for {} frames",
-                                    elapsed.as_secs_f64() * 1000.0,
-                                    frame.num_frames
-                                );
-                            }
+                // Use reusable buffer
+                // Temporarily take buffer out of state to avoid double mutable borrow
+                let mut process_buffer = std::mem::take(&mut state.process_buffer);
 
-                            // Send processed frame with correct output channel count
-                            let processed_frame = super::AudioFrame::new(
-                                process_buffer.clone(),
-                                frame.num_frames,
-                                output_channels,
-                                frame.sample_rate,
+                if process_buffer.len() != output_samples {
+                    process_buffer.resize(output_samples, 0.0);
+                }
+
+                let start_time = std::time::Instant::now();
+                match state.process_frame(&frame.data, &mut process_buffer) {
+                    Ok(_) => {
+                        let elapsed = start_time.elapsed();
+                        if elapsed > std::time::Duration::from_millis(5) {
+                            log::warn!(
+                                "[Processing Thread] Slow processing: {:.2}ms for {} frames",
+                                elapsed.as_secs_f64() * 1000.0,
+                                frame.num_frames
                             );
-                            message_tx
-                                .send(ProcessingMessage::Frame(processed_frame))
-                                .ok();
                         }
-                        Err(e) => {
-                            log::debug!("[Processing Thread] Processing error: {}", e);
-                            event_tx.send(ThreadEvent::ProcessingError(e)).ok();
-                        }
+
+                        // Send processed frame with correct output channel count
+                        let processed_frame = super::AudioFrame::new(
+                            process_buffer.clone(),
+                            frame.num_frames,
+                            output_channels,
+                            frame.sample_rate,
+                        );
+                        message_tx
+                            .send(ProcessingMessage::Frame(processed_frame))
+                            .ok();
                     }
-                    
-                    // Put buffer back
-                    state.process_buffer = process_buffer;          }
+                    Err(e) => {
+                        log::debug!("[Processing Thread] Processing error: {}", e);
+                        event_tx.send(ThreadEvent::ProcessingError(e)).ok();
+                    }
+                }
+
+                // Put buffer back
+                state.process_buffer = process_buffer;
+            }
             Ok(DecoderMessage::EndOfStream) => {
                 message_tx.send(ProcessingMessage::EndOfStream).ok();
             }
@@ -759,6 +762,15 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "convolution" => {
+            let params: ConvolutionPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse convolution plugin parameters: {}", e))?;
+
+            let plugin = ConvolutionPlugin::from_params(channels, sample_rate, params)
+                .map_err(|e| format!("Failed to create convolution plugin: {}", e))?;
+            Ok(Box::new(plugin))
+        }
+
         "gate" => {
             let params: GatePluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse gate plugin parameters: {}", e))?;
@@ -876,4 +888,3 @@ fn create_plugin(
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }
-

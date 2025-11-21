@@ -228,15 +228,18 @@ impl SymphoniaDecoder {
     }
 
     /// Convert audio buffer to normalized f32 samples and append to output vector
-    fn convert_audio_buffer_into(audio_buf: AudioBufferRef, samples: &mut Vec<f32>) -> AudioDecoderResult<()> {
+    fn convert_audio_buffer_into(
+        audio_buf: AudioBufferRef,
+        samples: &mut Vec<f32>,
+    ) -> AudioDecoderResult<()> {
         let channels_count = audio_buf.spec().channels.count();
         let duration = audio_buf.frames();
         let total_samples = duration * channels_count;
-        
+
         // Resize to fit new samples (appending)
         let current_len = samples.len();
         samples.resize(current_len + total_samples, 0.0);
-        
+
         // Get mutable slice to write into
         let output = &mut samples[current_len..];
 
@@ -244,28 +247,32 @@ impl SymphoniaDecoder {
             AudioBufferRef::U8(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 128.0 - 1.0;
+                        output[frame * channels_count + ch] =
+                            buf.chan(ch)[frame] as f32 / 128.0 - 1.0;
                     }
                 }
             }
             AudioBufferRef::U16(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 32768.0 - 1.0;
+                        output[frame * channels_count + ch] =
+                            buf.chan(ch)[frame] as f32 / 32768.0 - 1.0;
                     }
                 }
             }
             AudioBufferRef::U24(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = (buf.chan(ch)[frame].inner() as f32) / 8388608.0 - 1.0;
+                        output[frame * channels_count + ch] =
+                            (buf.chan(ch)[frame].inner() as f32) / 8388608.0 - 1.0;
                     }
                 }
             }
             AudioBufferRef::U32(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 2147483648.0 - 1.0;
+                        output[frame * channels_count + ch] =
+                            buf.chan(ch)[frame] as f32 / 2147483648.0 - 1.0;
                     }
                 }
             }
@@ -286,14 +293,16 @@ impl SymphoniaDecoder {
             AudioBufferRef::S24(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = (buf.chan(ch)[frame].inner() as f32) / 8388608.0;
+                        output[frame * channels_count + ch] =
+                            (buf.chan(ch)[frame].inner() as f32) / 8388608.0;
                     }
                 }
             }
             AudioBufferRef::S32(buf) => {
                 for frame in 0..duration {
                     for ch in 0..channels_count {
-                        output[frame * channels_count + ch] = buf.chan(ch)[frame] as f32 / 2147483648.0;
+                        output[frame * channels_count + ch] =
+                            buf.chan(ch)[frame] as f32 / 2147483648.0;
                     }
                 }
             }
@@ -367,7 +376,7 @@ impl AudioDecoder for SymphoniaDecoder {
             })?;
 
             let frame_count = decoded_audio_buf.frames() as u64;
-            
+
             // Convert directly into destination buffer
             Self::convert_audio_buffer_into(decoded_audio_buf, &mut dest.samples)?;
 

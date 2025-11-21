@@ -1599,6 +1599,22 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 format!("{:.2}", near_field_strength),
             ),
         ],
+        PluginSettings::Convolution {
+            ir_file,
+            mix,
+            gain_db,
+        } => vec![
+            (
+                "IR File".to_string(),
+                if ir_file.is_empty() {
+                    "[not set]".to_string()
+                } else {
+                    ir_file.clone()
+                },
+            ),
+            ("Mix (Dry/Wet)".to_string(), format!("{:.2}", mix)),
+            ("Gain".to_string(), format!("{:.1} dB", gain_db)),
+        ],
     }
 }
 

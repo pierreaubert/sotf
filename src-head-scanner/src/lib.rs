@@ -153,7 +153,7 @@ pub struct HeadScanner {
     point_cloud: Arc<RwLock<PointCloud>>,
     coverage: Arc<RwLock<coverage::CoverageMap>>,
     vision_model: Arc<RwLock<Option<vision::VisionModel>>>,
-    
+
     // SfM components
     orb_detector: Arc<RwLock<Option<vision::ORBDetector>>>,
     frame_history: Arc<RwLock<std::collections::VecDeque<SfMFrame>>>,
@@ -173,13 +173,13 @@ impl HeadScanner {
     pub fn new(config: ScannerConfig) -> ScannerResult<Self> {
         // Default camera intrinsics (will be updated if calibration is available)
         let intrinsics = reconstruction::CameraIntrinsics {
-            fx: config.frame_width as f32 * 0.8,  // Typical focal length
+            fx: config.frame_width as f32 * 0.8, // Typical focal length
             fy: config.frame_width as f32 * 0.8,
             cx: config.frame_width as f32 / 2.0,
             cy: config.frame_height as f32 / 2.0,
             distortion: Some([0.0, 0.0, 0.0, 0.0, 0.0]),
         };
-        
+
         Ok(Self {
             config,
             state: Arc::new(RwLock::new(ScanState::Idle)),
@@ -232,7 +232,10 @@ impl HeadScanner {
         if self.config.use_sfm {
             let orb = vision::ORBDetector::new()?;
             *self.orb_detector.write() = Some(orb);
-            log::info!("SfM mode enabled with {} frame history", self.config.sfm_frame_count);
+            log::info!(
+                "SfM mode enabled with {} frame history",
+                self.config.sfm_frame_count
+            );
         }
 
         *self.state.write() = ScanState::DetectingHead;
@@ -270,7 +273,11 @@ impl HeadScanner {
     }
 
     /// Process frame using classical feature detection with estimated depth
-    async fn process_frame_classical(&mut self, frame: Frame, state: ScanState) -> ScannerResult<()> {
+    async fn process_frame_classical(
+        &mut self,
+        frame: Frame,
+        state: ScanState,
+    ) -> ScannerResult<()> {
         // Detect head features
         let features = if let Some(ref mut model) = *self.vision_model.write() {
             model.detect_features(&frame)?
@@ -283,13 +290,20 @@ impl HeadScanner {
         // If we detected a head, start scanning
         if state == ScanState::DetectingHead && !features.is_empty() {
             *self.state.write() = ScanState::Scanning;
-            log::info!("Head detected with {} features, starting scan", features.len());
+            log::info!(
+                "Head detected with {} features, starting scan",
+                features.len()
+            );
         }
 
         // Add points to the point cloud
         if state == ScanState::Scanning {
             let points = reconstruction::features_to_points(&features, &frame)?;
-            log::debug!("Converted {} features to {} 3D points", features.len(), points.len());
+            log::debug!(
+                "Converted {} features to {} 3D points",
+                features.len(),
+                points.len()
+            );
 
             // Deduplicate and filter points before adding
             let mut point_cloud = self.point_cloud.write();
@@ -299,7 +313,12 @@ impl HeadScanner {
             if !filtered_points.is_empty() {
                 point_cloud.add_points(&filtered_points);
                 let new_count = point_cloud.len();
-                log::debug!("Added {} new points (total: {} -> {})", filtered_points.len(), initial_count, new_count);
+                log::debug!(
+                    "Added {} new points (total: {} -> {})",
+                    filtered_points.len(),
+                    initial_count,
+                    new_count
+                );
 
                 // Periodically downsample to control memory usage
                 if point_cloud.len() % 1000 == 0 {
@@ -323,8 +342,9 @@ impl HeadScanner {
         // Detect ORB features
         let (keypoints, descriptors) = {
             let mut orb_guard = self.orb_detector.write();
-            let orb = orb_guard.as_mut()
-                .ok_or(ScannerError::InvalidConfig("ORB detector not initialized".to_string()))?;
+            let orb = orb_guard.as_mut().ok_or(ScannerError::InvalidConfig(
+                "ORB detector not initialized".to_string(),
+            ))?;
             orb.detect_and_compute(&frame)?
         };
 
@@ -333,7 +353,10 @@ impl HeadScanner {
         // If we detected features, start scanning
         if state == ScanState::DetectingHead && keypoints.len() > 0 {
             *self.state.write() = ScanState::Scanning;
-            log::info!("Head detected with {} ORB features, starting SfM scan", keypoints.len());
+            log::info!(
+                "Head detected with {} ORB features, starting SfM scan",
+                keypoints.len()
+            );
         }
 
         // Add frame to history
@@ -364,7 +387,7 @@ impl HeadScanner {
     async fn reconstruct_sfm(&mut self) -> ScannerResult<()> {
         let history = self.frame_history.read();
         let n = history.len();
-        
+
         if n < 2 {
             return Ok(());
         }
@@ -377,11 +400,14 @@ impl HeadScanner {
         let matches = vision::ORBDetector::match_features(
             &frame1.descriptors,
             &frame2.descriptors,
-            0.75,  // Lowe's ratio test threshold
+            0.75, // Lowe's ratio test threshold
         )?;
-        
+
         if matches.len() < 8 {
-            log::debug!("Not enough matched features for SfM ({} < 8)", matches.len());
+            log::debug!(
+                "Not enough matched features for SfM ({} < 8)",
+                matches.len()
+            );
             return Ok(());
         }
 
@@ -394,7 +420,7 @@ impl HeadScanner {
         // Extract matched point positions
         let mut points1 = Vec::new();
         let mut points2 = Vec::new();
-        
+
         for (idx1, idx2) in matches.iter() {
             if *idx1 < features1.len() && *idx2 < features2.len() {
                 points1.push((features1[*idx1].position.x, features1[*idx1].position.y));
@@ -403,26 +429,31 @@ impl HeadScanner {
         }
 
         // Estimate essential matrix
-        let (essential, inliers) = match reconstruction::estimate_essential_matrix(
-            &points1,
-            &points2,
-            &self.intrinsics,
-        ) {
-            Ok(result) => result,
-            Err(e) => {
-                log::debug!("Essential matrix estimation failed: {}", e);
-                return Ok(());
-            }
-        };
+        let (essential, inliers) =
+            match reconstruction::estimate_essential_matrix(&points1, &points2, &self.intrinsics) {
+                Ok(result) => result,
+                Err(e) => {
+                    log::debug!("Essential matrix estimation failed: {}", e);
+                    return Ok(());
+                }
+            };
 
         let inlier_count = inliers.iter().filter(|&&x| x).count();
-        
+
         if inlier_count < self.config.sfm_min_inliers {
-            log::debug!("Not enough inliers for SfM ({} < {})", inlier_count, self.config.sfm_min_inliers);
+            log::debug!(
+                "Not enough inliers for SfM ({} < {})",
+                inlier_count,
+                self.config.sfm_min_inliers
+            );
             return Ok(());
         }
 
-        log::debug!("Essential matrix: {} inliers of {} points", inlier_count, points1.len());
+        log::debug!(
+            "Essential matrix: {} inliers of {} points",
+            inlier_count,
+            points1.len()
+        );
 
         // Recover camera pose
         let pose = match reconstruction::recover_pose_from_essential(
@@ -460,15 +491,18 @@ impl HeadScanner {
                 let pt1 = nalgebra::Point2::new(points1[i].0, points1[i].1);
                 let pt2 = nalgebra::Point2::new(points2[i].0, points2[i].1);
 
-                if let Ok(point_3d) = reconstruction::triangulate_point(&pt1, &pt2, &pose1, &pose, &self.intrinsics) {
+                if let Ok(point_3d) =
+                    reconstruction::triangulate_point(&pt1, &pt2, &pose1, &pose, &self.intrinsics)
+                {
                     // Filter out points that are too far or behind camera
                     let depth = point_3d.coords.norm();
-                    if depth > 10.0 && depth < 200.0 {  // 10cm to 2m range
+                    if depth > 10.0 && depth < 200.0 {
+                        // 10cm to 2m range
                         new_points.push(pointcloud::Point {
                             position: point_3d,
                             normal: None,
                             color: None,
-                            confidence: 1.0,  // High confidence for triangulated points
+                            confidence: 1.0, // High confidence for triangulated points
                         });
                     }
                 }
@@ -480,11 +514,15 @@ impl HeadScanner {
             let mut point_cloud = self.point_cloud.write();
             let initial_count = point_cloud.len();
             let filtered_points = self.filter_new_points(&point_cloud, new_points);
-            
+
             if !filtered_points.is_empty() {
                 point_cloud.add_points(&filtered_points);
-                log::info!("SfM: Triangulated {} new 3D points (total: {} -> {})", 
-                    filtered_points.len(), initial_count, point_cloud.len());
+                log::info!(
+                    "SfM: Triangulated {} new 3D points (total: {} -> {})",
+                    filtered_points.len(),
+                    initial_count,
+                    point_cloud.len()
+                );
 
                 // Update coverage
                 drop(point_cloud);

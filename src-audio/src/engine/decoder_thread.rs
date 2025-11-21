@@ -195,7 +195,8 @@ impl DecoderState {
 
                 // Add to resampler buffer if we're resampling
                 if let Some(resampler) = &mut self.resampler {
-                    self.resampler_buffer.extend_from_slice(&decode_buffer.samples);
+                    self.resampler_buffer
+                        .extend_from_slice(&decode_buffer.samples);
 
                     // Process resampler buffer in frame_size chunks
                     while self.resampler_buffer.len() >= frame_size * channels {
@@ -228,10 +229,15 @@ impl DecoderState {
                             (frame_size as f64 * resampler.ratio()).ceil() as usize;
 
                         // Send resampled frame - cloning from reusable buffer
-                        let frame_data = self.resample_output_buffer[..expected_frames * channels].to_vec();
+                        let frame_data =
+                            self.resample_output_buffer[..expected_frames * channels].to_vec();
 
-                        let frame =
-                            AudioFrame::new(frame_data, expected_frames, channels, target_sample_rate);
+                        let frame = AudioFrame::new(
+                            frame_data,
+                            expected_frames,
+                            channels,
+                            target_sample_rate,
+                        );
 
                         let s_start = Instant::now();
                         message_tx
@@ -242,8 +248,12 @@ impl DecoderState {
                 } else {
                     // No resampling - send decoded samples directly as frames
                     let num_frames = decode_buffer.samples.len() / channels;
-                    let frame =
-                        AudioFrame::new(decode_buffer.samples.clone(), num_frames, channels, source_sample_rate);
+                    let frame = AudioFrame::new(
+                        decode_buffer.samples.clone(),
+                        num_frames,
+                        channels,
+                        source_sample_rate,
+                    );
 
                     let s_start = Instant::now();
                     message_tx
@@ -397,7 +407,12 @@ impl DecoderState {
                 self.hal_input_buffer[samples_read..].fill(0.0);
             }
 
-            let frame = AudioFrame::new(self.hal_input_buffer.clone(), frame_size, channels, sample_rate);
+            let frame = AudioFrame::new(
+                self.hal_input_buffer.clone(),
+                frame_size,
+                channels,
+                sample_rate,
+            );
             message_tx
                 .send(DecoderMessage::Frame(frame))
                 .map_err(|_| "Failed to send HAL frame")?;

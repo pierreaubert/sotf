@@ -443,8 +443,7 @@ impl InPlacePlugin for CompressorPlugin {
         } else {
             0.0
         };
-        let makeup_gain_linear =
-            10.0_f32.powf((self.makeup_gain_db + auto_makeup_db) / 20.0);
+        let makeup_gain_linear = 10.0_f32.powf((self.makeup_gain_db + auto_makeup_db) / 20.0);
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 

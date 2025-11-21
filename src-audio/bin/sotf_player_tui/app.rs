@@ -1571,8 +1571,7 @@ impl App {
                         }
                         6 => {
                             // Adjust sidechain HPF cutoff in Hz
-                            *sidechain_hpf_hz =
-                                (*sidechain_hpf_hz + delta * 5.0).clamp(0.0, 200.0);
+                            *sidechain_hpf_hz = (*sidechain_hpf_hz + delta * 5.0).clamp(0.0, 200.0);
                         }
                         _ => return false,
                     }
@@ -1607,8 +1606,8 @@ impl App {
                     if let Some(filter) = filters.get_mut(filter_idx) {
                         match field_idx {
                             0 => {
-                                filter.frequency = (filter.frequency + delta * 10.0)
-                                    .clamp(20.0, 20_000.0);
+                                filter.frequency =
+                                    (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
                                 true
                             }
                             1 => {
@@ -1616,8 +1615,7 @@ impl App {
                                 true
                             }
                             2 => {
-                                filter.gain_db =
-                                    (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0);
+                                filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0);
                                 true
                             }
                             3 => {
@@ -1675,7 +1673,27 @@ impl App {
                             true
                         }
                         4 => {
-                            *near_field_strength = (*near_field_strength + delta * 0.05).clamp(0.0, 1.0);
+                            *near_field_strength =
+                                (*near_field_strength + delta * 0.05).clamp(0.0, 1.0);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::Convolution {
+                    ir_file: _,
+                    mix,
+                    gain_db,
+                } => {
+                    // ir_file (param 0) would need file browser - not adjustable here
+                    match param_idx {
+                        0 => false, // IR file
+                        1 => {
+                            *mix = (*mix + delta * 0.01).clamp(0.0, 1.0);
+                            true
+                        }
+                        2 => {
+                            *gain_db = (*gain_db + delta * 0.1).clamp(-20.0, 20.0);
                             true
                         }
                         _ => false,
@@ -2105,10 +2123,11 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Upmixer { .. } => 11, // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, lfe_cutoff_hz, stereo_width, bandpass_hz, height_gain, lfe_gain, enable_subharmonic_synth, subharmonic_gain
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
-        PluginSettings::Limiter { .. } => 3, // threshold, release, mix
-        PluginSettings::Gate { .. } => 7,    // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
+        PluginSettings::Limiter { .. } => 3,     // threshold, release, mix
+        PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
+        PluginSettings::Convolution { .. } => 3,     // ir_file, mix, gain_db
     }
 }
 
@@ -2349,16 +2368,12 @@ mod tests {
         assert_eq!(app.current_queue_index, Some(0));
 
         let third_path = app.next_track().unwrap();
-        assert!(third_path
-            .to_string_lossy()
-            .contains("album2/track0.flac"));
+        assert!(third_path.to_string_lossy().contains("album2/track0.flac"));
         assert_eq!(app.queue.len(), 1);
         assert_eq!(app.current_queue_index, Some(0));
 
         let fourth_path = app.next_track().unwrap();
-        assert!(fourth_path
-            .to_string_lossy()
-            .contains("album2/track1.flac"));
+        assert!(fourth_path.to_string_lossy().contains("album2/track1.flac"));
 
         let none = app.next_track();
         assert!(none.is_none());
@@ -2433,9 +2448,19 @@ mod tests {
         app.editing_plugin_index = Some(0);
 
         let plugin = app.plugin_chain.get_plugin(0).unwrap();
-        let (orig_speaker_config, orig_front_direct, orig_front_ambient, orig_rear_ambient,
-             orig_lfe_cutoff, orig_stereo_width, orig_bandpass, orig_height_gain,
-             orig_lfe_gain, orig_enable_subharm, orig_subharm_gain) = match &plugin.settings {
+        let (
+            orig_speaker_config,
+            orig_front_direct,
+            orig_front_ambient,
+            orig_rear_ambient,
+            orig_lfe_cutoff,
+            orig_stereo_width,
+            orig_bandpass,
+            orig_height_gain,
+            orig_lfe_gain,
+            orig_enable_subharm,
+            orig_subharm_gain,
+        ) = match &plugin.settings {
             PluginSettings::Upmixer {
                 speaker_config,
                 gain_front_direct,
@@ -2611,27 +2636,27 @@ mod tests {
         app.plugin_chain.add_plugin(&PluginType::Gate);
         app.editing_plugin_index = Some(0);
         let plugin = app.plugin_chain.get_plugin(0).unwrap();
-        let (orig_thresh, orig_ratio, orig_attack, orig_release, orig_mix,
-             orig_link, orig_hpf) = match &plugin.settings {
-            PluginSettings::Gate {
-                threshold_db,
-                ratio,
-                attack_ms,
-                release_ms,
-                mix,
-                link_channels,
-                sidechain_hpf_hz,
-            } => (
-                *threshold_db,
-                *ratio,
-                *attack_ms,
-                *release_ms,
-                *mix,
-                *link_channels,
-                *sidechain_hpf_hz,
-            ),
-            _ => panic!("Expected Gate plugin"),
-        };
+        let (orig_thresh, orig_ratio, orig_attack, orig_release, orig_mix, orig_link, orig_hpf) =
+            match &plugin.settings {
+                PluginSettings::Gate {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    mix,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => (
+                    *threshold_db,
+                    *ratio,
+                    *attack_ms,
+                    *release_ms,
+                    *mix,
+                    *link_channels,
+                    *sidechain_hpf_hz,
+                ),
+                _ => panic!("Expected Gate plugin"),
+            };
         for idx in 0..7 {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(1.0));
@@ -2658,7 +2683,8 @@ mod tests {
 
         // Loudness compensation
         let mut app = App::new();
-        app.plugin_chain.add_plugin(&PluginType::LoudnessCompensation);
+        app.plugin_chain
+            .add_plugin(&PluginType::LoudnessCompensation);
         app.editing_plugin_index = Some(0);
         let plugin = app.plugin_chain.get_plugin(0).unwrap();
         let (orig_target, orig_min, orig_max) = match &plugin.settings {
@@ -2694,23 +2720,22 @@ mod tests {
         app.selected_plugin_index = 0;
 
         let plugin = app.plugin_chain.get_plugin(0).unwrap();
-        let (orig_sofa, orig_channels, orig_opt, orig_ext, orig_near) =
-            match &plugin.settings {
-                PluginSettings::BinauralDecoder {
-                    sofa_file,
-                    input_channels,
-                    enable_optimization,
-                    externalization,
-                    near_field_strength,
-                } => (
-                    sofa_file.clone(),
-                    *input_channels,
-                    *enable_optimization,
-                    *externalization,
-                    *near_field_strength,
-                ),
-                _ => panic!("Expected BinauralDecoder plugin"),
-            };
+        let (orig_sofa, orig_channels, orig_opt, orig_ext, orig_near) = match &plugin.settings {
+            PluginSettings::BinauralDecoder {
+                sofa_file,
+                input_channels,
+                enable_optimization,
+                externalization,
+                near_field_strength,
+            } => (
+                sofa_file.clone(),
+                *input_channels,
+                *enable_optimization,
+                *externalization,
+                *near_field_strength,
+            ),
+            _ => panic!("Expected BinauralDecoder plugin"),
+        };
 
         // Adjust numeric / boolean parameters via adjust_selected_param
         for idx in 1..5 {

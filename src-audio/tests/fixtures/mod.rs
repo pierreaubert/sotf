@@ -2,8 +2,8 @@
 //
 // Provides utilities to create synthetic SOFA files for testing
 
-use std::path::PathBuf;
 use std::f32::consts::PI;
+use std::path::PathBuf;
 
 /// Create a minimal test SOFA file with synthetic HRTFs
 ///
@@ -32,7 +32,8 @@ pub fn create_test_sofa_file(
 
     // Add global attributes
     file.add_attribute("Conventions", "SOFA").unwrap();
-    file.add_attribute("SOFAConventions", "SimpleFreeFieldHRIR").unwrap();
+    file.add_attribute("SOFAConventions", "SimpleFreeFieldHRIR")
+        .unwrap();
     file.add_attribute("SOFAConventionsVersion", "1.0").unwrap();
     file.add_attribute("DataType", "FIR").unwrap();
     file.add_attribute("RoomType", "free field").unwrap();
@@ -40,14 +41,12 @@ pub fn create_test_sofa_file(
 
     // Define dimensions
     file.add_dimension("M", num_positions).unwrap(); // Measurements
-    file.add_dimension("R", 2).unwrap();              // Receivers (L/R ears)
-    file.add_dimension("N", ir_length).unwrap();      // Samples
-    file.add_dimension("C", 3).unwrap();              // Coordinates (az, el, r)
+    file.add_dimension("R", 2).unwrap(); // Receivers (L/R ears)
+    file.add_dimension("N", ir_length).unwrap(); // Samples
+    file.add_dimension("C", 3).unwrap(); // Coordinates (az, el, r)
 
     // Add Data.SamplingRate variable
-    let mut sr_var = file
-        .add_variable::<f32>("Data.SamplingRate", &[])
-        .unwrap();
+    let mut sr_var = file.add_variable::<f32>("Data.SamplingRate", &[]).unwrap();
     sr_var.put_value(sample_rate, None).unwrap();
 
     // Generate source positions (distributed around sphere)
@@ -56,17 +55,24 @@ pub fn create_test_sofa_file(
         let theta = 2.0 * PI * (i as f32) / (num_positions as f32);
         let phi = (i as f32 / num_positions as f32) * PI - PI / 2.0;
 
-        positions[i * 3] = theta.to_degrees();     // Azimuth
-        positions[i * 3 + 1] = phi.to_degrees();   // Elevation
-        positions[i * 3 + 2] = 1.0;                // Distance
+        positions[i * 3] = theta.to_degrees(); // Azimuth
+        positions[i * 3 + 1] = phi.to_degrees(); // Elevation
+        positions[i * 3 + 2] = 1.0; // Distance
     }
 
     let mut pos_var = file
         .add_variable::<f32>("SourcePosition", &["M", "C"])
         .unwrap();
     pos_var.put_values(&positions, None, None).unwrap();
-    pos_var.add_attribute("Type", AttributeValue::Str("spherical".to_string())).unwrap();
-    pos_var.add_attribute("Units", AttributeValue::Str("degree, degree, metre".to_string())).unwrap();
+    pos_var
+        .add_attribute("Type", AttributeValue::Str("spherical".to_string()))
+        .unwrap();
+    pos_var
+        .add_attribute(
+            "Units",
+            AttributeValue::Str("degree, degree, metre".to_string()),
+        )
+        .unwrap();
 
     // Generate synthetic HRTF impulse responses
     // Simple model: delayed impulse with frequency-dependent decay
@@ -79,8 +85,8 @@ pub fn create_test_sofa_file(
         // Simple sphere head model: ITD = (r/c) * (azimuth + sin(azimuth))
         let head_radius = 0.0875; // 8.75 cm
         let speed_of_sound = 343.0; // m/s
-        let itd_samples = (head_radius / speed_of_sound * sample_rate *
-                          (azimuth + azimuth.sin())) as i32;
+        let itd_samples =
+            (head_radius / speed_of_sound * sample_rate * (azimuth + azimuth.sin())) as i32;
 
         // Generate left ear IR
         let left_delay = ir_length / 4 - itd_samples.max(0) as usize;
@@ -101,7 +107,8 @@ pub fn create_test_sofa_file(
             for i in 0..(ir_length - right_delay).min(50) {
                 let t = i as f32 / sample_rate;
                 let decay = (-t * 2000.0).exp();
-                ir_data[right_offset + right_delay + i] = decay * (2.0 * PI * 1000.0 * t).sin() * 0.1;
+                ir_data[right_offset + right_delay + i] =
+                    decay * (2.0 * PI * 1000.0 * t).sin() * 0.1;
             }
         }
 
@@ -127,14 +134,16 @@ pub fn create_test_sofa_file(
 
     // Add receiver positions (ears)
     let receiver_pos = vec![
-        90.0, 0.0, 0.0,   // Left ear
-        -90.0, 0.0, 0.0,  // Right ear
+        90.0, 0.0, 0.0, // Left ear
+        -90.0, 0.0, 0.0, // Right ear
     ];
     let mut recv_var = file
         .add_variable::<f32>("ReceiverPosition", &["R", "C"])
         .unwrap();
     recv_var.put_values(&receiver_pos, None, None).unwrap();
-    recv_var.add_attribute("Type", AttributeValue::Str("spherical".to_string())).unwrap();
+    recv_var
+        .add_attribute("Type", AttributeValue::Str("spherical".to_string()))
+        .unwrap();
 
     // Add listener position
     let listener_pos = vec![0.0, 0.0, 0.0];
@@ -146,8 +155,10 @@ pub fn create_test_sofa_file(
     drop(file); // Close file
 
     println!("Created test SOFA file: {:?}", path);
-    println!("  Positions: {}, IR length: {}, Sample rate: {} Hz",
-             num_positions, ir_length, sample_rate);
+    println!(
+        "  Positions: {}, IR length: {}, Sample rate: {} Hz",
+        num_positions, ir_length, sample_rate
+    );
 
     path
 }

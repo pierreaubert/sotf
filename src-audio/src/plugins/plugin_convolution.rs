@@ -4,8 +4,8 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -228,10 +228,7 @@ impl ConvolutionPlugin {
         let file = File::open(Path::new(path))
             .map_err(|e| format!("Failed to open IR file '{}': {}", path, e))?;
 
-        let mss = symphonia::core::io::MediaSourceStream::new(
-            Box::new(file),
-            Default::default(),
-        );
+        let mss = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
 
         let hint = symphonia::core::probe::Hint::new();
         let format_opts = symphonia::core::formats::FormatOptions::default();
@@ -246,7 +243,9 @@ impl ConvolutionPlugin {
             .default_track()
             .ok_or("No default track in IR file")?;
 
-        let channels = track.codec_params.channels
+        let channels = track
+            .codec_params
+            .channels
             .ok_or("No channel info in IR file")?
             .count();
 
@@ -382,14 +381,12 @@ impl ConvolutionPlugin {
                 }
 
                 // Shift input buffer
-                self.input_buffer[channel]
-                    .copy_within(self.hop_size..self.fft_size, 0);
+                self.input_buffer[channel].copy_within(self.hop_size..self.fft_size, 0);
                 self.input_buffer[channel][self.hop_size..].fill(0.0);
                 self.input_buffer_fill[channel] -= self.hop_size;
 
                 // Track output accumulator fill
-                self.output_accumulator_fill =
-                    self.output_accumulator_fill.max(self.fft_size);
+                self.output_accumulator_fill = self.output_accumulator_fill.max(self.fft_size);
             }
 
             // 3. Drain output accumulator
@@ -411,8 +408,7 @@ impl ConvolutionPlugin {
                 }
 
                 // Shift accumulator
-                self.output_accumulator[channel]
-                    .copy_within(to_drain..self.fft_size * 2, 0);
+                self.output_accumulator[channel].copy_within(to_drain..self.fft_size * 2, 0);
                 self.output_accumulator[channel][self.fft_size * 2 - to_drain..].fill(0.0);
                 self.output_accumulator_fill -= to_drain;
                 output_pos += to_drain;

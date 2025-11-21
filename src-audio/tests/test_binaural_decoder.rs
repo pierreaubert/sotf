@@ -7,8 +7,8 @@
 // Note: Tests run without a SOFA file, so they verify the fixes work even with
 // silent/minimal output. When a SOFA file is loaded, the same fixes ensure clean audio.
 
-use sotf_audio::plugins::BinauralDecoderPlugin;
 use sotf_audio::Plugin;
+use sotf_audio::plugins::BinauralDecoderPlugin;
 
 #[test]
 fn test_binaural_channel_normalization_no_clipping() {
@@ -24,9 +24,9 @@ fn test_binaural_channel_normalization_no_clipping() {
         input_channels,
         fft_size,
         None, // No SOFA file - will skip HRTF convolution in test mode
-        true,  // enable_optimization
-        0.0,   // externalization
-        0.0,   // near_field_strength
+        true, // enable_optimization
+        0.0,  // externalization
+        0.0,  // near_field_strength
     );
     plugin.initialize(sample_rate).unwrap();
 
@@ -38,12 +38,11 @@ fn test_binaural_channel_normalization_no_clipping() {
     for i in 0..num_samples {
         let t = i as f32 / sample_rate as f32;
         // Mix of frequencies with high amplitude
-        let signal = 0.95 * (
-            (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.4 +
-            (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3 +
-            (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.2 +
-            (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.1
-        );
+        let signal = 0.95
+            * ((2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.4
+                + (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3
+                + (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.2
+                + (2.0 * std::f32::consts::PI * 220.0 * t).sin() * 0.1);
         // Apply same signal to all input channels to maximize summing
         for ch in 0..input_channels {
             input[i * input_channels + ch] = signal;
@@ -101,9 +100,14 @@ fn test_binaural_channel_normalization_no_clipping() {
             "Output RMS too low: {:.6}. Signal may be overly attenuated.",
             rms
         );
-        println!("✓ Binaural channel normalization test passed: no clipping detected with output RMS {:.6}", rms);
+        println!(
+            "✓ Binaural channel normalization test passed: no clipping detected with output RMS {:.6}",
+            rms
+        );
     } else {
-        println!("✓ Binaural channel normalization test passed: no clipping detected (silent output without SOFA file is expected)");
+        println!(
+            "✓ Binaural channel normalization test passed: no clipping detected (silent output without SOFA file is expected)"
+        );
     }
 }
 
@@ -120,9 +124,9 @@ fn test_binaural_denormal_flushing() {
         input_channels,
         fft_size,
         None, // No SOFA file
-        true,  // enable_optimization
-        0.0,   // externalization
-        0.0,   // near_field_strength
+        true, // enable_optimization
+        0.0,  // externalization
+        0.0,  // near_field_strength
     );
     plugin.initialize(sample_rate).unwrap();
 

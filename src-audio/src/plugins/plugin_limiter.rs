@@ -228,10 +228,7 @@ impl InPlacePlugin for LimiterPlugin {
         } else if id == self.param_soft {
             self.soft = value.as_bool().ok_or("Invalid soft value")?;
         } else if id == self.param_mix {
-            self.mix = value
-                .as_float()
-                .ok_or("Invalid mix value")?
-                .clamp(0.0, 1.0);
+            self.mix = value.as_float().ok_or("Invalid mix value")?.clamp(0.0, 1.0);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -378,48 +375,48 @@ mod tests {
         }
     }
 
-	#[test]
-	fn test_limiter_additional_parameters_defaults() {
-		let limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
+    #[test]
+    fn test_limiter_additional_parameters_defaults() {
+        let limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
 
-		assert_eq!(limiter.mix, 1.0);
-	}
+        assert_eq!(limiter.mix, 1.0);
+    }
 
-	#[test]
-	fn test_limiter_mix_parameter_set_get() {
-		let mut limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
-		limiter.initialize(48000).unwrap();
+    #[test]
+    fn test_limiter_mix_parameter_set_get() {
+        let mut limiter = LimiterPlugin::new(2, -0.1, 50.0, 5.0, false);
+        limiter.initialize(48000).unwrap();
 
-		limiter
-			.set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
-			.unwrap();
+        limiter
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+            .unwrap();
 
-		let mix = limiter.get_parameter(&ParameterId::from("mix"));
-		assert_eq!(mix, Some(ParameterValue::Float(0.5)));
-	}
+        let mix = limiter.get_parameter(&ParameterId::from("mix"));
+        assert_eq!(mix, Some(ParameterValue::Float(0.5)));
+    }
 
-	#[test]
-	fn test_limiter_soft_vs_hard_behaviour() {
-		let mut hard = LimiterPlugin::new(1, 0.0, 50.0, 0.0, false);
-		let mut soft = LimiterPlugin::new(1, 0.0, 50.0, 0.0, true);
-		hard.initialize(48000).unwrap();
-		soft.initialize(48000).unwrap();
+    #[test]
+    fn test_limiter_soft_vs_hard_behaviour() {
+        let mut hard = LimiterPlugin::new(1, 0.0, 50.0, 0.0, false);
+        let mut soft = LimiterPlugin::new(1, 0.0, 50.0, 0.0, true);
+        hard.initialize(48000).unwrap();
+        soft.initialize(48000).unwrap();
 
-		let context = ProcessContext {
-			num_frames: 1,
-			sample_rate: 48000,
-		};
+        let context = ProcessContext {
+            num_frames: 1,
+            sample_rate: 48000,
+        };
 
-		let mut hard_buf = vec![2.0_f32];
-		let mut soft_buf = vec![2.0_f32];
+        let mut hard_buf = vec![2.0_f32];
+        let mut soft_buf = vec![2.0_f32];
 
-		hard.process_in_place(&mut hard_buf, &context).unwrap();
-		soft.process_in_place(&mut soft_buf, &context).unwrap();
+        hard.process_in_place(&mut hard_buf, &context).unwrap();
+        soft.process_in_place(&mut soft_buf, &context).unwrap();
 
-		assert!(hard_buf[0].abs() <= 1.0);
-		assert!(soft_buf[0].abs() <= 1.0);
-		// Soft limiter should not produce a larger peak than the hard limiter
-		// for the same hot input, ensuring a safe, rounded response.
-		assert!(soft_buf[0].abs() <= hard_buf[0].abs());
-	}
+        assert!(hard_buf[0].abs() <= 1.0);
+        assert!(soft_buf[0].abs() <= 1.0);
+        // Soft limiter should not produce a larger peak than the hard limiter
+        // for the same hot input, ensuring a safe, rounded response.
+        assert!(soft_buf[0].abs() <= hard_buf[0].abs());
+    }
 }

@@ -47,7 +47,8 @@ fn test_binaural_with_minimal_sofa() {
 
     // Verify output is non-zero (actual spatialization happened)
     let rms_left: f32 = output.iter().step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
-    let rms_right: f32 = output.iter().skip(1).step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
+    let rms_right: f32 =
+        output.iter().skip(1).step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
 
     let rms_left = rms_left.sqrt();
     let rms_right = rms_right.sqrt();
@@ -69,14 +70,7 @@ fn test_binaural_sample_rate_resampling() {
     let sofa_path = create_test_sofa_file("test_resample.sofa", 5, 256, 48000.0);
 
     // Initialize decoder at 44.1kHz (different rate)
-    let mut decoder = BinauralDecoderPlugin::new(
-        5,
-        2048,
-        Some(sofa_path.clone()),
-        true,
-        0.0,
-        0.0,
-    );
+    let mut decoder = BinauralDecoderPlugin::new(5, 2048, Some(sofa_path.clone()), true, 0.0, 0.0);
 
     // This should trigger automatic resampling
     decoder.initialize(44100).unwrap();
@@ -135,7 +129,8 @@ fn test_binaural_lfe_handling() {
 
     // LFE should be mixed equally to both ears
     let rms_left: f32 = output.iter().step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
-    let rms_right: f32 = output.iter().skip(1).step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
+    let rms_right: f32 =
+        output.iter().skip(1).step_by(2).map(|x| x * x).sum::<f32>() / (block_size as f32);
 
     let rms_left = rms_left.sqrt();
     let rms_right = rms_right.sqrt();
@@ -192,8 +187,12 @@ fn test_binaural_externalization() {
         sample_rate: 48000,
     };
 
-    decoder_no_ext.process(&input, &mut output_no_ext, &context).unwrap();
-    decoder_with_ext.process(&input, &mut output_with_ext, &context).unwrap();
+    decoder_no_ext
+        .process(&input, &mut output_no_ext, &context)
+        .unwrap();
+    decoder_with_ext
+        .process(&input, &mut output_with_ext, &context)
+        .unwrap();
 
     // With externalization, the impulse response should be longer (early reflections)
     // Find the effective length (90% energy threshold)
@@ -244,8 +243,12 @@ fn test_binaural_optimization_equivalence() {
         sample_rate: 48000,
     };
 
-    decoder_standard.process(&input, &mut output_standard, &context).unwrap();
-    decoder_optimized.process(&input, &mut output_optimized, &context).unwrap();
+    decoder_standard
+        .process(&input, &mut output_standard, &context)
+        .unwrap();
+    decoder_optimized
+        .process(&input, &mut output_optimized, &context)
+        .unwrap();
 
     // Outputs should be very similar (within numerical precision)
     let max_diff = output_standard
@@ -254,7 +257,10 @@ fn test_binaural_optimization_equivalence() {
         .map(|(a, b)| (a - b).abs())
         .fold(0.0f32, f32::max);
 
-    println!("Max difference between standard and optimized: {:.6e}", max_diff);
+    println!(
+        "Max difference between standard and optimized: {:.6e}",
+        max_diff
+    );
 
     assert!(
         max_diff < 1e-5,
@@ -286,8 +292,8 @@ fn test_binaural_atmos_7_1_4() {
 
     // Put signal on height channels (last 4 channels)
     for i in 0..block_size {
-        input[i * 12 + 8] = 0.2;  // Top Front Left
-        input[i * 12 + 9] = 0.2;  // Top Front Right
+        input[i * 12 + 8] = 0.2; // Top Front Left
+        input[i * 12 + 9] = 0.2; // Top Front Right
         input[i * 12 + 10] = 0.2; // Top Back Left
         input[i * 12 + 11] = 0.2; // Top Back Right
     }
@@ -312,14 +318,7 @@ fn test_binaural_atmos_7_1_4() {
 fn test_binaural_continuous_processing() {
     let sofa_path = create_test_sofa_file("test_continuous.sofa", 5, 256, 48000.0);
 
-    let mut decoder = BinauralDecoderPlugin::new(
-        5,
-        2048,
-        Some(sofa_path.clone()),
-        true,
-        0.0,
-        0.0,
-    );
+    let mut decoder = BinauralDecoderPlugin::new(5, 2048, Some(sofa_path.clone()), true, 0.0, 0.0);
 
     decoder.initialize(48000).unwrap();
 

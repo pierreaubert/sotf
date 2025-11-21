@@ -12,6 +12,7 @@ pub enum PluginType {
     Gate,
     LoudnessCompensation,
     BinauralDecoder,
+    Convolution,
 }
 
 impl PluginType {
@@ -24,6 +25,7 @@ impl PluginType {
             Self::Gate => "[5] Gate",
             Self::LoudnessCompensation => "[6] Loudness Compensation",
             Self::BinauralDecoder => "[7] Binaural Decoder",
+            Self::Convolution => "[8] Convolution",
         }
     }
 
@@ -36,6 +38,7 @@ impl PluginType {
             Self::Gate => "Noise Gate",
             Self::LoudnessCompensation => "Equal Loudness Compensation",
             Self::BinauralDecoder => "Multi-channel to Binaural (HRTF)",
+            Self::Convolution => "FFT-based Convolution (IR Processing)",
         }
     }
 
@@ -48,6 +51,7 @@ impl PluginType {
             Self::Gate,
             Self::LoudnessCompensation,
             Self::BinauralDecoder,
+            Self::Convolution,
         ]
     }
 }
@@ -256,6 +260,11 @@ pub enum PluginSettings {
         externalization: f64,
         near_field_strength: f64,
     },
+    Convolution {
+        ir_file: String,
+        mix: f64,
+        gain_db: f64,
+    },
 }
 
 impl PluginSettings {
@@ -268,6 +277,7 @@ impl PluginSettings {
             Self::Gate { .. } => PluginType::Gate,
             Self::LoudnessCompensation { .. } => PluginType::LoudnessCompensation,
             Self::BinauralDecoder { .. } => PluginType::BinauralDecoder,
+            Self::Convolution { .. } => PluginType::Convolution,
         }
     }
 
@@ -408,6 +418,18 @@ impl PluginSettings {
                     "near_field_strength": near_field_strength,
                 }),
             ),
+            Self::Convolution {
+                ir_file,
+                mix,
+                gain_db,
+            } => PluginConfig::new(
+                "convolution",
+                json!({
+                    "ir_file": ir_file,
+                    "mix": mix,
+                    "gain_db": gain_db,
+                }),
+            ),
         }
     }
 
@@ -479,6 +501,11 @@ impl PluginSettings {
                 enable_optimization: true,
                 externalization: 0.0,
                 near_field_strength: 0.0,
+            },
+            PluginType::Convolution => Self::Convolution {
+                ir_file: String::new(),
+                mix: 1.0,
+                gain_db: 0.0,
             },
         }
     }

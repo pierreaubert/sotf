@@ -3,13 +3,17 @@
 // This benchmark suite measures performance of the binaural decoder plugin
 // under various configurations and workloads.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use sotf_audio::plugins::BinauralDecoderPlugin;
 use sotf_audio::{Plugin, ProcessContext};
 use std::time::Duration;
 
 /// Create a binaural decoder for benchmarking
-fn create_decoder(input_channels: usize, fft_size: usize, optimization: bool) -> BinauralDecoderPlugin {
+fn create_decoder(
+    input_channels: usize,
+    fft_size: usize,
+    optimization: bool,
+) -> BinauralDecoderPlugin {
     BinauralDecoderPlugin::new(
         input_channels,
         fft_size,
@@ -47,11 +51,13 @@ fn bench_process_channels(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    decoder.process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    ).unwrap();
+                    decoder
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
+                        .unwrap();
                 });
             },
         );
@@ -87,11 +93,13 @@ fn bench_process_fft_sizes(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    decoder.process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    ).unwrap();
+                    decoder
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
+                        .unwrap();
                 });
             },
         );
@@ -130,11 +138,13 @@ fn bench_optimization_comparison(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    decoder.process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    ).unwrap();
+                    decoder
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
+                        .unwrap();
                 });
             },
         );
@@ -158,14 +168,8 @@ fn bench_externalization(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{:.1}", ext_level)),
             &ext_level,
             |b, &ext_level| {
-                let mut decoder = BinauralDecoderPlugin::new(
-                    channels,
-                    fft_size,
-                    None,
-                    true,
-                    ext_level,
-                    0.0,
-                );
+                let mut decoder =
+                    BinauralDecoderPlugin::new(channels, fft_size, None, true, ext_level, 0.0);
                 decoder.initialize(sample_rate).unwrap();
 
                 let input = vec![0.5f32; block_size * channels];
@@ -176,11 +180,13 @@ fn bench_externalization(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    decoder.process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    ).unwrap();
+                    decoder
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
+                        .unwrap();
                 });
             },
         );
@@ -218,11 +224,13 @@ fn bench_large_blocks(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    decoder.process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    ).unwrap();
+                    decoder
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
+                        .unwrap();
                 });
             },
         );
@@ -258,11 +266,13 @@ fn bench_passthrough(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    decoder.process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    ).unwrap();
+                    decoder
+                        .process(
+                            black_box(&input),
+                            black_box(&mut output),
+                            black_box(&context),
+                        )
+                        .unwrap();
                 });
             },
         );
@@ -286,11 +296,7 @@ fn bench_atmos_7_1_4(c: &mut Criterion) {
 
     group.bench_function("with_externalization", |b| {
         let mut decoder = BinauralDecoderPlugin::new(
-            channels,
-            fft_size,
-            None,
-            true,
-            0.3, // Moderate externalization
+            channels, fft_size, None, true, 0.3, // Moderate externalization
             0.5, // Some near-field
         );
         decoder.initialize(sample_rate).unwrap();
@@ -303,11 +309,13 @@ fn bench_atmos_7_1_4(c: &mut Criterion) {
         };
 
         b.iter(|| {
-            decoder.process(
-                black_box(&input),
-                black_box(&mut output),
-                black_box(&context),
-            ).unwrap();
+            decoder
+                .process(
+                    black_box(&input),
+                    black_box(&mut output),
+                    black_box(&context),
+                )
+                .unwrap();
         });
     });
 
