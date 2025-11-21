@@ -963,7 +963,7 @@ impl BinauralDecoderPlugin {
 
         // Mix LFE channels directly (no HRTF)
         if !self.lfe_channels.is_empty() {
-            let lfe_gain = 0.7071; // -3dB
+            let lfe_gain = std::f32::consts::FRAC_1_SQRT_2; // -3dB (~0.7071)
             for &lfe_ch in &self.lfe_channels {
                 for i in 0..self.hop_size {
                     let lfe_sample = self.temp_input_block[i * self.input_channels + lfe_ch];

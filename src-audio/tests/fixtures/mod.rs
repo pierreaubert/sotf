@@ -1,4 +1,4 @@
-// Test fixtures for binaural decoder tests
+// Tes fixtures for binaural decoder tests
 //
 // Provides utilities to create synthetic SOFA files for testing
 
@@ -21,7 +21,7 @@ pub fn create_test_sofa_file(
     ir_length: usize,
     sample_rate: f32,
 ) -> PathBuf {
-    use netcdf::{self, AttributeValue};
+    use netcdf;
     use std::env;
 
     let temp_dir = env::temp_dir();
@@ -47,7 +47,9 @@ pub fn create_test_sofa_file(
 
     // Add Data.SamplingRate variable
     let mut sr_var = file.add_variable::<f32>("Data.SamplingRate", &[]).unwrap();
-    sr_var.put_value(sample_rate, None).unwrap();
+    sr_var
+        .put_value::<_, &[std::ops::RangeFull; 0]>(sample_rate, &[])
+        .unwrap();
 
     // Generate source positions (distributed around sphere)
     let mut positions = vec![0.0f32; num_positions * 3];
@@ -63,15 +65,12 @@ pub fn create_test_sofa_file(
     let mut pos_var = file
         .add_variable::<f32>("SourcePosition", &["M", "C"])
         .unwrap();
-    pos_var.put_values(&positions, None, None).unwrap();
-    pos_var
-        .add_attribute("Type", AttributeValue::Str("spherical".to_string()))
+    pos_var.put_values(&positions, &[.., ..]).unwrap();
+
+    // Add variable attributes using file-level attribute with variable:name format
+    file.add_attribute("SourcePosition:Type", "spherical")
         .unwrap();
-    pos_var
-        .add_attribute(
-            "Units",
-            AttributeValue::Str("degree, degree, metre".to_string()),
-        )
+    file.add_attribute("SourcePosition:Units", "degree, degree, metre")
         .unwrap();
 
     // Generate synthetic HRTF impulse responses
@@ -89,7 +88,7 @@ pub fn create_test_sofa_file(
             (head_radius / speed_of_sound * sample_rate * (azimuth + azimuth.sin())) as i32;
 
         // Generate left ear IR
-        let left_delay = ir_length / 4 - itd_samples.max(0) as usize;
+        let left_delay = (ir_length / 4).saturating_sub(itd_samples.max(0) as usize);
         let left_offset = m * 2 * ir_length;
         if left_delay < ir_length {
             // Simple impulse with exponential decay
@@ -130,7 +129,12 @@ pub fn create_test_sofa_file(
     let mut ir_var = file
         .add_variable::<f32>("Data.IR", &["M", "R", "N"])
         .unwrap();
-    ir_var.put_values(&ir_data, None, None).unwrap();
+
+    // Debug: Check if IR data is non-zero
+    let non_zero_count = ir_data.iter().filter(|&&x| x != 0.0).count();
+    println!("  Non-zero IR samples: {}/{}", non_zero_count, ir_data.len());
+
+    ir_var.put_values(&ir_data, &[.., .., ..]).unwrap();
 
     // Add receiver positions (ears)
     let receiver_pos = vec![
@@ -140,9 +144,9 @@ pub fn create_test_sofa_file(
     let mut recv_var = file
         .add_variable::<f32>("ReceiverPosition", &["R", "C"])
         .unwrap();
-    recv_var.put_values(&receiver_pos, None, None).unwrap();
-    recv_var
-        .add_attribute("Type", AttributeValue::Str("spherical".to_string()))
+    recv_var.put_values(&receiver_pos, &[.., ..]).unwrap();
+
+    file.add_attribute("ReceiverPosition:Type", "spherical")
         .unwrap();
 
     // Add listener position
@@ -150,7 +154,7 @@ pub fn create_test_sofa_file(
     let mut list_var = file
         .add_variable::<f32>("ListenerPosition", &["C"])
         .unwrap();
-    list_var.put_values(&listener_pos, None, None).unwrap();
+    list_var.put_values(&listener_pos, &[..]).unwrap();
 
     drop(file); // Close file
 

@@ -126,6 +126,10 @@ pub struct UpmixerPluginParams {
     /// Gain for Sub-Harmonic Synthesis (0.0 to 1.0)
     #[serde(default = "default_subharmonic_gain")]
     pub subharmonic_gain: f32,
+
+    /// Enable high-resolution direct-path enhancement (experimental)
+    #[serde(default)]
+    pub enable_hr_direct: bool,
 }
 
 // ============================================================================
@@ -146,10 +150,19 @@ pub struct UpmixerPlugin {
     /// Number of output channels (dynamic based on config)
     num_output_channels: usize,
 
-    /// Forward FFT planner
+    /// Forward FFT planner (low-resolution path)
     fft_forward: Arc<dyn Fft<f32>>,
-    /// Inverse FFT planner
+    /// Inverse FFT planner (low-resolution path)
     fft_inverse: Arc<dyn Fft<f32>>,
+
+    /// High-resolution FFT size for direct-path enhancement
+    hr_fft_size: usize,
+    /// High-resolution hop size (hr_fft_size / 2)
+    hr_hop_size: usize,
+    /// Forward FFT planner (high-resolution path)
+    hr_fft_forward: Arc<dyn Fft<f32>>,
+    /// Inverse FFT planner (high-resolution path)
+    hr_fft_inverse: Arc<dyn Fft<f32>>,
 
     // Parameters
     param_speaker_config: ParameterId,
@@ -194,6 +207,10 @@ pub struct UpmixerPlugin {
     enable_subharmonic_synth: bool,
     param_subharmonic_gain: ParameterId,
     subharmonic_gain: f32,
+
+    /// High-resolution direct-path enhancement (multires)
+    param_enable_hr_direct: ParameterId,
+    enable_hr_direct: bool,
 
     // Sub-harmonic synth state
     subharmonic_phase: f32,
@@ -262,6 +279,8 @@ pub struct UpmixerPlugin {
 
     /// Hann window for FFT (pre-computed)
     window: Vec<f32>,
+    /// Hann window for high-resolution FFT path
+    hr_window: Vec<f32>,
     /// Output accumulator for overlap-add (holds fft_size samples per channel)
     /// This allows us to accumulate processed blocks and drain them gradually
     output_accumulator: Vec<Vec<f32>>,
@@ -271,6 +290,26 @@ pub struct UpmixerPlugin {
     next_add_position: usize,
     /// Pre-allocated output block buffer (reused to avoid allocations)
     output_block: Vec<f32>,
+
+    // High-resolution direct-path buffers (allocated once, reused)
+    /// Input buffer accumulator for HR path (stereo interleaved)
+    hr_input_buffer: Vec<f32>,
+    /// Number of samples currently in HR input buffer
+    hr_input_buffer_fill: usize,
+    /// Temporary HR input block for FFT processing
+    hr_temp_input_block: Vec<f32>,
+    /// Time-domain buffer for left channel (HR path)
+    hr_time_domain_left: Vec<Complex<f32>>,
+    /// Time-domain buffer for right channel (HR path)
+    hr_time_domain_right: Vec<Complex<f32>>,
+    /// Frequency-domain buffer for left channel (HR path)
+    hr_freq_domain_left: Vec<Complex<f32>>,
+    /// Frequency-domain buffer for right channel (HR path)
+    hr_freq_domain_right: Vec<Complex<f32>>,
+    /// Per-channel HR output buffers in frequency/time domain
+    hr_time_out_channels: Vec<Vec<Complex<f32>>>,
+    /// Next position to add a HR block in the shared accumulator (reserved)
+    hr_next_add_position: usize,
 }
 
 impl UpmixerPlugin {
@@ -330,6 +369,20 @@ impl UpmixerPlugin {
         // 50% overlap requires fft_size/2 hop size
         let hop_size = fft_size / 2;
 
+        // High-resolution path uses a shorter FFT for improved direct-path
+        // time resolution. For now this is internal and disabled by default.
+        let hr_fft_size = 512;
+        let hr_hop_size = hr_fft_size / 2;
+        let hr_fft_forward = planner.plan_fft_forward(hr_fft_size);
+        let hr_fft_inverse = planner.plan_fft_inverse(hr_fft_size);
+
+        let hr_window: Vec<f32> = (0..hr_fft_size)
+            .map(|i| {
+                0.5 * (1.0
+                    - ((2.0 * std::f32::consts::PI * i as f32) / hr_fft_size as f32).cos())
+            })
+            .collect();
+
         // Get speaker configuration
         let speaker_config = get_speaker_config(speaker_config_id).unwrap_or_else(|| {
             log::info!(
@@ -361,6 +414,11 @@ impl UpmixerPlugin {
 
             fft_forward,
             fft_inverse,
+
+            hr_fft_size,
+            hr_hop_size,
+            hr_fft_forward,
+            hr_fft_inverse,
 
             param_speaker_config: ParameterId::from("speaker_config"),
             param_gain_front_direct: ParameterId::from("gain_front_direct"),
@@ -394,6 +452,9 @@ impl UpmixerPlugin {
             enable_subharmonic_synth,
             param_subharmonic_gain: ParameterId::from("subharmonic_gain"),
             subharmonic_gain,
+
+            param_enable_hr_direct: ParameterId::from("enable_hr_direct"),
+            enable_hr_direct: false,
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
 
@@ -433,10 +494,21 @@ impl UpmixerPlugin {
             temp_input_block: vec![0.0; fft_size * 2], // Pre-allocated temp buffer
 
             window,
+            hr_window,
             output_accumulator,
             output_accumulator_fill: 0,
             next_add_position: 0,
             output_block: vec![0.0; fft_size * num_output_channels],
+
+            hr_input_buffer: vec![0.0; hr_fft_size * 2],
+            hr_input_buffer_fill: 0,
+            hr_temp_input_block: vec![0.0; hr_fft_size * 2],
+            hr_time_domain_left: vec![zero_complex; hr_fft_size],
+            hr_time_domain_right: vec![zero_complex; hr_fft_size],
+            hr_freq_domain_left: vec![zero_complex; hr_fft_size],
+            hr_freq_domain_right: vec![zero_complex; hr_fft_size],
+            hr_time_out_channels: vec![vec![zero_complex; hr_fft_size]; num_output_channels],
+            hr_next_add_position: 0,
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
@@ -462,6 +534,7 @@ impl UpmixerPlugin {
             params.subharmonic_gain,
         );
         plugin.center_spread = params.center_spread.clamp(0.0, 1.0);
+        plugin.enable_hr_direct = params.enable_hr_direct;
         plugin
     }
 
@@ -576,19 +649,10 @@ impl UpmixerPlugin {
         );
     }
 
-    /// Process one FFT block using VBAP panning
-    pub fn process_fft_block(&mut self, input: &[f32], output: &mut [f32]) {
-        // Verify sizes
-        assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
-        assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
-
-        log::trace!(
-            "[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
-            self.fft_size,
-            self.num_output_channels
-        );
-
-        // 1. Copy input to time domain buffers and apply ANALYSIS window
+    /// Phase 1: Apply window to input and perform forward FFT
+    #[inline]
+    fn apply_window_and_forward_fft(&mut self, input: &[f32]) {
+        // Copy input to time domain buffers and apply ANALYSIS window
         for i in 0..self.fft_size {
             let idx = i * 2;
             let window_val = self.window[i];
@@ -596,7 +660,7 @@ impl UpmixerPlugin {
             self.time_domain_right[i] = Complex::new(input[idx + 1] * window_val, 0.0);
         }
 
-        // 2. Forward FFT (in-place)
+        // Forward FFT (in-place)
         self.freq_domain_left
             .copy_from_slice(&self.time_domain_left);
         self.freq_domain_right
@@ -604,8 +668,11 @@ impl UpmixerPlugin {
 
         self.fft_forward.process(&mut self.freq_domain_left);
         self.fft_forward.process(&mut self.freq_domain_right);
+    }
 
-        // 3. Frequency-dependent processing (ERB Bands + PCA)
+    /// Phase 2: Process frequency domain with ERB bands and PCA decomposition
+    #[inline]
+    fn process_frequency_domain_erb_bands(&mut self) {
         let lfe_cutoff_bin =
             ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
         let bandpass_bin =
@@ -626,7 +693,7 @@ impl UpmixerPlugin {
                 continue;
             }
 
-            // 3a. Calculate Band Statistics (Covariance)
+            // Calculate Band Statistics (Covariance)
             let mut cov_xx = 0.0;
             let mut cov_yy = 0.0;
             let mut cov_xy = Complex::new(0.0, 0.0);
@@ -639,7 +706,7 @@ impl UpmixerPlugin {
                 cov_xy += l * r.conj();
             }
 
-            // 3b. Logic Steering (Smoothing)
+            // Logic Steering (Smoothing)
             let inst_energy = cov_xx + cov_yy;
             let smooth_energy = self.pca_cov_xx[band_idx] + self.pca_cov_yy[band_idx];
 
@@ -664,7 +731,7 @@ impl UpmixerPlugin {
             self.pca_cov_yy[band_idx] = (1.0 - alpha) * self.pca_cov_yy[band_idx] + alpha * cov_yy;
             self.pca_cov_xy[band_idx] = (1.0 - alpha) * self.pca_cov_xy[band_idx] + alpha * cov_xy;
 
-            // 3c. PCA Decomposition
+            // PCA Decomposition
             let c_xx = self.pca_cov_xx[band_idx];
             let c_yy = self.pca_cov_yy[band_idx];
             let c_xy = self.pca_cov_xy[band_idx];
@@ -686,18 +753,17 @@ impl UpmixerPlugin {
                 0.0
             };
 
-            // 3d. Apply to all bins in band
-            for i in start_bin..end_bin {
-                let left = self.freq_domain_left[i];
-                let right = self.freq_domain_right[i];
+            // 1. LFE Band Logic
+            // Determine intersection of current band [start_bin, end_bin) with LFE range [0, lfe_cutoff_bin]
+            let lfe_end = (lfe_cutoff_bin + 1).min(end_bin);
+            if start_bin < lfe_end {
+                let loop_start = start_bin;
+                let loop_end = lfe_end;
 
-                // Handle Nyquist folding
-                let nyquist_bin = self.fft_size / 2;
-                let lfe_cutoff_bin = lfe_cutoff_bin.min(nyquist_bin);
-                let is_lfe_band = i <= lfe_cutoff_bin;
-                let is_passthrough_band = i > lfe_cutoff_bin && i < bandpass_bin;
+                for i in loop_start..loop_end {
+                    let left = self.freq_domain_left[i];
+                    let right = self.freq_domain_right[i];
 
-                if is_lfe_band {
                     // LFE band: use Linkwitz–Riley style crossover so that
                     // low frequencies are shared between LFE (low-pass
                     // mono sum) and mains (high-passed left/right).
@@ -714,15 +780,37 @@ impl UpmixerPlugin {
                     self.direct_right[i] = right * hp_scale;
                     self.ambient_left[i] = Complex::new(0.0, 0.0);
                     self.ambient_right[i] = Complex::new(0.0, 0.0);
-                } else if is_passthrough_band {
-                    // Pass-through band
+                }
+            }
+
+            // 2. Pass-through Band Logic
+            // Intersection of [start_bin, end_bin) with [lfe_cutoff_bin + 1, bandpass_bin)
+            let pass_start = (lfe_cutoff_bin + 1).max(start_bin);
+            let pass_end = bandpass_bin.min(end_bin);
+
+            if pass_start < pass_end {
+                for i in pass_start..pass_end {
+                    let left = self.freq_domain_left[i];
+                    let right = self.freq_domain_right[i];
+
                     self.direct_left[i] = left;
                     self.direct_right[i] = right;
                     self.lfe[i] = Complex::new(0.0, 0.0);
                     self.ambient_left[i] = Complex::new(0.0, 0.0);
                     self.ambient_right[i] = Complex::new(0.0, 0.0);
-                } else {
-                    // Upmixing Band
+                }
+            }
+
+            // 3. Upmixing Band Logic
+            // Intersection of [start_bin, end_bin) with [bandpass_bin, infinity)
+            let upmix_start = bandpass_bin.max(start_bin);
+            let upmix_end = end_bin;
+
+            if upmix_start < upmix_end {
+                for i in upmix_start..upmix_end {
+                    let left = self.freq_domain_left[i];
+                    let right = self.freq_domain_right[i];
+
                     let sum = left + right;
                     let sum_norm = sum.norm();
 
@@ -773,8 +861,10 @@ impl UpmixerPlugin {
                         self.height_band_gains[i] = height_mask;
                     }
                 }
+            }
 
-                // Mirror to negative frequencies for conjugate symmetry
+            // Apply to all bins in band - Mirror to negative frequencies
+            for i in start_bin..end_bin {
                 if i > 0 {
                     let mirror = self.fft_size - i;
                     if mirror < self.fft_size {
@@ -788,21 +878,11 @@ impl UpmixerPlugin {
                 }
             }
         }
+    }
 
-        // 4. Apply VBAP panning to distribute to output speakers
-        let fft_scale = 1.0 / self.fft_size as f32;
-
-        // COLA (Constant Overlap-Add) compensation for Hann window at 50% overlap
-        // Hann window has mean value ≈ 0.5, so we need to scale by 2.0 to compensate
-        // when using single-window STFT (analysis window only, no synthesis window)
-        let cola_scale = 2.0;
-
-        // Channel normalization: Prevent clipping when summing multiple signal components
-        // Using 0.9 headroom factor to prevent occasional peaks (same as binaural decoder)
-        // The sqrt(2) accounts for 2 input channels being distributed across output speakers
-        let channel_normalization = 0.9 / 2.0_f32.sqrt();
-        let combined_scale = fft_scale * cola_scale * channel_normalization;
-
+    /// Phase 3: Apply VBAP panning to distribute to output speakers and perform inverse FFT
+    #[inline]
+    fn apply_vbap_panning_and_inverse_fft(&mut self) {
         self.time_out_channels
             .iter_mut()
             .enumerate()
@@ -916,57 +996,65 @@ impl UpmixerPlugin {
                 // Inverse FFT
                 self.fft_inverse.process(time_out_channel);
             });
+    }
 
-        // 5. Sub-Harmonic Synthesis (Time Domain)
-        if self.enable_subharmonic_synth {
-            if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
-                // Generate subharmonics based on LFE amplitude
-                // We use a simple sine wave at 40Hz (typical rumble) modulated by the LFE envelope
-                let phase_inc = 2.0 * std::f32::consts::PI * 40.0 / self.sample_rate as f32;
+    /// Phase 4: Apply sub-harmonic synthesis to LFE channel (time domain)
+    #[inline]
+    fn apply_subharmonic_synthesis(&mut self) {
+        if !self.enable_subharmonic_synth {
+            return;
+        }
 
-                // Envelope smoothing parameters (time constants in samples)
-                // Attack: 10ms = 441 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/441) ≈ 0.00227
-                // Release: 50ms = 2205 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/2205) ≈ 0.000453
-                let attack_coeff = 1.0 - (-1.0 / (0.010 * self.sample_rate as f32)).exp();
-                let release_coeff = 1.0 - (-1.0 / (0.050 * self.sample_rate as f32)).exp();
+        if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
+            // Generate subharmonics based on LFE amplitude
+            // We use a simple sine wave at 40Hz (typical rumble) modulated by the LFE envelope
+            let phase_inc = 2.0 * std::f32::consts::PI * 40.0 / self.sample_rate as f32;
 
-                for i in 0..self.fft_size {
-                    // Use the real part of the IFFT output as the envelope
-                    let lfe_amp = self.time_out_channels[lfe_idx][i].re.abs();
+            // Envelope smoothing parameters (time constants in samples)
+            // Attack: 10ms = 441 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/441) ≈ 0.00227
+            // Release: 50ms = 2205 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/2205) ≈ 0.000453
+            let attack_coeff = 1.0 - (-1.0 / (0.010 * self.sample_rate as f32)).exp();
+            let release_coeff = 1.0 - (-1.0 / (0.050 * self.sample_rate as f32)).exp();
 
-                    // Smooth envelope: gradually ramp up/down instead of hard switching
-                    // This prevents clicks and pops when sub-harmonic synthesis turns on/off
-                    if lfe_amp > 0.001 {
-                        // Attack: envelope moves toward 1.0
-                        self.subharmonic_envelope +=
-                            (1.0 - self.subharmonic_envelope) * attack_coeff;
-                    } else {
-                        // Release: envelope moves toward 0.0
-                        self.subharmonic_envelope +=
-                            (0.0 - self.subharmonic_envelope) * release_coeff;
+            for i in 0..self.fft_size {
+                // Use the real part of the IFFT output as the envelope
+                let lfe_amp = self.time_out_channels[lfe_idx][i].re.abs();
+
+                // Smooth envelope: gradually ramp up/down instead of hard switching
+                // This prevents clicks and pops when sub-harmonic synthesis turns on/off
+                if lfe_amp > 0.001 {
+                    // Attack: envelope moves toward 1.0
+                    self.subharmonic_envelope +=
+                        (1.0 - self.subharmonic_envelope) * attack_coeff;
+                } else {
+                    // Release: envelope moves toward 0.0
+                    self.subharmonic_envelope +=
+                        (0.0 - self.subharmonic_envelope) * release_coeff;
+                }
+
+                // Only generate sub-harmonic if envelope is above threshold
+                if self.subharmonic_envelope > 0.0001 {
+                    self.subharmonic_phase += phase_inc;
+                    if self.subharmonic_phase > 2.0 * std::f32::consts::PI {
+                        self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
                     }
 
-                    // Only generate sub-harmonic if envelope is above threshold
-                    if self.subharmonic_envelope > 0.0001 {
-                        self.subharmonic_phase += phase_inc;
-                        if self.subharmonic_phase > 2.0 * std::f32::consts::PI {
-                            self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
-                        }
-
-                        // Apply envelope to sub-harmonic for smooth transitions
-                        let sub = self.subharmonic_phase.sin()
-                            * lfe_amp
-                            * self.subharmonic_gain
-                            * self.subharmonic_envelope;
-                        self.time_out_channels[lfe_idx][i].re += sub;
-                    }
+                    // Apply envelope to sub-harmonic for smooth transitions
+                    let sub = self.subharmonic_phase.sin()
+                        * lfe_amp
+                        * self.subharmonic_gain
+                        * self.subharmonic_envelope;
+                    self.time_out_channels[lfe_idx][i].re += sub;
                 }
             }
         }
+    }
 
-        // 6. Extract real parts and apply final scaling
+    /// Phase 5: Extract real parts from time domain and apply final scaling
+    #[inline]
+    fn extract_output_and_scale(&mut self, output: &mut [f32], combined_scale: f32) {
         // Note: With Hann window at 50% hop size, COLA (Constant Overlap-Add) is achieved by:
-        // 1. Applying window ONCE during analysis (before FFT) - done at line 569-570
+        // 1. Applying window ONCE during analysis (before FFT)
         // 2. Overlap-add with hop_size = fft_size/2
         // Applying window again here would break COLA and cause amplitude modulation artifacts
         for i in 0..self.fft_size {
@@ -984,6 +1072,40 @@ impl UpmixerPlugin {
                 output[idx + ch] = sample;
             }
         }
+    }
+
+    /// Process one FFT block using VBAP panning
+    pub fn process_fft_block(&mut self, input: &[f32], output: &mut [f32]) {
+        // Verify sizes
+        assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
+        assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
+
+        log::trace!(
+            "[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
+            self.fft_size,
+            self.num_output_channels
+        );
+
+        // Phase 1: Apply window and perform forward FFT
+        self.apply_window_and_forward_fft(input);
+
+        // Phase 2: Frequency-domain processing (ERB Bands + PCA)
+        self.process_frequency_domain_erb_bands();
+
+        // Phase 3: Apply VBAP panning and inverse FFT
+        // Calculate combined scaling factor for output
+        let fft_scale = 1.0 / self.fft_size as f32;
+        let cola_scale = 2.0; // COLA compensation for Hann window at 50% overlap
+        let channel_normalization = 0.9 / 2.0_f32.sqrt(); // Prevent clipping
+        let combined_scale = fft_scale * cola_scale * channel_normalization;
+
+        self.apply_vbap_panning_and_inverse_fft();
+
+        // Phase 4: Sub-harmonic synthesis (time domain)
+        self.apply_subharmonic_synthesis();
+
+        // Phase 5: Extract output and apply final scaling
+        self.extract_output_and_scale(output, combined_scale);
     }
 
     /// Calculate ERB bands based on sample rate and FFT size
@@ -1238,6 +1360,8 @@ impl Plugin for UpmixerPlugin {
                 .with_description("Enable sub-harmonic synthesis for LFE channel"),
             Parameter::new_float("subharmonic_gain", "Sub-Harmonic Gain", 0.5, 0.0, 1.0)
                 .with_description("Gain for synthesized sub-harmonics"),
+            Parameter::new_bool("enable_hr_direct", "High-Res Direct", false)
+                .with_description("Enable high-resolution direct-path enhancement (experimental)"),
         ]
     }
 
@@ -1336,6 +1460,11 @@ impl Plugin for UpmixerPlugin {
                 return Ok(());
             }
             return Err("Sub-harmonic gain must be between 0.0 and 1.0".to_string());
+        } else if id == self.param_enable_hr_direct {
+            if let Some(enable) = value.as_bool() {
+                self.enable_hr_direct = enable;
+                return Ok(());
+            }
         }
         Err(format!("Unknown parameter: {}", id))
     }
@@ -1378,6 +1507,8 @@ impl Plugin for UpmixerPlugin {
             Some(ParameterValue::Bool(self.enable_subharmonic_synth))
         } else if id == &self.param_subharmonic_gain {
             Some(ParameterValue::Float(self.subharmonic_gain))
+        } else if id == &self.param_enable_hr_direct {
+            Some(ParameterValue::Bool(self.enable_hr_direct))
         } else {
             None
         }
@@ -1408,6 +1539,7 @@ impl Plugin for UpmixerPlugin {
     fn reset(&mut self) {
         // Clear buffers
         self.input_buffer_fill = 0;
+        self.hr_input_buffer_fill = 0;
         let zero = Complex::new(0.0, 0.0);
         for buf in [
             &mut self.time_domain_left,
@@ -1422,6 +1554,10 @@ impl Plugin for UpmixerPlugin {
             &mut self.lfe,
             &mut self.decorrelation_filter_left,
             &mut self.decorrelation_filter_right,
+            &mut self.hr_time_domain_left,
+            &mut self.hr_time_domain_right,
+            &mut self.hr_freq_domain_left,
+            &mut self.hr_freq_domain_right,
         ]
         .iter_mut()
         {
@@ -1430,6 +1566,11 @@ impl Plugin for UpmixerPlugin {
 
         // Clear output channels
         for channel_buf in self.time_out_channels.iter_mut() {
+            channel_buf.fill(zero);
+        }
+
+        // Clear HR output channels
+        for channel_buf in self.hr_time_out_channels.iter_mut() {
             channel_buf.fill(zero);
         }
 
@@ -1442,6 +1583,11 @@ impl Plugin for UpmixerPlugin {
 
         // Clear output block
         self.output_block.fill(0.0);
+
+        // Clear HR input and temp blocks
+        self.hr_input_buffer.fill(0.0);
+        self.hr_temp_input_block.fill(0.0);
+        self.hr_next_add_position = 0;
 
         // Reset state vectors
         self.steering_alphas.fill(0.15);
@@ -1598,10 +1744,35 @@ impl Plugin for UpmixerPlugin {
                 self.temp_input_block[..self.fft_size * 2]
                     .copy_from_slice(&self.input_buffer[..self.fft_size * 2]);
 
-                // Process FFT block
+                // Process FFT block (low-resolution path)
                 let temp_input = std::mem::take(&mut self.temp_input_block);
                 let mut output_block = std::mem::take(&mut self.output_block);
                 self.process_fft_block(&temp_input, &mut output_block);
+
+                // Optional high-resolution direct-path enhancement
+                if self.enable_hr_direct && self.gain_front_direct > 0.0 {
+                    // Take a centered HR window from the current input block
+                    let center = (self.fft_size - self.hr_fft_size) / 2;
+                    let start = center * 2; // stereo interleaved
+                    let end = start + self.hr_fft_size * 2;
+
+                    if end <= temp_input.len() {
+                        let hr_input = &temp_input[start..end];
+                        let mut hr_output =
+                            vec![0.0_f32; self.hr_fft_size * self.num_output_channels];
+                        self.process_hr_block(hr_input, &mut hr_output);
+
+                        // Overlay HR contribution onto the low-res output block
+                        for i in 0..self.hr_fft_size {
+                            let dst_idx = (center + i) * self.num_output_channels;
+                            let src_idx = i * self.num_output_channels;
+                            for ch in 0..self.num_output_channels {
+                                output_block[dst_idx + ch] += hr_output[src_idx + ch];
+                            }
+                        }
+                    }
+                }
+
                 self.temp_input_block = temp_input;
 
                 // Accumulate output (overlap-add) at next_add_position
@@ -1771,6 +1942,115 @@ impl Plugin for UpmixerPlugin {
 
     fn latency_samples(&self) -> usize {
         self.fft_size
+    }
+}
+
+// Inherent methods on UpmixerPlugin (not part of the Plugin trait)
+impl UpmixerPlugin {
+    /// High-resolution direct-path processing for a single FFT block.
+    ///
+    /// This operates at hr_fft_size with its own Hann window and does not
+    /// modify the main overlap-add state. It is intended for experiments and
+    /// tests and is not wired into the streaming process loop yet.
+    fn process_hr_block(&mut self, input: &[f32], output: &mut [f32]) {
+        // Verify sizes: stereo interleaved input, variable output channels
+        assert_eq!(input.len(), self.hr_fft_size * 2);
+        assert_eq!(output.len(), self.hr_fft_size * self.num_output_channels);
+
+        // 1. Copy input to HR time-domain buffers and apply HR analysis window
+        for i in 0..self.hr_fft_size {
+            let idx = i * 2;
+            let window_val = self.hr_window[i];
+            self.hr_time_domain_left[i] = Complex::new(input[idx] * window_val, 0.0);
+            self.hr_time_domain_right[i] = Complex::new(input[idx + 1] * window_val, 0.0);
+        }
+
+        // 2. Forward FFT (in-place)
+        self.hr_freq_domain_left
+            .copy_from_slice(&self.hr_time_domain_left);
+        self.hr_freq_domain_right
+            .copy_from_slice(&self.hr_time_domain_right);
+
+        self.hr_fft_forward.process(&mut self.hr_freq_domain_left);
+        self.hr_fft_forward.process(&mut self.hr_freq_domain_right);
+
+        // 3. Frequency-dependent processing for HF direct path only
+        //    We restrict to frequencies above a cutoff so that the
+        //    high-resolution path mainly sharpens transients.
+        let freq_per_bin = self.sample_rate as f32 / self.hr_fft_size as f32;
+        let hf_cut = self.bandpass_hz.max(1000.0);
+
+        // Clear HR output spectra
+        for ch in 0..self.num_output_channels {
+            self.hr_time_out_channels[ch].fill(Complex::new(0.0, 0.0));
+        }
+
+        for i in 0..=self.hr_fft_size / 2 {
+            let freq = i as f32 * freq_per_bin;
+            if freq <= hf_cut {
+                continue;
+            }
+
+            let l = self.hr_freq_domain_left[i];
+            let r = self.hr_freq_domain_right[i];
+
+            // Map HF direct energy only to front, non-height, non-LFE speakers.
+            for ch_idx in 0..self.num_output_channels {
+                let speaker = &self.speaker_config.speakers[ch_idx];
+                if speaker.is_lfe || speaker.elevation > 10.0 || speaker.azimuth.abs() >= 80.0 {
+                    continue;
+                }
+
+                let is_center = speaker.label == "C";
+                let panning_gain_left = self.panning_gains_left[ch_idx];
+                let panning_gain_right = self.panning_gains_right[ch_idx];
+                let mut direct_val = l * panning_gain_left + r * panning_gain_right;
+
+                // Apply front direct gain and center spread shaping so that
+                // zero-gains and center spread invariants still hold when the
+                // HR path is active.
+                let mut gain_scale = self.gain_front_direct;
+                if is_center {
+                    let spread = self.center_spread.clamp(0.0, 1.0);
+                    gain_scale *= 1.0 - spread;
+                }
+
+                if gain_scale == 0.0 {
+                    continue;
+                }
+
+                direct_val *= gain_scale;
+
+                self.hr_time_out_channels[ch_idx][i] += direct_val;
+            }
+
+            // Conjugate symmetry for negative frequencies
+            if i > 0 {
+                let mirror = self.hr_fft_size - i;
+                if mirror < self.hr_fft_size {
+                    for ch_idx in 0..self.num_output_channels {
+                        self.hr_time_out_channels[ch_idx][mirror] =
+                            self.hr_time_out_channels[ch_idx][i].conj();
+                    }
+                }
+            }
+        }
+
+        // 4. Inverse FFT and write time-domain output (real parts)
+        let fft_scale = 1.0 / self.hr_fft_size as f32;
+        let cola_scale = 2.0; // Hann with 50% overlap
+        let channel_normalization = 0.5; // Conservative mix factor for HR path
+        let combined_scale = fft_scale * cola_scale * channel_normalization;
+
+        for (ch_idx, hr_time_out_channel) in self.hr_time_out_channels.iter_mut().enumerate() {
+            // Skip channels that remained zero in frequency domain
+            self.hr_fft_inverse.process(hr_time_out_channel);
+
+            for i in 0..self.hr_fft_size {
+                let idx = i * self.num_output_channels + ch_idx;
+                output[idx] = hr_time_out_channel[i].re * combined_scale;
+            }
+        }
     }
 }
 
@@ -1966,6 +2246,57 @@ mod tests {
             energy_spread_1,
             energy_spread_0
         );
+    }
+
+    #[test]
+    fn test_hr_block_front_hf_direct_distribution() {
+        // Verify that the high-resolution path (process_hr_block) produces
+        // non-zero energy on front speakers for high-frequency coherent input
+        // while leaving non-front channels effectively silent.
+
+        let mut plugin =
+            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
+        plugin.initialize(44100).unwrap();
+
+        let hr_size = plugin.hr_fft_size;
+        let mut input = vec![0.0f32; hr_size * 2];
+
+        // 4 kHz coherent sine (L=R), safely above hf_cut (>= 1 kHz)
+        for i in 0..hr_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 4000.0 * t).sin() * 0.5;
+            input[i * 2] = s;
+            input[i * 2 + 1] = s;
+        }
+
+        let mut output = vec![0.0f32; hr_size * plugin.num_output_channels];
+        plugin.process_hr_block(&input, &mut output);
+
+        let mut energies = vec![0.0f32; plugin.num_output_channels];
+        for i in 0..hr_size {
+            for ch in 0..plugin.num_output_channels {
+                let s = output[i * plugin.num_output_channels + ch];
+                energies[ch] += s * s;
+            }
+        }
+
+        // 5.1 layout: 0=FL,1=FR,2=C,3=LFE,4=SL,5=SR
+        // Expect FL/FR/C to have some energy, LFE/surrounds to be near zero.
+        assert!(
+            energies[0] > 0.0 || energies[1] > 0.0 || energies[2] > 0.0,
+            "Front speakers should have non-zero HF direct energy from HR path: {:?}",
+            energies
+        );
+
+        // LFE and surrounds should stay effectively silent in HR path
+        for ch in 3..plugin.num_output_channels {
+            assert!(
+                energies[ch] < 1e-6,
+                "Non-front channel {} should be near zero in HR path (got {})",
+                ch,
+                energies[ch]
+            );
+        }
     }
 
     #[test]

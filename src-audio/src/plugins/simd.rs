@@ -31,40 +31,42 @@ pub unsafe fn complex_mul_add_simd_chunk(
 
     // Process 4 complex numbers (8 floats) at once using AVX2
     // Input layout: [re0, im0, re1, im1, re2, im2, re3, im3]
-    let src_ptr = src.as_ptr().add(start) as *const f32;
-    let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
-    let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
+    unsafe {
+        let src_ptr = src.as_ptr().add(start) as *const f32;
+        let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
+        let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
 
-    // Load 4 complex numbers
-    let a = _mm256_loadu_ps(src_ptr);
-    let b = _mm256_loadu_ps(hrtf_ptr);
-    let dst_val = _mm256_loadu_ps(dst_ptr);
+        // Load 4 complex numbers
+        let a = _mm256_loadu_ps(src_ptr);
+        let b = _mm256_loadu_ps(hrtf_ptr);
+        let dst_val = _mm256_loadu_ps(dst_ptr);
 
-    // Complex multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
+        // Complex multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
 
-    // Duplicate real and imaginary parts correctly:
-    // moveldup: duplicates even elements [0, 0, 2, 2, 4, 4, 6, 6] -> [re0, re0, re1, re1, ...]
-    // movehdup: duplicates odd elements  [1, 1, 3, 3, 5, 5, 7, 7] -> [im0, im0, im1, im1, ...]
-    let a_re = _mm256_moveldup_ps(a);
-    let a_im = _mm256_movehdup_ps(a);
+        // Duplicate real and imaginary parts correctly:
+        // moveldup: duplicates even elements [0, 0, 2, 2, 4, 4, 6, 6] -> [re0, re0, re1, re1, ...]
+        // movehdup: duplicates odd elements  [1, 1, 3, 3, 5, 5, 7, 7] -> [im0, im0, im1, im1, ...]
+        let a_re = _mm256_moveldup_ps(a);
+        let a_im = _mm256_movehdup_ps(a);
 
-    // Compute: a.re * b = [re*re, re*im, ...] = [ac, ad, ...]
-    let ac_ad = _mm256_mul_ps(a_re, b);
+        // Compute: a.re * b = [re*re, re*im, ...] = [ac, ad, ...]
+        let ac_ad = _mm256_mul_ps(a_re, b);
 
-    // Swap b's re/im: [im, re, im, re, ...] = [d, c, ...]
-    let b_swapped = _mm256_shuffle_ps(b, b, SHUFFLE_SWAP_RE_IM);
+        // Swap b's re/im: [im, re, im, re, ...] = [d, c, ...]
+        let b_swapped = _mm256_shuffle_ps(b, b, SHUFFLE_SWAP_RE_IM);
 
-    // Compute: a.im * b_swapped = [im*im, im*re, ...] = [bd, bc, ...]
-    let bd_bc = _mm256_mul_ps(a_im, b_swapped);
+        // Compute: a.im * b_swapped = [im*im, im*re, ...] = [bd, bc, ...]
+        let bd_bc = _mm256_mul_ps(a_im, b_swapped);
 
-    // Combine using addsub: performs [a[0]-b[0], a[1]+b[1], a[2]-b[2], a[3]+b[3], ...]
-    // This gives us: [(ac - bd), (ad + bc), ...] = [result.re, result.im, ...]
-    let result = _mm256_addsub_ps(ac_ad, bd_bc);
+        // Combine using addsub: performs [a[0]-b[0], a[1]+b[1], a[2]-b[2], a[3]+b[3], ...]
+        // This gives us: [(ac - bd), (ad + bc), ...] = [result.re, result.im, ...]
+        let result = _mm256_addsub_ps(ac_ad, bd_bc);
 
-    // Add to destination (accumulate)
-    let final_result = _mm256_add_ps(dst_val, result);
+        // Add to destination (accumulate)
+        let final_result = _mm256_add_ps(dst_val, result);
 
-    _mm256_storeu_ps(dst_ptr, final_result);
+        _mm256_storeu_ps(dst_ptr, final_result);
+    }
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -79,52 +81,54 @@ pub unsafe fn complex_mul_add_simd_chunk(
 
     // Process 2 complex numbers (4 floats) at once using NEON
     // Input layout: [re0, im0, re1, im1]
-    let src_ptr = src.as_ptr().add(start) as *const f32;
-    let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
-    let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
+    unsafe {
+        let src_ptr = src.as_ptr().add(start) as *const f32;
+        let hrtf_ptr = hrtf.as_ptr().add(start) as *const f32;
+        let dst_ptr = dst.as_mut_ptr().add(start) as *mut f32;
 
-    // Load 2 complex numbers
-    let a = vld1q_f32(src_ptr);
-    let b = vld1q_f32(hrtf_ptr);
-    let dst_val = vld1q_f32(dst_ptr);
+        // Load 2 complex numbers
+        let a = vld1q_f32(src_ptr);
+        let b = vld1q_f32(hrtf_ptr);
+        let dst_val = vld1q_f32(dst_ptr);
 
-    // Complex multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
+        // Complex multiplication: (a + bi) * (c + di) = (ac - bd) + (ad + bc)i
 
-    // Duplicate real and imaginary parts properly for 2 complex numbers:
-    // vtrn1q_f32 extracts elements [0, 2, 0, 2] from both inputs (when both are same)
-    // vtrn2q_f32 extracts elements [1, 3, 1, 3] from both inputs (when both are same)
-    // This gives us [re0, re0, re1, re1] and [im0, im0, im1, im1]
-    let a_re = vtrn1q_f32(a, a); // [re0, re0, re1, re1]
-    let a_im = vtrn2q_f32(a, a); // [im0, im0, im1, im1]
+        // Duplicate real and imaginary parts properly for 2 complex numbers:
+        // vtrn1q_f32 extracts elements [0, 2, 0, 2] from both inputs (when both are same)
+        // vtrn2q_f32 extracts elements [1, 3, 1, 3] from both inputs (when both are same)
+        // This gives us [re0, re0, re1, re1] and [im0, im0, im1, im1]
+        let a_re = vtrn1q_f32(a, a); // [re0, re0, re1, re1]
+        let a_im = vtrn2q_f32(a, a); // [im0, im0, im1, im1]
 
-    // Compute: a.re * b = [re*re, re*im, ...] = [ac, ad, ...]
-    let ac_ad = vmulq_f32(a_re, b);
+        // Compute: a.re * b = [re*re, re*im, ...] = [ac, ad, ...]
+        let ac_ad = vmulq_f32(a_re, b);
 
-    // Swap b's re/im using vrev64: [re0, im0, re1, im1] -> [im0, re0, im1, re1]
-    let b_swapped = vrev64q_f32(b);
+        // Swap b's re/im using vrev64: [re0, im0, re1, im1] -> [im0, re0, im1, re1]
+        let b_swapped = vrev64q_f32(b);
 
-    // Compute: a.im * b_swapped = [im*im, im*re, ...] = [bd, bc, ...]
-    let bd_bc = vmulq_f32(a_im, b_swapped);
+        // Compute: a.im * b_swapped = [im*im, im*re, ...] = [bd, bc, ...]
+        let bd_bc = vmulq_f32(a_im, b_swapped);
 
-    // Combine: (ac - bd, ad + bc)
-    // Create alternating negation mask: [0x80000000, 0, 0x80000000, 0] for [-, +, -, +]
-    let sign_bit: u32 = 0x80000000;
-    let neg_mask = vreinterpretq_f32_u32(vsetq_lane_u32::<2>(
-        sign_bit,
-        vsetq_lane_u32::<0>(sign_bit, vdupq_n_u32(0)),
-    ));
+        // Combine: (ac - bd, ad + bc)
+        // Create alternating negation mask: [0x80000000, 0, 0x80000000, 0] for [-, +, -, +]
+        let sign_bit: u32 = 0x80000000;
+        let neg_mask = vreinterpretq_f32_u32(vsetq_lane_u32::<2>(
+            sign_bit,
+            vsetq_lane_u32::<0>(sign_bit, vdupq_n_u32(0)),
+        ));
 
-    // Apply alternating negation to bd_bc, then add to ac_ad
-    let bd_bc_negated = vreinterpretq_f32_u32(veorq_u32(
-        vreinterpretq_u32_f32(bd_bc),
-        vreinterpretq_u32_f32(neg_mask),
-    ));
-    let result = vaddq_f32(ac_ad, bd_bc_negated);
+        // Apply alternating negation to bd_bc, then add to ac_ad
+        let bd_bc_negated = vreinterpretq_f32_u32(veorq_u32(
+            vreinterpretq_u32_f32(bd_bc),
+            vreinterpretq_u32_f32(neg_mask),
+        ));
+        let result = vaddq_f32(ac_ad, bd_bc_negated);
 
-    // Add to destination (accumulate)
-    let final_result = vaddq_f32(dst_val, result);
+        // Add to destination (accumulate)
+        let final_result = vaddq_f32(dst_val, result);
 
-    vst1q_f32(dst_ptr, final_result);
+        vst1q_f32(dst_ptr, final_result);
+    }
 }
 
 #[cfg(not(any(
