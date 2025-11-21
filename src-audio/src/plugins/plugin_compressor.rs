@@ -11,6 +11,10 @@
 // - release: Time to return to no compression (ms)
 // - knee: Soft knee width for smoother compression (dB)
 // - makeup_gain: Output gain to compensate for volume reduction (dB)
+// - mix: Dry/wet mix between unprocessed and compressed signal (0 = dry, 1 = wet)
+// - auto_makeup: Automatically add makeup gain based on threshold/ratio
+// - link_channels: Use a shared detector across channels to avoid image shifts
+// - sidechain_hpf_hz: High-pass filter cutoff for the detector sidechain (Hz)
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
@@ -532,5 +536,37 @@ mod tests {
         // Gain reduction = 12 * (1 - 1/4) = 9 dB
         let gr = compressor.calculate_gain_reduction(-8.0);
         assert!((gr - 9.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compressor_additional_parameters_defaults() {
+        let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
+
+        assert_eq!(compressor.mix, 1.0);
+        assert!(!compressor.auto_makeup);
+        assert!(compressor.link_channels);
+        assert_eq!(compressor.sidechain_hpf_hz, 80.0);
+    }
+
+    #[test]
+    fn test_compressor_mix_and_sidechain_parameters_set_get() {
+        let mut compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 6.0, 0.0);
+        compressor.initialize(48000).unwrap();
+
+        compressor
+            .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
+            .unwrap();
+        compressor
+            .set_parameter(
+                ParameterId::from("sidechain_hpf_hz"),
+                ParameterValue::Float(120.0),
+            )
+            .unwrap();
+
+        let mix = compressor.get_parameter(&ParameterId::from("mix"));
+        let sidechain = compressor.get_parameter(&ParameterId::from("sidechain_hpf_hz"));
+
+        assert_eq!(mix, Some(ParameterValue::Float(0.5)));
+        assert_eq!(sidechain, Some(ParameterValue::Float(120.0)));
     }
 }
