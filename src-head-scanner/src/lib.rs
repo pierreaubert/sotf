@@ -47,6 +47,7 @@ pub mod camera;
 pub mod convexhull;
 pub mod coverage;
 pub mod error;
+pub mod hrtf;
 pub mod mesh;
 pub mod mesh2hrtf;
 pub mod pointcloud;
