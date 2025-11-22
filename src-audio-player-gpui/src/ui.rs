@@ -231,6 +231,18 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn toggle_help(&mut self, _: &ToggleHelp, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            use crate::app::InputMode;
+            if state.app.input_mode == InputMode::Help {
+                state.app.input_mode = InputMode::Normal;
+            } else {
+                state.app.input_mode = InputMode::Help;
+            }
+        });
+        cx.notify();
+    }
+
     fn cycle_sort_order(&mut self, _: &CycleSortOrder, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             use crate::app::LibrarySortOrder;
@@ -698,6 +710,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_directory_manager))
             .on_action(cx.listener(Self::toggle_search))
             .on_action(cx.listener(Self::toggle_library_view))
+            .on_action(cx.listener(Self::toggle_help))
             .on_action(cx.listener(Self::cycle_sort_order))
             .on_action(cx.listener(Self::set_sort_artist))
             .on_action(cx.listener(Self::set_sort_album))
@@ -752,6 +765,9 @@ impl Render for PlayerView {
                 Screen::DirectoryManager => self.render_directory_screen(cx).into_any_element(),
             }))
             .child(self.render_footer(cx))
+            .when(input_mode == crate::app::InputMode::Help, |div| {
+                div.child(self.render_help_modal(cx))
+            })
     }
 }
 
@@ -1759,5 +1775,157 @@ impl PlayerView {
                             .child("+/-: Volume"),
                     ),
             )
+    }
+
+    fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let screen_name = match state.app.current_screen {
+            Screen::Library => "Library",
+            Screen::DirectoryManager => "Directories",
+            Screen::Queue => "Queue",
+            Screen::Plugins => "Plugins",
+            Screen::Devices => "Devices",
+            Screen::Spectrum => "Spectrum",
+        };
+
+        // Get keybindings for current screen
+        let keybindings = get_keybindings_for_screen(state.app.current_screen);
+
+        // Create modal overlay (centered, 80% width, 90% height)
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(0x000000aa)) // Semi-transparent background
+            .child(
+                div()
+                    .w(Rems(60.0)) // 80% approx
+                    .h(Rems(40.0)) // 90% approx
+                    .bg(rgb(0x1e1e1e))
+                    .border_2()
+                    .border_color(rgb(0x007acc))
+                    .rounded_md()
+                    .p_4()
+                    .overflow_y_scroll()
+                    .child(
+                        div()
+                            .text_xl()
+                            .font_weight(FontWeight::BOLD)
+                            .mb_4()
+                            .child(format!(
+                                "Help - {} Screen (Press ESC or ? to close)",
+                                screen_name
+                            ))
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            // Global keybindings section
+                            .child(
+                                div()
+                                    .text_lg()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(0x4ec9b0))
+                                    .mb_2()
+                                    .child("GLOBAL KEYBINDINGS")
+                            )
+                            .child(self.render_keybinding("Shift-L/Q/P/O/D", "Jump to Library/Queue/Plugins/Devices/Directories"))
+                            .child(self.render_keybinding("+/=", "Increase volume"))
+                            .child(self.render_keybinding("-/_", "Decrease volume"))
+                            .child(self.render_keybinding("?", "Show this help"))
+                            .child(div().h_4()) // Spacer
+                            // Screen-specific keybindings section
+                            .child(
+                                div()
+                                    .text_lg()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(0x4ec9b0))
+                                    .mb_2()
+                                    .child(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
+                            )
+                            .children(
+                                keybindings.iter().map(|(key, desc)| {
+                                    self.render_keybinding(key, desc)
+                                })
+                            )
+                    )
+            )
+    }
+
+    fn render_keybinding(&self, key: &str, description: &str) -> impl IntoElement {
+        div()
+            .flex()
+            .gap_4()
+            .mb_1()
+            .child(
+                div()
+                    .w(Rems(12.0))
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(0x569cd6))
+                    .child(format!("  {}", key))
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0xcccccc))
+                    .child(description)
+            )
+    }
+}
+
+fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
+    match screen {
+        Screen::Library => vec![
+            ("↑/↓ or K/J", "Navigate albums/artists"),
+            ("PageUp/PageDown", "Jump by page"),
+            ("/", "Search albums"),
+            ("T", "Toggle tree view / flat view"),
+            ("H/L or ←/→", "Collapse/expand artists in tree view"),
+            ("S or 1/2/3/4", "Sort by Artist/Album/Title/Year"),
+            ("C or 5/6/7/8/9", "Filter: All/Mono/Stereo/Multi/Mixed"),
+            ("A or Enter", "Add album to queue"),
+            ("Shift-Q", "Go to queue screen"),
+        ],
+        Screen::DirectoryManager => vec![
+            ("↑/↓ or K/J", "Navigate directories"),
+            ("PageUp/PageDown", "Jump by page"),
+            ("Enter/→/L", "Expand/collapse directory"),
+            ("Shift-A", "Add directory"),
+            ("D/Delete", "Remove selected directory"),
+            ("Shift-S", "Scan library"),
+        ],
+        Screen::Queue => vec![
+            ("↑/↓ or K/J", "Navigate queue items"),
+            ("Enter", "Play selected album from start"),
+            ("H/L or ←/→", "Expand/collapse album tracks"),
+            ("Space", "Play/Pause"),
+            ("N or >", "Next track"),
+            ("B or <", "Previous track"),
+            ("D/Delete", "Remove from queue"),
+            ("C", "Clear entire queue"),
+        ],
+        Screen::Plugins => vec![
+            ("↑/↓ or K/J", "Navigate plugin chain"),
+            ("A", "Add plugin (default)"),
+            ("1/2/3/4/5/6/7", "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural"),
+            ("E or Enter", "Edit selected plugin"),
+            ("Shift-T", "Toggle plugin enabled/disabled"),
+            ("D/Delete", "Remove plugin"),
+            ("U", "Move plugin up in chain"),
+            ("Shift-N", "Move plugin down in chain"),
+        ],
+        Screen::Devices => vec![
+            ("↑/↓ or K/J", "Navigate output devices"),
+            ("Enter/Space", "Select output device"),
+        ],
+        Screen::Spectrum => vec![
+            ("Space", "Play/Pause"),
+            ("N", "Next track"),
+        ],
     }
 }
