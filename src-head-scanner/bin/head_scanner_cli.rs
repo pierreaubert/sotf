@@ -9,6 +9,7 @@ use head_scanner::{
     bundle_adjustment::{BundleAdjuster, Point3DWithObservations},
     calibration::{CalibrationSession, CheckerboardPattern},
     camera::Camera,
+    guidance,
     reconstruction::{CameraIntrinsics, CameraPose},
 };
 use indicatif::{ProgressBar, ProgressStyle};
@@ -109,6 +110,30 @@ enum Commands {
         /// Minimum inliers for valid SfM pose estimation
         #[arg(long, default_value_t = 20)]
         sfm_min_inliers: usize,
+
+        /// Generate SOFA file for HRTF
+        #[arg(long)]
+        generate_sofa: bool,
+
+        /// SOFA output file path
+        #[arg(long, default_value = "head_scan.sofa")]
+        sofa_output: PathBuf,
+
+        /// SOFA sample rate (Hz)
+        #[arg(long, default_value_t = 44100.0)]
+        sofa_sample_rate: f32,
+
+        /// SOFA azimuth resolution (number of angles, e.g. 72 = 5° spacing)
+        #[arg(long, default_value_t = 72)]
+        sofa_azimuth: usize,
+
+        /// SOFA elevation resolution (number of angles, e.g. 36 = 5° spacing)
+        #[arg(long, default_value_t = 36)]
+        sofa_elevation: usize,
+
+        /// SOFA source distance (cm, e.g. 100 = 1m)
+        #[arg(long, default_value_t = 100.0)]
+        sofa_distance: f32,
     },
 
     /// Test camera connection
@@ -176,6 +201,12 @@ async fn main() -> ScannerResult<()> {
             sfm,
             sfm_frames,
             sfm_min_inliers,
+            generate_sofa,
+            sofa_output,
+            sofa_sample_rate,
+            sofa_azimuth,
+            sofa_elevation,
+            sofa_distance,
         } => {
             run_scan(
                 cli.camera,
@@ -196,6 +227,12 @@ async fn main() -> ScannerResult<()> {
                 sfm,
                 sfm_frames,
                 sfm_min_inliers,
+                generate_sofa,
+                sofa_output,
+                sofa_sample_rate,
+                sofa_azimuth,
+                sofa_elevation,
+                sofa_distance,
             )
             .await?;
         }
@@ -248,6 +285,12 @@ async fn run_scan(
     use_sfm: bool,
     sfm_frame_count: usize,
     sfm_min_inliers: usize,
+    generate_sofa: bool,
+    sofa_output: PathBuf,
+    sofa_sample_rate: f32,
+    sofa_azimuth: usize,
+    sofa_elevation: usize,
+    sofa_distance: f32,
 ) -> ScannerResult<()> {
     println!("🎥 Head Scanner CLI");
     println!("==================");
@@ -362,6 +405,7 @@ async fn run_scan(
                         processed_frame_count,
                         elapsed,
                         using_gpu,
+                        &scanner,
                     ) {
                         warn!("Failed to draw overlay: {}", e);
                     }
@@ -414,6 +458,7 @@ async fn run_scan(
                     processed_frame_count as u32,
                     elapsed,
                     using_gpu,
+                    &scanner,
                 ) {
                     warn!("Failed to draw overlay: {}", e);
                 }
@@ -567,6 +612,59 @@ async fn run_scan(
     mesh.export(&output_path.to_string_lossy())?;
     println!("   ✓ Mesh exported successfully");
 
+    // Generate SOFA file if requested
+    if generate_sofa {
+        println!();
+        println!("🎧 Generating SOFA file for HRTF...");
+
+        #[cfg(feature = "sofa")]
+        {
+            use head_scanner::acoustics;
+            use head_scanner::security;
+
+            // Validate SOFA output path for security
+            let validated_sofa_path = match security::validate_export_path(
+                &sofa_output.to_string_lossy(),
+                None,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    println!("   ⚠ Invalid SOFA output path: {}", e);
+                    println!("   Please use a valid filename without directory traversal");
+                    return Err(e);
+                }
+            };
+
+            let result = acoustics::generate_sofa_analytical(
+                &mesh,
+                &validated_sofa_path.to_string_lossy(),
+                sofa_sample_rate,
+                sofa_azimuth,
+                sofa_elevation,
+                sofa_distance,
+            );
+
+            match result {
+                Ok(_) => {
+                    println!("   ✓ SOFA file generated: {:?}", validated_sofa_path);
+                    println!("   Grid: {}az × {}el = {} positions",
+                        sofa_azimuth, sofa_elevation, sofa_azimuth * sofa_elevation);
+                    println!("   Sample rate: {} Hz", sofa_sample_rate);
+                }
+                Err(e) => {
+                    println!("   ⚠ SOFA generation failed: {}", e);
+                    println!("   Note: Ear detection may have failed - ensure scan covers both ears");
+                }
+            }
+        }
+
+        #[cfg(not(feature = "sofa"))]
+        {
+            println!("   ⚠ SOFA support not enabled");
+            println!("   Rebuild with: cargo build --features sofa");
+        }
+    }
+
     // Stop scanner
     scanner.stop().await?;
 
@@ -581,7 +679,7 @@ async fn run_scan(
     Ok(())
 }
 
-/// Draw progress overlay on video frame
+/// Draw progress overlay on video frame with scan guidance
 fn draw_progress_overlay(
     frame: &mut opencv::core::Mat,
     state: ScanState,
@@ -589,12 +687,13 @@ fn draw_progress_overlay(
     frame_count: u32,
     elapsed_secs: f32,
     using_gpu: bool,
+    scanner: &HeadScanner,
 ) -> ScannerResult<()> {
     let height = frame.rows();
     let width = frame.cols();
 
     // Draw semi-transparent background at top
-    let overlay_height = 120;
+    let overlay_height = 200; // Increased to fit guidance info
     imgproc::rectangle(
         frame,
         opencv::core::Rect::new(0, 0, width, overlay_height),
@@ -719,6 +818,79 @@ fn draw_progress_overlay(
         imgproc::LINE_AA,
         false,
     )?;
+
+    // Draw scan guidance information
+    if state == ScanState::Scanning {
+        // Get quality metrics
+        let quality = scanner.get_quality_metrics();
+
+        // Display angular coverage
+        imgproc::put_text(
+            frame,
+            &format!(
+                "Angular coverage: {:.0}% ({} angles)",
+                quality.angular_coverage * 100.0,
+                quality.unique_angles
+            ),
+            CvPoint::new(20, 140),
+            font,
+            0.6,
+            white,
+            1,
+            imgproc::LINE_AA,
+            false,
+        )?;
+
+        // Display quality score
+        let quality_score = quality.overall_score();
+        let quality_color = if quality_score > 0.85 {
+            green
+        } else if quality_score > 0.7 {
+            yellow
+        } else {
+            red
+        };
+
+        imgproc::put_text(
+            frame,
+            &format!("Quality score: {:.0}%", quality_score * 100.0),
+            CvPoint::new(20, 165),
+            font,
+            0.6,
+            quality_color,
+            1,
+            imgproc::LINE_AA,
+            false,
+        )?;
+
+        // Display next guidance instruction
+        if let Some(instruction) = scanner.get_next_guidance() {
+            imgproc::put_text(
+                frame,
+                &format!("➜ {}", instruction.direction),
+                CvPoint::new(20, 190),
+                font,
+                0.7,
+                Scalar::new(0.0, 255.0, 255.0, 0.0), // Cyan for instructions
+                2,
+                imgproc::LINE_AA,
+                false,
+            )?;
+        } else {
+            // All regions covered!
+            imgproc::put_text(
+                frame,
+                "✓ All angles captured!",
+                CvPoint::new(20, 190),
+                font,
+                0.7,
+                green,
+                2,
+                imgproc::LINE_AA,
+                false,
+            )?;
+        }
+    }
 
     // Controls hint at bottom
     let hint_y = height - 20;
@@ -958,13 +1130,18 @@ async fn run_calibration(
     // Save calibration data
     println!();
     println!("💾 Saving calibration to {:?}...", output_path);
+
+    // Validate output path for security
+    use head_scanner::security;
+    let validated_path = security::validate_export_path(&output_path.to_string_lossy(), None)?;
+
     let json = serde_json::to_string_pretty(&result.intrinsics)?;
-    std::fs::write(&output_path, json)?;
+    std::fs::write(&validated_path, json)?;
     println!("✓ Calibration saved");
 
     println!();
     println!("✨ Calibration complete!");
-    println!("   Use this file with: --calibration {:?}", output_path);
+    println!("   Use this file with: --calibration {:?}", validated_path);
 
     Ok(())
 }

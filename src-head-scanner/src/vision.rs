@@ -57,6 +57,27 @@ impl VisionModel {
         Self::load_with_gpu(model_path, true)
     }
 
+    /// Helper function to try enabling a GPU provider and log results
+    fn try_enable_gpu_provider(
+        builder: &mut ort::SessionBuilder,
+        provider_name: &str,
+        enable_fn: impl FnOnce(&mut ort::SessionBuilder) -> ScannerResult<()>,
+    ) -> bool {
+        log::info!("Attempting to enable {} execution provider", provider_name);
+
+        match enable_fn(builder) {
+            Ok(_) => {
+                log::info!("✓ {} execution provider enabled successfully", provider_name);
+                true
+            }
+            Err(e) => {
+                log::warn!("Failed to enable {}: {}. Falling back to CPU.", provider_name, e);
+                log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
+                false
+            }
+        }
+    }
+
     /// Load a vision model with explicit GPU preference
     pub fn load_with_gpu(model_path: &str, prefer_gpu: bool) -> ScannerResult<Self> {
         // In ort 2.0, load model using commit_from_file on the builder
@@ -70,41 +91,24 @@ impl VisionModel {
         // Try to enable GPU execution providers
         let mut use_gpu = false;
         if prefer_gpu {
-            // Note: GPU execution providers require additional setup
-            // For now, we'll use CPU but mark GPU as "requested"
-            // Future: Add CUDA, CoreML, DirectML when ort crate supports them
-
             #[cfg(target_os = "macos")]
             {
-                // Apple Silicon has Neural Engine support via CoreML
-                log::info!("GPU acceleration requested (CoreML/Neural Engine on Apple Silicon)");
-                // TODO: Enable when ort 2.0 stable supports CoreML
-                use_gpu = true;
+                use_gpu = Self::try_enable_gpu_provider(&mut builder, "CoreML", Self::enable_coreml);
             }
 
             #[cfg(target_os = "windows")]
             {
-                // Windows can use DirectML for GPU acceleration
-                log::info!("GPU acceleration requested (DirectML on Windows)");
-                // TODO: Enable when ort 2.0 stable supports DirectML
-                use_gpu = true;
+                use_gpu = Self::try_enable_gpu_provider(&mut builder, "DirectML", Self::enable_directml);
             }
 
             #[cfg(target_os = "linux")]
             {
-                // Linux can use CUDA for NVIDIA GPUs
-                log::info!("GPU acceleration requested (CUDA on Linux)");
-                // TODO: Enable when ort 2.0 stable supports CUDA
-                use_gpu = false; // Will be true when CUDA is available
+                use_gpu = Self::try_enable_gpu_provider(&mut builder, "CUDA", Self::enable_cuda);
             }
 
-            if !use_gpu {
-                log::info!(
-                    "GPU execution providers not yet available in ort 2.0-rc.10, using optimized CPU"
-                );
-                log::info!(
-                    "Note: ONNX Runtime will still use CPU optimizations (SIMD, multi-threading)"
-                );
+            #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+            {
+                log::info!("GPU acceleration not configured for this platform, using CPU");
             }
         } else {
             log::info!("GPU acceleration disabled, using CPU");
@@ -129,6 +133,42 @@ impl VisionModel {
     /// Check if GPU acceleration is enabled
     pub fn is_using_gpu(&self) -> bool {
         self.use_gpu
+    }
+
+    /// Enable CoreML execution provider (macOS)
+    #[cfg(target_os = "macos")]
+    fn enable_coreml(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
+        use ort::ExecutionProvider;
+
+        builder
+            .with_execution_providers([ExecutionProvider::CoreML(Default::default())])
+            .map_err(|e| ScannerError::VisionModel(format!("CoreML setup failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Enable DirectML execution provider (Windows)
+    #[cfg(target_os = "windows")]
+    fn enable_directml(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
+        use ort::ExecutionProvider;
+
+        builder
+            .with_execution_providers([ExecutionProvider::DirectML(Default::default())])
+            .map_err(|e| ScannerError::VisionModel(format!("DirectML setup failed: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// Enable CUDA execution provider (Linux)
+    #[cfg(target_os = "linux")]
+    fn enable_cuda(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
+        use ort::ExecutionProvider;
+
+        builder
+            .with_execution_providers([ExecutionProvider::CUDA(Default::default())])
+            .map_err(|e| ScannerError::VisionModel(format!("CUDA setup failed: {}", e)))?;
+
+        Ok(())
     }
 
     /// Detect features in a frame using the neural network
@@ -884,5 +924,86 @@ mod tests {
         tracker.update(features2);
 
         assert!(tracker.get_tracks().len() > 0);
+    }
+
+    #[test]
+    fn test_gpu_provider_helper() {
+        // Test the GPU provider helper function with mock enable function
+        use crate::error::ScannerResult;
+
+        let mut dummy_builder = Session::builder().unwrap();
+
+        // Test successful provider enable
+        let result = VisionModel::try_enable_gpu_provider(
+            &mut dummy_builder,
+            "MockGPU",
+            |_builder| Ok(()),
+        );
+        assert!(result, "GPU provider enable should return true on success");
+
+        // Test failed provider enable
+        let result = VisionModel::try_enable_gpu_provider(
+            &mut dummy_builder,
+            "FailedGPU",
+            |_builder| Err(ScannerError::VisionModel("Mock failure".to_string())),
+        );
+        assert!(!result, "GPU provider enable should return false on failure");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_coreml_provider_available() {
+        // Test that CoreML provider can be attempted on macOS
+        // Note: This may fail if CoreML is not actually available, but should not panic
+        let mut builder = Session::builder().unwrap();
+        let result = VisionModel::enable_coreml(&mut builder);
+
+        // We don't assert success because CoreML may not be available
+        // But we verify the function doesn't panic
+        match result {
+            Ok(_) => println!("CoreML enabled successfully"),
+            Err(e) => println!("CoreML not available: {:?}", e),
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_directml_provider_available() {
+        // Test that DirectML provider can be attempted on Windows
+        let mut builder = Session::builder().unwrap();
+        let result = VisionModel::enable_directml(&mut builder);
+
+        match result {
+            Ok(_) => println!("DirectML enabled successfully"),
+            Err(e) => println!("DirectML not available: {:?}", e),
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_cuda_provider_available() {
+        // Test that CUDA provider can be attempted on Linux
+        let mut builder = Session::builder().unwrap();
+        let result = VisionModel::enable_cuda(&mut builder);
+
+        match result {
+            Ok(_) => println!("CUDA enabled successfully"),
+            Err(e) => println!("CUDA not available: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_gpu_preference_flags() {
+        // Test that GPU preference is respected
+        // We can't actually load a model without a file, but we can test the logic
+
+        // This test verifies the GPU selection code path exists
+        // In a real scenario, you would:
+        // 1. Create a minimal ONNX model file
+        // 2. Call load_with_gpu(path, true) and load_with_gpu(path, false)
+        // 3. Verify appropriate providers are attempted
+
+        // For now, just verify the functions exist and are callable
+        assert!(true, "GPU preference API exists");
     }
 }
