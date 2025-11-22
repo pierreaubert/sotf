@@ -60,7 +60,15 @@
       "shift-t": "player_ui::TogglePlugin",
 
       "shift-a": "player_ui::AddDirectory",
-      "shift-s": "player_ui::ScanLibrary"
+      "shift-s": "player_ui::ScanLibrary",
+
+      "!": "player_ui::QuickAddEQ",
+      "@": "player_ui::QuickAddUpmixer",
+      "#": "player_ui::QuickAddCompressor",
+      "$": "player_ui::QuickAddGate",
+      "%": "player_ui::QuickAddLimiter",
+      "^": "player_ui::QuickAddLoudness",
+      "&": "player_ui::QuickAddBinaural"
     }
   }
 ]

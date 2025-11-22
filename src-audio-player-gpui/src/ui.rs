@@ -46,6 +46,13 @@ actions!(
         TogglePlugin,
         AddDirectory,
         ScanLibrary,
+        QuickAddEQ,
+        QuickAddUpmixer,
+        QuickAddCompressor,
+        QuickAddGate,
+        QuickAddLimiter,
+        QuickAddLoudness,
+        QuickAddBinaural,
     ]
 );
 
@@ -630,6 +637,56 @@ impl PlayerView {
         cx.notify();
     }
 
+    // Quick plugin add shortcuts
+    fn quick_add_eq(&mut self, _: &QuickAddEQ, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.add_plugin(&sotf_audio_player::PluginType::EQ);
+        });
+        cx.notify();
+    }
+
+    fn quick_add_upmixer(&mut self, _: &QuickAddUpmixer, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.add_plugin(&sotf_audio_player::PluginType::Upmixer);
+        });
+        cx.notify();
+    }
+
+    fn quick_add_compressor(&mut self, _: &QuickAddCompressor, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.add_plugin(&sotf_audio_player::PluginType::Compressor);
+        });
+        cx.notify();
+    }
+
+    fn quick_add_gate(&mut self, _: &QuickAddGate, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.add_plugin(&sotf_audio_player::PluginType::Gate);
+        });
+        cx.notify();
+    }
+
+    fn quick_add_limiter(&mut self, _: &QuickAddLimiter, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.add_plugin(&sotf_audio_player::PluginType::Limiter);
+        });
+        cx.notify();
+    }
+
+    fn quick_add_loudness(&mut self, _: &QuickAddLoudness, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.add_plugin(&sotf_audio_player::PluginType::LoudnessCompensation);
+        });
+        cx.notify();
+    }
+
+    fn quick_add_binaural(&mut self, _: &QuickAddBinaural, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.add_plugin(&sotf_audio_player::PluginType::BinauralDecoder);
+        });
+        cx.notify();
+    }
+
     fn handle_enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             use crate::app::InputMode;
@@ -736,6 +793,13 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_plugin))
             .on_action(cx.listener(Self::add_directory))
             .on_action(cx.listener(Self::scan_library))
+            .on_action(cx.listener(Self::quick_add_eq))
+            .on_action(cx.listener(Self::quick_add_upmixer))
+            .on_action(cx.listener(Self::quick_add_compressor))
+            .on_action(cx.listener(Self::quick_add_gate))
+            .on_action(cx.listener(Self::quick_add_limiter))
+            .on_action(cx.listener(Self::quick_add_loudness))
+            .on_action(cx.listener(Self::quick_add_binaural))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 // Handle text input for search mode and add directory mode
                 let input_mode = view.state.read(cx).app.input_mode;
@@ -1912,7 +1976,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         Screen::Plugins => vec![
             ("↑/↓ or K/J", "Navigate plugin chain"),
             ("A", "Add plugin (default)"),
-            ("1/2/3/4/5/6/7", "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural"),
+            ("Shift-1/2/3/4/5/6/7", "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural"),
             ("E or Enter", "Edit selected plugin"),
             ("Shift-T", "Toggle plugin enabled/disabled"),
             ("D/Delete", "Remove plugin"),

@@ -932,6 +932,13 @@ impl App {
     }
 
     // Plugin management methods
+    pub fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
+        let new_index = self.plugin_chain.add_plugin(plugin_type);
+        self.selected_plugin_index = new_index;
+        self.plugin_chain.update_binaural_decoder_channels();
+        self.needs_plugin_update = true;
+    }
+
     pub fn toggle_plugin(&mut self, index: usize) {
         self.plugin_chain.toggle_plugin(index);
         // Update BinauralDecoder input channels after toggle
