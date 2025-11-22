@@ -605,6 +605,44 @@ impl App {
         }
     }
 
+    pub fn page_down_albums(&mut self, page_size: usize) {
+        let albums = self.filtered_albums();
+        if !albums.is_empty() {
+            self.selected_album_index =
+                (self.selected_album_index + page_size).min(albums.len() - 1);
+        }
+    }
+
+    pub fn page_up_albums(&mut self, page_size: usize) {
+        let albums = self.filtered_albums();
+        if !albums.is_empty() {
+            self.selected_album_index = self.selected_album_index.saturating_sub(page_size);
+        }
+    }
+
+    pub fn page_down_tree(&mut self, page_size: usize) {
+        if self.library_view_mode != LibraryViewMode::TreeView {
+            return;
+        }
+
+        let tree_items = self.get_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_tree_index =
+                (self.selected_tree_index + page_size).min(tree_items.len() - 1);
+        }
+    }
+
+    pub fn page_up_tree(&mut self, page_size: usize) {
+        if self.library_view_mode != LibraryViewMode::TreeView {
+            return;
+        }
+
+        let tree_items = self.get_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_tree_index = self.selected_tree_index.saturating_sub(page_size);
+        }
+    }
+
     pub fn select_next_queue_item(&mut self) {
         if !self.queue.is_empty() {
             self.selected_queue_index = (self.selected_queue_index + 1) % self.queue.len();
@@ -618,6 +656,19 @@ impl App {
             } else {
                 self.selected_queue_index -= 1;
             }
+        }
+    }
+
+    pub fn page_down_queue(&mut self, page_size: usize) {
+        if !self.queue.is_empty() {
+            self.selected_queue_index =
+                (self.selected_queue_index + page_size).min(self.queue.len() - 1);
+        }
+    }
+
+    pub fn page_up_queue(&mut self, page_size: usize) {
+        if !self.queue.is_empty() {
+            self.selected_queue_index = self.selected_queue_index.saturating_sub(page_size);
         }
     }
 
@@ -636,6 +687,21 @@ impl App {
             } else {
                 self.selected_directory_index -= 1;
             }
+        }
+    }
+
+    pub fn page_down_directories(&mut self, page_size: usize) {
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_directory_index =
+                (self.selected_directory_index + page_size).min(tree_items.len() - 1);
+        }
+    }
+
+    pub fn page_up_directories(&mut self, page_size: usize) {
+        let tree_items = self.get_directory_tree_items();
+        if !tree_items.is_empty() {
+            self.selected_directory_index = self.selected_directory_index.saturating_sub(page_size);
         }
     }
 

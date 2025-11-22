@@ -379,6 +379,44 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn select_next_page(&mut self, _: &SelectNextPage, _: &mut Window, cx: &mut Context<Self>) {
+        const PAGE_SIZE: usize = 20;
+
+        self.state
+            .update(cx, |state, _cx| match state.app.current_screen {
+                Screen::Library => {
+                    if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
+                        state.app.page_down_tree(PAGE_SIZE);
+                    } else {
+                        state.app.page_down_albums(PAGE_SIZE);
+                    }
+                }
+                Screen::Queue => state.app.page_down_queue(PAGE_SIZE),
+                Screen::DirectoryManager => state.app.page_down_directories(PAGE_SIZE),
+                _ => {}
+            });
+        cx.notify();
+    }
+
+    fn select_prev_page(&mut self, _: &SelectPrevPage, _: &mut Window, cx: &mut Context<Self>) {
+        const PAGE_SIZE: usize = 20;
+
+        self.state
+            .update(cx, |state, _cx| match state.app.current_screen {
+                Screen::Library => {
+                    if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
+                        state.app.page_up_tree(PAGE_SIZE);
+                    } else {
+                        state.app.page_up_albums(PAGE_SIZE);
+                    }
+                }
+                Screen::Queue => state.app.page_up_queue(PAGE_SIZE),
+                Screen::DirectoryManager => state.app.page_up_directories(PAGE_SIZE),
+                _ => {}
+            });
+        cx.notify();
+    }
+
     fn toggle_expand(&mut self, _: &ToggleExpand, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             if state.app.current_screen == Screen::Library {
@@ -539,6 +577,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::set_filter_mixed))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
+            .on_action(cx.listener(Self::select_next_page))
+            .on_action(cx.listener(Self::select_prev_page))
             .on_action(cx.listener(Self::toggle_expand))
             .on_action(cx.listener(Self::handle_enter))
             .on_action(cx.listener(Self::cancel))
