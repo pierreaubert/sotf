@@ -38,7 +38,11 @@
 
 pub mod types;
 pub mod numcalc_parser;
+pub mod hrir;
 
 // Re-exports
 pub use types::*;
 pub use numcalc_parser::NumCalcParser;
+pub use hrir::{
+    apply_blackman_window, apply_hamming_window, apply_hann_window, compute_hrir,
+};
