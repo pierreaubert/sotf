@@ -27,6 +27,9 @@ ndarray-linalg = { workspace = true }
 special = { workspace = true }
 spec_math = { workspace = true }
 
+# Environment utilities
+autoeq-env = { path = "../src-env" }
+
 # Parallel processing - RAYON ONLY (NO TOKIO)
 rayon = { workspace = true }
 

@@ -11,9 +11,19 @@ use bem::analytical::{sphere_scattering_3d, sphere_rcs_3d, sphere_scattering_eff
 use bem::testing::ValidationResult;
 use num_complex::Complex64;
 use std::f64::consts::PI;
+use autoeq_env::get_data_generated_dir;
+use std::path::PathBuf;
+
+/// Get output directory from AUTOEQ_DIR environment variable
+fn get_output_dir() -> PathBuf {
+    get_data_generated_dir()
+        .expect("Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable")
+        .join("bem")
+        .join("3d")
+}
 
 fn ensure_output_dir() -> std::io::Result<()> {
-    std::fs::create_dir_all("tests/output/3d")?;
+    std::fs::create_dir_all(get_output_dir())?;
     Ok(())
 }
 
@@ -42,7 +52,8 @@ fn test_3d_sphere_rayleigh_regime() {
         0, 0.5,
     );
 
-    validation.save_json("tests/output/3d/sphere_rayleigh_ka0.1.json").unwrap();
+    let output_path = get_output_dir().join("sphere_rayleigh_ka0.1.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     // In Rayleigh regime, scattering is very weak
@@ -82,7 +93,8 @@ fn test_3d_sphere_mie_regime() {
         0, 1.0,
     );
 
-    validation.save_json("tests/output/3d/sphere_mie_ka1.0.json").unwrap();
+    let output_path = get_output_dir().join("sphere_mie_ka1.0.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     let rcs = sphere_rcs_3d(k, a, 30);
@@ -121,7 +133,8 @@ fn test_3d_sphere_geometric_regime() {
         0, 3.0,
     );
 
-    validation.save_json("tests/output/3d/sphere_geometric_ka20.json").unwrap();
+    let output_path = get_output_dir().join("sphere_geometric_ka20.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     // In geometric regime, RCS → 2πa² (twice geometric cross-section)
@@ -171,8 +184,9 @@ fn test_3d_sphere_rcs_frequency_sweep() {
         "geometric_cross_section": geometric_cs,
     });
 
+    let output_path = get_output_dir().join("sphere_rcs_sweep.json");
     std::fs::write(
-        "tests/output/3d/sphere_rcs_sweep.json",
+        output_path,
         serde_json::to_string_pretty(&rcs_data).unwrap()
     ).unwrap();
 
@@ -216,8 +230,9 @@ fn test_3d_sphere_directivity_pattern() {
         "phase": solution.phase(),
     });
 
+    let output_path = get_output_dir().join("sphere_directivity_ka2.json");
     std::fs::write(
-        "tests/output/3d/sphere_directivity_ka2.json",
+        output_path,
         serde_json::to_string_pretty(&directivity_data).unwrap()
     ).unwrap();
 
@@ -249,8 +264,9 @@ fn test_3d_sphere_surface_pressure() {
         "phase": solution.phase(),
     });
 
+    let output_path = get_output_dir().join("sphere_surface_pressure_ka3.json");
     std::fs::write(
-        "tests/output/3d/sphere_surface_pressure_ka3.json",
+        output_path,
         serde_json::to_string_pretty(&surface_data).unwrap()
     ).unwrap();
 
@@ -318,8 +334,9 @@ fn test_3d_sphere_3d_field_slice() {
         "field_points": field_points,
     });
 
+    let output_path = get_output_dir().join("sphere_field_slice_ka2.json");
     std::fs::write(
-        "tests/output/3d/sphere_field_slice_ka2.json",
+        output_path,
         serde_json::to_string_pretty(&field_data).unwrap()
     ).unwrap();
 
@@ -372,8 +389,9 @@ fn test_3d_sphere_convergence_with_series_terms() {
         "relative_errors": convergence_data.iter().map(|(_, e)| e).collect::<Vec<_>>(),
     });
 
+    let output_path = get_output_dir().join("sphere_convergence.json");
     std::fs::write(
-        "tests/output/3d/sphere_convergence.json",
+        output_path,
         serde_json::to_string_pretty(&conv_json).unwrap()
     ).unwrap();
 
@@ -424,8 +442,9 @@ fn test_3d_sphere_mesh_convergence() {
         "simulated_errors": mesh_convergence.iter().map(|(_, _, e)| e).collect::<Vec<_>>(),
     });
 
+    let output_path = get_output_dir().join("sphere_mesh_convergence.json");
     std::fs::write(
-        "tests/output/3d/sphere_mesh_convergence.json",
+        output_path,
         serde_json::to_string_pretty(&mesh_json).unwrap()
     ).unwrap();
 }
@@ -459,8 +478,9 @@ fn generate_3d_visualization_suite() {
             "magnitude_db": directivity.magnitude().iter().map(|&m| 20.0 * m.log10()).collect::<Vec<_>>(),
         });
 
+        let output_path = get_output_dir().join(format!("viz_directivity_ka{:.1}.json", ka));
         std::fs::write(
-            format!("tests/output/3d/viz_directivity_ka{:.1}.json", ka),
+            output_path,
             serde_json::to_string_pretty(&dir_data).unwrap()
         ).unwrap();
 
@@ -475,8 +495,9 @@ fn generate_3d_visualization_suite() {
             "phase": surface.phase(),
         });
 
+        let output_path = get_output_dir().join(format!("viz_surface_ka{:.1}.json", ka));
         std::fs::write(
-            format!("tests/output/3d/viz_surface_ka{:.1}.json", ka),
+            output_path,
             serde_json::to_string_pretty(&surf_data).unwrap()
         ).unwrap();
     }

@@ -7,9 +7,19 @@ use bem::analytical::{cylinder_scattering_2d, cylinder_directivity_2d, cylinder_
 use bem::testing::ValidationResult;
 use num_complex::Complex64;
 use std::f64::consts::PI;
+use autoeq_env::get_data_generated_dir;
+use std::path::PathBuf;
+
+/// Get output directory from AUTOEQ_DIR environment variable
+fn get_output_dir() -> PathBuf {
+    get_data_generated_dir()
+        .expect("Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable")
+        .join("bem")
+        .join("2d")
+}
 
 fn ensure_output_dir() -> std::io::Result<()> {
-    std::fs::create_dir_all("tests/output/2d")?;
+    std::fs::create_dir_all(get_output_dir())?;
     Ok(())
 }
 
@@ -38,7 +48,8 @@ fn test_2d_cylinder_low_frequency_rayleigh() {
         0, 0.5,
     );
 
-    validation.save_json("tests/output/2d/cylinder_rayleigh_ka0.1.json").unwrap();
+    let output_path = get_output_dir().join("cylinder_rayleigh_ka0.1.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     // In Rayleigh regime, scattering is weak
@@ -75,7 +86,8 @@ fn test_2d_cylinder_mie_regime() {
         0, 1.0,
     );
 
-    validation.save_json("tests/output/2d/cylinder_mie_ka1.0.json").unwrap();
+    let output_path = get_output_dir().join("cylinder_mie_ka1.0.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     assert!(validation.passed(1e-10));
@@ -107,7 +119,8 @@ fn test_2d_cylinder_high_frequency() {
         0, 2.0,
     );
 
-    validation.save_json("tests/output/2d/cylinder_high_freq_ka10.json").unwrap();
+    let output_path = get_output_dir().join("cylinder_high_freq_ka10.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     assert!(validation.passed(1e-10));
@@ -173,12 +186,13 @@ fn test_2d_cylinder_directivity_pattern() {
             .collect::<Vec<_>>(),
     });
 
+    let output_path = get_output_dir().join("cylinder_directivity_ka2.json");
     std::fs::write(
-        "tests/output/2d/cylinder_directivity_ka2.json",
+        &output_path,
         serde_json::to_string_pretty(&directivity_data).unwrap()
     ).unwrap();
 
-    println!("Directivity pattern saved to tests/output/2d/cylinder_directivity_ka2.json");
+    println!("Directivity pattern saved to {:?}", output_path);
 }
 
 #[test]
@@ -209,8 +223,9 @@ fn test_2d_cylinder_scattering_cross_section() {
             .collect::<Vec<_>>(),
     });
 
+    let output_path = get_output_dir().join("cylinder_cross_section.json");
     std::fs::write(
-        "tests/output/2d/cylinder_cross_section.json",
+        output_path,
         serde_json::to_string_pretty(&cs_data).unwrap()
     ).unwrap();
 
@@ -283,8 +298,9 @@ fn test_2d_cylinder_field_map() {
         "field_points": field_map,
     });
 
+    let output_path = get_output_dir().join("cylinder_field_map_ka2.json");
     std::fs::write(
-        "tests/output/2d/cylinder_field_map_ka2.json",
+        output_path,
         serde_json::to_string_pretty(&field_data).unwrap()
     ).unwrap();
 
@@ -336,8 +352,9 @@ fn test_2d_cylinder_convergence_with_series_terms() {
         "relative_errors": convergence_data.iter().map(|(_, e)| e).collect::<Vec<_>>(),
     });
 
+    let output_path = get_output_dir().join("cylinder_convergence.json");
     std::fs::write(
-        "tests/output/2d/cylinder_convergence.json",
+        output_path,
         serde_json::to_string_pretty(&conv_json).unwrap()
     ).unwrap();
 }
@@ -369,8 +386,9 @@ fn generate_2d_visualization_suite() {
             "phase": directivity.iter().map(|d| d.arg()).collect::<Vec<_>>(),
         });
 
+        let output_path = get_output_dir().join(format!("viz_directivity_ka{:.1}.json", ka));
         std::fs::write(
-            format!("tests/output/2d/viz_directivity_ka{:.1}.json", ka),
+            output_path,
             serde_json::to_string_pretty(&dir_data).unwrap()
         ).unwrap();
 
@@ -396,8 +414,9 @@ fn generate_2d_visualization_suite() {
             "field_points": field_points,
         });
 
+        let output_path = get_output_dir().join(format!("viz_field_ka{:.1}.json", ka));
         std::fs::write(
-            format!("tests/output/2d/viz_field_ka{:.1}.json", ka),
+            output_path,
             serde_json::to_string_pretty(&field_data).unwrap()
         ).unwrap();
     }

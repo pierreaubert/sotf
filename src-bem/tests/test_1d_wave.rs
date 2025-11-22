@@ -6,11 +6,20 @@
 use bem::analytical::{plane_wave_1d, standing_wave_1d, damped_wave_1d};
 use bem::testing::ValidationResult;
 use num_complex::Complex64;
-use std::path::Path;
+use autoeq_env::get_data_generated_dir;
+use std::path::PathBuf;
+
+/// Get output directory from AUTOEQ_DIR environment variable
+fn get_output_dir() -> PathBuf {
+    get_data_generated_dir()
+        .expect("Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable")
+        .join("bem")
+        .join("1d")
+}
 
 /// Create output directory if it doesn't exist
 fn ensure_output_dir() -> std::io::Result<()> {
-    std::fs::create_dir_all("tests/output/1d")?;
+    std::fs::create_dir_all(get_output_dir())?;
     Ok(())
 }
 
@@ -38,7 +47,8 @@ fn test_1d_plane_wave_single_wavelength() {
     );
 
     // Save JSON
-    validation.save_json("tests/output/1d/plane_wave_k2_one_wavelength.json").unwrap();
+    let output_path = get_output_dir().join("plane_wave_k2_one_wavelength.json");
+    validation.save_json(output_path).unwrap();
 
     // Print summary
     validation.print_summary();
@@ -73,7 +83,8 @@ fn test_1d_plane_wave_multiple_wavelengths() {
             0.1,
         );
 
-        validation.save_json(format!("tests/output/1d/plane_wave_{}.json", name)).unwrap();
+        let output_path = get_output_dir().join(format!("plane_wave_{}.json", name));
+        validation.save_json(output_path).unwrap();
 
         assert!(validation.passed(1e-10));
     }
@@ -97,7 +108,8 @@ fn test_1d_standing_wave_nodes() {
         0.1,
     );
 
-    validation.save_json("tests/output/1d/standing_wave_nodes.json").unwrap();
+    let output_path = get_output_dir().join("standing_wave_nodes.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     // Verify nodes at boundaries
@@ -129,7 +141,8 @@ fn test_1d_damped_wave_decay() {
         0.1,
     );
 
-    validation.save_json("tests/output/1d/damped_wave_alpha0.2.json").unwrap();
+    let output_path = get_output_dir().join("damped_wave_alpha0.2.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     // Verify exponential decay
@@ -182,8 +195,9 @@ fn test_1d_convergence_with_resolution() {
             .collect::<Vec<_>>(),
     });
 
+    let output_path = get_output_dir().join("convergence_study.json");
     std::fs::write(
-        "tests/output/1d/convergence_study.json",
+        output_path,
         serde_json::to_string_pretty(&convergence_data).unwrap()
     ).unwrap();
 
@@ -243,7 +257,8 @@ fn test_1d_with_simulated_bem_error() {
         0.1,
     );
 
-    validation.save_json("tests/output/1d/plane_wave_with_error.json").unwrap();
+    let output_path = get_output_dir().join("plane_wave_with_error.json");
+    validation.save_json(output_path).unwrap();
     validation.print_summary();
 
     // Error should be small but nonzero
@@ -273,9 +288,8 @@ fn generate_1d_visualization_suite() {
             0, 0.1,
         );
 
-        validation.save_json(
-            format!("tests/output/1d/viz_plane_wave_k{:.1}.json", k)
-        ).unwrap();
+        let output_path = get_output_dir().join(format!("viz_plane_wave_k{:.1}.json", k));
+        validation.save_json(output_path).unwrap();
     }
 
     // Test 2: Standing waves
@@ -290,9 +304,8 @@ fn generate_1d_visualization_suite() {
             0, 0.1,
         );
 
-        validation.save_json(
-            format!("tests/output/1d/viz_standing_wave_k{:.1}.json", k)
-        ).unwrap();
+        let output_path = get_output_dir().join(format!("viz_standing_wave_k{:.1}.json", k));
+        validation.save_json(output_path).unwrap();
     }
 
     // Test 3: Various damping
@@ -307,10 +320,9 @@ fn generate_1d_visualization_suite() {
             0, 0.1,
         );
 
-        validation.save_json(
-            format!("tests/output/1d/viz_damped_alpha{:.2}.json", alpha)
-        ).unwrap();
+        let output_path = get_output_dir().join(format!("viz_damped_alpha{:.2}.json", alpha));
+        validation.save_json(output_path).unwrap();
     }
 
-    println!("Generated visualization files in tests/output/1d/");
+    println!("Generated visualization files in {:?}", get_output_dir());
 }
