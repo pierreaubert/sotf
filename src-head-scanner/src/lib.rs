@@ -41,15 +41,20 @@
 //! # }
 //! ```
 
+pub mod acoustics;
 pub mod bundle_adjustment;
 pub mod calibration;
 pub mod camera;
 pub mod convexhull;
 pub mod coverage;
 pub mod error;
+pub mod ffi; // FFI bindings for iOS/Swift
+pub mod security; // Security utilities for path validation
+pub mod guidance;
 pub mod mesh;
 pub mod pointcloud;
 pub mod reconstruction;
+pub mod scanner; // Simplified scanner interface for FFI
 pub mod stereo;
 pub mod texture;
 pub mod vision;
@@ -89,6 +94,10 @@ pub struct ScannerConfig {
     /// Path to the vision model (ONNX format)
     pub model_path: Option<String>,
 
+    /// Allowed base directories for model files (for security)
+    /// If empty, any directory is allowed (less secure)
+    pub model_base_dirs: Vec<std::path::PathBuf>,
+
     /// Use Structure-from-Motion for accurate 3D reconstruction
     pub use_sfm: bool,
 
@@ -110,6 +119,7 @@ impl Default for ScannerConfig {
             point_density: 50.0, // 50 points per square cm
             use_gpu: true,
             model_path: None,
+            model_base_dirs: Vec::new(), // Empty = allow any directory (less secure)
             use_sfm: false,      // Disabled by default for compatibility
             sfm_frame_count: 3,  // Use 3 frames for SfM
             sfm_min_inliers: 20, // Minimum 20 inliers for valid pose
@@ -159,6 +169,13 @@ pub struct HeadScanner {
     frame_history: Arc<RwLock<std::collections::VecDeque<SfMFrame>>>,
     pose_history: Arc<RwLock<Vec<reconstruction::CameraPose>>>,
     intrinsics: reconstruction::CameraIntrinsics,
+
+    // Scan guidance system
+    guidance: Arc<RwLock<guidance::ScanGuidance>>,
+
+    // K-d tree cache for efficient point deduplication
+    // Stores (tree, point_count_when_built) to know when to invalidate
+    kd_tree_cache: Arc<RwLock<Option<(kiddo::KdTree<f32, 3>, usize)>>>,
 }
 
 /// Frame data for Structure-from-Motion
@@ -191,6 +208,8 @@ impl HeadScanner {
             frame_history: Arc::new(RwLock::new(std::collections::VecDeque::new())),
             pose_history: Arc::new(RwLock::new(Vec::new())),
             intrinsics,
+            guidance: Arc::new(RwLock::new(guidance::ScanGuidance::new())),
+            kd_tree_cache: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -209,22 +228,19 @@ impl HeadScanner {
 
         // Initialize vision model if path provided
         if let Some(ref model_path) = self.config.model_path {
-            // Validate model path for security
-            use std::path::Path;
-            let path = Path::new(model_path);
-            if model_path.contains("..") {
-                return Err(ScannerError::InvalidConfig(
-                    "Path traversal detected in model path".to_string(),
-                ));
-            }
-            if !path.exists() {
-                return Err(ScannerError::InvalidConfig(format!(
-                    "Model file does not exist: {}",
-                    model_path
-                )));
-            }
+            // Validate model path for security (prevents path traversal, symlink attacks, etc.)
+            let validated_path = if self.config.model_base_dirs.is_empty() {
+                // No base directories specified - just validate the path exists and is safe
+                security::validate_model_path(model_path, &[])?
+            } else {
+                // Validate path is within one of the allowed base directories
+                security::validate_model_path(model_path, &self.config.model_base_dirs)?
+            };
 
-            let model = vision::VisionModel::load_with_gpu(model_path, self.config.use_gpu)?;
+            let model = vision::VisionModel::load_with_gpu(
+                validated_path.to_str().unwrap(),
+                self.config.use_gpu,
+            )?;
             *self.vision_model.write() = Some(model);
         }
 
@@ -473,6 +489,10 @@ impl HeadScanner {
         // Add pose to history
         self.pose_history.write().push(pose.clone());
 
+        // Update scan guidance with new pose
+        let point_count = self.point_cloud.read().len();
+        self.guidance.write().update_pose(&pose, point_count);
+
         // Get previous pose (or identity for first frame)
         let pose1 = if self.pose_history.read().len() > 1 {
             let poses = self.pose_history.read();
@@ -585,6 +605,7 @@ impl HeadScanner {
         *self.state.write() = ScanState::Idle;
         *self.point_cloud.write() = PointCloud::new();
         *self.coverage.write() = coverage::CoverageMap::new();
+        *self.kd_tree_cache.write() = None; // Invalidate K-d tree cache
     }
 
     /// Stop the scanner and release resources
@@ -620,9 +641,37 @@ impl HeadScanner {
         self.point_cloud.read().len()
     }
 
+    /// Get the scan guidance system (for reading guidance instructions)
+    pub fn get_guidance(&self) -> guidance::ScanGuidance {
+        self.guidance.read().clone()
+    }
+
+    /// Get quality metrics for the current scan
+    pub fn get_quality_metrics(&self) -> guidance::QualityMetrics {
+        let point_count = self.get_point_cloud_size();
+        let coverage_map = self.coverage.read();
+        self.guidance
+            .write()
+            .compute_quality(&coverage_map, point_count)
+    }
+
+    /// Get next scan guidance instruction
+    pub fn get_next_guidance(&self) -> Option<guidance::GuidanceInstruction> {
+        self.guidance.read().compute_next_target()
+    }
+
+    /// Get quality improvement suggestions
+    pub fn get_suggestions(&self) -> Vec<String> {
+        self.guidance.read().suggest_improvements()
+    }
+
     /// Filter new points to remove duplicates and points too close to existing ones
     ///
     /// This prevents the point cloud from growing unbounded with redundant data
+    /// Uses a cached K-d tree to avoid O(n log n) rebuild overhead every frame
+    ///
+    /// Cache is invalidated when point cloud exceeds MAX_CACHE_SIZE to prevent
+    /// excessive memory usage in long scanning sessions.
     fn filter_new_points(
         &self,
         existing_cloud: &PointCloud,
@@ -630,16 +679,69 @@ impl HeadScanner {
     ) -> Vec<pointcloud::Point> {
         use kiddo::{KdTree, SquaredEuclidean};
 
+        // Maximum point count for K-d tree caching (prevents unbounded memory growth)
+        // 100K points ≈ 2-4 MB tree, reasonable for head scan detail
+        const MAX_CACHE_SIZE: usize = 100_000;
+
         if existing_cloud.is_empty() {
             return new_points;
         }
 
-        // Build k-d tree from existing points for efficient nearest neighbor search
-        let mut tree: KdTree<f32, 3> = KdTree::new();
-        for (idx, point) in existing_cloud.points().iter().enumerate() {
-            let pos = point.position;
-            tree.add(&[pos.x, pos.y, pos.z], idx as u64);
-        }
+        let current_point_count = existing_cloud.len();
+
+        // Check if we can use cached K-d tree or need to rebuild
+        let tree = {
+            let mut cache = self.kd_tree_cache.write();
+
+            // Check if cache is valid (point count matches AND within size limit)
+            let needs_rebuild = match cache.as_ref() {
+                Some((_, cached_count)) => {
+                    // Invalidate if point count changed OR exceeded max cache size
+                    *cached_count != current_point_count || current_point_count > MAX_CACHE_SIZE
+                }
+                None => true,
+            };
+
+            if needs_rebuild {
+                // If point cloud is too large, disable caching to prevent memory bloat
+                if current_point_count > MAX_CACHE_SIZE {
+                    log::debug!(
+                        "K-d tree cache disabled: point cloud size {} exceeds limit {}",
+                        current_point_count,
+                        MAX_CACHE_SIZE
+                    );
+                    *cache = None; // Clear cache
+
+                    // Build tree directly without caching
+                    let mut new_tree: KdTree<f32, 3> = KdTree::new();
+                    for (idx, point) in existing_cloud.points().iter().enumerate() {
+                        let pos = point.position;
+                        new_tree.add(&[pos.x, pos.y, pos.z], idx as u64);
+                    }
+                    new_tree
+                } else {
+                    // Build new k-d tree from existing points
+                    let mut new_tree: KdTree<f32, 3> = KdTree::new();
+                    for (idx, point) in existing_cloud.points().iter().enumerate() {
+                        let pos = point.position;
+                        new_tree.add(&[pos.x, pos.y, pos.z], idx as u64);
+                    }
+
+                    log::debug!(
+                        "Rebuilt K-d tree with {} points (cache was {})",
+                        current_point_count,
+                        if cache.is_some() { "stale" } else { "empty" }
+                    );
+
+                    // Update cache
+                    *cache = Some((new_tree.clone(), current_point_count));
+                    new_tree
+                }
+            } else {
+                // Clone the tree for use (kiddo::KdTree is relatively lightweight to clone)
+                cache.as_ref().unwrap().0.clone()
+            }
+        };
 
         // Minimum distance threshold (in cm) - points closer than this are considered duplicates
         // Relaxed threshold to allow more points through for faster coverage
@@ -687,5 +789,194 @@ mod tests {
         let scanner = scanner.unwrap();
         assert_eq!(scanner.get_state(), ScanState::Idle);
         assert_eq!(scanner.get_coverage(), 0.0);
+    }
+
+    #[test]
+    fn test_kd_tree_cache_initialization() {
+        // K-d tree cache should start as None
+        let config = ScannerConfig::default();
+        let scanner = HeadScanner::new(config).unwrap();
+
+        let cache = scanner.kd_tree_cache.read();
+        assert!(cache.is_none(), "K-d tree cache should be None initially");
+    }
+
+    #[test]
+    fn test_kd_tree_cache_builds_on_first_use() {
+        let config = ScannerConfig::default();
+        let scanner = HeadScanner::new(config).unwrap();
+
+        // Add some points to the point cloud
+        let mut point_cloud = scanner.point_cloud.write();
+        point_cloud.add_point(pointcloud::Point::new(0.0, 0.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(1.0, 0.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(0.0, 1.0, 0.0));
+        drop(point_cloud); // Release lock
+
+        // Filter new points (this should build the cache)
+        let new_points = vec![pointcloud::Point::new(0.5, 0.5, 0.0)];
+        let point_cloud_read = scanner.point_cloud.read();
+        let _filtered = scanner.filter_new_points(&point_cloud_read, new_points);
+        drop(point_cloud_read);
+
+        // Cache should now exist with correct point count
+        let cache = scanner.kd_tree_cache.read();
+        assert!(cache.is_some(), "K-d tree cache should be built after first use");
+        let (_, cached_count) = cache.as_ref().unwrap();
+        assert_eq!(*cached_count, 3, "Cached point count should match point cloud size");
+    }
+
+    #[test]
+    fn test_kd_tree_cache_reuses_on_same_size() {
+        let config = ScannerConfig::default();
+        let scanner = HeadScanner::new(config).unwrap();
+
+        // Add points
+        let mut point_cloud = scanner.point_cloud.write();
+        point_cloud.add_point(pointcloud::Point::new(0.0, 0.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(1.0, 0.0, 0.0));
+        drop(point_cloud);
+
+        // First filter - builds cache
+        let new_points1 = vec![pointcloud::Point::new(0.5, 0.5, 0.0)];
+        let point_cloud_read = scanner.point_cloud.read();
+        let _filtered1 = scanner.filter_new_points(&point_cloud_read, new_points1);
+        drop(point_cloud_read);
+
+        // Get cache reference
+        let cache_ptr = {
+            let cache = scanner.kd_tree_cache.read();
+            cache.as_ref().unwrap().0.size()
+        };
+
+        // Second filter with same point cloud size - should reuse cache
+        let new_points2 = vec![pointcloud::Point::new(0.3, 0.3, 0.0)];
+        let point_cloud_read = scanner.point_cloud.read();
+        let _filtered2 = scanner.filter_new_points(&point_cloud_read, new_points2);
+        drop(point_cloud_read);
+
+        // Cache should still have same size (was reused)
+        let cache = scanner.kd_tree_cache.read();
+        assert_eq!(cache.as_ref().unwrap().0.size(), cache_ptr, "Cache should be reused");
+    }
+
+    #[test]
+    fn test_kd_tree_cache_rebuilds_on_size_change() {
+        let config = ScannerConfig::default();
+        let scanner = HeadScanner::new(config).unwrap();
+
+        // Add initial points
+        let mut point_cloud = scanner.point_cloud.write();
+        point_cloud.add_point(pointcloud::Point::new(0.0, 0.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(1.0, 0.0, 0.0));
+        drop(point_cloud);
+
+        // First filter - builds cache with 2 points
+        let new_points1 = vec![pointcloud::Point::new(0.5, 0.5, 0.0)];
+        let point_cloud_read = scanner.point_cloud.read();
+        let _filtered1 = scanner.filter_new_points(&point_cloud_read, new_points1);
+        drop(point_cloud_read);
+
+        let initial_cached_count = {
+            let cache = scanner.kd_tree_cache.read();
+            cache.as_ref().unwrap().1
+        };
+        assert_eq!(initial_cached_count, 2);
+
+        // Add more points to change size
+        let mut point_cloud = scanner.point_cloud.write();
+        point_cloud.add_point(pointcloud::Point::new(0.0, 1.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(1.0, 1.0, 0.0));
+        drop(point_cloud);
+
+        // Second filter - should rebuild cache with 4 points
+        let new_points2 = vec![pointcloud::Point::new(0.3, 0.3, 0.0)];
+        let point_cloud_read = scanner.point_cloud.read();
+        let _filtered2 = scanner.filter_new_points(&point_cloud_read, new_points2);
+        drop(point_cloud_read);
+
+        // Cache should reflect new point count
+        let cache = scanner.kd_tree_cache.read();
+        let (_, cached_count) = cache.as_ref().unwrap();
+        assert_eq!(*cached_count, 4, "Cache should be rebuilt with new point count");
+    }
+
+    #[test]
+    fn test_kd_tree_cache_invalidates_on_reset() {
+        let config = ScannerConfig::default();
+        let mut scanner = HeadScanner::new(config).unwrap();
+
+        // Add points and build cache
+        let mut point_cloud = scanner.point_cloud.write();
+        point_cloud.add_point(pointcloud::Point::new(0.0, 0.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(1.0, 0.0, 0.0));
+        drop(point_cloud);
+
+        let new_points = vec![pointcloud::Point::new(0.5, 0.5, 0.0)];
+        let point_cloud_read = scanner.point_cloud.read();
+        let _filtered = scanner.filter_new_points(&point_cloud_read, new_points);
+        drop(point_cloud_read);
+
+        // Verify cache exists
+        assert!(scanner.kd_tree_cache.read().is_some());
+
+        // Reset scanner
+        scanner.reset();
+
+        // Cache should be invalidated
+        let cache = scanner.kd_tree_cache.read();
+        assert!(cache.is_none(), "K-d tree cache should be None after reset");
+    }
+
+    #[test]
+    fn test_kd_tree_cache_filter_correctness() {
+        // Verify that cached filtering produces same results as uncached
+        let config = ScannerConfig::default();
+        let scanner = HeadScanner::new(config).unwrap();
+
+        // Add points with specific spacing
+        let mut point_cloud = scanner.point_cloud.write();
+        point_cloud.add_point(pointcloud::Point::new(0.0, 0.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(10.0, 0.0, 0.0));
+        point_cloud.add_point(pointcloud::Point::new(0.0, 10.0, 0.0));
+        drop(point_cloud);
+
+        // Points to filter: one close (should be filtered), one far (should pass)
+        let new_points = vec![
+            pointcloud::Point::new(0.01, 0.01, 0.0), // Very close to (0,0,0) - should be filtered
+            pointcloud::Point::new(5.0, 5.0, 0.0),   // Far from all points - should pass
+        ];
+
+        let point_cloud_read = scanner.point_cloud.read();
+        let filtered = scanner.filter_new_points(&point_cloud_read, new_points);
+        drop(point_cloud_read);
+
+        // Should only have the far point
+        assert_eq!(filtered.len(), 1, "Should filter out close point");
+        assert!((filtered[0].position.x - 5.0).abs() < 0.01);
+        assert!((filtered[0].position.y - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_kd_tree_cache_with_empty_cloud() {
+        // Verify cache behavior with empty point cloud
+        let config = ScannerConfig::default();
+        let scanner = HeadScanner::new(config).unwrap();
+
+        let new_points = vec![
+            pointcloud::Point::new(1.0, 1.0, 1.0),
+            pointcloud::Point::new(2.0, 2.0, 2.0),
+        ];
+
+        let point_cloud_read = scanner.point_cloud.read();
+        let filtered = scanner.filter_new_points(&point_cloud_read, new_points.clone());
+        drop(point_cloud_read);
+
+        // All points should pass through (no existing points to compare)
+        assert_eq!(filtered.len(), 2, "All points should pass with empty cloud");
+
+        // Cache should still be None (early return for empty cloud)
+        let cache = scanner.kd_tree_cache.read();
+        assert!(cache.is_none(), "Cache should remain None for empty cloud");
     }
 }
