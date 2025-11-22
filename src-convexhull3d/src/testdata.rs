@@ -11,7 +11,7 @@ use std::path::Path;
 
 /// Generate random points on a sphere
 pub fn random_sphere_points(n: usize, radius: f64) -> Vec<Vertex> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut vertices = Vec::with_capacity(n);
 
     for _ in 0..n {
