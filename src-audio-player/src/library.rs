@@ -6,10 +6,11 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{Limit, MetadataOptions};
 use symphonia::core::probe::{Hint, Probe};
 use walkdir::WalkDir;
+use serde::{Serialize, Deserialize};
 
 use crate::database::MusicDatabase;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryInfo {
     pub path: PathBuf,
     pub file_count: usize,

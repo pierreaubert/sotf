@@ -143,7 +143,7 @@ impl EQFilter {
 
     /// Parse APO format file and return a vector of EQ filters
     /// Format:
-    /// ```
+    /// ```text
     /// Preamp: -6.0 dB
     /// Filter 1: ON PK Fc 100 Hz Gain -2.0 dB Q 1.41
     /// Filter 2: ON LSC Fc 105 Hz Gain 4.1 dB Q 0.71

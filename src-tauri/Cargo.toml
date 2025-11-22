@@ -25,7 +25,8 @@ chrono = "0.4"
 hound = "3.5"
 
 # autoeq
-sotf_audio = { path = "../src-audio" }
+sotf-audio-plugins = { path = "../src-audio-plugins" }
+sotf-audio-engine = { path = "../src-audio-engine" }
 autoeq = { path = "../src-autoeq" }
 
 # tauri

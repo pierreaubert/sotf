@@ -565,7 +565,7 @@ impl App {
             // Add subdirectories if expanded (level 1)
             if dir_info.expanded {
                 for subdir in &dir_info.subdirectories {
-                    items.push((subdir.clone(), 1, false));
+                    items.push((subdir.path.clone(), 1, false));
                 }
             }
         }

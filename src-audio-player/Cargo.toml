@@ -13,7 +13,8 @@ path = "src/lib.rs"
 
 [dependencies]
 # Audio engine
-sotf_audio = { path = "../src-audio" }
+sotf-audio-plugins = { path = "../src-audio-plugins" }
+sotf-audio-engine = { path = "../src-audio-engine" }
 autoeq-iir = { path = "../src-iir" }
 
 # Serialization

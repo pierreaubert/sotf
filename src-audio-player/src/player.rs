@@ -1,6 +1,6 @@
 use sotf_audio::engine::PluginConfig;
-use sotf_audio::manager::AudioStreamingManager;
-use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};
+use sotf_audio::manager::{AudioStreamingManager, StreamingEvent, StreamingState};
+use sotf_audio::{LoudnessInfo, SpectrumInfo};
 use std::path::PathBuf;
 
 /// Batched playback state to reduce mutex locking
@@ -10,6 +10,7 @@ pub struct PlaybackState {
     pub is_playing: bool,
     pub loudness: Option<LoudnessInfo>,
     pub spectrum: Option<SpectrumInfo>,
+    pub last_error: Option<String>,
 }
 
 pub struct Player {
@@ -47,9 +48,14 @@ impl Player {
         &self,
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Ignore error if engine not running - plugins will be applied on next playback
-        let _ = self.manager.update_plugin_chain(plugins);
-        Ok(())
+        match self.manager.update_plugin_chain(plugins) {
+            Ok(()) => Ok(()),
+            Err(e) if e == "No engine running" => {
+                // Engine not running yet - plugins will be applied on next playback
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub fn pause(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -92,7 +98,7 @@ impl Player {
 
     pub fn is_playing(&self) -> bool {
         let state = self.manager.get_state();
-        matches!(state, sotf_audio::manager::StreamingState::Playing)
+        matches!(state, StreamingState::Playing)
     }
 
     pub fn get_loudness(&self) -> Option<LoudnessInfo> {
@@ -122,12 +128,17 @@ impl Player {
     /// Get all playback state in a single call
     /// No extra locking - AudioStreamingManager handles internal synchronization
     pub fn get_playback_state(&self, include_spectrum: bool) -> PlaybackState {
-        // Call try_recv_event to process any pending events (non-blocking)
-        self.manager.try_recv_event();
+        // Drain any pending streaming events and capture the last error (if any)
+        let mut last_error: Option<String> = None;
+        for event in self.manager.drain_events() {
+            if let StreamingEvent::Error(msg) = event {
+                last_error = Some(msg);
+            }
+        }
 
         let state = self.manager.get_state();
         let position_secs = self.manager.get_position();
-        let is_playing = matches!(state, sotf_audio::manager::StreamingState::Playing);
+        let is_playing = matches!(state, StreamingState::Playing);
 
         // Only query analyzers when actually playing to reduce overhead
         let loudness = if is_playing {
@@ -137,7 +148,9 @@ impl Player {
         };
 
         let spectrum = if include_spectrum && is_playing {
-            self.manager.get_spectrum()
+            // This Player wrapper does not currently expose spectrum monitoring,
+            // so always return None for spectrum data.
+            None
         } else {
             None
         };

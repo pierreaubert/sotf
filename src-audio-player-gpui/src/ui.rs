@@ -867,7 +867,7 @@ impl PlayerView {
                                 state
                                     .app
                                     .plugin_chain
-                                    .add_plugin(&crate::plugins::PluginType::Upmixer);
+                                    .add_plugin(&sotf_audio_player::PluginType::Upmixer);
                                 state.app.needs_plugin_update = true;
                             });
                             cx.notify();
@@ -889,7 +889,7 @@ impl PlayerView {
                                 state
                                     .app
                                     .plugin_chain
-                                    .add_plugin(&crate::plugins::PluginType::EQ);
+                                    .add_plugin(&sotf_audio_player::PluginType::EQ);
                                 state.app.needs_plugin_update = true;
                             });
                             cx.notify();
@@ -933,9 +933,21 @@ impl PlayerView {
             .get_plugin(state.app.selected_plugin_index)
         {
             match &plugin.settings {
-                crate::plugins::PluginSettings::Upmixer {
+                sotf_audio_player::PluginSettings::Upmixer {
                     speaker_config,
                     lfe_gain,
+                    gain_front_direct: _,
+                    gain_front_ambient: _,
+                    gain_rear_ambient: _,
+                    lfe_cutoff_hz: _,
+                    stereo_width: _,
+                    bandpass_hz: _,
+                    height_gain: _,
+                    enable_subharmonic_synth: _,
+                    subharmonic_gain: _,
+                    enable_hr_direct: _,
+                    hr_sharpen: _,
+                    safety_cap_db: _,
                 } => div()
                     .p_4()
                     .flex()
@@ -949,7 +961,7 @@ impl PlayerView {
                             .text_color(rgb(0x999999))
                             .child("Editing not yet implemented"),
                     ),
-                crate::plugins::PluginSettings::EQ { filters } => div()
+                sotf_audio_player::PluginSettings::EQ { filters } => div()
                     .p_4()
                     .flex()
                     .flex_col()
@@ -1153,7 +1165,7 @@ impl PlayerView {
                         .p_3()
                         .rounded_md()
                         .bg(rgb(0x2d2d2d))
-                        .child(div().text_sm().child(dir.display().to_string()))
+                        .child(div().text_sm().child(dir.path.display().to_string()))
                 }),
             ))
     }

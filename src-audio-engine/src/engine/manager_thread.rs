@@ -628,12 +628,14 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
             log::debug!("[Manager] Decoder end of stream");
             if let Ok(mut state) = safe_lock(state) {
                 state.playback_state = PlaybackState::Stopped;
+                state.last_error = None;
             }
         }
         ThreadEvent::DecoderError(err) => {
             log::debug!("[Manager] Decoder error: {}", err);
             if let Ok(mut state) = safe_lock(state) {
                 state.playback_state = PlaybackState::Stopped;
+                state.last_error = Some(err);
             }
         }
         ThreadEvent::PlaybackUnderrun => {
@@ -647,9 +649,16 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
         }
         ThreadEvent::ProcessingError(err) => {
             log::debug!("[Manager] Processing error: {}", err);
+            if let Ok(mut state) = safe_lock(state) {
+                state.last_error = Some(err);
+            }
         }
         ThreadEvent::ThreadPanic(thread_name) => {
             log::debug!("[Manager] Thread panicked: {}", thread_name);
+            if let Ok(mut state) = safe_lock(state) {
+                state.playback_state = PlaybackState::Stopped;
+                state.last_error = Some(format!("Thread panicked: {}", thread_name));
+            }
         }
         ThreadEvent::PositionUpdate(position) => {
             if let Ok(mut state) = safe_lock(state) {

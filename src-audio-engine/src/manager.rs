@@ -586,13 +586,19 @@ impl AudioStreamingManager {
 
     /// Try to receive an event (non-blocking)
     pub fn try_recv_event(&self) -> Option<StreamingEvent> {
-        // Check engine state for end-of-stream
+        // Check engine state for end-of-stream or error
         let engine_state = self.get_engine_state();
+        let current_state = self.get_state();
 
         if engine_state.playback_state == PlaybackState::Stopped {
-            let current_state = self.get_state();
+            if let Some(err) = engine_state.last_error.clone() {
+                if !err.is_empty() && current_state != StreamingState::Idle {
+                    self.set_state(StreamingState::Error);
+                    return Some(StreamingEvent::Error(err));
+                }
+            }
+
             if current_state == StreamingState::Playing {
-                // Was playing, now stopped = end of stream
                 self.set_state(StreamingState::Idle);
                 return Some(StreamingEvent::EndOfStream);
             }

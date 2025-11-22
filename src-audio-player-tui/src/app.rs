@@ -1,6 +1,6 @@
 use crate::theme::Theme;
 use sotf_audio::devices::AudioDevice;
-use sotf_audio::plugins::LoudnessInfo;
+use sotf_audio::LoudnessInfo;
 use sotf_audio_player::{Album, MusicLibrary, PluginChain, PluginType, Track};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

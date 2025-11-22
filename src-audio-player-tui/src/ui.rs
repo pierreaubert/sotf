@@ -7,7 +7,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
-use sotf_audio::plugins::get_speaker_config_by_channels;
+use sotf_audio::get_speaker_config_by_channels;
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
 fn format_channel_count(n: u32) -> String {

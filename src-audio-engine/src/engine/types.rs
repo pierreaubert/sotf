@@ -251,6 +251,8 @@ pub struct AudioEngineState {
     pub processing_bypassed: bool,
     /// Number of buffer underruns
     pub underruns: u64,
+    /// Last error message, if any
+    pub last_error: Option<String>,
 }
 
 impl Default for AudioEngineState {
@@ -266,6 +268,7 @@ impl Default for AudioEngineState {
             muted: false,
             processing_bypassed: false,
             underruns: 0,
+            last_error: None,
         }
     }
 }

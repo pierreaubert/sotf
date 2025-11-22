@@ -16,7 +16,7 @@ path = "src/main.rs"
 sotf-audio-player = { path = "../src-audio-player" }
 
 # Audio engine
-sotf_audio = { path = "../src-audio" }
+sotf-audio-engine = { path = "../src-audio-engine" }
 
 # TUI framework
 ratatui = { workspace = true }
