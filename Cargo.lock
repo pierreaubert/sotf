@@ -4161,6 +4161,7 @@ dependencies = [
 name = "head-scanner"
 version = "0.5.1"
 dependencies = [
+ "anyhow",
  "bytemuck",
  "byteorder",
  "clap",

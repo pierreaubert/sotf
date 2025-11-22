@@ -48,6 +48,7 @@ pub mod convexhull;
 pub mod coverage;
 pub mod error;
 pub mod mesh;
+pub mod mesh2hrtf;
 pub mod pointcloud;
 pub mod reconstruction;
 pub mod stereo;
