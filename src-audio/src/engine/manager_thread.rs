@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 const SPIN_MS_SLEEP_MANAGER: u64 = 10;
 const SPIN_MS_CHECK_MANAGER: u64 = 50;
+const PLUGIN_INIT_TIMEOUT_MS: u64 = 10000; // 10 seconds for plugin initialization (SOFA loading can be slow)
 const MAX_CONFIG_QUEUE_SIZE: usize = 5; // Maximum pending config updates
 
 /// Helper function to safely lock a mutex, handling poisoned mutexes
@@ -230,20 +231,23 @@ fn run_manager_thread(
 
     // Determine actual output channel count by loading plugin chain first
     let actual_output_channels = if !config.plugins.is_empty() {
+        log::info!("[Manager Thread] Loading initial plugin chain ({} plugins)...", config.plugins.len());
         processing_thread.send_command(ProcessingCommand::UpdatePlugins(config.plugins.clone()))?;
 
         // Wait for response to get output channel count (with timeout)
+        // Use longer timeout for initial plugin loading since SOFA files can take time
         let start = std::time::Instant::now();
         let mut output_channels = config.output_channels;
 
-        while start.elapsed() < std::time::Duration::from_millis(SPIN_MS_CHECK_MANAGER) {
+        while start.elapsed() < std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
             if let Some(response) = processing_thread.try_recv_response() {
                 match response {
                     super::ProcessingResponse::PluginChainUpdated {
                         output_channels: ch,
                     } => {
                         log::info!(
-                            "[Manager Thread] Initial plugin chain loaded, output channels: {}",
+                            "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}",
+                            start.elapsed(),
                             ch
                         );
                         output_channels = ch;
@@ -262,6 +266,14 @@ fn run_manager_thread(
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+        }
+
+        // Check if we timed out
+        if start.elapsed() >= std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
+            log::warn!(
+                "[Manager Thread] Plugin initialization timed out after {:?} - proceeding with default channel count",
+                start.elapsed()
+            );
         }
 
         // Update state with actual channel count

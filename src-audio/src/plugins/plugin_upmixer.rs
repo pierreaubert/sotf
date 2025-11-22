@@ -1920,17 +1920,17 @@ above unity, the block is scaled down to stay within the cap.",
             ));
         }
 
-        log::info!(
-            "[UPMIXER] process() called: input={} frames, output={} frames",
-            context.num_frames,
-            context.num_frames
-        );
-        log::info!(
-            "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-            self.input_buffer_fill,
-            self.output_accumulator_fill,
-            self.next_add_position
-        );
+        // log::debug!(
+        //     "[UPMIXER] process() called: input={} frames, output={} frames",
+        //     context.num_frames,
+        //     context.num_frames
+        // );
+        // log::debug!(
+        //     "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
+        //     self.input_buffer_fill,
+        //     self.output_accumulator_fill,
+        //     self.next_add_position
+        // );
 
         // Sanity check for threading issues
         if self.next_add_position > self.fft_size * 3 {
@@ -1975,13 +1975,13 @@ above unity, the block is scaled down to stay within the cap.",
             let frames_to_drain = self.output_accumulator_fill.min(frames_available);
 
             if frames_to_drain > 0 {
-                log::info!(
-                    "[UPMIXER] Iter {}: DRAIN {} frames (accum_fill={}, frames_avail={})",
-                    iteration,
-                    frames_to_drain,
-                    self.output_accumulator_fill,
-                    frames_available
-                );
+                // log::debug!(
+                //     "[UPMIXER] Iter {}: DRAIN {} frames (accum_fill={}, frames_avail={})",
+                //     iteration,
+                //     frames_to_drain,
+                //     self.output_accumulator_fill,
+                //     frames_available
+                // );
 
                 // Copy samples to output
                 for i in 0..frames_to_drain {
@@ -2013,12 +2013,12 @@ above unity, the block is scaled down to stay within the cap.",
                     self.next_add_position = 0;
                 }
 
-                log::info!(
-                    "[UPMIXER] After drain: accum_fill={}, next_add_pos={}, output_pos={}",
-                    self.output_accumulator_fill,
-                    self.next_add_position,
-                    output_pos / self.num_output_channels
-                );
+                // log::debug!(
+                //     "[UPMIXER] After drain: accum_fill={}, next_add_pos={}, output_pos={}",
+                //     self.output_accumulator_fill,
+                //     self.next_add_position,
+                //     output_pos / self.num_output_channels
+                // );
             }
 
             // Step 2: Process FFT block if we have input and accumulator space
@@ -2027,14 +2027,14 @@ above unity, the block is scaled down to stay within the cap.",
             let can_process_space = self.next_add_position + self.fft_size <= self.fft_size * 3;
 
             if can_process_input && can_process_space {
-                log::info!(
-                    "[UPMIXER] Iter {}: PROCESS FFT (input_buf_fill={}/{}, next_add_pos={}, space_ok={})",
-                    iteration,
-                    self.input_buffer_fill / 2,
-                    self.fft_size,
-                    self.next_add_position,
-                    can_process_space
-                );
+                // log::debug!(
+                //     "[UPMIXER] Iter {}: PROCESS FFT (input_buf_fill={}/{}, next_add_pos={}, space_ok={})",
+                //     iteration,
+                //     self.input_buffer_fill / 2,
+                //     self.fft_size,
+                //     self.next_add_position,
+                //     can_process_space
+                // );
 
                 // Copy to temp buffer
                 self.temp_input_block[..self.fft_size * 2]
@@ -2102,21 +2102,21 @@ above unity, the block is scaled down to stay within the cap.",
                     .copy_within(shift_amount..self.fft_size * 2, 0);
                 self.input_buffer_fill -= shift_amount;
 
-                log::info!(
-                    "[UPMIXER] After FFT: accum_fill={}, next_add_pos={}, input_buf_fill={}",
-                    self.output_accumulator_fill,
-                    self.next_add_position,
-                    self.input_buffer_fill / 2
-                );
+                // log::debug!(
+                //     "[UPMIXER] After FFT: accum_fill={}, next_add_pos={}, input_buf_fill={}",
+                //     self.output_accumulator_fill,
+                //     self.next_add_position,
+                //     self.input_buffer_fill / 2
+                // );
 
                 continue; // Process more blocks if possible
             } else if !can_process_input || !can_process_space {
-                log::info!(
-                    "[UPMIXER] Iter {}: SKIP FFT (can_process_input={}, can_process_space={})",
-                    iteration,
-                    can_process_input,
-                    can_process_space
-                );
+                // log::debug!(
+                //     "[UPMIXER] Iter {}: SKIP FFT (can_process_input={}, can_process_space={})",
+                //     iteration,
+                //     can_process_input,
+                //     can_process_space
+                // );
             }
 
             // Step 3: Fill input buffer if we have more input
@@ -2124,14 +2124,14 @@ above unity, the block is scaled down to stay within the cap.",
                 let samples_to_copy =
                     (input.len() - input_pos).min(self.fft_size * 2 - self.input_buffer_fill);
 
-                log::info!(
-                    "[UPMIXER] Iter {}: FILL {} samples (input_pos={}/{}, input_buf_fill={})",
-                    iteration,
-                    samples_to_copy / 2,
-                    input_pos / 2,
-                    input.len() / 2,
-                    self.input_buffer_fill / 2
-                );
+                // log::debug!(
+                //     "[UPMIXER] Iter {}: FILL {} samples (input_pos={}/{}, input_buf_fill={})",
+                //     iteration,
+                //     samples_to_copy / 2,
+                //     input_pos / 2,
+                //     input.len() / 2,
+                //     self.input_buffer_fill / 2
+                // );
 
                 self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
                     .copy_from_slice(&input[input_pos..input_pos + samples_to_copy]);
@@ -2139,11 +2139,11 @@ above unity, the block is scaled down to stay within the cap.",
                 self.input_buffer_fill += samples_to_copy;
                 input_pos += samples_to_copy;
 
-                log::info!(
-                    "[UPMIXER] After fill: input_buf_fill={}, input_pos={}",
-                    self.input_buffer_fill / 2,
-                    input_pos / 2
-                );
+                // log::debug!(
+                //     "[UPMIXER] After fill: input_buf_fill={}, input_pos={}",
+                //     self.input_buffer_fill / 2,
+                //     input_pos / 2
+                // );
 
                 continue; // Try processing again
             }
@@ -2155,47 +2155,47 @@ above unity, the block is scaled down to stay within the cap.",
             let no_data_to_drain = self.output_accumulator_fill == 0;
             let no_space_to_drain = (output.len() - output_pos) / self.num_output_channels == 0;
 
-            log::info!(
-                "[UPMIXER] Iter {}: CHECK EXIT - no_more_input={}, cant_process={}, no_data={}, no_space={}",
-                iteration,
-                input_pos >= input.len(),
-                cant_process,
-                no_data_to_drain,
-                no_space_to_drain
-            );
+            // log::debug!(
+            //     "[UPMIXER] Iter {}: CHECK EXIT - no_more_input={}, cant_process={}, no_data={}, no_space={}",
+            //     iteration,
+            //     input_pos >= input.len(),
+            //     cant_process,
+            //     no_data_to_drain,
+            //     no_space_to_drain
+            // );
 
             // Exit if output buffer is full (most important - prevents deadlock)
             if no_space_to_drain {
-                log::debug!("[UPMIXER] EXITING LOOP: output buffer full");
+                // log::debug!("[UPMIXER] EXITING LOOP: output buffer full");
                 break;
             }
 
             // Exit if no more input and can't process and nothing to drain
             if input_pos >= input.len() && cant_process && no_data_to_drain {
-                log::debug!("[UPMIXER] EXITING LOOP: no more work");
+                // log::debug!("[UPMIXER] EXITING LOOP: no more work");
                 break;
             }
         }
 
-        log::debug!("[UPMIXER] Loop finished after {} iterations", iteration);
-        log::info!(
-            "[UPMIXER] Final: output_pos={}/{}, accum_fill={}",
-            output_pos / self.num_output_channels,
-            output.len() / self.num_output_channels,
-            self.output_accumulator_fill
-        );
+        // log::debug!("[UPMIXER] Loop finished after {} iterations", iteration);
+        // log::debug!(
+        //     "[UPMIXER] Final: output_pos={}/{}, accum_fill={}",
+        //     output_pos / self.num_output_channels,
+        //     output.len() / self.num_output_channels,
+        //     self.output_accumulator_fill
+        // );
 
         // Final drain of any remaining output
         let frames_available = (output.len() - output_pos) / self.num_output_channels;
         let frames_to_drain = self.output_accumulator_fill.min(frames_available);
 
         if frames_to_drain > 0 {
-            log::info!(
-                "[UPMIXER] FINAL DRAIN: {} frames (accum_fill={}, frames_avail={})",
-                frames_to_drain,
-                self.output_accumulator_fill,
-                frames_available
-            );
+            // log::debug!(
+            //     "[UPMIXER] FINAL DRAIN: {} frames (accum_fill={}, frames_avail={})",
+            //     frames_to_drain,
+            //     self.output_accumulator_fill,
+            //     frames_available
+            // );
 
             for i in 0..frames_to_drain {
                 for ch in 0..self.num_output_channels {
@@ -2224,18 +2224,18 @@ above unity, the block is scaled down to stay within the cap.",
                 self.next_add_position = 0;
             }
 
-            log::info!(
-                "[UPMIXER] After final drain: accum_fill={}, next_add_pos={}, total_output={}",
-                self.output_accumulator_fill,
-                self.next_add_position,
-                output_pos / self.num_output_channels
-            );
+            // log::debug!(
+            //     "[UPMIXER] After final drain: accum_fill={}, next_add_pos={}, total_output={}",
+            //     self.output_accumulator_fill,
+            //     self.next_add_position,
+            //     output_pos / self.num_output_channels
+            // );
         }
 
-        log::info!(
-            "[UPMIXER] process() complete: returned {} frames\n",
-            output_pos / self.num_output_channels
-        );
+        // log::debug!(
+        //     "[UPMIXER] process() complete: returned {} frames\n",
+        //     output_pos / self.num_output_channels
+        // );
 
         Ok(())
     }
