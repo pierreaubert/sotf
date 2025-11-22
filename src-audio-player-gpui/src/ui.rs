@@ -119,6 +119,29 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn prev_track(&mut self, _: &PrevTrack, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| {
+            if let Some(path) = state.app.previous_track() {
+                let sample_rate = 48000.0;
+                let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
+                let output_channels = state.app.plugin_chain.output_channels();
+
+                if let Err(e) = state.player.lock().load_and_play(
+                    path,
+                    plugins,
+                    output_channels,
+                    state.app.current_output_device_name.clone(),
+                ) {
+                    log::error!("Failed to play previous track: {}", e);
+                    state.app.is_playing = false;
+                }
+            } else {
+                state.app.is_playing = false;
+            }
+        });
+        cx.notify();
+    }
+
     fn adjust_volume(&mut self, delta: f32, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.volume = (state.app.volume + delta).clamp(0.0, 1.0);
@@ -493,6 +516,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_playback))
             .on_action(cx.listener(Self::stop_playback))
             .on_action(cx.listener(Self::next_track))
+            .on_action(cx.listener(Self::prev_track))
             .on_action(cx.listener(Self::volume_up))
             .on_action(cx.listener(Self::volume_down))
             .on_action(cx.listener(Self::switch_to_library))

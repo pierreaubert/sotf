@@ -394,6 +394,28 @@ impl App {
         None
     }
 
+    pub fn previous_track(&mut self) -> Option<PathBuf> {
+        if let Some(idx) = self.current_queue_index
+            && let Some(item) = self.queue.get_mut(idx)
+        {
+            if let Some(track) = item.previous_track() {
+                return Some(track.path.clone());
+            } else {
+                // Move to previous album in queue
+                if idx > 0 {
+                    self.current_queue_index = Some(idx - 1);
+                    // Go to last track of previous album
+                    if let Some(prev_item) = self.queue.get_mut(idx - 1) {
+                        prev_item.current_track_index =
+                            prev_item.album.tracks.len().saturating_sub(1);
+                        return prev_item.current_track().map(|t| t.path.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn clear_queue(&mut self) {
         self.queue.clear();
         self.expanded_queue_items.clear();

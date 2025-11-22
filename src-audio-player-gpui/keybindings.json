@@ -5,6 +5,8 @@
       "space": "player_ui::PlayPause",
       "n": "player_ui::NextTrack",
       ">": "player_ui::NextTrack",
+      "b": "player_ui::PrevTrack",
+      "<": "player_ui::PrevTrack",
       "s": "player_ui::Stop",
       "+": "player_ui::VolumeUp",
       "=": "player_ui::VolumeUp",
