@@ -217,6 +217,9 @@ pub enum PluginSettings {
         lfe_gain: f64,
         enable_subharmonic_synth: bool,
         subharmonic_gain: f64,
+        enable_hr_direct: bool,
+        hr_sharpen: f64,
+        safety_cap_db: f64,
     },
     Compressor {
         threshold_db: f64,
@@ -316,6 +319,9 @@ impl PluginSettings {
                 lfe_gain,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                enable_hr_direct,
+                hr_sharpen,
+                safety_cap_db,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -330,6 +336,9 @@ impl PluginSettings {
                     "lfe_gain": lfe_gain,
                     "enable_subharmonic_synth": enable_subharmonic_synth,
                     "subharmonic_gain": subharmonic_gain,
+                    "enable_hr_direct": enable_hr_direct,
+                    "hr_sharpen": hr_sharpen,
+                    "safety_cap_db": safety_cap_db,
                 }),
             ),
             Self::Compressor {
@@ -463,6 +472,9 @@ impl PluginSettings {
                 lfe_gain: 1.0,
                 enable_subharmonic_synth: false,
                 subharmonic_gain: 0.5,
+                enable_hr_direct: false,
+                hr_sharpen: 1.0,
+                safety_cap_db: 3.0,
             },
             PluginType::Compressor => Self::Compressor {
                 threshold_db: -20.0,
@@ -836,6 +848,9 @@ mod tests {
                 lfe_gain: 1.0,
                 enable_subharmonic_synth: false,
                 subharmonic_gain: 0.5,
+                enable_hr_direct: false,
+                hr_sharpen: 1.0,
+                safety_cap_db: 3.0,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -880,6 +895,9 @@ mod tests {
                 lfe_gain: 1.0,
                 enable_subharmonic_synth: false,
                 subharmonic_gain: 0.5,
+                enable_hr_direct: false,
+                hr_sharpen: 1.0,
+                safety_cap_db: 3.0,
             };
         }
 

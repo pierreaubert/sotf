@@ -4,6 +4,7 @@
 
 use convexhull3d::{ConvexHull3D, Vertex, export_html, export_obj, testdata};
 use std::fs;
+use autoeq_env::env_utils::get_autoeq_dir;
 
 /// Helper function to run a test and generate visualizations
 fn run_test_with_visualization(
@@ -270,8 +271,8 @@ fn test_process_all_obj_files() {
     println!("========================================");
 
     // Get the data directory path
-    let data_dir = std::env::var("AUTOEQ_DIR").unwrap_or_else(|_| ".".to_string());
-    let obj_dir = format!("{}/data_tests/convexhull3d/obj_files", data_dir);
+    let data_dir = get_autoeq_dir().expect("Failed to get AUTOEQ_DIR. Please set AUTOEQ_DIR environment variable or ensure autoeq/sotf directory exists in $HOME or $HOME/src");
+    let obj_dir = data_dir.join("data_tests/convexhull3d/obj_files");
 
     // Maximum vertices to process (set to None to process all, or Some(n) to limit)
     // For testing, we limit to 5000 vertices to avoid extremely long computation times
@@ -346,11 +347,11 @@ fn test_process_all_obj_files() {
                         );
 
                         // Export results
-                        let output_dir = format!("{}/data_generated/convexhull3d", data_dir);
+                        let output_dir = data_dir.join("data_generated/convexhull3d");
                         fs::create_dir_all(&output_dir).unwrap();
 
-                        let obj_path = format!("{}/convhull_{}.obj", output_dir, filename);
-                        let html_path = format!("{}/convhull_{}.html", output_dir, filename);
+                        let obj_path = output_dir.join(format!("convhull_{}.obj", filename));
+                        let html_path = output_dir.join(format!("convhull_{}.html", filename));
                         let title = format!("Convex Hull: {}", filename);
 
                         if let Err(e) = export_obj(&hull, &obj_path) {

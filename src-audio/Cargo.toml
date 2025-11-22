@@ -94,3 +94,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "binaural_decoder"
 harness = false
 
+[[bench]]
+name = "upmixer"
+harness = false
+

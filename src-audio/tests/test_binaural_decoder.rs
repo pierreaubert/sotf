@@ -130,63 +130,42 @@ fn test_binaural_denormal_flushing() {
     );
     plugin.initialize(sample_rate).unwrap();
 
-    // Create very low amplitude input (below denormal threshold)
-    let num_samples = 8192;
-    let mut input = vec![0.0; num_samples * input_channels];
-
-    for i in 0..num_samples {
-        let t = i as f32 / sample_rate as f32;
-        // Extremely low amplitude signal (1e-35 is in denormal range)
-        let signal = 1e-35 * (2.0 * std::f32::consts::PI * 1000.0 * t).sin();
-        for ch in 0..input_channels {
-            input[i * input_channels + ch] = signal;
-        }
-    }
-
-    let output_channels = 2; // Stereo output
-    let mut output = vec![0.0; num_samples * output_channels];
+    let num_samples = 1024;
     let context = sotf_audio::ProcessContext {
         sample_rate,
         num_frames: num_samples,
     };
-    plugin.process(&input, &mut output, &context).unwrap();
 
-    // Count denormal samples (between 0 and 1e-30)
-    let mut denormal_count = 0;
-    let mut zero_count = 0;
-    let mut normal_count = 0;
+    // Step 1: Verify passthrough works for normal values
+    let mut input_normal = vec![0.5; num_samples * input_channels];
+    let mut output_normal = vec![0.0; num_samples * 2];
+    plugin.process(&input_normal, &mut output_normal, &context).unwrap();
+    
+    // Check first frame (should be 0.5)
+    assert_eq!(output_normal[0], 0.5, "Passthrough failed for normal values");
 
-    for &sample in output.iter() {
-        let abs_sample = sample.abs();
-        if abs_sample == 0.0 {
-            zero_count += 1;
-        } else if abs_sample < 1e-30 {
-            denormal_count += 1;
-        } else {
-            normal_count += 1;
-        }
+    // Step 2: Verify flushing for denormal values
+    // Create very low amplitude input (below denormal threshold)
+    let mut input_denormal = vec![1e-35; num_samples * input_channels];
+    let mut output_denormal = vec![0.0; num_samples * 2];
+    
+    plugin.process(&input_denormal, &mut output_denormal, &context).unwrap();
+
+    // Count non-zero samples
+    let non_zero_count = output_denormal.iter().filter(|&&x| x.abs() > 0.0).count();
+    
+    if non_zero_count > 0 {
+        let first_non_zero = output_denormal.iter().find(|&&x| x.abs() > 0.0).unwrap();
+        println!("Found {} non-zero samples. First one: {:e}", non_zero_count, first_non_zero);
+        println!("Input was 1e-35. Expected flush to 0.0.");
     }
 
-    println!("Zero samples: {}", zero_count);
-    println!("Denormal samples (< 1e-30): {}", denormal_count);
-    println!("Normal samples (>= 1e-30): {}", normal_count);
-
-    // With proper denormal flushing, there should be NO denormal samples
+    // With proper denormal flushing, ALL samples should be zero
     assert_eq!(
-        denormal_count, 0,
-        "Found {} denormal samples. Denormal flushing is not working correctly.",
-        denormal_count
+        non_zero_count, 0,
+        "Found {} denormal samples (not flushed). Denormal flushing is not working correctly.",
+        non_zero_count
     );
 
-    // Most samples should be flushed to zero given the tiny input
-    let zero_percentage = (zero_count as f32 / output.len() as f32) * 100.0;
-    println!("Zero samples: {:.2}%", zero_percentage);
-
-    assert!(
-        zero_percentage > 90.0,
-        "Only {:.2}% samples are zero. Expected >90% for denormal input.",
-        zero_percentage
-    );
-
-    println!("✓ Binaural denormal flushing test passed: no denormals detected");
+    println!("✓ Binaural denormal flushing test passed: all denormals flushed to zero");
 }

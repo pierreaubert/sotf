@@ -1424,6 +1424,9 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             lfe_gain,
             enable_subharmonic_synth,
             subharmonic_gain,
+            enable_hr_direct,
+            hr_sharpen,
+            safety_cap_db,
         } => vec![
             ("Speaker Config".to_string(), speaker_config.clone()),
             (
@@ -1454,6 +1457,18 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             (
                 "Subharmonic Gain".to_string(),
                 format!("{:.2}x", subharmonic_gain),
+            ),
+            (
+                "HR Direct".to_string(),
+                if *enable_hr_direct { "On" } else { "Off" }.to_string(),
+            ),
+            (
+                "HR Sharpen".to_string(),
+                format!("{:.2}", hr_sharpen),
+            ),
+            (
+                "Safety Cap".to_string(),
+                format!("{:.1} dB", safety_cap_db),
             ),
         ],
         PluginSettings::Compressor {

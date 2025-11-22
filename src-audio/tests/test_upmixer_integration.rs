@@ -107,7 +107,7 @@ fn test_upmixer_parameter_adjustment() {
 
     // Test parameter queries
     let params = plugin.parameters();
-    assert_eq!(params.len(), 12); // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, height_gain, lfe_gain, lfe_cutoff_hz, stereo_width, center_spread, bandpass_hz, enable_subharmonic_synth, subharmonic_gain
+    assert_eq!(params.len(), 15); // + hr_sharpen, safety_cap_db
 
     // Modify gains
     plugin
@@ -130,6 +130,48 @@ fn test_upmixer_parameter_adjustment() {
 
     let rear_ambient = plugin.get_parameter(&ParameterId::from("gain_rear_ambient"));
     assert_eq!(rear_ambient, Some(ParameterValue::Float(1.5)));
+
+    // Verify enable_hr_direct parameter roundtrip
+    let hr_direct = plugin.get_parameter(&ParameterId::from("enable_hr_direct"));
+    assert_eq!(hr_direct, Some(ParameterValue::Bool(false)));
+
+    plugin
+        .set_parameter(
+            ParameterId::from("enable_hr_direct"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+    let hr_direct_after = plugin.get_parameter(&ParameterId::from("enable_hr_direct"));
+    assert_eq!(hr_direct_after, Some(ParameterValue::Bool(true)));
+
+    // Verify hr_sharpen parameter roundtrip
+    let hr_sharpen = plugin.get_parameter(&ParameterId::from("hr_sharpen"));
+    assert_eq!(hr_sharpen, Some(ParameterValue::Float(1.0)));
+
+    plugin
+        .set_parameter(
+            ParameterId::from("hr_sharpen"),
+            ParameterValue::Float(0.3),
+        )
+        .unwrap();
+
+    let hr_sharpen_after = plugin.get_parameter(&ParameterId::from("hr_sharpen"));
+    assert_eq!(hr_sharpen_after, Some(ParameterValue::Float(0.3)));
+
+    // Verify safety_cap_db parameter roundtrip
+    let safety_cap = plugin.get_parameter(&ParameterId::from("safety_cap_db"));
+    assert_eq!(safety_cap, Some(ParameterValue::Float(3.0)));
+
+    plugin
+        .set_parameter(
+            ParameterId::from("safety_cap_db"),
+            ParameterValue::Float(6.0),
+        )
+        .unwrap();
+
+    let safety_cap_after = plugin.get_parameter(&ParameterId::from("safety_cap_db"));
+    assert_eq!(safety_cap_after, Some(ParameterValue::Float(6.0)));
 }
 
 #[test]
@@ -212,6 +254,102 @@ fn test_upmixer_synthesis_windowing_no_crackling() {
     );
 
     println!("✓ Synthesis windowing test passed: no crackling detected");
+}
+
+#[test]
+fn test_upmixer_hr_direct_increases_front_energy() {
+    use sotf_audio::{ParameterId, ParameterValue, Plugin};
+
+    let fft_size = 2048;
+    let sample_rate = 44100;
+    let num_frames = 4096;
+    let output_channels = 6; // 5.1
+
+    // Upmixer without HR direct
+    let mut plugin_off = UpmixerPlugin::new(
+        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+    );
+    plugin_off.initialize(sample_rate).unwrap();
+
+    // Upmixer with HR direct enabled
+    let mut plugin_on = UpmixerPlugin::new(
+        fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+    );
+    plugin_on.initialize(sample_rate).unwrap();
+    plugin_on
+        .set_parameter(
+            ParameterId::from("enable_hr_direct"),
+            ParameterValue::Bool(true),
+        )
+        .unwrap();
+
+    // Create transient by starting with low-frequency content, then introducing high-frequency
+    // This allows the HR transient detector to identify the change in HF energy
+    let mut input = vec![0.0_f32; num_frames * 2];
+    let transient_start = num_frames / 4; // Start HF signal at 25% of the input
+    for i in 0..num_frames {
+        let t = i as f32 / sample_rate as f32;
+        let s = if i < transient_start {
+            // Low-frequency content first (100 Hz)
+            (2.0 * std::f32::consts::PI * 100.0 * t).sin() * 0.3
+        } else {
+            // Then high-frequency transient (4000 Hz)
+            (2.0 * std::f32::consts::PI * 4000.0 * t).sin() * 0.5
+        };
+        input[i * 2] = s;
+        input[i * 2 + 1] = s;
+    }
+
+    let mut out_off = vec![0.0_f32; num_frames * output_channels];
+    let mut out_on = vec![0.0_f32; num_frames * output_channels];
+    let context = sotf_audio::ProcessContext {
+        sample_rate,
+        num_frames,
+    };
+
+    plugin_off
+        .process(&input, &mut out_off, &context)
+        .unwrap();
+    plugin_on
+        .process(&input, &mut out_on, &context)
+        .unwrap();
+
+    let mut energies_off = vec![0.0_f32; output_channels];
+    let mut energies_on = vec![0.0_f32; output_channels];
+    for i in 0..num_frames {
+        for ch in 0..output_channels {
+            let s_off = out_off[i * output_channels + ch];
+            let s_on = out_on[i * output_channels + ch];
+            energies_off[ch] += s_off * s_off;
+            energies_on[ch] += s_on * s_on;
+        }
+    }
+
+    // Front channels: FL, FR, C
+    let front_off = energies_off[0] + energies_off[1] + energies_off[2];
+    let front_on = energies_on[0] + energies_on[1] + energies_on[2];
+
+    // Non-front channels: LFE + surrounds
+    let rest_off: f32 = energies_off[3..].iter().sum();
+    let rest_on: f32 = energies_on[3..].iter().sum();
+
+    assert!(
+        front_on > front_off,
+        "Front energy should increase when HR direct is enabled (off={}, on={})",
+        front_off,
+        front_on
+    );
+
+    let rest_diff = (rest_on - rest_off).abs();
+    let rest_tol = rest_off * 0.1 + 1e-4; // 10% relative tolerance + epsilon
+    assert!(
+        rest_diff <= rest_tol,
+        "Non-front energy changed too much with HR direct (off={}, on={}, diff={}, tol={})",
+        rest_off,
+        rest_on,
+        rest_diff,
+        rest_tol
+    );
 }
 
 #[test]

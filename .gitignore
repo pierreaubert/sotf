@@ -12,6 +12,8 @@ autoeq_*.html
 autoeq_*.png
 /*.csv
 /*.html
+bugs.md
+mutants.out
 *~
 .*~
 *#

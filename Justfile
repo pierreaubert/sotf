@@ -311,6 +311,9 @@ install-rustup:
 	~/.cargo/bin/rustup default stable
 	~/.cargo/bin/cargo install just
 	~/.cargo/bin/cargo install cargo-wizard
+	~/.cargo/bin/cargo install cargo-llvm-cov
+	~/.cargo/bin/cargo install cargo-bininstall
+	~/.cargo/bin/cargo binstall cargo-nextest --secure
 
 # ----------------------------------------------------------------------
 # Install macos

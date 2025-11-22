@@ -45,14 +45,9 @@ This feature is disabled by default to reduce dependencies and build complexity.
 
 ## Toolkit
 
-### src-autoeq
-
-A [CLI](src-autoeq/README.md) to optimise the response of your headset or headphone.
-A corresponing App is also available at [https://github.com/pierreaubert/autoeq-app](https://github.com/pierreaubert/autoeq-app).
-
 ### src-testfunctions
 
-A [set of functions](src-testfunctions/README.md) for testing non linear optimisation algorithms
+A [set of functions](src-testfunctions/README.md) for testing non linear optimisation algorithms used in the next crate.
 
 ### src-de
 
@@ -62,67 +57,65 @@ A implementation of [differential evolution algorithm](src-de/README.md) (forked
 
 A implementation of CEA2034 aka [Spinorama](https://spinorama.org): a set of metrics and curves that describe a loudspeaker performance.
 
+### src-autoeq
+
+A [CLI](src-autoeq/README.md) to optimise the response of your headset or headphone.
+
 ### src-env
 
 A small set of functions and constants used by the other crates but you are unlikely to be interested.
 
 ### src-audio
 
-This backend take care of all the Audio activities (from recording to playing). It also provides support for IIR filters, SPL computations etc
+This backend take care of all the Audio activities (from recording to playing). It also provides support for IIR filters, SPL computations etc.
 
-#### Microphone Compensation
+It does provide a lot of features:
+- playing:
+  - reading from files and audio interfaces
+  - computing relay gain, spectrum, lufs etc
+- recording:
+  - record from N channels
+  - play test signals and record on N channels or N times on 1 channel automatically
+  - microphone compensation
+- plugins:
+  - gate
+  - limiter
+  - compressor
+  - eq (iir)
+  - convolver (fir)
+  - delay
+  - crossover (via iir)
+  - loudness compensation (via iir)
+  - upmixer up to 9.1.6
+  - binaural decoder
 
-When recording measurements with `sotf_recorder`, you can compensate for your microphone's non-flat frequency response using `--microphone-compensation`:
+It does have interfaces to demonstrate how the system works:
+- There is a basic CLI
+- There is a fun TUI interface that is good enough to use day to day to play music
+- A better looking interface is in construction on src-gpui-player but not ready for general use at all.
 
-```bash
-./target/release/sotf_recorder \
-  --signal sweep \
-  --duration 10 \
-  --microphone-compensation mic_calibration.txt
-```
 
-**Supported formats:**
-- **CSV** (`.csv`): Comma-separated with optional header
-  ```csv
-  frequency_hz,spl_db
-  1000,3.0
-  8000,2.0
-  ```
-- **TXT** (`.txt`): Auto-detects separator (comma, tab, or space)
-  ```
-  1000 3.0
-  8000,2.0
-  ```
+### MacOS specifig: src-hal and src-confbar
 
-**TXT format features:**
-- **Auto-detects separator** per line: comma, tab, or space
-- **Skips non-numeric lines** (headers, notes, etc.)
-- **Ignores comments** starting with `#`
-- **Handles mixed formats** in the same file
-
-**How it works:**
-1. **Pre-compensation (sweeps)**: The playback signal is shaped to cancel the mic's response
-2. **Post-compensation (all signals)**: The CSV output is corrected after recording
-
-See example files: `mic_calibration_example.csv` and `mic_calibration_example.txt`
-
-### src-hal
-
-This crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
-
-### src-confbar
-
-This crate allows you to configure the above driver and is conveniently available from the menubar.
+src-hal crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
+src-confbar crate allows you to configure the above driver and is conveniently available from the menubar.
 
 ### src-convexhull3d
 
-This crate computes a convex hull in 3d. This will be used (possibly) for HRTF optimisation.
+This crate computes a convex hull in 3d.
 
-### src-tauri
+### src-bem
+
+This experimental crate will be a BEM (Boundary Element Solver) for the HRTF computation. It will also be used for optimal shape of speaker waveguide.
+This part is not on GH yet. It is a merge of previous projects in python and will come step by step. BEM is the first crate but the control theory part is
+not converted yet (adjoint computation etc).
+
+### src-head-scanner
+
+An experimental app to scan your head and do all the computations to get an HRTF. There is a long way to go but we are making progress.
+
+### src-tauri and and src-ui-frontend
 
 The Tauri backend for the frontend. Noting special here, just a wrapper around src-audio and src-autoeq.
-
-### src-ui-frontend
-
 The UI frontend :) Nothing special here, just a boring UI.
 

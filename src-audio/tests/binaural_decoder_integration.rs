@@ -3,22 +3,46 @@
 // These tests verify end-to-end functionality with actual HRTF data
 
 use sotf_audio::plugins::BinauralDecoderPlugin;
-use sotf_audio::{Plugin, ProcessContext};
+use sotf_audio::{Plugin, ProcessContext, SofaFile};
 use std::f32::consts::PI;
 use std::fs;
-use std::path::PathBuf;
 
 mod fixtures;
 use fixtures::create_test_sofa_file;
 
 /// Test basic processing with a minimal SOFA file
 #[test]
+fn test_sofa_file_creation_and_reading() {
+    let sofa_path = create_test_sofa_file("test_creation.sofa", 5, 256, 44100.0);
+
+    // Try to load the SOFA file
+    let sofa = SofaFile::load(&sofa_path).unwrap();
+
+    println!("Sample rate: {}", sofa.sample_rate);
+    println!("Num measurements: {}", sofa.num_measurements);
+    println!("IR length: {}", sofa.ir_length);
+
+    // Get first HRTF
+    let hrtf = sofa.get_hrtf(0).unwrap();
+    let non_zero_left = hrtf.ir_left.iter().filter(|&&x| x != 0.0).count();
+    let non_zero_right = hrtf.ir_right.iter().filter(|&&x| x != 0.0).count();
+
+    println!("Non-zero left: {}/{}", non_zero_left, hrtf.ir_left.len());
+    println!("Non-zero right: {}/{}", non_zero_right, hrtf.ir_right.len());
+
+    assert!(non_zero_left > 0, "Left IR should have non-zero samples");
+    assert!(non_zero_right > 0, "Right IR should have non-zero samples");
+
+    fs::remove_file(sofa_path).ok();
+}
+
+#[test]
 fn test_binaural_with_minimal_sofa() {
     let sofa_path = create_test_sofa_file("test_minimal.sofa", 5, 256, 44100.0);
 
     let mut decoder = BinauralDecoderPlugin::new(
-        5,    // 5.0 surround
-        2048, // FFT size
+        5,   // 5.0 surround
+        512, // FFT size (must be >= block_size/2 for processing to occur)
         Some(sofa_path.clone()),
         true, // Optimization on
         0.0,  // No externalization
@@ -70,7 +94,7 @@ fn test_binaural_sample_rate_resampling() {
     let sofa_path = create_test_sofa_file("test_resample.sofa", 5, 256, 48000.0);
 
     // Initialize decoder at 44.1kHz (different rate)
-    let mut decoder = BinauralDecoderPlugin::new(5, 2048, Some(sofa_path.clone()), true, 0.0, 0.0);
+    let mut decoder = BinauralDecoderPlugin::new(5, 512, Some(sofa_path.clone()), true, 0.0, 0.0);
 
     // This should trigger automatic resampling
     decoder.initialize(44100).unwrap();
@@ -101,8 +125,8 @@ fn test_binaural_lfe_handling() {
 
     // 5.1 configuration has LFE at channel 3
     let mut decoder = BinauralDecoderPlugin::new(
-        6, // 5.1 surround
-        2048,
+        6,   // 5.1 surround
+        512, // FFT size
         Some(sofa_path.clone()),
         true,
         0.0,
@@ -277,8 +301,8 @@ fn test_binaural_atmos_7_1_4() {
     let sofa_path = create_test_sofa_file("test_atmos.sofa", 12, 256, 48000.0);
 
     let mut decoder = BinauralDecoderPlugin::new(
-        12, // 7.1.4 Atmos
-        2048,
+        12,  // 7.1.4 Atmos
+        512, // FFT size
         Some(sofa_path.clone()),
         true,
         0.3, // Some externalization
@@ -318,7 +342,7 @@ fn test_binaural_atmos_7_1_4() {
 fn test_binaural_continuous_processing() {
     let sofa_path = create_test_sofa_file("test_continuous.sofa", 5, 256, 48000.0);
 
-    let mut decoder = BinauralDecoderPlugin::new(5, 2048, Some(sofa_path.clone()), true, 0.0, 0.0);
+    let mut decoder = BinauralDecoderPlugin::new(5, 512, Some(sofa_path.clone()), true, 0.0, 0.0);
 
     decoder.initialize(48000).unwrap();
 

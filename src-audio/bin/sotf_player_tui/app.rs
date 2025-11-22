@@ -1456,6 +1456,9 @@ impl App {
                     lfe_gain,
                     enable_subharmonic_synth,
                     subharmonic_gain,
+                    enable_hr_direct,
+                    hr_sharpen,
+                    safety_cap_db,
                 } => {
                     match param_idx {
                         0 => {
@@ -1497,6 +1500,15 @@ impl App {
                         }
                         10 => {
                             *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(0.0, 1.0)
+                        }
+                        11 => {
+                            *enable_hr_direct = !*enable_hr_direct;
+                        }
+                        12 => {
+                            *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0)
+                        }
+                        13 => {
+                            *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0)
                         }
                         _ => return false,
                     }
@@ -2121,7 +2133,7 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
     use crate::plugins::PluginSettings;
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
-        PluginSettings::Upmixer { .. } => 11, // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, lfe_cutoff_hz, stereo_width, bandpass_hz, height_gain, lfe_gain, enable_subharmonic_synth, subharmonic_gain
+        PluginSettings::Upmixer { .. } => 14, // + enable_hr_direct, hr_sharpen, safety_cap_db
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 3,     // threshold, release, mix
         PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
@@ -2473,6 +2485,7 @@ mod tests {
                 lfe_gain,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                ..
             } => (
                 speaker_config.clone(),
                 *gain_front_direct,
@@ -2507,6 +2520,7 @@ mod tests {
             lfe_gain,
             enable_subharmonic_synth,
             subharmonic_gain,
+            ..
         } = &plugin.settings
         {
             assert_ne!(*speaker_config, orig_speaker_config);
