@@ -418,6 +418,13 @@ impl ScanGuidance {
             return 0.0;
         }
 
+        // Filter out NaN/infinity values before sorting to prevent panics
+        angular_velocities.retain(|v| v.is_finite());
+
+        if angular_velocities.is_empty() {
+            return 0.0; // All values were NaN/infinity
+        }
+
         // Use 90th percentile angular velocity (ignore outliers)
         angular_velocities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let percentile_90 = angular_velocities[(angular_velocities.len() * 9 / 10).min(angular_velocities.len() - 1)];
@@ -456,6 +463,14 @@ impl ScanGuidance {
 
         // Calculate median reprojection error (robust to outliers)
         let mut errors: Vec<f32> = self.reprojection_errors.iter().copied().collect();
+
+        // Filter out NaN/infinity values before sorting to prevent panics
+        errors.retain(|e| e.is_finite());
+
+        if errors.is_empty() {
+            return 0.0; // All values were NaN/infinity, assume good
+        }
+
         errors.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let median_error = if errors.len() % 2 == 0 {

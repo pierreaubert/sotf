@@ -631,12 +631,19 @@ impl HeadScanner {
     ///
     /// This prevents the point cloud from growing unbounded with redundant data
     /// Uses a cached K-d tree to avoid O(n log n) rebuild overhead every frame
+    ///
+    /// Cache is invalidated when point cloud exceeds MAX_CACHE_SIZE to prevent
+    /// excessive memory usage in long scanning sessions.
     fn filter_new_points(
         &self,
         existing_cloud: &PointCloud,
         new_points: Vec<pointcloud::Point>,
     ) -> Vec<pointcloud::Point> {
         use kiddo::{KdTree, SquaredEuclidean};
+
+        // Maximum point count for K-d tree caching (prevents unbounded memory growth)
+        // 100K points ≈ 2-4 MB tree, reasonable for head scan detail
+        const MAX_CACHE_SIZE: usize = 100_000;
 
         if existing_cloud.is_empty() {
             return new_points;
@@ -648,32 +655,54 @@ impl HeadScanner {
         let tree = {
             let mut cache = self.kd_tree_cache.write();
 
-            // Check if cache is valid (point count matches)
+            // Check if cache is valid (point count matches AND within size limit)
             let needs_rebuild = match cache.as_ref() {
-                Some((_, cached_count)) => *cached_count != current_point_count,
+                Some((_, cached_count)) => {
+                    // Invalidate if point count changed OR exceeded max cache size
+                    *cached_count != current_point_count || current_point_count > MAX_CACHE_SIZE
+                }
                 None => true,
             };
 
             if needs_rebuild {
-                // Build new k-d tree from existing points
-                let mut new_tree: KdTree<f32, 3> = KdTree::new();
-                for (idx, point) in existing_cloud.points().iter().enumerate() {
-                    let pos = point.position;
-                    new_tree.add(&[pos.x, pos.y, pos.z], idx as u64);
+                // If point cloud is too large, disable caching to prevent memory bloat
+                if current_point_count > MAX_CACHE_SIZE {
+                    log::debug!(
+                        "K-d tree cache disabled: point cloud size {} exceeds limit {}",
+                        current_point_count,
+                        MAX_CACHE_SIZE
+                    );
+                    *cache = None; // Clear cache
+
+                    // Build tree directly without caching
+                    let mut new_tree: KdTree<f32, 3> = KdTree::new();
+                    for (idx, point) in existing_cloud.points().iter().enumerate() {
+                        let pos = point.position;
+                        new_tree.add(&[pos.x, pos.y, pos.z], idx as u64);
+                    }
+                    new_tree
+                } else {
+                    // Build new k-d tree from existing points
+                    let mut new_tree: KdTree<f32, 3> = KdTree::new();
+                    for (idx, point) in existing_cloud.points().iter().enumerate() {
+                        let pos = point.position;
+                        new_tree.add(&[pos.x, pos.y, pos.z], idx as u64);
+                    }
+
+                    log::debug!(
+                        "Rebuilt K-d tree with {} points (cache was {})",
+                        current_point_count,
+                        if cache.is_some() { "stale" } else { "empty" }
+                    );
+
+                    // Update cache
+                    *cache = Some((new_tree.clone(), current_point_count));
+                    new_tree
                 }
-
-                log::debug!(
-                    "Rebuilt K-d tree with {} points (cache was {})",
-                    current_point_count,
-                    if cache.is_some() { "stale" } else { "empty" }
-                );
-
-                // Update cache
-                *cache = Some((new_tree, current_point_count));
+            } else {
+                // Clone the tree for use (kiddo::KdTree is relatively lightweight to clone)
+                cache.as_ref().unwrap().0.clone()
             }
-
-            // Clone the tree for use (kiddo::KdTree is relatively lightweight to clone)
-            cache.as_ref().unwrap().0.clone()
         };
 
         // Minimum distance threshold (in cm) - points closer than this are considered duplicates

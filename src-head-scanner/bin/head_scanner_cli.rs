@@ -606,10 +606,24 @@ async fn run_scan(
         #[cfg(feature = "sofa")]
         {
             use head_scanner::acoustics;
+            use head_scanner::security;
+
+            // Validate SOFA output path for security
+            let validated_sofa_path = match security::validate_export_path(
+                &sofa_output.to_string_lossy(),
+                None,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    println!("   ⚠ Invalid SOFA output path: {}", e);
+                    println!("   Please use a valid filename without directory traversal");
+                    return Err(e);
+                }
+            };
 
             let result = acoustics::generate_sofa_analytical(
                 &mesh,
-                &sofa_output.to_string_lossy(),
+                &validated_sofa_path.to_string_lossy(),
                 sofa_sample_rate,
                 sofa_azimuth,
                 sofa_elevation,
@@ -618,7 +632,7 @@ async fn run_scan(
 
             match result {
                 Ok(_) => {
-                    println!("   ✓ SOFA file generated: {:?}", sofa_output);
+                    println!("   ✓ SOFA file generated: {:?}", validated_sofa_path);
                     println!("   Grid: {}az × {}el = {} positions",
                         sofa_azimuth, sofa_elevation, sofa_azimuth * sofa_elevation);
                     println!("   Sample rate: {} Hz", sofa_sample_rate);
@@ -1102,13 +1116,18 @@ async fn run_calibration(
     // Save calibration data
     println!();
     println!("💾 Saving calibration to {:?}...", output_path);
+
+    // Validate output path for security
+    use head_scanner::security;
+    let validated_path = security::validate_export_path(&output_path.to_string_lossy(), None)?;
+
     let json = serde_json::to_string_pretty(&result.intrinsics)?;
-    std::fs::write(&output_path, json)?;
+    std::fs::write(&validated_path, json)?;
     println!("✓ Calibration saved");
 
     println!();
     println!("✨ Calibration complete!");
-    println!("   Use this file with: --calibration {:?}", output_path);
+    println!("   Use this file with: --calibration {:?}", validated_path);
 
     Ok(())
 }

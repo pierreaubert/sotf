@@ -81,6 +81,24 @@ class ScannerViewModel: ObservableObject {
         frameCounter += 1
         guard frameCounter % 3 == 0 else { return }
 
+        // Validate input data before FFI call to catch errors early
+        let expectedRGBSize = Int(width * height * 3)
+        let expectedDepthSize = Int(width * height)
+
+        guard rgb.count == expectedRGBSize else {
+            Task { @MainActor in
+                self.handleError("Invalid RGB data size: expected \(expectedRGBSize), got \(rgb.count)")
+            }
+            return
+        }
+
+        guard depth.count == expectedDepthSize else {
+            Task { @MainActor in
+                self.handleError("Invalid depth data size: expected \(expectedDepthSize), got \(depth.count)")
+            }
+            return
+        }
+
         processingQueue.async { [weak self] in
             guard let self = self else { return }
 
