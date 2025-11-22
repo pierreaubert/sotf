@@ -1,21 +1,28 @@
-# Binaural Decoder Benchmarks
+# Audio Plugin Benchmarks
 
-This directory contains performance benchmarks for the binaural decoder plugin.
+This directory contains performance benchmarks for audio plugins in the `sotf_audio` crate.
+
+Currently covered:
+- Binaural decoder (multichannel -> binaural)
+- Upmixer (stereo -> surround)
 
 ## Running Benchmarks
 
 ```bash
-# Run all benchmarks
+# Run binaural decoder benchmarks
 cargo bench --bench binaural_decoder
 
-# Run specific benchmark group
+# Run specific binaural benchmark group
 cargo bench --bench binaural_decoder -- binaural_process_channels
 
-# Run with specific filter
-cargo bench --bench binaural_decoder -- "5ch"
+# Run upmixer benchmarks
+cargo bench --bench upmixer
+
+# Run specific upmixer benchmark group
+cargo bench --bench upmixer -- upmixer_5_1_block_sizes
 ```
 
-## Benchmark Groups
+## Binaural Decoder Benchmark Groups
 
 ### 1. `binaural_process_channels`
 Tests processing performance across different channel configurations:
@@ -69,6 +76,38 @@ Realistic workload for Dolby Atmos 7.1.4 with all features enabled.
 **What it measures:** Real-world performance with 12-channel Atmos content.
 
 **Expected results:** Target < 2ms processing time for 512-frame blocks @ 48kHz.
+
+## Upmixer Benchmark Groups
+
+### 1. `upmixer_5_1_block_sizes`
+Tests processing performance for 5.1 configuration with different buffer sizes:
+- 256 frames
+- 512 frames
+- 1024 frames
+- 2048 frames
+
+**What it measures:**
+- Cost of the full upmix chain (FFT, ERB bands, decorrelation, VBAP, overlap-add)
+  as a function of real-time buffer size.
+
+### 2. `upmixer_configs`
+Tests scaling with different speaker configurations at fixed block size (512 frames):
+- `2.0` (stereo passthrough)
+- `5.1` (6 channels)
+- `7.1.4` (12 channels)
+ - `9.1.6` (immersive layout)
+
+**What it measures:**
+- How processing cost scales with increasing number of output channels and VBAP targets.
+
+### 3. `upmixer_fft_sizes`
+Tests impact of FFT size on 5.1 upmixing performance with 512-frame buffers:
+- 1024
+- 2048
+- 4096
+
+**What it measures:**
+- Trade-off between time/frequency resolution and CPU cost for the upmixer.
 
 ## Interpreting Results
 
