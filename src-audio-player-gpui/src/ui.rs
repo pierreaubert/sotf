@@ -41,6 +41,9 @@ actions!(
         Cancel,
         RemoveItem,
         ClearQueue,
+        MovePluginUp,
+        MovePluginDown,
+        TogglePlugin,
     ]
 );
 
@@ -524,6 +527,27 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn move_plugin_up(&mut self, _: &MovePluginUp, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.move_plugin_up(state.app.selected_plugin_index);
+        });
+        cx.notify();
+    }
+
+    fn move_plugin_down(&mut self, _: &MovePluginDown, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.move_plugin_down(state.app.selected_plugin_index);
+        });
+        cx.notify();
+    }
+
+    fn toggle_plugin(&mut self, _: &TogglePlugin, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.toggle_plugin(state.app.selected_plugin_index);
+        });
+        cx.notify();
+    }
+
     fn handle_enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             match state.app.current_screen {
@@ -608,6 +632,9 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::cancel))
             .on_action(cx.listener(Self::remove_item))
             .on_action(cx.listener(Self::clear_queue))
+            .on_action(cx.listener(Self::move_plugin_up))
+            .on_action(cx.listener(Self::move_plugin_down))
+            .on_action(cx.listener(Self::toggle_plugin))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 // Handle text input for search mode
                 let in_search_mode = view.state.read(cx).app.input_mode == crate::app::InputMode::Search;

@@ -803,4 +803,63 @@ impl App {
         }
         items
     }
+
+    // Plugin management methods
+    pub fn toggle_plugin(&mut self, index: usize) {
+        self.plugin_chain.toggle_plugin(index);
+        // Update BinauralDecoder input channels after toggle
+        self.plugin_chain.update_binaural_decoder_channels();
+        self.needs_plugin_update = true;
+    }
+
+    pub fn move_plugin_up(&mut self, index: usize) {
+        if index > 0 {
+            self.plugin_chain.move_plugin(index, index - 1);
+            self.selected_plugin_index = index - 1;
+            // Update BinauralDecoder input channels after move
+            self.plugin_chain.update_binaural_decoder_channels();
+            self.needs_plugin_update = true;
+        }
+    }
+
+    pub fn move_plugin_down(&mut self, index: usize) {
+        if index < self.plugin_chain.len() - 1 {
+            self.plugin_chain.move_plugin(index, index + 1);
+            self.selected_plugin_index = index + 1;
+            // Update BinauralDecoder input channels after move
+            self.plugin_chain.update_binaural_decoder_channels();
+            self.needs_plugin_update = true;
+        }
+    }
+
+    pub fn select_next_plugin(&mut self) {
+        if !self.plugin_chain.is_empty() {
+            self.selected_plugin_index = (self.selected_plugin_index + 1) % self.plugin_chain.len();
+        }
+    }
+
+    pub fn select_previous_plugin(&mut self) {
+        if !self.plugin_chain.is_empty() {
+            if self.selected_plugin_index == 0 {
+                self.selected_plugin_index = self.plugin_chain.len() - 1;
+            } else {
+                self.selected_plugin_index -= 1;
+            }
+        }
+    }
+
+    pub fn remove_plugin(&mut self, index: usize) {
+        if index < self.plugin_chain.len() {
+            self.plugin_chain.remove_plugin(index);
+            // Update BinauralDecoder input channels after removal
+            self.plugin_chain.update_binaural_decoder_channels();
+            self.needs_plugin_update = true;
+            // Adjust selection
+            if self.selected_plugin_index >= self.plugin_chain.len()
+                && self.selected_plugin_index > 0
+            {
+                self.selected_plugin_index = self.plugin_chain.len() - 1;
+            }
+        }
+    }
 }
