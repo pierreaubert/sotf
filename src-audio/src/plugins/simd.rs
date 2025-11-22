@@ -175,6 +175,41 @@ pub fn complex_mul_add_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf
         }
     }
 
+    #[test]
+    fn test_simd_complex_mul_inplace_correctness() {
+        use rustfft::num_complex::Complex;
+
+        let src = vec![
+            Complex::new(2.0, 3.0),
+            Complex::new(-1.5, 2.5),
+            Complex::new(0.5, -1.0),
+            Complex::new(4.0, -2.0),
+        ];
+
+        let hrtf = vec![
+            Complex::new(1.0, 0.5),
+            Complex::new(2.0, -1.0),
+            Complex::new(-0.5, 1.5),
+            Complex::new(0.75, 0.25),
+        ];
+
+        // Scalar reference
+        let mut expected = src.clone();
+        for i in 0..expected.len() {
+            expected[i] *= hrtf[i];
+        }
+
+        // SIMD in-place computation
+        let mut result = src.clone();
+        complex_mul_inplace_simd(&mut result, &hrtf);
+
+        const EPSILON: f32 = 1e-6;
+        for i in 0..result.len() {
+            assert!((result[i].re - expected[i].re).abs() < EPSILON);
+            assert!((result[i].im - expected[i].im).abs() < EPSILON);
+        }
+    }
+
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         // Process 2 complex at a time with NEON
@@ -215,6 +250,95 @@ pub fn complex_mul_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[
     // The compiler will vectorize this effectively
     for i in 0..len {
         dst[i] = src[i] * hrtf[i];
+    }
+}
+
+/// SIMD-optimized in-place complex multiplication
+///
+/// Computes: dst[i] *= hrtf[i] for all i
+#[inline]
+pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>]) {
+    let len = dst.len();
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let dst_ptr = dst.as_mut_ptr().add(i) as *mut f32;
+                let hrtf_ptr = hrtf.as_ptr().add(i) as *const f32;
+
+                let a = _mm256_loadu_ps(dst_ptr);
+                let b = _mm256_loadu_ps(hrtf_ptr);
+
+                let a_re = _mm256_moveldup_ps(a);
+                let a_im = _mm256_movehdup_ps(a);
+                let ac_ad = _mm256_mul_ps(a_re, b);
+                let b_swapped = _mm256_shuffle_ps(b, b, SHUFFLE_SWAP_RE_IM);
+                let bd_bc = _mm256_mul_ps(a_im, b_swapped);
+                let result = _mm256_addsub_ps(ac_ad, bd_bc);
+
+                _mm256_storeu_ps(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] *= hrtf[i];
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+
+        let simd_len = (len / 2) * 2;
+
+        for i in (0..simd_len).step_by(2) {
+            unsafe {
+                let dst_ptr = dst.as_mut_ptr().add(i) as *mut f32;
+                let hrtf_ptr = hrtf.as_ptr().add(i) as *const f32;
+
+                let a = vld1q_f32(dst_ptr);
+                let b = vld1q_f32(hrtf_ptr);
+
+                let a_re = vtrn1q_f32(a, a);
+                let a_im = vtrn2q_f32(a, a);
+                let ac_ad = vmulq_f32(a_re, b);
+                let b_swapped = vrev64q_f32(b);
+                let bd_bc = vmulq_f32(a_im, b_swapped);
+
+                let sign_bit: u32 = 0x80000000;
+                let neg_mask = vreinterpretq_f32_u32(vsetq_lane_u32::<2>(
+                    sign_bit,
+                    vsetq_lane_u32::<0>(sign_bit, vdupq_n_u32(0)),
+                ));
+
+                let bd_bc_negated = vreinterpretq_f32_u32(veorq_u32(
+                    vreinterpretq_u32_f32(bd_bc),
+                    vreinterpretq_u32_f32(neg_mask),
+                ));
+
+                let result = vaddq_f32(ac_ad, bd_bc_negated);
+                vst1q_f32(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] *= hrtf[i];
+        }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for i in 0..len {
+            dst[i] *= hrtf[i];
+        }
     }
 }
 

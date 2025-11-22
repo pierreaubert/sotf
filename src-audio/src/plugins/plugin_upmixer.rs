@@ -18,6 +18,7 @@
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, calculate_panning_gain, get_speaker_config};
+use super::simd::complex_mul_inplace_simd;
 use autoeq_iir::{Biquad, BiquadFilterType};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -813,6 +814,9 @@ impl UpmixerPlugin {
             let upmix_end = end_bin;
 
             if upmix_start < upmix_end {
+                // Precompute ambient gain for this band
+                let ambient_gain = (1.0 - coherence).sqrt(); // Energy preservation
+
                 for i in upmix_start..upmix_end {
                     let left = self.freq_domain_left[i];
                     let right = self.freq_domain_right[i];
@@ -831,14 +835,11 @@ impl UpmixerPlugin {
                     self.direct[i] = direct_val;
 
                     // Ambient Extraction (Residual)
-                    // We use the difference signal for ambient, scaled by (1 - coherence)
-                    // And apply decorrelation
+                    // We use the difference signal for ambient, scaled by (1 - coherence).
+                    // Decorrelation is applied in a SIMD-optimized pass after this loop.
                     let diff = left - right;
-                    let ambient_gain = (1.0 - coherence).sqrt(); // Energy preservation
-
-                    self.ambient_left[i] = diff * ambient_gain * self.decorrelation_filter_left[i];
-                    self.ambient_right[i] =
-                        -diff * ambient_gain * self.decorrelation_filter_right[i]; // Inverted for symmetry? No, decorrelated.
+                    self.ambient_left[i] = diff * ambient_gain;
+                    self.ambient_right[i] = -diff * ambient_gain;
 
                     // Divergence for Fronts
                     self.direct_left[i] = left - direct_val * self.stereo_width;
@@ -867,6 +868,15 @@ impl UpmixerPlugin {
                         self.height_band_gains[i] = height_mask;
                     }
                 }
+
+                // SIMD-optimized decorrelation: ambient_left/right *= decorrelation_filter_*.
+                let left_slice = &mut self.ambient_left[upmix_start..upmix_end];
+                let right_slice = &mut self.ambient_right[upmix_start..upmix_end];
+                let decor_left = &self.decorrelation_filter_left[upmix_start..upmix_end];
+                let decor_right = &self.decorrelation_filter_right[upmix_start..upmix_end];
+
+                complex_mul_inplace_simd(left_slice, decor_left);
+                complex_mul_inplace_simd(right_slice, decor_right);
             }
         }
     }
