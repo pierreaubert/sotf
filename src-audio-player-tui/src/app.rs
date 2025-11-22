@@ -1635,7 +1635,7 @@ impl App {
                                 true
                             }
                             3 => {
-                                use autoeq_iir::BiquadFilterType;
+                                use sotf_audio_player::BiquadFilterType;
 
                                 let types = [
                                     BiquadFilterType::Peak,

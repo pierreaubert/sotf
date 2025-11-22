@@ -3,19 +3,19 @@ members = [
     "src-audio",
     "src-audio-ffi",
     "src-audio-player",
+    "src-audio-player-gpui",
+    "src-audio-player-tui",
     "src-autoeq",
     "src-bem",
     "src-cea2034",
     "src-convexhull3d",
     "src-de",
     "src-env",
-    "src-gpui-player",
     "src-hal",
     "src-head-scanner",
     "src-iir",
     "src-tauri",
     "src-testfunctions",
-    "src-tui-player",
 ]
 # Default members excludes
 #   - macOS-only src-hal, src-configbar
@@ -33,6 +33,7 @@ members = [
 default-members = [
     "src-audio",
     "src-audio-player",
+    "src-audio-player-tui",
     "src-autoeq",
     "src-cea2034",
     "src-convexhull3d",
@@ -41,7 +42,6 @@ default-members = [
     "src-iir",
     "src-tauri",
     "src-testfunctions",
-    "src-tui-player",
 ]
 resolver = "3"
 

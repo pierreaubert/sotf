@@ -9541,7 +9541,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-gpui-player"
+name = "sotf-audio-player-gpui"
 version = "0.5.1"
 dependencies = [
  "autoeq-iir",
@@ -9573,7 +9573,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-tui-player"
+name = "sotf-audio-player-tui"
 version = "0.5.1"
 dependencies = [
  "clap",

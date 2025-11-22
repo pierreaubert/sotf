@@ -1,5 +1,5 @@
 use crate::app::{App, InputMode, Screen};
-use crate::plugins::PluginType;
+use sotf_audio_player::PluginType;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::time::Duration;
 
@@ -626,7 +626,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         }
         KeyCode::Char('a') => {
             // Load APO file (for EQ plugins)
-            use crate::plugins::PluginSettings;
+            use sotf_audio_player::PluginSettings;
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                     app.input_mode = InputMode::LoadApoFile;
@@ -640,7 +640,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         }
         KeyCode::Char('f') => {
             // Load SOFA file (for Binaural Decoder plugins)
-            use crate::plugins::PluginSettings;
+            use sotf_audio_player::PluginSettings;
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
                     app.input_mode = InputMode::LoadSofaFile;

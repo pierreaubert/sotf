@@ -1,5 +1,5 @@
 [package]
-name = "sotf-tui-player"
+name = "sotf-audio-player-tui"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true

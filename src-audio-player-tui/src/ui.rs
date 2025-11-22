@@ -1,5 +1,5 @@
 use crate::app::{App, InputMode, LibraryViewMode, Screen, TreeItem};
-use crate::plugins::{PluginSettings, PluginType};
+use sotf_audio_player::{PluginSettings, PluginType};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -615,9 +615,9 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 
             // Helper to find directory info by path
             fn find_dir_info<'a>(
-                directories: &'a [crate::library::DirectoryInfo],
+                directories: &'a [sotf_audio_player::DirectoryInfo],
                 path: &std::path::Path,
-            ) -> Option<&'a crate::library::DirectoryInfo> {
+            ) -> Option<&'a sotf_audio_player::DirectoryInfo> {
                 for dir in directories {
                     if dir.path == path {
                         return Some(dir);

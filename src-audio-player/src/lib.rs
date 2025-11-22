@@ -16,9 +16,13 @@ pub mod plugins;
 pub mod replay_gain_scanner;
 
 // Re-export commonly used types
-pub use config::Config;
+pub use config::AppConfig;
 pub use database::MusicDatabase;
 pub use library::{Album, AlbumChannelType, DirectoryInfo, MusicLibrary, Track};
 pub use player::{PlaybackState, Player};
 pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
-pub use replay_gain_scanner::{ReplayGainInfo, ReplayGainScanner, ScanMessage};
+pub use replay_gain_scanner::{ReplayGainScanner, ScanMessage};
+pub use sotf_audio::replaygain::ReplayGainInfo;
+
+// Re-export autoeq_iir types needed by TUI
+pub use autoeq_iir::BiquadFilterType;

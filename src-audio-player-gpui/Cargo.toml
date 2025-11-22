@@ -1,5 +1,5 @@
 [package]
-name = "sotf-gpui-player"
+name = "sotf-audio-player-gpui"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
