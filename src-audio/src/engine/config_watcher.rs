@@ -13,10 +13,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::Mutex;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const SPIN_MS_DELAY_WATCHER: u64 = 300;
+const DEBOUNCE_MS: u64 = 300; // Wait 300ms after last file change before triggering reload
 
 /// Config watcher events
 #[derive(Debug, Clone)]
@@ -162,7 +164,7 @@ fn run_config_watcher(
     Ok(())
 }
 
-/// Setup file watcher using notify crate
+/// Setup file watcher using notify crate with debouncing
 fn setup_file_watcher(
     config_path: PathBuf,
     event_tx: Sender<ConfigEvent>,
@@ -172,6 +174,62 @@ fn setup_file_watcher(
     log::debug!("[Config Watcher] Watching file: {:?}", config_path);
 
     let config_path_clone = config_path.clone();
+
+    // Debouncing state: tracks the last event time and if event is pending
+    #[derive(Clone, Copy)]
+    struct DebounceState {
+        last_event_time: Instant,
+        event_pending: bool,
+        last_sent_time: Instant,
+    }
+
+    let debounce_state = Arc::new(Mutex::new(DebounceState {
+        last_event_time: Instant::now(),
+        event_pending: false,
+        last_sent_time: Instant::now(),
+    }));
+
+    let debounce_event_tx = event_tx.clone();
+    let debounce_config_path = config_path.clone();
+
+    // Spawn a debouncing thread that checks periodically
+    let debounce_state_clone = Arc::clone(&debounce_state);
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_millis(DEBOUNCE_MS / 2));
+
+            let should_send = {
+                let state = debounce_state_clone.lock().unwrap();
+                let elapsed_since_event = state.last_event_time.elapsed().as_millis() as u64;
+                let elapsed_since_sent = state.last_sent_time.elapsed().as_millis() as u64;
+
+                // Send if:
+                // 1. There's a pending event
+                // 2. Enough time has passed since the last file change
+                // 3. We haven't sent an event recently (avoid duplicates)
+                state.event_pending
+                    && elapsed_since_event >= DEBOUNCE_MS
+                    && elapsed_since_sent >= DEBOUNCE_MS
+            };
+
+            if should_send {
+                log::debug!("[Config Watcher] Debounce period elapsed, triggering reload");
+                if debounce_event_tx
+                    .send(ConfigEvent::ConfigChanged(debounce_config_path.clone()))
+                    .is_err()
+                {
+                    // Channel closed, exit thread
+                    break;
+                }
+
+                // Mark event as sent
+                let mut state = debounce_state_clone.lock().unwrap();
+                state.event_pending = false;
+                state.last_sent_time = Instant::now();
+            }
+        }
+    });
+
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
             match res {
@@ -179,10 +237,11 @@ fn setup_file_watcher(
                     // Only trigger on modify/write events
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) => {
-                            log::debug!("[Config Watcher] File changed: {:?}", config_path_clone);
-                            event_tx
-                                .send(ConfigEvent::ConfigChanged(config_path_clone.clone()))
-                                .ok();
+                            log::debug!("[Config Watcher] File changed: {:?} (debouncing)", config_path_clone);
+                            // Update the debounce state
+                            let mut state = debounce_state.lock().unwrap();
+                            state.last_event_time = Instant::now();
+                            state.event_pending = true;
                         }
                         _ => {
                             // Ignore other events (access, etc.)
@@ -228,10 +287,23 @@ struct SignalFlags {
 /// Setup Unix signal handler using flag-based approach
 #[cfg(unix)]
 fn setup_signal_handler() -> Result<SignalFlags, String> {
+    use signal_hook::consts::signal::*;
+    use signal_hook::flag;
+
     log::debug!("[Config Watcher] Setting up signal handlers (SIGHUP, SIGTERM, SIGINT)");
 
     let shutdown = Arc::new(AtomicBool::new(false));
     let reload = Arc::new(AtomicBool::new(false));
+
+    // Register signal handlers using signal-hook
+    flag::register(SIGTERM, Arc::clone(&shutdown))
+        .map_err(|e| format!("Failed to register SIGTERM handler: {}", e))?;
+
+    flag::register(SIGINT, Arc::clone(&shutdown))
+        .map_err(|e| format!("Failed to register SIGINT handler: {}", e))?;
+
+    flag::register(SIGHUP, Arc::clone(&reload))
+        .map_err(|e| format!("Failed to register SIGHUP handler: {}", e))?;
 
     log::debug!("[Config Watcher] Signal handlers registered successfully");
 
