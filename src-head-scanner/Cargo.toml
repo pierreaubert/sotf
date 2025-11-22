@@ -23,7 +23,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
+anyhow = "1.0"
 parking_lot = { workspace = true }
+chrono = { workspace = true }
+rustfft = { workspace = true }
+num-complex = { workspace = true }
+
+# SOFA file export (netCDF-4 format, which is HDF5-based)
+netcdf = "0.11"
 
 # Internal dependencies
 convexhull3d = { path = "../src-convexhull3d" }
@@ -81,6 +88,7 @@ indicatif = "0.17"  # Progress bars and spinners
 
 [dev-dependencies]
 tempfile = { workspace = true }
+approx = "0.5"
 
 [[bin]]
 name = "head-scanner-cli"

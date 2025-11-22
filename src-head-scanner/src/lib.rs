@@ -48,10 +48,12 @@ pub mod camera;
 pub mod convexhull;
 pub mod coverage;
 pub mod error;
+pub mod hrtf;
 pub mod ffi; // FFI bindings for iOS/Swift
 pub mod security; // Security utilities for path validation
 pub mod guidance;
 pub mod mesh;
+pub mod mesh2hrtf;
 pub mod pointcloud;
 pub mod reconstruction;
 pub mod scanner; // Simplified scanner interface for FFI
