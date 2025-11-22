@@ -6,8 +6,8 @@
 //! 3) --loss speaker-score --measurement CEA2034 --algo nlopt:isres
 //! 4) --loss speaker-score --measurement CEA2034 --algo autoeq:de
 //!
-//! Input data is expected under data_cached/{speaker}/{measurement}.json (Plotly JSON),
-//! optionally data_cached/{speaker}/metadata.json for metadata preference score.
+//! Input data is expected under data_cached/speakers/org.spinorama/{speaker}/{measurement}.json (Plotly JSON),
+//! optionally data_cached/speakers/org.spinorama/{speaker}/metadata.json for metadata preference score.
 
 use autoeq::cea2034 as score;
 use autoeq::optim::ObjectiveData;
@@ -90,8 +90,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Validate CLI arguments
     autoeq::cli::validate_args_or_exit(&args.base);
 
-    // Enumerate speakers as subdirectories of ./data
-    let speakers = list_speakers(DATA_CACHED)?;
+    // Enumerate speakers as subdirectories of ./data_cached/speakers/org.spinorama/
+    let speakers_dir = PathBuf::from(DATA_CACHED).join("speakers").join("org.spinorama");
+    let speakers = list_speakers(speakers_dir)?;
     let speakers: Vec<String> = if args.smoke_test {
         speakers.into_iter().take(5).collect()
     } else {
@@ -535,9 +536,7 @@ async fn perform_optimization(
 }
 
 fn read_metadata_pref_score(speaker: &str) -> Result<Option<f64>, Box<dyn Error>> {
-    let p = PathBuf::from(DATA_CACHED)
-        .join(speaker)
-        .join("metadata.json");
+    let p = read::data_dir_for(speaker).join("metadata.json");
     let content = match fs::read_to_string(&p) {
         Ok(s) => s,
         Err(e) => {

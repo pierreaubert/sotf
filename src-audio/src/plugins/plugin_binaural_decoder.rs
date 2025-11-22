@@ -453,6 +453,15 @@ impl BinauralDecoderPlugin {
                 .process(&input, None)
                 .map_err(|e| format!("Resampling failed for measurement {}: {:?}", m, e))?;
 
+            log::debug!(
+                "[BinauralDecoder] Measurement {}: input_len={}, output_left_len={}, output_right_len={}, expected={}",
+                m,
+                sofa.ir_length,
+                output[0].len(),
+                output[1].len(),
+                new_ir_length
+            );
+
             // Append resampled data (interleaved: left then right)
             resampled_data.extend_from_slice(&output[0]); // Left channel
             resampled_data.extend_from_slice(&output[1]); // Right channel
@@ -461,15 +470,37 @@ impl BinauralDecoderPlugin {
             resampler.reset();
         }
 
-        // Update SOFA file with resampled data
-        sofa.impulse_responses = resampled_data;
-        sofa.ir_length = new_ir_length;
-        sofa.sample_rate = target_sample_rate as f32;
+        // Verify the resampled data size
+        let expected_total = sofa.num_measurements * 2 * new_ir_length;
+        let actual_total = resampled_data.len();
 
-        log::info!(
-            "[BinauralDecoder] Resampling complete: new IR length = {}",
-            new_ir_length
-        );
+        if actual_total != expected_total {
+            log::warn!(
+                "[BinauralDecoder] Resampled data size mismatch: expected {}, got {}. Adjusting ir_length.",
+                expected_total,
+                actual_total
+            );
+            // Calculate actual IR length based on what we got
+            let actual_ir_length = actual_total / (sofa.num_measurements * 2);
+            sofa.ir_length = actual_ir_length;
+            sofa.impulse_responses = resampled_data;
+            sofa.sample_rate = target_sample_rate as f32;
+
+            log::info!(
+                "[BinauralDecoder] Resampling complete: IR length adjusted to {}",
+                actual_ir_length
+            );
+        } else {
+            // Update SOFA file with resampled data
+            sofa.impulse_responses = resampled_data;
+            sofa.ir_length = new_ir_length;
+            sofa.sample_rate = target_sample_rate as f32;
+
+            log::info!(
+                "[BinauralDecoder] Resampling complete: new IR length = {}",
+                new_ir_length
+            );
+        }
 
         Ok(())
     }

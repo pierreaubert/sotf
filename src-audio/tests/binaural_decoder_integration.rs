@@ -41,8 +41,8 @@ fn test_binaural_with_minimal_sofa() {
     let sofa_path = create_test_sofa_file("test_minimal.sofa", 5, 256, 44100.0);
 
     let mut decoder = BinauralDecoderPlugin::new(
-        5,    // 5.0 surround
-        2048, // FFT size
+        5,   // 5.0 surround
+        512, // FFT size (must be >= block_size/2 for processing to occur)
         Some(sofa_path.clone()),
         true, // Optimization on
         0.0,  // No externalization
@@ -94,7 +94,7 @@ fn test_binaural_sample_rate_resampling() {
     let sofa_path = create_test_sofa_file("test_resample.sofa", 5, 256, 48000.0);
 
     // Initialize decoder at 44.1kHz (different rate)
-    let mut decoder = BinauralDecoderPlugin::new(5, 2048, Some(sofa_path.clone()), true, 0.0, 0.0);
+    let mut decoder = BinauralDecoderPlugin::new(5, 512, Some(sofa_path.clone()), true, 0.0, 0.0);
 
     // This should trigger automatic resampling
     decoder.initialize(44100).unwrap();
@@ -125,8 +125,8 @@ fn test_binaural_lfe_handling() {
 
     // 5.1 configuration has LFE at channel 3
     let mut decoder = BinauralDecoderPlugin::new(
-        6, // 5.1 surround
-        2048,
+        6,   // 5.1 surround
+        512, // FFT size
         Some(sofa_path.clone()),
         true,
         0.0,
@@ -301,8 +301,8 @@ fn test_binaural_atmos_7_1_4() {
     let sofa_path = create_test_sofa_file("test_atmos.sofa", 12, 256, 48000.0);
 
     let mut decoder = BinauralDecoderPlugin::new(
-        12, // 7.1.4 Atmos
-        2048,
+        12,  // 7.1.4 Atmos
+        512, // FFT size
         Some(sofa_path.clone()),
         true,
         0.3, // Some externalization
@@ -342,7 +342,7 @@ fn test_binaural_atmos_7_1_4() {
 fn test_binaural_continuous_processing() {
     let sofa_path = create_test_sofa_file("test_continuous.sofa", 5, 256, 48000.0);
 
-    let mut decoder = BinauralDecoderPlugin::new(5, 2048, Some(sofa_path.clone()), true, 0.0, 0.0);
+    let mut decoder = BinauralDecoderPlugin::new(5, 512, Some(sofa_path.clone()), true, 0.0, 0.0);
 
     decoder.initialize(48000).unwrap();
 

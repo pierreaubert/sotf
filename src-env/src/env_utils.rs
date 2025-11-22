@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum EnvError {
     #[error(
-        "AUTOEQ_DIR environment variable is not set. Please set it to the AutoEQ project root directory (e.g., export AUTOEQ_DIR=/path/to/autoeq)"
+        "AUTOEQ_DIR environment variable is not set and no autoeq/sotf directory found in $HOME or $HOME/src. Please set it to the AutoEQ project root directory (e.g., export AUTOEQ_DIR=/path/to/autoeq)"
     )]
     AutoeqDirNotSet,
 
@@ -20,9 +20,19 @@ pub enum EnvError {
 
     #[error("Failed to create data_generated directory: {0}")]
     DataGeneratedCreationFailed(std::io::Error),
+
+    #[error("Multiple autoeq/sotf directories found: {0:?}. Please set AUTOEQ_DIR to specify which one to use")]
+    MultipleAutoEqDirsFound(Vec<PathBuf>),
 }
 
 /// Get the AUTOEQ_DIR environment variable and validate it exists
+///
+/// If AUTOEQ_DIR is not set, this function will attempt to automatically
+/// find the autoeq/sotf directory by searching in:
+/// - $HOME/autoeq
+/// - $HOME/sotf
+/// - $HOME/src/autoeq
+/// - $HOME/src/sotf
 ///
 /// # Returns
 ///
@@ -31,7 +41,8 @@ pub enum EnvError {
 /// # Errors
 ///
 /// Returns an error if:
-/// - AUTOEQ_DIR is not set
+/// - AUTOEQ_DIR is not set and no autoeq/sotf directory can be found
+/// - AUTOEQ_DIR is not set and multiple autoeq/sotf directories are found
 /// - AUTOEQ_DIR points to a non-existent directory
 ///
 /// # Example
@@ -44,15 +55,38 @@ pub enum EnvError {
 /// # Ok::<(), autoeq_env::env_utils::EnvError>(())
 /// ```
 pub fn get_autoeq_dir() -> Result<PathBuf, EnvError> {
-    let autoeq_dir = env::var("AUTOEQ_DIR").map_err(|_| EnvError::AutoeqDirNotSet)?;
-
-    let path = PathBuf::from(autoeq_dir);
-
-    if !path.exists() {
-        return Err(EnvError::AutoeqDirNotFound(path));
+    // First try the environment variable
+    if let Ok(autoeq_dir) = env::var("AUTOEQ_DIR") {
+        let path = PathBuf::from(autoeq_dir);
+        if !path.exists() {
+            return Err(EnvError::AutoeqDirNotFound(path));
+        }
+        return Ok(path);
     }
 
-    Ok(path)
+    // If AUTOEQ_DIR is not set, try to guess the location
+    let home = env::var("HOME").map_err(|_| EnvError::AutoeqDirNotSet)?;
+    let home_path = PathBuf::from(home);
+
+    let candidates = vec![
+        home_path.join("autoeq"),
+        home_path.join("sotf"),
+        home_path.join("src").join("autoeq"),
+        home_path.join("src").join("sotf"),
+    ];
+
+    let mut found_dirs = Vec::new();
+    for candidate in candidates {
+        if candidate.exists() && candidate.is_dir() {
+            found_dirs.push(candidate);
+        }
+    }
+
+    match found_dirs.len() {
+        0 => Err(EnvError::AutoeqDirNotSet),
+        1 => Ok(found_dirs.into_iter().next().unwrap()),
+        _ => Err(EnvError::MultipleAutoEqDirsFound(found_dirs)),
+    }
 }
 
 /// Get the path to the data_generated directory, creating it if necessary

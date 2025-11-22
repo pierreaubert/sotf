@@ -84,6 +84,14 @@ fn default_center_spread() -> f32 {
     0.0
 }
 
+fn default_hr_sharpen() -> f32 {
+    1.0
+}
+
+fn default_safety_cap_db() -> f32 {
+    3.0
+}
+
 /// Configuration parameters for UpmixerPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpmixerPluginParams {
@@ -131,6 +139,12 @@ pub struct UpmixerPluginParams {
     /// Enable high-resolution direct-path enhancement (experimental)
     #[serde(default)]
     pub enable_hr_direct: bool,
+
+    #[serde(default = "default_hr_sharpen")]
+    pub hr_sharpen: f32,
+
+    #[serde(default = "default_safety_cap_db")]
+    pub safety_cap_db: f32,
 }
 
 // ============================================================================
@@ -212,6 +226,12 @@ pub struct UpmixerPlugin {
     /// High-resolution direct-path enhancement (multires)
     param_enable_hr_direct: ParameterId,
     enable_hr_direct: bool,
+    param_hr_sharpen: ParameterId,
+    hr_sharpen: f32,
+
+    /// Safety cap on upmixer output peak (in dB)
+    param_safety_cap_db: ParameterId,
+    safety_cap_db: f32,
 
     // Sub-harmonic synth state
     subharmonic_phase: f32,
@@ -224,10 +244,15 @@ pub struct UpmixerPlugin {
 
     // Logic Steering State
     steering_alphas: Vec<f32>, // Per-band alpha
+    coherence_instant: Vec<f32>,
+    smoothed_coherence: Vec<f32>,
 
     // Decorrelation
     decorrelation_filter_left: Vec<Complex<f32>>,
     decorrelation_filter_right: Vec<Complex<f32>>,
+    decor_base_phases_left: Vec<f32>,
+    decor_base_phases_right: Vec<f32>,
+    decor_lfo_phase: f32,
 
     // PCA State (per band)
     pca_cov_xx: Vec<f32>,
@@ -316,6 +341,9 @@ pub struct UpmixerPlugin {
     hr_time_out_channels: Vec<Vec<f32>>,
     /// Next position to add a HR block in the shared accumulator (reserved)
     hr_next_add_position: usize,
+
+    hr_transient_env: f32,
+    hr_energy_smooth: f32,
 }
 
 impl UpmixerPlugin {
@@ -463,13 +491,22 @@ impl UpmixerPlugin {
 
             param_enable_hr_direct: ParameterId::from("enable_hr_direct"),
             enable_hr_direct: false,
+            param_hr_sharpen: ParameterId::from("hr_sharpen"),
+            hr_sharpen: 1.0,
+            param_safety_cap_db: ParameterId::from("safety_cap_db"),
+            safety_cap_db: default_safety_cap_db(),
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
 
             erb_bands: Vec::new(), // Will be calculated in initialize()
             steering_alphas: Vec::new(),
+            coherence_instant: Vec::new(),
+            smoothed_coherence: Vec::new(),
             decorrelation_filter_left: vec![zero_complex; fft_size],
             decorrelation_filter_right: vec![zero_complex; fft_size],
+            decor_base_phases_left: Vec::new(),
+            decor_base_phases_right: Vec::new(),
+            decor_lfo_phase: 0.0,
             pca_cov_xx: Vec::new(),
             pca_cov_yy: Vec::new(),
             pca_cov_xy: Vec::new(),
@@ -519,6 +556,9 @@ impl UpmixerPlugin {
             hr_freq_domain_right: vec![zero_complex; hr_spectrum_size],
             hr_time_out_channels: vec![vec![0.0; hr_fft_size]; num_output_channels],
             hr_next_add_position: 0,
+
+            hr_transient_env: 0.0,
+            hr_energy_smooth: 0.0,
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
@@ -545,6 +585,8 @@ impl UpmixerPlugin {
         );
         plugin.center_spread = params.center_spread.clamp(0.0, 1.0);
         plugin.enable_hr_direct = params.enable_hr_direct;
+        plugin.hr_sharpen = params.hr_sharpen.clamp(0.0, 1.0);
+        plugin.safety_cap_db = params.safety_cap_db.max(0.0);
         plugin
     }
 
@@ -680,6 +722,8 @@ impl UpmixerPlugin {
     /// Phase 2: Process frequency domain with ERB bands and PCA decomposition
     #[inline]
     fn process_frequency_domain_erb_bands(&mut self) {
+        self.update_decorrelation_filters_time_varying();
+
         let lfe_cutoff_bin =
             ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
         let bandpass_bin =
@@ -754,11 +798,26 @@ impl UpmixerPlugin {
             // Coherence (0 to 1)
             // High coherence = strong direct sound (lambda1 >> lambda2)
             // Low coherence = diffuse sound (lambda1 ~= lambda2)
-            let coherence = if trace > 1e-9 {
+            let mut coherence = if trace > 1e-9 {
                 (lambda1 - lambda2) / (lambda1 + lambda2)
             } else {
                 0.0
             };
+
+            self.coherence_instant[band_idx] = coherence;
+
+            let prev = self.smoothed_coherence[band_idx];
+            let band_alpha = self.steering_alphas[band_idx];
+            let coherence_attack = (band_alpha * 0.75).min(0.5);
+            let coherence_release = (band_alpha * 0.1).max(0.01);
+            let alpha_coh = if coherence > prev {
+                coherence_attack
+            } else {
+                coherence_release
+            };
+            let smoothed = prev + alpha_coh * (coherence - prev);
+            self.smoothed_coherence[band_idx] = smoothed;
+            coherence = smoothed;
 
             // 1. LFE Band Logic
             // Determine intersection of current band [start_bin, end_bin) with LFE range [0, lfe_cutoff_bin]
@@ -885,6 +944,7 @@ impl UpmixerPlugin {
     #[inline]
     fn apply_vbap_panning_and_inverse_fft(&mut self) {
         let spectrum_size = self.fft_size / 2 + 1;
+        let hr_mix_global = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
 
         for ch_idx in 0..self.num_output_channels {
             let speaker = &self.speaker_config.speakers[ch_idx];
@@ -904,17 +964,34 @@ impl UpmixerPlugin {
                 let is_center = speaker.label == "C";
 
                 // Front speakers use explicit front direct/ambient gains.
-                let direct_gain = if is_front && !is_height {
+                let mut direct_gain = if is_front && !is_height {
                     self.gain_front_direct
                 } else {
                     self.gain_rear_ambient * 0.15
                 };
 
-                let ambient_gain = if is_front && !is_height {
+                let mut ambient_gain = if is_front && !is_height {
                     self.gain_front_ambient
                 } else {
                     self.gain_rear_ambient
                 };
+
+                if is_front && !is_height && hr_mix_global > 0.0 {
+                    let duck_direct = 0.25 * hr_mix_global;
+                    let duck_ambient = 0.5 * hr_mix_global;
+
+                    let min_scale = if self.safety_cap_db > 0.0 {
+                        10.0_f32.powf(-self.safety_cap_db / 20.0)
+                    } else {
+                        0.0
+                    };
+
+                    let direct_scale = (1.0 - duck_direct).max(min_scale);
+                    let ambient_scale = (1.0 - duck_ambient).max(min_scale);
+
+                    direct_gain *= direct_scale;
+                    ambient_gain *= ambient_scale;
+                }
 
                 if is_height {
                     for i in 0..spectrum_size {
@@ -1045,10 +1122,35 @@ impl UpmixerPlugin {
         // 1. Applying window ONCE during analysis (before FFT)
         // 2. Overlap-add with hop_size = fft_size/2
         // Applying window again here would break COLA and cause amplitude modulation artifacts
+        // Safety cap: optionally reduce overall gain so that the block peak does not
+        // exceed safety_cap_db (in dB) above unit amplitude.
+        let mut safety_scale = 1.0_f32;
+        if self.safety_cap_db > 0.0 {
+            let mut max_abs = 0.0_f32;
+            for ch in 0..self.num_output_channels {
+                for i in 0..self.fft_size {
+                    let v = self.time_out_channels[ch][i].abs();
+                    if v > max_abs {
+                        max_abs = v;
+                    }
+                }
+            }
+
+            if max_abs > 0.0 {
+                let cap_linear = 10.0_f32.powf(self.safety_cap_db / 20.0);
+                let effective_peak = max_abs * combined_scale;
+                if effective_peak > cap_linear {
+                    safety_scale = cap_linear / effective_peak;
+                }
+            }
+        }
+
+        let final_scale = combined_scale * safety_scale;
+
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
             for ch in 0..self.num_output_channels {
-                let mut sample = self.time_out_channels[ch][i] * combined_scale;
+                let mut sample = self.time_out_channels[ch][i] * final_scale;
 
                 // Flush denormals to zero to prevent CPU spikes and audio glitches
                 // Denormal numbers (very small floats near zero) can cause significant
@@ -1076,6 +1178,64 @@ impl UpmixerPlugin {
 
         // Phase 1: Apply window and perform forward FFT
         self.apply_window_and_forward_fft(input);
+
+        // High-frequency transient detector for HR direct-path crossfade.
+        if self.enable_hr_direct {
+            let spectrum_size = self.fft_size / 2 + 1;
+            let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+            let hf_start = self.bandpass_hz.max(1000.0);
+
+            let mut energy = 0.0_f32;
+            let mut count = 0usize;
+            for i in 0..spectrum_size {
+                let freq = i as f32 * freq_per_bin;
+                if freq >= hf_start {
+                    let l = self.freq_domain_left[i];
+                    let r = self.freq_domain_right[i];
+                    energy += l.norm_sqr() + r.norm_sqr();
+                    count += 1;
+                }
+            }
+            if count > 0 {
+                energy /= count as f32;
+            } else {
+                energy = 0.0;
+            }
+
+            if self.hr_energy_smooth <= 0.0 {
+                self.hr_energy_smooth = energy;
+                self.hr_transient_env = 0.0;
+            } else {
+                let prev_smooth = self.hr_energy_smooth;
+                let prev_smooth_clamped = prev_smooth.max(1e-9);
+                let ratio = (energy / prev_smooth_clamped).max(0.0);
+
+                let attack_e = 0.5_f32;
+                let release_e = 0.1_f32;
+                let alpha_e = if energy > prev_smooth { attack_e } else { release_e };
+                self.hr_energy_smooth = prev_smooth + alpha_e * (energy - prev_smooth);
+
+                let ratio_clamped = ratio.clamp(1.0, 4.0);
+                let transient_target = if ratio_clamped > 1.0 {
+                    (ratio_clamped - 1.0) / 3.0
+                } else {
+                    0.0
+                };
+
+                let prev_env = self.hr_transient_env;
+                let attack_env = 0.8_f32;
+                let release_env = 0.3_f32;
+                let alpha_env = if transient_target > prev_env {
+                    attack_env
+                } else {
+                    release_env
+                };
+                self.hr_transient_env =
+                    prev_env + alpha_env * (transient_target - prev_env);
+            }
+        } else {
+            self.hr_transient_env = 0.0;
+        }
 
         // Phase 2: Frequency-domain processing (ERB Bands + PCA)
         self.process_frequency_domain_erb_bands();
@@ -1280,20 +1440,67 @@ impl UpmixerPlugin {
             }
         }
 
-        // Fill positive frequencies 0..half
-        for i in 0..=half {
-            self.decorrelation_filter_left[i] = Complex::from_polar(1.0, phases_left[i]);
-            self.decorrelation_filter_right[i] = Complex::from_polar(1.0, phases_right[i]);
+        self.decor_base_phases_left = phases_left;
+        self.decor_base_phases_right = phases_right;
+        self.decor_lfo_phase = 0.0;
+
+        self.update_decorrelation_filters_time_varying();
+    }
+
+    fn update_decorrelation_filters_time_varying(&mut self) {
+        if self.sample_rate == 0 || self.fft_size == 0 {
+            return;
         }
 
-        // Enforce conjugate symmetry for negative frequencies
+        let n = self.fft_size;
+        let half = n / 2;
+        if self.decor_base_phases_left.len() != half + 1
+            || self.decor_base_phases_right.len() != half + 1
+        {
+            return;
+        }
+
+        let dt = self.hop_size as f32 / self.sample_rate as f32;
+        let rate_hz = 0.7_f32;
+        let two_pi = std::f32::consts::PI * 2.0;
+        self.decor_lfo_phase += two_pi * rate_hz * dt;
+        if self.decor_lfo_phase > two_pi {
+            self.decor_lfo_phase -= two_pi;
+        }
+
+        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        let nyquist = self.sample_rate as f32 / 2.0;
+        let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
+
+        for i in 0..=half {
+            let freq = i as f32 * freq_per_bin;
+            let hf_ratio = if freq <= hf_start {
+                0.0
+            } else if freq >= nyquist {
+                1.0
+            } else {
+                (freq - hf_start) / (nyquist - hf_start)
+            };
+
+            let depth = 0.3_f32 * hf_ratio;
+            let phase_warp = (self.decor_lfo_phase + 0.37_f32 * i as f32).sin() * depth;
+
+            let base_l = self.decor_base_phases_left[i];
+            let base_r = self.decor_base_phases_right[i];
+
+            let phi_l = base_l + phase_warp;
+            let phi_r = base_r - phase_warp;
+
+            self.decorrelation_filter_left[i] = Complex::from_polar(1.0, phi_l);
+            self.decorrelation_filter_right[i] = Complex::from_polar(1.0, phi_r);
+        }
+
         for i in 1..half {
             let mirror_idx = n - i;
             self.decorrelation_filter_left[mirror_idx] = self.decorrelation_filter_left[i].conj();
             self.decorrelation_filter_right[mirror_idx] = self.decorrelation_filter_right[i].conj();
         }
 
-        // DC and Nyquist must be real
         self.decorrelation_filter_left[0] = Complex::new(1.0, 0.0);
         self.decorrelation_filter_right[0] = Complex::new(1.0, 0.0);
         self.decorrelation_filter_left[half] = Complex::new(1.0, 0.0);
@@ -1325,31 +1532,108 @@ impl Plugin for UpmixerPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_int("speaker_config", "Configuration", 0, 0, 9)
-                .with_description("Speaker configuration (0=5.1, 1=7.1, 2=5.1.2, 3=5.1.4, 4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6, 8=2.0, 9=5.0)"),
+                .with_description(
+                    "Speaker configuration index.
+0=5.1 (default), 1=7.1, 2=5.1.2, 3=5.1.4,
+4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6,
+8=2.0, 9=5.0.
+Controls output layout and number of channels.",
+                ),
             Parameter::new_float("gain_front_direct", "Front Direct Gain", 1.0, 0.0, 2.0)
-                .with_description("Gain for direct sound in front channels"),
+                .with_description(
+                    "Front direct gain for non-height front speakers.
+Range: 0.0-2.0, default 1.0.
+Higher values make the front image more focused and dry;
+lower values rely more on ambient and surround energy.",
+                ),
             Parameter::new_float("gain_front_ambient", "Front Ambient Gain", 0.5, 0.0, 2.0)
-                .with_description("Gain for ambient sound in front channels"),
+                .with_description(
+                    "Decorrelated ambient gain routed to front speakers.
+Range: 0.0-2.0, default 0.5.
+Increase to widen and enliven the front stage;
+decrease for a more center-focused, direct front.",
+                ),
             Parameter::new_float("gain_rear_ambient", "Rear Ambient Gain", 1.0, 0.0, 2.0)
-                .with_description("Gain for ambient sound in rear channels"),
+                .with_description(
+                    "Ambient gain for surround and rear channels.
+Range: 0.0-2.0, default 1.0.
+Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
+                ),
             Parameter::new_float("height_gain", "Height Gain", 1.0, 0.0, 2.0)
-                .with_description("Gain for height/overhead channels (elevation > 0)"),
+                .with_description(
+                    "Gain for height/overhead channels (elevation > 0).
+Range: 0.0-2.0, default 1.0.
+0.0 disables height channels; higher values raise the contribution
+of height speakers relative to the bed layer.",
+                ),
             Parameter::new_float("lfe_gain", "LFE Gain", 1.0, 0.0, 2.0)
-                .with_description("Gain for LFE/subwoofer channel"),
+                .with_description(
+                    "Gain for LFE/subwoofer channel.
+Range: 0.0-2.0, default 1.0.
+Controls overall subwoofer level after the mains/LFE crossover.",
+                ),
             Parameter::new_float("lfe_cutoff_hz", "LFE Cutoff (Hz)", 120.0, 40.0, 200.0)
-                .with_description("Low-pass filter cutoff frequency for LFE channel"),
+                .with_description(
+                    "Linkwitz-Riley crossover frequency between mains and LFE.
+Range: 40-200 Hz, default 120 Hz.
+Lower values keep more bass in mains; higher values route
+more low-frequency energy into the subwoofer.",
+                ),
             Parameter::new_float("stereo_width", "Stereo Width", 0.5, 0.0, 1.0)
-                .with_description("Control stereo width (0.0=wide, 1.0=narrow)"),
+                .with_description(
+                    "Controls front stereo width for the direct component.
+Range: 0.0-1.0, default 0.5.
+0.0 keeps L/R wide; 1.0 collapses toward mono/center;
+intermediate values balance width and center focus.",
+                ),
             Parameter::new_float("center_spread", "Center Spread", 0.0, 0.0, 1.0)
-                .with_description("Control how much direct energy is focused in the center vs spread to L/R (0.0=all center, 1.0=phantom center)"),
+                .with_description(
+                    "Controls how much direct energy is focused in the physical center vs L/R.
+Range: 0.0-1.0, default 0.0.
+0.0 sends coherent center energy to the C speaker;
+1.0 moves it into a phantom center across L/R.",
+                ),
             Parameter::new_float("bandpass_hz", "Upmix Crossover (Hz)", 250.0, 200.0, 1000.0)
-                .with_description("Frequency above which upmixing is applied"),
+                .with_description(
+                    "Frequency above which upmixing to surrounds/height is applied.
+Range: 200-1000 Hz, default 250 Hz.
+Below this frequency content stays mainly in fronts + LFE;
+above it participates in the direct/ambient upmix.",
+                ),
             Parameter::new_bool("enable_subharmonic_synth", "Sub-Harmonic Synth", false)
-                .with_description("Enable sub-harmonic synthesis for LFE channel"),
+                .with_description(
+                    "Enables optional sub-harmonic synthesis on the LFE.
+Default: off. When enabled, a low-frequency tone is added to the
+subwoofer, driven by the LFE envelope for extra rumble.",
+                ),
             Parameter::new_float("subharmonic_gain", "Sub-Harmonic Gain", 0.5, 0.0, 1.0)
-                .with_description("Gain for synthesized sub-harmonics"),
+                .with_description(
+                    "Gain for synthesized sub-harmonics when enabled.
+Range: 0.0-1.0, default 0.5.
+Controls how loud the synthesized low-frequency component is
+relative to the original LFE signal.",
+                ),
             Parameter::new_bool("enable_hr_direct", "High-Res Direct", false)
-                .with_description("Enable high-resolution direct-path enhancement (experimental)"),
+                .with_description(
+                    "Enables the high-resolution direct-path enhancement.
+Default: off. When on, detected high-frequency transients can
+be sharpened using a shorter FFT, mainly in the front speakers.",
+                ),
+            Parameter::new_float("hr_sharpen", "HR Sharpen", 1.0, 0.0, 1.0)
+                .with_description(
+                    "Depth control for the high-resolution direct path.
+Range: 0.0-1.0, default 1.0.
+0.0 effectively disables the HR contribution even if enabled;
+1.0 applies the full transient-driven HR emphasis and ducking
+of the main front field.",
+                ),
+            Parameter::new_float("safety_cap_db", "Safety Cap (dB)", 3.0, 0.0, 12.0)
+                .with_description(
+                    "Peak safety cap for the upmixer output.
+Range: 0.0-12.0 dB, default 3.0 dB.
+If a block's peak level after upmixing would exceed this value
+above unity, the block is scaled down to stay within the cap.",
+                ),
         ]
     }
 
@@ -1453,6 +1737,22 @@ impl Plugin for UpmixerPlugin {
                 self.enable_hr_direct = enable;
                 return Ok(());
             }
+        } else if id == self.param_hr_sharpen
+            && let Some(val) = value.as_float()
+        {
+            if (0.0..=1.0).contains(&val) {
+                self.hr_sharpen = val;
+                return Ok(());
+            }
+            return Err("HR Sharpen must be between 0.0 and 1.0".to_string());
+        } else if id == self.param_safety_cap_db
+            && let Some(val) = value.as_float()
+        {
+            if (0.0..=12.0).contains(&val) {
+                self.safety_cap_db = val;
+                return Ok(());
+            }
+            return Err("Safety cap must be between 0.0 and 12.0 dB".to_string());
         }
         Err(format!("Unknown parameter: {}", id))
     }
@@ -1497,6 +1797,10 @@ impl Plugin for UpmixerPlugin {
             Some(ParameterValue::Float(self.subharmonic_gain))
         } else if id == &self.param_enable_hr_direct {
             Some(ParameterValue::Bool(self.enable_hr_direct))
+        } else if id == &self.param_hr_sharpen {
+            Some(ParameterValue::Float(self.hr_sharpen))
+        } else if id == &self.param_safety_cap_db {
+            Some(ParameterValue::Float(self.safety_cap_db))
         } else {
             None
         }
@@ -1514,6 +1818,8 @@ impl Plugin for UpmixerPlugin {
         self.pca_cov_xx = vec![0.0; num_bands];
         self.pca_cov_yy = vec![0.0; num_bands];
         self.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
+        self.coherence_instant = vec![0.0; num_bands];
+        self.smoothed_coherence = vec![0.0; num_bands];
 
         // Generate decorrelation filters
         self.generate_decorrelation_filters();
@@ -1579,6 +1885,11 @@ impl Plugin for UpmixerPlugin {
         self.pca_cov_xx.fill(0.0);
         self.pca_cov_yy.fill(0.0);
         self.pca_cov_xy.fill(Complex::new(0.0, 0.0));
+        self.coherence_instant.fill(0.0);
+        self.smoothed_coherence.fill(0.0);
+        self.decor_lfo_phase = 0.0;
+        self.hr_transient_env = 0.0;
+        self.hr_energy_smooth = 0.0;
 
         // Clear height mask; it will be recomputed in process_fft_block
         self.height_band_gains.fill(0.0);
@@ -1748,11 +2059,15 @@ impl Plugin for UpmixerPlugin {
                         self.process_hr_block(hr_input, &mut hr_output);
 
                         // Overlay HR contribution onto the low-res output block
-                        for i in 0..self.hr_fft_size {
-                            let dst_idx = (center + i) * self.num_output_channels;
-                            let src_idx = i * self.num_output_channels;
-                            for ch in 0..self.num_output_channels {
-                                output_block[dst_idx + ch] += hr_output[src_idx + ch];
+                        let hr_mix = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
+                        if hr_mix > 0.0 {
+                            for i in 0..self.hr_fft_size {
+                                let dst_idx = (center + i) * self.num_output_channels;
+                                let src_idx = i * self.num_output_channels;
+                                for ch in 0..self.num_output_channels {
+                                    output_block[dst_idx + ch] +=
+                                        hr_output[src_idx + ch] * hr_mix;
+                                }
                             }
                         }
                     }
@@ -2174,6 +2489,120 @@ mod tests {
     }
 
     #[test]
+    fn test_coherence_hysteresis_slow_release() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let fft_size = plugin.fft_size;
+        let mut input = vec![0.0f32; fft_size * 2];
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
+            input[i * 2] = s;
+            input[i * 2 + 1] = s;
+        }
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+        plugin.process_fft_block(&input, &mut output);
+
+        let num_bands = plugin.erb_bands.len();
+        assert!(num_bands >= 3);
+        let band_idx = num_bands / 2;
+
+        let coh1_inst = plugin.coherence_instant[band_idx];
+        let coh1_smooth = plugin.smoothed_coherence[band_idx];
+        assert!(coh1_inst > 0.5);
+        assert!(coh1_smooth >= 0.0);
+        assert!(coh1_smooth <= coh1_inst + 1e-3_f32);
+
+        // Use phase-inverted signal to create strong incoherence
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
+            input[i * 2] = s;
+            input[i * 2 + 1] = -s;  // Inverted phase = maximally incoherent
+        }
+
+        plugin.process_fft_block(&input, &mut output);
+
+        let coh2_inst = plugin.coherence_instant[band_idx];
+        let coh2_smooth = plugin.smoothed_coherence[band_idx];
+
+        assert!(coh2_inst < coh1_inst);
+        assert!(coh2_smooth > coh2_inst);
+        assert!(coh2_smooth < coh1_smooth);
+    }
+
+    #[test]
+    fn test_decorrelation_filters_time_varying() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        let fft_size = plugin.fft_size;
+        let mut input = vec![0.0f32; fft_size * 2];
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
+            input[i * 2] = s;
+            input[i * 2 + 1] = -s;
+        }
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+
+        plugin.process_fft_block(&input, &mut output);
+        let half = plugin.fft_size / 2;
+        let idx = half.saturating_sub(10).max(1);
+        let before_l = plugin.decorrelation_filter_left[idx];
+        let before_r = plugin.decorrelation_filter_right[idx];
+
+        plugin.process_fft_block(&input, &mut output);
+        let after_l = plugin.decorrelation_filter_left[idx];
+        let after_r = plugin.decorrelation_filter_right[idx];
+
+        let diff_l = (after_l - before_l).norm();
+        let diff_r = (after_r - before_r).norm();
+        assert!(diff_l > 1e-6_f32 || diff_r > 1e-6_f32);
+    }
+
+    #[test]
+    fn test_hr_transient_envelope_energy_jump() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+        plugin.enable_hr_direct = true;
+
+        let fft_size = plugin.fft_size;
+        let mut input = vec![0.0f32; fft_size * 2];
+        let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
+
+        // First block: low-energy high-frequency tone
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 4000.0 * t).sin() * 0.1;
+            input[i * 2] = s;
+            input[i * 2 + 1] = s;
+        }
+        plugin.process_fft_block(&input, &mut output);
+        let env1 = plugin.hr_transient_env;
+
+        // Second block: large step in HF energy (simulate transient)
+        for i in 0..fft_size {
+            let t = i as f32 / 44100.0;
+            let s = (2.0 * std::f32::consts::PI * 4000.0 * t).sin();
+            input[i * 2] = s;
+            input[i * 2 + 1] = s;
+        }
+        plugin.process_fft_block(&input, &mut output);
+        let env2 = plugin.hr_transient_env;
+
+        assert!(env2 > env1);
+        assert!(env2 > 0.0);
+    }
+
+    #[test]
     fn test_center_spread_reduces_center_energy() {
         // Coherent input (L=R) in 5.1: with center_spread=1.0 the physical
         // center channel should receive less direct energy than with
@@ -2251,8 +2680,7 @@ mod tests {
         let mut energies = vec![0.0f32; plugin.num_output_channels];
         for i in 0..hr_size {
             for ch in 0..plugin.num_output_channels {
-                let s = output[i * plugin.num_output_channels + ch];
-                energies[ch] += s * s;
+                energies[ch] += output[i * plugin.num_output_channels + ch].powi(2);
             }
         }
 
@@ -2279,7 +2707,7 @@ mod tests {
     fn test_upmixer_zero_gains() {
         // Test that with all gains at 0, output is silence (critical for crackling fix)
         let mut plugin = UpmixerPlugin::new(
-            2048, "5.1", 0.0, 0.0, 0.0, 120.0, 0.5, 250.0, 1.0, 0.0, false, 0.5,
+            2048, "5.1", 0.0, 0.0, 0.0, 120.0, 0.5, 250.0, 0.0, 0.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
 

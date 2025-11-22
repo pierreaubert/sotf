@@ -107,7 +107,7 @@ fn test_upmixer_parameter_adjustment() {
 
     // Test parameter queries
     let params = plugin.parameters();
-    assert_eq!(params.len(), 13); // speaker_config, gain_front_direct, gain_front_ambient, gain_rear_ambient, height_gain, lfe_gain, lfe_cutoff_hz, stereo_width, center_spread, bandpass_hz, enable_subharmonic_synth, subharmonic_gain, enable_hr_direct
+    assert_eq!(params.len(), 15); // + hr_sharpen, safety_cap_db
 
     // Modify gains
     plugin
@@ -144,6 +144,34 @@ fn test_upmixer_parameter_adjustment() {
 
     let hr_direct_after = plugin.get_parameter(&ParameterId::from("enable_hr_direct"));
     assert_eq!(hr_direct_after, Some(ParameterValue::Bool(true)));
+
+    // Verify hr_sharpen parameter roundtrip
+    let hr_sharpen = plugin.get_parameter(&ParameterId::from("hr_sharpen"));
+    assert_eq!(hr_sharpen, Some(ParameterValue::Float(1.0)));
+
+    plugin
+        .set_parameter(
+            ParameterId::from("hr_sharpen"),
+            ParameterValue::Float(0.3),
+        )
+        .unwrap();
+
+    let hr_sharpen_after = plugin.get_parameter(&ParameterId::from("hr_sharpen"));
+    assert_eq!(hr_sharpen_after, Some(ParameterValue::Float(0.3)));
+
+    // Verify safety_cap_db parameter roundtrip
+    let safety_cap = plugin.get_parameter(&ParameterId::from("safety_cap_db"));
+    assert_eq!(safety_cap, Some(ParameterValue::Float(3.0)));
+
+    plugin
+        .set_parameter(
+            ParameterId::from("safety_cap_db"),
+            ParameterValue::Float(6.0),
+        )
+        .unwrap();
+
+    let safety_cap_after = plugin.get_parameter(&ParameterId::from("safety_cap_db"));
+    assert_eq!(safety_cap_after, Some(ParameterValue::Float(6.0)));
 }
 
 #[test]
@@ -255,11 +283,19 @@ fn test_upmixer_hr_direct_increases_front_energy() {
         )
         .unwrap();
 
-    // High-frequency coherent input (L=R) to emphasize HF direct path
+    // Create transient by starting with low-frequency content, then introducing high-frequency
+    // This allows the HR transient detector to identify the change in HF energy
     let mut input = vec![0.0_f32; num_frames * 2];
+    let transient_start = num_frames / 4; // Start HF signal at 25% of the input
     for i in 0..num_frames {
         let t = i as f32 / sample_rate as f32;
-        let s = (2.0 * std::f32::consts::PI * 4000.0 * t).sin() * 0.5;
+        let s = if i < transient_start {
+            // Low-frequency content first (100 Hz)
+            (2.0 * std::f32::consts::PI * 100.0 * t).sin() * 0.3
+        } else {
+            // Then high-frequency transient (4000 Hz)
+            (2.0 * std::f32::consts::PI * 4000.0 * t).sin() * 0.5
+        };
         input[i * 2] = s;
         input[i * 2 + 1] = s;
     }

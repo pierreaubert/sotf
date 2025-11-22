@@ -45,8 +45,16 @@ fn create_upmixer_plugin_config(
     gain_front_direct: f32,
     gain_front_ambient: f32,
     gain_rear_ambient: f32,
+    lfe_cutoff_hz: f32,
+    stereo_width: f32,
+    bandpass_hz: f32,
+    height_gain: f32,
+    lfe_gain: f32,
     enable_subharmonic_synth: bool,
     subharmonic_gain: f32,
+    enable_hr_direct: bool,
+    hr_sharpen: f32,
+    safety_cap_db: f32,
 ) -> Result<PluginConfig, String> {
     use serde_json::json;
 
@@ -67,8 +75,16 @@ fn create_upmixer_plugin_config(
         "gain_front_direct": gain_front_direct,
         "gain_front_ambient": gain_front_ambient,
         "gain_rear_ambient": gain_rear_ambient,
+        "lfe_cutoff_hz": lfe_cutoff_hz,
+        "stereo_width": stereo_width,
+        "bandpass_hz": bandpass_hz,
+        "height_gain": height_gain,
+        "lfe_gain": lfe_gain,
         "enable_subharmonic_synth": enable_subharmonic_synth,
         "subharmonic_gain": subharmonic_gain,
+        "enable_hr_direct": enable_hr_direct,
+        "hr_sharpen": hr_sharpen,
+        "safety_cap_db": safety_cap_db,
     });
 
     Ok(PluginConfig {
@@ -267,6 +283,26 @@ enum Commands {
         #[arg(long = "upmixer-gain-rear-ambient", default_value = "1.0")]
         upmixer_gain_rear_ambient: f32,
 
+        /// Upmixer LFE cutoff frequency (Hz, 40-200)
+        #[arg(long = "upmixer-lfe-cutoff", default_value = "120.0")]
+        upmixer_lfe_cutoff_hz: f32,
+
+        /// Upmixer stereo width (0.0-1.0)
+        #[arg(long = "upmixer-stereo-width", default_value = "0.5")]
+        upmixer_stereo_width: f32,
+
+        /// Upmixer bandpass / upmix crossover frequency (Hz)
+        #[arg(long = "upmixer-bandpass", default_value = "250.0")]
+        upmixer_bandpass_hz: f32,
+
+        /// Upmixer height gain (0.0-2.0)
+        #[arg(long = "upmixer-height-gain", default_value = "1.0")]
+        upmixer_height_gain: f32,
+
+        /// Upmixer LFE gain (0.0-2.0)
+        #[arg(long = "upmixer-lfe-gain", default_value = "1.0")]
+        upmixer_lfe_gain: f32,
+
         /// Enable Upmixer Sub-Harmonic Synthesizer (adds low-end impact)
         #[arg(long = "upmixer-subharmonic", default_value_t = false)]
         upmixer_subharmonic: bool,
@@ -274,6 +310,18 @@ enum Commands {
         /// Upmixer Sub-Harmonic Synthesizer gain (0.0-1.0)
         #[arg(long = "upmixer-subharmonic-gain", default_value = "0.5")]
         upmixer_subharmonic_gain: f32,
+
+        /// Enable Upmixer high-resolution direct path
+        #[arg(long = "upmixer-hr-direct", default_value_t = false)]
+        upmixer_hr_direct: bool,
+
+        /// Upmixer HR Sharpen depth (0.0-1.0)
+        #[arg(long = "upmixer-hr-sharpen", default_value = "1.0")]
+        upmixer_hr_sharpen: f32,
+
+        /// Upmixer safety cap in dB (0.0-12.0, 3.0 = default safety)
+        #[arg(long = "upmixer-safety-cap-db", default_value = "3.0")]
+        upmixer_safety_cap_db: f32,
 
         /// Enable binaural decoder (converts multi-channel to binaural stereo using HRTFs)
         #[arg(long = "binaural", default_value_t = false)]
@@ -357,8 +405,16 @@ fn main() {
             upmixer_gain_front_direct,
             upmixer_gain_front_ambient,
             upmixer_gain_rear_ambient,
+            upmixer_lfe_cutoff_hz,
+            upmixer_stereo_width,
+            upmixer_bandpass_hz,
+            upmixer_height_gain,
+            upmixer_lfe_gain,
             upmixer_subharmonic,
             upmixer_subharmonic_gain,
+            upmixer_hr_direct,
+            upmixer_hr_sharpen,
+            upmixer_safety_cap_db,
             binaural,
             sofa_file,
             binaural_fft_size,
@@ -399,8 +455,16 @@ fn main() {
                 upmixer_gain_front_direct,
                 upmixer_gain_front_ambient,
                 upmixer_gain_rear_ambient,
+                upmixer_lfe_cutoff_hz,
+                upmixer_stereo_width,
+                upmixer_bandpass_hz,
+                upmixer_height_gain,
+                upmixer_lfe_gain,
                 upmixer_subharmonic,
                 upmixer_subharmonic_gain,
+                upmixer_hr_direct,
+                upmixer_hr_sharpen,
+                upmixer_safety_cap_db,
                 binaural,
                 sofa_file,
                 binaural_fft_size,
@@ -713,8 +777,16 @@ fn play_stream(
     upmixer_gain_front_direct: f32,
     upmixer_gain_front_ambient: f32,
     upmixer_gain_rear_ambient: f32,
+    upmixer_lfe_cutoff_hz: f32,
+    upmixer_stereo_width: f32,
+    upmixer_bandpass_hz: f32,
+    upmixer_height_gain: f32,
+    upmixer_lfe_gain: f32,
     enable_subharmonic_synth: bool,
     subharmonic_gain: f32,
+    enable_hr_direct: bool,
+    hr_sharpen: f32,
+    safety_cap_db: f32,
     binaural: bool,
     sofa_file: Option<PathBuf>,
     binaural_fft_size: usize,
@@ -785,6 +857,17 @@ fn play_stream(
         log::info!("  Front direct gain: {:.2}", upmixer_gain_front_direct);
         log::info!("  Front ambient gain: {:.2}", upmixer_gain_front_ambient);
         log::info!("  Rear ambient gain: {:.2}", upmixer_gain_rear_ambient);
+        log::info!("  LFE cutoff: {:.1} Hz", upmixer_lfe_cutoff_hz);
+        log::info!("  Stereo width: {:.2}", upmixer_stereo_width);
+        log::info!("  Bandpass: {:.1} Hz", upmixer_bandpass_hz);
+        log::info!("  Height gain: {:.2}", upmixer_height_gain);
+        log::info!("  LFE gain: {:.2}", upmixer_lfe_gain);
+        log::info!(
+            "  HR direct: {} (sharpen {:.2}, safety cap {:.1} dB)",
+            enable_hr_direct,
+            hr_sharpen,
+            safety_cap_db
+        );
         log::info!("");
 
         let upmixer_plugin = create_upmixer_plugin_config(
@@ -793,8 +876,16 @@ fn play_stream(
             upmixer_gain_front_direct,
             upmixer_gain_front_ambient,
             upmixer_gain_rear_ambient,
+            upmixer_lfe_cutoff_hz,
+            upmixer_stereo_width,
+            upmixer_bandpass_hz,
+            upmixer_height_gain,
+            upmixer_lfe_gain,
             enable_subharmonic_synth,
             subharmonic_gain,
+            enable_hr_direct,
+            hr_sharpen,
+            safety_cap_db,
         )?;
         plugins.push(upmixer_plugin);
         log::debug!(

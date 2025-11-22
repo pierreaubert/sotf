@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::path::PathBuf;
 
 use ndarray::Array1;
 use reqwest;
@@ -10,10 +9,9 @@ use urlencoding;
 
 use crate::Curve;
 use crate::cea2034 as score;
-use crate::read::directory::{measurement_filename, sanitize_dir_name};
+use crate::read::directory::{data_dir_for, measurement_filename};
 use crate::read::interpolate::interpolate;
 use crate::read::plot::{normalize_plotly_json_from_str, normalize_plotly_value_with_suggestions};
-use autoeq_env::DATA_CACHED;
 
 /// Fetch a frequency response curve from the spinorama API
 ///
@@ -50,9 +48,9 @@ pub async fn fetch_measurement_plot_data(
     version: &str,
     measurement: &str,
 ) -> Result<Value, Box<dyn Error>> {
-    // 1) Try local cache first: data/{sanitized_speaker}/{measurement}.json
+    // 1) Try local cache first: data_cached/speakers/org.spinorama/{speaker}/{measurement}.json
     // We keep filename identical to measurement name when possible (with path separators replaced).
-    let cache_dir = PathBuf::from(DATA_CACHED).join(sanitize_dir_name(speaker));
+    let cache_dir = data_dir_for(speaker);
     let cache_file = cache_dir.join(measurement_filename(measurement));
 
     if let Ok(content) = fs::read_to_string(&cache_file).await {

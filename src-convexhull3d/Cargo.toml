@@ -18,3 +18,4 @@ log = "0.4"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+autoeq-env = { path = "../src-env" }
