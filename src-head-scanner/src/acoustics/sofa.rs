@@ -94,7 +94,7 @@ impl SOFAWriter {
 
         // Create HDF5 file
         let file = File::create(&self.file_path)
-            .map_err(|e| ScannerError::Io(format!("Failed to create SOFA file: {}", e)))?;
+            .map_err(|e| ScannerError::IoError(format!("Failed to create SOFA file: {}", e)))?;
 
         // Write global attributes (required by SOFA)
         self.write_global_attributes(&file)?;
@@ -113,13 +113,14 @@ impl SOFAWriter {
 
         // Write timestamps
         let now = Utc::now();
+        let date_str: hdf5::types::VarLenUnicode = now.format("%Y-%m-%d %H:%M:%S").to_string().into();
         file.new_attr::<hdf5::types::VarLenUnicode>()
             .create("DateCreated")?
-            .write_scalar(&now.format("%Y-%m-%d %H:%M:%S").to_string().into())?;
+            .write_scalar(&date_str)?;
 
         file.new_attr::<hdf5::types::VarLenUnicode>()
             .create("DateModified")?
-            .write_scalar(&now.format("%Y-%m-%d %H:%M:%S").to_string().into())?;
+            .write_scalar(&date_str)?;
 
         log::info!("✓ SOFA file written successfully: {}", self.file_path);
         Ok(())
@@ -130,49 +131,60 @@ impl SOFAWriter {
         use hdf5::types::VarLenUnicode;
 
         // SOFA version and conventions
+        let conventions: VarLenUnicode = "SOFA".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("Conventions")?
-            .write_scalar(&"SOFA".to_string().into())?;
+            .write_scalar(&conventions)?;
 
+        let version_val: VarLenUnicode = "1.0".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("Version")?
-            .write_scalar(&"1.0".to_string().into())?;
+            .write_scalar(&version_val)?;
 
+        let sofa_conventions: VarLenUnicode = "SimpleFreeFieldHRIR".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("SOFAConventions")?
-            .write_scalar(&"SimpleFreeFieldHRIR".to_string().into())?;
+            .write_scalar(&sofa_conventions)?;
 
+        let sofa_version: VarLenUnicode = "1.0".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("SOFAConventionsVersion")?
-            .write_scalar(&"1.0".to_string().into())?;
+            .write_scalar(&sofa_version)?;
 
+        let data_type: VarLenUnicode = "FIR".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("DataType")?
-            .write_scalar(&"FIR".to_string().into())?;
+            .write_scalar(&data_type)?;
 
+        let room_type: VarLenUnicode = "free field".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("RoomType")?
-            .write_scalar(&"free field".to_string().into())?;
+            .write_scalar(&room_type)?;
 
+        let title: VarLenUnicode = "HRTF generated from 3D head scan".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("Title")?
-            .write_scalar(&"HRTF generated from 3D head scan".to_string().into())?;
+            .write_scalar(&title)?;
 
+        let organization: VarLenUnicode = "Head Scanner".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("Organization")?
-            .write_scalar(&"Head Scanner".to_string().into())?;
+            .write_scalar(&organization)?;
 
+        let app_name: VarLenUnicode = "head-scanner".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("ApplicationName")?
-            .write_scalar(&"head-scanner".to_string().into())?;
+            .write_scalar(&app_name)?;
 
+        let version: VarLenUnicode = env!("CARGO_PKG_VERSION").to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("ApplicationVersion")?
-            .write_scalar(env!("CARGO_PKG_VERSION"))?;
+            .write_scalar(&version)?;
 
+        let comment: VarLenUnicode = "Generated using analytical Woodworth-Schlosberg model".to_string().into();
         file.new_attr::<VarLenUnicode>()
             .create("Comment")?
-            .write_scalar(&"Generated using analytical Woodworth-Schlosberg model".to_string().into())?;
+            .write_scalar(&comment)?;
 
         Ok(())
     }
@@ -193,15 +205,17 @@ impl SOFAWriter {
             model.head_center.z / 100.0,
         ]])?;
 
+        let type_val: VarLenUnicode = "cartesian".to_string().into();
         listener_position
             .new_attr::<VarLenUnicode>()
             .create("Type")?
-            .write_scalar(&"cartesian".to_string().into())?;
+            .write_scalar(&type_val)?;
 
+        let units_val: VarLenUnicode = "metre".to_string().into();
         listener_position
             .new_attr::<VarLenUnicode>()
             .create("Units")?
-            .write_scalar(&"metre".to_string().into())?;
+            .write_scalar(&units_val)?;
 
         // ListenerView [1 x 3]: listener's viewing direction (0, 0, 1) = looking forward
         let listener_view = file
@@ -211,15 +225,17 @@ impl SOFAWriter {
 
         listener_view.write(&arr2![[0.0, 0.0, 1.0]])?;
 
+        let type_val2: VarLenUnicode = "cartesian".to_string().into();
         listener_view
             .new_attr::<VarLenUnicode>()
             .create("Type")?
-            .write_scalar(&"cartesian".to_string().into())?;
+            .write_scalar(&type_val2)?;
 
+        let units_val2: VarLenUnicode = "metre".to_string().into();
         listener_view
             .new_attr::<VarLenUnicode>()
             .create("Units")?
-            .write_scalar(&"metre".to_string().into())?;
+            .write_scalar(&units_val2)?;
 
         // ListenerUp [1 x 3]: listener's up direction (0, 1, 0)
         let listener_up = file
@@ -229,15 +245,17 @@ impl SOFAWriter {
 
         listener_up.write(&arr2![[0.0, 1.0, 0.0]])?;
 
+        let type_val3: VarLenUnicode = "cartesian".to_string().into();
         listener_up
             .new_attr::<VarLenUnicode>()
             .create("Type")?
-            .write_scalar(&"cartesian".to_string().into())?;
+            .write_scalar(&type_val3)?;
 
+        let units_val3: VarLenUnicode = "metre".to_string().into();
         listener_up
             .new_attr::<VarLenUnicode>()
             .create("Units")?
-            .write_scalar(&"metre".to_string().into())?;
+            .write_scalar(&units_val3)?;
 
         Ok(())
     }
@@ -263,15 +281,17 @@ impl SOFAWriter {
 
         source_position.write_raw(&pos_array)?;
 
+        let type_val: VarLenUnicode = "cartesian".to_string().into();
         source_position
             .new_attr::<VarLenUnicode>()
             .create("Type")?
-            .write_scalar(&"cartesian".to_string().into())?;
+            .write_scalar(&type_val)?;
 
+        let units_val: VarLenUnicode = "metre".to_string().into();
         source_position
             .new_attr::<VarLenUnicode>()
             .create("Units")?
-            .write_scalar(&"metre".to_string().into())?;
+            .write_scalar(&units_val)?;
 
         Ok(())
     }
@@ -309,15 +329,17 @@ impl SOFAWriter {
 
         receiver_positions.write_raw(&pos_data)?;
 
+        let type_val: VarLenUnicode = "cartesian".to_string().into();
         receiver_positions
             .new_attr::<VarLenUnicode>()
             .create("Type")?
-            .write_scalar(&"cartesian".to_string().into())?;
+            .write_scalar(&type_val)?;
 
+        let units_val: VarLenUnicode = "metre".to_string().into();
         receiver_positions
             .new_attr::<VarLenUnicode>()
             .create("Units")?
-            .write_scalar(&"metre".to_string().into())?;
+            .write_scalar(&units_val)?;
 
         Ok(())
     }
@@ -358,10 +380,11 @@ impl SOFAWriter {
             .create("SamplingRate")?
             .write_scalar(&sampling_rate)?;
 
+        let units: hdf5::types::VarLenUnicode = "hertz".to_string().into();
         data_group
             .new_attr::<hdf5::types::VarLenUnicode>()
             .create("SamplingRate:Units")?
-            .write_scalar(&"hertz".to_string().into())?;
+            .write_scalar(&units)?;
 
         // Data.Delay [M x R]: per-source, per-receiver delay (all zeros for us)
         let delay_dataset = data_group

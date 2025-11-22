@@ -2172,7 +2172,7 @@ mod tests {
     }
 
     fn create_test_app_with_directories(num_dirs: usize) -> App {
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         for i in 0..num_dirs {
             app.library
                 .directories
@@ -2256,7 +2256,7 @@ mod tests {
 
     #[test]
     fn test_navigation_with_empty_directories() {
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         assert_eq!(app.selected_directory_index, 0);
 
         // Should not crash with empty directories
@@ -2365,7 +2365,7 @@ mod tests {
 
     #[test]
     fn test_next_track_removes_finished_album_and_advances() {
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
 
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
@@ -2400,7 +2400,7 @@ mod tests {
 
     #[test]
     fn test_adjust_eq_parameters() {
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         app.plugin_chain.add_plugin(&PluginType::EQ);
         app.editing_plugin_index = Some(0);
 
@@ -2459,7 +2459,7 @@ mod tests {
 
     #[test]
     fn test_adjust_upmixer_parameters() {
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         app.plugin_chain.add_plugin(&PluginType::Upmixer);
         app.editing_plugin_index = Some(0);
 
@@ -2546,7 +2546,7 @@ mod tests {
     #[test]
     fn test_adjust_compressor_limiter_gate_loudness_parameters() {
         // Compressor
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         app.plugin_chain.add_plugin(&PluginType::Compressor);
         app.editing_plugin_index = Some(0);
 
@@ -2621,7 +2621,7 @@ mod tests {
         }
 
         // Limiter
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         app.plugin_chain.add_plugin(&PluginType::Limiter);
         app.editing_plugin_index = Some(0);
         let plugin = app.plugin_chain.get_plugin(0).unwrap();
@@ -2650,7 +2650,7 @@ mod tests {
         }
 
         // Gate
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         app.plugin_chain.add_plugin(&PluginType::Gate);
         app.editing_plugin_index = Some(0);
         let plugin = app.plugin_chain.get_plugin(0).unwrap();
@@ -2700,7 +2700,7 @@ mod tests {
         }
 
         // Loudness compensation
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         app.plugin_chain
             .add_plugin(&PluginType::LoudnessCompensation);
         app.editing_plugin_index = Some(0);
@@ -2732,7 +2732,7 @@ mod tests {
 
     #[test]
     fn test_adjust_binaural_decoder_parameters_and_set_sofa() {
-        let mut app = App::new();
+        let mut app = App::new(Theme::default());
         app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
         app.editing_plugin_index = Some(0);
         app.selected_plugin_index = 0;

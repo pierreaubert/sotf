@@ -142,25 +142,36 @@ impl Scanner {
         // In a full implementation, this would use Poisson reconstruction or
         // other surface reconstruction algorithms
 
-        let mut mesh = Mesh::new();
+        // Collect all points as vertices
+        let mut vertices: Vec<crate::mesh::Vertex> = Vec::new();
 
-        // Add all points as vertices
-        for point in self.point_cloud.points() {
-            mesh.add_vertex(point.position, point.normal, point.color);
-        }
-
-        // If we have enough points, estimate normals
+        // If we have enough points, estimate normals first
         if self.point_cloud.len() >= 10 {
             // Create a temporary mutable copy for normal estimation
             let mut temp_cloud = self.point_cloud.clone();
             temp_cloud.estimate_normals(10);
 
-            // Update mesh vertices with estimated normals
-            mesh = Mesh::new();
+            // Collect vertices with estimated normals
             for point in temp_cloud.points() {
-                mesh.add_vertex(point.position, point.normal, point.color);
+                vertices.push(
+                    crate::mesh::Vertex::from_point(point.position)
+                        .with_normal(point.normal)
+                        .with_color(point.color)
+                );
+            }
+        } else {
+            // Collect vertices without normal estimation
+            for point in self.point_cloud.points() {
+                vertices.push(
+                    crate::mesh::Vertex::from_point(point.position)
+                        .with_normal(point.normal)
+                        .with_color(point.color)
+                );
             }
         }
+
+        // Create mesh from collected vertices (no triangles yet)
+        let mesh = Mesh::from_parts(vertices, Vec::new());
 
         // TODO: Implement actual surface reconstruction
         // For now, we just return the vertices without connectivity

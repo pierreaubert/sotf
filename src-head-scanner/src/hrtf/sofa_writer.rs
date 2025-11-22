@@ -203,14 +203,14 @@ impl SofaWriter {
         self.write_global_attributes(&mut file)?;
 
         // Define dimensions
-        let m_dim = file.add_dimension("M", num_measurements)?;
-        let r_dim = file.add_dimension("R", num_receivers)?;
-        let n_dim = file.add_dimension("N", num_samples)?;
-        let c_dim = file.add_dimension("C", 3)?;
-        let e_dim = file.add_dimension("E", 1)?;
+        file.add_dimension("M", num_measurements)?;
+        file.add_dimension("R", num_receivers)?;
+        file.add_dimension("N", num_samples)?;
+        file.add_dimension("C", 3)?;
+        file.add_dimension("E", 1)?;
 
-        // Write Data group variables
-        self.write_data_vars_hrir(&mut file, hrir_data, &m_dim, &r_dim, &n_dim)?;
+        // Write Data group variables (dimensions will be looked up by name)
+        self.write_data_vars_hrir(&mut file, hrir_data)?;
 
         // Write position variables
         self.write_position_vars(
@@ -218,9 +218,6 @@ impl SofaWriter {
             source_positions,
             num_measurements,
             num_receivers,
-            &m_dim,
-            &r_dim,
-            &c_dim,
         )?;
 
         Ok(())
@@ -276,9 +273,6 @@ impl SofaWriter {
         &self,
         file: &mut netcdf::FileMut,
         hrir_data: &HrirData,
-        m_dim: &netcdf::Dimension,
-        r_dim: &netcdf::Dimension,
-        n_dim: &netcdf::Dimension,
     ) -> Result<()> {
         let num_points = hrir_data.num_points();
         let num_samples = hrir_data.num_samples();
@@ -300,20 +294,20 @@ impl SofaWriter {
 
         // Write Data.IR
         let mut ir_var = file
-            .add_variable::<f64>("Data.IR", &[m_dim, r_dim, n_dim])?;
+            .add_variable::<f64>("Data.IR", &["M", "R", "N"])?;
         ir_var.put_values(&ir_data.into_raw_vec(), ..)?;
         ir_var.put_attribute("Units", "")?; // Dimensionless
 
         // Write Data.SamplingRate
         let mut sr_var = file.add_variable::<f64>("Data.SamplingRate", &[])?;
-        sr_var.put_value(hrir_data.sample_rate, None)?;
+        sr_var.put_values(&[hrir_data.sample_rate], ..)?;
         sr_var.put_attribute("Units", "hertz")?;
 
         // Write Data.Delay [M, R] (all zeros for now)
         let delay_data = Array2::<f64>::zeros((num_points, 2));
         let mut delay_var = file
-            .add_variable::<f64>("Data.Delay", &[m_dim, r_dim])?;
-        delay_var.put_values(&delay_data.into_raw_vec(), .., ..)?;
+            .add_variable::<f64>("Data.Delay", &["M", "R"])?;
+        delay_var.put_values(&delay_data.into_raw_vec(), ..)?;
         delay_var.put_attribute("Units", "samples")?;
 
         Ok(())
@@ -326,9 +320,6 @@ impl SofaWriter {
         source_positions: &Array2<f64>,
         num_measurements: usize,
         num_receivers: usize,
-        m_dim: &netcdf::Dimension,
-        r_dim: &netcdf::Dimension,
-        c_dim: &netcdf::Dimension,
     ) -> Result<()> {
         let coord_type = self.coordinate_system.as_str();
         let coord_units = self.coordinate_system.units();
@@ -354,8 +345,8 @@ impl SofaWriter {
 
         // Write SourcePosition
         let mut src_var = file
-            .add_variable::<f64>("SourcePosition", &[m_dim, c_dim])?;
-        src_var.put_values(&source_pos.into_raw_vec(), .., ..)?;
+            .add_variable::<f64>("SourcePosition", &["M", "C"])?;
+        src_var.put_values(&source_pos.into_raw_vec(), ..)?;
         src_var.put_attribute("Type", coord_type)?;
         src_var.put_attribute("Units", coord_units)?;
 
@@ -371,16 +362,16 @@ impl SofaWriter {
         };
 
         let mut rcv_var = file
-            .add_variable::<f64>("ReceiverPosition", &[r_dim, c_dim])?;
-        rcv_var.put_values(&receiver_pos.into_raw_vec(), .., ..)?;
+            .add_variable::<f64>("ReceiverPosition", &["R", "C"])?;
+        rcv_var.put_values(&receiver_pos.into_raw_vec(), ..)?;
         rcv_var.put_attribute("Type", coord_type)?;
         rcv_var.put_attribute("Units", coord_units)?;
 
         // Write ListenerPosition (all at origin)
         let listener_pos = Array2::<f64>::zeros((num_measurements, 3));
         let mut lst_var = file
-            .add_variable::<f64>("ListenerPosition", &[m_dim, c_dim])?;
-        lst_var.put_values(&listener_pos.into_raw_vec(), .., ..)?;
+            .add_variable::<f64>("ListenerPosition", &["M", "C"])?;
+        lst_var.put_values(&listener_pos.into_raw_vec(), ..)?;
         lst_var.put_attribute("Type", coord_type)?;
         lst_var.put_attribute("Units", coord_units)?;
 
@@ -393,8 +384,8 @@ impl SofaWriter {
         let listener_view = Array2::from_shape_fn((num_measurements, 3), |(_, j)| view_dir[j]);
 
         let mut view_var = file
-            .add_variable::<f64>("ListenerView", &[m_dim, c_dim])?;
-        view_var.put_values(&listener_view.into_raw_vec(), .., ..)?;
+            .add_variable::<f64>("ListenerView", &["M", "C"])?;
+        view_var.put_values(&listener_view.into_raw_vec(), ..)?;
         view_var.put_attribute("Type", coord_type)?;
         view_var.put_attribute("Units", coord_units)?;
 
@@ -407,8 +398,8 @@ impl SofaWriter {
         let listener_up = Array2::from_shape_fn((num_measurements, 3), |(_, j)| up_dir[j]);
 
         let mut up_var = file
-            .add_variable::<f64>("ListenerUp", &[m_dim, c_dim])?;
-        up_var.put_values(&listener_up.into_raw_vec(), .., ..)?;
+            .add_variable::<f64>("ListenerUp", &["M", "C"])?;
+        up_var.put_values(&listener_up.into_raw_vec(), ..)?;
         up_var.put_attribute("Type", coord_type)?;
         up_var.put_attribute("Units", coord_units)?;
 

@@ -245,7 +245,7 @@ pub fn generate_sofa_bem(
 
     // Create work directory
     std::fs::create_dir_all(work_dir)
-        .map_err(|e| crate::error::ScannerError::Io(format!("Failed to create work dir: {}", e)))?;
+        .map_err(|e| crate::error::ScannerError::IoError(format!("Failed to create work dir: {}", e)))?;
 
     // Step 1: Create acoustic model
     log::info!("Step 1/5: Analyzing head geometry...");
@@ -270,7 +270,7 @@ pub fn generate_sofa_bem(
     log::info!("Step 4/5: Running BEM simulation (this will take hours)...");
     let output_dir = work_dir.join("bem_output");
     std::fs::create_dir_all(&output_dir)
-        .map_err(|e| crate::error::ScannerError::Io(format!("Failed to create output dir: {}", e)))?;
+        .map_err(|e| crate::error::ScannerError::IoError(format!("Failed to create output dir: {}", e)))?;
 
     bem_solver.run_bem_simulation(&mesh_path, &config_path, &output_dir)?;
 

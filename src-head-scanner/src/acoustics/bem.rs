@@ -130,7 +130,7 @@ impl BEMSolver {
         let config_content = self.create_mesh2hrtf_config(model, source_positions);
 
         std::fs::write(output_path, config_content)
-            .map_err(|e| ScannerError::Io(format!("Failed to write BEM config: {}", e)))?;
+            .map_err(|e| ScannerError::IoError(format!("Failed to write BEM config: {}", e)))?;
 
         log::info!("✓ BEM configuration generated");
         Ok(())
@@ -227,7 +227,7 @@ impl BEMSolver {
             .arg(output_dir)
             .output()
             .map_err(|e| {
-                ScannerError::Io(format!("Failed to execute BEM solver: {}", e))
+                ScannerError::IoError(format!("Failed to execute BEM solver: {}", e))
             })?;
 
         if !output.status.success() {

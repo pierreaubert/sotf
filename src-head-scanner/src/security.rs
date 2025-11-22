@@ -84,12 +84,12 @@ pub fn validate_path(path: &str, base_dir: Option<&Path>) -> ScannerResult<PathB
 
         // Canonicalize to resolve symlinks and .. components
         let canonical = full_path.canonicalize().map_err(|e| {
-            ScannerError::Io(format!("Failed to canonicalize path: {}", e))
+            ScannerError::IoError(format!("Failed to canonicalize path: {}", e))
         })?;
 
         // Canonicalize base directory
         let canonical_base = base.canonicalize().map_err(|e| {
-            ScannerError::Io(format!("Failed to canonicalize base directory: {}", e))
+            ScannerError::IoError(format!("Failed to canonicalize base directory: {}", e))
         })?;
 
         // Ensure the canonical path is within the base directory
@@ -105,7 +105,7 @@ pub fn validate_path(path: &str, base_dir: Option<&Path>) -> ScannerResult<PathB
     } else {
         // No base directory specified - just canonicalize and return
         path_obj.canonicalize().map_err(|e| {
-            ScannerError::Io(format!("Invalid path: {}", e))
+            ScannerError::IoError(format!("Invalid path: {}", e))
         })
     }
 }
@@ -169,19 +169,19 @@ pub fn validate_export_path(path: &str, base_dir: Option<&Path>) -> ScannerResul
     // If parent doesn't exist, try to create it (optional - may want to require it exists)
     if !parent.exists() {
         std::fs::create_dir_all(parent).map_err(|e| {
-            ScannerError::Io(format!("Failed to create parent directory: {}", e))
+            ScannerError::IoError(format!("Failed to create parent directory: {}", e))
         })?;
     }
 
     // Canonicalize parent to prevent symlink attacks
     let canonical_parent = parent.canonicalize().map_err(|e| {
-        ScannerError::Io(format!("Failed to canonicalize parent directory: {}", e))
+        ScannerError::IoError(format!("Failed to canonicalize parent directory: {}", e))
     })?;
 
     // If base directory specified, ensure parent is within it
     if let Some(base) = base_dir {
         let canonical_base = base.canonicalize().map_err(|e| {
-            ScannerError::Io(format!("Failed to canonicalize base directory: {}", e))
+            ScannerError::IoError(format!("Failed to canonicalize base directory: {}", e))
         })?;
 
         if !canonical_parent.starts_with(&canonical_base) {
@@ -238,7 +238,7 @@ pub fn validate_model_path(path: &str, allowed_model_dirs: &[PathBuf]) -> Scanne
 
     // Canonicalize to resolve symlinks
     let canonical = path_obj.canonicalize().map_err(|e| {
-        ScannerError::Io(format!("Failed to canonicalize model path: {}", e))
+        ScannerError::IoError(format!("Failed to canonicalize model path: {}", e))
     })?;
 
     // If allowed directories specified, check the path is within one of them
@@ -247,7 +247,7 @@ pub fn validate_model_path(path: &str, allowed_model_dirs: &[PathBuf]) -> Scanne
 
         for base_dir in allowed_model_dirs {
             let canonical_base = base_dir.canonicalize().map_err(|e| {
-                ScannerError::Io(format!("Failed to canonicalize base directory: {}", e))
+                ScannerError::IoError(format!("Failed to canonicalize base directory: {}", e))
             })?;
 
             if canonical.starts_with(&canonical_base) {
