@@ -3,7 +3,7 @@ use crate::plugins::{PluginSettings, PluginType};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
@@ -226,7 +226,7 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     let sotf_title = Paragraph::new("SotF")
         .style(
             Style::default()
-                .fg(Color::Green)
+                .fg(app.theme.border_color)
                 .add_modifier(Modifier::BOLD),
         )
         .alignment(Alignment::Left)
@@ -245,7 +245,7 @@ fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let device_widget = Paragraph::new(device_text)
-        .style(Style::default().fg(Color::Green))
+        .style(Style::default().fg(app.theme.border_color))
         .alignment(Alignment::Center)
         .block(
             Block::default()
@@ -275,11 +275,11 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
         // Box with screen label
         let style = if is_active {
             Style::default()
-                .fg(Color::Green)
-                .bg(Color::Black)
+                .fg(app.theme.border_color)
+                .bg(app.theme.bg_primary)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::White).bg(Color::Black)
+            Style::default().fg(app.theme.fg_primary).bg(app.theme.bg_primary)
         };
 
         if is_active {
@@ -324,7 +324,7 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     use crate::app::{ChannelFilter, LibrarySortOrder};
 
     let input_style = if app.input_mode == InputMode::Search {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(app.theme.title_color)
     } else {
         Style::default()
     };
@@ -374,9 +374,9 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     let suffix = format!(" [c/5-9]{})", counts_str);
     let title_spans = vec![
         Span::raw("Search Albums ('/' search | Sort: "),
-        Span::styled(sort_order_str, Style::default().fg(Color::Green)),
+        Span::styled(sort_order_str, Style::default().fg(app.theme.border_color)),
         Span::raw(" [s/1-4] | Filter: "),
-        Span::styled(&filter_str, Style::default().fg(Color::Green)),
+        Span::styled(&filter_str, Style::default().fg(app.theme.border_color)),
         Span::raw(suffix),
     ];
     let title = Line::from(title_spans);
@@ -417,8 +417,8 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
 
                     let style = if i == app.selected_album_index {
                         Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::White)
+                            .fg(app.theme.fg_selected)
+                            .bg(app.theme.bg_selected)
                             .add_modifier(Modifier::BOLD)
                     } else {
                         Style::default()
@@ -434,8 +434,8 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 )))
                 .highlight_style(
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::White)
+                        .fg(app.theme.fg_selected)
+                        .bg(app.theme.bg_selected)
                         .add_modifier(Modifier::BOLD),
                 );
 
@@ -459,10 +459,10 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                             let truncated_name = truncate_with_ellipsis(&cleaned_name, 95);
                             let content = format!("{}{}", prefix, truncated_name);
                             let mut style = Style::default()
-                                .fg(Color::Cyan)
+                                .fg(app.theme.accent_primary)
                                 .add_modifier(Modifier::BOLD);
                             if i == app.selected_tree_index {
-                                style = style.bg(Color::DarkGray);
+                                style = style.bg(app.theme.bg_highlight);
                             }
                             (content, style)
                         }
@@ -476,8 +476,8 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                                 let mut style = Style::default();
                                 if i == app.selected_tree_index {
                                     style = Style::default()
-                                        .fg(Color::Black)
-                                        .bg(Color::White)
+                                        .fg(app.theme.fg_selected)
+                                        .bg(app.theme.bg_selected)
                                         .add_modifier(Modifier::BOLD);
                                 }
                                 (content, style)
@@ -497,8 +497,8 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 )))
                 .highlight_style(
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::White)
+                        .fg(app.theme.fg_selected)
+                        .bg(app.theme.bg_selected)
                         .add_modifier(Modifier::BOLD),
                 );
 
@@ -530,7 +530,7 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 
     // Input box for adding directories
     let input_style = if app.input_mode == InputMode::AddDirectory {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(app.theme.title_color)
     } else {
         Style::default()
     };
@@ -559,11 +559,11 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
             .map(|(i, suggestion)| {
                 let style = if i == app.autocomplete_index {
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
+                        .fg(app.theme.fg_selected)
+                        .bg(app.theme.accent_primary)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::Gray)
+                    Style::default().fg(app.theme.fg_secondary)
                 };
                 ListItem::new(suggestion.as_str()).style(style)
             })
@@ -668,12 +668,12 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 
             let style = if i == app.selected_directory_index {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::White)
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else if *level == 0 {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -704,8 +704,8 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         .block(Block::default().borders(Borders::ALL).title(title))
         .highlight_style(
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::White)
+                .fg(app.theme.fg_selected)
+                .bg(app.theme.bg_selected)
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -744,11 +744,11 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
         let mut style = Style::default();
         if is_selected {
             style = style
-                .fg(Color::Black)
-                .bg(Color::White)
+                .fg(app.theme.fg_selected)
+                .bg(app.theme.bg_selected)
                 .add_modifier(Modifier::BOLD);
         } else if is_current {
-            style = style.fg(Color::Green).add_modifier(Modifier::BOLD);
+            style = style.fg(app.theme.playing_indicator).add_modifier(Modifier::BOLD);
         }
 
         items.push(ListItem::new(content).style(style));
@@ -783,10 +783,10 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
 
                 let track_style = if is_current_track {
                     Style::default()
-                        .fg(Color::Cyan)
+                        .fg(app.theme.current_track)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(Color::DarkGray)
+                    Style::default().fg(app.theme.fg_muted)
                 };
 
                 items.push(ListItem::new(track_content).style(track_style));
@@ -841,13 +841,13 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
 
             let style = if i == app.selected_plugin_index {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::White)
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else if plugin.enabled {
-                Style::default().fg(Color::Green)
+                Style::default().fg(app.theme.accent_success)
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(app.theme.fg_muted)
             };
 
             ListItem::new(content).style(style)
@@ -879,13 +879,13 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(list, area);
 }
 
-fn draw_available_plugins(f: &mut Frame, area: Rect, _app: &App) {
+fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
     let plugins = PluginType::all();
     let items: Vec<ListItem> = plugins
         .iter()
         .map(|plugin_type| {
             let content = format!("{}\n  {}", plugin_type.name(), plugin_type.description());
-            ListItem::new(content).style(Style::default().fg(Color::Cyan))
+            ListItem::new(content).style(Style::default().fg(app.theme.accent_primary))
         })
         .collect();
 
@@ -910,7 +910,7 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     // Info box
     let info_text = "Select output device with ↑/↓, press Enter or Space to apply";
     let info = Paragraph::new(info_text)
-        .style(Style::default().fg(Color::Yellow))
+        .style(Style::default().fg(app.theme.title_color))
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL).title("Help"));
 
@@ -943,11 +943,11 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
 
             let style = if i == app.selected_output_device_index {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::White)
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else if device.is_default {
-                Style::default().fg(Color::Green)
+                Style::default().fg(app.theme.accent_success)
             } else {
                 Style::default()
             };
@@ -1010,21 +1010,21 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 Span::raw("M: "),
                 Span::styled(
                     format!("{} LUFS", momentary),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(app.theme.title_color),
                 ),
             ]),
             Line::from(vec![
                 Span::raw("S: "),
                 Span::styled(
                     format!("{} LUFS", shortterm),
-                    Style::default().fg(Color::Yellow),
+                    Style::default().fg(app.theme.title_color),
                 ),
             ]),
             Line::from(vec![
                 Span::raw("Pk: "),
                 Span::styled(
                     format!("{:>5.1} dBFS", peak_db),
-                    Style::default().fg(Color::Red),
+                    Style::default().fg(app.theme.accent_error),
                 ),
             ]),
         ]
@@ -1110,11 +1110,11 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                 // Color based on level (top = red, middle = yellow, bottom = green)
                 let level_ratio = row_idx as f64 / meter_height as f64;
                 let color = if level_ratio > 0.95 {
-                    Color::Red
+                    app.theme.accent_error
                 } else if level_ratio > 0.90 {
-                    Color::Yellow
+                    app.theme.accent_warning
                 } else {
-                    Color::Green
+                    app.theme.accent_success
                 };
 
                 if is_filled {
@@ -1126,7 +1126,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                     let bar = "░".repeat(ch_width.saturating_sub(1) as usize);
                     meter_lines.push(Line::from(Span::styled(
                         bar,
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(app.theme.fg_muted),
                     )));
                 }
             }
@@ -1158,7 +1158,7 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
 
             f.render_widget(
                 Paragraph::new(label)
-                    .style(Style::default().fg(Color::Cyan))
+                    .style(Style::default().fg(app.theme.accent_primary))
                     .alignment(Alignment::Center),
                 Rect {
                     x: ch_x,
@@ -1213,11 +1213,11 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                     };
 
                     let color = if db >= -6 {
-                        Color::Red
+                        app.theme.accent_error
                     } else if db >= -20 {
-                        Color::Yellow
+                        app.theme.accent_warning
                     } else {
-                        Color::DarkGray
+                        app.theme.fg_muted
                     };
 
                     f.render_widget(
@@ -1245,7 +1245,7 @@ fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
     let text = Line::from(vec![Span::styled(
         format!("{}%", volume_pct),
         Style::default()
-            .fg(Color::Cyan)
+            .fg(app.theme.accent_primary)
             .add_modifier(Modifier::BOLD),
     )]);
 
@@ -1279,7 +1279,7 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
             status_spans.push(Span::styled(
                 format!("{} | ", truncated_msg),
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(app.theme.title_color)
                     .add_modifier(Modifier::BOLD),
             ));
         }
@@ -1298,7 +1298,7 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         let track_name = truncate_with_ellipsis(&cleaned_track_name, 50);
         status_spans.push(Span::styled(
             format!("Now: {}", track_name),
-            Style::default().fg(Color::Green),
+            Style::default().fg(app.theme.playing_indicator),
         ));
         status_spans.push(Span::raw(" | "));
     }
@@ -1306,27 +1306,27 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     if !app.plugin_chain.is_empty() {
         status_spans.push(Span::styled(
             format!("Plugins: {} ", app.plugin_chain.len()),
-            Style::default().fg(Color::Magenta),
+            Style::default().fg(app.theme.accent_secondary),
         ));
         status_spans.push(Span::raw("| "));
     }
 
     status_spans.push(Span::raw("Keys: "));
-    status_spans.push(Span::styled("TAB", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("TAB", Style::default().fg(app.theme.accent_primary)));
     status_spans.push(Span::raw("=Next "));
-    status_spans.push(Span::styled("L", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("L", Style::default().fg(app.theme.accent_primary)));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("D", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("D", Style::default().fg(app.theme.accent_primary)));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("Q", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("Q", Style::default().fg(app.theme.accent_primary)));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("P", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("P", Style::default().fg(app.theme.accent_primary)));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("O", Style::default().fg(Color::Cyan)));
+    status_spans.push(Span::styled("O", Style::default().fg(app.theme.accent_primary)));
     status_spans.push(Span::raw("=Screens "));
-    status_spans.push(Span::styled("+=/-_", Style::default().fg(Color::Yellow)));
+    status_spans.push(Span::styled("+=/-_", Style::default().fg(app.theme.title_color)));
     status_spans.push(Span::raw("=Volume "));
-    status_spans.push(Span::styled("ESC/%-Q", Style::default().fg(Color::Red)));
+    status_spans.push(Span::styled("ESC/%-Q", Style::default().fg(app.theme.accent_error)));
     status_spans.push(Span::raw("=Quit "));
 
     let status_text = Line::from(status_spans);
@@ -1357,7 +1357,7 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         // Clear the background with a block
         let block = Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().bg(Color::Black))
+            .style(Style::default().bg(app.theme.bg_primary))
             .title(format!(
                 "Edit {} Plugin (ESC to close)",
                 plugin.plugin_type().name()
@@ -1377,9 +1377,9 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         let mut lines = Vec::new();
         lines.push(Line::from(vec![
             Span::styled("Use ", Style::default()),
-            Span::styled("↑/↓", Style::default().fg(Color::Cyan)),
+            Span::styled("↑/↓", Style::default().fg(app.theme.accent_primary)),
             Span::styled(" to select parameter, ", Style::default()),
-            Span::styled("←/→", Style::default().fg(Color::Cyan)),
+            Span::styled("←/→", Style::default().fg(app.theme.accent_primary)),
             Span::styled(" to adjust value", Style::default()),
         ]));
         lines.push(Line::from(""));
@@ -1388,8 +1388,8 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         for (i, param) in params.iter().enumerate() {
             let style = if i == app.plugin_param_selection {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::White)
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
@@ -1397,7 +1397,7 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
 
             lines.push(Line::from(vec![
                 Span::styled(format!("  {}: ", param.0), style),
-                Span::styled(param.1.clone(), style.fg(Color::Yellow)),
+                Span::styled(param.1.clone(), style.fg(app.theme.title_color)),
             ]));
         }
 
@@ -1651,7 +1651,7 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title("Save Plugin Preset");
 
     f.render_widget(block, dialog_area);
@@ -1667,23 +1667,23 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     let lines = vec![
         Line::from("Enter preset name (without .json extension):"),
         Line::from(vec![
-            Span::styled("  Saved to: ", Style::default().fg(Color::DarkGray)),
+            Span::styled("  Saved to: ", Style::default().fg(app.theme.fg_muted)),
             Span::styled(
                 "plugin_presets/",
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(app.theme.fg_muted)
                     .add_modifier(Modifier::ITALIC),
             ),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
             Span::raw(&app.plugin_file_input),
-            Span::styled("_", Style::default().fg(Color::Green)),
+            Span::styled("_", Style::default().fg(app.theme.accent_success)),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Note: ", Style::default().fg(Color::Yellow)),
+            Span::styled("Note: ", Style::default().fg(app.theme.title_color)),
             Span::raw(".json extension will be added automatically"),
         ]),
         Line::from("Press Enter to save, ESC to cancel"),
@@ -1714,7 +1714,7 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title("Load Plugin Preset");
 
     f.render_widget(block, dialog_area);
@@ -1734,9 +1734,9 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
             Line::from("Enter filename (without .json extension):"),
             Line::from(""),
             Line::from(vec![
-                Span::styled("> ", Style::default().fg(Color::Cyan)),
+                Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
                 Span::raw(&app.plugin_file_input),
-                Span::styled("_", Style::default().fg(Color::Green)),
+                Span::styled("_", Style::default().fg(app.theme.accent_success)),
             ]),
             Line::from(""),
             Line::from("Press Enter to load, ESC to cancel"),
@@ -1761,7 +1761,7 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
         let paragraph = Paragraph::new(lines)
             .block(Block::default())
             .wrap(Wrap { trim: false })
-            .style(Style::default().fg(Color::Yellow));
+            .style(Style::default().fg(app.theme.title_color));
 
         f.render_widget(paragraph, inner);
     } else {
@@ -1771,7 +1771,7 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
                 Span::styled("Available Presets ", Style::default()),
                 Span::styled(
                     "(↑/↓ to select, Enter to load)",
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(app.theme.fg_muted),
                 ),
             ]),
             Line::from(""),
@@ -1782,11 +1782,11 @@ fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
             let is_selected = i == app.selected_preset_index;
             let style = if is_selected {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::White)
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Cyan)
+                Style::default().fg(app.theme.accent_primary)
             };
 
             let marker = if is_selected { "► " } else { "  " };
@@ -1827,7 +1827,7 @@ fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title("Load APO EQ File");
 
     f.render_widget(block, dialog_area);
@@ -1844,14 +1844,14 @@ fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
         Line::from("Enter path to APO file:"),
         Line::from(""),
         Line::from(vec![
-            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
             Span::raw(&app.apo_file_input),
-            Span::styled("_", Style::default().fg(Color::Green)),
+            Span::styled("_", Style::default().fg(app.theme.accent_success)),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Supported format:",
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(app.theme.title_color),
         )]),
         Line::from("  Filter 1: ON PK Fc 100 Hz Gain -2.0 dB Q 1.41"),
         Line::from("  Filter 2: ON LSC Fc 105 Hz Gain 4.1 dB Q 0.71"),
@@ -1884,7 +1884,7 @@ fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
     // Clear background
     let block = Block::default()
         .borders(Borders::ALL)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title("Load SOFA HRTF File");
 
     f.render_widget(block, dialog_area);
@@ -1901,9 +1901,9 @@ fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
         Line::from("Enter path to SOFA file containing HRTFs:"),
         Line::from(""),
         Line::from(vec![
-            Span::styled("> ", Style::default().fg(Color::Cyan)),
+            Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
             Span::raw(&app.sofa_file_input),
-            Span::styled("_", Style::default().fg(Color::Green)),
+            Span::styled("_", Style::default().fg(app.theme.accent_success)),
         ]),
         Line::from(""),
         Line::from("SOFA format contains Head-Related Transfer Functions"),
@@ -1936,7 +1936,7 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title("Scanning Library");
 
     f.render_widget(Clear, dialog_area);
@@ -1954,7 +1954,7 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(""),
         Line::from(vec![Span::styled(
             "Scanning directories for audio files...",
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(app.theme.title_color),
         )]),
         Line::from(""),
         Line::from(vec![
@@ -1962,7 +1962,7 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!("{}", app.scan_progress_tracks),
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
@@ -1971,7 +1971,7 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!("{}", app.scan_progress_albums),
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(app.theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
@@ -1979,7 +1979,7 @@ fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(vec![Span::styled(
             "Please wait...",
             Style::default()
-                .fg(Color::Gray)
+                .fg(app.theme.fg_secondary)
                 .add_modifier(Modifier::ITALIC),
         )]),
     ];
@@ -2010,7 +2010,7 @@ fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title("Database Maintenance");
 
     f.render_widget(Clear, dialog_area);
@@ -2035,7 +2035,7 @@ fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(""),
         Line::from(vec![Span::styled(
             "Checking database for missing files...",
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(app.theme.title_color),
         )]),
         Line::from(""),
         Line::from(vec![
@@ -2046,7 +2046,7 @@ fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
                     app.maintenance_progress_checked, app.maintenance_progress_total, progress_pct
                 ),
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
@@ -2054,7 +2054,7 @@ fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(vec![Span::styled(
             "Please wait...",
             Style::default()
-                .fg(Color::Gray)
+                .fg(app.theme.fg_secondary)
                 .add_modifier(Modifier::ITALIC),
         )]),
     ];
@@ -2085,7 +2085,7 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title("ReplayGain Analysis");
 
     f.render_widget(Clear, dialog_area);
@@ -2109,7 +2109,7 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(""),
         Line::from(vec![Span::styled(
             "Analyzing tracks for ReplayGain...",
-            Style::default().fg(Color::Yellow),
+            Style::default().fg(app.theme.title_color),
         )]),
         Line::from(""),
         Line::from(vec![
@@ -2120,7 +2120,7 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
                     app.replay_gain_processed, app.replay_gain_total, progress_pct
                 ),
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(app.theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
@@ -2130,20 +2130,20 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!("{}", app.replay_gain_succeeded),
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(app.theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  Failed: "),
             Span::styled(
                 format!("{}", app.replay_gain_failed),
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default().fg(app.theme.accent_error).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
             "Please wait...",
             Style::default()
-                .fg(Color::Gray)
+                .fg(app.theme.fg_secondary)
                 .add_modifier(Modifier::ITALIC),
         )]),
     ];
@@ -2174,7 +2174,7 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .style(Style::default().bg(Color::Black))
+        .style(Style::default().bg(app.theme.bg_primary))
         .title(format!(
             "Help - {} Screen (Press ESC or ? to close)",
             match app.current_screen {
@@ -2207,36 +2207,36 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
     lines.push(Line::from(vec![Span::styled(
         "GLOBAL KEYBINDINGS",
         Style::default()
-            .fg(Color::Yellow)
+            .fg(app.theme.title_color)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
     )]));
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
-        Span::styled("  TAB", Style::default().fg(Color::Cyan)),
+        Span::styled("  TAB", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Next screen"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  L/D/Q/P/O", Style::default().fg(Color::Cyan)),
+        Span::styled("  L/D/Q/P/O", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Jump to Library/Directories/Queue/Plugins/Devices"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  +/=", Style::default().fg(Color::Cyan)),
+        Span::styled("  +/=", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Increase volume"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  -/_", Style::default().fg(Color::Cyan)),
+        Span::styled("  -/_", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Decrease volume"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  Ctrl+Left/Right", Style::default().fg(Color::Cyan)),
+        Span::styled("  Ctrl+Left/Right", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Select output device"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  ?", Style::default().fg(Color::Cyan)),
+        Span::styled("  ?", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Show this help"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  ESC/Ctrl+Q/Cmd+Q", Style::default().fg(Color::Cyan)),
+        Span::styled("  ESC/Ctrl+Q/Cmd+Q", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Quit"),
     ]));
     lines.push(Line::from(""));
@@ -2254,14 +2254,14 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
             }
         ),
         Style::default()
-            .fg(Color::Green)
+            .fg(app.theme.border_color)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
     )]));
     lines.push(Line::from(""));
 
     for (key, description) in keybindings {
         lines.push(Line::from(vec![
-            Span::styled(format!("  {:<18}", key), Style::default().fg(Color::Cyan)),
+            Span::styled(format!("  {:<18}", key), Style::default().fg(app.theme.accent_primary)),
             Span::raw(description),
         ]));
     }

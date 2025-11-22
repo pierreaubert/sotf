@@ -6,6 +6,7 @@ mod library;
 mod player;
 mod plugins;
 mod replay_gain_scanner;
+mod theme;
 mod ui;
 
 use app::App;
@@ -41,6 +42,10 @@ struct Args {
     /// Path to SOFA file for binaural decoder
     #[arg(long)]
     sofa_file: Option<PathBuf>,
+
+    /// Theme to use (dark or light)
+    #[arg(long, default_value = "dark")]
+    theme: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,6 +66,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args = Args::parse();
 
+    // Parse theme
+    let theme_type = theme::ThemeType::from_str(&args.theme)
+        .ok_or_else(|| format!("Invalid theme '{}', valid options are: dark, light", args.theme))?;
+    let theme = theme::Theme::from_type(theme_type);
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -69,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = Terminal::new(backend)?;
 
     // Create app and player
-    let mut app = App::new();
+    let mut app = App::new(theme);
     let mut player = Player::new();
 
     // Enable loudness monitoring

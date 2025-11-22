@@ -2314,7 +2314,7 @@ impl UpmixerPlugin {
                 let l = self.hr_freq_domain_left[i];
                 let r = self.hr_freq_domain_right[i];
 
-                let mut direct_val = l * panning_gain_left + r * panning_gain_right;
+                let direct_val = l * panning_gain_left + r * panning_gain_right;
                 let mut gain_scale = self.gain_front_direct;
                 if is_center {
                     let spread = self.center_spread.clamp(0.0, 1.0);

@@ -1,5 +1,6 @@
 use crate::library::{Album, MusicLibrary, Track};
 use crate::plugins::{PluginChain, PluginType};
+use crate::theme::Theme;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio::plugins::LoudnessInfo;
 use std::path::PathBuf;
@@ -114,6 +115,9 @@ pub struct App {
     pub current_screen: Screen,
     pub input_mode: InputMode,
 
+    // Theme
+    pub theme: Theme,
+
     // UI state
     pub search_query: String,
     pub directory_input: String,
@@ -189,7 +193,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(theme: Theme) -> Self {
         // Try to create library with database, fallback to simple library
         let library = MusicLibrary::with_database().unwrap_or_else(|e| {
             log::warn!(
@@ -205,6 +209,7 @@ impl App {
             expanded_queue_items: Vec::new(),
             current_screen: Screen::Library,
             input_mode: InputMode::Normal,
+            theme,
             search_query: String::new(),
             directory_input: String::new(),
             plugin_file_input: String::new(),
@@ -2145,7 +2150,7 @@ fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
 
 impl Default for App {
     fn default() -> Self {
-        Self::new()
+        Self::new(Theme::default())
     }
 }
 
