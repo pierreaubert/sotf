@@ -2,6 +2,7 @@
 members = [
     "src-audio",
     "src-autoeq",
+    "src-bem",
     "src-cea2034",
     "src-convexhull3d",
     "src-de",
@@ -28,6 +29,7 @@ members = [
 default-members = [
     "src-audio",
     "src-autoeq",
+    "src-bem",
     "src-cea2034",
     "src-convexhull3d",
     "src-de",
