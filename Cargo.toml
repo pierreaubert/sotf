@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "src-audio",
+    "src-audio-ffi",
     "src-autoeq",
     "src-bem",
     "src-cea2034",

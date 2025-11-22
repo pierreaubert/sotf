@@ -98,6 +98,69 @@ prod-head-scanner:
 	cargo build --release -p head-scanner
 
 # ----------------------------------------------------------------------
+# AUDIO UNIT (macOS only)
+# ----------------------------------------------------------------------
+
+# Build Rust FFI library for Audio Units
+build-au-rust:
+	#!/usr/bin/env bash
+	set -euxo pipefail
+	# Build for both architectures
+	cargo build --release -p sotf-audio-ffi --target x86_64-apple-darwin
+	cargo build --release -p sotf-audio-ffi --target aarch64-apple-darwin
+	# Create universal binary
+	mkdir -p SOTFAudioUnits/Resources
+	lipo -create \
+		target/x86_64-apple-darwin/release/libsotf_audio_ffi.a \
+		target/aarch64-apple-darwin/release/libsotf_audio_ffi.a \
+		-output SOTFAudioUnits/Resources/libsotf_audio_ffi.a
+	# Copy header file
+	cp src-audio-ffi/sotf_audio_ffi.h SOTFAudioUnits/Shared/
+	echo "✅ Universal Rust FFI library created"
+
+# Build Audio Unit plugins in Xcode
+build-au-swift: build-au-rust
+	#!/usr/bin/env bash
+	set -euxo pipefail
+	if [ ! -d "SOTFAudioUnits/SOTFAudioUnits.xcodeproj" ]; then
+		echo "⚠️  Xcode project not found. Please create it manually first."
+		echo "   See SOTFAudioUnits/README.md for instructions"
+		exit 1
+	fi
+	xcodebuild -project SOTFAudioUnits/SOTFAudioUnits.xcodeproj \
+		-scheme EQAudioUnit \
+		-configuration Release \
+		build
+	echo "✅ Audio Unit built successfully"
+
+# Install Audio Units to system
+install-au:
+	#!/usr/bin/env bash
+	set -euxo pipefail
+	mkdir -p ~/Library/Audio/Plug-Ins/Components/
+	if [ -d "build/Release/EQAudioUnit.appex" ]; then
+		cp -r build/Release/EQAudioUnit.appex ~/Library/Audio/Plug-Ins/Components/
+		echo "✅ EQ Audio Unit installed"
+	else
+		echo "⚠️  No Audio Unit build found. Run 'just build-au-swift' first"
+		exit 1
+	fi
+	# Restart Audio Component registration
+	killall -9 AudioComponentRegistrar 2>/dev/null || true
+	echo "✅ Audio Units installed to ~/Library/Audio/Plug-Ins/Components/"
+
+# Validate Audio Unit
+validate-au:
+	#!/usr/bin/env bash
+	set -euxo pipefail
+	echo "Validating SOTF EQ Audio Unit..."
+	auval -v aufx SOEQ SOTF
+
+# Complete AU build pipeline
+build-au: build-au-rust build-au-swift
+	echo "✅ Complete Audio Unit build finished"
+
+# ----------------------------------------------------------------------
 # BENCH
 # ----------------------------------------------------------------------
 
