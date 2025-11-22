@@ -1,8 +1,7 @@
-use crate::library::{Album, MusicLibrary, Track};
-use crate::plugins::{PluginChain, PluginType};
 use crate::theme::Theme;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio::plugins::LoudnessInfo;
+use sotf_audio_player::{Album, MusicLibrary, PluginChain, PluginType, Track};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -181,7 +180,7 @@ pub struct App {
     pub maintenance_progress_total: usize,
 
     // ReplayGain scanner progress
-    pub replay_gain_scanner: Option<Arc<crate::replay_gain_scanner::ReplayGainScanner>>,
+    pub replay_gain_scanner: Option<Arc<sotf_audio_player::ReplayGainScanner>>,
     pub replay_gain_in_progress: bool,
     pub replay_gain_total: usize,
     pub replay_gain_processed: usize,
@@ -316,7 +315,7 @@ impl App {
     }
 
     pub fn filtered_albums(&self) -> Vec<&Album> {
-        use crate::library::AlbumChannelType;
+        use sotf_audio_player::AlbumChannelType;
 
         let mut albums: Vec<&Album> = if self.search_query.is_empty() {
             self.library.albums.iter().collect()
@@ -617,7 +616,7 @@ impl App {
         if let Some((path, _, _)) = tree_items.get(self.selected_directory_index) {
             // Helper to find and toggle directory recursively
             fn toggle_recursive(
-                directories: &mut [crate::library::DirectoryInfo],
+                directories: &mut [sotf_audio_player::DirectoryInfo],
                 target_path: &std::path::Path,
             ) -> bool {
                 for dir in directories {
@@ -644,7 +643,7 @@ impl App {
 
         fn add_recursive(
             items: &mut Vec<(PathBuf, usize, bool)>,
-            dir_info: &crate::library::DirectoryInfo,
+            dir_info: &sotf_audio_player::DirectoryInfo,
             level: usize,
         ) {
             items.push((dir_info.path.clone(), level, dir_info.expanded));
@@ -810,11 +809,11 @@ impl App {
         }
 
         // Get database path
-        let db_path = crate::database::MusicDatabase::default_path()
+        let db_path = sotf_audio_player::MusicDatabase::default_path()
             .ok_or("Could not determine database path")?;
 
         // Get tracks that need ReplayGain analysis
-        let db = crate::database::MusicDatabase::open(&db_path)?;
+        let db = sotf_audio_player::MusicDatabase::open(&db_path)?;
         let tracks = db.get_tracks_without_replay_gain()?;
 
         if tracks.is_empty() {
@@ -831,7 +830,7 @@ impl App {
             .unwrap_or(2);
 
         // Create scanner
-        let scanner = Arc::new(crate::replay_gain_scanner::ReplayGainScanner::new(
+        let scanner = Arc::new(sotf_audio_player::ReplayGainScanner::new(
             num_threads,
             db_path,
         ));
@@ -865,7 +864,7 @@ impl App {
 
         // Process all pending messages
         while let Some(msg) = scanner.try_recv() {
-            use crate::replay_gain_scanner::ScanMessage;
+            use sotf_audio_player::ScanMessage;
 
             match msg {
                 ScanMessage::Started { .. } => {
@@ -920,7 +919,7 @@ impl App {
 
     /// Save current app state to config file
     pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let config = crate::config::AppConfig {
+        let config = sotf_audio_player::config::AppConfig {
             output_device: self.current_output_device_name.clone(),
             queue: self
                 .queue
@@ -936,14 +935,14 @@ impl App {
             plugin_preset: self.last_loaded_preset.clone(),
         };
 
-        crate::config::save_app_config(&config)?;
+        sotf_audio_player::config::save_app_config(&config)?;
         log::info!("Saved app configuration");
         Ok(())
     }
 
     /// Load app state from config file and restore it
     pub fn load_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let config = crate::config::load_app_config()?;
+        let config = sotf_audio_player::config::load_app_config()?;
 
         // Restore output device
         if let Some(device_name) = &config.output_device {
@@ -1407,12 +1406,12 @@ impl App {
         self.input_mode = InputMode::Normal;
     }
 
-    pub fn get_editing_plugin(&self) -> Option<&crate::plugins::Plugin> {
+    pub fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
         self.editing_plugin_index
             .and_then(|idx| self.plugin_chain.get_plugin(idx))
     }
 
-    pub fn get_editing_plugin_mut(&mut self) -> Option<&mut crate::plugins::Plugin> {
+    pub fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
         self.editing_plugin_index
             .and_then(|idx| self.plugin_chain.get_plugin_mut(idx))
     }
@@ -1442,7 +1441,7 @@ impl App {
     /// Adjust the currently selected parameter by the given delta
     /// Returns true if the parameter was adjusted successfully
     pub fn adjust_selected_param(&mut self, delta: f64) -> bool {
-        use crate::plugins::PluginSettings;
+        use sotf_audio_player::PluginSettings;
 
         let param_idx = self.plugin_param_selection;
         let mut channel_count_changed = false;
@@ -1794,7 +1793,7 @@ impl App {
         self.available_plugin_presets.clear();
         self.selected_preset_index = 0;
 
-        if let Some(presets_dir) = crate::config::get_plugin_presets_dir()
+        if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir()
             && let Ok(entries) = std::fs::read_dir(&presets_dir)
         {
             for entry in entries.flatten() {
@@ -2091,7 +2090,7 @@ impl App {
 
     /// Load APO file and update the currently selected EQ plugin
     pub fn load_apo_file(&mut self) -> Result<(), String> {
-        use crate::plugins::{EQFilter, PluginSettings};
+        use sotf_audio_player::{EQFilter, PluginSettings};
         use std::path::Path;
 
         let path = Path::new(&self.apo_file_input);
@@ -2114,7 +2113,7 @@ impl App {
 
     /// Update SOFA file path for the currently selected binaural decoder plugin
     pub fn load_sofa_file(&mut self) -> Result<(), String> {
-        use crate::plugins::PluginSettings;
+        use sotf_audio_player::PluginSettings;
 
         // Update the currently selected plugin if it's a binaural decoder
         if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
@@ -2134,8 +2133,8 @@ impl App {
 }
 
 // Helper function to get parameter count for a plugin
-fn get_param_count(settings: &crate::plugins::PluginSettings) -> usize {
-    use crate::plugins::PluginSettings;
+fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
+    use sotf_audio_player::PluginSettings;
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Upmixer { .. } => 14, // + enable_hr_direct, hr_sharpen, safety_cap_db
@@ -2157,8 +2156,8 @@ impl Default for App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::{Album, DirectoryInfo, Track};
-    use crate::plugins::{PluginSettings, PluginType};
+    use sotf_audio_player::{Album, DirectoryInfo, Track};
+    use sotf_audio_player::{PluginSettings, PluginType};
     use std::path::PathBuf;
 
     fn create_test_directory_info(path: &str) -> DirectoryInfo {

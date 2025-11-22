@@ -9550,6 +9550,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "sotf-audio-player"
+version = "0.5.1"
+dependencies = [
+ "autoeq-iir",
+ "chrono",
+ "directories",
+ "ebur128",
+ "log",
+ "parking_lot",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sotf_audio",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
 name = "sotf-gpui-player"
 version = "0.5.1"
 dependencies = [
@@ -9579,6 +9608,20 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "sotf-tui-player"
+version = "0.5.1"
+dependencies = [
+ "clap",
+ "crossterm",
+ "env_logger 0.11.8",
+ "log",
+ "parking_lot",
+ "ratatui",
+ "sotf-audio-player",
+ "sotf_audio",
 ]
 
 [[package]]
