@@ -39,6 +39,8 @@ actions!(
         ToggleExpand,
         Enter,
         Cancel,
+        RemoveItem,
+        ClearQueue,
     ]
 );
 
@@ -500,6 +502,28 @@ impl PlayerView {
         });
         cx.notify();
     }
+    fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            match state.app.current_screen {
+                Screen::Queue => {
+                    state.app.remove_from_queue(state.app.selected_queue_index);
+                }
+                Screen::DirectoryManager => {
+                    state.app.remove_selected_directory();
+                }
+                _ => {}
+            }
+        });
+        cx.notify();
+    }
+
+    fn clear_queue(&mut self, _: &ClearQueue, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.clear_queue();
+        });
+        cx.notify();
+    }
+
     fn handle_enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             match state.app.current_screen {
@@ -582,6 +606,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_expand))
             .on_action(cx.listener(Self::handle_enter))
             .on_action(cx.listener(Self::cancel))
+            .on_action(cx.listener(Self::remove_item))
+            .on_action(cx.listener(Self::clear_queue))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 // Handle text input for search mode
                 let in_search_mode = view.state.read(cx).app.input_mode == crate::app::InputMode::Search;

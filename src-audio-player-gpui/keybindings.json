@@ -50,7 +50,10 @@
       "l": "player_ui::ToggleExpand",
 
       "enter": "player_ui::Enter",
-      "a": "player_ui::Enter"
+      "a": "player_ui::Enter",
+
+      "d": "player_ui::RemoveItem",
+      "delete": "player_ui::RemoveItem"
     }
   }
 ]
