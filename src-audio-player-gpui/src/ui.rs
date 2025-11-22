@@ -44,6 +44,8 @@ actions!(
         MovePluginUp,
         MovePluginDown,
         TogglePlugin,
+        AddDirectory,
+        ScanLibrary,
     ]
 );
 
@@ -211,6 +213,8 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state.app.input_mode = crate::app::InputMode::Normal;
             state.app.search_query.clear();
+            state.app.directory_input.clear();
+            state.app.clear_autocomplete();
         });
         cx.notify();
     }
@@ -343,6 +347,46 @@ impl PlayerView {
                     self.state.update(cx, |state, _cx| {
                         state.app.search_query.push_str(text);
                         state.app.selected_album_index = 0; // Reset selection when query changes
+                    });
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle text input for add directory mode
+        match &event.keystroke.key {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.directory_input.pop();
+                    state.app.clear_autocomplete();
+                });
+                cx.notify();
+            }
+            "tab" => {
+                // Tab autocomplete
+                self.state.update(cx, |state, _cx| {
+                    if state.app.autocomplete_suggestions.is_empty() {
+                        state.app.generate_autocomplete_suggestions();
+                    } else {
+                        state.app.next_autocomplete();
+                    }
+                });
+                cx.notify();
+            }
+            "escape" => {
+                // Already handled by Cancel action
+            }
+            "enter" => {
+                // Already handled by Enter action (adds directory)
+            }
+            _ => {
+                // Add character to directory input
+                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.directory_input.push_str(text);
+                        state.app.clear_autocomplete();
                     });
                     cx.notify();
                 }
@@ -548,8 +592,50 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn add_directory(&mut self, _: &AddDirectory, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            use crate::app::InputMode;
+            // Enter add directory mode
+            state.app.input_mode = InputMode::AddDirectory;
+            state.app.directory_input.clear();
+            state.app.clear_autocomplete();
+        });
+        cx.notify();
+    }
+
+    fn scan_library(&mut self, _: &ScanLibrary, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            // Start scan (this will be async in reality, but for now we do it synchronously)
+            if let Err(e) = state.app.scan_library() {
+                log::error!("Library scan failed: {}", e);
+                state.app.status_message = Some(format!("Scan failed: {}", e));
+            }
+            // Save directories to config after successful scan
+            if let Err(e) = state.app.save_config() {
+                log::warn!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
     fn handle_enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
+            use crate::app::InputMode;
+
+            // Handle input modes first
+            if state.app.input_mode == InputMode::AddDirectory {
+                // Add the directory
+                if !state.app.directory_input.is_empty() {
+                    let path = std::path::PathBuf::from(&state.app.directory_input);
+                    state.app.add_directory(path);
+                    state.app.directory_input.clear();
+                    state.app.clear_autocomplete();
+                }
+                state.app.input_mode = InputMode::Normal;
+                return;
+            }
+
+            // Handle screen-specific actions in Normal mode
             match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
@@ -635,12 +721,20 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::move_plugin_up))
             .on_action(cx.listener(Self::move_plugin_down))
             .on_action(cx.listener(Self::toggle_plugin))
+            .on_action(cx.listener(Self::add_directory))
+            .on_action(cx.listener(Self::scan_library))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
-                // Handle text input for search mode
-                let in_search_mode = view.state.read(cx).app.input_mode == crate::app::InputMode::Search;
+                // Handle text input for search mode and add directory mode
+                let input_mode = view.state.read(cx).app.input_mode;
 
-                if in_search_mode {
-                    view.handle_search_input(event, cx);
+                match input_mode {
+                    crate::app::InputMode::Search => {
+                        view.handle_search_input(event, cx);
+                    }
+                    crate::app::InputMode::AddDirectory => {
+                        view.handle_directory_input(event, cx);
+                    }
+                    _ => {}
                 }
             }))
             .flex()
@@ -1499,6 +1593,8 @@ impl PlayerView {
 
     fn render_directory_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let is_add_mode = state.app.input_mode == crate::app::InputMode::AddDirectory;
+        let tree_items = state.app.get_directory_tree_items();
 
         div()
             .flex()
@@ -1512,15 +1608,111 @@ impl PlayerView {
                     .mb_4()
                     .child("Directory Manager"),
             )
-            .child(div().flex().flex_col().gap_2().children(
-                state.app.library.directories.iter().map(|dir| {
+            .when(is_add_mode, |div| {
+                div.child(
                     div()
                         .p_3()
+                        .mb_4()
                         .rounded_md()
                         .bg(rgb(0x2d2d2d))
-                        .child(div().text_sm().child(dir.path.display().to_string()))
-                }),
-            ))
+                        .border_1()
+                        .border_color(rgb(0x007acc))
+                        .child(div().text_sm().child("Add Directory"))
+                        .child(
+                            div()
+                                .text_sm()
+                                .mt_2()
+                                .child(format!(
+                                    "Path: {}{}",
+                                    state.app.directory_input,
+                                    if is_add_mode { "█" } else { "" }
+                                ))
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .mt_2()
+                                .text_color(rgb(0x999999))
+                                .child("Tab: autocomplete, Enter: add, Esc: cancel")
+                        )
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .children(tree_items.iter().enumerate().map(|(i, (path, level, expanded))| {
+                        let is_selected = i == state.app.selected_directory_index;
+                        let indent = "  ".repeat(*level);
+                        let prefix = if *level == 0 {
+                            if *expanded { "▼ " } else { "▶ " }
+                        } else {
+                            "  "
+                        };
+
+                        div()
+                            .p_2()
+                            .rounded_md()
+                            .when(is_selected, |div| div.bg(rgb(0x264f78)))
+                            .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .child(format!("{}{}{}", indent, prefix, path.display()))
+                            )
+                    }))
+            )
+            .when(state.app.scan_in_progress, |div| {
+                div.child(
+                    div()
+                        .p_3()
+                        .mt_4()
+                        .rounded_md()
+                        .bg(rgb(0x2d2d2d))
+                        .border_1()
+                        .border_color(rgb(0x4ec9b0))
+                        .child(div().text_sm().child("Scanning library..."))
+                        .child(
+                            div()
+                                .text_xs()
+                                .mt_2()
+                                .child(format!(
+                                    "{} tracks, {} albums found",
+                                    state.app.scan_progress_tracks,
+                                    state.app.scan_progress_albums
+                                ))
+                        )
+                )
+            })
+            .when(state.app.status_message.is_some(), |div| {
+                div.child(
+                    div()
+                        .p_3()
+                        .mt_4()
+                        .rounded_md()
+                        .bg(rgb(0x2d2d2d))
+                        .border_1()
+                        .border_color(rgb(0x4ec9b0))
+                        .child(
+                            div()
+                                .text_sm()
+                                .child(state.app.status_message.as_ref().unwrap().clone())
+                        )
+                )
+            })
+            .child(
+                div()
+                    .p_3()
+                    .mt_4()
+                    .rounded_md()
+                    .bg(rgb(0x1e1e1e))
+                    .text_xs()
+                    .text_color(rgb(0x999999))
+                    .child("Shift-A: Add Directory | Shift-S: Scan Library | D: Remove | Enter/L: Expand | Esc: Cancel")
+            )
     }
 
     fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {

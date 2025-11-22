@@ -557,18 +557,145 @@ impl App {
         items
     }
 
-    pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.scan_in_progress = true;
-        self.library.scan()?;
-        self.rebuild_artist_tree();
-        self.scan_in_progress = false;
-        Ok(())
+    /// Add a directory to the library (interactive version with UI feedback)
+    pub fn add_directory(&mut self, path: PathBuf) {
+        match self.library.add_directory(path) {
+            Ok(needs_scan) => {
+                if needs_scan {
+                    self.needs_rescan = true;
+                    self.status_message = Some("Directory added. Press 's' to scan.".to_string());
+                } else {
+                    self.status_message = Some("Directory already exists.".to_string());
+                }
+            }
+            Err(msg) => {
+                self.status_message = Some(msg);
+            }
+        }
     }
 
+    /// Add a directory without triggering rescan (for startup initialization)
     pub fn add_directory_quiet(&mut self, path: PathBuf) {
-        if !self.library.directories.iter().any(|d| d.path == path) {
-            self.library.add_directory(path);
+        let _ = self.library.add_directory(path);
+    }
+
+    /// Remove the selected directory from the library
+    pub fn remove_selected_directory(&mut self) {
+        // We need to map from tree index to actual directory index
+        let tree_items = self.get_directory_tree_items();
+        if let Some((path, level, _)) = tree_items.get(self.selected_directory_index) {
+            // Only allow removing level 0 directories (main directories, not subdirectories)
+            if *level == 0 {
+                // Find the actual index in the directories vector
+                if let Some(dir_index) = self
+                    .library
+                    .directories
+                    .iter()
+                    .position(|d| d.path == *path)
+                {
+                    if self.library.remove_directory(dir_index).is_some() {
+                        // Adjust selected_directory_index if needed
+                        let tree_items = self.get_directory_tree_items();
+                        if self.selected_directory_index >= tree_items.len()
+                            && self.selected_directory_index > 0
+                        {
+                            self.selected_directory_index = tree_items.len() - 1;
+                        }
+                        self.needs_rescan = true;
+                        self.status_message = Some("Directory removed.".to_string());
+                    }
+                }
+            } else {
+                self.status_message = Some("Cannot remove subdirectory.".to_string());
+            }
         }
+    }
+
+    /// Start library scan (sets up progress tracking flags)
+    pub fn start_library_scan(&mut self) {
+        self.scan_in_progress = true;
+        self.scan_progress_tracks = 0;
+        self.scan_progress_albums = 0;
+        self.status_message = Some("Starting library scan...".to_string());
+    }
+
+    /// Scan the library with progress tracking
+    pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        use parking_lot::Mutex;
+        use std::sync::Arc;
+
+        self.scan_in_progress = true;
+        self.scan_progress_tracks = 0;
+        self.scan_progress_albums = 0;
+        self.status_message = Some("Scanning library...".to_string());
+
+        // Create shared progress state
+        let progress_tracks = Arc::new(Mutex::new(0usize));
+        let progress_albums = Arc::new(Mutex::new(0usize));
+        let last_update_tracks = Arc::new(Mutex::new(0usize));
+
+        let progress_tracks_clone = Arc::clone(&progress_tracks);
+        let progress_albums_clone = Arc::clone(&progress_albums);
+        let last_update_clone = Arc::clone(&last_update_tracks);
+
+        // Use progress callback to update shared progress
+        let result = self.library.scan_with_progress(move |tracks, albums| {
+            let should_update = if let Ok(last) = last_update_clone.lock() {
+                tracks - *last >= 1000 || tracks == 0
+            } else {
+                false
+            };
+
+            if should_update {
+                if let Ok(mut pt) = progress_tracks_clone.lock() {
+                    *pt = tracks;
+                }
+                if let Ok(mut pa) = progress_albums_clone.lock() {
+                    *pa = albums;
+                }
+                if let Ok(mut last) = last_update_clone.lock() {
+                    *last = tracks;
+                }
+                log::info!("Scan progress: {} tracks, {} albums found", tracks, albums);
+            }
+        });
+
+        // Update app state with final progress
+        if let Ok(pt) = progress_tracks.lock() {
+            self.scan_progress_tracks = *pt;
+        }
+        if let Ok(pa) = progress_albums.lock() {
+            self.scan_progress_albums = *pa;
+        }
+
+        self.scan_in_progress = false;
+        self.needs_rescan = false;
+        self.selected_album_index = 0;
+        self.album_list_offset = 0;
+
+        match &result {
+            Ok(_) => {
+                let album_count = self.library.albums.len();
+                let track_count: usize = self.library.albums.iter().map(|a| a.tracks.len()).sum();
+                self.status_message = Some(format!(
+                    "Scan complete: {} tracks in {} albums",
+                    track_count, album_count
+                ));
+                log::info!(
+                    "Scan complete: {} tracks in {} albums",
+                    track_count,
+                    album_count
+                );
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Scan failed: {}", e));
+                log::error!("Scan failed: {}", e);
+            }
+        }
+
+        self.rebuild_artist_tree();
+
+        result
     }
 
     pub fn load_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -861,5 +988,99 @@ impl App {
                 self.selected_plugin_index = self.plugin_chain.len() - 1;
             }
         }
+    }
+
+    // Directory autocomplete methods
+
+    /// Generate autocomplete suggestions for the current directory input
+    pub fn generate_autocomplete_suggestions(&mut self) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
+
+        let input = if self.directory_input.is_empty() {
+            "./"
+        } else {
+            &self.directory_input
+        };
+
+        // Expand tilde to home directory
+        let expanded_input = if input.starts_with('~') {
+            if let Ok(home) = std::env::var("HOME") {
+                input.replacen('~', &home, 1)
+            } else {
+                input.to_string()
+            }
+        } else {
+            input.to_string()
+        };
+
+        let path = std::path::Path::new(&expanded_input);
+
+        // Determine the directory to search and the prefix to match
+        let (search_dir, prefix) = if path.is_dir() && expanded_input.ends_with('/') {
+            // User typed a complete directory with trailing slash
+            (path.to_path_buf(), String::new())
+        } else if let Some(parent) = path.parent() {
+            // User is typing a partial name
+            let prefix = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (parent.to_path_buf(), prefix)
+        } else {
+            // Fallback to current directory
+            (std::path::PathBuf::from("."), expanded_input.clone())
+        };
+
+        // Read directory and find matching entries
+        if let Ok(entries) = std::fs::read_dir(&search_dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string() {
+                    // Skip hidden files unless prefix starts with '.'
+                    if file_name.starts_with('.') && !prefix.starts_with('.') {
+                        continue;
+                    }
+
+                    // Check if filename starts with prefix
+                    if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                        let mut full_path = search_dir.join(&file_name);
+
+                        // Add trailing slash for directories
+                        if entry.path().is_dir() {
+                            full_path = full_path.join("");
+                        }
+
+                        let suggestion = full_path.to_string_lossy().to_string();
+                        self.autocomplete_suggestions.push(suggestion);
+                    }
+                }
+            }
+        }
+
+        // Sort suggestions
+        self.autocomplete_suggestions.sort();
+    }
+
+    /// Apply the current autocomplete suggestion to the directory input
+    pub fn apply_autocomplete(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
+            self.directory_input = suggestion.clone();
+        }
+    }
+
+    /// Cycle to the next autocomplete suggestion
+    pub fn next_autocomplete(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.apply_autocomplete();
+        }
+    }
+
+    /// Clear autocomplete suggestions
+    pub fn clear_autocomplete(&mut self) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
     }
 }
