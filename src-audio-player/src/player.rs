@@ -1,6 +1,6 @@
 use sotf_audio::engine::PluginConfig;
 use sotf_audio::manager::AudioStreamingManager;
-use sotf_audio::plugins::LoudnessInfo;
+use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};
 use std::path::PathBuf;
 
 /// Batched playback state to reduce mutex locking
@@ -9,6 +9,7 @@ pub struct PlaybackState {
     pub position_secs: f64,
     pub is_playing: bool,
     pub loudness: Option<LoudnessInfo>,
+    pub spectrum: Option<SpectrumInfo>,
 }
 
 pub struct Player {
@@ -76,6 +77,32 @@ impl Player {
         Ok(())
     }
 
+    pub fn enable_spectrum_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager.enable_spectrum_monitoring()?;
+        Ok(())
+    }
+
+    pub fn disable_spectrum_monitoring(&mut self) {
+        self.manager.disable_spectrum_monitoring();
+    }
+
+    pub fn get_position(&self) -> f64 {
+        self.manager.get_position()
+    }
+
+    pub fn is_playing(&self) -> bool {
+        let state = self.manager.get_state();
+        matches!(state, sotf_audio::manager::StreamingState::Playing)
+    }
+
+    pub fn get_loudness(&self) -> Option<LoudnessInfo> {
+        self.manager.get_loudness()
+    }
+
+    pub fn get_spectrum(&self) -> Option<SpectrumInfo> {
+        self.manager.get_spectrum()
+    }
+
     pub fn set_output_device(
         &mut self,
         device_name: String,
@@ -94,7 +121,7 @@ impl Player {
 
     /// Get all playback state in a single call
     /// No extra locking - AudioStreamingManager handles internal synchronization
-    pub fn get_playback_state(&self) -> PlaybackState {
+    pub fn get_playback_state(&self, include_spectrum: bool) -> PlaybackState {
         // Call try_recv_event to process any pending events (non-blocking)
         self.manager.try_recv_event();
 
@@ -109,10 +136,17 @@ impl Player {
             None
         };
 
+        let spectrum = if include_spectrum && is_playing {
+            self.manager.get_spectrum()
+        } else {
+            None
+        };
+
         PlaybackState {
             position_secs,
             is_playing,
             loudness,
+            spectrum,
         }
     }
 }

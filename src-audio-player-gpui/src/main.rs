@@ -1,15 +1,11 @@
 mod app;
 mod config;
-mod database;
-mod library;
-mod player;
-mod plugins;
 mod ui;
 
 use app::{App, AppState};
 use gpui::AppContext;
 use gpui::*;
-use player::Player;
+use sotf_audio_player::Player;
 use std::path::PathBuf;
 use std::sync::Arc;
 

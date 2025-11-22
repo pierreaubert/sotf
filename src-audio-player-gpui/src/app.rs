@@ -1,8 +1,5 @@
-use crate::library::{Album, MusicLibrary, Track};
-use crate::player::Player;
-use crate::plugins::{PluginChain, PluginType};
+use sotf_audio_player::{Album, LoudnessInfo, MusicLibrary, Player, PluginChain, PluginType, SpectrumInfo, Track};
 use sotf_audio::devices::AudioDevice;
-use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -157,7 +154,7 @@ pub struct App {
 /// GPUI-compatible state wrapper
 pub struct AppState {
     pub app: App,
-    pub player: Arc<parking_lot::Mutex<crate::player::Player>>,
+    pub player: Arc<parking_lot::Mutex<Player>>,
 }
 
 impl App {
