@@ -1,0 +1,1265 @@
+// ============================================================================
+// Manager Thread - Coordination and Signal Handling
+// ============================================================================
+//
+// Coordinates all worker threads, handles commands, and manages signals.
+
+use super::{
+    AudioEngineState, ConfigEvent, ConfigWatcher, DecoderCommand, DecoderThread, EngineConfig,
+    ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
+    ProcessingCommand, ProcessingThread, ThreadEvent,
+};
+use std::collections::VecDeque;
+use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
+use std::sync::{Arc, Mutex};
+
+const SPIN_MS_SLEEP_MANAGER: u64 = 10;
+const SPIN_MS_CHECK_MANAGER: u64 = 50;
+const PLUGIN_INIT_TIMEOUT_MS: u64 = 10000; // 10 seconds for plugin initialization (SOFA loading can be slow)
+const MAX_CONFIG_QUEUE_SIZE: usize = 5; // Maximum pending config updates
+
+/// Priority for config updates
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ConfigUpdatePriority {
+    FileWatcher = 1,  // Lowest priority - automatic file watching
+    SignalReload = 2, // Medium priority - SIGHUP signal
+    UserDirect = 3,   // Highest priority - direct API/command
+}
+
+/// Structured config error types
+#[derive(Debug, Clone)]
+enum ConfigError {
+    /// Failed to parse config file
+    ParseError {
+        path: std::path::PathBuf,
+        reason: String,
+    },
+    /// Config validation failed
+    ValidationError { plugin_index: usize, reason: String },
+    /// Plugin update timed out
+    TimeoutError { waited_ms: u64 },
+    /// Plugin update failed in processing thread
+    ProcessingError { reason: String },
+    /// Unexpected response from processing thread
+    UnexpectedResponse,
+    /// Failed to lock state mutex
+    StateLockError,
+    /// Communication channel disconnected
+    ChannelDisconnected,
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::ParseError { path, reason } => {
+                write!(f, "Failed to parse config {:?}: {}", path, reason)
+            }
+            Self::ValidationError {
+                plugin_index,
+                reason,
+            } => {
+                write!(f, "Plugin {} validation failed: {}", plugin_index, reason)
+            }
+            Self::TimeoutError { waited_ms } => {
+                write!(f, "Plugin update timed out after {}ms", waited_ms)
+            }
+            Self::ProcessingError { reason } => {
+                write!(f, "Plugin processing error: {}", reason)
+            }
+            Self::UnexpectedResponse => {
+                write!(f, "Unexpected response from processing thread")
+            }
+            Self::StateLockError => {
+                write!(f, "Failed to acquire state lock")
+            }
+            Self::ChannelDisconnected => {
+                write!(f, "Communication channel disconnected")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
+/// Metrics for config update operations
+#[derive(Default, Debug, Clone)]
+struct ConfigUpdateMetrics {
+    /// Total number of update attempts
+    total_updates: u64,
+    /// Number of successful updates
+    successful_updates: u64,
+    /// Number of failed updates
+    failed_updates: u64,
+    /// Number of updates rejected (validation or queue full)
+    rejected_updates: u64,
+    /// Number of rollbacks attempted
+    rollback_attempts: u64,
+    /// Number of successful rollbacks
+    successful_rollbacks: u64,
+    /// Total time spent on updates (milliseconds)
+    total_update_time_ms: u64,
+    /// Maximum queue depth observed
+    max_queue_depth: usize,
+    /// Last update timestamp
+    last_update_time: Option<std::time::Instant>,
+}
+
+impl ConfigUpdateMetrics {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn record_success(&mut self, duration: std::time::Duration) {
+        self.total_updates += 1;
+        self.successful_updates += 1;
+        self.total_update_time_ms += duration.as_millis() as u64;
+        self.last_update_time = Some(std::time::Instant::now());
+    }
+
+    fn record_failure(&mut self) {
+        self.total_updates += 1;
+        self.failed_updates += 1;
+    }
+
+    fn record_rejection(&mut self) {
+        self.rejected_updates += 1;
+    }
+
+    fn record_rollback(&mut self, success: bool) {
+        self.rollback_attempts += 1;
+        if success {
+            self.successful_rollbacks += 1;
+        }
+    }
+
+    fn update_queue_depth(&mut self, depth: usize) {
+        self.max_queue_depth = self.max_queue_depth.max(depth);
+    }
+
+    fn success_rate(&self) -> f64 {
+        if self.total_updates == 0 {
+            return 1.0;
+        }
+        self.successful_updates as f64 / self.total_updates as f64
+    }
+
+    fn avg_update_time_ms(&self) -> f64 {
+        if self.successful_updates == 0 {
+            return 0.0;
+        }
+        self.total_update_time_ms as f64 / self.successful_updates as f64
+    }
+}
+
+/// Helper function to safely lock a mutex, handling poisoned mutexes
+/// by recovering the data instead of panicking
+fn safe_lock<T>(mutex: &Arc<Mutex<T>>) -> Result<std::sync::MutexGuard<'_, T>, String> {
+    match mutex.lock() {
+        Ok(guard) => Ok(guard),
+        Err(poisoned) => {
+            log::warn!("[Manager] Mutex was poisoned, recovering data");
+            // Recover the data from the poisoned mutex
+            Ok(poisoned.into_inner())
+        }
+    }
+}
+
+/// Pending config update
+#[derive(Debug)]
+struct PendingConfigUpdate {
+    plugins: Vec<super::PluginConfig>,
+    timestamp: std::time::Instant,
+    priority: ConfigUpdatePriority,
+}
+
+/// Config update queue manager
+struct ConfigUpdateQueue {
+    queue: VecDeque<PendingConfigUpdate>,
+    update_in_progress: bool,
+    last_working_config: Option<Vec<super::PluginConfig>>,
+    metrics: ConfigUpdateMetrics,
+}
+
+impl ConfigUpdateQueue {
+    fn new() -> Self {
+        Self {
+            queue: VecDeque::new(),
+            update_in_progress: false,
+            last_working_config: None,
+            metrics: ConfigUpdateMetrics::new(),
+        }
+    }
+
+    /// Save a working config for rollback
+    fn save_working_config(&mut self, plugins: Vec<super::PluginConfig>) {
+        self.last_working_config = Some(plugins);
+    }
+
+    /// Get the last working config for rollback
+    fn get_rollback_config(&self) -> Option<&Vec<super::PluginConfig>> {
+        self.last_working_config.as_ref()
+    }
+
+    /// Add a config update to the queue with priority-based management
+    /// Returns true if added, false if rejected
+    fn enqueue(&mut self, plugins: Vec<super::PluginConfig>, priority: ConfigUpdatePriority) -> bool {
+        let update = PendingConfigUpdate {
+            plugins,
+            timestamp: std::time::Instant::now(),
+            priority,
+        };
+
+        if self.queue.len() >= MAX_CONFIG_QUEUE_SIZE {
+            // Find lowest priority item in queue
+            let min_priority_idx = self
+                .queue
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, u)| u.priority)
+                .map(|(i, _)| i);
+
+            if let Some(idx) = min_priority_idx {
+                let min_priority = self.queue[idx].priority;
+
+                if priority > min_priority {
+                    // New update has higher priority - drop lower priority item
+                    let dropped = self.queue.remove(idx).unwrap();
+                    log::warn!(
+                        "[Manager] Config queue full, dropping {:?} update to make room for {:?} update",
+                        dropped.priority,
+                        priority
+                    );
+                } else {
+                    // New update has equal or lower priority - reject it
+                    log::warn!(
+                        "[Manager] Config queue full with higher priority items, rejecting {:?} update",
+                        priority
+                    );
+                    self.metrics.record_rejection();
+                    return false;
+                }
+            }
+        }
+
+        self.queue.push_back(update);
+        self.metrics.update_queue_depth(self.queue.len());
+        log::debug!(
+            "[Manager] Config update queued with priority {:?} (queue size: {}, max: {})",
+            priority,
+            self.queue.len(),
+            self.metrics.max_queue_depth
+        );
+        true
+    }
+
+    /// Check if we can start processing the next update
+    fn can_process_next(&self) -> bool {
+        !self.update_in_progress && !self.queue.is_empty()
+    }
+
+    /// Start processing the next update in queue
+    fn start_processing(&mut self) -> Option<Vec<super::PluginConfig>> {
+        if self.update_in_progress {
+            return None;
+        }
+
+        if let Some(update) = self.queue.pop_front() {
+            self.update_in_progress = true;
+            log::debug!(
+                "[Manager] Starting config update (queued for {:?}, {} remaining in queue)",
+                update.timestamp.elapsed(),
+                self.queue.len()
+            );
+            Some(update.plugins)
+        } else {
+            None
+        }
+    }
+
+    /// Mark current update as completed
+    fn complete_processing(&mut self) {
+        if self.update_in_progress {
+            self.update_in_progress = false;
+            log::debug!("[Manager] Config update completed");
+        }
+    }
+
+    /// Check if currently processing an update
+    fn is_processing(&self) -> bool {
+        self.update_in_progress
+    }
+
+    /// Get current metrics
+    fn get_metrics(&self) -> &ConfigUpdateMetrics {
+        &self.metrics
+    }
+
+    /// Log metrics summary
+    fn log_metrics_summary(&self) {
+        log::info!(
+            "[Manager] Config Update Metrics: {} total, {} success ({:.1}%), {} failed, {} rejected, {} rollbacks ({} successful), avg {:.0}ms, max queue depth: {}",
+            self.metrics.total_updates,
+            self.metrics.successful_updates,
+            self.metrics.success_rate() * 100.0,
+            self.metrics.failed_updates,
+            self.metrics.rejected_updates,
+            self.metrics.rollback_attempts,
+            self.metrics.successful_rollbacks,
+            self.metrics.avg_update_time_ms(),
+            self.metrics.max_queue_depth
+        );
+    }
+}
+
+/// Manager thread handle
+pub struct ManagerThread {
+    command_tx: Sender<ManagerCommand>,
+    response_rx: Receiver<ManagerResponse>,
+    state: Arc<Mutex<AudioEngineState>>,
+    thread_handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ManagerThread {
+    /// Create and start the manager thread
+    pub fn new(config: EngineConfig) -> Result<Self, String> {
+        let (command_tx, command_rx) = channel();
+        let (response_tx, response_rx) = channel();
+
+        let state = Arc::new(Mutex::new(AudioEngineState::default()));
+        let state_clone = Arc::clone(&state);
+
+        let thread_handle = std::thread::Builder::new()
+            .name("manager".to_string())
+            .spawn(move || {
+                if let Err(e) = run_manager_thread(config, command_rx, response_tx, state_clone) {
+                    log::debug!("[Manager Thread] Error: {}", e);
+                }
+            })
+            .map_err(|e| format!("Failed to spawn manager thread: {}", e))?;
+
+        Ok(Self {
+            command_tx,
+            response_rx,
+            state,
+            thread_handle: Some(thread_handle),
+        })
+    }
+
+    /// Send a command to the manager
+    pub fn send_command(&self, command: ManagerCommand) -> Result<(), String> {
+        self.command_tx
+            .send(command)
+            .map_err(|e| format!("Failed to send command: {}", e))
+    }
+
+    /// Receive a response (blocking)
+    pub fn recv_response(&self) -> Result<ManagerResponse, String> {
+        self.response_rx
+            .recv()
+            .map_err(|e| format!("Failed to receive response: {}", e))
+    }
+
+    /// Try to receive a response (non-blocking)
+    pub fn try_recv_response(&self) -> Option<ManagerResponse> {
+        self.response_rx.try_recv().ok()
+    }
+
+    /// Get current state
+    pub fn get_state(&self) -> AudioEngineState {
+        safe_lock(&self.state)
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|e| {
+                log::error!("[Manager] Failed to lock state: {}", e);
+                AudioEngineState::default()
+            })
+    }
+
+    /// Shutdown the manager thread
+    pub fn shutdown(&mut self) {
+        self.send_command(ManagerCommand::Shutdown).ok();
+        if let Some(handle) = self.thread_handle.take() {
+            handle.join().ok();
+        }
+    }
+}
+
+impl Drop for ManagerThread {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+/// Main manager thread function
+fn run_manager_thread(
+    config: EngineConfig,
+    command_rx: Receiver<ManagerCommand>,
+    response_tx: Sender<ManagerResponse>,
+    state: Arc<Mutex<AudioEngineState>>,
+) -> Result<(), String> {
+    log::debug!("[Manager Thread] Starting with config: {:?}", config);
+
+    // Create config update queue for serializing plugin updates
+    let mut config_update_queue = ConfigUpdateQueue::new();
+
+    // Create bounded queues for backpressure
+    // Queue capacity based on buffer_ms to provide proper flow control
+    let queue_capacity = config.queue_capacity_frames();
+    log::debug!("[Manager Thread] Queue capacity: {} frames", queue_capacity);
+
+    let (decoder_tx, decoder_rx) = sync_channel(queue_capacity);
+    let (processing_tx, processing_rx) = sync_channel(queue_capacity);
+    let (event_tx, event_rx) = channel(); // Events can be unbounded
+
+    // Create threads
+    let mut decoder_thread = DecoderThread::new(
+        decoder_tx,
+        event_tx.clone(),
+        config.output_sample_rate,
+        config.frame_size,
+    )?;
+
+    let mut processing_thread = ProcessingThread::new(
+        decoder_rx,
+        processing_tx,
+        event_tx.clone(),
+        config.output_sample_rate,
+        config.input_channels, // Use input channels, not output
+    )?;
+
+    // Determine actual output channel count by loading plugin chain first
+    let actual_output_channels = if !config.plugins.is_empty() {
+        log::info!("[Manager Thread] Loading initial plugin chain ({} plugins)...", config.plugins.len());
+        processing_thread.send_command(ProcessingCommand::UpdatePlugins(config.plugins.clone()))?;
+
+        // Wait for response to get output channel count (with timeout)
+        // Use longer timeout for initial plugin loading since SOFA files can take time
+        let start = std::time::Instant::now();
+        let mut output_channels = config.output_channels;
+
+        while start.elapsed() < std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
+            if let Some(response) = processing_thread.try_recv_response() {
+                match response {
+                    super::ProcessingResponse::PluginChainUpdated {
+                        output_channels: ch,
+                    } => {
+                        log::info!(
+                            "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}",
+                            start.elapsed(),
+                            ch
+                        );
+                        output_channels = ch;
+                        break;
+                    }
+                    super::ProcessingResponse::Error(e) => {
+                        log::debug!("[Manager Thread] Failed to initialize plugin chain: {}", e);
+                        break;
+                    }
+                    _ => {
+                        log::info!(
+                            "[Manager Thread] Unexpected response during plugin initialization"
+                        );
+                        break;
+                    }
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+        }
+
+        // Check if we timed out
+        if start.elapsed() >= std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
+            log::warn!(
+                "[Manager Thread] Plugin initialization timed out after {:?} - proceeding with default channel count",
+                start.elapsed()
+            );
+        }
+
+        // Update state with actual channel count
+        if let Ok(mut state_lock) = safe_lock(&state) {
+            state_lock.num_channels = output_channels;
+        }
+
+        output_channels
+    } else {
+        config.output_channels
+    };
+
+    log::info!(
+        "[Manager Thread] Creating playback thread with {} channels",
+        actual_output_channels
+    );
+
+    // Now create playback thread with the correct channel count
+    let mut playback_thread = PlaybackThread::new(
+        processing_rx,
+        event_tx.clone(),
+        config.output_sample_rate,
+        actual_output_channels,
+        config.output_device.clone(),
+    )?;
+
+    // Set initial volume and mute
+    playback_thread.send_command(PlaybackCommand::SetVolume(config.volume))?;
+    playback_thread.send_command(PlaybackCommand::Mute(config.muted))?;
+
+    // Start silent source mode if no input channels (HAL playback)
+    if config.input_channels == 0 {
+        log::info!("[Manager Thread] Starting silent source mode for HAL input");
+        decoder_thread.send_command(super::DecoderCommand::StartSilentSource)?;
+    }
+
+    // Setup config watcher if enabled
+    let config_watcher = if config.watch_config {
+        match ConfigWatcher::new(config.config_path.clone(), true) {
+            Ok(watcher) => {
+                log::debug!("[Manager Thread] Config watcher enabled");
+                Some(watcher)
+            }
+            Err(e) => {
+                log::debug!("[Manager Thread] Failed to create config watcher: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    log::debug!("[Manager Thread] All threads started");
+
+    // Main loop
+    loop {
+        // Check for thread events (non-blocking)
+        if let Ok(event) = event_rx.try_recv() {
+            handle_thread_event(event, &state);
+        }
+
+        // Check for config watcher events (non-blocking)
+        if let Some(ref watcher) = config_watcher
+            && let Some(config_event) = watcher.try_recv()
+        {
+            match handle_config_event(config_event, &config, &mut config_update_queue, &state) {
+                Ok(should_exit) => {
+                    if should_exit {
+                        log::debug!("[Manager Thread] Shutdown requested via signal");
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::debug!("[Manager Thread] Config event error: {}", e);
+                }
+            }
+        }
+
+        // Process pending config updates (one at a time)
+        if config_update_queue.can_process_next() {
+            if let Some(plugins) = config_update_queue.start_processing() {
+                log::debug!("[Manager Thread] Processing queued config update");
+                if let Err(e) = apply_plugin_update(
+                    &mut processing_thread,
+                    &mut playback_thread,
+                    &state,
+                    &mut config_update_queue,
+                    plugins,
+                ) {
+                    log::error!("[Manager Thread] Failed to apply config update: {}", e);
+                }
+                config_update_queue.complete_processing();
+            }
+        }
+
+        // Check for commands (blocking with timeout)
+        match command_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_CHECK_MANAGER)) {
+            Ok(command) => {
+                let response = handle_command(
+                    command,
+                    &mut decoder_thread,
+                    &mut processing_thread,
+                    &mut playback_thread,
+                    &state,
+                    &mut config_update_queue,
+                );
+
+                if let ManagerResponse::Ok = response {
+                    // Check if shutdown
+                    let should_exit = if let Ok(state_guard) = safe_lock(&state) {
+                        state_guard.playback_state == PlaybackState::Stopped
+                            && matches!(response, ManagerResponse::Ok)
+                    } else {
+                        false
+                    };
+
+                    response_tx.send(response).ok();
+
+                    if should_exit {
+                        // This was a shutdown command
+                        break;
+                    }
+                } else {
+                    response_tx.send(response).ok();
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // No command, continue
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                log::debug!("[Manager Thread] Command channel disconnected");
+                break;
+            }
+        }
+    }
+
+    // Cleanup
+    log::debug!("[Manager Thread] Shutting down threads");
+
+    // Log final metrics before shutdown
+    config_update_queue.log_metrics_summary();
+
+    decoder_thread.shutdown();
+    processing_thread.shutdown();
+    playback_thread.shutdown();
+
+    log::debug!("[Manager Thread] Stopped");
+    Ok(())
+}
+
+/// Handle a thread event
+fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>) {
+    match event {
+        ThreadEvent::DecoderEndOfStream => {
+            log::debug!("[Manager] Decoder end of stream");
+            if let Ok(mut state) = safe_lock(state) {
+                state.playback_state = PlaybackState::Stopped;
+            }
+        }
+        ThreadEvent::DecoderError(err) => {
+            log::debug!("[Manager] Decoder error: {}", err);
+            if let Ok(mut state) = safe_lock(state) {
+                state.playback_state = PlaybackState::Stopped;
+            }
+        }
+        ThreadEvent::PlaybackUnderrun => {
+            if let Ok(mut state) = safe_lock(state) {
+                state.underruns += 1;
+                // Log summary every 50 underruns to track overall pattern
+                if state.underruns % 50 == 1 {
+                    log::warn!("[Manager] Playback underrun count: {}", state.underruns);
+                }
+            }
+        }
+        ThreadEvent::ProcessingError(err) => {
+            log::debug!("[Manager] Processing error: {}", err);
+        }
+        ThreadEvent::ThreadPanic(thread_name) => {
+            log::debug!("[Manager] Thread panicked: {}", thread_name);
+        }
+        ThreadEvent::PositionUpdate(position) => {
+            if let Ok(mut state) = safe_lock(state) {
+                state.position = position;
+            }
+        }
+    }
+}
+
+/// Handle a config watcher event
+/// Returns Ok(true) if shutdown requested, Ok(false) otherwise
+fn handle_config_event(
+    event: ConfigEvent,
+    config: &EngineConfig,
+    config_queue: &mut ConfigUpdateQueue,
+    state: &Arc<Mutex<AudioEngineState>>,
+) -> Result<bool, String> {
+    match event {
+        ConfigEvent::ConfigChanged(_) | ConfigEvent::Reload => {
+            log::debug!("[Manager] Config reload requested");
+
+            // If we have a config path, reload from file
+            if let Some(config_path) = config.config_path.as_ref() {
+                log::debug!("[Manager] Reloading config from: {:?}", config_path);
+
+                // Load and parse config file
+                match load_config_file(config_path) {
+                    Ok(new_config) => {
+                        // Validate config before queuing
+                        match validate_plugin_configs(&new_config.plugins) {
+                            Ok(_) => {
+                                log::debug!("[Manager] Config validated, enqueuing plugin update");
+                                // Use SignalReload priority for explicit reloads, FileWatcher for file changes
+                                let priority = match event {
+                                    ConfigEvent::Reload => ConfigUpdatePriority::SignalReload,
+                                    _ => ConfigUpdatePriority::FileWatcher,
+                                };
+                                config_queue.enqueue(new_config.plugins, priority);
+                            }
+                            Err(e) => {
+                                log::warn!("[Manager] Config validation failed: {}", e);
+                                config_queue.metrics.record_rejection();
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("[Manager] Config parse failed: {}", e);
+                    }
+                }
+            } else {
+                log::debug!("[Manager] No config path set, ignoring reload request");
+            }
+
+            Ok(false)
+        }
+        ConfigEvent::Shutdown => {
+            log::debug!("[Manager] Shutdown signal received");
+
+            // Update state to Stopped so applications can detect shutdown
+            if let Ok(mut state_lock) = safe_lock(state) {
+                state_lock.playback_state = PlaybackState::Stopped;
+            }
+
+            Ok(true)
+        }
+    }
+}
+
+/// Estimate timeout duration based on plugin complexity
+/// Complex plugins (SOFA loading, large convolutions) need more time
+fn estimate_update_timeout(plugins: &[super::PluginConfig]) -> std::time::Duration {
+    let mut timeout_ms: u64 = 200; // Base timeout for crossfade
+
+    for plugin in plugins {
+        timeout_ms += match plugin.plugin_type.as_str() {
+            "convolution" => {
+                // SOFA/IR loading can be very slow
+                2000
+            }
+            "upmixer" => {
+                // FFT setup and buffer allocation
+                300
+            }
+            "crossover" => {
+                // Multiple filter banks
+                200
+            }
+            "EQ" => {
+                // Count number of filters if available
+                if let Some(filters) = plugin.parameters.get("filters") {
+                    if let Some(array) = filters.as_array() {
+                        array.len() as u64 * 10 // ~10ms per filter
+                    } else {
+                        50
+                    }
+                } else {
+                    50
+                }
+            }
+            "resampler" => 150,
+            "limiter" | "compressor" | "gate" => 100,
+            "gain" | "matrix" => 20,
+            _ => 50,
+        };
+    }
+
+    // Cap at 10 seconds (for very complex chains)
+    std::time::Duration::from_millis(timeout_ms.min(10000))
+}
+
+/// Apply a plugin update with proper synchronization and rollback on failure
+/// Waits for confirmation from processing thread and updates playback thread if needed
+fn apply_plugin_update(
+    processing: &mut ProcessingThread,
+    playback: &mut PlaybackThread,
+    state: &Arc<Mutex<AudioEngineState>>,
+    config_queue: &mut ConfigUpdateQueue,
+    plugins: Vec<super::PluginConfig>,
+) -> Result<(), String> {
+    // Send update command to processing thread
+    processing.send_command(ProcessingCommand::UpdatePlugins(plugins.clone()))?;
+
+    // Calculate adaptive timeout based on plugin complexity
+    let timeout = estimate_update_timeout(&plugins);
+    log::debug!("[Manager] Using adaptive timeout: {:?}", timeout);
+    let start = std::time::Instant::now();
+
+    while start.elapsed() < timeout {
+        if let Some(response) = processing.try_recv_response() {
+            match response {
+                super::ProcessingResponse::PluginChainUpdated { output_channels } => {
+                    log::info!(
+                        "[Manager] Plugin chain updated, output channels: {}",
+                        output_channels
+                    );
+
+                    // Get old channel count before updating
+                    let old_channels = if let Ok(state_guard) = safe_lock(state) {
+                        state_guard.num_channels
+                    } else {
+                        return Err("Failed to lock state".to_string());
+                    };
+
+                    // Update state with new channel count
+                    if let Ok(mut state_guard) = safe_lock(state) {
+                        state_guard.num_channels = output_channels;
+                    }
+
+                    // If channel count changed, update playback thread
+                    if output_channels != old_channels {
+                        log::info!(
+                            "[Manager] Channel count changed {}→{}, updating playback thread",
+                            old_channels,
+                            output_channels
+                        );
+
+                        // Clear ring buffer first to flush any pending frames with old channel count
+                        // This prevents audio corruption from channel count mismatches during hot-reload
+                        playback.send_command(PlaybackCommand::Stop)?;
+
+                        // Send update command (fire-and-forget)
+                        // Playback thread will handle channel update asynchronously
+                        playback.send_command(PlaybackCommand::UpdateChannels(output_channels))?;
+                    }
+
+                    // Save this as the last working config for future rollback
+                    config_queue.save_working_config(plugins);
+
+                    // Record success metrics
+                    config_queue.metrics.record_success(start.elapsed());
+
+                    return Ok(());
+                }
+                super::ProcessingResponse::Error(e) => {
+                    let error_msg = format!("Plugin update error: {}", e);
+                    log::error!("[Manager] {}", error_msg);
+
+                    // Record failure metrics
+                    config_queue.metrics.record_failure();
+
+                    // Attempt rollback to last working config
+                    if let Some(rollback_config) = config_queue.get_rollback_config() {
+                        log::warn!(
+                            "[Manager] Attempting rollback to last working config ({} plugins)",
+                            rollback_config.len()
+                        );
+
+                        // Try to restore the last working config
+                        processing
+                            .send_command(ProcessingCommand::UpdatePlugins(rollback_config.clone()))?;
+
+                        // Wait for rollback confirmation (shorter timeout)
+                        let rollback_start = std::time::Instant::now();
+                        let rollback_timeout = std::time::Duration::from_millis(250);
+                        let mut rollback_success = false;
+
+                        while rollback_start.elapsed() < rollback_timeout {
+                            if let Some(rollback_response) = processing.try_recv_response() {
+                                match rollback_response {
+                                    super::ProcessingResponse::PluginChainUpdated { .. } => {
+                                        log::info!("[Manager] Rollback successful");
+                                        rollback_success = true;
+                                        break;
+                                    }
+                                    super::ProcessingResponse::Error(e) => {
+                                        log::error!("[Manager] Rollback failed: {}", e);
+                                        break;
+                                    }
+                                    _ => break,
+                                }
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                SPIN_MS_SLEEP_MANAGER,
+                            ));
+                        }
+
+                        // Record rollback metrics
+                        config_queue.metrics.record_rollback(rollback_success);
+                    } else {
+                        log::warn!("[Manager] No rollback config available");
+                    }
+
+                    return Err(error_msg);
+                }
+                _ => {
+                    return Err("Unexpected response from processing thread".to_string());
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+    }
+
+    Err("Timeout waiting for plugin update response".to_string())
+}
+
+/// Validate plugin configurations before applying
+fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), ConfigError> {
+    for (i, config) in configs.iter().enumerate() {
+        // Check if plugin type is recognized
+        let valid_types = [
+            "EQ",
+            "gain",
+            "upmixer",
+            "compressor",
+            "gate",
+            "limiter",
+            "loudness_compensation",
+            "matrix",
+            "convolution",
+            "crossover",
+            "delay",
+            "resampler",
+        ];
+
+        if !valid_types.contains(&config.plugin_type.as_str()) {
+            return Err(ConfigError::ValidationError {
+                plugin_index: i,
+                reason: format!("Unknown plugin type '{}'", config.plugin_type),
+            });
+        }
+
+        // Validate that parameters exist
+        if config.parameters.is_null() {
+            return Err(ConfigError::ValidationError {
+                plugin_index: i,
+                reason: format!("Plugin '{}' missing parameters", config.plugin_type),
+            });
+        }
+
+        // Type-specific validation
+        match config.plugin_type.as_str() {
+            "EQ" => {
+                // Validate EQ filter structure
+                if let Some(filters) = config.parameters.get("filters") {
+                    if !filters.is_array() {
+                        return Err(ConfigError::ValidationError {
+                            plugin_index: i,
+                            reason: "Invalid 'filters' parameter (must be array)".to_string(),
+                        });
+                    }
+                }
+            }
+            "gain" => {
+                // Validate gain_db exists
+                if config.parameters.get("gain_db").is_none() {
+                    return Err(ConfigError::ValidationError {
+                        plugin_index: i,
+                        reason: "Missing 'gain_db' parameter".to_string(),
+                    });
+                }
+            }
+            "upmixer" => {
+                // Validate upmixer mode
+                if let Some(mode) = config.parameters.get("mode") {
+                    if !mode.is_string() {
+                        return Err(ConfigError::ValidationError {
+                            plugin_index: i,
+                            reason: "Invalid 'mode' parameter (must be string)".to_string(),
+                        });
+                    }
+                }
+            }
+            _ => {
+                // Basic validation for other types
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Load config from YAML file
+fn load_config_file(path: &std::path::Path) -> Result<EngineConfig, ConfigError> {
+    let contents = std::fs::read_to_string(path).map_err(|e| ConfigError::ParseError {
+        path: path.to_path_buf(),
+        reason: format!("Failed to read file: {}", e),
+    })?;
+
+    let config: EngineConfig =
+        serde_yaml::from_str(&contents).map_err(|e| ConfigError::ParseError {
+            path: path.to_path_buf(),
+            reason: format!("YAML parse error: {}", e),
+        })?;
+
+    Ok(config)
+}
+
+/// Handle a manager command
+fn handle_command(
+    command: ManagerCommand,
+    decoder: &mut DecoderThread,
+    processing: &mut ProcessingThread,
+    playback: &mut PlaybackThread,
+    state: &Arc<Mutex<AudioEngineState>>,
+    config_queue: &mut ConfigUpdateQueue,
+) -> ManagerResponse {
+    match command {
+        ManagerCommand::Play(path) => {
+            log::debug!("[Manager] Play: {:?}", path);
+
+            // Update state
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.current_file = Some(path.clone());
+                state_guard.playback_state = PlaybackState::Playing;
+                state_guard.position = 0.0;
+            }
+
+            // Send to decoder
+            if let Err(e) = decoder.send_command(DecoderCommand::Play(path)) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::Pause => {
+            log::debug!("[Manager] Pause");
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Paused;
+            }
+
+            if let Err(e) = decoder.send_command(DecoderCommand::Pause) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::Resume => {
+            log::debug!("[Manager] Resume");
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Playing;
+            }
+
+            if let Err(e) = decoder.send_command(DecoderCommand::Resume) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::Stop => {
+            log::debug!("[Manager] Stop");
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Stopped;
+                state_guard.current_file = None;
+                state_guard.position = 0.0;
+            }
+
+            decoder.send_command(DecoderCommand::Stop).ok();
+            playback.send_command(PlaybackCommand::Stop).ok();
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::Seek(position) => {
+            log::debug!("[Manager] Seek to {:.2}s", position);
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.position = position;
+            }
+
+            if let Err(e) = decoder.send_command(DecoderCommand::Seek(position)) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::SetVolume(volume) => {
+            log::debug!("[Manager] Set volume: {:.2}", volume);
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.volume = volume;
+            }
+
+            if let Err(e) = playback.send_command(PlaybackCommand::SetVolume(volume)) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::Mute(muted) => {
+            log::debug!("[Manager] Mute: {}", muted);
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.muted = muted;
+            }
+
+            if let Err(e) = playback.send_command(PlaybackCommand::Mute(muted)) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::UpdatePluginChain(plugins) => {
+            log::debug!("[Manager] Update plugin chain ({} plugins)", plugins.len());
+
+            // Validate config before processing
+            if let Err(e) = validate_plugin_configs(&plugins) {
+                log::warn!("[Manager] Plugin configuration validation failed: {}", e);
+                config_queue.metrics.record_rejection();
+                return ManagerResponse::Error(e.to_string());
+            }
+
+            // If a config update is already in progress, enqueue this one
+            if config_queue.is_processing() {
+                log::debug!("[Manager] Config update in progress, enqueuing new update");
+                config_queue.enqueue(plugins, ConfigUpdatePriority::UserDirect);
+                return ManagerResponse::Ok;
+            }
+
+            // Otherwise, apply immediately using the synchronized apply function
+            match apply_plugin_update(processing, playback, state, config_queue, plugins) {
+                Ok(()) => ManagerResponse::Ok,
+                Err(e) => ManagerResponse::Error(e),
+            }
+        }
+        ManagerCommand::SetPluginParameter {
+            plugin_index,
+            param_id,
+            value,
+        } => {
+            log::info!(
+                "[Manager] Set plugin {} parameter {} = {}",
+                plugin_index,
+                param_id,
+                value
+            );
+
+            if let Err(e) = processing.send_command(ProcessingCommand::SetParameter {
+                plugin_index,
+                param_id,
+                value,
+            }) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::BypassProcessing(bypass) => {
+            log::debug!("[Manager] Bypass processing: {}", bypass);
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.processing_bypassed = bypass;
+            }
+
+            if let Err(e) = processing.send_command(ProcessingCommand::Bypass(bypass)) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
+        ManagerCommand::AddLoudnessAnalyzer { id, channels } => {
+            log::info!(
+                "[Manager] Add loudness analyzer: {} ({} channels)",
+                id,
+                channels
+            );
+
+            if let Err(e) =
+                processing.send_command(ProcessingCommand::AddLoudnessAnalyzer { id, channels })
+            {
+                return ManagerResponse::Error(e);
+            }
+
+            // Wait for response
+            if let Some(response) = processing.try_recv_response() {
+                match response {
+                    super::ProcessingResponse::Ok => ManagerResponse::Ok,
+                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
+                    _ => ManagerResponse::Error("Unexpected response".to_string()),
+                }
+            } else {
+                ManagerResponse::Error("No response from processing thread".to_string())
+            }
+        }
+        ManagerCommand::AddSpectrumAnalyzer { id, channels } => {
+            log::info!(
+                "[Manager] Add spectrum analyzer: {} ({} channels)",
+                id,
+                channels
+            );
+
+            if let Err(e) =
+                processing.send_command(ProcessingCommand::AddSpectrumAnalyzer { id, channels })
+            {
+                return ManagerResponse::Error(e);
+            }
+
+            // Wait for response
+            if let Some(response) = processing.try_recv_response() {
+                match response {
+                    super::ProcessingResponse::Ok => ManagerResponse::Ok,
+                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
+                    _ => ManagerResponse::Error("Unexpected response".to_string()),
+                }
+            } else {
+                ManagerResponse::Error("No response from processing thread".to_string())
+            }
+        }
+        ManagerCommand::RemoveAnalyzer(id) => {
+            log::debug!("[Manager] Remove analyzer: {}", id);
+
+            if let Err(e) = processing.send_command(ProcessingCommand::RemoveAnalyzer(id)) {
+                return ManagerResponse::Error(e);
+            }
+
+            // Wait for response
+            if let Some(response) = processing.try_recv_response() {
+                match response {
+                    super::ProcessingResponse::Ok => ManagerResponse::Ok,
+                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
+                    _ => ManagerResponse::Error("Unexpected response".to_string()),
+                }
+            } else {
+                ManagerResponse::Error("No response from processing thread".to_string())
+            }
+        }
+        ManagerCommand::GetState => {
+            if let Ok(state_guard) = safe_lock(state) {
+                ManagerResponse::State(state_guard.clone())
+            } else {
+                ManagerResponse::Error("Failed to lock state".to_string())
+            }
+        }
+        ManagerCommand::GetPosition => {
+            if let Ok(state_guard) = safe_lock(state) {
+                ManagerResponse::Position(state_guard.position)
+            } else {
+                ManagerResponse::Error("Failed to lock state".to_string())
+            }
+        }
+        ManagerCommand::GetAnalyzerData(analyzer_id) => {
+            // log::debug!("[Manager] Get analyzer data: {}", analyzer_id);
+
+            if let Err(e) = processing.send_command(ProcessingCommand::GetAnalyzerData(analyzer_id))
+            {
+                return ManagerResponse::Error(e);
+            }
+
+            // Wait for response from processing thread
+            if let Some(response) = processing.try_recv_response() {
+                match response {
+                    super::ProcessingResponse::AnalyzerData(data) => {
+                        ManagerResponse::AnalyzerData(data)
+                    }
+                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
+                    _ => ManagerResponse::Error("Unexpected response".to_string()),
+                }
+            } else {
+                ManagerResponse::Error("No response from processing thread".to_string())
+            }
+        }
+        ManagerCommand::ReloadConfig => {
+            log::debug!("[Manager] Reload config (not implemented)");
+            // TODO: Reload config from file
+            ManagerResponse::Ok
+        }
+        ManagerCommand::Shutdown => {
+            log::debug!("[Manager] Shutdown requested");
+
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.playback_state = PlaybackState::Stopped;
+            }
+
+            // Signal threads to shutdown
+            decoder.send_command(DecoderCommand::Shutdown).ok();
+            processing.send_command(ProcessingCommand::Shutdown).ok();
+            playback.send_command(PlaybackCommand::Shutdown).ok();
+
+            ManagerResponse::Ok
+        }
+    }
+}

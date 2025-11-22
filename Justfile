@@ -106,28 +106,28 @@ build-au-rust:
 	#!/usr/bin/env bash
 	set -euxo pipefail
 	# Build for both architectures
-	cargo build --release -p sotf-audio-ffi --target x86_64-apple-darwin
-	cargo build --release -p sotf-audio-ffi --target aarch64-apple-darwin
+	cargo build --release -p sotf-audio-plugins-ffi --target x86_64-apple-darwin
+	cargo build --release -p sotf-audio-plugins-ffi --target aarch64-apple-darwin
 	# Create universal binary
-	mkdir -p SOTFAudioUnits/Resources
+	mkdir -p src-audio-plugins-au/Resources
 	lipo -create \
-		target/x86_64-apple-darwin/release/libsotf_audio_ffi.a \
-		target/aarch64-apple-darwin/release/libsotf_audio_ffi.a \
-		-output SOTFAudioUnits/Resources/libsotf_audio_ffi.a
+		target/x86_64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
+		target/aarch64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
+		-output src-audio-plugins-au/Resources/libsotf_audio_plugins_ffi.a
 	# Copy header file
-	cp src-audio-ffi/sotf_audio_ffi.h SOTFAudioUnits/Shared/
+	cp src-audio-plugins-ffi/sotf_audio_ffi.h src-audio-plugins-au/Shared/
 	echo "✅ Universal Rust FFI library created"
 
 # Build Audio Unit plugins in Xcode
 build-au-swift: build-au-rust
 	#!/usr/bin/env bash
 	set -euxo pipefail
-	if [ ! -d "SOTFAudioUnits/SOTFAudioUnits.xcodeproj" ]; then
+	if [ ! -d "src-audio-plugins/SOTFAudioUnits.xcodeproj" ]; then
 		echo "⚠️  Xcode project not found. Please create it manually first."
-		echo "   See SOTFAudioUnits/README.md for instructions"
+		echo "   See src-audio-plugins/README.md for instructions"
 		exit 1
 	fi
-	xcodebuild -project SOTFAudioUnits/SOTFAudioUnits.xcodeproj \
+	xcodebuild -project src-audio-plugins/SOTFAudioUnits.xcodeproj \
 		-scheme EQAudioUnit \
 		-configuration Release \
 		build

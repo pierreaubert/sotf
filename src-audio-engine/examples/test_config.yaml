@@ -1,0 +1,27 @@
+# Audio Engine Test Configuration
+# Edit this file while the demo is running to trigger hot-reload!
+
+# Processing settings
+frame_size: 1024
+buffer_ms: 200
+
+# Output settings
+output_sample_rate: 48000
+output_channels: 2
+
+# Volume settings
+volume: 0.7
+muted: false
+
+# Plugin chain (empty for now - you can add plugins here)
+plugins: []
+
+# Example plugin configuration (commented out):
+# plugins:
+#   - type: "Gain"
+#     params:
+#       gain_db: -6.0
+#   - type: "LowPass"
+#     params:
+#       frequency: 10000.0
+#       q: 0.707

@@ -1,0 +1,116 @@
+# Example Audio Engine Configuration with Plugin Chain
+# This demonstrates how to configure a processing chain with multiple plugins
+
+# Frame size for processing blocks (must be power of 2)
+frame_size: 1024
+
+# Buffer size in milliseconds (affects latency)
+buffer_ms: 200
+
+# Output sample rate (Hz)
+output_sample_rate: 48000
+
+# Output channels (2 = stereo, 5 = 5.0 surround)
+# Note: This is the INPUT channel count. Plugins like upmixer will change the output count.
+output_channels: 2
+
+# Volume control (linear, 0.0 = silence, 1.0 = unity)
+volume: 1.0
+
+# Mute flag
+muted: false
+
+# Watch config file for changes and hot-reload
+watch_config: true
+
+# Plugin chain (processed in order)
+plugins:
+  # Example 1: Gain plugin (volume adjustment)
+  - plugin_type: "gain"
+    parameters:
+      gain_db: -3.0  # -3dB attenuation
+
+  # Example 2: Parametric EQ
+  - plugin_type: "eq"
+    parameters:
+      filters:
+        # Bass boost: Low-shelf at 100Hz, +3dB
+        - filter_type: "lowshelf"
+          freq: 100.0
+          q: 0.707
+          db_gain: 3.0
+
+        # Mid cut: Peak at 1kHz, -2dB
+        - filter_type: "peak"
+          freq: 1000.0
+          q: 1.0
+          db_gain: -2.0
+
+        # Treble boost: High-shelf at 8kHz, +2dB
+        - filter_type: "highshelf"
+          freq: 8000.0
+          q: 0.707
+          db_gain: 2.0
+
+  # Example 3: Compressor (dynamics processing)
+  - plugin_type: "compressor"
+    parameters:
+      threshold_db: -20.0  # Start compressing at -20dB
+      ratio: 4.0           # 4:1 compression ratio
+      attack_ms: 10.0      # 10ms attack time
+      release_ms: 100.0    # 100ms release time
+      knee_db: 0.0         # Hard knee (0) or soft knee (>0)
+      makeup_gain_db: 3.0  # Add 3dB makeup gain
+
+  # Example 4: Upmixer (stereo to 5.0 surround)
+  # Note: This changes channel count from 2 to 5
+  # All subsequent plugins must support 5 channels
+  - plugin_type: "upmixer"
+    parameters:
+      fft_size: 2048              # FFT size for analysis (power of 2)
+      gain_front_direct: 1.0      # Direct sound to front speakers
+      gain_front_ambient: 0.5     # Ambient sound to front speakers
+      gain_rear_ambient: 1.0      # Ambient sound to rear speakers
+
+  # Example 5: Limiter (after upmixer, processes 5 channels)
+  - plugin_type: "limiter"
+    parameters:
+      threshold_db: -1.0   # Limit peaks above -1dB
+      release_ms: 50.0     # 50ms release time
+      lookahead_ms: 5.0    # 5ms lookahead for smoother limiting
+      soft: true           # Use soft knee limiting
+
+# Alternative plugin chain examples (commented out)
+# Uncomment and modify to try different configurations
+
+# Simple gain-only chain:
+# plugins:
+#   - plugin_type: "gain"
+#     parameters:
+#       gain_db: -6.0
+
+# Gate + Compressor + Limiter (mastering chain):
+# plugins:
+#   - plugin_type: "gate"
+#     parameters:
+#       threshold_db: -40.0
+#       ratio: 10.0
+#       attack_ms: 1.0
+#       hold_ms: 10.0
+#       release_ms: 100.0
+#
+#   - plugin_type: "compressor"
+#     parameters:
+#       threshold_db: -12.0
+#       ratio: 3.0
+#       attack_ms: 5.0
+#       release_ms: 50.0
+#       knee_db: 6.0
+#       makeup_gain_db: 6.0
+#
+#   - plugin_type: "limiter"
+#     parameters:
+#       threshold_db: -0.5
+#       release_ms: 30.0
+#       lookahead_ms: 5.0
+#       soft: true

@@ -1398,6 +1398,25 @@ dependencies = [
 
 [[package]]
 name = "cbindgen"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fce8dd7fcfcbf3a0a87d8f515194b49d6135acab73e18bd380d1d93bb1a15eb"
+dependencies = [
+ "clap",
+ "heck 0.4.1",
+ "indexmap 2.12.1",
+ "log",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn 2.0.110",
+ "tempfile",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "cbindgen"
 version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eadd868a2ce9ca38de7eeafdcec9c7065ef89b42b32f0839278d55f35c54d1ff"
@@ -3868,7 +3887,7 @@ dependencies = [
  "bytemuck",
  "calloop",
  "calloop-wayland-source",
- "cbindgen",
+ "cbindgen 0.28.0",
  "circular-buffer",
  "cocoa 0.26.0",
  "cocoa-foundation 0.2.0",
@@ -9500,7 +9519,8 @@ dependencies = [
  "reqwest 0.12.24",
  "serde",
  "serde_json",
- "sotf_audio",
+ "sotf-audio-engine",
+ "sotf-audio-plugins",
  "tauri",
  "tauri-build",
  "tauri-plugin-devtools",
@@ -9512,82 +9532,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-audio-player"
-version = "0.5.1"
-dependencies = [
- "autoeq-iir",
- "chrono",
- "directories",
- "ebur128",
- "log",
- "parking_lot",
- "rusqlite",
- "serde",
- "serde_json",
- "sotf_audio",
- "symphonia",
- "symphonia-bundle-flac",
- "symphonia-bundle-mp3",
- "symphonia-codec-aac",
- "symphonia-core",
- "symphonia-format-isomp4",
- "symphonia-format-ogg",
- "symphonia-format-riff",
- "symphonia-metadata",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "walkdir",
-]
-
-[[package]]
-name = "sotf-audio-player-gpui"
-version = "0.5.1"
-dependencies = [
- "autoeq-iir",
- "clap",
- "directories",
- "env_logger 0.11.8",
- "gpui",
- "id3",
- "log",
- "metaflac",
- "parking_lot",
- "rusqlite",
- "serde",
- "serde_json",
- "smol",
- "sotf_audio",
- "symphonia",
- "symphonia-bundle-flac",
- "symphonia-bundle-mp3",
- "symphonia-codec-aac",
- "symphonia-core",
- "symphonia-format-isomp4",
- "symphonia-format-ogg",
- "symphonia-format-riff",
- "symphonia-metadata",
- "thiserror 2.0.17",
- "tokio",
- "walkdir",
-]
-
-[[package]]
-name = "sotf-audio-player-tui"
-version = "0.5.1"
-dependencies = [
- "clap",
- "crossterm",
- "env_logger 0.11.8",
- "log",
- "parking_lot",
- "ratatui",
- "sotf-audio-player",
- "sotf_audio",
-]
-
-[[package]]
-name = "sotf_audio"
+name = "sotf-audio-engine"
 version = "0.5.1"
 dependencies = [
  "autoeq-env",
@@ -9620,6 +9565,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "signal-hook",
+ "sotf-audio-plugins",
  "sotf_hal",
  "symphonia",
  "symphonia-bundle-flac",
@@ -9637,6 +9583,146 @@ dependencies = [
  "tokio",
  "walkdir",
  "which 8.0.0",
+]
+
+[[package]]
+name = "sotf-audio-player"
+version = "0.5.1"
+dependencies = [
+ "autoeq-iir",
+ "chrono",
+ "directories",
+ "ebur128",
+ "log",
+ "parking_lot",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sotf-audio-engine",
+ "sotf-audio-plugins",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
+name = "sotf-audio-player-gpui"
+version = "0.5.1"
+dependencies = [
+ "autoeq-iir",
+ "clap",
+ "directories",
+ "env_logger 0.11.8",
+ "gpui",
+ "id3",
+ "log",
+ "metaflac",
+ "parking_lot",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "smol",
+ "sotf-audio-engine",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "thiserror 2.0.17",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
+name = "sotf-audio-player-tui"
+version = "0.5.1"
+dependencies = [
+ "clap",
+ "crossterm",
+ "env_logger 0.11.8",
+ "log",
+ "parking_lot",
+ "ratatui",
+ "sotf-audio-engine",
+ "sotf-audio-player",
+]
+
+[[package]]
+name = "sotf-audio-plugins"
+version = "0.5.1"
+dependencies = [
+ "autoeq-env",
+ "autoeq-iir",
+ "chrono",
+ "clap",
+ "cpal",
+ "criterion",
+ "ctrlc",
+ "directories",
+ "ebur128",
+ "env_logger 0.11.8",
+ "hound",
+ "id3",
+ "libc",
+ "log",
+ "metaflac",
+ "ndarray 0.17.1",
+ "netcdf",
+ "notify",
+ "parking_lot",
+ "rand 0.9.2",
+ "realfft",
+ "rubato",
+ "rusqlite",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "signal-hook",
+ "sotf_hal",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-codec-alac",
+ "symphonia-codec-pcm",
+ "symphonia-codec-vorbis",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "tokio",
+ "walkdir",
+ "which 8.0.0",
+]
+
+[[package]]
+name = "sotf-audio-plugins-ffi"
+version = "0.2.1"
+dependencies = [
+ "autoeq-iir",
+ "cbindgen 0.27.0",
+ "log",
+ "serde",
+ "serde_json",
+ "sotf-audio-engine",
+ "sotf-audio-plugins",
 ]
 
 [[package]]

@@ -1,0 +1,21 @@
+# Test Configuration: Upmixer Only
+# This config tests the stereo to 5.0 surround upmixer
+
+frame_size: 1024
+buffer_ms: 200
+output_sample_rate: 48000
+output_channels: 2  # Start with stereo input
+
+volume: 0.8
+muted: false
+
+watch_config: true
+
+# Single plugin: upmixer (2 → 5 channels)
+plugins:
+  - plugin_type: "upmixer"
+    parameters:
+      fft_size: 2048
+      gain_front_direct: 1.0
+      gain_front_ambient: 0.5
+      gain_rear_ambient: 1.0

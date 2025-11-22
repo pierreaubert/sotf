@@ -1,10 +1,11 @@
 [workspace]
 members = [
-    "src-audio",
-    "src-audio-ffi",
+    "src-audio-engine",
     "src-audio-player",
     "src-audio-player-gpui",
     "src-audio-player-tui",
+    "src-audio-plugins",
+    "src-audio-plugins-ffi",
     "src-autoeq",
     "src-bem",
     "src-cea2034",
@@ -31,7 +32,8 @@ members = [
 # src-gpui-player is also excluded from default build due to heavy GPUI dependency
 #
 default-members = [
-    "src-audio",
+    "src-audio-engine",
+    "src-audio-plugins",
     "src-audio-player",
     "src-audio-player-tui",
     "src-autoeq",
