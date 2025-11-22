@@ -13,10 +13,6 @@ name = "sotf_player_cli"
 path = "bin/sotf_player_cli.rs"
 
 [[bin]]
-name = "sotf_player_tui"
-path = "bin/sotf_player_tui/main.rs"
-
-[[bin]]
 name = "sotf_recorder_cli"
 path = "bin/sotf_recorder_cli.rs"
 
