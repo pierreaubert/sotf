@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "src-audio",
+    "src-audio-player",
     "src-autoeq",
     "src-bem",
     "src-cea2034",
@@ -29,6 +30,7 @@ members = [
 #
 default-members = [
     "src-audio",
+    "src-audio-player",
     "src-autoeq",
     "src-cea2034",
     "src-convexhull3d",
