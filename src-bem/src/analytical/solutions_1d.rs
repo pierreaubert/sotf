@@ -197,9 +197,10 @@ mod tests {
         // At x = 0, sin(0) = 0
         assert_abs_diff_eq!(solution.pressure[0].im, 0.0, epsilon = 1e-10);
 
-        // At x = π/2, sin(π/2) = 1
-        let mid_idx = solution.pressure.len() / 2;
-        assert_abs_diff_eq!(solution.pressure[mid_idx].im, 1.0, epsilon = 1e-6);
+        // At x = π/2, sin(π/2) = 1. Pick the grid point closest to π/2.
+        let dx = (PI - 0.0) / (100 - 1) as f64;
+        let target_idx = ((PI / 2.0) / dx).round() as usize;
+        assert_abs_diff_eq!(solution.pressure[target_idx].im, 1.0, epsilon = 1e-4);
     }
 
     #[test]

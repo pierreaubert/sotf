@@ -207,15 +207,6 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "approx"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f2a05fd1bd10b2527e20a2cd32d8873d115b8b39fe219ee25f42a8aca6ba278"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
-name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
@@ -713,7 +704,7 @@ dependencies = [
  "csv",
  "intel-mkl-src",
  "metaheuristics-nature",
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "nlopt",
  "num_cpus",
  "openblas-src",
@@ -734,7 +725,7 @@ dependencies = [
 name = "autoeq-cea2034"
 version = "0.2.190"
 dependencies = [
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "serde",
  "tokio",
 ]
@@ -750,7 +741,7 @@ dependencies = [
  "clap",
  "csv",
  "intel-mkl-src",
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "nlopt",
  "openblas-src",
  "plotly",
@@ -766,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq-env"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "chrono",
  "thiserror 2.0.17",
@@ -778,7 +769,7 @@ version = "0.2.21"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "num-complex",
  "serde",
 ]
@@ -789,7 +780,7 @@ version = "0.2.37"
 dependencies = [
  "autoeq-env",
  "clap",
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "plotly",
  "plotly_static",
  "regex",
@@ -943,33 +934,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba62675e8242a4c4e806d12f11d136e626e6c8361d6b829310732241652a178a"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "bem"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "approx 0.5.1",
- "cc",
- "chrono",
- "clap",
- "criterion",
- "env_logger 0.11.8",
- "log",
- "memory-stats",
- "ndarray 0.15.6",
- "ndarray-linalg",
- "num-complex",
- "num-traits",
- "proptest",
- "rayon",
- "serde",
- "serde_json",
- "special",
- "sysinfo 0.30.13",
- "thiserror 1.0.69",
- "which",
 ]
 
 [[package]]
@@ -1730,7 +1694,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "indexmap 2.12.1",
  "rustc-hash 2.1.1",
@@ -2543,7 +2507,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2920,6 +2884,12 @@ dependencies = [
  "log",
  "regex",
 ]
+
+[[package]]
+name = "env_home"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
 
 [[package]]
 name = "env_logger"
@@ -3883,7 +3853,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "anyhow",
  "as-raw-xcb-connection",
@@ -3982,7 +3952,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -4210,7 +4180,7 @@ name = "head-scanner"
 version = "0.5.1"
 dependencies = [
  "anyhow",
- "approx 0.5.1",
+ "approx",
  "bytemuck",
  "byteorder",
  "chrono",
@@ -4404,7 +4374,7 @@ checksum = "add0ab9360ddbd88cfeb3bd9574a1d85cfdfa14db10b3e21d3700dbc4328758f"
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "anyhow",
  "async-compression",
@@ -4843,7 +4813,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2393fb7808960751a52e8a154f67e7dd3f8a2ef9bd80d1553078a7b4e8ed3f0d"
 dependencies = [
  "ab_glyph",
- "approx 0.5.1",
+ "approx",
  "getrandom 0.2.16",
  "image",
  "itertools 0.12.1",
@@ -5345,26 +5315,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "lapack-sys"
-version = "0.14.0"
+name = "lambert_w"
+version = "1.2.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "447f56c85fb410a7a3d36701b2153c1018b1d2b908c5fbaf01c1b04fac33bcbe"
+checksum = "1c567f2087fc83535a312e683b6ed8811395690ef896df7b82966b21b7526580"
+dependencies = [
+ "num-complex",
+ "num-traits",
+]
+
+[[package]]
+name = "lapack-sys"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "314b879030845b68571809a6978e52d3b67ac5fba07e77b1b317b484092e2fb5"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "lax"
-version = "0.16.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f96a229d9557112e574164f8024ce703625ad9f88a90964c1780809358e53da"
+checksum = "bda593cb87a3b1c06625e73710812005caf1523e45b0b898adcd7716602f8ba2"
 dependencies = [
  "cauchy",
  "katexit",
  "lapack-sys",
  "num-traits",
- "openblas-src",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -5804,7 +5783,7 @@ dependencies = [
 [[package]]
 name = "media"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "anyhow",
  "bindgen 0.71.1",
@@ -6013,7 +5992,7 @@ version = "0.32.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b5c17de023a86f59ed79891b2e5d5a94c705dbe904a5b5c9c952ea6221b03e4"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "matrixmultiply",
  "num-complex",
  "num-rational",
@@ -6028,7 +6007,7 @@ version = "0.33.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "26aecdf64b707efd1310e3544d709c5c0ac61c13756046aaaba41be5c4f66a3b"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "matrixmultiply",
  "nalgebra-macros",
  "num-complex",
@@ -6088,29 +6067,10 @@ dependencies = [
 
 [[package]]
 name = "ndarray"
-version = "0.15.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adb12d4e967ec485a5f71c6311fe28158e9d6f4bc4a447b474184d0f91a8fa32"
-dependencies = [
- "approx 0.4.0",
- "cblas-sys",
- "libc",
- "matrixmultiply",
- "num-complex",
- "num-integer",
- "num-traits",
- "rawpointer",
- "rayon",
-]
-
-[[package]]
-name = "ndarray"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "882ed72dce9365842bf196bdeedf5055305f11fc8c03dee7bb0194a6cad34841"
 dependencies = [
- "cblas-sys",
- "libc",
  "matrixmultiply",
  "num-complex",
  "num-integer",
@@ -6128,6 +6088,9 @@ version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7c9125e8f6f10c9da3aad044cc918cf8784fa34de857b1aa68038eb05a50a9"
 dependencies = [
+ "approx",
+ "cblas-sys",
+ "libc",
  "matrixmultiply",
  "num-complex",
  "num-integer",
@@ -6135,22 +6098,24 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "rawpointer",
+ "rayon",
+ "serde",
 ]
 
 [[package]]
 name = "ndarray-linalg"
-version = "0.16.0"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b0e8dda0c941b64a85c5deb2b3e0144aca87aced64678adfc23eacea6d2cc42"
+checksum = "264d4af20161410ca6e57eb54f2cbe734de57fb9764860c21b845bb31ec92b54"
 dependencies = [
  "cauchy",
  "katexit",
  "lax",
- "ndarray 0.15.6",
+ "ndarray 0.17.1",
  "num-complex",
  "num-traits",
  "rand 0.8.5",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -6725,6 +6690,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "objc2-io-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
+dependencies = [
+ "libc",
+ "objc2-core-foundation",
+]
+
+[[package]]
 name = "objc2-io-surface"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7199,7 +7174,7 @@ version = "0.17.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6aeb9659a05b1783fb2e9bc94f48225ae5b40817eb45b62569c0e4dd767a6e51"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "arrayvec",
  "bitflags 2.10.0",
  "downcast-rs",
@@ -7307,7 +7282,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "perf"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "collections",
  "serde",
@@ -8376,7 +8351,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "derive_refineable",
 ]
@@ -9045,7 +9020,7 @@ checksum = "16c2f82143577edb4921b71ede051dac62ca3c16084e918bf7b40c96ae10eb33"
 [[package]]
 name = "semantic_version"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "anyhow",
  "serde",
@@ -9369,7 +9344,7 @@ version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "061507c94fc6ab4ba1c9a0305018408e312e17c041eb63bef8aa726fa33aceae"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "num-complex",
  "num-traits",
  "paste",
@@ -9382,7 +9357,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c99284beb21666094ba2b75bbceda012e610f5479dfcc2d6e2426f53197ffd95"
 dependencies = [
- "approx 0.5.1",
+ "approx",
  "num-complex",
  "num-traits",
  "paste",
@@ -9556,7 +9531,7 @@ dependencies = [
  "csv",
  "hound",
  "intel-mkl-src",
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "nlopt",
  "openblas-src",
  "plotly",
@@ -9626,7 +9601,7 @@ dependencies = [
  "libc",
  "log",
  "metaflac",
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "netcdf",
  "notify",
  "parking_lot",
@@ -9655,7 +9630,36 @@ dependencies = [
  "tempfile",
  "tokio",
  "walkdir",
- "which",
+ "which 8.0.0",
+]
+
+[[package]]
+name = "sotf_bem"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "approx",
+ "cc",
+ "chrono",
+ "clap",
+ "criterion",
+ "env_logger 0.11.8",
+ "log",
+ "memory-stats",
+ "ndarray 0.17.1",
+ "ndarray-linalg",
+ "num-complex",
+ "num-traits",
+ "num_cpus",
+ "proptest",
+ "rayon",
+ "serde",
+ "serde_json",
+ "spec_math",
+ "special",
+ "sysinfo 0.37.2",
+ "thiserror 2.0.17",
+ "which 8.0.0",
 ]
 
 [[package]]
@@ -9714,11 +9718,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "special"
-version = "0.10.3"
+name = "spec_math"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b89cf0d71ae639fdd8097350bfac415a41aabf1d5ddd356295fdc95f09760382"
+checksum = "02ef091d4e8b981dbaa4cc17789d00b53d5d2c001ae689f14e6093f30c529036"
+
+[[package]]
+name = "special"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2037227570e0bedf82a7f866a3e7cebe218ec9cd0d5399151942ee7358f90bb6"
 dependencies = [
+ "lambert_w",
  "libm",
 ]
 
@@ -9893,7 +9904,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "arrayvec",
  "log",
@@ -10214,21 +10225,6 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.30.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a5b4ddaee55fb2bea2bf0e5000747e5f5c0de765e5a5ff87f4cd106439f4bb3"
-dependencies = [
- "cfg-if",
- "core-foundation-sys",
- "libc",
- "ntapi",
- "once_cell",
- "rayon",
- "windows 0.52.0",
-]
-
-[[package]]
-name = "sysinfo"
 version = "0.31.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "355dbe4f8799b304b05e1b0f05fc59b2a18d36645cf169607da45bde2f69a1be"
@@ -10239,6 +10235,20 @@ dependencies = [
  "ntapi",
  "rayon",
  "windows 0.57.0",
+]
+
+[[package]]
+name = "sysinfo"
+version = "0.37.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16607d5caffd1c07ce073528f9ed972d88db15dd44023fa57142963be3feb11f"
+dependencies = [
+ "libc",
+ "memchr",
+ "ntapi",
+ "objc2-core-foundation",
+ "objc2-io-kit",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -11595,9 +11605,9 @@ dependencies = [
 
 [[package]]
 name = "ureq-proto"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b4531c118335662134346048ddb0e54cc86bd7e81866757873055f0e38f5d2"
+checksum = "d81f9efa9df032be5934a46a068815a10a042b494b6a58cb0a1a97bb5467ed6f"
 dependencies = [
  "base64 0.22.1",
  "http 1.3.1",
@@ -11683,7 +11693,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "util"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "anyhow",
  "async-fs",
@@ -11713,13 +11723,13 @@ dependencies = [
  "tendril",
  "unicase",
  "walkdir",
- "which",
+ "which 6.0.3",
 ]
 
 [[package]]
 name = "util_macros"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed.git#bfe141ea79aa4984028934067ba75c48d99136ae"
+source = "git+https://github.com/zed-industries/zed.git#10eba0bd5f79286fa27eb105b38992ba838fd66f"
 dependencies = [
  "perf",
  "quote",
@@ -12148,7 +12158,7 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tracing",
- "which",
+ "which 6.0.3",
  "zip 0.6.6",
 ]
 
@@ -12278,6 +12288,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "8.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3fabb953106c3c8eea8306e4393700d7657561cb43122571b172bbfb7c7ba1d"
+dependencies = [
+ "env_home",
+ "rustix 1.1.2",
+ "winsafe",
+]
+
+[[package]]
 name = "wide"
 version = "0.7.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12331,16 +12352,6 @@ dependencies = [
  "raw-window-handle",
  "windows-sys 0.59.0",
  "windows-version",
-]
-
-[[package]]
-name = "windows"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be"
-dependencies = [
- "windows-core 0.52.0",
- "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -12417,15 +12428,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b2d95af1a8a14a3c7367e1ed4fc9c20e0a26e79551b1454d72583c97cc6610"
 dependencies = [
  "windows-core 0.62.2",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ab640c8d7e35bf8ba19b884ba838ceb4fba93a4e8c65a9059d08afcfc683d9"
-dependencies = [
- "windows-targets 0.52.6",
 ]
 
 [[package]]

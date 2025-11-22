@@ -16,6 +16,7 @@ members = [
 ]
 # Default members excludes
 #   - macOS-only src-hal, src-configbar
+#   - src-bem
 #   - src-head-scanner
 #   - src-gpui-player
 #
@@ -23,13 +24,12 @@ members = [
 #            just prod-hal
 #            just prod-configbar
 #
-# Crate head-scanner is build separetly since it is hard to get all the dependency rights
+# Crate head-scanner is build separetly since it is hard to get all the dependency right
 # src-gpui-player is also excluded from default build due to heavy GPUI dependency
 #
 default-members = [
     "src-audio",
     "src-autoeq",
-    "src-bem",
     "src-cea2034",
     "src-convexhull3d",
     "src-de",
@@ -50,8 +50,6 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/pierreaubert/sotf"
 
 [workspace.dependencies]
-# Core numerical computing
-ndarray = { version = "0.16.1", features = ["rayon", "blas", "serde"] }
 
 # Serialization and data
 serde = { version = "1.0", features = ["derive"] }
@@ -62,6 +60,7 @@ regex = "1.12"
 
 # Async and networking
 # ideally we would use only threads or only tokio
+anyhow = { version = "1.0" }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.21"
 signal-hook = "0.3"
@@ -81,14 +80,20 @@ thiserror = "2.0.17"
 strsim = "0.11"
 chrono = "0.4"
 tempfile = "3.23"
-which = "6.0"
 base64 = "0.22"
 byteorder = "1.5"
 libc = "0.2"
+log = "0.4"
+env = "1"
+env_logger = "0.11"
+which = "8"
 
 # Optimization and math
+ndarray = { version = "0.17", features = ["rayon", "blas", "serde"] }
+ndarray-linalg = { version = "0.18" }
 rand = "0.9.2"
 num-complex = "0.4"
+num-traits = "0.2"
 netcdf = "0.11"
 hdf5 = { package = "hdf5-metno", version = "0.10.0" }
 metaheuristics-nature = "10.1"
@@ -96,6 +101,8 @@ rayon = "1.11"
 nlopt = "0.8.1"
 blas-src = {version="0.14"}
 rustfft = "6.4"
+special = "0.11"  # Bessel, Hankel, Legendre functions
+spec_math = "0.1.6"
 autoeq = { path = "src-autoeq" }
 
 # Plotting and visualization

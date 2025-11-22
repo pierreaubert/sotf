@@ -10,7 +10,7 @@ repository = { workspace = true }
 [features]
 default = ["sofa"]
 sofa = ["hdf5"]  # Enable SOFA file generation
-bem = ["netcdf", "rustfft"]  # Enable BEM solver integration
+bem = ["netcdf"]  # Enable BEM solver integration
 
 [lib]
 name = "head_scanner"
@@ -25,12 +25,9 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 anyhow = "1.0"
 parking_lot = { workspace = true }
-chrono = { workspace = true }
 rustfft = { workspace = true }
 num-complex = { workspace = true }
-
-# SOFA file export (netCDF-4 format, which is HDF5-based)
-netcdf = "0.11"
+chrono = { workspace = true }
 
 # Internal dependencies
 convexhull3d = { path = "../src-convexhull3d" }
@@ -67,12 +64,9 @@ delaunator = "1.0"  # Delaunay triangulation
 # This is a known limitation - SOFA generation requires a different HDF5 version than the BEM solver
 # hdf5 = { version = "0.8", optional = true }
 hdf5 = { workspace = true, optional = true }
-chrono = { workspace = true }
 
 # BEM solver integration (NetCDF + FFT)
 netcdf = { workspace = true, optional = true }  # NetCDF file parsing
-rustfft = { workspace = true, optional = true }  # FFT for frequency → time domain conversion
-num-complex = "0.4"  # Complex numbers for FFT
 
 # Async and parallelism
 rayon = { workspace = true }

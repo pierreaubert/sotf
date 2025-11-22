@@ -5,7 +5,6 @@
 
 use super::{AnalyticalSolution, Point};
 use num_complex::Complex64;
-use special::Bessel;
 use std::f64::consts::PI;
 
 /// Sphere scattering: rigid sphere in a plane wave (Mie theory)

@@ -153,11 +153,11 @@ impl NumCalcRunner {
         log::info!("Executing NumCalc: {:?}", cmd);
 
         // Spawn process
-        let mut child = cmd.spawn().context("Failed to spawn NumCalc process")?;
+        let child = cmd.spawn().context("Failed to spawn NumCalc process")?;
 
         // Apply timeout if specified
         let output = if let Some(timeout) = config.timeout {
-            Self::wait_with_timeout(&mut child, timeout)?
+            Self::wait_with_timeout(child, timeout)?
         } else {
             child.wait_with_output()?
         };
@@ -192,7 +192,7 @@ impl NumCalcRunner {
 
     /// Wait for process with timeout
     fn wait_with_timeout(
-        child: &mut std::process::Child,
+        mut child: std::process::Child,
         timeout: Duration,
     ) -> Result<std::process::Output> {
         use std::thread;
@@ -200,7 +200,7 @@ impl NumCalcRunner {
 
         let (tx, rx) = mpsc::channel();
 
-        let child_id = child.id();
+        let _child_id = child.id();
 
         // Spawn thread to wait for child
         thread::spawn(move || {

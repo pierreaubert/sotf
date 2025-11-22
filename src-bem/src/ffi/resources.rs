@@ -31,7 +31,7 @@ pub struct SystemResources {
 impl SystemResources {
     /// Get current system resources
     pub fn current() -> anyhow::Result<Self> {
-        use sysinfo::{System, SystemExt};
+        use sysinfo::System;
 
         let mut sys = System::new_all();
         sys.refresh_all();
@@ -42,11 +42,11 @@ impl SystemResources {
 
         // Get CPU usage (requires refresh)
         std::thread::sleep(Duration::from_millis(200));
-        sys.refresh_cpu();
-        let cpu_usage_percent = sys.global_cpu_info().cpu_usage() as f64;
+        sys.refresh_cpu_all();
+        let cpu_usage_percent = sys.global_cpu_usage() as f64;
 
         // Get load average (Unix only)
-        let load_average = sys.load_average().one;
+        let load_average = System::load_average().one;
         let load_average = if load_average > 0.0 {
             Some(load_average)
         } else {

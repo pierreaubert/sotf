@@ -5,7 +5,7 @@
 
 use super::{AnalyticalSolution, Point};
 use num_complex::Complex64;
-use special::Bessel;
+use spec_math::Bessel;
 use std::f64::consts::PI;
 
 /// Cylinder scattering: rigid circular cylinder in a plane wave
@@ -61,31 +61,31 @@ pub fn cylinder_scattering_2d(
     let mut pressure = Vec::new();
 
     for &r in &r_points {
+        let kr = wave_number * r;
+        let hankels: Vec<Complex64> = (0..num_terms)
+            .map(|n| {
+                let n_i64 = n as i64;
+                Complex64::new(bessel_j(n_i64, kr), bessel_y(n_i64, kr))
+            })
+            .collect();
+
         for &theta in &theta_points {
             positions.push(Point::from_polar(r, theta));
 
             // Incident wave: exp(ikr cos θ)
-            let kr = wave_number * r;
             let incident = Complex64::new(
                 (kr * theta.cos()).cos(),
                 (kr * theta.cos()).sin(),
             );
 
-            // Scattered wave: Σ aₙ Hₙ⁽¹⁾(kr) exp(inθ)
+            // Scattered wave: cosine expansion includes ±n symmetry explicitly
             let mut scattered = Complex64::new(0.0, 0.0);
 
             for n in 0..num_terms {
-                let n_i64 = n as i64;
-
-                // Hankel function H_n^(1)(kr) = J_n(kr) + i*Y_n(kr)
-                let jn = bessel_j(n_i64, kr);
-                let yn = bessel_y(n_i64, kr);
-                let hankel = Complex64::new(jn, yn);
-
-                // exp(inθ)
-                let phase = Complex64::new((n as f64 * theta).cos(), (n as f64 * theta).sin());
-
-                scattered += coefficients[n] * hankel * phase;
+                let weight = if n == 0 { 1.0 } else { 2.0 };
+                let cos_term = (n as f64 * theta).cos();
+                let contribution = coefficients[n] * hankels[n];
+                scattered += contribution * (weight * cos_term);
             }
 
             pressure.push(incident + scattered);
@@ -160,23 +160,14 @@ fn compute_rigid_cylinder_coefficients(ka: f64, num_terms: usize) -> Vec<Complex
     coefficients
 }
 
-/// Bessel function J_n(x) using `special` crate
+/// Cylindrical Bessel function of the first kind, order `n`
 fn bessel_j(n: i64, x: f64) -> f64 {
-    // special crate provides j0, j1, jn
-    match n {
-        0 => x.j0(),
-        1 => x.j1(),
-        _ => x.jn(n as usize),
-    }
+    x.bessel_jv(n as f64)
 }
 
-/// Bessel function Y_n(x) (Neumann function) using `special` crate
+/// Cylindrical Bessel function of the second kind (Neumann), order `n`
 fn bessel_y(n: i64, x: f64) -> f64 {
-    match n {
-        0 => x.y0(),
-        1 => x.y1(),
-        _ => x.yn(n as usize),
-    }
+    x.bessel_yv(n as f64)
 }
 
 /// Pressure directivity pattern (far-field)
@@ -202,11 +193,9 @@ pub fn cylinder_directivity_2d(
             let mut directivity = Complex64::new(0.0, 0.0);
 
             for n in 0..num_terms {
-                let phase = Complex64::new(
-                    (n as f64 * theta).cos(),
-                    (n as f64 * theta).sin(),
-                );
-                directivity += coefficients[n] * phase;
+                let weight = if n == 0 { 1.0 } else { 2.0 };
+                let cos_term = (n as f64 * theta).cos();
+                directivity += coefficients[n] * (weight * cos_term);
             }
 
             directivity
