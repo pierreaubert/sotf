@@ -1,0 +1,8 @@
+/target
+/Cargo.lock
+*.json
+*.html
+/NumCalc/build
+/NumCalc/*.o
+/results
+/output
