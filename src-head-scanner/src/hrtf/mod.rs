@@ -39,10 +39,14 @@
 pub mod types;
 pub mod numcalc_parser;
 pub mod hrir;
+pub mod sofa_writer;
 
 // Re-exports
 pub use types::*;
 pub use numcalc_parser::NumCalcParser;
 pub use hrir::{
     apply_blackman_window, apply_hamming_window, apply_hann_window, compute_hrir,
+};
+pub use sofa_writer::{
+    cartesian_to_spherical, spherical_to_cartesian, CoordinateSystem, SofaMetadata, SofaWriter,
 };
