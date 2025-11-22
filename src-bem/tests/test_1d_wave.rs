@@ -195,7 +195,7 @@ fn test_1d_convergence_with_resolution() {
 
 /// Benchmark test (not run by default)
 #[test]
-#[ignore]
+// #[ignore]
 fn bench_1d_plane_wave_performance() {
     use std::time::Instant;
 

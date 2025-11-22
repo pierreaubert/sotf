@@ -486,7 +486,7 @@ fn generate_3d_visualization_suite() {
 
 /// Performance benchmark for 3D Mie series
 #[test]
-#[ignore]
+// #[ignore]
 fn bench_3d_sphere_performance() {
     use std::time::Instant;
 

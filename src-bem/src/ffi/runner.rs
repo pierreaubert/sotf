@@ -67,10 +67,26 @@ impl NumCalcRunner {
     /// 3. System PATH
     fn find_executable() -> Result<PathBuf> {
         // Try environment variable first
-        if let Ok(path) = std::env::var("NUMCALC_PATH") {
-            let path = PathBuf::from(path);
+        if let Ok(path_str) = std::env::var("NUMCALC_PATH") {
+            let path = PathBuf::from(path_str);
             if path.exists() {
-                return Ok(path);
+                if path.is_file() {
+                    return Ok(path);
+                } else if path.is_dir() {
+                    // Check common locations inside directory
+                    let candidates = vec![
+                        path.join("NumCalc"),
+                        path.join("bin/NumCalc"),
+                        path.join("src/NumCalc"),
+                        path.join("NumCalc.exe"),
+                        path.join("bin/NumCalc.exe"),
+                    ];
+                    for candidate in candidates {
+                        if candidate.exists() && candidate.is_file() {
+                            return Ok(candidate);
+                        }
+                    }
+                }
             }
         }
 

@@ -40,6 +40,7 @@ use std::f64::consts::PI;
 ///
 /// ```rust
 /// use bem::analytical::cylinder_scattering_2d;
+/// use std::f64::consts::PI;
 ///
 /// // ka = 1 (low frequency)
 /// let solution = cylinder_scattering_2d(1.0, 1.0, 20, vec![1.0, 2.0, 3.0], vec![0.0, PI/4.0, PI/2.0]);
@@ -211,15 +212,21 @@ pub fn cylinder_scattering_cross_section_2d(
     radius: f64,
     num_terms: usize,
 ) -> f64 {
-    let directivity_forward = cylinder_directivity_2d(
-        wave_number,
-        radius,
-        num_terms,
-        vec![0.0],
-    );
+    let ka = wave_number * radius;
+    let coefficients = compute_rigid_cylinder_coefficients(ka, num_terms);
 
-    // Optical theorem
-    4.0 / wave_number * directivity_forward[0].im
+    // Scattering cross section σ = (4/k) * Σ |aₙ|²
+    // Note: The factor 2 for n>0 is already included in the definition of the series expansion
+    // but for cross section we sum the squared magnitudes of the coefficients.
+    // For cylindrical wave expansion: σ = (4/k) * [ |a₀|² + 2 * Σₙ₌₁ |aₙ|² ]
+
+    let mut sum_sq = 0.0;
+    for (n, a_n) in coefficients.iter().enumerate() {
+        let weight = if n == 0 { 1.0 } else { 2.0 };
+        sum_sq += weight * a_n.norm_sqr();
+    }
+
+    4.0 / wave_number * sum_sq
 }
 
 #[cfg(test)]

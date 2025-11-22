@@ -42,6 +42,7 @@ use std::f64::consts::PI;
 ///
 /// ```rust
 /// use bem::analytical::sphere_scattering_3d;
+/// use std::f64::consts::PI;
 ///
 /// // ka = 1 (Mie regime)
 /// let solution = sphere_scattering_3d(
@@ -197,24 +198,37 @@ fn spherical_bessel_j(n: usize, x: f64) -> f64 {
         }
     }
 
-    // Use recurrence for small n
-    match n {
-        0 => x.sin() / x,
-        1 => x.sin() / (x * x) - x.cos() / x,
-        _ => {
-            // Upward recurrence: jₙ(x) = (2n-1)/x * jₙ₋₁(x) - jₙ₋₂(x)
-            let mut j_nm2 = (x).sin() / x;
-            let mut j_nm1 = (x).sin() / (x * x) - (x).cos() / x;
+    // For small x or small n, upward recurrence is okay, but it's unstable for n > x.
+    // We use downward recurrence (Miller's method) which is stable.
+    // Start from N >> n and x.
+    let start_n = n + (x.abs() as usize) + 20; // Heuristic for starting point
 
-            for k in 2..=n {
-                let j_n = (2 * k - 1) as f64 / x * j_nm1 - j_nm2;
-                j_nm2 = j_nm1;
-                j_nm1 = j_n;
-            }
+    let mut j_next = 0.0; // j_{N+1}
+    let mut j_curr = 1e-30; // j_N (arbitrary small number)
 
-            j_nm1
-        }
+    // Downward recurrence: jₙ₋₁(x) = (2n+1)/x * jₙ(x) - jₙ₊₁(x)
+    // We normalize later using sum relation or known value (j0).
+    // Here we just want the ratio correct, then normalize with j0.
+
+    // Store values if we need specific n
+    // But since we only need j_n, we can just iterate down.
+    // However, to normalize, we usually need j0. So we compute down to 0.
+
+    let mut values = vec![0.0; start_n + 1];
+    values[start_n] = j_curr;
+
+    for k in (0..start_n).rev() {
+        let j_prev = (2 * k + 3) as f64 / x * j_curr - j_next;
+        values[k] = j_prev;
+        j_next = j_curr;
+        j_curr = j_prev;
     }
+
+    // Normalize using j0(x) = sin(x)/x
+    let true_j0 = x.sin() / x;
+    let scale = true_j0 / values[0];
+
+    values[n] * scale
 }
 
 /// Spherical Bessel function yₙ(x) (Neumann function)
@@ -278,7 +292,7 @@ pub fn sphere_rcs_3d(wave_number: f64, radius: f64, num_terms: usize) -> f64 {
         rcs += (2 * n + 1) as f64 * a_n.norm_sqr();
     }
 
-    4.0 * PI * rcs
+    4.0 * PI * rcs / (wave_number * wave_number)
 }
 
 /// Scattering efficiency Q_scat = σ / (πa²)

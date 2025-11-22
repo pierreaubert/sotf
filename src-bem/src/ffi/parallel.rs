@@ -318,13 +318,23 @@ mod tests {
     }
 
     #[test]
-    #[ignore]  // Requires actual NumCalc installation
+    // #[ignore]  // Requires actual NumCalc installation
     fn test_parallel_execution() {
         // This test is ignored - run with cargo test --ignored
         // Requires TEST_PROJECT_DIR environment variable
 
+        let temp_dir = std::env::temp_dir();
         let project_dir = std::env::var("TEST_PROJECT_DIR")
-            .unwrap_or_else(|_| "test_project".to_string());
+            .unwrap_or_else(|_| {
+                 // Create a dummy project dir if not set, just to test runner creation
+                 let p = temp_dir.join("test_project_parallel");
+                 std::fs::create_dir_all(&p).unwrap();
+                 // Create dummy NC.inp
+                 std::fs::write(p.join("NC.inp"), "Mesh2HRTF\nMinimalTest\nmeshfile=mesh.msh\n").unwrap();
+                 // Create dummy mesh.msh
+                 std::fs::write(p.join("mesh.msh"), "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n4\n1 0 0 0\n2 1 0 0\n3 0 1 0\n4 0 0 1\n$EndNodes\n$Elements\n4\n1 2 2 1 1 1 2 3\n2 2 2 1 1 1 2 4\n3 2 2 1 1 2 3 4\n4 2 2 1 1 1 3 4\n$EndElements").unwrap();
+                 p.to_string_lossy().to_string()
+            });
 
         if let Ok(runner) = ParallelBemRunner::new(project_dir) {
             match runner.run_all_frequencies(5) {

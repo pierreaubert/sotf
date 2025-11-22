@@ -43,7 +43,9 @@
 //! ```
 
 use bem::ffi::{NumCalcConfig, NumCalcRunner, ParallelBemRunner, SystemResources};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::fs;
+use std::io::Write;
 
 /// Get test project directory from environment
 fn get_test_project_dir() -> Option<PathBuf> {
@@ -68,11 +70,11 @@ fn is_numcalc_available() -> bool {
 /// Note: This may not produce physically meaningful results, but it's
 /// sufficient for testing the FFI wrapper functionality.
 #[allow(dead_code)]
-fn create_minimal_test_project(base_dir: &std::path::Path) -> anyhow::Result<PathBuf> {
-    use std::fs;
-    use std::io::Write;
-
-    let project_dir = base_dir.join("minimal_numcalc_test");
+fn create_minimal_test_project(base_dir: &Path, name: &str) -> std::io::Result<PathBuf> {
+    let project_dir = base_dir.join(name);
+    if project_dir.exists() {
+        fs::remove_dir_all(&project_dir)?;
+    }
     fs::create_dir_all(&project_dir)?;
 
     // Create minimal NC.inp
@@ -80,10 +82,8 @@ fn create_minimal_test_project(base_dir: &std::path::Path) -> anyhow::Result<Pat
     let mut file = fs::File::create(nc_inp)?;
 
     // Minimal NumCalc input file
-    // This is a simplified version - real projects are more complex
-    writeln!(file, "# Minimal NumCalc test project")?;
-    writeln!(file, "# Created by bem-rs integration tests")?;
-    writeln!(file, "")?;
+    writeln!(file, "Mesh2HRTF")?;
+    writeln!(file, "MinimalTest")?;
     writeln!(file, "meshfile=mesh.msh")?;
     writeln!(file, "freqmin=1000")?;
     writeln!(file, "freqmax=2000")?;
@@ -91,30 +91,16 @@ fn create_minimal_test_project(base_dir: &std::path::Path) -> anyhow::Result<Pat
     writeln!(file, "method=ML-FMM-BM")?;
     writeln!(file, "epsilon=1e-3")?;
 
-    // Create minimal mesh file (Gmsh format)
+    // Create dummy mesh file with a closed tetrahedron (4 triangles)
     let mesh_file = project_dir.join("mesh.msh");
-    let mut file = fs::File::create(mesh_file)?;
-
-    writeln!(file, "$MeshFormat")?;
-    writeln!(file, "2.2 0 8")?;
-    writeln!(file, "$EndMeshFormat")?;
-    writeln!(file, "$Nodes")?;
-    writeln!(file, "4")?;
-    writeln!(file, "1 0 0 0")?;
-    writeln!(file, "2 1 0 0")?;
-    writeln!(file, "3 0 1 0")?;
-    writeln!(file, "4 0 0 1")?;
-    writeln!(file, "$EndNodes")?;
-    writeln!(file, "$Elements")?;
-    writeln!(file, "1")?;
-    writeln!(file, "1 2 0 1 2 3 4")?;
-    writeln!(file, "$EndElements")?;
+    let mut mesh = fs::File::create(mesh_file)?;
+    writeln!(mesh, "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n4\n1 0 0 0\n2 1 0 0\n3 0 1 0\n4 0 0 1\n$EndNodes\n$Elements\n4\n1 2 2 1 1 1 2 3\n2 2 2 1 1 1 2 4\n3 2 2 1 1 2 3 4\n4 2 2 1 1 1 3 4\n$EndElements")?;
 
     Ok(project_dir)
 }
 
 #[test]
-#[ignore] // Run with: cargo test --test test_numcalc_integration -- --ignored
+// #[ignore] // Run with: cargo test --test test_numcalc_integration -- --ignored
 fn test_system_resources() {
     println!("\n=== System Resources Test ===\n");
 
@@ -137,7 +123,7 @@ fn test_system_resources() {
 }
 
 #[test]
-#[ignore]
+// #[ignore]
 fn test_numcalc_executable_discovery() {
     println!("\n=== NumCalc Executable Discovery Test ===\n");
 
@@ -173,18 +159,22 @@ fn test_numcalc_executable_discovery() {
 }
 
 #[test]
-#[ignore]
+// #[ignore]
 fn test_runner_creation() {
     println!("\n=== NumCalc Runner Creation Test ===\n");
 
+    if !is_numcalc_available() {
+        println!("NumCalc not available, skipping test execution");
+        return;
+    }
+
+    // Use temp dir if TEST_PROJECT_DIR not set
+    let temp_dir = std::env::temp_dir();
     let project_dir = match get_test_project_dir() {
         Some(dir) => dir,
         None => {
-            println!("✗ TEST_PROJECT_DIR not set or directory does not exist");
-            println!("\nPlease set up a test project:");
-            println!("  export TEST_PROJECT_DIR=/path/to/mesh2hrtf/project");
-            println!("\nSee module documentation for setup instructions.");
-            panic!("TEST_PROJECT_DIR required for this test");
+            println!("TEST_PROJECT_DIR not set, creating temporary test project...");
+            create_minimal_test_project(&temp_dir, "test_runner_creation").expect("Failed to create temp project")
         }
     };
 
@@ -213,11 +203,20 @@ fn test_runner_creation() {
 }
 
 #[test]
-#[ignore]
+// #[ignore]
 fn test_single_frequency_execution() {
     println!("\n=== Single Frequency Execution Test ===\n");
 
-    let project_dir = get_test_project_dir().expect("TEST_PROJECT_DIR not set");
+    if !is_numcalc_available() {
+        println!("NumCalc not available, skipping test execution");
+        return;
+    }
+
+    let temp_dir = std::env::temp_dir();
+    let project_dir = get_test_project_dir().unwrap_or_else(|| {
+        create_minimal_test_project(&temp_dir, "test_single_freq").expect("Failed to create temp project")
+    });
+    
     let runner = NumCalcRunner::new(&project_dir).expect("Failed to create runner");
 
     println!("Running NumCalc for frequency index 0...");
@@ -266,11 +265,19 @@ fn test_single_frequency_execution() {
 }
 
 #[test]
-#[ignore]
+// #[ignore]
 fn test_memory_estimation() {
     println!("\n=== Memory Estimation Test ===\n");
 
-    let project_dir = get_test_project_dir().expect("TEST_PROJECT_DIR not set");
+    if !is_numcalc_available() {
+        println!("NumCalc not available, skipping test execution");
+        return;
+    }
+
+    let temp_dir = std::env::temp_dir();
+    let project_dir = get_test_project_dir().unwrap_or_else(|| {
+        create_minimal_test_project(&temp_dir, "test_memory").expect("Failed to create temp project")
+    });
     let runner = NumCalcRunner::new(&project_dir).expect("Failed to create runner");
 
     println!("Running NumCalc memory estimation...");
@@ -299,11 +306,19 @@ fn test_memory_estimation() {
 }
 
 #[test]
-#[ignore]
+// #[ignore]
 fn test_parallel_execution_small() {
     println!("\n=== Parallel Execution Test (3 frequencies) ===\n");
 
-    let project_dir = get_test_project_dir().expect("TEST_PROJECT_DIR not set");
+    if !is_numcalc_available() {
+        println!("NumCalc not available, skipping test execution");
+        return;
+    }
+
+    let temp_dir = std::env::temp_dir();
+    let project_dir = get_test_project_dir().unwrap_or_else(|| {
+        create_minimal_test_project(&temp_dir, "test_parallel").expect("Failed to create temp project")
+    });
 
     let runner = ParallelBemRunner::new(&project_dir).expect("Failed to create parallel runner");
 
@@ -363,7 +378,7 @@ fn test_parallel_execution_small() {
 }
 
 #[test]
-#[ignore]
+// #[ignore]
 fn test_resource_monitoring() {
     println!("\n=== Resource Monitoring Test ===\n");
 
@@ -403,7 +418,7 @@ fn test_resource_monitoring() {
 }
 
 #[test]
-#[ignore]
+// #[ignore]
 fn test_can_run_task() {
     println!("\n=== Task Feasibility Test ===\n");
 

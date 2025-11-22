@@ -192,13 +192,13 @@ mod tests {
     #[test]
     fn test_standing_wave_nodes() {
         let k = 1.0;
-        let solution = standing_wave_1d(k, 0.0, PI, 100);
+        let solution = standing_wave_1d(k, 0.0, PI, 200);
 
         // At x = 0, sin(0) = 0
         assert_abs_diff_eq!(solution.pressure[0].im, 0.0, epsilon = 1e-10);
 
         // At x = π/2, sin(π/2) = 1. Pick the grid point closest to π/2.
-        let dx = (PI - 0.0) / (100 - 1) as f64;
+        let dx = (PI - 0.0) / (200 - 1) as f64;
         let target_idx = ((PI / 2.0) / dx).round() as usize;
         assert_abs_diff_eq!(solution.pressure[target_idx].im, 1.0, epsilon = 1e-4);
     }
