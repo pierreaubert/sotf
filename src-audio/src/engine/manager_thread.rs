@@ -42,6 +42,7 @@ struct PendingConfigUpdate {
 struct ConfigUpdateQueue {
     queue: VecDeque<PendingConfigUpdate>,
     update_in_progress: bool,
+    last_working_config: Option<Vec<super::PluginConfig>>,
 }
 
 impl ConfigUpdateQueue {
@@ -49,7 +50,18 @@ impl ConfigUpdateQueue {
         Self {
             queue: VecDeque::new(),
             update_in_progress: false,
+            last_working_config: None,
         }
+    }
+
+    /// Save a working config for rollback
+    fn save_working_config(&mut self, plugins: Vec<super::PluginConfig>) {
+        self.last_working_config = Some(plugins);
+    }
+
+    /// Get the last working config for rollback
+    fn get_rollback_config(&self) -> Option<&Vec<super::PluginConfig>> {
+        self.last_working_config.as_ref()
     }
 
     /// Add a config update to the queue
@@ -360,6 +372,7 @@ fn run_manager_thread(
                     &mut processing_thread,
                     &mut playback_thread,
                     &state,
+                    &mut config_update_queue,
                     plugins,
                 ) {
                     log::error!("[Manager Thread] Failed to apply config update: {}", e);
@@ -476,10 +489,16 @@ fn handle_config_event(
                 // Load and parse config file
                 match load_config_file(config_path) {
                     Ok(new_config) => {
-                        log::debug!("[Manager] Config loaded, enqueuing plugin update");
-
-                        // Enqueue the update instead of applying immediately
-                        config_queue.enqueue(new_config.plugins);
+                        // Validate config before queuing
+                        match validate_plugin_configs(&new_config.plugins) {
+                            Ok(_) => {
+                                log::debug!("[Manager] Config validated, enqueuing plugin update");
+                                config_queue.enqueue(new_config.plugins);
+                            }
+                            Err(e) => {
+                                log::warn!("[Manager] Invalid config file rejected: {}", e);
+                            }
+                        }
                     }
                     Err(e) => {
                         log::debug!("[Manager] Failed to load config: {}", e);
@@ -504,16 +523,17 @@ fn handle_config_event(
     }
 }
 
-/// Apply a plugin update with proper synchronization
+/// Apply a plugin update with proper synchronization and rollback on failure
 /// Waits for confirmation from processing thread and updates playback thread if needed
 fn apply_plugin_update(
     processing: &mut ProcessingThread,
     playback: &mut PlaybackThread,
     state: &Arc<Mutex<AudioEngineState>>,
+    config_queue: &mut ConfigUpdateQueue,
     plugins: Vec<super::PluginConfig>,
 ) -> Result<(), String> {
     // Send update command to processing thread
-    processing.send_command(ProcessingCommand::UpdatePlugins(plugins))?;
+    processing.send_command(ProcessingCommand::UpdatePlugins(plugins.clone()))?;
 
     // Wait for response with longer timeout to allow crossfade to complete
     let timeout = std::time::Duration::from_millis(500); // 500ms should be enough for crossfade
@@ -557,10 +577,53 @@ fn apply_plugin_update(
                         playback.send_command(PlaybackCommand::UpdateChannels(output_channels))?;
                     }
 
+                    // Save this as the last working config for future rollback
+                    config_queue.save_working_config(plugins);
+
                     return Ok(());
                 }
                 super::ProcessingResponse::Error(e) => {
-                    return Err(format!("Plugin update error: {}", e));
+                    let error_msg = format!("Plugin update error: {}", e);
+                    log::error!("[Manager] {}", error_msg);
+
+                    // Attempt rollback to last working config
+                    if let Some(rollback_config) = config_queue.get_rollback_config() {
+                        log::warn!(
+                            "[Manager] Attempting rollback to last working config ({} plugins)",
+                            rollback_config.len()
+                        );
+
+                        // Try to restore the last working config
+                        processing
+                            .send_command(ProcessingCommand::UpdatePlugins(rollback_config.clone()))?;
+
+                        // Wait for rollback confirmation (shorter timeout)
+                        let rollback_start = std::time::Instant::now();
+                        let rollback_timeout = std::time::Duration::from_millis(250);
+
+                        while rollback_start.elapsed() < rollback_timeout {
+                            if let Some(rollback_response) = processing.try_recv_response() {
+                                match rollback_response {
+                                    super::ProcessingResponse::PluginChainUpdated { .. } => {
+                                        log::info!("[Manager] Rollback successful");
+                                        break;
+                                    }
+                                    super::ProcessingResponse::Error(e) => {
+                                        log::error!("[Manager] Rollback failed: {}", e);
+                                        break;
+                                    }
+                                    _ => break,
+                                }
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                SPIN_MS_SLEEP_MANAGER,
+                            ));
+                        }
+                    } else {
+                        log::warn!("[Manager] No rollback config available");
+                    }
+
+                    return Err(error_msg);
                 }
                 _ => {
                     return Err("Unexpected response from processing thread".to_string());
@@ -571,6 +634,79 @@ fn apply_plugin_update(
     }
 
     Err("Timeout waiting for plugin update response".to_string())
+}
+
+/// Validate plugin configurations before applying
+fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), String> {
+    for (i, config) in configs.iter().enumerate() {
+        // Check if plugin type is recognized
+        let valid_types = [
+            "EQ",
+            "gain",
+            "upmixer",
+            "compressor",
+            "gate",
+            "limiter",
+            "loudness_compensation",
+            "matrix",
+            "convolution",
+            "crossover",
+            "delay",
+            "resampler",
+        ];
+
+        if !valid_types.contains(&config.plugin_type.as_str()) {
+            return Err(format!(
+                "Unknown plugin type '{}' at index {}",
+                config.plugin_type, i
+            ));
+        }
+
+        // Validate that parameters exist
+        if config.parameters.is_null() {
+            return Err(format!(
+                "Plugin {} ('{}') missing parameters",
+                i, config.plugin_type
+            ));
+        }
+
+        // Type-specific validation
+        match config.plugin_type.as_str() {
+            "EQ" => {
+                // Validate EQ filter structure
+                if let Some(filters) = config.parameters.get("filters") {
+                    if !filters.is_array() {
+                        return Err(format!(
+                            "EQ plugin {} has invalid 'filters' (must be array)",
+                            i
+                        ));
+                    }
+                }
+            }
+            "gain" => {
+                // Validate gain_db exists
+                if config.parameters.get("gain_db").is_none() {
+                    return Err(format!("Gain plugin {} missing 'gain_db' parameter", i));
+                }
+            }
+            "upmixer" => {
+                // Validate upmixer mode
+                if let Some(mode) = config.parameters.get("mode") {
+                    if !mode.is_string() {
+                        return Err(format!(
+                            "Upmixer plugin {} has invalid 'mode' (must be string)",
+                            i
+                        ));
+                    }
+                }
+            }
+            _ => {
+                // Basic validation for other types
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Load config from YAML file
@@ -693,6 +829,12 @@ fn handle_command(
         ManagerCommand::UpdatePluginChain(plugins) => {
             log::debug!("[Manager] Update plugin chain ({} plugins)", plugins.len());
 
+            // Validate config before processing
+            if let Err(e) = validate_plugin_configs(&plugins) {
+                log::warn!("[Manager] Invalid plugin configuration rejected: {}", e);
+                return ManagerResponse::Error(format!("Invalid plugin configuration: {}", e));
+            }
+
             // If a config update is already in progress, enqueue this one
             if config_queue.is_processing() {
                 log::debug!("[Manager] Config update in progress, enqueuing new update");
@@ -701,7 +843,7 @@ fn handle_command(
             }
 
             // Otherwise, apply immediately using the synchronized apply function
-            match apply_plugin_update(processing, playback, state, plugins) {
+            match apply_plugin_update(processing, playback, state, config_queue, plugins) {
                 Ok(()) => ManagerResponse::Ok,
                 Err(e) => ManagerResponse::Error(e),
             }
