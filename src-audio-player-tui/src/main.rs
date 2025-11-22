@@ -216,10 +216,17 @@ fn run_app<B: ratatui::backend::Backend>(
                     app.position_secs = state.position_secs;
                     app.loudness_info = state.loudness;
 
-                    // Check if playback ended and auto-advance
-                    if app.is_playing && !state.is_playing && app.current_queue_index.is_some() {
+                    // Handle playback errors explicitly and avoid auto-advance on failure
+                    if let Some(err) = state.last_error {
+                        log::error!("[TUI] Playback error: {}", err);
+                        app.status_message = Some(format!("Playback error: {}", err));
+                        app.is_playing = false;
+                    } else if app.is_playing
+                        && !state.is_playing
+                        && app.current_queue_index.is_some()
+                    {
                         log::info!("[TUI] Track ended, attempting auto-advance...");
-                        // Track ended, advance to next
+                        // Track ended cleanly, advance to next
                         if let Some(path) = app.next_track() {
                             log::info!("[TUI] Auto-advancing to: {:?}", path);
                             let sample_rate = 48000.0;
@@ -236,10 +243,7 @@ fn run_app<B: ratatui::backend::Backend>(
                                     max_channels
                                 );
                                 app.is_playing = false;
-                                continue;
-                            }
-
-                            if let Err(e) = player.load_and_play(
+                            } else if let Err(e) = player.load_and_play(
                                 path,
                                 plugins,
                                 output_channels,
@@ -247,12 +251,35 @@ fn run_app<B: ratatui::backend::Backend>(
                             ) {
                                 log::error!("[TUI] Failed to auto-advance: {}", e);
                                 app.is_playing = false;
+                                app.status_message = Some(format!(
+                                    "Failed to auto-advance: {}",
+                                    e
+                                ));
                             } else {
                                 log::info!("[TUI] Auto-advance successful");
                             }
                         } else {
                             log::info!("[TUI] No more tracks in queue, stopping playback");
                             app.is_playing = false;
+                        }
+                    }
+
+                    // Apply pending plugin updates with simple debouncing
+                    if app.needs_plugin_update {
+                        let sample_rate = 48000.0;
+                        let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
+                        match player.update_plugins(plugins) {
+                            Ok(()) => {
+                                app.needs_plugin_update = false;
+                            }
+                            Err(e) => {
+                                log::error!("[TUI] Plugin update failed: {}", e);
+                                app.status_message = Some(format!(
+                                    "Plugin update failed: {}",
+                                    e
+                                ));
+                                // Keep needs_plugin_update true so user can retry after fixing config
+                            }
                         }
                     }
 
@@ -329,15 +356,17 @@ fn handle_player_command(
             player.set_volume(volume)?;
         }
         PlayerCommand::UpdatePlugins => {
-            // Update plugins in real-time
-            let sample_rate = 48000.0;
-            let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
-            player.update_plugins(plugins)?;
+            // Deprecated: plugin updates are now applied in the Tick handler
+            app.needs_plugin_update = true;
         }
         PlayerCommand::SetOutputDevice(device_name) => {
             // Store the device name for future playback
             app.current_output_device_name = Some(device_name.clone());
-            player.set_output_device(device_name)?;
+            player.set_output_device(device_name.clone())?;
+            app.status_message = Some(format!(
+                "Output device set to '{}'; will be used for next playback",
+                device_name
+            ));
             log::info!("Output device changed");
         }
     }

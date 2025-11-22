@@ -650,6 +650,7 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
         ThreadEvent::ProcessingError(err) => {
             log::debug!("[Manager] Processing error: {}", err);
             if let Ok(mut state) = safe_lock(state) {
+                state.playback_state = PlaybackState::Stopped;
                 state.last_error = Some(err);
             }
         }

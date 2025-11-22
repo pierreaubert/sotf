@@ -160,6 +160,7 @@ impl Player {
             is_playing,
             loudness,
             spectrum,
+            last_error,
         }
     }
 }
@@ -167,5 +168,29 @@ impl Player {
 impl Default for Player {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playback_state_defaults_are_sane() {
+        let player = Player::new();
+        let state = player.get_playback_state(false);
+
+        assert_eq!(state.position_secs, 0.0);
+        assert!(!state.is_playing);
+        assert!(state.loudness.is_none());
+        assert!(state.spectrum.is_none());
+        assert!(state.last_error.is_none());
+    }
+
+    #[test]
+    fn update_plugins_is_ok_when_no_engine_running() {
+        let player = Player::new();
+        let result = player.update_plugins(Vec::new());
+        assert!(result.is_ok());
     }
 }

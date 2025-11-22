@@ -1836,7 +1836,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convexhull3d"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "autoeq-env",
  "log",
@@ -9483,7 +9483,7 @@ checksum = "19f58d7b0190c7f12df7e8be6b79767a0836059159811b869d5ab55721fe14d0"
 
 [[package]]
 name = "sotf"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "accelerate-src",
  "autoeq",
@@ -9514,7 +9514,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-engine"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "autoeq-env",
  "autoeq-iir",
@@ -9568,7 +9568,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "autoeq-iir",
  "chrono",
@@ -9598,7 +9598,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player-gpui"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "autoeq-iir",
  "clap",
@@ -9628,7 +9628,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player-tui"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "clap",
  "crossterm",
@@ -9642,7 +9642,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-plugins"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "autoeq-env",
  "autoeq-iir",
@@ -9740,7 +9740,7 @@ dependencies = [
 
 [[package]]
 name = "sotf_head_scanner"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "approx",

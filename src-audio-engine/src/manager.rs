@@ -672,4 +672,16 @@ mod tests {
         manager.set_state(StreamingState::Ready);
         assert_eq!(manager.get_state(), StreamingState::Ready);
     }
+
+    #[test]
+    fn try_recv_event_emits_end_of_stream_when_stopped_from_playing() {
+        let manager = AudioStreamingManager::new();
+
+        // Simulate that we were previously playing; engine state defaults to Stopped
+        manager.set_state(StreamingState::Playing);
+
+        let event = manager.try_recv_event();
+        assert!(matches!(event, Some(StreamingEvent::EndOfStream)));
+        assert_eq!(manager.get_state(), StreamingState::Idle);
+    }
 }

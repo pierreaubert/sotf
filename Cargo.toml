@@ -47,7 +47,7 @@ default-members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 authors = ["Pierre F. Aubert pierre@spinorama.org"]
 description = "Optimise the sound of your speakers or your headphones"
 edition = "2024"

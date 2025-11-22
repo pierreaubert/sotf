@@ -431,6 +431,7 @@ fn build_output_stream(
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
     let mut last_underrun_count = 0u64;
+    let event_tx_data = event_tx.clone();
 
     let stream = device
         .build_output_stream(
@@ -480,7 +481,9 @@ fn build_output_stream(
                         let current_underruns =
                             state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
                         if current_underruns != last_underrun_count {
-                            event_tx.send(ThreadEvent::PlaybackUnderrun).ok();
+                            event_tx_data
+                                .send(ThreadEvent::PlaybackUnderrun)
+                                .ok();
                             last_underrun_count = current_underruns;
                         }
                         log::warn!(
@@ -519,8 +522,11 @@ fn build_output_stream(
                     }
                 }
             },
-            |err| {
+            move |err| {
                 log::warn!("[Playback Thread] Stream error: {}", err);
+                event_tx
+                    .send(ThreadEvent::ProcessingError(format!("Stream error: {}", err)))
+                    .ok();
             },
             None,
         )

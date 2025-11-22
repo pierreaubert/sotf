@@ -516,59 +516,59 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             if let Some(first_type) = plugin_types.first() {
                 app.add_plugin(first_type);
             }
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('t') => {
             // Toggle plugin enabled/disabled
             app.toggle_plugin(app.selected_plugin_index);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('d') | KeyCode::Delete => {
             app.remove_plugin(app.selected_plugin_index);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('u') | KeyCode::Char('U') => {
             app.move_plugin_up(app.selected_plugin_index);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('n') | KeyCode::Char('N') => {
             app.move_plugin_down(app.selected_plugin_index);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('1') => {
             // Quick add EQ
             app.add_plugin(&PluginType::EQ);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('2') => {
             // Quick add Upmixer
             app.add_plugin(&PluginType::Upmixer);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('3') => {
             // Quick add Compressor
             app.add_plugin(&PluginType::Compressor);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('4') => {
             // Quick add Gate
             app.add_plugin(&PluginType::Gate);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('5') => {
             // Quick add Limiter
             app.add_plugin(&PluginType::Limiter);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('6') => {
             // Quick add Loudness Compensation
             app.add_plugin(&PluginType::LoudnessCompensation);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         KeyCode::Char('7') => {
             // Quick add Binaural Decoder
             app.add_plugin(&PluginType::BinauralDecoder);
-            Some(PlayerCommand::UpdatePlugins)
+            None
         }
         _ => None,
     }
@@ -592,7 +592,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             // Decrease parameter value
             if app.adjust_selected_param(-1.0) {
                 app.needs_plugin_update = true;
-                Some(PlayerCommand::UpdatePlugins)
+                None
             } else {
                 None
             }
@@ -601,7 +601,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             // Increase parameter value
             if app.adjust_selected_param(1.0) {
                 app.needs_plugin_update = true;
-                Some(PlayerCommand::UpdatePlugins)
+                None
             } else {
                 None
             }
@@ -610,7 +610,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             // Large decrease
             if app.adjust_selected_param(-10.0) {
                 app.needs_plugin_update = true;
-                Some(PlayerCommand::UpdatePlugins)
+                None
             } else {
                 None
             }
@@ -619,7 +619,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             // Large increase
             if app.adjust_selected_param(10.0) {
                 app.needs_plugin_update = true;
-                Some(PlayerCommand::UpdatePlugins)
+                None
             } else {
                 None
             }
@@ -698,11 +698,7 @@ fn handle_load_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
             }
             app.input_mode = InputMode::Normal;
             app.clear_autocomplete();
-            if app.needs_plugin_update {
-                Some(PlayerCommand::UpdatePlugins)
-            } else {
-                None
-            }
+            None
         }
         KeyCode::Tab => {
             // Autocomplete file path (only if user typed something)
@@ -767,11 +763,7 @@ fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             app.input_mode = InputMode::Normal;
             app.apo_file_input.clear();
             app.clear_autocomplete();
-            if app.needs_plugin_update {
-                Some(PlayerCommand::UpdatePlugins)
-            } else {
-                None
-            }
+            None
         }
         KeyCode::Tab => {
             // Autocomplete file path
@@ -820,11 +812,7 @@ fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComm
             app.input_mode = InputMode::Normal;
             app.sofa_file_input.clear();
             app.clear_autocomplete();
-            if app.needs_plugin_update {
-                Some(PlayerCommand::UpdatePlugins)
-            } else {
-                None
-            }
+            None
         }
         KeyCode::Tab => {
             // Autocomplete file path
