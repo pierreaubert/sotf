@@ -58,6 +58,7 @@
       "u": "player_ui::MovePluginUp",
       "shift-n": "player_ui::MovePluginDown",
       "shift-t": "player_ui::TogglePlugin",
+      "e": "player_ui::EditPlugin",
 
       "shift-a": "player_ui::AddDirectory",
       "shift-s": "player_ui::ScanLibrary",

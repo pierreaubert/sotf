@@ -53,6 +53,7 @@ actions!(
         QuickAddLimiter,
         QuickAddLoudness,
         QuickAddBinaural,
+        EditPlugin,
     ]
 );
 
@@ -687,6 +688,47 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn edit_plugin(&mut self, _: &EditPlugin, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.enter_plugin_edit_mode();
+        });
+        cx.notify();
+    }
+
+    fn handle_plugin_edit_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle key input for plugin edit mode
+        match &event.keystroke.key {
+            "up" | "k" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.select_previous_param();
+                });
+                cx.notify();
+            }
+            "down" | "j" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.select_next_param();
+                });
+                cx.notify();
+            }
+            "left" | "h" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.adjust_selected_param(-1.0);
+                });
+                cx.notify();
+            }
+            "right" | "l" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.adjust_selected_param(1.0);
+                });
+                cx.notify();
+            }
+            "escape" => {
+                // Already handled by Cancel action
+            }
+            _ => {}
+        }
+    }
+
     fn handle_enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             use crate::app::InputMode;
@@ -722,6 +764,10 @@ impl PlayerView {
                 Screen::Queue => {
                     // Play selected track in queue
                     // TODO: Implement playing specific track from queue
+                }
+                Screen::Plugins => {
+                    // Enter plugin edit mode
+                    state.app.enter_plugin_edit_mode();
                 }
                 _ => {}
             }
@@ -800,6 +846,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_limiter))
             .on_action(cx.listener(Self::quick_add_loudness))
             .on_action(cx.listener(Self::quick_add_binaural))
+            .on_action(cx.listener(Self::edit_plugin))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 // Handle text input for search mode and add directory mode
                 let input_mode = view.state.read(cx).app.input_mode;
@@ -810,6 +857,9 @@ impl Render for PlayerView {
                     }
                     crate::app::InputMode::AddDirectory => {
                         view.handle_directory_input(event, cx);
+                    }
+                    crate::app::InputMode::EditPlugin => {
+                        view.handle_plugin_edit_input(event, cx);
                     }
                     _ => {}
                 }
@@ -831,6 +881,9 @@ impl Render for PlayerView {
             .child(self.render_footer(cx))
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
+            })
+            .when(input_mode == crate::app::InputMode::EditPlugin, |div| {
+                div.child(self.render_plugin_edit_modal(cx))
             })
     }
 }
@@ -1940,6 +1993,91 @@ impl PlayerView {
                     .child(description)
             )
     }
+
+    fn render_plugin_edit_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+
+        if let Some(plugin) = state.app.get_editing_plugin() {
+            let plugin_name = plugin.plugin_type.to_string();
+            let params = render_plugin_param_list(plugin, state.app.plugin_param_selection);
+
+            // Create modal overlay
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(rgba(0x000000aa)) // Semi-transparent background
+                .child(
+                    div()
+                        .w(Rems(50.0))
+                        .h(Rems(35.0))
+                        .bg(rgb(0x1e1e1e))
+                        .border_2()
+                        .border_color(rgb(0x4ec9b0))
+                        .rounded_md()
+                        .p_4()
+                        .overflow_y_scroll()
+                        .child(
+                            div()
+                                .text_xl()
+                                .font_weight(FontWeight::BOLD)
+                                .mb_4()
+                                .child(format!(
+                                    "Edit Plugin: {} (Press ESC to close)",
+                                    plugin_name
+                                ))
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .children(
+                                    params.iter().enumerate().map(|(idx, (name, value))| {
+                                        let is_selected = idx == state.app.plugin_param_selection;
+                                        div()
+                                            .p_2()
+                                            .rounded_md()
+                                            .when(is_selected, |div| div.bg(rgb(0x264f78)))
+                                            .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .justify_between()
+                                                    .child(
+                                                        div()
+                                                            .text_sm()
+                                                            .font_weight(FontWeight::SEMIBOLD)
+                                                            .text_color(if is_selected { rgb(0xffffff) } else { rgb(0x569cd6) })
+                                                            .child(name.clone())
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_sm()
+                                                            .text_color(if is_selected { rgb(0xffffff) } else { rgb(0xcccccc) })
+                                                            .child(value.clone())
+                                                    )
+                                            )
+                                    })
+                                )
+                        )
+                        .child(
+                            div()
+                                .p_3()
+                                .mt_4()
+                                .rounded_md()
+                                .bg(rgb(0x1e1e1e))
+                                .text_xs()
+                                .text_color(rgb(0x999999))
+                                .child("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit")
+                        )
+                )
+        } else {
+            div() // Return empty div if no plugin is being edited
+        }
+    }
 }
 
 fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
@@ -1991,5 +2129,45 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("Space", "Play/Pause"),
             ("N", "Next track"),
         ],
+    }
+}
+
+// Helper function to render plugin parameters for editing
+fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: usize) -> Vec<(String, String)> {
+    use sotf_audio_player::PluginSettings;
+
+    match &plugin.settings {
+        PluginSettings::Upmixer {
+            speaker_config,
+            gain_front_direct,
+            gain_front_ambient,
+            gain_rear_ambient,
+            lfe_cutoff_hz,
+            stereo_width,
+            bandpass_hz,
+            height_gain,
+            lfe_gain,
+            enable_subharmonic_synth,
+            subharmonic_gain,
+            enable_hr_direct,
+            hr_sharpen,
+            safety_cap_db,
+        } => vec![
+            ("Speaker Config".to_string(), speaker_config.clone()),
+            ("Gain Front Direct".to_string(), format!("{:.1} dB", gain_front_direct)),
+            ("Gain Front Ambient".to_string(), format!("{:.1} dB", gain_front_ambient)),
+            ("Gain Rear Ambient".to_string(), format!("{:.1} dB", gain_rear_ambient)),
+            ("LFE Cutoff".to_string(), format!("{:.0} Hz", lfe_cutoff_hz)),
+            ("Stereo Width".to_string(), format!("{:.2}", stereo_width)),
+            ("Bandpass".to_string(), format!("{:.0} Hz", bandpass_hz)),
+            ("Height Gain".to_string(), format!("{:.1} dB", height_gain)),
+            ("LFE Gain".to_string(), format!("{:.1} dB", lfe_gain)),
+            ("Subharmonic Synth".to_string(), if *enable_subharmonic_synth { "On".to_string() } else { "Off".to_string() }),
+            ("Subharmonic Gain".to_string(), format!("{:.1} dB", subharmonic_gain)),
+            ("HR Direct".to_string(), if *enable_hr_direct { "On".to_string() } else { "Off".to_string() }),
+            ("HR Sharpen".to_string(), format!("{:.2}", hr_sharpen)),
+            ("Safety Cap".to_string(), format!("{:.1} dB", safety_cap_db)),
+        ],
+        _ => vec![("Not editable yet".to_string(), "".to_string())],
     }
 }

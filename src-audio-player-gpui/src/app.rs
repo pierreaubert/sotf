@@ -997,6 +997,176 @@ impl App {
         }
     }
 
+    // Plugin editing methods
+    pub fn enter_plugin_edit_mode(&mut self) {
+        if self.selected_plugin_index < self.plugin_chain.len() {
+            self.editing_plugin_index = Some(self.selected_plugin_index);
+            self.plugin_param_selection = 0;
+            self.input_mode = InputMode::EditPlugin;
+        }
+    }
+
+    pub fn exit_plugin_edit_mode(&mut self) {
+        self.editing_plugin_index = None;
+        self.plugin_param_selection = 0;
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
+        self.editing_plugin_index
+            .and_then(|idx| self.plugin_chain.get_plugin(idx))
+    }
+
+    pub fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
+        self.editing_plugin_index
+            .and_then(|idx| self.plugin_chain.get_plugin_mut(idx))
+    }
+
+    pub fn select_next_param(&mut self) {
+        if let Some(plugin) = self.get_editing_plugin() {
+            let param_count = get_param_count(&plugin.settings);
+            if param_count > 0 {
+                self.plugin_param_selection = (self.plugin_param_selection + 1) % param_count;
+            }
+        }
+    }
+
+    pub fn select_previous_param(&mut self) {
+        if let Some(plugin) = self.get_editing_plugin() {
+            let param_count = get_param_count(&plugin.settings);
+            if param_count > 0 {
+                if self.plugin_param_selection == 0 {
+                    self.plugin_param_selection = param_count - 1;
+                } else {
+                    self.plugin_param_selection -= 1;
+                }
+            }
+        }
+    }
+
+    /// Adjust the currently selected parameter by the given delta
+    /// Returns true if the parameter was adjusted successfully
+    pub fn adjust_selected_param(&mut self, delta: f64) -> bool {
+        use sotf_audio_player::PluginSettings;
+
+        let param_idx = self.plugin_param_selection;
+        let mut channel_count_changed = false;
+
+        let result = if let Some(plugin) = self.get_editing_plugin_mut() {
+            match &mut plugin.settings {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    gain_front_direct,
+                    gain_front_ambient,
+                    gain_rear_ambient,
+                    lfe_cutoff_hz,
+                    stereo_width,
+                    bandpass_hz,
+                    height_gain,
+                    lfe_gain,
+                    enable_subharmonic_synth,
+                    subharmonic_gain,
+                    enable_hr_direct,
+                    hr_sharpen,
+                    safety_cap_db,
+                } => {
+                    match param_idx {
+                        0 => {
+                            // speaker_config: cycle through available configs
+                            let configs = [
+                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
+                                "9.1.4", "9.1.6",
+                            ];
+                            let current_idx = configs
+                                .iter()
+                                .position(|&c| c == speaker_config.as_str())
+                                .unwrap_or(0);
+                            let new_idx = if delta > 0.0 {
+                                (current_idx + 1) % configs.len()
+                            } else {
+                                if current_idx == 0 {
+                                    configs.len() - 1
+                                } else {
+                                    current_idx - 1
+                                }
+                            };
+                            *speaker_config = configs[new_idx].to_string();
+                            channel_count_changed = true;
+                            true
+                        }
+                        1 => {
+                            *gain_front_direct = (*gain_front_direct + delta as f32).max(-30.0).min(30.0);
+                            true
+                        }
+                        2 => {
+                            *gain_front_ambient = (*gain_front_ambient + delta as f32).max(-30.0).min(30.0);
+                            true
+                        }
+                        3 => {
+                            *gain_rear_ambient = (*gain_rear_ambient + delta as f32).max(-30.0).min(30.0);
+                            true
+                        }
+                        4 => {
+                            *lfe_cutoff_hz = (*lfe_cutoff_hz + delta as f32 * 10.0).max(20.0).min(200.0);
+                            true
+                        }
+                        5 => {
+                            *stereo_width = (*stereo_width + delta as f32 * 0.1).max(0.0).min(2.0);
+                            true
+                        }
+                        6 => {
+                            *bandpass_hz = (*bandpass_hz + delta as f32 * 50.0).max(100.0).min(1000.0);
+                            true
+                        }
+                        7 => {
+                            *height_gain = (*height_gain + delta as f32).max(-30.0).min(30.0);
+                            true
+                        }
+                        8 => {
+                            *lfe_gain = (*lfe_gain + delta as f32).max(-30.0).min(30.0);
+                            true
+                        }
+                        9 => {
+                            *enable_subharmonic_synth = !*enable_subharmonic_synth;
+                            true
+                        }
+                        10 => {
+                            *subharmonic_gain = (*subharmonic_gain + delta as f32).max(-30.0).min(30.0);
+                            true
+                        }
+                        11 => {
+                            *enable_hr_direct = !*enable_hr_direct;
+                            true
+                        }
+                        12 => {
+                            *hr_sharpen = (*hr_sharpen + delta as f32 * 0.1).max(0.0).min(2.0);
+                            true
+                        }
+                        13 => {
+                            *safety_cap_db = (*safety_cap_db + delta as f32).max(-30.0).min(0.0);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                // For other plugin types, we can add later. For now return false
+                _ => false,
+            }
+        } else {
+            false
+        };
+
+        if result && channel_count_changed {
+            self.plugin_chain.update_binaural_decoder_channels();
+        }
+
+        if result {
+            self.needs_plugin_update = true;
+        }
+
+        result
+    }
+
     // Directory autocomplete methods
 
     /// Generate autocomplete suggestions for the current directory input
@@ -1089,5 +1259,22 @@ impl App {
     pub fn clear_autocomplete(&mut self) {
         self.autocomplete_suggestions.clear();
         self.autocomplete_index = 0;
+    }
+}
+
+// Helper function to get parameter count for a plugin
+fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
+    use sotf_audio_player::PluginSettings;
+    match settings {
+        PluginSettings::Upmixer { .. } => 14,
+        PluginSettings::EQ { .. } => 1, // Just the filter count for now
+        PluginSettings::Gain { .. } => 1,
+        PluginSettings::Compressor { .. } => 5,
+        PluginSettings::Gate { .. } => 4,
+        PluginSettings::Limiter { .. } => 3,
+        PluginSettings::LoudnessCompensation { .. } => 3,
+        PluginSettings::BinauralDecoder { .. } => 2,
+        PluginSettings::Resampler { .. } => 1,
+        PluginSettings::Matrix { .. } => 0, // No adjustable params for now
     }
 }
