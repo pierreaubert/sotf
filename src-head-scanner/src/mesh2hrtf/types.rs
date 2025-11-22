@@ -104,22 +104,21 @@ impl Mesh {
     /// Checks:
     /// - All vertex indices in elements exist
     /// - No degenerate triangles
-    /// - Node IDs are sequential
+    /// - Node IDs are unique (not necessarily sequential for evaluation grids)
     pub fn validate(&self) -> Result<(), String> {
-        // Check node IDs are sequential
+        // Check node IDs are unique (but allow non-sequential for evaluation grids)
+        // Build a map of node IDs to indices for element validation
+        let mut node_id_to_index = std::collections::HashMap::new();
         for (i, node) in self.nodes.iter().enumerate() {
-            if node.id != i {
-                return Err(format!(
-                    "Node ID mismatch: expected {}, got {}",
-                    i, node.id
-                ));
+            if node_id_to_index.insert(node.id, i).is_some() {
+                return Err(format!("Duplicate node ID: {}", node.id));
             }
         }
 
         // Check element references
         for element in &self.elements {
             for &vertex_id in &element.vertices {
-                if vertex_id >= self.nodes.len() {
+                if !node_id_to_index.contains_key(&vertex_id) {
                     return Err(format!(
                         "Element {} references non-existent vertex {}",
                         element.id, vertex_id
@@ -411,7 +410,32 @@ mod tests {
             Node::from_coords(0, 0.0, 0.0, 0.0),
             Node::from_coords(1, 1.0, 0.0, 0.0),
         ];
-        mesh.elements = vec![Element::new(0, 0, [0, 1, 5])]; // Vertex 5 doesn't exist
+        mesh.elements = vec![Element::new(0, 0, [0, 1, 999])]; // Vertex 999 doesn't exist
+
+        assert!(mesh.validate().is_err());
+    }
+
+    #[test]
+    fn test_mesh_validation_non_sequential_ids() {
+        // Evaluation grids can have non-sequential node IDs (e.g., starting at 300000)
+        let mut mesh = Mesh::new();
+        mesh.nodes = vec![
+            Node::from_coords(300000, 0.0, 0.0, 0.0),
+            Node::from_coords(300001, 1.0, 0.0, 0.0),
+            Node::from_coords(300002, 0.0, 1.0, 0.0),
+        ];
+        mesh.elements = vec![Element::new(300000, 0, [300000, 300001, 300002])];
+
+        assert!(mesh.validate().is_ok());
+    }
+
+    #[test]
+    fn test_mesh_validation_duplicate_node_id() {
+        let mut mesh = Mesh::new();
+        mesh.nodes = vec![
+            Node::from_coords(0, 0.0, 0.0, 0.0),
+            Node::from_coords(0, 1.0, 0.0, 0.0), // Duplicate ID
+        ];
 
         assert!(mesh.validate().is_err());
     }
