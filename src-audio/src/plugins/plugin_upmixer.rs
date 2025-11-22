@@ -19,8 +19,8 @@ use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, calculate_panning_gain, get_speaker_config};
 use autoeq_iir::{Biquad, BiquadFilterType};
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -151,18 +151,18 @@ pub struct UpmixerPlugin {
     num_output_channels: usize,
 
     /// Forward FFT planner (low-resolution path)
-    fft_forward: Arc<dyn Fft<f32>>,
+    fft_forward: Arc<dyn RealToComplex<f32>>,
     /// Inverse FFT planner (low-resolution path)
-    fft_inverse: Arc<dyn Fft<f32>>,
+    fft_inverse: Arc<dyn ComplexToReal<f32>>,
 
     /// High-resolution FFT size for direct-path enhancement
     hr_fft_size: usize,
     /// High-resolution hop size (hr_fft_size / 2)
     hr_hop_size: usize,
     /// Forward FFT planner (high-resolution path)
-    hr_fft_forward: Arc<dyn Fft<f32>>,
+    hr_fft_forward: Arc<dyn RealToComplex<f32>>,
     /// Inverse FFT planner (high-resolution path)
-    hr_fft_inverse: Arc<dyn Fft<f32>>,
+    hr_fft_inverse: Arc<dyn ComplexToReal<f32>>,
 
     // Parameters
     param_speaker_config: ParameterId,
@@ -247,9 +247,9 @@ pub struct UpmixerPlugin {
 
     // Processing buffers (allocated once, reused)
     /// Time domain buffer for left channel
-    time_domain_left: Vec<Complex<f32>>,
+    time_domain_left: Vec<f32>,
     /// Time domain buffer for right channel
-    time_domain_right: Vec<Complex<f32>>,
+    time_domain_right: Vec<f32>,
 
     /// Frequency domain buffer for left channel
     freq_domain_left: Vec<Complex<f32>>,
@@ -267,7 +267,7 @@ pub struct UpmixerPlugin {
     // Smoothing buffers for ICC calculation
 
     // Output time-domain buffers (one per output channel, variable length)
-    time_out_channels: Vec<Vec<Complex<f32>>>,
+    time_out_channels: Vec<Vec<f32>>,
 
     /// Input buffer accumulator for block-based processing
     input_buffer: Vec<f32>,
@@ -276,6 +276,9 @@ pub struct UpmixerPlugin {
 
     /// Temporary input block for FFT processing (pre-allocated)
     temp_input_block: Vec<f32>,
+
+    /// Temporary frequency buffer for IFFT mixing (reused per channel)
+    temp_freq_out: Vec<Complex<f32>>,
 
     /// Hann window for FFT (pre-computed)
     window: Vec<f32>,
@@ -298,16 +301,18 @@ pub struct UpmixerPlugin {
     hr_input_buffer_fill: usize,
     /// Temporary HR input block for FFT processing
     hr_temp_input_block: Vec<f32>,
+    /// Temporary HR frequency buffer for IFFT mixing
+    hr_temp_freq_out: Vec<Complex<f32>>,
     /// Time-domain buffer for left channel (HR path)
-    hr_time_domain_left: Vec<Complex<f32>>,
+    hr_time_domain_left: Vec<f32>,
     /// Time-domain buffer for right channel (HR path)
-    hr_time_domain_right: Vec<Complex<f32>>,
+    hr_time_domain_right: Vec<f32>,
     /// Frequency-domain buffer for left channel (HR path)
     hr_freq_domain_left: Vec<Complex<f32>>,
     /// Frequency-domain buffer for right channel (HR path)
     hr_freq_domain_right: Vec<Complex<f32>>,
     /// Per-channel HR output buffers in frequency/time domain
-    hr_time_out_channels: Vec<Vec<Complex<f32>>>,
+    hr_time_out_channels: Vec<Vec<f32>>,
     /// Next position to add a HR block in the shared accumulator (reserved)
     hr_next_add_position: usize,
 }
@@ -352,11 +357,12 @@ impl UpmixerPlugin {
             "Bandpass frequency must be greater than LFE cutoff"
         );
 
-        let mut planner = FftPlanner::<f32>::new();
+        let mut planner = RealFftPlanner::<f32>::new();
         let fft_forward = planner.plan_fft_forward(fft_size);
         let fft_inverse = planner.plan_fft_inverse(fft_size);
 
         let zero_complex = Complex::new(0.0, 0.0);
+        let spectrum_size = fft_size / 2 + 1;
 
         // Generate Hann window: w[n] = 0.5 * (1 - cos(2*pi*n/N))
         // Using N (not N-1) for perfect COLA with 50% overlap
@@ -373,6 +379,7 @@ impl UpmixerPlugin {
         // time resolution. For now this is internal and disabled by default.
         let hr_fft_size = 512;
         let hr_hop_size = hr_fft_size / 2;
+        let hr_spectrum_size = hr_fft_size / 2 + 1;
         let hr_fft_forward = planner.plan_fft_forward(hr_fft_size);
         let hr_fft_inverse = planner.plan_fft_inverse(hr_fft_size);
 
@@ -403,7 +410,7 @@ impl UpmixerPlugin {
         let output_accumulator = vec![vec![0.0; fft_size * 3]; num_output_channels];
 
         // Allocate output buffers for each channel
-        let time_out_channels = vec![vec![zero_complex; fft_size]; num_output_channels];
+        let time_out_channels = vec![vec![0.0; fft_size]; num_output_channels];
 
         let mut plugin = Self {
             fft_size,
@@ -466,25 +473,25 @@ impl UpmixerPlugin {
             pca_cov_yy: Vec::new(),
             pca_cov_xy: Vec::new(),
 
-            lfe_low_gains: vec![1.0; fft_size / 2 + 1],
-            mains_high_gains: vec![1.0; fft_size / 2 + 1],
+            lfe_low_gains: vec![1.0; spectrum_size],
+            mains_high_gains: vec![1.0; spectrum_size],
 
-            height_band_gains: vec![0.0; fft_size / 2 + 1],
+            height_band_gains: vec![0.0; spectrum_size],
 
             panning_gains_left,
             panning_gains_right,
 
             // Allocate all buffers
-            time_domain_left: vec![zero_complex; fft_size],
-            time_domain_right: vec![zero_complex; fft_size],
-            freq_domain_left: vec![zero_complex; fft_size],
-            freq_domain_right: vec![zero_complex; fft_size],
-            direct: vec![zero_complex; fft_size],
-            direct_left: vec![zero_complex; fft_size],
-            direct_right: vec![zero_complex; fft_size],
-            ambient_left: vec![zero_complex; fft_size],
-            ambient_right: vec![zero_complex; fft_size],
-            lfe: vec![zero_complex; fft_size],
+            time_domain_left: vec![0.0; fft_size],
+            time_domain_right: vec![0.0; fft_size],
+            freq_domain_left: vec![zero_complex; spectrum_size],
+            freq_domain_right: vec![zero_complex; spectrum_size],
+            direct: vec![zero_complex; spectrum_size],
+            direct_left: vec![zero_complex; spectrum_size],
+            direct_right: vec![zero_complex; spectrum_size],
+            ambient_left: vec![zero_complex; spectrum_size],
+            ambient_right: vec![zero_complex; spectrum_size],
+            lfe: vec![zero_complex; spectrum_size],
 
             time_out_channels,
 
@@ -492,6 +499,7 @@ impl UpmixerPlugin {
             input_buffer_fill: 0,
 
             temp_input_block: vec![0.0; fft_size * 2], // Pre-allocated temp buffer
+            temp_freq_out: vec![zero_complex; spectrum_size],
 
             window,
             hr_window,
@@ -503,11 +511,12 @@ impl UpmixerPlugin {
             hr_input_buffer: vec![0.0; hr_fft_size * 2],
             hr_input_buffer_fill: 0,
             hr_temp_input_block: vec![0.0; hr_fft_size * 2],
-            hr_time_domain_left: vec![zero_complex; hr_fft_size],
-            hr_time_domain_right: vec![zero_complex; hr_fft_size],
-            hr_freq_domain_left: vec![zero_complex; hr_fft_size],
-            hr_freq_domain_right: vec![zero_complex; hr_fft_size],
-            hr_time_out_channels: vec![vec![zero_complex; hr_fft_size]; num_output_channels],
+            hr_temp_freq_out: vec![zero_complex; hr_spectrum_size],
+            hr_time_domain_left: vec![0.0; hr_fft_size],
+            hr_time_domain_right: vec![0.0; hr_fft_size],
+            hr_freq_domain_left: vec![zero_complex; hr_spectrum_size],
+            hr_freq_domain_right: vec![zero_complex; hr_spectrum_size],
+            hr_time_out_channels: vec![vec![0.0; hr_fft_size]; num_output_channels],
             hr_next_add_position: 0,
         };
 
@@ -555,8 +564,10 @@ impl UpmixerPlugin {
         self.num_output_channels = new_config.total_channels;
 
         // Reallocate output buffers
-        let zero_complex = Complex::new(0.0, 0.0);
-        self.time_out_channels = vec![vec![zero_complex; self.fft_size]; self.num_output_channels];
+        // Note: time_out_channels are now real (f32) for RealFFT inverse output
+        self.time_out_channels = vec![vec![0.0; self.fft_size]; self.num_output_channels];
+        // Also reallocate HR output buffers which depend on channel count
+        self.hr_time_out_channels = vec![vec![0.0; self.hr_fft_size]; self.num_output_channels];
         self.output_accumulator = vec![vec![0.0; self.fft_size * 3]; self.num_output_channels];
         self.output_block = vec![0.0; self.fft_size * self.num_output_channels];
 
@@ -656,18 +667,13 @@ impl UpmixerPlugin {
         for i in 0..self.fft_size {
             let idx = i * 2;
             let window_val = self.window[i];
-            self.time_domain_left[i] = Complex::new(input[idx] * window_val, 0.0);
-            self.time_domain_right[i] = Complex::new(input[idx + 1] * window_val, 0.0);
+            self.time_domain_left[i] = input[idx] * window_val;
+            self.time_domain_right[i] = input[idx + 1] * window_val;
         }
 
-        // Forward FFT (in-place)
-        self.freq_domain_left
-            .copy_from_slice(&self.time_domain_left);
-        self.freq_domain_right
-            .copy_from_slice(&self.time_domain_right);
-
-        self.fft_forward.process(&mut self.freq_domain_left);
-        self.fft_forward.process(&mut self.freq_domain_right);
+        // Forward FFT (Real->Complex)
+        self.fft_forward.process(&mut self.time_domain_left, &mut self.freq_domain_left).unwrap();
+        self.fft_forward.process(&mut self.time_domain_right, &mut self.freq_domain_right).unwrap();
     }
 
     /// Phase 2: Process frequency domain with ERB bands and PCA decomposition
@@ -862,140 +868,112 @@ impl UpmixerPlugin {
                     }
                 }
             }
-
-            // Apply to all bins in band - Mirror to negative frequencies
-            for i in start_bin..end_bin {
-                if i > 0 {
-                    let mirror = self.fft_size - i;
-                    if mirror < self.fft_size {
-                        self.direct[mirror] = self.direct[i].conj();
-                        self.ambient_left[mirror] = self.ambient_left[i].conj();
-                        self.ambient_right[mirror] = self.ambient_right[i].conj();
-                        self.direct_left[mirror] = self.direct_left[i].conj();
-                        self.direct_right[mirror] = self.direct_right[i].conj();
-                        self.lfe[mirror] = self.lfe[i].conj();
-                    }
-                }
-            }
         }
     }
 
     /// Phase 3: Apply VBAP panning to distribute to output speakers and perform inverse FFT
     #[inline]
     fn apply_vbap_panning_and_inverse_fft(&mut self) {
-        self.time_out_channels
-            .iter_mut()
-            .enumerate()
-            .for_each(|(ch_idx, time_out_channel)| {
-                let speaker = &self.speaker_config.speakers[ch_idx];
+        let spectrum_size = self.fft_size / 2 + 1;
 
-                if speaker.is_lfe {
-                    // LFE channel
-                    for i in 0..self.fft_size {
-                        time_out_channel[i] = self.lfe[i] * self.lfe_gain;
+        for ch_idx in 0..self.num_output_channels {
+            let speaker = &self.speaker_config.speakers[ch_idx];
+
+            if speaker.is_lfe {
+                // LFE channel
+                for i in 0..spectrum_size {
+                    self.temp_freq_out[i] = self.lfe[i] * self.lfe_gain;
+                }
+            } else {
+                // Regular speaker
+                let panning_gain_left = self.panning_gains_left[ch_idx];
+                let panning_gain_right = self.panning_gains_right[ch_idx];
+
+                let is_front = speaker.azimuth.abs() < 80.0;
+                let is_height = speaker.elevation > 10.0;
+                let is_center = speaker.label == "C";
+
+                // Front speakers use explicit front direct/ambient gains.
+                let direct_gain = if is_front && !is_height {
+                    self.gain_front_direct
+                } else {
+                    self.gain_rear_ambient * 0.15
+                };
+
+                let ambient_gain = if is_front && !is_height {
+                    self.gain_front_ambient
+                } else {
+                    self.gain_rear_ambient
+                };
+
+                if is_height {
+                    for i in 0..spectrum_size {
+                        // 1. Direct component
+                        let direct_component = self.direct_left[i] * panning_gain_left
+                            + self.direct_right[i] * panning_gain_right;
+
+                        // 2. Ambient component
+                        let is_left = speaker.azimuth > 0.0;
+
+                        let ambient_component = if is_front {
+                            // Front Height
+                            if is_left {
+                                self.ambient_left[i] * PHASE_SHIFT_180
+                                    + self.ambient_right[i] * PHASE_SHIFT_270
+                            } else {
+                                self.ambient_left[i] * PHASE_SHIFT_270
+                                    + self.ambient_right[i] * PHASE_SHIFT_180
+                            }
+                        } else {
+                            // Rear Height
+                            let decorrelated = if is_left {
+                                self.ambient_left[i] * PHASE_SHIFT_270
+                                    + self.ambient_right[i] * PHASE_SHIFT_180
+                            } else {
+                                self.ambient_left[i] * PHASE_SHIFT_180
+                                    + self.ambient_right[i] * PHASE_SHIFT_270
+                            };
+                            let late_reflection =
+                                (self.direct_left[i] + self.direct_right[i]) * 0.10;
+                            decorrelated + late_reflection
+                        };
+
+                        // Height mask
+                        let height_mask = self.height_band_gains[i];
+
+                        self.temp_freq_out[i] = (direct_component * direct_gain
+                            + ambient_component * ambient_gain)
+                            * self.height_gain
+                            * height_mask;
                     }
                 } else {
-                    // Regular speaker
-                    let panning_gain_left = self.panning_gains_left[ch_idx];
-                    let panning_gain_right = self.panning_gains_right[ch_idx];
+                    for i in 0..spectrum_size {
+                        let mut direct_component = self.direct_left[i] * panning_gain_left
+                            + self.direct_right[i] * panning_gain_right;
+                        let ambient_component = self.ambient_left[i] * panning_gain_left
+                            + self.ambient_right[i] * panning_gain_right;
 
-                    let is_front = speaker.azimuth.abs() < 80.0;
-                    let is_height = speaker.elevation > 10.0;
-                    let is_center = speaker.label == "C";
-
-                    // Front speakers use explicit front direct/ambient gains.
-                    // For non-front (surround/height) speakers, we tie both direct
-                    // and ambient levels to `gain_rear_ambient`, with a small
-                    // direct factor (0.15) for stability. This ensures that when
-                    // all user-facing gains are set to zero (front direct/ambient,
-                    // rear ambient, LFE gain), *all* output channels become
-                    // effectively silent, which is required by
-                    // `test_upmixer_zero_gains` and prevents crackling.
-                    let (direct_gain, ambient_gain) = if is_front {
-                        (self.gain_front_direct, self.gain_front_ambient)
-                    } else {
-                        (0.15 * self.gain_rear_ambient, self.gain_rear_ambient)
-                    };
-
-                    if is_height {
-                        // HEIGHT CHANNELS
-                        let half_len = self.height_band_gains.len();
-                        for i in 0..self.fft_size {
-                            // 1. Direct component
-                            let direct_component = self.direct_left[i] * panning_gain_left
-                                + self.direct_right[i] * panning_gain_right;
-
-                            // 2. Ambient component
-                            // For height channels, we want to create a diffuse field.
-                            // We use the decorrelated ambient signals and mix them based on position.
-                            // We also add a bit of "late reflection" (scaled direct sound) to simulate room height.
-
-                            let is_left = speaker.azimuth > 0.0; // Positive azimuth is Left in this coordinate system?
-                            // Wait, standard is: +Azimuth = Left, -Azimuth = Right? Or vice versa?
-                            // Usually +Azimuth is Left (CCW from front).
-                            // Let's assume +Azimuth is Left.
-
-                            let ambient_component = if is_front {
-                                // Front Height: Use decorrelated ambient but keep some L/R separation
-                                if is_left {
-                                    self.ambient_left[i] * PHASE_SHIFT_180
-                                        + self.ambient_right[i] * PHASE_SHIFT_270
-                                } else {
-                                    self.ambient_left[i] * PHASE_SHIFT_270
-                                        + self.ambient_right[i] * PHASE_SHIFT_180
-                                }
-                            } else {
-                                // Rear Height: Fully diffuse
-                                let decorrelated = if is_left {
-                                    self.ambient_left[i] * PHASE_SHIFT_270
-                                        + self.ambient_right[i] * PHASE_SHIFT_180
-                                } else {
-                                    self.ambient_left[i] * PHASE_SHIFT_180
-                                        + self.ambient_right[i] * PHASE_SHIFT_270
-                                };
-                                let late_reflection =
-                                    (self.direct_left[i] + self.direct_right[i]) * 0.10;
-                                decorrelated + late_reflection
-                            };
-
-                            // Map FFT bin to positive-frequency index for height mask
-                            let mask_idx = if i <= half_len - 1 {
-                                i
-                            } else {
-                                (self.fft_size - i).min(half_len - 1)
-                            };
-                            let height_mask = self.height_band_gains[mask_idx];
-
-                            time_out_channel[i] = (direct_component * direct_gain
-                                + ambient_component * ambient_gain)
-                                * self.height_gain
-                                * height_mask;
+                        if is_front && !is_height && is_center {
+                            let spread = self.center_spread.clamp(0.0, 1.0);
+                            direct_component = direct_component * (1.0 - spread);
                         }
-                    } else {
-                        for i in 0..self.fft_size {
-                            let mut direct_component = self.direct_left[i] * panning_gain_left
-                                + self.direct_right[i] * panning_gain_right;
-                            let ambient_component = self.ambient_left[i] * panning_gain_left
-                                + self.ambient_right[i] * panning_gain_right;
-
-                            // Center spread: when enabled, reduce how much direct
-                            // energy is sent to the physical center speaker so that
-                            // dialog moves toward a phantom center in L/R instead.
-                            // 0.0 = all center (original behaviour), 1.0 = no direct
-                            // to center (only phantom via L/R).
-                            if is_front && !is_height && is_center {
-                                let spread = self.center_spread.clamp(0.0, 1.0);
-                                direct_component = direct_component * (1.0 - spread);
-                            }
-                            time_out_channel[i] =
-                                direct_component * direct_gain + ambient_component * ambient_gain;
-                        }
+                        self.temp_freq_out[i] =
+                            direct_component * direct_gain + ambient_component * ambient_gain;
                     }
                 }
+            }
 
-                // Inverse FFT
-                self.fft_inverse.process(time_out_channel);
-            });
+            // Enforce RealFFT constraints: DC and Nyquist bins must be purely real
+            if spectrum_size > 0 {
+                self.temp_freq_out[0].im = 0.0;
+                self.temp_freq_out[spectrum_size - 1].im = 0.0;
+            }
+
+            // Inverse FFT (Complex -> Real)
+            self.fft_inverse
+                .process(&mut self.temp_freq_out, &mut self.time_out_channels[ch_idx])
+                .unwrap();
+        }
     }
 
     /// Phase 4: Apply sub-harmonic synthesis to LFE channel (time domain)
@@ -1017,8 +995,8 @@ impl UpmixerPlugin {
             let release_coeff = 1.0 - (-1.0 / (0.050 * self.sample_rate as f32)).exp();
 
             for i in 0..self.fft_size {
-                // Use the real part of the IFFT output as the envelope
-                let lfe_amp = self.time_out_channels[lfe_idx][i].re.abs();
+                // Use the time-domain LFE signal as the envelope
+                let lfe_amp = self.time_out_channels[lfe_idx][i].abs();
 
                 // Smooth envelope: gradually ramp up/down instead of hard switching
                 // This prevents clicks and pops when sub-harmonic synthesis turns on/off
@@ -1044,7 +1022,7 @@ impl UpmixerPlugin {
                         * lfe_amp
                         * self.subharmonic_gain
                         * self.subharmonic_envelope;
-                    self.time_out_channels[lfe_idx][i].re += sub;
+                    self.time_out_channels[lfe_idx][i] += sub;
                 }
             }
         }
@@ -1060,7 +1038,7 @@ impl UpmixerPlugin {
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
             for ch in 0..self.num_output_channels {
-                let mut sample = self.time_out_channels[ch][i].re * combined_scale;
+                let mut sample = self.time_out_channels[ch][i] * combined_scale;
 
                 // Flush denormals to zero to prevent CPU spikes and audio glitches
                 // Denormal numbers (very small floats near zero) can cause significant
@@ -1541,9 +1519,15 @@ impl Plugin for UpmixerPlugin {
         self.input_buffer_fill = 0;
         self.hr_input_buffer_fill = 0;
         let zero = Complex::new(0.0, 0.0);
+
+        // Clear real-valued time domain buffers
+        self.time_domain_left.fill(0.0);
+        self.time_domain_right.fill(0.0);
+        self.hr_time_domain_left.fill(0.0);
+        self.hr_time_domain_right.fill(0.0);
+
+        // Clear complex frequency domain buffers
         for buf in [
-            &mut self.time_domain_left,
-            &mut self.time_domain_right,
             &mut self.freq_domain_left,
             &mut self.freq_domain_right,
             &mut self.direct,
@@ -1554,8 +1538,6 @@ impl Plugin for UpmixerPlugin {
             &mut self.lfe,
             &mut self.decorrelation_filter_left,
             &mut self.decorrelation_filter_right,
-            &mut self.hr_time_domain_left,
-            &mut self.hr_time_domain_right,
             &mut self.hr_freq_domain_left,
             &mut self.hr_freq_domain_right,
         ]
@@ -1566,22 +1548,15 @@ impl Plugin for UpmixerPlugin {
 
         // Clear output channels
         for channel_buf in self.time_out_channels.iter_mut() {
-            channel_buf.fill(zero);
+            channel_buf.fill(0.0);
         }
 
         // Clear HR output channels
         for channel_buf in self.hr_time_out_channels.iter_mut() {
-            channel_buf.fill(zero);
+            channel_buf.fill(0.0);
         }
 
-        // Clear output accumulator
-        for accum_buf in self.output_accumulator.iter_mut() {
-            accum_buf.fill(0.0);
-        }
-        self.output_accumulator_fill = 0;
-        self.next_add_position = 0;
-
-        // Clear output block
+        self.output_accumulator.iter_mut().for_each(|b| b.fill(0.0));
         self.output_block.fill(0.0);
 
         // Clear HR input and temp blocks
@@ -1591,7 +1566,7 @@ impl Plugin for UpmixerPlugin {
 
         // Reset state vectors
         self.steering_alphas.fill(0.15);
-        self.pca_cov_xx.fill(0.15);
+        self.pca_cov_xx.fill(0.0);
         self.pca_cov_yy.fill(0.0);
         self.pca_cov_xy.fill(Complex::new(0.0, 0.0));
 
@@ -1957,58 +1932,64 @@ impl UpmixerPlugin {
         assert_eq!(input.len(), self.hr_fft_size * 2);
         assert_eq!(output.len(), self.hr_fft_size * self.num_output_channels);
 
+        output.fill(0.0);
+
         // 1. Copy input to HR time-domain buffers and apply HR analysis window
         for i in 0..self.hr_fft_size {
             let idx = i * 2;
             let window_val = self.hr_window[i];
-            self.hr_time_domain_left[i] = Complex::new(input[idx] * window_val, 0.0);
-            self.hr_time_domain_right[i] = Complex::new(input[idx + 1] * window_val, 0.0);
+            self.hr_time_domain_left[i] = input[idx] * window_val;
+            self.hr_time_domain_right[i] = input[idx + 1] * window_val;
         }
 
-        // 2. Forward FFT (in-place)
-        self.hr_freq_domain_left
-            .copy_from_slice(&self.hr_time_domain_left);
-        self.hr_freq_domain_right
-            .copy_from_slice(&self.hr_time_domain_right);
-
-        self.hr_fft_forward.process(&mut self.hr_freq_domain_left);
-        self.hr_fft_forward.process(&mut self.hr_freq_domain_right);
+        // 2. Forward FFT (Real->Complex)
+        self.hr_fft_forward
+            .process(&mut self.hr_time_domain_left, &mut self.hr_freq_domain_left)
+            .unwrap();
+        self.hr_fft_forward
+            .process(&mut self.hr_time_domain_right, &mut self.hr_freq_domain_right)
+            .unwrap();
 
         // 3. Frequency-dependent processing for HF direct path only
         //    We restrict to frequencies above a cutoff so that the
         //    high-resolution path mainly sharpens transients.
         let freq_per_bin = self.sample_rate as f32 / self.hr_fft_size as f32;
         let hf_cut = self.bandpass_hz.max(1000.0);
+        let hr_spectrum_size = self.hr_fft_size / 2 + 1;
 
-        // Clear HR output spectra
+        // Clear HR time-domain buffers
         for ch in 0..self.num_output_channels {
-            self.hr_time_out_channels[ch].fill(Complex::new(0.0, 0.0));
+            self.hr_time_out_channels[ch].fill(0.0);
         }
 
-        for i in 0..=self.hr_fft_size / 2 {
-            let freq = i as f32 * freq_per_bin;
-            if freq <= hf_cut {
+        // 4. Inverse FFT per-channel and write time-domain output
+        let fft_scale = 1.0 / self.hr_fft_size as f32;
+        let cola_scale = 2.0; // Hann with 50% overlap
+        let channel_normalization = 0.5; // Conservative mix factor for HR path
+        let combined_scale = fft_scale * cola_scale * channel_normalization;
+
+        for ch_idx in 0..self.num_output_channels {
+            let speaker = &self.speaker_config.speakers[ch_idx];
+            if speaker.is_lfe || speaker.elevation > 10.0 || speaker.azimuth.abs() >= 80.0 {
                 continue;
             }
 
-            let l = self.hr_freq_domain_left[i];
-            let r = self.hr_freq_domain_right[i];
+            let is_center = speaker.label == "C";
+            let panning_gain_left = self.panning_gains_left[ch_idx];
+            let panning_gain_right = self.panning_gains_right[ch_idx];
 
-            // Map HF direct energy only to front, non-height, non-LFE speakers.
-            for ch_idx in 0..self.num_output_channels {
-                let speaker = &self.speaker_config.speakers[ch_idx];
-                if speaker.is_lfe || speaker.elevation > 10.0 || speaker.azimuth.abs() >= 80.0 {
+            self.hr_temp_freq_out.fill(Complex::new(0.0, 0.0));
+
+            for i in 0..hr_spectrum_size {
+                let freq = i as f32 * freq_per_bin;
+                if freq <= hf_cut {
                     continue;
                 }
 
-                let is_center = speaker.label == "C";
-                let panning_gain_left = self.panning_gains_left[ch_idx];
-                let panning_gain_right = self.panning_gains_right[ch_idx];
-                let mut direct_val = l * panning_gain_left + r * panning_gain_right;
+                let l = self.hr_freq_domain_left[i];
+                let r = self.hr_freq_domain_right[i];
 
-                // Apply front direct gain and center spread shaping so that
-                // zero-gains and center spread invariants still hold when the
-                // HR path is active.
+                let mut direct_val = l * panning_gain_left + r * panning_gain_right;
                 let mut gain_scale = self.gain_front_direct;
                 if is_center {
                     let spread = self.center_spread.clamp(0.0, 1.0);
@@ -2019,36 +2000,21 @@ impl UpmixerPlugin {
                     continue;
                 }
 
-                direct_val *= gain_scale;
-
-                self.hr_time_out_channels[ch_idx][i] += direct_val;
+                self.hr_temp_freq_out[i] = direct_val * gain_scale;
             }
 
-            // Conjugate symmetry for negative frequencies
-            if i > 0 {
-                let mirror = self.hr_fft_size - i;
-                if mirror < self.hr_fft_size {
-                    for ch_idx in 0..self.num_output_channels {
-                        self.hr_time_out_channels[ch_idx][mirror] =
-                            self.hr_time_out_channels[ch_idx][i].conj();
-                    }
-                }
+            if hr_spectrum_size > 0 {
+                self.hr_temp_freq_out[0].im = 0.0;
+                self.hr_temp_freq_out[hr_spectrum_size - 1].im = 0.0;
             }
-        }
 
-        // 4. Inverse FFT and write time-domain output (real parts)
-        let fft_scale = 1.0 / self.hr_fft_size as f32;
-        let cola_scale = 2.0; // Hann with 50% overlap
-        let channel_normalization = 0.5; // Conservative mix factor for HR path
-        let combined_scale = fft_scale * cola_scale * channel_normalization;
-
-        for (ch_idx, hr_time_out_channel) in self.hr_time_out_channels.iter_mut().enumerate() {
-            // Skip channels that remained zero in frequency domain
-            self.hr_fft_inverse.process(hr_time_out_channel);
+            self.hr_fft_inverse
+                .process(&mut self.hr_temp_freq_out, &mut self.hr_time_out_channels[ch_idx])
+                .unwrap();
 
             for i in 0..self.hr_fft_size {
                 let idx = i * self.num_output_channels + ch_idx;
-                output[idx] = hr_time_out_channel[i].re * combined_scale;
+                output[idx] = self.hr_time_out_channels[ch_idx][i] * combined_scale;
             }
         }
     }
