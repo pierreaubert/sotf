@@ -20,6 +20,7 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 anyhow = "1.0"
 parking_lot = { workspace = true }
+chrono = { workspace = true }
 
 # Internal dependencies
 convexhull3d = { path = "../src-convexhull3d" }

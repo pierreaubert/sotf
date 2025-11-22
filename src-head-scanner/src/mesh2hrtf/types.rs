@@ -242,6 +242,19 @@ impl EvaluationGrid {
     pub fn num_points(&self) -> usize {
         self.nodes.len()
     }
+
+    /// Convert evaluation grid to mesh format
+    pub fn to_mesh(&self) -> Mesh {
+        Mesh {
+            nodes: self.nodes.clone(),
+            elements: self.elements.clone(),
+            metadata: MeshMetadata {
+                units: "m".to_string(),
+                description: format!("Evaluation grid: {}", self.name),
+                extra: std::collections::HashMap::new(),
+            },
+        }
+    }
 }
 
 /// Source types for BEM simulation
