@@ -1,0 +1,33 @@
+[package]
+name = "sotf-tui-player"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "TUI music player for SOTF"
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "sotf_player_tui"
+path = "src/main.rs"
+
+[dependencies]
+# Shared business logic
+sotf-audio-player = { path = "../src-audio-player" }
+
+# Audio engine
+sotf_audio = { path = "../src-audio" }
+
+# TUI framework
+ratatui = { workspace = true }
+crossterm = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Utilities
+parking_lot = { workspace = true }

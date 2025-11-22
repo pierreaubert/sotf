@@ -1,11 +1,6 @@
+
 mod app;
-mod config;
-mod database;
 mod events;
-mod library;
-mod player;
-mod plugins;
-mod replay_gain_scanner;
 mod theme;
 mod ui;
 
@@ -16,8 +11,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
-use player::Player;
 use ratatui::{Terminal, backend::CrosstermBackend};
+use sotf_audio_player::{Player, PluginSettings, PluginType};
 use std::fs::OpenOptions;
 use std::io;
 use std::path::PathBuf;
@@ -87,8 +82,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Configure binaural decoder if requested
     if args.binaural {
-        use plugins::{PluginSettings, PluginType};
-
         // Validate that SOFA file is provided
         let sofa_file = args
             .sofa_file

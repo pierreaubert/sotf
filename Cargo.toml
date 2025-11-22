@@ -14,6 +14,7 @@ members = [
     "src-iir",
     "src-tauri",
     "src-testfunctions",
+    "src-tui-player",
 ]
 # Default members excludes
 #   - macOS-only src-hal, src-configbar
@@ -39,6 +40,7 @@ default-members = [
     "src-iir",
     "src-tauri",
     "src-testfunctions",
+    "src-tui-player",
 ]
 resolver = "3"
 

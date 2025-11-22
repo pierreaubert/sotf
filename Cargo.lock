@@ -9554,6 +9554,7 @@ name = "sotf-audio-player"
 version = "0.5.1"
 dependencies = [
  "autoeq-iir",
+ "chrono",
  "directories",
  "ebur128",
  "log",
@@ -9607,6 +9608,20 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "sotf-tui-player"
+version = "0.5.1"
+dependencies = [
+ "clap",
+ "crossterm",
+ "env_logger 0.11.8",
+ "log",
+ "parking_lot",
+ "ratatui",
+ "sotf-audio-player",
+ "sotf_audio",
 ]
 
 [[package]]

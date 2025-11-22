@@ -20,5 +20,5 @@ pub use config::Config;
 pub use database::MusicDatabase;
 pub use library::{Album, AlbumChannelType, DirectoryInfo, MusicLibrary, Track};
 pub use player::{PlaybackState, Player};
-pub use plugins::{PluginChain, PluginSettings, PluginType};
-pub use replay_gain_scanner::{ReplayGainInfo, ReplayGainScanner};
+pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
+pub use replay_gain_scanner::{ReplayGainInfo, ReplayGainScanner, ScanMessage};
