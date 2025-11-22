@@ -21,6 +21,7 @@ pub enum InputMode {
     EditPlugin,
     SavePlugins,
     LoadPlugins,
+    Help,
 }
 
 /// Tree view mode for library
