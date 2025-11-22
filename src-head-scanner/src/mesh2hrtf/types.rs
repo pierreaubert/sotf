@@ -202,7 +202,7 @@ pub struct MeshMetadata {
 pub enum GridType {
     /// Horizontal plane at a given height
     HorizontalPlane { z: f64, radius: f64, points: usize },
-    /// Vertical plane
+    /// Vertical plane at a specific azimuth angle
     VerticalPlane {
         angle: f64,
         radius: f64,

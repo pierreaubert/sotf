@@ -50,7 +50,9 @@
 
 pub mod types;
 pub mod mesh_io;
+pub mod evaluation_grid;
 
 // Re-exports for convenience
 pub use types::*;
 pub use mesh_io::MeshIO;
+pub use evaluation_grid::GridGenerator;
