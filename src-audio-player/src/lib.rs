@@ -26,3 +26,6 @@ pub use sotf_audio::replaygain::ReplayGainInfo;
 
 // Re-export autoeq_iir types needed by TUI
 pub use autoeq_iir::BiquadFilterType;
+
+// Re-export analyzer types
+pub use sotf_audio::plugins::{LoudnessInfo, SpectrumInfo};

@@ -209,8 +209,8 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                 }
                 AppEvent::Tick => {
-                    // Get playback state
-                    let state = player.get_playback_state();
+                    // Get playback state (TUI doesn't use spectrum)
+                    let state = player.get_playback_state(false);
 
                     // Update app state
                     app.position_secs = state.position_secs;
