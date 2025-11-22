@@ -38,6 +38,7 @@ fn create_codec_registry() -> CodecRegistry {
     registry.register_all::<symphonia_bundle_mp3::MpaDecoder>();
     registry.register_all::<symphonia_codec_pcm::PcmDecoder>();
     registry.register_all::<symphonia_codec_aac::AacDecoder>();
+    registry.register_all::<symphonia_codec_alac::AlacDecoder>();
     registry.register_all::<symphonia_codec_vorbis::VorbisDecoder>();
 
     registry
@@ -128,8 +129,8 @@ impl SymphoniaDecoder {
                         .make(&codec_params, &decoder_opts)
                         .map_err(|e| {
                             AudioDecoderError::UnsupportedFormat(format!(
-                                "Cannot create decoder for codec: {:?}",
-                                e
+                                "Cannot create decoder for codec '{:?}'. Supported codecs: FLAC, MP3, AAC, ALAC, PCM, Vorbis. Error: {:?}",
+                                codec_params.codec, e
                             ))
                         })?;
 
@@ -173,8 +174,8 @@ impl SymphoniaDecoder {
                         .make(&codec_params, &decoder_opts)
                         .map_err(|e| {
                             AudioDecoderError::UnsupportedFormat(format!(
-                                "Cannot create decoder for codec: {:?}",
-                                e
+                                "Cannot create decoder for codec '{:?}'. Supported codecs: FLAC, MP3, AAC, ALAC, PCM, Vorbis. Error: {:?}",
+                                codec_params.codec, e
                             ))
                         })?;
 
@@ -186,8 +187,8 @@ impl SymphoniaDecoder {
                     .make(&codec_params, &decoder_opts)
                     .map_err(|e| {
                         AudioDecoderError::UnsupportedFormat(format!(
-                            "Cannot create decoder for codec: {:?}",
-                            e
+                            "Cannot create decoder for codec '{:?}'. Supported codecs: FLAC, MP3, AAC, ALAC, PCM, Vorbis. Error: {:?}",
+                            codec_params.codec, e
                         ))
                     })?;
                 (format_reader, decoder, channels)

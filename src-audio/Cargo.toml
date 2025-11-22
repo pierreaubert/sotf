@@ -65,6 +65,7 @@ symphonia-metadata = { workspace = true }
 symphonia-bundle-flac = { workspace = true }
 symphonia-bundle-mp3 = { workspace = true }
 symphonia-codec-aac = { workspace = true }
+symphonia-codec-alac = { workspace = true }
 symphonia-codec-pcm = { workspace = true }
 symphonia-codec-vorbis = { workspace = true }
 symphonia-format-riff = { workspace = true }
