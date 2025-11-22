@@ -4176,44 +4176,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "head-scanner"
-version = "0.5.1"
-dependencies = [
- "anyhow",
- "approx",
- "bytemuck",
- "byteorder",
- "chrono",
- "clap",
- "convexhull3d",
- "delaunator",
- "env_logger 0.11.8",
- "futures",
- "hdf5-metno",
- "image",
- "imageproc",
- "indicatif",
- "kiddo",
- "log",
- "nalgebra 0.33.2",
- "nalgebra-sparse",
- "ndarray 0.16.1",
- "netcdf",
- "num-complex",
- "opencv",
- "ort",
- "parking_lot",
- "parry3d",
- "rayon",
- "rustfft",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
-]
-
-[[package]]
 name = "heapless"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9720,6 +9682,44 @@ dependencies = [
  "rb",
  "tempfile",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "sotf_head_scanner"
+version = "0.5.1"
+dependencies = [
+ "anyhow",
+ "approx",
+ "bytemuck",
+ "byteorder",
+ "chrono",
+ "clap",
+ "convexhull3d",
+ "delaunator",
+ "env_logger 0.11.8",
+ "futures",
+ "hdf5-metno",
+ "image",
+ "imageproc",
+ "indicatif",
+ "kiddo",
+ "log",
+ "nalgebra 0.33.2",
+ "nalgebra-sparse",
+ "ndarray 0.16.1",
+ "netcdf",
+ "num-complex",
+ "opencv",
+ "ort",
+ "parking_lot",
+ "parry3d",
+ "rayon",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]

@@ -84,3 +84,17 @@ impl From<ort::Error> for ScannerError {
         ScannerError::OnnxRuntime(err.to_string())
     }
 }
+
+#[cfg(feature = "bem")]
+impl From<netcdf::Error> for ScannerError {
+    fn from(err: netcdf::Error) -> Self {
+        ScannerError::IoError(err.to_string())
+    }
+}
+
+#[cfg(feature = "sofa")]
+impl From<hdf5::Error> for ScannerError {
+    fn from(err: hdf5::Error) -> Self {
+        ScannerError::IoError(err.to_string())
+    }
+}

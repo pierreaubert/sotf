@@ -10,7 +10,7 @@ use opencv::{
     imgproc, objdetect,
     prelude::*,
 };
-use ort::{session::Session, value::Value};
+use ort::{session::{Session, builder::SessionBuilder}, value::Value};
 use serde::{Deserialize, Serialize};
 
 /// A detected facial or head feature
@@ -59,9 +59,9 @@ impl VisionModel {
 
     /// Helper function to try enabling a GPU provider and log results
     fn try_enable_gpu_provider(
-        builder: &mut ort::SessionBuilder,
+        builder: &mut SessionBuilder,
         provider_name: &str,
-        enable_fn: impl FnOnce(&mut ort::SessionBuilder) -> ScannerResult<()>,
+        enable_fn: impl FnOnce(&mut SessionBuilder) -> ScannerResult<()>,
     ) -> bool {
         log::info!("Attempting to enable {} execution provider", provider_name);
 
@@ -137,8 +137,8 @@ impl VisionModel {
 
     /// Enable CoreML execution provider (macOS)
     #[cfg(target_os = "macos")]
-    fn enable_coreml(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
-        use ort::ExecutionProvider;
+    fn enable_coreml(builder: &mut SessionBuilder) -> ScannerResult<()> {
+        use ort::execution_providers::ExecutionProvider;
 
         builder
             .with_execution_providers([ExecutionProvider::CoreML(Default::default())])
@@ -149,8 +149,8 @@ impl VisionModel {
 
     /// Enable DirectML execution provider (Windows)
     #[cfg(target_os = "windows")]
-    fn enable_directml(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
-        use ort::ExecutionProvider;
+    fn enable_directml(builder: &mut SessionBuilder) -> ScannerResult<()> {
+        use ort::execution_providers::ExecutionProvider;
 
         builder
             .with_execution_providers([ExecutionProvider::DirectML(Default::default())])
@@ -161,8 +161,8 @@ impl VisionModel {
 
     /// Enable CUDA execution provider (Linux)
     #[cfg(target_os = "linux")]
-    fn enable_cuda(builder: &mut ort::SessionBuilder) -> ScannerResult<()> {
-        use ort::ExecutionProvider;
+    fn enable_cuda(builder: &mut SessionBuilder) -> ScannerResult<()> {
+        use ort::execution_providers::ExecutionProvider;
 
         builder
             .with_execution_providers([ExecutionProvider::CUDA(Default::default())])

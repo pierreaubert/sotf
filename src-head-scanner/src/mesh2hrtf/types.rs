@@ -249,9 +249,14 @@ impl EvaluationGrid {
             nodes: self.nodes.clone(),
             elements: self.elements.clone(),
             metadata: MeshMetadata {
-                units: "m".to_string(),
-                description: format!("Evaluation grid: {}", self.name),
-                extra: std::collections::HashMap::new(),
+                name: Some(format!("Evaluation grid: {}", self.name)),
+                created: None,
+                source: None,
+                extra: {
+                    let mut map = std::collections::HashMap::new();
+                    map.insert("units".to_string(), serde_json::json!("m"));
+                    map
+                },
             },
         }
     }

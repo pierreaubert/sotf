@@ -301,20 +301,20 @@ impl SofaWriter {
         // Write Data.IR
         let mut ir_var = file
             .add_variable::<f64>("Data.IR", &[m_dim, r_dim, n_dim])?;
-        ir_var.put_values(&ir_data.into_raw_vec(), .., ..)?;
-        ir_var.add_attribute("Units", "")?; // Dimensionless
+        ir_var.put_values(&ir_data.into_raw_vec(), ..)?;
+        ir_var.put_attribute("Units", "")?; // Dimensionless
 
         // Write Data.SamplingRate
         let mut sr_var = file.add_variable::<f64>("Data.SamplingRate", &[])?;
         sr_var.put_value(hrir_data.sample_rate, None)?;
-        sr_var.add_attribute("Units", "hertz")?;
+        sr_var.put_attribute("Units", "hertz")?;
 
         // Write Data.Delay [M, R] (all zeros for now)
         let delay_data = Array2::<f64>::zeros((num_points, 2));
         let mut delay_var = file
             .add_variable::<f64>("Data.Delay", &[m_dim, r_dim])?;
         delay_var.put_values(&delay_data.into_raw_vec(), .., ..)?;
-        delay_var.add_attribute("Units", "samples")?;
+        delay_var.put_attribute("Units", "samples")?;
 
         Ok(())
     }
@@ -356,8 +356,8 @@ impl SofaWriter {
         let mut src_var = file
             .add_variable::<f64>("SourcePosition", &[m_dim, c_dim])?;
         src_var.put_values(&source_pos.into_raw_vec(), .., ..)?;
-        src_var.add_attribute("Type", coord_type)?;
-        src_var.add_attribute("Units", coord_units)?;
+        src_var.put_attribute("Type", coord_type)?;
+        src_var.put_attribute("Units", coord_units)?;
 
         // Write ReceiverPosition (ears relative to listener)
         // Standard HRTF convention: left ear = (-0.09, 0, 0), right ear = (0.09, 0, 0)
@@ -373,16 +373,16 @@ impl SofaWriter {
         let mut rcv_var = file
             .add_variable::<f64>("ReceiverPosition", &[r_dim, c_dim])?;
         rcv_var.put_values(&receiver_pos.into_raw_vec(), .., ..)?;
-        rcv_var.add_attribute("Type", coord_type)?;
-        rcv_var.add_attribute("Units", coord_units)?;
+        rcv_var.put_attribute("Type", coord_type)?;
+        rcv_var.put_attribute("Units", coord_units)?;
 
         // Write ListenerPosition (all at origin)
         let listener_pos = Array2::<f64>::zeros((num_measurements, 3));
         let mut lst_var = file
             .add_variable::<f64>("ListenerPosition", &[m_dim, c_dim])?;
         lst_var.put_values(&listener_pos.into_raw_vec(), .., ..)?;
-        lst_var.add_attribute("Type", coord_type)?;
-        lst_var.add_attribute("Units", coord_units)?;
+        lst_var.put_attribute("Type", coord_type)?;
+        lst_var.put_attribute("Units", coord_units)?;
 
         // Write ListenerView (facing forward: +y direction in Cartesian, or 0° azimuth)
         let view_dir = if self.coordinate_system == CoordinateSystem::Cartesian {
@@ -395,8 +395,8 @@ impl SofaWriter {
         let mut view_var = file
             .add_variable::<f64>("ListenerView", &[m_dim, c_dim])?;
         view_var.put_values(&listener_view.into_raw_vec(), .., ..)?;
-        view_var.add_attribute("Type", coord_type)?;
-        view_var.add_attribute("Units", coord_units)?;
+        view_var.put_attribute("Type", coord_type)?;
+        view_var.put_attribute("Units", coord_units)?;
 
         // Write ListenerUp (up direction: +z in Cartesian, or 90° elevation)
         let up_dir = if self.coordinate_system == CoordinateSystem::Cartesian {
@@ -409,8 +409,8 @@ impl SofaWriter {
         let mut up_var = file
             .add_variable::<f64>("ListenerUp", &[m_dim, c_dim])?;
         up_var.put_values(&listener_up.into_raw_vec(), .., ..)?;
-        up_var.add_attribute("Type", coord_type)?;
-        up_var.add_attribute("Units", coord_units)?;
+        up_var.put_attribute("Type", coord_type)?;
+        up_var.put_attribute("Units", coord_units)?;
 
         Ok(())
     }

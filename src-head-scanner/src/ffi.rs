@@ -62,7 +62,7 @@ pub struct QualityMetricsC {
 impl From<&QualityMetrics> for QualityMetricsC {
     fn from(metrics: &QualityMetrics) -> Self {
         QualityMetricsC {
-            coverage: metrics.coverage,
+            coverage: metrics.coverage_percentage,
             angular_coverage: metrics.angular_coverage,
             point_density: metrics.point_density,
             blur_score: metrics.blur_score,
@@ -78,12 +78,12 @@ pub enum HeadRegionC {
     Right = 2,
     Back = 3,
     Top = 4,
-    Bottom = 5,
-    FrontLeft = 6,
-    FrontRight = 7,
-    BackLeft = 8,
-    BackRight = 9,
-    TopFront = 10,
+    FrontLeft = 5,
+    FrontRight = 6,
+    BackLeft = 7,
+    BackRight = 8,
+    TopLeft = 9,
+    TopRight = 10,
 }
 
 impl From<HeadRegion> for HeadRegionC {
@@ -94,12 +94,12 @@ impl From<HeadRegion> for HeadRegionC {
             HeadRegion::Right => HeadRegionC::Right,
             HeadRegion::Back => HeadRegionC::Back,
             HeadRegion::Top => HeadRegionC::Top,
-            HeadRegion::Bottom => HeadRegionC::Bottom,
             HeadRegion::FrontLeft => HeadRegionC::FrontLeft,
             HeadRegion::FrontRight => HeadRegionC::FrontRight,
             HeadRegion::BackLeft => HeadRegionC::BackLeft,
             HeadRegion::BackRight => HeadRegionC::BackRight,
-            HeadRegion::TopFront => HeadRegionC::TopFront,
+            HeadRegion::TopLeft => HeadRegionC::TopLeft,
+            HeadRegion::TopRight => HeadRegionC::TopRight,
         }
     }
 }
@@ -112,12 +112,12 @@ impl From<HeadRegionC> for HeadRegion {
             HeadRegionC::Right => HeadRegion::Right,
             HeadRegionC::Back => HeadRegion::Back,
             HeadRegionC::Top => HeadRegion::Top,
-            HeadRegionC::Bottom => HeadRegion::Bottom,
             HeadRegionC::FrontLeft => HeadRegion::FrontLeft,
             HeadRegionC::FrontRight => HeadRegion::FrontRight,
             HeadRegionC::BackLeft => HeadRegion::BackLeft,
             HeadRegionC::BackRight => HeadRegion::BackRight,
-            HeadRegionC::TopFront => HeadRegion::TopFront,
+            HeadRegionC::TopLeft => HeadRegion::TopLeft,
+            HeadRegionC::TopRight => HeadRegion::TopRight,
         }
     }
 }
@@ -134,12 +134,12 @@ fn set_last_error(err: String) {
 
 /// Scanner lifecycle
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scanner_new() -> *mut Scanner {
     Box::into_raw(Box::new(Scanner::new()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scanner_free(scanner: *mut Scanner) {
     if !scanner.is_null() {
         unsafe {
@@ -150,7 +150,7 @@ pub extern "C" fn scanner_free(scanner: *mut Scanner) {
 
 /// Frame processing
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scanner_process_frame(
     scanner: *mut Scanner,
     rgb_data: *const u8,
@@ -261,7 +261,7 @@ pub extern "C" fn scanner_process_frame(
 
 /// Scan guidance
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scanner_get_guidance(scanner: *mut Scanner) -> *mut ScanGuidance {
     if scanner.is_null() {
         return ptr::null_mut();
@@ -271,7 +271,7 @@ pub extern "C" fn scanner_get_guidance(scanner: *mut Scanner) -> *mut ScanGuidan
     Box::into_raw(Box::new(ScanGuidance::new()))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guidance_free(guidance: *mut ScanGuidance) {
     if !guidance.is_null() {
         unsafe {
@@ -280,7 +280,7 @@ pub extern "C" fn guidance_free(guidance: *mut ScanGuidance) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guidance_update_pose(
     guidance: *mut ScanGuidance,
     pose: *const CameraPose,
@@ -304,7 +304,7 @@ pub extern "C" fn guidance_update_pose(
     ScannerResultCode::Ok
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guidance_get_metrics(guidance: *const ScanGuidance) -> QualityMetricsC {
     if guidance.is_null() {
         return QualityMetricsC {
@@ -316,10 +316,10 @@ pub extern "C" fn guidance_get_metrics(guidance: *const ScanGuidance) -> Quality
     }
 
     let guidance = unsafe { &*guidance };
-    QualityMetricsC::from(&guidance.quality_metrics)
+    QualityMetricsC::from(guidance.get_quality_metrics())
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guidance_is_region_covered(
     guidance: *const ScanGuidance,
     region: HeadRegionC,
@@ -329,10 +329,10 @@ pub extern "C" fn guidance_is_region_covered(
     }
 
     let guidance = unsafe { &*guidance };
-    guidance.covered_regions.contains(&HeadRegion::from(region))
+    guidance.get_covered_regions().contains(&HeadRegion::from(region))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn guidance_get_next_region(guidance: *const ScanGuidance) -> HeadRegionC {
     if guidance.is_null() {
         return HeadRegionC::Front;
@@ -344,7 +344,7 @@ pub extern "C" fn guidance_get_next_region(guidance: *const ScanGuidance) -> Hea
 
 /// Mesh reconstruction
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scanner_get_mesh(scanner: *mut Scanner) -> *mut Mesh {
     if scanner.is_null() {
         return ptr::null_mut();
@@ -360,7 +360,7 @@ pub extern "C" fn scanner_get_mesh(scanner: *mut Scanner) -> *mut Mesh {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mesh_free(mesh: *mut Mesh) {
     if !mesh.is_null() {
         unsafe {
@@ -369,7 +369,7 @@ pub extern "C" fn mesh_free(mesh: *mut Mesh) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mesh_vertex_count(mesh: *const Mesh) -> u32 {
     if mesh.is_null() {
         return 0;
@@ -379,7 +379,7 @@ pub extern "C" fn mesh_vertex_count(mesh: *const Mesh) -> u32 {
     mesh.vertex_count() as u32
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mesh_triangle_count(mesh: *const Mesh) -> u32 {
     if mesh.is_null() {
         return 0;
@@ -389,7 +389,7 @@ pub extern "C" fn mesh_triangle_count(mesh: *const Mesh) -> u32 {
     mesh.triangle_count() as u32
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn mesh_export_obj(mesh: *const Mesh, path: *const c_char) -> ScannerResultCode {
     if mesh.is_null() || path.is_null() {
         set_last_error("Null pointer provided to mesh_export_obj".to_string());
@@ -431,7 +431,7 @@ pub extern "C" fn mesh_export_obj(mesh: *const Mesh, path: *const c_char) -> Sca
 
 /// SOFA generation
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scanner_generate_sofa(
     mesh: *const Mesh,
     output_path: *const c_char,
@@ -550,7 +550,7 @@ pub extern "C" fn scanner_generate_sofa(
 
 /// Error handling
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn scanner_last_error() -> *const c_char {
     LAST_ERROR.with(|e| {
         e.borrow()

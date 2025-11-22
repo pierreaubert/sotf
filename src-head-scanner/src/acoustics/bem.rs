@@ -290,13 +290,10 @@ impl BEMSolver {
         netcdf_path: &Path,
         target_sample_rate: f32,
     ) -> ScannerResult<(Vec<Point3<f32>>, Vec<Vec<Vec<f32>>>)> {
-        use netcdf::File as NetCDFFile;
-
         log::info!("Parsing NetCDF file...");
 
         // Open NetCDF file
-        let file = NetCDFFile::open(netcdf_path)
-            .map_err(|e| ScannerError::Io(format!("Failed to open NetCDF file: {}", e)))?;
+        let file = netcdf::open(netcdf_path)?;
 
         // Read source positions
         let source_positions = self.read_source_positions(&file)?;
@@ -327,11 +324,7 @@ impl BEMSolver {
                 ScannerError::InvalidConfig("sourcePosition variable not found in NetCDF".to_string())
             })?;
 
-        let data: Vec<f32> = var
-            .values::<f32, _>(None, None)
-            .map_err(|e| ScannerError::Io(format!("Failed to read source positions: {}", e)))?
-            .into_iter()
-            .collect();
+        let data: Vec<f32> = var.get_values::<f32, _>(..)?.into_iter().collect();
 
         // Convert flat array to Vec<Point3>
         let num_sources = data.len() / 3;
@@ -362,16 +355,16 @@ impl BEMSolver {
                 ScannerError::InvalidConfig("transferFunction variable not found in NetCDF".to_string())
             })?;
 
-        let shape = var.shape();
-        if shape.len() < 4 {
+        let dims = var.dimensions();
+        if dims.len() < 4 {
             return Err(ScannerError::InvalidConfig(
                 "Invalid transferFunction shape in NetCDF".to_string(),
             ));
         }
 
-        let num_sources = shape[0];
-        let num_receivers = shape[1];
-        let num_frequencies = shape[2];
+        let num_sources = dims[0].len();
+        let num_receivers = dims[1].len();
+        let num_frequencies = dims[2].len();
 
         log::info!(
             "  NetCDF shape: {} sources × {} receivers × {} frequencies",
@@ -380,11 +373,7 @@ impl BEMSolver {
             num_frequencies
         );
 
-        let data: Vec<f32> = var
-            .values::<f32, _>(None, None)
-            .map_err(|e| ScannerError::Io(format!("Failed to read transfer functions: {}", e)))?
-            .into_iter()
-            .collect();
+        let data: Vec<f32> = var.get_values::<f32, _>(..)?.into_iter().collect();
 
         // Convert to nested structure: [source][receiver][frequency] = (real, imag)
         let mut hrtfs = vec![vec![vec![(0.0f32, 0.0f32); num_frequencies]; num_receivers]; num_sources];

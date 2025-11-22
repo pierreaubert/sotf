@@ -1,5 +1,5 @@
 [package]
-name = "head-scanner"
+name = "sotf_head_scanner"
 version = { workspace = true }
 authors = { workspace = true }
 description = "3D head scanner using computer vision for HRTF optimization"
@@ -8,7 +8,7 @@ license = { workspace = true }
 repository = { workspace = true }
 
 [features]
-default = ["sofa"]
+default = ["sofa", "bem"]
 sofa = ["hdf5"]  # Enable SOFA file generation
 bem = ["netcdf"]  # Enable BEM solver integration
 

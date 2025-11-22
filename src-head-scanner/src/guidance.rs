@@ -337,7 +337,7 @@ impl ScanGuidance {
 
         // Vector from head center to camera
         let to_camera = pose.position - head_center;
-        let distance = to_camera.coords.norm();
+        let distance = to_camera.norm();
 
         // Compute azimuth (horizontal angle)
         let azimuth = to_camera.z.atan2(to_camera.x).to_degrees();
@@ -917,7 +917,6 @@ mod tests {
         println!("  Blur score: {:.2}", metrics.blur_score);
         println!("  Reconstruction error: {:.2}", metrics.reconstruction_error);
     }
-}
 
     #[test]
     fn test_guidance_system() {
