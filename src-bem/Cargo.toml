@@ -54,6 +54,12 @@ clap = { version = "4.0", features = ["derive"], optional = true }
 # Memory profiling
 memory-stats = "1.0"
 
+# System information (for resource monitoring)
+sysinfo = "0.30"
+
+# Process/executable finding
+which = "6.0"
+
 # Benchmarking
 criterion = { version = "0.5", optional = true }
 
