@@ -17,15 +17,28 @@ actions!(
         SwitchToPlugins,
         SwitchToDevices,
         SwitchToSpectrum,
+        SwitchToDirectoryManager,
         ToggleSearch,
         ToggleLibraryView,
         ToggleHelp,
+        CycleSortOrder,
+        SetSortArtist,
+        SetSortAlbum,
+        SetSortTitle,
+        SetSortYear,
+        CycleChannelFilter,
+        SetFilterAll,
+        SetFilterMono,
+        SetFilterStereo,
+        SetFilterMultichannel,
+        SetFilterMixed,
         SelectNext,
         SelectPrev,
         SelectNextPage,
         SelectPrevPage,
         ToggleExpand,
         Enter,
+        Cancel,
     ]
 );
 
@@ -145,6 +158,35 @@ impl PlayerView {
         self.switch_screen(Screen::Devices, cx);
     }
 
+    fn switch_to_directory_manager(
+        &mut self,
+        _: &SwitchToDirectoryManager,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.switch_screen(Screen::DirectoryManager, cx);
+    }
+
+    fn toggle_search(&mut self, _: &ToggleSearch, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if state.app.input_mode == crate::app::InputMode::Search {
+                state.app.input_mode = crate::app::InputMode::Normal;
+            } else {
+                state.app.input_mode = crate::app::InputMode::Search;
+                state.app.search_query.clear();
+            }
+        });
+        cx.notify();
+    }
+
+    fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.input_mode = crate::app::InputMode::Normal;
+            state.app.search_query.clear();
+        });
+        cx.notify();
+    }
+
     fn toggle_library_view(
         &mut self,
         _: &ToggleLibraryView,
@@ -155,6 +197,129 @@ impl PlayerView {
             state.app.toggle_library_view_mode();
         });
         cx.notify();
+    }
+
+    fn cycle_sort_order(&mut self, _: &CycleSortOrder, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            use crate::app::LibrarySortOrder;
+            let next_order = match state.app.library_sort_order {
+                LibrarySortOrder::Artist => LibrarySortOrder::Album,
+                LibrarySortOrder::Album => LibrarySortOrder::Title,
+                LibrarySortOrder::Title => LibrarySortOrder::Year,
+                LibrarySortOrder::Year => LibrarySortOrder::Artist,
+            };
+            state.app.set_library_sort_order(next_order);
+        });
+        cx.notify();
+    }
+
+    fn set_sort_artist(&mut self, _: &SetSortArtist, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Artist);
+        });
+        cx.notify();
+    }
+
+    fn set_sort_album(&mut self, _: &SetSortAlbum, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Album);
+        });
+        cx.notify();
+    }
+
+    fn set_sort_title(&mut self, _: &SetSortTitle, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Title);
+        });
+        cx.notify();
+    }
+
+    fn set_sort_year(&mut self, _: &SetSortYear, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Year);
+        });
+        cx.notify();
+    }
+
+    fn cycle_channel_filter(
+        &mut self,
+        _: &CycleChannelFilter,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.cycle_channel_filter();
+        });
+        cx.notify();
+    }
+
+    fn set_filter_all(&mut self, _: &SetFilterAll, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_channel_filter(crate::app::ChannelFilter::All);
+        });
+        cx.notify();
+    }
+
+    fn set_filter_mono(&mut self, _: &SetFilterMono, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_channel_filter(crate::app::ChannelFilter::Mono);
+        });
+        cx.notify();
+    }
+
+    fn set_filter_stereo(&mut self, _: &SetFilterStereo, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_channel_filter(crate::app::ChannelFilter::Stereo);
+        });
+        cx.notify();
+    }
+
+    fn set_filter_multichannel(
+        &mut self,
+        _: &SetFilterMultichannel,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_channel_filter(crate::app::ChannelFilter::Multichannel);
+        });
+        cx.notify();
+    }
+
+    fn set_filter_mixed(&mut self, _: &SetFilterMixed, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.set_channel_filter(crate::app::ChannelFilter::Mixed);
+        });
+        cx.notify();
+    }
+
+    fn handle_search_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle text input for search mode
+        match &event.keystroke.key {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.search_query.pop();
+                    state.app.selected_album_index = 0; // Reset selection when query changes
+                });
+                cx.notify();
+            }
+            "escape" => {
+                // Already handled by Cancel action
+            }
+            "enter" => {
+                // Already handled by Enter action (exits search mode)
+            }
+            _ => {
+                // Add character to search query
+                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.search_query.push_str(text);
+                        state.app.selected_album_index = 0; // Reset selection when query changes
+                    });
+                    cx.notify();
+                }
+            }
+        }
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
@@ -320,6 +485,7 @@ impl PlayerView {
 impl Render for PlayerView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let current_screen = self.state.read(cx).app.current_screen;
+        let input_mode = self.state.read(cx).app.input_mode;
 
         div()
             .key_context("PlayerView")
@@ -333,11 +499,33 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_queue))
             .on_action(cx.listener(Self::switch_to_plugins))
             .on_action(cx.listener(Self::switch_to_devices))
+            .on_action(cx.listener(Self::switch_to_directory_manager))
+            .on_action(cx.listener(Self::toggle_search))
             .on_action(cx.listener(Self::toggle_library_view))
+            .on_action(cx.listener(Self::cycle_sort_order))
+            .on_action(cx.listener(Self::set_sort_artist))
+            .on_action(cx.listener(Self::set_sort_album))
+            .on_action(cx.listener(Self::set_sort_title))
+            .on_action(cx.listener(Self::set_sort_year))
+            .on_action(cx.listener(Self::cycle_channel_filter))
+            .on_action(cx.listener(Self::set_filter_all))
+            .on_action(cx.listener(Self::set_filter_mono))
+            .on_action(cx.listener(Self::set_filter_stereo))
+            .on_action(cx.listener(Self::set_filter_multichannel))
+            .on_action(cx.listener(Self::set_filter_mixed))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))
             .on_action(cx.listener(Self::toggle_expand))
             .on_action(cx.listener(Self::handle_enter))
+            .on_action(cx.listener(Self::cancel))
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
+                // Handle text input for search mode
+                let in_search_mode = view.state.read(cx).app.input_mode == crate::app::InputMode::Search;
+
+                if in_search_mode {
+                    view.handle_search_input(event, cx);
+                }
+            }))
             .flex()
             .flex_col()
             .size_full()
@@ -417,20 +605,43 @@ impl PlayerView {
     }
 
     fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (library_view_mode, albums_count, search_query, scan_in_progress) = {
+        let (library_view_mode, albums_count, search_query, scan_in_progress, input_mode, sort_order, channel_filter, filtered_count) = {
             let state = self.state.read(cx);
+            let filtered_count = state.app.filtered_albums().len();
             (
                 state.app.library_view_mode,
                 state.app.library.albums.len(),
                 state.app.search_query.clone(),
                 state.app.scan_in_progress,
+                state.app.input_mode,
+                state.app.library_sort_order,
+                state.app.channel_filter,
+                filtered_count,
             )
         };
+
+        let is_search_mode = input_mode == crate::app::InputMode::Search;
 
         let content = if library_view_mode == crate::app::LibraryViewMode::TreeView {
             self.render_library_tree(cx).into_any_element()
         } else {
             self.render_library_flat(cx).into_any_element()
+        };
+
+        let sort_label = match sort_order {
+            crate::app::LibrarySortOrder::Artist => "Artist",
+            crate::app::LibrarySortOrder::Album => "Album",
+            crate::app::LibrarySortOrder::Title => "Title",
+            crate::app::LibrarySortOrder::Year => "Year",
+        };
+
+        let filter_label = match channel_filter {
+            crate::app::ChannelFilter::All => "All".to_string(),
+            crate::app::ChannelFilter::Mono => "Mono".to_string(),
+            crate::app::ChannelFilter::Stereo => "Stereo".to_string(),
+            crate::app::ChannelFilter::Multichannel => "Multi".to_string(),
+            crate::app::ChannelFilter::Mixed => "Mixed".to_string(),
+            crate::app::ChannelFilter::Specific(n) => format!("{}ch", n),
         };
 
         div()
@@ -448,7 +659,11 @@ impl PlayerView {
                         div()
                             .text_lg()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(format!("Library ({} albums)", albums_count)),
+                            .child(if filtered_count == albums_count {
+                                format!("Library ({} albums)", albums_count)
+                            } else {
+                                format!("Library ({}/{} albums)", filtered_count, albums_count)
+                            }),
                     )
                     .child(
                         div()
@@ -461,26 +676,47 @@ impl PlayerView {
                                     .bg(rgb(0x2d2d2d))
                                     .rounded_md()
                                     .border_1()
-                                    .border_color(rgb(0x3e3e3e))
+                                    .when(is_search_mode, |div| div.border_color(rgb(0x007acc)))
+                                    .when(!is_search_mode, |div| div.border_color(rgb(0x3e3e3e)))
                                     .px_2()
                                     .py_1()
                                     .w_64()
                                     .child(
-                                        div() // Placeholder for search icon
+                                        div()
                                             .mr_2()
-                                            .text_color(rgb(0x999999))
+                                            .text_color(if is_search_mode { rgb(0x007acc) } else { rgb(0x999999) })
                                             .child("🔍")
                                     )
                                     .child(
-                                        div() // Search input simulation (since GPUI doesn't have a built-in TextInput widget easily accessible without boilerplate)
-                                            // In a real implementation we'd use a proper text input view.
-                                            // For now, we'll just show the current query and rely on keyboard input if we were to implement it fully,
-                                            // but since we don't have a text input widget ready, we might skip the interactive part or implement a basic one.
-                                            // Let's try to implement a basic text display that shows "Search..." or the query.
+                                        div()
                                             .text_sm()
-                                            .text_color(if search_query.is_empty() { rgb(0x666666) } else { rgb(0xcccccc) })
-                                            .child(if search_query.is_empty() { "Type to search...".to_string() } else { search_query.clone() })
+                                            .text_color(if search_query.is_empty() {
+                                                if is_search_mode { rgb(0x999999) } else { rgb(0x666666) }
+                                            } else {
+                                                rgb(0xcccccc)
+                                            })
+                                            .child(if search_query.is_empty() {
+                                                if is_search_mode {
+                                                    "Type to search...".to_string()
+                                                } else {
+                                                    "Press / to search".to_string()
+                                                }
+                                            } else {
+                                                format!("{}{}",search_query, if is_search_mode { "|" } else { "" })
+                                            })
                                     )
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(rgb(0x999999))
+                                    .child(format!("Sort: {}", sort_label))
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(rgb(0x999999))
+                                    .child(format!("Filter: {}", filter_label))
                             )
                             .child(
                                 div()

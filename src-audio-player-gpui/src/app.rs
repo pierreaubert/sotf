@@ -242,10 +242,100 @@ impl App {
     }
 
     pub fn filtered_albums(&self) -> Vec<&Album> {
-        if self.search_query.is_empty() {
+        use ChannelFilter::*;
+        use LibrarySortOrder::*;
+
+        // First filter by search query
+        let mut albums: Vec<&Album> = if self.search_query.is_empty() {
             self.library.albums.iter().collect()
         } else {
             self.library.search_albums(&self.search_query)
+        };
+
+        // Then filter by channel count
+        albums.retain(|album| match self.channel_filter {
+            All => true,
+            Mono => album.uniform_channel_count() == Some(1),
+            Stereo => album.uniform_channel_count() == Some(2),
+            Multichannel => {
+                if let Some(count) = album.uniform_channel_count() {
+                    count > 2
+                } else {
+                    false
+                }
+            }
+            Mixed => album.uniform_channel_count().is_none(),
+            Specific(n) => album.uniform_channel_count() == Some(n),
+        });
+
+        // Finally, sort
+        match self.library_sort_order {
+            Artist => {
+                albums.sort_by(|a, b| {
+                    a.artist
+                        .cmp(&b.artist)
+                        .then_with(|| a.year.cmp(&b.year).reverse())
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            Album => {
+                albums.sort_by(|a, b| a.title.cmp(&b.title));
+            }
+            Title => {
+                albums.sort_by(|a, b| a.title.cmp(&b.title));
+            }
+            Year => {
+                albums.sort_by(|a, b| {
+                    b.year
+                        .cmp(&a.year)
+                        .then_with(|| a.artist.cmp(&b.artist))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+        }
+
+        albums
+    }
+
+    /// Set library sort order
+    pub fn set_library_sort_order(&mut self, order: LibrarySortOrder) {
+        self.library_sort_order = order;
+        // Reset selection to top when changing sort order
+        self.selected_album_index = 0;
+        self.selected_tree_index = 0;
+        // Rebuild tree view if active (as sort order affects tree structure)
+        if self.library_view_mode == LibraryViewMode::TreeView {
+            self.rebuild_artist_tree();
+        }
+    }
+
+    /// Set channel filter
+    pub fn set_channel_filter(&mut self, filter: ChannelFilter) {
+        self.channel_filter = filter;
+        // Reset selection to top when changing filter
+        self.selected_album_index = 0;
+        self.selected_tree_index = 0;
+        // Rebuild tree view if active
+        if self.library_view_mode == LibraryViewMode::TreeView {
+            self.rebuild_artist_tree();
+        }
+    }
+
+    /// Cycle to next channel filter
+    pub fn cycle_channel_filter(&mut self) {
+        self.channel_filter = match self.channel_filter {
+            ChannelFilter::All => ChannelFilter::Mono,
+            ChannelFilter::Mono => ChannelFilter::Stereo,
+            ChannelFilter::Stereo => ChannelFilter::Multichannel,
+            ChannelFilter::Multichannel => ChannelFilter::Mixed,
+            ChannelFilter::Mixed => ChannelFilter::All,
+            ChannelFilter::Specific(_) => ChannelFilter::All,
+        };
+        // Reset selection and rebuild tree
+        self.selected_album_index = 0;
+        self.selected_tree_index = 0;
+        if self.library_view_mode == LibraryViewMode::TreeView {
+            self.rebuild_artist_tree();
         }
     }
 
