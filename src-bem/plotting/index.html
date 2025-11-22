@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BEM Analytical Test Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 10px;
+            padding: 30px;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            border-color: #667eea;
+        }
+
+        .card h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.8em;
+        }
+
+        .card p {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .dimension-badge {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        .info-section {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 5px;
+        }
+
+        .info-section h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .info-section ul {
+            margin-left: 20px;
+            color: #555;
+            line-height: 1.8;
+        }
+
+        .footer {
+            text-align: center;
+            color: #999;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            color: #e83e8c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 BEM Analytical Test Visualization</h1>
+        <p class="subtitle">Interactive validation of Boundary Element Method implementations</p>
+
+        <div class="info-section">
+            <h3>📊 About This Suite</h3>
+            <p>
+                This visualization suite compares BEM numerical solutions with exact analytical
+                solutions for acoustic scattering problems. Tests are performed in 1D, 2D, and 3D
+                to validate correctness across different geometries and frequency regimes.
+            </p>
+        </div>
+
+        <div class="card-grid">
+            <div class="card" onclick="window.location.href='plot_1d.html'">
+                <h2>1D Wave Propagation</h2>
+                <p>Plane waves, standing waves, and damped propagation in one dimension.</p>
+                <p><strong>Tests:</strong></p>
+                <ul>
+                    <li>Plane wave: p(x) = exp(ikx)</li>
+                    <li>Standing wave with nodes</li>
+                    <li>Exponential damping</li>
+                    <li>Convergence studies</li>
+                </ul>
+                <span class="dimension-badge">1D</span>
+            </div>
+
+            <div class="card" onclick="window.location.href='plot_2d.html'">
+                <h2>2D Cylinder Scattering</h2>
+                <p>Rigid cylinder scattering using Bessel/Hankel function series.</p>
+                <p><strong>Tests:</strong></p>
+                <ul>
+                    <li>Rayleigh scattering (ka &lt;&lt; 1)</li>
+                    <li>Mie regime (ka ~ 1)</li>
+                    <li>High frequency (ka &gt;&gt; 1)</li>
+                    <li>Directivity patterns</li>
+                    <li>Scattering cross-section</li>
+                </ul>
+                <span class="dimension-badge">2D</span>
+            </div>
+
+            <div class="card" onclick="window.location.href='plot_3d.html'">
+                <h2>3D Sphere Scattering</h2>
+                <p>Rigid sphere scattering using Mie theory (spherical harmonics).</p>
+                <p><strong>Tests:</strong></p>
+                <ul>
+                    <li>Rayleigh regime (ka &lt; 0.3)</li>
+                    <li>Mie resonances (ka ~ 1)</li>
+                    <li>Geometric optics (ka &gt; 10)</li>
+                    <li>Radar cross-section (RCS)</li>
+                    <li>Surface pressure distributions</li>
+                </ul>
+                <span class="dimension-badge">3D</span>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h3>🚀 How to Use</h3>
+            <ol style="margin-left: 20px; line-height: 1.8; color: #555;">
+                <li>Run tests to generate JSON output:
+                    <br><code>cargo test --release -- --nocapture</code>
+                </li>
+                <li>Start local server:
+                    <br><code>cd plotting && python -m http.server 8080</code>
+                </li>
+                <li>Open <code>http://localhost:8080</code> in browser</li>
+                <li>Click on dimension cards above to view results</li>
+            </ol>
+        </div>
+
+        <div class="info-section">
+            <h3>📖 Key Concepts</h3>
+            <ul>
+                <li><strong>ka</strong>: Dimensionless frequency parameter (wave number × radius)</li>
+                <li><strong>Rayleigh regime</strong>: Long wavelength (ka &lt; 0.3), weak scattering</li>
+                <li><strong>Mie regime</strong>: Resonance regime (ka ~ 1), complex patterns</li>
+                <li><strong>Geometric regime</strong>: Short wavelength (ka &gt; 10), ray approximation</li>
+                <li><strong>RCS</strong>: Radar Cross Section, measure of scattered power</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Part of the <strong>src-bem</strong> library</p>
+            <p>Analytical solutions: 1D (plane waves), 2D (Bessel/Hankel), 3D (Mie theory)</p>
+            <p style="margin-top: 10px; color: #bbb;">
+                Powered by Plotly.js & Three.js
+            </p>
+        </div>
+    </div>
+</body>
+</html>
