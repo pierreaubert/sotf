@@ -5,8 +5,11 @@
 //! - Managing MIDI connections (input and output)
 //! - Sending and receiving MIDI messages
 //! - Configuring and persisting device profiles
+//! - Pre-configured profiles for popular audio hardware
 //!
 //! # Examples
+//!
+//! ## Basic MIDI I/O
 //!
 //! ```no_run
 //! use sotf_audio_player_midi::{MidiManager, MidiMessage};
@@ -39,12 +42,30 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Using Device Profiles
+//!
+//! ```no_run
+//! use sotf_audio_player_midi::{MidiManager, profiles::{TotalMixControl, TotalMixRow}};
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut manager = MidiManager::new()?;
+//! manager.connect_output(0)?;
+//!
+//! // Control RME TotalMix FX
+//! let totalmix = TotalMixControl::new(&mut manager)?;
+//! totalmix.set_main_volume(100)?;
+//! totalmix.set_fader(TotalMixRow::Output, 0, 0, 95)?;
+//! # Ok(())
+//! # }
+//! ```
 
 pub mod config;
 pub mod device;
 pub mod error;
 pub mod manager;
 pub mod message;
+pub mod profiles;
 
 pub use config::{DeviceConfig, DeviceProfile, MidiConfig};
 pub use device::{MidiDevice, MidiDeviceInfo};
