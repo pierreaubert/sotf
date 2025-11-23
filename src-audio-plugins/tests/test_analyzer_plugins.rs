@@ -6,7 +6,7 @@
 // producing audio output.
 
 use sotf_plugins::{
-    AnalyzerPlugin, LoudnessData, LoudnessMonitorPlugin, ProcessContext, SpectrumAnalyzerPlugin,
+    LoudnessData, LoudnessMonitorPlugin, Plugin, ProcessContext, SpectrumAnalyzerPlugin,
     SpectrumConfig, SpectrumData,
 };
 
@@ -32,10 +32,12 @@ fn test_loudness_monitor_stereo() {
     };
 
     // Process audio
-    monitor.process(&input, &context).unwrap();
+    let mut output = vec![0.0; input.len()];
+    monitor.process(&input, &mut output, &context).unwrap();
 
     // Get loudness data
-    let data = monitor.get_data();
+    let data_opt = monitor.get_data();
+    let data = data_opt.unwrap();
     let loudness = data.downcast_ref::<LoudnessData>().unwrap();
 
     println!("Loudness Monitor Results:");
@@ -80,10 +82,12 @@ fn test_spectrum_analyzer_stereo() {
     };
 
     // Process audio
-    analyzer.process(&input, &context).unwrap();
+    let mut output = vec![0.0; input.len()];
+    analyzer.process(&input, &mut output, &context).unwrap();
 
     // Get spectrum data
-    let data = analyzer.get_data();
+    let data_opt = analyzer.get_data();
+    let data = data_opt.unwrap();
     let spectrum = data.downcast_ref::<SpectrumData>().unwrap();
 
     println!("\nSpectrum Analyzer Results:");
@@ -143,12 +147,13 @@ fn test_both_analyzers_together() {
     };
 
     // Process with both analyzers
-    loudness.process(&input, &context).unwrap();
-    spectrum.process(&input, &context).unwrap();
+    let mut output = vec![0.0; input.len()];
+    loudness.process(&input, &mut output, &context).unwrap();
+    spectrum.process(&input, &mut output, &context).unwrap();
 
     // Get results from both
-    let loudness_data = loudness.get_data();
-    let spectrum_data = spectrum.get_data();
+    let loudness_data = loudness.get_data().unwrap();
+    let spectrum_data = spectrum.get_data().unwrap();
 
     let ld = loudness_data.downcast_ref::<LoudnessData>().unwrap();
     let sd = spectrum_data.downcast_ref::<SpectrumData>().unwrap();
@@ -200,12 +205,13 @@ fn test_analyzer_with_5ch_audio() {
     };
 
     // Process
-    loudness.process(&input, &context).unwrap();
-    spectrum.process(&input, &context).unwrap();
+    let mut output = vec![0.0; input.len()];
+    loudness.process(&input, &mut output, &context).unwrap();
+    spectrum.process(&input, &mut output, &context).unwrap();
 
     // Get results
-    let loudness_data = loudness.get_data();
-    let spectrum_data = spectrum.get_data();
+    let loudness_data = loudness.get_data().unwrap();
+    let spectrum_data = spectrum.get_data().unwrap();
 
     let ld = loudness_data.downcast_ref::<LoudnessData>().unwrap();
     let sd = spectrum_data.downcast_ref::<SpectrumData>().unwrap();
@@ -238,10 +244,11 @@ fn test_analyzer_reset() {
         num_frames,
     };
 
-    monitor.process(&input, &context).unwrap();
+    let mut output = vec![0.0; input.len()];
+    monitor.process(&input, &mut output, &context).unwrap();
 
     // Get data before reset
-    let data_before = monitor.get_data();
+    let data_before = monitor.get_data().unwrap();
     let ld_before = data_before.downcast_ref::<LoudnessData>().unwrap();
     let peak_before = ld_before.peak;
 
@@ -251,7 +258,7 @@ fn test_analyzer_reset() {
     monitor.reset();
 
     // Get data after reset
-    let data_after = monitor.get_data();
+    let data_after = monitor.get_data().unwrap();
     let ld_after = data_after.downcast_ref::<LoudnessData>().unwrap();
     let peak_after = ld_after.peak;
 

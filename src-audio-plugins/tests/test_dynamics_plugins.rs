@@ -52,7 +52,7 @@ fn test_limiter_prevents_clipping() {
     host.process(&input, &mut output).unwrap();
 
     // All output samples should be <= 1.0
-    let max_output = output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+    let max_output = output.iter().map(|&x| x.abs()).fold(0.0_f32, f32::max);
     let threshold_linear = 10.0_f32.powf(-0.1 / 20.0); // -0.1dB in linear
 
     assert!(
@@ -171,7 +171,7 @@ fn test_dynamics_chain() {
     host.process(&input, &mut output).unwrap();
 
     // Check that output is controlled
-    let max_output = output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+    let max_output = output.iter().map(|&x| x.abs()).fold(0.0_f32, f32::max);
     assert!(
         max_output <= 1.0,
         "Full chain should prevent clipping: max = {}",
@@ -259,7 +259,7 @@ fn test_limiter_soft_mode() {
     host.process(&input, &mut output).unwrap();
 
     // All output samples should be <= 1.0 (soft limiter still respects threshold)
-    let max_output = output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+    let max_output = output.iter().map(|&x| x.abs()).fold(0.0_f32, f32::max);
 
     assert!(
         max_output <= 1.0,

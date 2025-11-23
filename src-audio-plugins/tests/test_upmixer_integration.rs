@@ -91,7 +91,7 @@ fn test_upmixer_chain_with_gain() {
     host.process(&input, &mut output).unwrap();
 
     // Output should be non-zero and attenuated
-    let sum: f32 = output.iter().map(|x| x.abs()).sum();
+    let sum: f32 = output.iter().map(|&x| x.abs()).sum();
     println!("Chain output sum: {}", sum);
     assert!(sum > 0.0, "Should have output after upmixer + gain");
 }

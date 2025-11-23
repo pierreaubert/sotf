@@ -23,10 +23,6 @@ mod analyzer;
 mod analyzer_loudness_monitor;
 mod analyzer_spectrum;
 mod host;
-mod host_daw;
-mod host_graph;
-mod host_rack;
-mod host_rack_shared;
 mod parameters;
 mod plugin;
 mod plugin_binaural_decoder;
@@ -53,11 +49,7 @@ mod plugin_hal_input;
 mod plugin_hal_output;
 
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
-pub use host::Host;
-pub use host_daw::{DawHost, GraphEdge as DawGraphEdge, NodeId as DawNodeId};
-pub use host_graph::{GraphEdge, GraphHost, GraphNode, NodeId};
-pub use host_rack::PluginHost;
-pub use host_rack_shared::SharedPluginHost;
+pub use host::{Host, DawHost, GraphEdge as DawGraphEdge, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
@@ -90,6 +82,9 @@ pub use analyzer_loudness_monitor::{LoudnessInfo, LoudnessMonitorPlugin};
 pub(crate) use analyzer_spectrum::SpectrumAnalyzer;
 pub use analyzer_spectrum::{SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo};
 pub use plugin_loudness_compensation::LoudnessCompensation;
+
+// Define PluginHost as alias for DawHost (the single supported host type)
+pub type PluginHost = DawHost;
 
 // HAL plugins (macOS only)
 #[cfg(target_os = "macos")]

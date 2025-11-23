@@ -5,16 +5,12 @@
 // Wraps the LoudnessMonitor as an AnalyzerPlugin.
 // Provides real-time EBU R128 loudness measurements.
 
-use super::analyzer::{AnalyzerPlugin, LoudnessData};
-use super::plugin::{PluginInfo, PluginResult, ProcessContext};
-use std::any::Any;
-
-// ============================================================================
-// Core Loudness Monitor Implementation
-// ============================================================================
-
+use super::analyzer::LoudnessData;
+use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use ebur128::{EbuR128, Mode};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 /// Real-time loudness measurements
@@ -246,7 +242,7 @@ impl LoudnessMonitorPlugin {
     }
 }
 
-impl AnalyzerPlugin for LoudnessMonitorPlugin {
+impl Plugin for LoudnessMonitorPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "Loudness Monitor".to_string(),
@@ -258,6 +254,22 @@ impl AnalyzerPlugin for LoudnessMonitorPlugin {
 
     fn input_channels(&self) -> usize {
         self.num_channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.num_channels
+    }
+
+    fn parameters(&self) -> Vec<Parameter> {
+        Vec::new()
+    }
+
+    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
+        Err("Loudness monitor has no parameters".to_string())
+    }
+
+    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
+        None
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
@@ -272,8 +284,13 @@ impl AnalyzerPlugin for LoudnessMonitorPlugin {
         self.monitor.reset().ok();
     }
 
-    fn process(&mut self, input: &[f32], context: &ProcessContext) -> PluginResult<()> {
-        // Verify input size
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<()> {
+        // Verify input/output size
         let expected_samples = context.num_frames * self.num_channels;
         if input.len() != expected_samples {
             return Err(format!(
@@ -282,6 +299,16 @@ impl AnalyzerPlugin for LoudnessMonitorPlugin {
                 input.len()
             ));
         }
+        if output.len() != expected_samples {
+            return Err(format!(
+                "Output size mismatch: expected {}, got {}",
+                expected_samples,
+                output.len()
+            ));
+        }
+
+        // Pass-through: copy input to output
+        output.copy_from_slice(input);
 
         // Add frames to the monitor
         self.monitor
@@ -291,9 +318,10 @@ impl AnalyzerPlugin for LoudnessMonitorPlugin {
         Ok(())
     }
 
-    fn get_data(&self) -> Box<dyn Any + Send> {
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         let info = self.monitor.get_loudness();
-        Box::new(Self::to_loudness_data(&info))
+        let data = Self::to_loudness_data(&info);
+        Some(Arc::new(data))
     }
 
     fn latency_samples(&self) -> usize {
@@ -305,6 +333,7 @@ impl AnalyzerPlugin for LoudnessMonitorPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Plugin;
 
     #[test]
     fn test_loudness_monitor_plugin_creation() {
@@ -332,11 +361,13 @@ mod tests {
             num_frames,
         };
 
+        let mut output = vec![0.0_f32; num_frames * 2];
+
         // Process
-        plugin.process(&input, &context).unwrap();
+        plugin.process(&input, &mut output, &context).unwrap();
 
         // Get measurements
-        let data = plugin.get_data();
+        let data = plugin.get_data().unwrap();
         let loudness_data = data.downcast_ref::<LoudnessData>().unwrap();
 
         log::info!("Momentary LUFS: {:.1}", loudness_data.momentary_lufs);
@@ -364,13 +395,14 @@ mod tests {
             num_frames,
         };
 
-        plugin.process(&input, &context).unwrap();
+        let mut output = vec![0.0_f32; num_frames * 2];
+        plugin.process(&input, &mut output, &context).unwrap();
 
         // Reset
         plugin.reset();
 
         // Measurements should be reset
-        let data = plugin.get_data();
+        let data = plugin.get_data().unwrap();
         let loudness_data = data.downcast_ref::<LoudnessData>().unwrap();
 
         // After reset, values should be back to default (negative infinity for LUFS)
@@ -405,9 +437,10 @@ mod tests {
             num_frames,
         };
 
-        plugin.process(&input, &context).unwrap();
+        let mut output = vec![0.0_f32; num_frames * 5];
+        plugin.process(&input, &mut output, &context).unwrap();
 
-        let data = plugin.get_data();
+        let data = plugin.get_data().unwrap();
         let loudness_data = data.downcast_ref::<LoudnessData>().unwrap();
 
         log::info!(

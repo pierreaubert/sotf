@@ -3,6 +3,8 @@
 // ============================================================================
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
+use std::any::Any;
+use std::sync::Arc;
 
 /// Information about a plugin
 #[derive(Debug, Clone)]
@@ -98,6 +100,12 @@ pub trait Plugin: Send {
     /// By default, this checks that input/output match expected values
     fn supports_channel_config(&self, input_channels: usize, output_channels: usize) -> bool {
         input_channels == self.input_channels() && output_channels == self.output_channels()
+    }
+
+    /// Get data from the plugin (if it's an analyzer or exposes internal state)
+    /// Returns `None` by default for plugins that don't expose data.
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        None
     }
 }
 

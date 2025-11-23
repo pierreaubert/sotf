@@ -6,8 +6,9 @@
 // This file contains both the core SpectrumAnalyzer implementation and
 // the AnalyzerPlugin wrapper.
 
-use super::analyzer::{AnalyzerPlugin, SpectrumData};
-use super::plugin::{PluginInfo, PluginResult, ProcessContext};
+use super::analyzer::SpectrumData;
+use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::{Arc, Mutex};
@@ -38,7 +39,7 @@ impl Default for SpectrumInfo {
 }
 
 /// Configuration for spectrum analyzer
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpectrumConfig {
     /// Number of frequency bins (default: 30)
     pub num_bins: usize,
@@ -341,7 +342,7 @@ impl SpectrumAnalyzerPlugin {
     }
 }
 
-impl AnalyzerPlugin for SpectrumAnalyzerPlugin {
+impl Plugin for SpectrumAnalyzerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "Spectrum Analyzer".to_string(),
@@ -353,6 +354,22 @@ impl AnalyzerPlugin for SpectrumAnalyzerPlugin {
 
     fn input_channels(&self) -> usize {
         self.num_channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.num_channels
+    }
+
+    fn parameters(&self) -> Vec<Parameter> {
+        Vec::new()
+    }
+
+    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
+        Err("Spectrum analyzer has no parameters".to_string())
+    }
+
+    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
+        None
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
@@ -370,8 +387,13 @@ impl AnalyzerPlugin for SpectrumAnalyzerPlugin {
         self.analyzer.reset().ok();
     }
 
-    fn process(&mut self, input: &[f32], context: &ProcessContext) -> PluginResult<()> {
-        // Verify input size
+    fn process(
+        &mut self,
+        input: &[f32],
+        output: &mut [f32],
+        context: &ProcessContext,
+    ) -> PluginResult<()> {
+        // Verify input/output size
         let expected_samples = context.num_frames * self.num_channels;
         if input.len() != expected_samples {
             return Err(format!(
@@ -380,6 +402,16 @@ impl AnalyzerPlugin for SpectrumAnalyzerPlugin {
                 input.len()
             ));
         }
+        if output.len() != expected_samples {
+            return Err(format!(
+                "Output size mismatch: expected {}, got {}",
+                expected_samples,
+                output.len()
+            ));
+        }
+
+        // Pass-through: copy input to output
+        output.copy_from_slice(input);
 
         // Add frames to the analyzer
         self.analyzer
@@ -389,20 +421,23 @@ impl AnalyzerPlugin for SpectrumAnalyzerPlugin {
         Ok(())
     }
 
-    fn get_data(&self) -> Box<dyn Any + Send> {
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         let info = self.analyzer.get_spectrum();
-        Box::new(Self::to_spectrum_data(&info))
+        let data = Self::to_spectrum_data(&info);
+        Some(Arc::new(data))
     }
 
     fn latency_samples(&self) -> usize {
-        // Spectrum analyzer has latency equal to FFT size
-        2048
+        // Spectrum analyzer has latency equal to FFT size but since it is pass-through, 
+        // it doesn't delay the audio signal.
+        0
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Plugin;
 
     #[test]
     fn test_spectrum_analyzer_plugin_creation() {
@@ -446,11 +481,13 @@ mod tests {
             num_frames,
         };
 
+        let mut output = vec![0.0_f32; num_frames * 2];
+
         // Process
-        plugin.process(&input, &context).unwrap();
+        plugin.process(&input, &mut output, &context).unwrap();
 
         // Get spectrum
-        let data = plugin.get_data();
+        let data = plugin.get_data().unwrap();
         let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
 
         log::info!("Number of bins: {}", spectrum_data.frequencies.len());
@@ -493,12 +530,14 @@ mod tests {
             num_frames,
         };
 
+        let mut output = vec![0.0_f32; num_frames * 2];
+
         // Process multiple times to fill the buffer
         for _ in 0..3 {
-            plugin.process(&input, &context).unwrap();
+            plugin.process(&input, &mut output, &context).unwrap();
         }
 
-        let data = plugin.get_data();
+        let data = plugin.get_data().unwrap();
         let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
 
         // Find the bin closest to 1kHz
@@ -541,13 +580,14 @@ mod tests {
             num_frames,
         };
 
-        plugin.process(&input, &context).unwrap();
+        let mut output = vec![0.0_f32; num_frames * 2];
+        plugin.process(&input, &mut output, &context).unwrap();
 
         // Reset
         plugin.reset();
 
         // Get spectrum after reset
-        let data = plugin.get_data();
+        let data = plugin.get_data().unwrap();
         let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
 
         // After reset, magnitudes should be low/silent
@@ -578,9 +618,10 @@ mod tests {
             num_frames,
         };
 
-        plugin.process(&input, &context).unwrap();
+        let mut output = vec![0.0_f32; num_frames * 5];
+        plugin.process(&input, &mut output, &context).unwrap();
 
-        let data = plugin.get_data();
+        let data = plugin.get_data().unwrap();
         let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
 
         log::info!(
