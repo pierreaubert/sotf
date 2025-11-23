@@ -11,6 +11,7 @@ use crossterm::{
 };
 use events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
 use ratatui::{Terminal, backend::CrosstermBackend};
+use sotf_audio::run_preflight_checks;
 use sotf_audio_player::{Player, PluginSettings, PluginType};
 use std::fs::OpenOptions;
 use std::io;
@@ -57,6 +58,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     log::info!("SOTF UI Player starting...");
+
+    // Run pre-flight checks before initializing the player
+    if let Err(e) = run_preflight_checks() {
+        eprintln!("\nPre-flight check failed:\n");
+        eprintln!("{}\n", e);
+        log::error!("Pre-flight check failed: {}", e);
+        std::process::exit(1);
+    }
 
     let args = Args::parse();
 
