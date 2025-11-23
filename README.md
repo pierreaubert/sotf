@@ -53,19 +53,25 @@ A [set of functions](src-testfunctions/README.md) for testing non linear optimis
 
 A implementation of [differential evolution algorithm](src-de/README.md) (forked from Scipy) with an interface to NLopt and MetaHeuristics two libraries that also provide various optimisation algorithms. DE support linear and non-linear constraints and implement other features like JADE or adaptative behaviour.
 
+Status: good for speaker equalisation. Not tested enough for other use cases.
+
 ### src-cea2034
 
 A implementation of CEA2034 aka [Spinorama](https://spinorama.org): a set of metrics and curves that describe a loudspeaker performance.
+
+Status: mature.
 
 ### src-autoeq
 
 A [CLI](src-autoeq/README.md) to optimise the response of your headset or headphone.
 
+Status: good up to very good depending what you optimise for.
+
 ### src-env
 
 A small set of functions and constants used by the other crates but you are unlikely to be interested.
 
-### src-audio
+### src-audio-*
 
 This backend take care of all the Audio activities (from recording to playing). It also provides support for IIR filters, SPL computations etc.
 
@@ -94,21 +100,36 @@ It does have interfaces to demonstrate how the system works:
 - There is a fun TUI interface that is good enough to use day to day to play music
 - A better looking interface is in construction on src-gpui-player but not ready for general use at all.
 
+Status:
+- src-audio-engine: production quality
+- src-audio-plugins: code is good but some plugins need tuning.
+- src-audio-plugins-ffi: beta quality
+- src-audio-plugins-au: an attempt at generating AUplugins
+- src-audio-player: production quality
+- src-audio-player-tui: good quality, can scan by 4k albums and play them with an TUI interface. It is good for testing parameters and plugins.
+- src-audio-player-gpui: experimental status
+
 
 ### MacOS specifig: src-hal and src-confbar
 
 src-hal crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
 src-confbar crate allows you to configure the above driver and is conveniently available from the menubar.
 
+Status: experimental for HAL and ok for confbar.
+
 ### src-convexhull3d
 
 This crate computes a convex hull in 3d.
+
+Status: good quality aka no known bug.
 
 ### src-bem
 
 This experimental crate will be a BEM (Boundary Element Solver) for the HRTF computation. It will also be used for optimal shape of speaker waveguide.
 This part is not on GH yet. It is a merge of previous projects in python and will come step by step. BEM is the first crate but the control theory part is
 not converted yet (adjoint computation etc).
+
+Status: experimental
 
 ### src-head-scanner
 
@@ -118,4 +139,6 @@ An experimental app to scan your head and do all the computations to get an HRTF
 
 The Tauri backend for the frontend. Noting special here, just a wrapper around src-audio and src-autoeq.
 The UI frontend :) Nothing special here, just a boring UI.
+
+Status: working but unpolished
 
