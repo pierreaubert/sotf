@@ -49,7 +49,7 @@ fn default_gain_front_ambient() -> f32 {
 }
 
 fn default_gain_rear_ambient() -> f32 {
-    1.0
+    1.2  // Boosted from 1.0 (20% increase) for better rear/height envelopment
 }
 
 fn default_lfe_cutoff_hz() -> f32 {
@@ -61,7 +61,7 @@ fn default_stereo_width() -> f32 {
 }
 
 fn default_bandpass_hz() -> f32 {
-    300.0
+    220.0  // Lowered from 300Hz for more mid-range content in surrounds
 }
 
 fn default_speaker_config() -> String {
@@ -265,6 +265,8 @@ pub struct UpmixerPlugin {
 
     // Height channel mask per positive-frequency bin (HF emphasis + coherence gating)
     height_band_gains: Vec<f32>,
+    // Temporal smoothing buffer for height gains (previous frame)
+    height_band_gains_prev: Vec<f32>,
 
     /// Panning gains for left source (pre-calculated for each speaker)
     panning_gains_left: Vec<f32>,
@@ -514,6 +516,7 @@ impl UpmixerPlugin {
             mains_high_gains: vec![1.0; spectrum_size],
 
             height_band_gains: vec![0.0; spectrum_size],
+            height_band_gains_prev: vec![0.0; spectrum_size],
 
             panning_gains_left,
             panning_gains_right,
@@ -884,8 +887,10 @@ impl UpmixerPlugin {
             let upmix_end = end_bin;
 
             if upmix_start < upmix_end {
-                // Precompute ambient gain for this band
-                let ambient_gain = (1.0 - coherence).sqrt(); // Energy preservation
+                // Perceptually-weighted ambient gain for better envelopment
+                // Base: sqrt(1 - coherence) for energy preservation
+                // Boost: 1.2x (20%) for enhanced spatial impression
+                let ambient_gain = (1.0 - coherence).sqrt() * 1.2;
 
                 for i in upmix_start..upmix_end {
                     let left = self.freq_domain_left[i];
@@ -917,21 +922,35 @@ impl UpmixerPlugin {
                     self.lfe[i] = Complex::new(0.0, 0.0);
 
                     // Height mask: emphasize high-frequency, low-coherence (diffuse) content
+                    // with reduced aggression to prevent "tizzy" artifacts
                     let nyquist = self.sample_rate as f32 / 2.0;
                     let freq = (i as f32 * self.sample_rate as f32) / self.fft_size as f32;
                     let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
+                    let hf_end = 16000.0_f32.min(nyquist); // Cap at 16kHz to avoid extreme highs
 
                     let hf_ratio = if freq <= hf_start {
                         0.0
-                    } else if freq >= nyquist {
+                    } else if freq >= hf_end {
                         1.0
                     } else {
-                        (freq - hf_start) / (nyquist - hf_start)
+                        (freq - hf_start) / (hf_end - hf_start)
                     };
 
-                    let freq_weight = hf_ratio.sqrt(); // gentle HF emphasis
+                    // Reduced from sqrt() to linear^0.7 for gentler emphasis
+                    let freq_weight = hf_ratio.powf(0.7);
                     let diffuse = (1.0 - coherence).max(0.0);
-                    let height_mask = (freq_weight * diffuse).min(1.0);
+
+                    // Height suitability: additive blend allows direct HF content
+                    // This prevents pure multiplicative gating (freq_weight * diffuse)
+                    // which would block coherent high frequencies from reaching heights.
+                    // 50/50 blend: some direct HF + some ambient = natural overhead sound
+                    let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
+
+                    // Transient-adaptive reduction: keep transients coherent
+                    // During transients, reduce height channel emphasis
+                    let transient_reduction = 1.0 - (self.hr_transient_env * 0.6).min(0.6);
+
+                    let height_mask = (height_suitability * transient_reduction).min(1.0);
 
                     let half_len = self.height_band_gains.len();
                     if i < half_len {
@@ -939,15 +958,144 @@ impl UpmixerPlugin {
                     }
                 }
 
-                // SIMD-optimized decorrelation: ambient_left/right *= decorrelation_filter_*.
-                let left_slice = &mut self.ambient_left[upmix_start..upmix_end];
-                let right_slice = &mut self.ambient_right[upmix_start..upmix_end];
-                let decor_left = &self.decorrelation_filter_left[upmix_start..upmix_end];
-                let decor_right = &self.decorrelation_filter_right[upmix_start..upmix_end];
+                // Transient-adaptive decorrelation: reduce decorrelation during transients
+                // to keep transients coherent and prevent "tizzy" artifacts.
+                //
+                // During transients (hr_transient_env approaching 1.0):
+                // - decorrelation_strength approaches 0.0
+                // - Filters approach identity (no decorrelation)
+                //
+                // During steady-state (hr_transient_env = 0.0):
+                // - decorrelation_strength = 1.0
+                // - Full decorrelation effect
+                let decorrelation_strength = (1.0 - self.hr_transient_env * 0.85).max(0.15);
 
-                complex_mul_inplace_simd(left_slice, decor_left);
-                complex_mul_inplace_simd(right_slice, decor_right);
+                // Apply transient-adaptive decorrelation
+                self.apply_adaptive_decorrelation(
+                    upmix_start,
+                    upmix_end,
+                    decorrelation_strength,
+                );
             }
+        }
+
+        // Apply spectral and temporal smoothing to height_band_gains
+        self.smooth_height_gains();
+    }
+
+    /// Apply transient-adaptive decorrelation to ambient channels
+    ///
+    /// This scales the decorrelation filters by `strength`:
+    /// - strength = 1.0: full decorrelation (steady-state)
+    /// - strength = 0.0: no decorrelation (pure transients)
+    ///
+    /// The adaptive scaling prevents "tizzy" artifacts during transients by
+    /// keeping high-frequency transient content coherent rather than decorrelated.
+    #[inline]
+    fn apply_adaptive_decorrelation(
+        &mut self,
+        start: usize,
+        end: usize,
+        strength: f32,
+    ) {
+        // Fast path: full decorrelation (common case during steady-state)
+        if strength >= 0.99 {
+            let left_slice = &mut self.ambient_left[start..end];
+            let right_slice = &mut self.ambient_right[start..end];
+            let decor_left = &self.decorrelation_filter_left[start..end];
+            let decor_right = &self.decorrelation_filter_right[start..end];
+
+            complex_mul_inplace_simd(left_slice, decor_left);
+            complex_mul_inplace_simd(right_slice, decor_right);
+            return;
+        }
+
+        // Adaptive decorrelation: blend between decorrelated and original signals
+        //
+        // For each bin:
+        //   decorrelated = signal * decorrelation_filter
+        //   output = strength * decorrelated + (1 - strength) * signal
+        //
+        // This can be rewritten as:
+        //   output = signal * (strength * decorrelation_filter + (1 - strength) * identity)
+        //   output = signal * (strength * decorrelation_filter + (1 - strength))
+        //
+        // We compute the blended filter and apply it in one pass.
+
+        let identity_weight = 1.0 - strength;
+
+        for i in start..end {
+            let decor_l = self.decorrelation_filter_left[i];
+            let decor_r = self.decorrelation_filter_right[i];
+
+            // Blend: strength * decor + (1 - strength) * identity
+            // Identity is Complex::new(1.0, 0.0)
+            let blended_l = Complex::new(
+                strength * decor_l.re + identity_weight,
+                strength * decor_l.im,
+            );
+            let blended_r = Complex::new(
+                strength * decor_r.re + identity_weight,
+                strength * decor_r.im,
+            );
+
+            self.ambient_left[i] *= blended_l;
+            self.ambient_right[i] *= blended_r;
+        }
+    }
+
+    /// Smooth height_band_gains to reduce bin-to-bin and frame-to-frame variance
+    ///
+    /// This applies:
+    /// 1. Spectral smoothing: 3-point moving average across adjacent bins
+    /// 2. Temporal smoothing: exponential averaging with previous frame
+    ///
+    /// This reduces "grainy" artifacts from bin-level processing within ERB bands.
+    #[inline]
+    fn smooth_height_gains(&mut self) {
+        let spectrum_size = self.fft_size / 2 + 1;
+
+        // Temporal smoothing coefficient (higher = more smoothing)
+        // 0.3 provides good balance: responsive but reduces frame-to-frame variance
+        let temporal_alpha = 0.3_f32;
+
+        // Spectral smoothing window size (3-point moving average)
+        // Larger windows over-blur and lose frequency resolution
+        let window_radius = 1_usize;
+
+        // Temporary buffer for spectral smoothing result
+        let mut smoothed = vec![0.0_f32; spectrum_size];
+
+        // 1. Spectral smoothing: moving average across adjacent bins
+        for i in 0..spectrum_size {
+            let start = i.saturating_sub(window_radius);
+            let end = (i + window_radius + 1).min(spectrum_size);
+
+            let mut sum = 0.0_f32;
+            let mut count = 0_usize;
+
+            for j in start..end {
+                sum += self.height_band_gains[j];
+                count += 1;
+            }
+
+            smoothed[i] = if count > 0 {
+                sum / count as f32
+            } else {
+                self.height_band_gains[i]
+            };
+        }
+
+        // 2. Temporal smoothing: blend with previous frame
+        for i in 0..spectrum_size {
+            let current = smoothed[i];
+            let previous = self.height_band_gains_prev[i];
+
+            // Exponential moving average
+            let blended = temporal_alpha * current + (1.0 - temporal_alpha) * previous;
+
+            self.height_band_gains[i] = blended;
+            self.height_band_gains_prev[i] = blended;
         }
     }
 
@@ -1475,7 +1623,8 @@ impl UpmixerPlugin {
         }
 
         let dt = self.hop_size as f32 / self.sample_rate as f32;
-        let rate_hz = 0.7_f32;
+        // Reduced from 0.7 Hz to 0.15 Hz to prevent audible warbling
+        let rate_hz = 0.15_f32;
         let two_pi = std::f32::consts::PI * 2.0;
         self.decor_lfo_phase += two_pi * rate_hz * dt;
         if self.decor_lfo_phase > two_pi {
@@ -1486,8 +1635,14 @@ impl UpmixerPlugin {
         let nyquist = self.sample_rate as f32 / 2.0;
         let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
 
+        // Critical frequencies for decorrelation shaping
+        let mid_start = 800.0_f32;   // Start reducing decorrelation in vocal range
+        let mid_end = 4000.0_f32;    // End of critical mid-range
+
         for i in 0..=half {
             let freq = i as f32 * freq_per_bin;
+
+            // High-frequency ratio (bandpass_hz to Nyquist)
             let hf_ratio = if freq <= hf_start {
                 0.0
             } else if freq >= nyquist {
@@ -1496,7 +1651,20 @@ impl UpmixerPlugin {
                 (freq - hf_start) / (nyquist - hf_start)
             };
 
-            let depth = 0.3_f32 * hf_ratio;
+            // Mid-frequency reduction (reduces phasiness in vocal range)
+            let mid_reduction = if freq < mid_start {
+                1.0
+            } else if freq > mid_end {
+                1.0
+            } else {
+                // Cosine taper through mid-range: 1.0 -> 0.3 -> 1.0
+                let t = (freq - mid_start) / (mid_end - mid_start);
+                0.3 + 0.7 * (std::f32::consts::PI * t).cos().abs()
+            };
+
+            // Reduced from 0.3 to 0.08, with mid-frequency reduction
+            let max_depth = 0.08_f32;
+            let depth = max_depth * hf_ratio * mid_reduction;
             let phase_warp = (self.decor_lfo_phase + 0.37_f32 * i as f32).sin() * depth;
 
             let base_l = self.decor_base_phases_left[i];
