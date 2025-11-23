@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "sotf",
-  "version": "0.4.49",
+  "version": "0.5.3",
   "identifier": "org.spinorama.sotf",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -31,6 +31,10 @@
       "public/headphone-targets/*.csv"
     ],
     "externalBin": [
+      "../target/sotf_player_cli",
+      "../target/sotf_player_tui",
+      "../target/sotf_player_gpui",
+      "../target/libnetcdf.22.dylib"
     ],
     "icon": [
       "icons/32x32.png",

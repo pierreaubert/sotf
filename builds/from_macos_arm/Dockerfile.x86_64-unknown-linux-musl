@@ -1,21 +1,6 @@
 FROM messense/rust-musl-cross:x86_64-musl
 
-# Install additional dependencies for audio and build tools
-# gfortran is needed for OpenBLAS static compilation
-# libhdf5-dev is needed for SOFA file support (binaural audio)
-RUN apt-get update && \
-    apt-get install -y \
-    cmake \
-    ninja-build \
-    perl \
-    pkg-config \
-    gfortran \
-    make \
-    libhdf5-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install just using the existing rust toolchain in the base image
-RUN cargo install just --locked
+RUN apt-get update && rm -rf /var/lib/apt/lists/*
 
 # Pre-install the exact Rust version required by rust-toolchain.toml with all components
 # This avoids cross trying to install it at build time with permission issues
@@ -29,6 +14,19 @@ RUN mkdir -p /root/.rustup/tmp && \
     mkdir -p /root/.rustup/downloads && \
     chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
 
+# Install just using the existing rust toolchain in the base image
+RUN cargo install just --locked
+
+WORKDIR /project
+COPY Justfile /project/Justfile
+ENV JUST_JUSTFILE=/project/Justfile
+ENV AUTOEQ_DIR=/project
+
+RUN just install-linux-root
+RUN just install-ubuntu-common
+RUN just install-ubuntu-x86-driver
+RUN just post-install-npm
+
 # Set up environment for static linking
 ENV RUSTFLAGS="-C target-feature=+crt-static"
 ENV PKG_CONFIG_ALL_STATIC=1
@@ -38,4 +36,3 @@ ENV PKG_CONFIG_ALLOW_CROSS=1
 ENV OPENSSL_STATIC=1
 ENV OPENSSL_VENDORED=1
 
-WORKDIR /project
