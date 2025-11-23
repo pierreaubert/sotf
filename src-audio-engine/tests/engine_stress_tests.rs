@@ -2,13 +2,13 @@
 //!
 //! Tests that stress the audio engine under heavy load and edge cases.
 
-use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig, PlaybackState};
+use hound::{WavSpec, WavWriter};
+use sotf_audio::engine::{AudioEngine, EngineConfig, PlaybackState, PluginConfig};
 use std::path::PathBuf;
-use std::thread;
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 use tempfile::NamedTempFile;
-use hound::{WavSpec, WavWriter};
 
 /// Helper to create a test WAV file
 fn create_test_wav(duration_secs: f32, sample_rate: u32, channels: u16) -> NamedTempFile {
@@ -19,10 +19,7 @@ fn create_test_wav(duration_secs: f32, sample_rate: u32, channels: u16) -> Named
         sample_format: hound::SampleFormat::Int,
     };
 
-    let temp_file = tempfile::Builder::new()
-        .suffix(".wav")
-        .tempfile()
-        .unwrap();
+    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
 
     let num_samples = (duration_secs * sample_rate as f32) as usize;
@@ -82,8 +79,8 @@ fn stress_rapid_pause_resume() {
 
     let state = engine.get_state();
     assert!(
-        state.playback_state == PlaybackState::Playing ||
-        state.playback_state == PlaybackState::Paused
+        state.playback_state == PlaybackState::Playing
+            || state.playback_state == PlaybackState::Paused
     );
 }
 
@@ -153,7 +150,11 @@ fn stress_concurrent_state_queries() {
     let engine = Arc::new(Mutex::new(AudioEngine::new(config).unwrap()));
 
     let temp_file = create_test_wav(3.0, 48000, 2);
-    engine.lock().unwrap().play(temp_file.path().to_path_buf()).unwrap();
+    engine
+        .lock()
+        .unwrap()
+        .play(temp_file.path().to_path_buf())
+        .unwrap();
 
     // Spawn multiple threads querying state concurrently
     let handles: Vec<_> = (0..10)
@@ -260,9 +261,12 @@ fn stress_plugin_chain_updates() {
         let num_plugins = (i % 5) + 1;
         let plugins: Vec<_> = (0..num_plugins)
             .map(|j| {
-                PluginConfig::new("gain", serde_json::json!({
-                    "gain_db": (j as f32 - 2.0) * 3.0
-                }))
+                PluginConfig::new(
+                    "gain",
+                    serde_json::json!({
+                        "gain_db": (j as f32 - 2.0) * 3.0
+                    }),
+                )
             })
             .collect();
 
@@ -289,8 +293,8 @@ fn stress_long_playback() {
 
         let state = engine.get_state();
         assert!(
-            state.playback_state == PlaybackState::Playing ||
-            state.playback_state == PlaybackState::Stopped,
+            state.playback_state == PlaybackState::Playing
+                || state.playback_state == PlaybackState::Stopped,
             "Unexpected state during long playback"
         );
 
@@ -319,8 +323,8 @@ fn stress_many_short_files() {
         let state = engine.get_state();
         // Should either be playing or have stopped (finished)
         assert!(
-            state.playback_state == PlaybackState::Playing ||
-            state.playback_state == PlaybackState::Stopped
+            state.playback_state == PlaybackState::Playing
+                || state.playback_state == PlaybackState::Stopped
         );
     }
 }
@@ -353,9 +357,10 @@ fn stress_bypass_toggle() {
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Set up a plugin chain
-    let plugins = vec![
-        PluginConfig::new("gain", serde_json::json!({"gain_db": -3.0})),
-    ];
+    let plugins = vec![PluginConfig::new(
+        "gain",
+        serde_json::json!({"gain_db": -3.0}),
+    )];
     engine.update_plugin_chain(plugins).ok();
 
     let temp_file = create_test_wav(2.0, 48000, 2);
@@ -384,13 +389,27 @@ fn stress_interleaved_operations() {
     // Perform a complex sequence of interleaved operations
     for i in 0..50 {
         match i % 7 {
-            0 => { engine.play(path.clone()).ok(); }
-            1 => { engine.pause().ok(); }
-            2 => { engine.resume().ok(); }
-            3 => { engine.seek(((i as f32 % 4.5) / 10.0).into()).ok(); }
-            4 => { engine.set_volume(i as f32 / 50.0).ok(); }
-            5 => { engine.set_mute(i % 3 == 0).ok(); }
-            6 => { engine.set_bypass(i % 4 == 0).ok(); }
+            0 => {
+                engine.play(path.clone()).ok();
+            }
+            1 => {
+                engine.pause().ok();
+            }
+            2 => {
+                engine.resume().ok();
+            }
+            3 => {
+                engine.seek(((i as f32 % 4.5) / 10.0).into()).ok();
+            }
+            4 => {
+                engine.set_volume(i as f32 / 50.0).ok();
+            }
+            5 => {
+                engine.set_mute(i % 3 == 0).ok();
+            }
+            6 => {
+                engine.set_bypass(i % 4 == 0).ok();
+            }
             _ => {}
         }
 
@@ -469,7 +488,10 @@ fn stress_empty_plugin_chain_updates() {
         let plugins = if i % 2 == 0 {
             vec![]
         } else {
-            vec![PluginConfig::new("gain", serde_json::json!({"gain_db": 0.0}))]
+            vec![PluginConfig::new(
+                "gain",
+                serde_json::json!({"gain_db": 0.0}),
+            )]
         };
 
         engine.update_plugin_chain(plugins).ok();
@@ -486,18 +508,7 @@ fn stress_volume_extremes() {
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Test extreme volume values
-    let extreme_volumes = [
-        0.0,
-        0.0001,
-        0.001,
-        0.01,
-        0.5,
-        1.0,
-        1.5,
-        2.0,
-        5.0,
-        10.0,
-    ];
+    let extreme_volumes = [0.0, 0.0001, 0.001, 0.01, 0.5, 1.0, 1.5, 2.0, 5.0, 10.0];
 
     for &vol in &extreme_volumes {
         engine.set_volume(vol).ok();
@@ -550,8 +561,8 @@ fn stress_mixed_sample_rate_files() {
 
         let state = engine.get_state();
         assert!(
-            state.playback_state == PlaybackState::Playing ||
-            state.playback_state == PlaybackState::Stopped
+            state.playback_state == PlaybackState::Playing
+                || state.playback_state == PlaybackState::Stopped
         );
     }
 }

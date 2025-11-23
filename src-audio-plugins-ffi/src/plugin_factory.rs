@@ -2,7 +2,7 @@
 // Plugin Factory - Creates plugin instances from JSON configs
 // ============================================================================
 
-use sotf_plugins::{Plugin, EqPlugin, EqPluginParams};
+use sotf_plugins::{EqPlugin, EqPluginParams, Plugin};
 
 /// Create a plugin instance from plugin type and JSON config string
 pub fn create_plugin(

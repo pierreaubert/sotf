@@ -5,9 +5,9 @@
 // Maps plugin-specific parameters to a generic parameter system for AU hosts.
 // For EQ plugins, this creates parameters for each filter band (frequency, Q, gain).
 
+use sotf_plugins::{ParameterId, ParameterValue, Plugin};
 use std::ffi::CString;
 use std::os::raw::c_char;
-use sotf_plugins::{Plugin, ParameterId, ParameterValue};
 
 /// Parameter information exposed to AU host
 #[repr(C)]
@@ -156,7 +156,8 @@ impl ParameterMap {
             .ok_or_else(|| format!("Unknown parameter: {}", param_id))?;
 
         // Denormalize value (convert from f64 to f32)
-        let value = param.min_value + (normalized_value as f32) * (param.max_value - param.min_value);
+        let value =
+            param.min_value + (normalized_value as f32) * (param.max_value - param.min_value);
 
         // Convert to plugin parameter
         let plugin_param_id = ParameterId(param.plugin_param_id.clone());
@@ -181,7 +182,8 @@ impl ParameterMap {
         };
 
         // Normalize (convert from f32 to f64)
-        let normalized = ((float_value - param.min_value) / (param.max_value - param.min_value)) as f64;
+        let normalized =
+            ((float_value - param.min_value) / (param.max_value - param.min_value)) as f64;
         Some(normalized.clamp(0.0, 1.0))
     }
 

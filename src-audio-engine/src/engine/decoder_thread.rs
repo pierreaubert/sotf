@@ -201,7 +201,7 @@ impl DecoderState {
                 while self.resampler_buffer.len() >= frame_size * channels {
                     // If resampling, we need enough input samples for one output frame
                     // But here we simplify: just process fixed input chunks
-                    
+
                     if let Some(resampler) = &mut self.resampler {
                         let chunk: Vec<f32> = self
                             .resampler_buffer
@@ -253,13 +253,9 @@ impl DecoderState {
                             .resampler_buffer
                             .drain(..frame_size * channels)
                             .collect();
-                        
-                        let frame = AudioFrame::new(
-                            chunk,
-                            frame_size,
-                            channels,
-                            source_sample_rate,
-                        );
+
+                        let frame =
+                            AudioFrame::new(chunk, frame_size, channels, source_sample_rate);
 
                         let s_start = Instant::now();
                         message_tx

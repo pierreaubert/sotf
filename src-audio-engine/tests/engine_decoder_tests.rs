@@ -2,12 +2,12 @@
 //!
 //! Unit tests for the decoder thread that handles audio file decoding and resampling.
 
+use hound::{WavSpec, WavWriter};
 use sotf_audio::engine::{DecoderCommand, DecoderMessage, DecoderThread, ThreadEvent};
 use std::path::PathBuf;
-use std::sync::mpsc::{sync_channel, channel};
+use std::sync::mpsc::{channel, sync_channel};
 use std::time::Duration;
 use tempfile::NamedTempFile;
-use hound::{WavSpec, WavWriter};
 
 /// Helper to create a test WAV file
 fn create_test_wav(duration_secs: f32, sample_rate: u32) -> NamedTempFile {
@@ -18,10 +18,7 @@ fn create_test_wav(duration_secs: f32, sample_rate: u32) -> NamedTempFile {
         sample_format: hound::SampleFormat::Int,
     };
 
-    let temp_file = tempfile::Builder::new()
-        .suffix(".wav")
-        .tempfile()
-        .unwrap();
+    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
 
     // Generate a simple 440Hz tone
@@ -136,9 +133,18 @@ fn test_decoder_pause_resume() {
     std::thread::sleep(Duration::from_millis(300));
     let frames_after_resume = message_rx.try_iter().count();
 
-    assert!(frames_before_pause > 0, "Should receive frames before pause");
-    assert_eq!(frames_during_pause, 0, "Should not receive frames while paused");
-    assert!(frames_after_resume > 0, "Should receive frames after resume");
+    assert!(
+        frames_before_pause > 0,
+        "Should receive frames before pause"
+    );
+    assert_eq!(
+        frames_during_pause, 0,
+        "Should not receive frames while paused"
+    );
+    assert!(
+        frames_after_resume > 0,
+        "Should receive frames after resume"
+    );
 }
 
 #[test]
@@ -164,7 +170,9 @@ fn test_decoder_seek() {
     std::thread::sleep(Duration::from_millis(100));
 
     let messages: Vec<_> = message_rx.try_iter().collect();
-    let has_flush = messages.iter().any(|msg| matches!(msg, DecoderMessage::Flush));
+    let has_flush = messages
+        .iter()
+        .any(|msg| matches!(msg, DecoderMessage::Flush));
 
     assert!(has_flush, "Should receive flush message after seek");
 }
@@ -189,20 +197,25 @@ fn test_decoder_resampling() {
     std::thread::sleep(Duration::from_millis(200));
 
     let messages: Vec<_> = message_rx.try_iter().collect();
-    let frames: Vec<_> = messages.iter().filter_map(|msg| {
-        if let DecoderMessage::Frame(frame) = msg {
-            Some(frame)
-        } else {
-            None
-        }
-    }).collect();
+    let frames: Vec<_> = messages
+        .iter()
+        .filter_map(|msg| {
+            if let DecoderMessage::Frame(frame) = msg {
+                Some(frame)
+            } else {
+                None
+            }
+        })
+        .collect();
 
     assert!(!frames.is_empty(), "Should receive frames after resampling");
 
     // All frames should be at target sample rate
     for frame in frames {
-        assert_eq!(frame.sample_rate, target_sr,
-            "Frame should be resampled to target rate");
+        assert_eq!(
+            frame.sample_rate, target_sr,
+            "Frame should be resampled to target rate"
+        );
     }
 }
 
@@ -242,7 +255,9 @@ fn test_decoder_invalid_file() {
 
     // Try to play non-existent file
     let invalid_path = PathBuf::from("/nonexistent/file.wav");
-    decoder.send_command(DecoderCommand::Play(invalid_path)).unwrap();
+    decoder
+        .send_command(DecoderCommand::Play(invalid_path))
+        .unwrap();
 
     // Should receive an error event
     let timeout = Duration::from_secs(2);
@@ -318,25 +333,32 @@ fn test_decoder_multiple_files() {
 
     // Play first file
     let temp_file1 = create_test_wav(0.1, 48000);
-    decoder.send_command(DecoderCommand::Play(temp_file1.path().to_path_buf())).unwrap();
+    decoder
+        .send_command(DecoderCommand::Play(temp_file1.path().to_path_buf()))
+        .unwrap();
 
     // Wait for end of stream
     let timeout = Duration::from_secs(2);
     let start = std::time::Instant::now();
     while start.elapsed() < timeout {
-        if let Ok(DecoderMessage::EndOfStream) = message_rx.recv_timeout(Duration::from_millis(50)) {
+        if let Ok(DecoderMessage::EndOfStream) = message_rx.recv_timeout(Duration::from_millis(50))
+        {
             break;
         }
     }
 
     // Play second file
     let temp_file2 = create_test_wav(0.1, 48000);
-    decoder.send_command(DecoderCommand::Play(temp_file2.path().to_path_buf())).unwrap();
+    decoder
+        .send_command(DecoderCommand::Play(temp_file2.path().to_path_buf()))
+        .unwrap();
 
     // Should receive frames from second file
     std::thread::sleep(Duration::from_millis(200));
     let messages: Vec<_> = message_rx.try_iter().collect();
-    let has_frames = messages.iter().any(|msg| matches!(msg, DecoderMessage::Frame(_)));
+    let has_frames = messages
+        .iter()
+        .any(|msg| matches!(msg, DecoderMessage::Frame(_)));
 
     assert!(has_frames, "Should receive frames from second file");
 }
@@ -350,11 +372,14 @@ fn test_decoder_frame_size_consistency() {
     let decoder = DecoderThread::new(message_tx, event_tx, 48000, frame_size).unwrap();
 
     let temp_file = create_test_wav(0.5, 48000);
-    decoder.send_command(DecoderCommand::Play(temp_file.path().to_path_buf())).unwrap();
+    decoder
+        .send_command(DecoderCommand::Play(temp_file.path().to_path_buf()))
+        .unwrap();
 
     std::thread::sleep(Duration::from_millis(300));
 
-    let frames: Vec<_> = message_rx.try_iter()
+    let frames: Vec<_> = message_rx
+        .try_iter()
         .filter_map(|msg| {
             if let DecoderMessage::Frame(frame) = msg {
                 Some(frame)
@@ -367,13 +392,15 @@ fn test_decoder_frame_size_consistency() {
     assert!(!frames.is_empty(), "Should receive frames");
 
     // Most frames should be the target frame size (last frame might be smaller)
-    let expected_size_count = frames.iter()
-        .filter(|f| f.num_frames == frame_size)
-        .count();
+    let expected_size_count = frames.iter().filter(|f| f.num_frames == frame_size).count();
 
     // At least 80% of frames should be the expected size
     let ratio = expected_size_count as f32 / frames.len() as f32;
-    assert!(ratio > 0.8,
+    assert!(
+        ratio > 0.8,
         "Most frames should match frame_size ({}%), got {}/{}",
-        ratio * 100.0, expected_size_count, frames.len());
+        ratio * 100.0,
+        expected_size_count,
+        frames.len()
+    );
 }

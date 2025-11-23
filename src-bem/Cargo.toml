@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "bem-runner"
-path = "src/bin/runner.rs"
+path = "bin/runner.rs"
 required-features = ["cli"]
 
 [dependencies]

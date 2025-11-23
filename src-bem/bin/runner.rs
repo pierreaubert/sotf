@@ -161,8 +161,7 @@ fn setup_logging(verbose: bool, debug: bool) -> Result<()> {
         "warn"
     };
 
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level))
-        .init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(log_level)).init();
 
     Ok(())
 }
@@ -176,8 +175,7 @@ fn run_solver(
     check_normals: bool,
     json_output: bool,
 ) -> Result<()> {
-    let runner = NumCalcRunner::new(project_dir)
-        .context("Failed to create NumCalc runner")?;
+    let runner = NumCalcRunner::new(project_dir).context("Failed to create NumCalc runner")?;
 
     let mut config = NumCalcConfig::default();
     config.freq_start_idx = freq_start;
@@ -191,7 +189,8 @@ fn run_solver(
     log::info!("  Frequency range: {:?} to {:?}", freq_start, freq_end);
     log::info!("  Max iterations: {}", max_iterations);
 
-    let output = runner.run(&config)
+    let output = runner
+        .run(&config)
         .context("Failed to run NumCalc solver")?;
 
     if json_output {
@@ -208,9 +207,19 @@ fn run_solver(
         println!("\n{}", "=".repeat(80));
         println!("NumCalc Execution Summary");
         println!("{}", "=".repeat(80));
-        println!("Status: {}", if output.success { "✓ SUCCESS" } else { "✗ FAILED" });
+        println!(
+            "Status: {}",
+            if output.success {
+                "✓ SUCCESS"
+            } else {
+                "✗ FAILED"
+            }
+        );
         println!("Exit code: {:?}", output.exit_code);
-        println!("Execution time: {:.2}s", output.execution_time.as_secs_f64());
+        println!(
+            "Execution time: {:.2}s",
+            output.execution_time.as_secs_f64()
+        );
         println!("Output files: {}", output.num_output_files());
 
         if !output.output_files.is_empty() {
@@ -236,22 +245,22 @@ fn run_solver(
     }
 
     if !output.success {
-        anyhow::bail!("NumCalc execution failed with exit code {:?}", output.exit_code);
+        anyhow::bail!(
+            "NumCalc execution failed with exit code {:?}",
+            output.exit_code
+        );
     }
 
     Ok(())
 }
 
-fn estimate_memory(
-    project_dir: &PathBuf,
-    json_output: bool,
-) -> Result<()> {
-    let runner = NumCalcRunner::new(project_dir)
-        .context("Failed to create NumCalc runner")?;
+fn estimate_memory(project_dir: &PathBuf, json_output: bool) -> Result<()> {
+    let runner = NumCalcRunner::new(project_dir).context("Failed to create NumCalc runner")?;
 
     log::info!("Estimating memory requirements...");
 
-    let estimate = runner.estimate_memory()
+    let estimate = runner
+        .estimate_memory()
         .context("Failed to estimate memory")?;
 
     if json_output {
@@ -290,7 +299,11 @@ fn run_parallel(
 
     let frequencies: Vec<usize> = (freq_start..=freq_end).collect();
 
-    log::info!("Processing {} frequencies with {} workers", frequencies.len(), workers);
+    log::info!(
+        "Processing {} frequencies with {} workers",
+        frequencies.len(),
+        workers
+    );
 
     let results: Vec<Result<_>> = frequencies
         .par_iter()
@@ -358,7 +371,10 @@ fn run_parallel(
         println!("Successes: {}", successes);
         println!("Failures: {}", failures);
         println!("Total time: {:.2}s", total_time.as_secs_f64());
-        println!("Average time per frequency: {:.2}s", total_time.as_secs_f64() / frequencies.len() as f64);
+        println!(
+            "Average time per frequency: {:.2}s",
+            total_time.as_secs_f64() / frequencies.len() as f64
+        );
     }
 
     if failures > 0 {
@@ -368,10 +384,7 @@ fn run_parallel(
     Ok(())
 }
 
-fn validate_project(
-    project_dir: &PathBuf,
-    json_output: bool,
-) -> Result<()> {
+fn validate_project(project_dir: &PathBuf, json_output: bool) -> Result<()> {
     // Check project directory exists
     if !project_dir.exists() {
         anyhow::bail!("Project directory does not exist: {:?}", project_dir);
@@ -384,8 +397,8 @@ fn validate_project(
     }
 
     // Try to create runner (this validates NumCalc executable)
-    let runner = NumCalcRunner::new(project_dir)
-        .context("Failed to validate NumCalc installation")?;
+    let runner =
+        NumCalcRunner::new(project_dir).context("Failed to validate NumCalc installation")?;
 
     if json_output {
         let json = serde_json::json!({

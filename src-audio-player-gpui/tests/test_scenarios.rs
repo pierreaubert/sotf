@@ -122,22 +122,17 @@ fn scenario_build_and_edit_plugin_chain() {
 
     // Step 2: User presses Shift-1 to add EQ plugin
     app.plugin_chain.add_plugin(&PluginType::EQ);
-    
+
     if let Some(plugin) = app.plugin_chain.get_plugin_mut(0) {
         plugin.settings = PluginSettings::EQ {
-            filters: vec![EQFilter::new(
-                BiquadFilterType::Peak,
-                1000.0,
-                1.5,
-                3.0,
-            )],
+            filters: vec![EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.5, 3.0)],
         };
     }
     assert_eq!(app.plugin_chain.len(), 1);
 
     // Step 3: User presses Shift-2 to add Upmixer plugin
     let upmixer_idx = app.plugin_chain.add_plugin(&PluginType::Upmixer);
-    
+
     if let Some(plugin) = app.plugin_chain.get_plugin_mut(upmixer_idx) {
         plugin.settings = PluginSettings::Upmixer {
             speaker_config: "5.0".to_string(),

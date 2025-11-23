@@ -19,10 +19,10 @@ use std::slice;
 
 use sotf_plugins::{Plugin, ProcessContext};
 
-mod plugin_factory;
 mod parameter_map;
+mod plugin_factory;
 
-pub use parameter_map::{ParameterMap, ParameterInfo};
+pub use parameter_map::{ParameterInfo, ParameterMap};
 
 // ============================================================================
 // Opaque Handle Types
@@ -266,7 +266,8 @@ pub extern "C" fn plugin_process(
     }));
 
     #[cfg(not(debug_assertions))]
-    let result: Result<PluginError, ()> = Ok(unsafe { process_impl(handle, input, output, num_frames) });
+    let result: Result<PluginError, ()> =
+        Ok(unsafe { process_impl(handle, input, output, num_frames) });
 
     result
         .unwrap_or_else(|_| {
@@ -296,7 +297,10 @@ unsafe fn process_impl(
         num_frames,
     };
 
-    match handle_ref.plugin.process(input_slice, output_slice, &context) {
+    match handle_ref
+        .plugin
+        .process(input_slice, output_slice, &context)
+    {
         Ok(_) => PluginError::Success,
         Err(_) => PluginError::ProcessingFailed,
     }
@@ -375,10 +379,11 @@ pub extern "C" fn plugin_set_parameter(
             }
         };
 
-        match handle_ref
-            .parameter_map
-            .set_normalized(&mut *handle_ref.plugin, param_id_str, normalized_value)
-        {
+        match handle_ref.parameter_map.set_normalized(
+            &mut *handle_ref.plugin,
+            param_id_str,
+            normalized_value,
+        ) {
             Ok(_) => PluginError::Success,
             Err(e) => {
                 set_last_error(&format!("Failed to set parameter: {}", e));
@@ -488,13 +493,7 @@ mod tests {
         let plugin_type = CString::new("EQ").unwrap();
         let config = CString::new(r#"{"filters": []}"#).unwrap();
 
-        let handle = plugin_create(
-            plugin_type.as_ptr(),
-            config.as_ptr(),
-            48000,
-            2,
-            2,
-        );
+        let handle = plugin_create(plugin_type.as_ptr(), config.as_ptr(), 48000, 2, 2);
 
         assert!(!handle.is_null());
 

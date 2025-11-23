@@ -2,11 +2,11 @@
 //!
 //! Unit tests for the manager thread that coordinates all worker threads.
 
-use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig, PlaybackState};
+use hound::{WavSpec, WavWriter};
+use sotf_audio::engine::{AudioEngine, EngineConfig, PlaybackState, PluginConfig};
 use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::NamedTempFile;
-use hound::{WavSpec, WavWriter};
 
 /// Helper to create a test WAV file
 fn create_test_wav(duration_secs: f32, sample_rate: u32, channels: u16) -> NamedTempFile {
@@ -17,10 +17,7 @@ fn create_test_wav(duration_secs: f32, sample_rate: u32, channels: u16) -> Named
         sample_format: hound::SampleFormat::Int,
     };
 
-    let temp_file = tempfile::Builder::new()
-        .suffix(".wav")
-        .tempfile()
-        .unwrap();
+    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
 
     let num_samples = (duration_secs * sample_rate as f32) as usize;
@@ -192,11 +189,12 @@ fn test_engine_update_plugin_chain() {
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a simple plugin chain with a gain plugin
-    let plugins = vec![
-        PluginConfig::new("gain", serde_json::json!({
+    let plugins = vec![PluginConfig::new(
+        "gain",
+        serde_json::json!({
             "gain_db": -6.0
-        }))
-    ];
+        }),
+    )];
 
     let result = engine.update_plugin_chain(plugins);
     assert!(result.is_ok(), "Failed to update plugin chain");
@@ -287,7 +285,10 @@ fn test_engine_rapid_commands() {
     // Should handle rapid commands without crashing
     std::thread::sleep(Duration::from_millis(100));
     let state = engine.get_state();
-    assert!(state.last_error.is_none(), "Engine should remain responsive");
+    assert!(
+        state.last_error.is_none(),
+        "Engine should remain responsive"
+    );
 }
 
 #[test]

@@ -40,7 +40,11 @@ fn test_playback_send_commands() {
 
     if let Ok(playback) = PlaybackThread::new(message_rx, event_tx, 48000, 2, None) {
         // Test sending volume command
-        assert!(playback.send_command(PlaybackCommand::SetVolume(0.5)).is_ok());
+        assert!(
+            playback
+                .send_command(PlaybackCommand::SetVolume(0.5))
+                .is_ok()
+        );
 
         // Test sending mute command
         assert!(playback.send_command(PlaybackCommand::Mute(true)).is_ok());
@@ -93,14 +97,17 @@ fn test_playback_receives_frames() {
         let frame = AudioFrame::silent(512, 2, 48000);
 
         for _ in 0..10 {
-            message_tx.send(ProcessingMessage::Frame(frame.clone())).ok();
+            message_tx
+                .send(ProcessingMessage::Frame(frame.clone()))
+                .ok();
         }
 
         std::thread::sleep(Duration::from_millis(200));
 
         // Check for underrun events (should not occur with sufficient frames)
         let events: Vec<_> = event_rx.try_iter().collect();
-        let underruns = events.iter()
+        let underruns = events
+            .iter()
             .filter(|e| matches!(e, ThreadEvent::PlaybackUnderrun))
             .count();
 
@@ -232,7 +239,9 @@ fn test_playback_rapid_mute_toggle() {
     if let Ok(playback) = PlaybackThread::new(message_rx, event_tx, 48000, 2, None) {
         // Rapidly toggle mute
         for i in 0..50 {
-            playback.send_command(PlaybackCommand::Mute(i % 2 == 0)).ok();
+            playback
+                .send_command(PlaybackCommand::Mute(i % 2 == 0))
+                .ok();
         }
 
         std::thread::sleep(Duration::from_millis(100));
@@ -252,7 +261,9 @@ fn test_playback_mixed_commands() {
                 let vol = i as f32 / 20.0;
                 playback.send_command(PlaybackCommand::SetVolume(vol)).ok();
             } else if i % 3 == 1 {
-                playback.send_command(PlaybackCommand::Mute(i % 2 == 0)).ok();
+                playback
+                    .send_command(PlaybackCommand::Mute(i % 2 == 0))
+                    .ok();
             } else {
                 let frame = AudioFrame::silent(512, 2, 48000);
                 message_tx.send(ProcessingMessage::Frame(frame)).ok();
@@ -282,7 +293,10 @@ fn test_playback_different_sample_rates() {
             Err(e) => {
                 // May fail if hardware doesn't support this rate or no audio in CI
                 assert!(
-                    e.contains("audio") || e.contains("device") || e.contains("rate") || e.contains("host"),
+                    e.contains("audio")
+                        || e.contains("device")
+                        || e.contains("rate")
+                        || e.contains("host"),
                     "Error should be audio-related for {} Hz: {}",
                     sr,
                     e
@@ -309,7 +323,10 @@ fn test_playback_different_channel_counts() {
             Err(e) => {
                 // May fail if hardware doesn't support this channel count
                 assert!(
-                    e.contains("audio") || e.contains("device") || e.contains("channel") || e.contains("host"),
+                    e.contains("audio")
+                        || e.contains("device")
+                        || e.contains("channel")
+                        || e.contains("host"),
                     "Error should be audio-related for {} channels: {}",
                     channels,
                     e
