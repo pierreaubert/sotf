@@ -225,6 +225,7 @@ impl PlayerView {
             state.app.apo_file_input.clear();
             state.app.sofa_file_input.clear();
             state.app.clear_autocomplete();
+            state.app.dismiss_toast();
         });
         cx.notify();
     }
@@ -630,7 +631,7 @@ impl PlayerView {
             // Start scan (this will be async in reality, but for now we do it synchronously)
             if let Err(e) = state.app.scan_library() {
                 log::error!("Library scan failed: {}", e);
-                state.app.status_message = Some(format!("Scan failed: {}", e));
+                state.app.toast_message = Some(crate::app::ToastMessage::error(format!("Scan failed: {}", e)));
             }
             // Save directories to config after successful scan
             if let Err(e) = state.app.save_config() {
@@ -733,9 +734,9 @@ impl PlayerView {
                         if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                             state.app.input_mode = InputMode::LoadApoFile;
                             state.app.apo_file_input.clear();
-                            state.app.status_message = Some("Enter path to APO file:".to_string());
+                            state.app.toast_message = Some(crate::app::ToastMessage::info("Enter path to APO file:"));
                         } else {
-                            state.app.status_message = Some("APO files can only be loaded for EQ plugins".to_string());
+                            state.app.toast_message = Some(crate::app::ToastMessage::warning("APO files can only be loaded for EQ plugins"));
                         }
                     }
                 });
@@ -750,9 +751,9 @@ impl PlayerView {
                         if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
                             state.app.input_mode = InputMode::LoadSofaFile;
                             state.app.sofa_file_input.clear();
-                            state.app.status_message = Some("Enter path to SOFA file:".to_string());
+                            state.app.toast_message = Some(crate::app::ToastMessage::info("Enter path to SOFA file:"));
                         } else {
-                            state.app.status_message = Some("SOFA files can only be loaded for Binaural Decoder plugins".to_string());
+                            state.app.toast_message = Some(crate::app::ToastMessage::warning("SOFA files can only be loaded for Binaural Decoder plugins"));
                         }
                     }
                 });
@@ -785,12 +786,12 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     match state.app.load_apo_file() {
                         Ok(()) => {
-                            state.app.status_message = Some("APO file loaded successfully".to_string());
+                            state.app.toast_message = Some(crate::app::ToastMessage::success("APO file loaded successfully"));
                             state.app.apo_file_input.clear();
                             state.app.input_mode = crate::app::InputMode::EditPlugin;
                         }
                         Err(e) => {
-                            state.app.status_message = Some(format!("Failed to load APO file: {}", e));
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!("Failed to load APO file: {}", e)));
                         }
                     }
                 });
@@ -828,12 +829,12 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     match state.app.load_sofa_file() {
                         Ok(()) => {
-                            state.app.status_message = Some("SOFA file loaded successfully".to_string());
+                            state.app.toast_message = Some(crate::app::ToastMessage::success("SOFA file loaded successfully"));
                             state.app.sofa_file_input.clear();
                             state.app.input_mode = crate::app::InputMode::EditPlugin;
                         }
                         Err(e) => {
-                            state.app.status_message = Some(format!("Failed to load SOFA file: {}", e));
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!("Failed to load SOFA file: {}", e)));
                         }
                     }
                 });
@@ -1019,6 +1020,7 @@ impl Render for PlayerView {
             .when(input_mode == crate::app::InputMode::LoadSofaFile, |div| {
                 div.child(self.render_sofa_file_dialog(cx))
             })
+            .child(self.render_toast(cx))
     }
 }
 
@@ -1954,22 +1956,6 @@ impl PlayerView {
                         )
                 )
             })
-            .when(state.app.status_message.is_some(), |div| {
-                div.child(
-                    div()
-                        .p_3()
-                        .mt_4()
-                        .rounded_md()
-                        .bg(rgb(0x2d2d2d))
-                        .border_1()
-                        .border_color(rgb(0x4ec9b0))
-                        .child(
-                            div()
-                                .text_sm()
-                                .child(state.app.status_message.as_ref().unwrap().clone())
-                        )
-                )
-            })
             .child(
                 div()
                     .p_3()
@@ -2126,6 +2112,62 @@ impl PlayerView {
                     .text_color(rgb(0xcccccc))
                     .child(description)
             )
+    }
+
+    fn render_toast(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+
+        if let Some(toast) = &state.app.toast_message {
+            let (bg_color, border_color, icon) = match toast.toast_type {
+                crate::app::ToastType::Success => (rgb(0x1e3a1e), rgb(0x4ec9b0), "✓"),
+                crate::app::ToastType::Error => (rgb(0x3a1e1e), rgb(0xf48771), "✗"),
+                crate::app::ToastType::Info => (rgb(0x1e2a3a), rgb(0x569cd6), "ℹ"),
+                crate::app::ToastType::Warning => (rgb(0x3a2e1e), rgb(0xdcdcaa), "⚠"),
+            };
+
+            div()
+                .absolute()
+                .top(Pixels(20.0))
+                .left_1_2()
+                .transform(Transform::translate(-50.percent(), 0.percent()))
+                .z_index(1000)
+                .min_w(Rems(25.0))
+                .max_w(Rems(50.0))
+                .bg(bg_color)
+                .border_2()
+                .border_color(border_color)
+                .rounded_md()
+                .shadow_lg()
+                .p_3()
+                .child(
+                    div()
+                        .flex()
+                        .gap_3()
+                        .items_center()
+                        .child(
+                            div()
+                                .text_lg()
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(border_color)
+                                .child(icon)
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_sm()
+                                .text_color(rgb(0xffffff))
+                                .child(toast.message.clone())
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(0x999999))
+                                .child("ESC to dismiss")
+                        )
+                )
+        } else {
+            div() // Return empty div if no toast
+        }
     }
 
     fn render_apo_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {

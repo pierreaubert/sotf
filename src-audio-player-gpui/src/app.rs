@@ -2,6 +2,7 @@ use sotf_audio_player::{Album, LoudnessInfo, MusicLibrary, Player, PluginChain, 
 use sotf_audio::devices::AudioDevice;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -24,6 +25,68 @@ pub enum InputMode {
     LoadApoFile,
     LoadSofaFile,
     Help,
+}
+
+/// Toast message type for color coding
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToastType {
+    Success,
+    Error,
+    Info,
+    Warning,
+}
+
+/// Toast message with type and timing
+#[derive(Debug, Clone)]
+pub struct ToastMessage {
+    pub message: String,
+    pub toast_type: ToastType,
+    pub created_at: Instant,
+    pub auto_dismiss_ms: Option<u64>, // None = no auto-dismiss
+}
+
+impl ToastMessage {
+    pub fn new(message: String, toast_type: ToastType) -> Self {
+        Self {
+            message,
+            toast_type,
+            created_at: Instant::now(),
+            auto_dismiss_ms: Some(5000), // Default 5 seconds
+        }
+    }
+
+    pub fn success(message: impl Into<String>) -> Self {
+        Self::new(message.into(), ToastType::Success)
+    }
+
+    pub fn error(message: impl Into<String>) -> Self {
+        Self::new(message.into(), ToastType::Error)
+    }
+
+    pub fn info(message: impl Into<String>) -> Self {
+        Self::new(message.into(), ToastType::Info)
+    }
+
+    pub fn warning(message: impl Into<String>) -> Self {
+        Self::new(message.into(), ToastType::Warning)
+    }
+
+    pub fn persistent(message: impl Into<String>, toast_type: ToastType) -> Self {
+        Self {
+            message: message.into(),
+            toast_type,
+            created_at: Instant::now(),
+            auto_dismiss_ms: None, // No auto-dismiss
+        }
+    }
+
+    pub fn should_dismiss(&self) -> bool {
+        if let Some(dismiss_ms) = self.auto_dismiss_ms {
+            self.created_at.elapsed() > Duration::from_millis(dismiss_ms)
+        } else {
+            false
+        }
+    }
 }
 
 /// Tree view mode for library
@@ -104,7 +167,7 @@ pub struct App {
     pub selected_queue_index: usize,
     pub selected_plugin_index: usize,
     pub album_list_offset: usize,
-    pub status_message: Option<String>, // For displaying save/load status
+    pub toast_message: Option<ToastMessage>, // Enhanced toast notifications
 
     // Autocomplete state
     pub autocomplete_suggestions: Vec<String>,
@@ -187,7 +250,7 @@ impl App {
             selected_directory_index: 0,
             selected_queue_index: 0,
             album_list_offset: 0,
-            status_message: None,
+            toast_message: None,
             autocomplete_suggestions: Vec::new(),
             autocomplete_index: 0,
             available_plugin_presets: Vec::new(),
@@ -569,13 +632,13 @@ impl App {
             Ok(needs_scan) => {
                 if needs_scan {
                     self.needs_rescan = true;
-                    self.status_message = Some("Directory added. Press 's' to scan.".to_string());
+                    self.toast_message = Some(ToastMessage::success("Directory added. Press 's' to scan."));
                 } else {
-                    self.status_message = Some("Directory already exists.".to_string());
+                    self.toast_message = Some(ToastMessage::warning("Directory already exists."));
                 }
             }
             Err(msg) => {
-                self.status_message = Some(msg);
+                self.toast_message = Some(ToastMessage::error(msg));
             }
         }
     }
@@ -608,11 +671,11 @@ impl App {
                             self.selected_directory_index = tree_items.len() - 1;
                         }
                         self.needs_rescan = true;
-                        self.status_message = Some("Directory removed.".to_string());
+                        self.toast_message = Some(ToastMessage::success("Directory removed."));
                     }
                 }
             } else {
-                self.status_message = Some("Cannot remove subdirectory.".to_string());
+                self.toast_message = Some(ToastMessage::error("Cannot remove subdirectory."));
             }
         }
     }
@@ -622,7 +685,7 @@ impl App {
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
-        self.status_message = Some("Starting library scan...".to_string());
+        self.toast_message = Some(ToastMessage::info("Starting library scan..."));
     }
 
     /// Scan the library with progress tracking
@@ -633,7 +696,7 @@ impl App {
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
-        self.status_message = Some("Scanning library...".to_string());
+        self.toast_message = Some(ToastMessage::persistent("Scanning library...", ToastType::Info));
 
         // Create shared progress state
         let progress_tracks = Arc::new(Mutex::new(0usize));
@@ -683,10 +746,10 @@ impl App {
             Ok(_) => {
                 let album_count = self.library.albums.len();
                 let track_count: usize = self.library.albums.iter().map(|a| a.tracks.len()).sum();
-                self.status_message = Some(format!(
+                self.toast_message = Some(ToastMessage::success(format!(
                     "Scan complete: {} tracks in {} albums",
                     track_count, album_count
-                ));
+                )));
                 log::info!(
                     "Scan complete: {} tracks in {} albums",
                     track_count,
@@ -694,7 +757,7 @@ impl App {
                 );
             }
             Err(e) => {
-                self.status_message = Some(format!("Scan failed: {}", e));
+                self.toast_message = Some(ToastMessage::error(format!("Scan failed: {}", e)));
                 log::error!("Scan failed: {}", e);
             }
         }
@@ -1575,6 +1638,20 @@ impl App {
     pub fn clear_autocomplete(&mut self) {
         self.autocomplete_suggestions.clear();
         self.autocomplete_index = 0;
+    }
+
+    /// Check and dismiss expired toast messages
+    pub fn update_toast(&mut self) {
+        if let Some(ref toast) = self.toast_message {
+            if toast.should_dismiss() {
+                self.toast_message = None;
+            }
+        }
+    }
+
+    /// Dismiss the current toast message manually
+    pub fn dismiss_toast(&mut self) {
+        self.toast_message = None;
     }
 }
 
