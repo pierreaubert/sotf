@@ -1,10 +1,10 @@
 [package]
 name = "sotf-audio-plugins-ffi"
 version = "0.2.1"
-edition = "2021"
-authors = ["AutoEQ Team"]
+edition = { workspace = true }
+authors = { workspace = true }
 description = "C FFI bindings for SOTF audio plugins (for Audio Unit integration)"
-license = "MIT"
+license = { workspace = true }
 
 [lib]
 crate-type = ["staticlib", "cdylib"]
@@ -13,12 +13,12 @@ crate-type = ["staticlib", "cdylib"]
 sotf-audio-plugins = { path = "../src-audio-plugins" }
 sotf-audio-engine = { path = "../src-audio-engine" }
 autoeq-iir = { path = "../src-iir" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-log = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
 
 [build-dependencies]
-cbindgen = "0.27"
+cbindgen = "0.29"
 
 [profile.release]
 lto = true
