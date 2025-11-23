@@ -222,6 +222,8 @@ impl PlayerView {
             state.app.input_mode = crate::app::InputMode::Normal;
             state.app.search_query.clear();
             state.app.directory_input.clear();
+            state.app.apo_file_input.clear();
+            state.app.sofa_file_input.clear();
             state.app.clear_autocomplete();
         });
         cx.notify();
@@ -722,10 +724,130 @@ impl PlayerView {
                 });
                 cx.notify();
             }
+            "a" => {
+                // Load APO file (for EQ plugins)
+                self.state.update(cx, |state, _cx| {
+                    use crate::app::InputMode;
+                    use sotf_audio_player::PluginSettings;
+                    if let Some(plugin) = state.app.get_editing_plugin() {
+                        if matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                            state.app.input_mode = InputMode::LoadApoFile;
+                            state.app.apo_file_input.clear();
+                            state.app.status_message = Some("Enter path to APO file:".to_string());
+                        } else {
+                            state.app.status_message = Some("APO files can only be loaded for EQ plugins".to_string());
+                        }
+                    }
+                });
+                cx.notify();
+            }
+            "f" => {
+                // Load SOFA file (for Binaural Decoder plugins)
+                self.state.update(cx, |state, _cx| {
+                    use crate::app::InputMode;
+                    use sotf_audio_player::PluginSettings;
+                    if let Some(plugin) = state.app.get_editing_plugin() {
+                        if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
+                            state.app.input_mode = InputMode::LoadSofaFile;
+                            state.app.sofa_file_input.clear();
+                            state.app.status_message = Some("Enter path to SOFA file:".to_string());
+                        } else {
+                            state.app.status_message = Some("SOFA files can only be loaded for Binaural Decoder plugins".to_string());
+                        }
+                    }
+                });
+                cx.notify();
+            }
             "escape" => {
                 // Already handled by Cancel action
             }
             _ => {}
+        }
+    }
+
+    fn handle_apo_file_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle text input for APO file loading mode
+        match &event.keystroke.key {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.apo_file_input.pop();
+                });
+                cx.notify();
+            }
+            "tab" => {
+                // TODO: Add file autocomplete support
+            }
+            "escape" => {
+                // Already handled by Cancel action
+            }
+            "enter" => {
+                // Load the APO file
+                self.state.update(cx, |state, _cx| {
+                    match state.app.load_apo_file() {
+                        Ok(()) => {
+                            state.app.status_message = Some("APO file loaded successfully".to_string());
+                            state.app.apo_file_input.clear();
+                            state.app.input_mode = crate::app::InputMode::EditPlugin;
+                        }
+                        Err(e) => {
+                            state.app.status_message = Some(format!("Failed to load APO file: {}", e));
+                        }
+                    }
+                });
+                cx.notify();
+            }
+            _ => {
+                // Add character to input
+                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.apo_file_input.push_str(text);
+                    });
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    fn handle_sofa_file_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle text input for SOFA file loading mode
+        match &event.keystroke.key {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.sofa_file_input.pop();
+                });
+                cx.notify();
+            }
+            "tab" => {
+                // TODO: Add file autocomplete support
+            }
+            "escape" => {
+                // Already handled by Cancel action
+            }
+            "enter" => {
+                // Load the SOFA file
+                self.state.update(cx, |state, _cx| {
+                    match state.app.load_sofa_file() {
+                        Ok(()) => {
+                            state.app.status_message = Some("SOFA file loaded successfully".to_string());
+                            state.app.sofa_file_input.clear();
+                            state.app.input_mode = crate::app::InputMode::EditPlugin;
+                        }
+                        Err(e) => {
+                            state.app.status_message = Some(format!("Failed to load SOFA file: {}", e));
+                        }
+                    }
+                });
+                cx.notify();
+            }
+            _ => {
+                // Add character to input
+                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.sofa_file_input.push_str(text);
+                    });
+                    cx.notify();
+                }
+            }
         }
     }
 
@@ -861,6 +983,12 @@ impl Render for PlayerView {
                     crate::app::InputMode::EditPlugin => {
                         view.handle_plugin_edit_input(event, cx);
                     }
+                    crate::app::InputMode::LoadApoFile => {
+                        view.handle_apo_file_input(event, cx);
+                    }
+                    crate::app::InputMode::LoadSofaFile => {
+                        view.handle_sofa_file_input(event, cx);
+                    }
                     _ => {}
                 }
             }))
@@ -884,6 +1012,12 @@ impl Render for PlayerView {
             })
             .when(input_mode == crate::app::InputMode::EditPlugin, |div| {
                 div.child(self.render_plugin_edit_modal(cx))
+            })
+            .when(input_mode == crate::app::InputMode::LoadApoFile, |div| {
+                div.child(self.render_apo_file_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::LoadSofaFile, |div| {
+                div.child(self.render_sofa_file_dialog(cx))
             })
     }
 }
@@ -1991,6 +2125,116 @@ impl PlayerView {
                     .text_sm()
                     .text_color(rgb(0xcccccc))
                     .child(description)
+            )
+    }
+
+    fn render_apo_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(0x000000aa)) // Semi-transparent background
+            .child(
+                div()
+                    .w(Rems(40.0))
+                    .bg(rgb(0x1e1e1e))
+                    .border_2()
+                    .border_color(rgb(0x007acc))
+                    .rounded_md()
+                    .p_4()
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::BOLD)
+                            .mb_4()
+                            .child("Load APO File for EQ Plugin")
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .mb_2()
+                            .text_color(rgb(0x999999))
+                            .child("Enter path to APO file:")
+                    )
+                    .child(
+                        div()
+                            .p_2()
+                            .mb_4()
+                            .rounded_md()
+                            .bg(rgb(0x2d2d2d))
+                            .border_1()
+                            .border_color(rgb(0x007acc))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .child(format!("{}█", state.app.apo_file_input))
+                            )
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(0x999999))
+                            .child("Enter: Load file | ESC: Cancel")
+                    )
+            )
+    }
+
+    fn render_sofa_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(0x000000aa)) // Semi-transparent background
+            .child(
+                div()
+                    .w(Rems(40.0))
+                    .bg(rgb(0x1e1e1e))
+                    .border_2()
+                    .border_color(rgb(0x007acc))
+                    .rounded_md()
+                    .p_4()
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::BOLD)
+                            .mb_4()
+                            .child("Load SOFA File for Binaural Decoder")
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .mb_2()
+                            .text_color(rgb(0x999999))
+                            .child("Enter path to SOFA file:")
+                    )
+                    .child(
+                        div()
+                            .p_2()
+                            .mb_4()
+                            .rounded_md()
+                            .bg(rgb(0x2d2d2d))
+                            .border_1()
+                            .border_color(rgb(0x007acc))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .child(format!("{}█", state.app.sofa_file_input))
+                            )
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(0x999999))
+                            .child("Enter: Load file | ESC: Cancel")
+                    )
             )
     }
 

@@ -21,6 +21,8 @@ pub enum InputMode {
     EditPlugin,
     SavePlugins,
     LoadPlugins,
+    LoadApoFile,
+    LoadSofaFile,
     Help,
 }
 
@@ -95,6 +97,8 @@ pub struct App {
     pub search_query: String,
     pub directory_input: String,
     pub plugin_file_input: String, // For save/load plugin chain
+    pub apo_file_input: String,    // For loading APO EQ files
+    pub sofa_file_input: String,   // For loading SOFA HRTF files
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
@@ -178,6 +182,8 @@ impl App {
             search_query: String::new(),
             directory_input: String::new(),
             plugin_file_input: String::new(),
+            apo_file_input: String::new(),
+            sofa_file_input: String::new(),
             selected_directory_index: 0,
             selected_queue_index: 0,
             album_list_offset: 0,
@@ -1430,6 +1436,51 @@ impl App {
         }
 
         result
+    }
+
+    /// Load EQ filters from APO file
+    pub fn load_apo_file(&mut self) -> Result<(), String> {
+        use sotf_audio_player::{EQFilter, PluginSettings};
+        use std::path::Path;
+
+        let path = Path::new(&self.apo_file_input);
+
+        // Load filters from APO file
+        let filters = EQFilter::from_apo_file(path)?;
+
+        // Update the currently editing plugin if it's an EQ
+        if let Some(plugin) = self.get_editing_plugin_mut() {
+            if matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                plugin.settings = PluginSettings::EQ { filters };
+                self.needs_plugin_update = true;
+                Ok(())
+            } else {
+                Err("Selected plugin is not an EQ".to_string())
+            }
+        } else {
+            Err("No plugin being edited".to_string())
+        }
+    }
+
+    /// Update SOFA file path for the currently editing binaural decoder plugin
+    pub fn load_sofa_file(&mut self) -> Result<(), String> {
+        use sotf_audio_player::PluginSettings;
+
+        // Update the currently editing plugin if it's a binaural decoder
+        if let Some(plugin) = self.get_editing_plugin_mut() {
+            if let PluginSettings::BinauralDecoder {
+                ref mut sofa_file, ..
+            } = plugin.settings
+            {
+                *sofa_file = Some(std::path::PathBuf::from(&self.sofa_file_input));
+                self.needs_plugin_update = true;
+                Ok(())
+            } else {
+                Err("Selected plugin is not a Binaural Decoder".to_string())
+            }
+        } else {
+            Err("No plugin being edited".to_string())
+        }
     }
 
     // Directory autocomplete methods
