@@ -2,6 +2,7 @@ FROM messense/rust-musl-cross:x86_64-musl
 
 # Install additional dependencies for audio and build tools
 # gfortran is needed for OpenBLAS static compilation
+# libhdf5-dev is needed for SOFA file support (binaural audio)
 RUN apt-get update && \
     apt-get install -y \
     cmake \
@@ -10,6 +11,7 @@ RUN apt-get update && \
     pkg-config \
     gfortran \
     make \
+    libhdf5-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install just using the existing rust toolchain in the base image
