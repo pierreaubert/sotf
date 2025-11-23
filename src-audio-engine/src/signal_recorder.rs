@@ -231,7 +231,7 @@ pub fn generate_output_filenames(
     (wav_path, csv_path)
 }
 
-/// Perform recording and analysis using AudioStreamingManager for playback
+/// Perform recording and analysis using AudioEngineManager for playback
 /// and cpal for recording.
 ///
 /// Plays back a signal to a specific output channel while simultaneously
@@ -248,7 +248,7 @@ pub fn record_and_analyze(
     device_name: Option<&str>,
     microphone_compensation_path: Option<&str>,
 ) -> Result<(), String> {
-    use crate::AudioStreamingManager;
+    use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use parking_lot::Mutex;
     use std::sync::Arc;
@@ -373,8 +373,8 @@ pub fn record_and_analyze(
     // Small delay to let recording buffer fill
     sleep(Duration::from_millis(100));
 
-    // Start playback using AudioStreamingManager
-    let mut manager = AudioStreamingManager::new();
+    // Start playback using AudioEngineManager
+    let mut manager = AudioEngineManager::new();
     manager
         .load_file(temp_wav_path)
         .map_err(|e| format!("Failed to load file: {}", e))?;

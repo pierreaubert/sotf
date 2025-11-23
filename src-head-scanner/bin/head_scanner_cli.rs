@@ -623,17 +623,15 @@ async fn run_scan(
             use head_scanner::security;
 
             // Validate SOFA output path for security
-            let validated_sofa_path = match security::validate_export_path(
-                &sofa_output.to_string_lossy(),
-                None,
-            ) {
-                Ok(path) => path,
-                Err(e) => {
-                    println!("   ⚠ Invalid SOFA output path: {}", e);
-                    println!("   Please use a valid filename without directory traversal");
-                    return Err(e);
-                }
-            };
+            let validated_sofa_path =
+                match security::validate_export_path(&sofa_output.to_string_lossy(), None) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        println!("   ⚠ Invalid SOFA output path: {}", e);
+                        println!("   Please use a valid filename without directory traversal");
+                        return Err(e);
+                    }
+                };
 
             let result = acoustics::generate_sofa_analytical(
                 &mesh,
@@ -647,13 +645,19 @@ async fn run_scan(
             match result {
                 Ok(_) => {
                     println!("   ✓ SOFA file generated: {:?}", validated_sofa_path);
-                    println!("   Grid: {}az × {}el = {} positions",
-                        sofa_azimuth, sofa_elevation, sofa_azimuth * sofa_elevation);
+                    println!(
+                        "   Grid: {}az × {}el = {} positions",
+                        sofa_azimuth,
+                        sofa_elevation,
+                        sofa_azimuth * sofa_elevation
+                    );
                     println!("   Sample rate: {} Hz", sofa_sample_rate);
                 }
                 Err(e) => {
                     println!("   ⚠ SOFA generation failed: {}", e);
-                    println!("   Note: Ear detection may have failed - ensure scan covers both ears");
+                    println!(
+                        "   Note: Ear detection may have failed - ensure scan covers both ears"
+                    );
                 }
             }
         }

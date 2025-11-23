@@ -3,7 +3,7 @@ use tokio::sync::Mutex;
 
 // Import audio streaming types
 // use sotf_audio::AudioManager;  // LEGACY: AudioManager has been removed (part of CamillaDSP phase-out)
-use sotf_audio::AudioStreamingManager;
+use sotf_audio::AudioEngineManager;
 use sotf_audio::SharedAudioState;
 
 // Declare modules
@@ -134,9 +134,9 @@ pub fn run() {
     // // Create AudioManager (wrapped in Mutex for Tauri state)
     // let audio_manager = Mutex::new(AudioManager::new(camilla_binary.clone()));
 
-    // Create AudioStreamingManager for all audio format playback (WAV, FLAC, MP3, etc.)
+    // Create AudioEngineManager for all audio format playback (WAV, FLAC, MP3, etc.)
     // NOTE: No longer requires CamillaDSP - uses native AudioEngine instead
-    let streaming_manager = Mutex::new(AudioStreamingManager::new());
+    let streaming_manager = Mutex::new(AudioEngineManager::new());
 
     let mut builder = tauri::Builder::default();
 
@@ -159,7 +159,7 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 loop {
                     // Poll for events from the decoder thread
-                    let streaming_mgr = app_handle.state::<Mutex<AudioStreamingManager>>();
+                    let streaming_mgr = app_handle.state::<Mutex<AudioEngineManager>>();
                     if let Ok(manager) = streaming_mgr.try_lock() {
                         for event in manager.drain_events() {
                             let _ = match event {

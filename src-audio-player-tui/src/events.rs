@@ -1,6 +1,6 @@
 use crate::app::{App, InputMode, Screen};
-use sotf_audio_player::PluginType;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use sotf_audio_player::PluginType;
 use std::time::Duration;
 
 pub enum AppEvent {

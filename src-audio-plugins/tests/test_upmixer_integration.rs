@@ -150,10 +150,7 @@ fn test_upmixer_parameter_adjustment() {
     assert_eq!(hr_sharpen, Some(ParameterValue::Float(1.0)));
 
     plugin
-        .set_parameter(
-            ParameterId::from("hr_sharpen"),
-            ParameterValue::Float(0.3),
-        )
+        .set_parameter(ParameterId::from("hr_sharpen"), ParameterValue::Float(0.3))
         .unwrap();
 
     let hr_sharpen_after = plugin.get_parameter(&ParameterId::from("hr_sharpen"));
@@ -307,12 +304,8 @@ fn test_upmixer_hr_direct_increases_front_energy() {
         num_frames,
     };
 
-    plugin_off
-        .process(&input, &mut out_off, &context)
-        .unwrap();
-    plugin_on
-        .process(&input, &mut out_on, &context)
-        .unwrap();
+    plugin_off.process(&input, &mut out_off, &context).unwrap();
+    plugin_on.process(&input, &mut out_on, &context).unwrap();
 
     let mut energies_off = vec![0.0_f32; output_channels];
     let mut energies_on = vec![0.0_f32; output_channels];

@@ -72,8 +72,7 @@ impl MeshIO {
         mesh.elements = elements;
         mesh.metadata.source = Some(dir.display().to_string());
 
-        mesh.validate()
-            .context("Mesh validation failed")?;
+        mesh.validate().context("Mesh validation failed")?;
 
         Ok(mesh)
     }
@@ -113,8 +112,7 @@ impl MeshIO {
     /// Read nodes from Nodes.txt
     fn read_nodes<P: AsRef<Path>>(path: P) -> Result<Vec<Node>> {
         let path = path.as_ref();
-        let file = File::open(path)
-            .context(format!("Failed to open {}", path.display()))?;
+        let file = File::open(path).context(format!("Failed to open {}", path.display()))?;
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
 
@@ -145,15 +143,18 @@ impl MeshIO {
             let id: usize = parts[0]
                 .parse()
                 .context(format!("Failed to parse node ID at line {}", line_num + 2))?;
-            let x: f64 = parts[1]
-                .parse()
-                .context(format!("Failed to parse X coordinate at line {}", line_num + 2))?;
-            let y: f64 = parts[2]
-                .parse()
-                .context(format!("Failed to parse Y coordinate at line {}", line_num + 2))?;
-            let z: f64 = parts[3]
-                .parse()
-                .context(format!("Failed to parse Z coordinate at line {}", line_num + 2))?;
+            let x: f64 = parts[1].parse().context(format!(
+                "Failed to parse X coordinate at line {}",
+                line_num + 2
+            ))?;
+            let y: f64 = parts[2].parse().context(format!(
+                "Failed to parse Y coordinate at line {}",
+                line_num + 2
+            ))?;
+            let z: f64 = parts[3].parse().context(format!(
+                "Failed to parse Z coordinate at line {}",
+                line_num + 2
+            ))?;
 
             nodes.push(Node::new(id, Point::new(x, y, z)));
         }
@@ -172,8 +173,8 @@ impl MeshIO {
     /// Write nodes to Nodes.txt
     fn write_nodes<P: AsRef<Path>>(nodes: &[Node], path: P) -> Result<()> {
         let path = path.as_ref();
-        let mut file = File::create(path)
-            .context(format!("Failed to create {}", path.display()))?;
+        let mut file =
+            File::create(path).context(format!("Failed to create {}", path.display()))?;
 
         // Write number of nodes
         writeln!(file, "{}", nodes.len())?;
@@ -193,8 +194,7 @@ impl MeshIO {
     /// Read elements from Elements.txt
     fn read_elements<P: AsRef<Path>>(path: P) -> Result<Vec<Element>> {
         let path = path.as_ref();
-        let file = File::open(path)
-            .context(format!("Failed to open {}", path.display()))?;
+        let file = File::open(path).context(format!("Failed to open {}", path.display()))?;
         let reader = BufReader::new(file);
         let mut lines = reader.lines();
 
@@ -222,9 +222,10 @@ impl MeshIO {
                 );
             }
 
-            let id: usize = parts[0]
-                .parse()
-                .context(format!("Failed to parse element ID at line {}", line_num + 2))?;
+            let id: usize = parts[0].parse().context(format!(
+                "Failed to parse element ID at line {}",
+                line_num + 2
+            ))?;
 
             // Elements can be triangles (v1, v2, v3, 0, 0, 0) or quads (v1, v2, v3, v4, 0, 0, 0)
             // For now, we only support triangles
@@ -256,8 +257,8 @@ impl MeshIO {
     /// Write elements to Elements.txt
     fn write_elements<P: AsRef<Path>>(elements: &[Element], path: P) -> Result<()> {
         let path = path.as_ref();
-        let mut file = File::create(path)
-            .context(format!("Failed to create {}", path.display()))?;
+        let mut file =
+            File::create(path).context(format!("Failed to create {}", path.display()))?;
 
         // Write number of elements
         writeln!(file, "{}", elements.len())?;
@@ -267,10 +268,7 @@ impl MeshIO {
             writeln!(
                 file,
                 "{} {} {} {} 0 0 0",
-                element.id,
-                element.vertices[0],
-                element.vertices[1],
-                element.vertices[2]
+                element.id, element.vertices[0], element.vertices[1], element.vertices[2]
             )?;
         }
 
@@ -374,6 +372,10 @@ mod tests {
         assert!(mesh.num_elements() > 0);
         assert!(mesh.validate().is_ok());
 
-        println!("Read real mesh: {} nodes, {} elements", mesh.num_nodes(), mesh.num_elements());
+        println!(
+            "Read real mesh: {} nodes, {} elements",
+            mesh.num_nodes(),
+            mesh.num_elements()
+        );
     }
 }

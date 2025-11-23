@@ -147,11 +147,7 @@ impl VelocityData {
 
 impl HrtfData {
     /// Create new HRTF data structure
-    pub fn new(
-        num_eval_points: usize,
-        num_frequencies: usize,
-        source_index: usize,
-    ) -> Self {
+    pub fn new(num_eval_points: usize, num_frequencies: usize, source_index: usize) -> Self {
         Self {
             eval_pressure: PressureData::new(num_eval_points, num_frequencies),
             eval_velocity: None,

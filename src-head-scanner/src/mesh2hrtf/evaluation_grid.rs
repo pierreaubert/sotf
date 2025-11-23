@@ -157,7 +157,10 @@ impl GridGenerator {
         }
 
         Ok(EvaluationGrid {
-            name: format!("Sphere_r{:.2}_az{}_el{}", radius, azimuth_steps, elevation_steps),
+            name: format!(
+                "Sphere_r{:.2}_az{}_el{}",
+                radius, azimuth_steps, elevation_steps
+            ),
             grid_type: GridType::Sphere {
                 radius,
                 points: nodes.len(),
@@ -210,7 +213,10 @@ impl GridGenerator {
         }
 
         Ok(EvaluationGrid {
-            name: format!("HorizontalPlane_r{:.2}_z{:.2}_n{}", radius, z_height, num_points),
+            name: format!(
+                "HorizontalPlane_r{:.2}_z{:.2}_n{}",
+                radius, z_height, num_points
+            ),
             grid_type: GridType::HorizontalPlane {
                 z: z_height,
                 radius,
@@ -276,7 +282,12 @@ impl GridGenerator {
         }
 
         Ok(EvaluationGrid {
-            name: format!("VerticalPlane_r{:.2}_az{:.1}_n{}", radius, azimuth.to_degrees(), num_points),
+            name: format!(
+                "VerticalPlane_r{:.2}_az{:.1}_n{}",
+                radius,
+                azimuth.to_degrees(),
+                num_points
+            ),
             grid_type: GridType::VerticalPlane {
                 angle: azimuth,
                 radius,
@@ -345,7 +356,10 @@ impl GridGenerator {
             name: format!("MultiRing_{}_rings_z{:.2}", radii.len(), z_height),
             grid_type: GridType::HorizontalPlane {
                 z: z_height,
-                radius: *radii.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap(),
+                radius: *radii
+                    .iter()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap(),
                 points: nodes.len(),
             },
             nodes,
@@ -365,10 +379,8 @@ mod tests {
 
         // All points should be approximately on the sphere
         for node in &grid.nodes {
-            let r = (node.position.x.powi(2)
-                + node.position.y.powi(2)
-                + node.position.z.powi(2))
-            .sqrt();
+            let r = (node.position.x.powi(2) + node.position.y.powi(2) + node.position.z.powi(2))
+                .sqrt();
             assert!((r - 1.0).abs() < 1e-10, "Point not on sphere: r={}", r);
         }
     }
@@ -379,10 +391,8 @@ mod tests {
 
         // Check all points are on the sphere
         for node in &grid.nodes {
-            let r = (node.position.x.powi(2)
-                + node.position.y.powi(2)
-                + node.position.z.powi(2))
-            .sqrt();
+            let r = (node.position.x.powi(2) + node.position.y.powi(2) + node.position.z.powi(2))
+                .sqrt();
             assert!((r - 1.5).abs() < 1e-10, "Point not on sphere: r={}", r);
         }
 
@@ -414,10 +424,8 @@ mod tests {
         // All points should be in the x-z plane (y≈0) and on sphere
         for node in &grid.nodes {
             assert!(node.position.y.abs() < 1e-10, "Not in x-z plane");
-            let r = (node.position.x.powi(2)
-                + node.position.y.powi(2)
-                + node.position.z.powi(2))
-            .sqrt();
+            let r = (node.position.x.powi(2) + node.position.y.powi(2) + node.position.z.powi(2))
+                .sqrt();
             assert!((r - 1.0).abs() < 1e-10, "Not on sphere");
         }
 

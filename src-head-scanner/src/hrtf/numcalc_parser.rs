@@ -84,14 +84,12 @@ impl NumCalcParser {
             hrtf_data.eval_velocity = Some(eval_velocity);
         }
 
-        if let Ok(boundary_pressure) =
-            self.parse_pressure(&source_dir, DataType::PressureBoundary)
+        if let Ok(boundary_pressure) = self.parse_pressure(&source_dir, DataType::PressureBoundary)
         {
             hrtf_data.boundary_pressure = Some(boundary_pressure);
         }
 
-        if let Ok(boundary_velocity) =
-            self.parse_velocity(&source_dir, DataType::VelocityBoundary)
+        if let Ok(boundary_velocity) = self.parse_velocity(&source_dir, DataType::VelocityBoundary)
         {
             hrtf_data.boundary_velocity = Some(boundary_velocity);
         }
@@ -324,22 +322,13 @@ impl NumCalcParser {
                     if parts.len() < 7 {
                         continue;
                     }
-                    let vx = Complex64::new(
-                        parts[1].parse::<f64>()?,
-                        parts[2].parse::<f64>()?,
-                    );
-                    let vy = Complex64::new(
-                        parts[3].parse::<f64>()?,
-                        parts[4].parse::<f64>()?,
-                    );
-                    let vz = Complex64::new(
-                        parts[5].parse::<f64>()?,
-                        parts[6].parse::<f64>()?,
-                    );
+                    let vx = Complex64::new(parts[1].parse::<f64>()?, parts[2].parse::<f64>()?);
+                    let vy = Complex64::new(parts[3].parse::<f64>()?, parts[4].parse::<f64>()?);
+                    let vz = Complex64::new(parts[5].parse::<f64>()?, parts[6].parse::<f64>()?);
 
                     // Magnitude: sqrt(|vx|^2 + |vy|^2 + |vz|^2)
-                    let magnitude = (vx.norm().powi(2) + vy.norm().powi(2) + vz.norm().powi(2))
-                        .sqrt();
+                    let magnitude =
+                        (vx.norm().powi(2) + vy.norm().powi(2) + vz.norm().powi(2)).sqrt();
                     values.push(magnitude);
                 }
                 _ => anyhow::bail!("Invalid velocity data type: {:?}", data_type),

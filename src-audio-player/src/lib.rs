@@ -7,7 +7,6 @@
 /// - Plugin chain management (`plugins`)
 /// - Player wrapper (`player`)
 /// - ReplayGain scanning (`replay_gain_scanner`)
-
 pub mod config;
 pub mod database;
 pub mod library;

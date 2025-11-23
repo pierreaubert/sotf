@@ -3,7 +3,7 @@
 #[cfg(test)]
 #[cfg(feature = "sofa")]
 mod tests {
-    use head_scanner::acoustics::{generate_sofa_analytical, AcousticHeadModel};
+    use head_scanner::acoustics::{AcousticHeadModel, generate_sofa_analytical};
     use head_scanner::mesh::Mesh;
     use nalgebra::Point3;
     use std::fs;
@@ -17,14 +17,14 @@ mod tests {
         let radius = 25.0; // 25cm head radius
 
         let vertices = vec![
-            Point3::new(radius, 0.0, 0.0),       // Right
-            Point3::new(-radius, 0.0, 0.0),      // Left
-            Point3::new(0.0, radius, 0.0),       // Top
-            Point3::new(0.0, -radius, 0.0),      // Bottom
-            Point3::new(0.0, 0.0, radius),       // Front
-            Point3::new(0.0, 0.0, -radius),      // Back
-            Point3::new(radius/2.0, radius/2.0, radius/2.0),   // Octant 1
-            Point3::new(-radius/2.0, radius/2.0, radius/2.0),  // Octant 2
+            Point3::new(radius, 0.0, 0.0),                          // Right
+            Point3::new(-radius, 0.0, 0.0),                         // Left
+            Point3::new(0.0, radius, 0.0),                          // Top
+            Point3::new(0.0, -radius, 0.0),                         // Bottom
+            Point3::new(0.0, 0.0, radius),                          // Front
+            Point3::new(0.0, 0.0, -radius),                         // Back
+            Point3::new(radius / 2.0, radius / 2.0, radius / 2.0),  // Octant 1
+            Point3::new(-radius / 2.0, radius / 2.0, radius / 2.0), // Octant 2
         ];
 
         for v in vertices {
@@ -46,27 +46,46 @@ mod tests {
 
         let result = AcousticHeadModel::from_mesh(&mesh);
 
-        assert!(result.is_ok(), "Should create acoustic model from valid mesh");
+        assert!(
+            result.is_ok(),
+            "Should create acoustic model from valid mesh"
+        );
 
         let model = result.unwrap();
 
         // Check head center is reasonable
-        assert!(model.head_center.coords.norm() < 10.0, "Head center should be near origin");
+        assert!(
+            model.head_center.coords.norm() < 10.0,
+            "Head center should be near origin"
+        );
 
         // Check head radius is reasonable (around 25cm)
-        assert!(model.head_radius > 20.0 && model.head_radius < 30.0,
-                "Head radius should be around 25cm, got {}", model.head_radius);
+        assert!(
+            model.head_radius > 20.0 && model.head_radius < 30.0,
+            "Head radius should be around 25cm, got {}",
+            model.head_radius
+        );
 
         // Check ears were detected
-        assert!(model.left_ear.x < 0.0, "Left ear should be on negative X side");
-        assert!(model.right_ear.x > 0.0, "Right ear should be on positive X side");
+        assert!(
+            model.left_ear.x < 0.0,
+            "Left ear should be on negative X side"
+        );
+        assert!(
+            model.right_ear.x > 0.0,
+            "Right ear should be on positive X side"
+        );
 
         // Ears should be symmetric (approximately)
         let left_dist = (model.left_ear - model.head_center).norm();
         let right_dist = (model.right_ear - model.head_center).norm();
         let symmetry_error = (left_dist - right_dist).abs() / left_dist;
 
-        assert!(symmetry_error < 0.2, "Ears should be roughly symmetric, error: {}", symmetry_error);
+        assert!(
+            symmetry_error < 0.2,
+            "Ears should be roughly symmetric, error: {}",
+            symmetry_error
+        );
     }
 
     #[test]
@@ -81,20 +100,28 @@ mod tests {
         let result = generate_sofa_analytical(
             &mesh,
             output_path.to_str().unwrap(),
-            44100.0,   // Sample rate
-            8,         // 8 azimuth angles (45° resolution)
-            4,         // 4 elevation angles
-            1.0,       // 1 meter distance
+            44100.0, // Sample rate
+            8,       // 8 azimuth angles (45° resolution)
+            4,       // 4 elevation angles
+            1.0,     // 1 meter distance
         );
 
-        assert!(result.is_ok(), "SOFA generation should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "SOFA generation should succeed: {:?}",
+            result.err()
+        );
 
         // Verify file was created
         assert!(output_path.exists(), "SOFA file should be created");
 
         // Check file size is reasonable (should have some data)
         let metadata = fs::metadata(&output_path).unwrap();
-        assert!(metadata.len() > 1000, "SOFA file should have substantial content, got {} bytes", metadata.len());
+        assert!(
+            metadata.len() > 1000,
+            "SOFA file should have substantial content, got {} bytes",
+            metadata.len()
+        );
 
         // Cleanup
         let _ = fs::remove_file(&output_path);
@@ -115,7 +142,7 @@ mod tests {
                 &mesh,
                 output_path.to_str().unwrap(),
                 rate,
-                4,   // Low resolution for speed
+                4, // Low resolution for speed
                 2,
                 1.0,
             );
@@ -137,8 +164,8 @@ mod tests {
             &mesh,
             output_low.to_str().unwrap(),
             44100.0,
-            4,  // 4 azimuth angles
-            2,  // 2 elevation angles
+            4, // 4 azimuth angles
+            2, // 2 elevation angles
             1.0,
         );
 
@@ -150,8 +177,8 @@ mod tests {
             &mesh,
             output_med.to_str().unwrap(),
             44100.0,
-            12,  // 12 azimuth angles
-            6,   // 6 elevation angles
+            12, // 12 azimuth angles
+            6,  // 6 elevation angles
             1.0,
         );
 
@@ -162,7 +189,10 @@ mod tests {
             let size_low = fs::metadata(&output_low).unwrap().len();
             let size_med = fs::metadata(&output_med).unwrap().len();
 
-            assert!(size_med > size_low, "Higher resolution should produce larger file");
+            assert!(
+                size_med > size_low,
+                "Higher resolution should produce larger file"
+            );
         }
 
         // Cleanup
@@ -208,14 +238,8 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let output_path = temp_dir.join("test_hrtf_validate.sofa");
 
-        let result = generate_sofa_analytical(
-            &mesh,
-            output_path.to_str().unwrap(),
-            44100.0,
-            8,
-            4,
-            1.0,
-        );
+        let result =
+            generate_sofa_analytical(&mesh, output_path.to_str().unwrap(), 44100.0, 8, 4, 1.0);
 
         assert!(result.is_ok(), "Should generate valid SOFA file");
 
@@ -274,8 +298,14 @@ mod tests {
         for angle in angles {
             // The actual ITD computation is internal to HRTF generator
             // This test verifies the model can be used for computation
-            assert!(model.head_radius > 0.0, "Model should have valid head radius");
-            assert!(model.left_ear.x != model.right_ear.x, "Ears should be at different positions");
+            assert!(
+                model.head_radius > 0.0,
+                "Model should have valid head radius"
+            );
+            assert!(
+                model.left_ear.x != model.right_ear.x,
+                "Ears should be at different positions"
+            );
         }
     }
 }

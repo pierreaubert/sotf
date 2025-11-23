@@ -124,16 +124,9 @@ impl ProjectBuilder {
     }
 
     /// Set frequency range with linear spacing
-    pub fn with_frequency_range(
-        mut self,
-        min_freq: f64,
-        max_freq: f64,
-        num_freqs: usize,
-    ) -> Self {
+    pub fn with_frequency_range(mut self, min_freq: f64, max_freq: f64, num_freqs: usize) -> Self {
         let step = (max_freq - min_freq) / (num_freqs - 1) as f64;
-        self.frequencies = (0..num_freqs)
-            .map(|i| min_freq + step * i as f64)
-            .collect();
+        self.frequencies = (0..num_freqs).map(|i| min_freq + step * i as f64).collect();
         self
     }
 
@@ -250,7 +243,10 @@ impl Project {
         // Create ObjectMeshes/Reference
         let object_mesh_dir = base_dir.join("ObjectMeshes").join("Reference");
         fs::create_dir_all(&object_mesh_dir).with_context(|| {
-            format!("Failed to create ObjectMeshes directory: {:?}", object_mesh_dir)
+            format!(
+                "Failed to create ObjectMeshes directory: {:?}",
+                object_mesh_dir
+            )
         })?;
 
         // Create EvaluationGrids subdirectories
@@ -274,8 +270,7 @@ impl Project {
 
     fn export_mesh(&self, base_dir: &Path) -> Result<()> {
         let mesh_dir = base_dir.join("ObjectMeshes").join("Reference");
-        MeshIO::write_mesh2hrtf(&self.mesh, &mesh_dir)
-            .context("Failed to write reference mesh")?;
+        MeshIO::write_mesh2hrtf(&self.mesh, &mesh_dir).context("Failed to write reference mesh")?;
         Ok(())
     }
 
@@ -392,21 +387,24 @@ mod tests {
         assert!(temp_dir.path().join("NumCalc/source_1").exists());
 
         // Verify files exist
-        assert!(temp_dir
-            .path()
-            .join("ObjectMeshes/Reference/Nodes.txt")
-            .exists());
-        assert!(temp_dir
-            .path()
-            .join("ObjectMeshes/Reference/Elements.txt")
-            .exists());
-        assert!(temp_dir
-            .path()
-            .join("EvaluationGrids/HorPlane/Nodes.txt")
-            .exists());
-        assert!(temp_dir
-            .path()
-            .join("NumCalc/source_1/NC.inp")
-            .exists());
+        assert!(
+            temp_dir
+                .path()
+                .join("ObjectMeshes/Reference/Nodes.txt")
+                .exists()
+        );
+        assert!(
+            temp_dir
+                .path()
+                .join("ObjectMeshes/Reference/Elements.txt")
+                .exists()
+        );
+        assert!(
+            temp_dir
+                .path()
+                .join("EvaluationGrids/HorPlane/Nodes.txt")
+                .exists()
+        );
+        assert!(temp_dir.path().join("NumCalc/source_1/NC.inp").exists());
     }
 }

@@ -21,7 +21,9 @@ pub enum EnvError {
     #[error("Failed to create data_generated directory: {0}")]
     DataGeneratedCreationFailed(std::io::Error),
 
-    #[error("Multiple autoeq/sotf directories found: {0:?}. Please set AUTOEQ_DIR to specify which one to use")]
+    #[error(
+        "Multiple autoeq/sotf directories found: {0:?}. Please set AUTOEQ_DIR to specify which one to use"
+    )]
     MultipleAutoEqDirsFound(Vec<PathBuf>),
 }
 

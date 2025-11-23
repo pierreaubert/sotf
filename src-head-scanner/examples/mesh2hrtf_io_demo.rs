@@ -133,7 +133,9 @@ fn read_nodes(path: &std::path::Path) -> Result<Vec<Node>> {
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
 
-    let first_line = lines.next().ok_or_else(|| anyhow::anyhow!("Empty file"))??;
+    let first_line = lines
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Empty file"))??;
     let num_nodes: usize = first_line.trim().parse()?;
 
     let mut nodes = Vec::with_capacity(num_nodes);
@@ -143,7 +145,10 @@ fn read_nodes(path: &std::path::Path) -> Result<Vec<Node>> {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
         if parts.len() != 4 {
-            anyhow::bail!("Invalid node format: expected 4 fields, got {}", parts.len());
+            anyhow::bail!(
+                "Invalid node format: expected 4 fields, got {}",
+                parts.len()
+            );
         }
 
         let id: usize = parts[0].parse()?;
@@ -170,7 +175,9 @@ fn read_elements(path: &std::path::Path) -> Result<Vec<Element>> {
     let reader = BufReader::new(file);
     let mut lines = reader.lines();
 
-    let first_line = lines.next().ok_or_else(|| anyhow::anyhow!("Empty file"))??;
+    let first_line = lines
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Empty file"))??;
     let num_elements: usize = first_line.trim().parse()?;
 
     let mut elements = Vec::with_capacity(num_elements);
@@ -279,8 +286,12 @@ fn main() -> Result<()> {
 
     // Test 1: Read real Mesh2HRTF data
     let test_paths = vec![
-        PathBuf::from("/tmp/mesh2hrtf_test/Mesh2HRTF/tests/resources/test_numcalc/project_folder_ears/ears_basic_project/ObjectMeshes/Reference"),
-        PathBuf::from("/tmp/mesh2hrtf_test/Mesh2HRTF/tests/resources/test_numcalc/project_folder_ears/ears_basic_project/EvaluationGrids/HorPlane"),
+        PathBuf::from(
+            "/tmp/mesh2hrtf_test/Mesh2HRTF/tests/resources/test_numcalc/project_folder_ears/ears_basic_project/ObjectMeshes/Reference",
+        ),
+        PathBuf::from(
+            "/tmp/mesh2hrtf_test/Mesh2HRTF/tests/resources/test_numcalc/project_folder_ears/ears_basic_project/EvaluationGrids/HorPlane",
+        ),
     ];
 
     for test_path in &test_paths {
@@ -365,8 +376,16 @@ fn main() -> Result<()> {
                     }
                 } else {
                     println!("✗ Roundtrip validation failed");
-                    println!("  Original: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
-                    println!("  Read back: {} nodes, {} elements", mesh2.nodes.len(), mesh2.elements.len());
+                    println!(
+                        "  Original: {} nodes, {} elements",
+                        mesh.nodes.len(),
+                        mesh.elements.len()
+                    );
+                    println!(
+                        "  Read back: {} nodes, {} elements",
+                        mesh2.nodes.len(),
+                        mesh2.elements.len()
+                    );
                 }
 
                 println!();

@@ -1,6 +1,6 @@
 use crate::theme::Theme;
-use sotf_audio::devices::AudioDevice;
 use sotf_audio::LoudnessInfo;
+use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{Album, MusicLibrary, PluginChain, PluginType, Track};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -1523,12 +1523,8 @@ impl App {
                         11 => {
                             *enable_hr_direct = !*enable_hr_direct;
                         }
-                        12 => {
-                            *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0)
-                        }
-                        13 => {
-                            *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0)
-                        }
+                        12 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0),
+                        13 => *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0),
                         _ => return false,
                     }
                     true

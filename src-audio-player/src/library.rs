@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -6,7 +7,6 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{Limit, MetadataOptions};
 use symphonia::core::probe::{Hint, Probe};
 use walkdir::WalkDir;
-use serde::{Serialize, Deserialize};
 
 use crate::database::MusicDatabase;
 
@@ -120,6 +120,22 @@ impl MusicLibrary {
         crate::database::backup_existing_database(&db_path)?;
 
         let db = MusicDatabase::open(&db_path)?;
+
+        Ok(Self {
+            directories: Vec::new(),
+            albums: Vec::new(),
+            db: Some(db),
+        })
+    }
+
+    /// Create a new library with database persistence at a custom path (for testing)
+    ///
+    /// This method is primarily intended for testing but is available in all builds.
+    /// For production use, prefer `with_database()` which uses the default database location.
+    pub fn with_custom_database<P: AsRef<std::path::Path>>(
+        db_path: P,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let db = MusicDatabase::open(db_path)?;
 
         Ok(Self {
             directories: Vec::new(),

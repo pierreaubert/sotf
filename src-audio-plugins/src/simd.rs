@@ -346,7 +346,6 @@ pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>])
 mod tests {
     use super::*;
 
-
     // ============================================================================
     // SIMD Correctness Tests
     // ============================================================================

@@ -1,5 +1,5 @@
 /// Shared test fixtures and utilities for src-audio-player integration tests
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tempfile::TempDir;
 
 /// Returns the path to the demo audio files directory

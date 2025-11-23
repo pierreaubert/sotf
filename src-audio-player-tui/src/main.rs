@@ -1,4 +1,3 @@
-
 mod app;
 mod events;
 mod theme;
@@ -62,8 +61,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Parse theme
-    let theme_type = theme::ThemeType::from_str(&args.theme)
-        .ok_or_else(|| format!("Invalid theme '{}', valid options are: dark, light", args.theme))?;
+    let theme_type = theme::ThemeType::from_str(&args.theme).ok_or_else(|| {
+        format!(
+            "Invalid theme '{}', valid options are: dark, light",
+            args.theme
+        )
+    })?;
     let theme = theme::Theme::from_type(theme_type);
 
     // Setup terminal
@@ -251,10 +254,7 @@ fn run_app<B: ratatui::backend::Backend>(
                             ) {
                                 log::error!("[TUI] Failed to auto-advance: {}", e);
                                 app.is_playing = false;
-                                app.status_message = Some(format!(
-                                    "Failed to auto-advance: {}",
-                                    e
-                                ));
+                                app.status_message = Some(format!("Failed to auto-advance: {}", e));
                             } else {
                                 log::info!("[TUI] Auto-advance successful");
                             }
@@ -307,7 +307,8 @@ fn run_app<B: ratatui::backend::Backend>(
                                 match player.update_plugins(plugins) {
                                     Ok(()) => {
                                         log::info!("[TUI] Plugin update successful");
-                                        app.status_message = Some("Plugin chain updated".to_string());
+                                        app.status_message =
+                                            Some("Plugin chain updated".to_string());
                                         app.plugin_update_retry_count = 0;
                                         app.plugin_update_in_progress = false;
                                     }
@@ -327,15 +328,12 @@ fn run_app<B: ratatui::backend::Backend>(
                                             app.needs_plugin_update = true;
                                             app.status_message = Some(format!(
                                                 "Plugin update failed, retrying... ({}/{})",
-                                                app.plugin_update_retry_count,
-                                                MAX_RETRIES
+                                                app.plugin_update_retry_count, MAX_RETRIES
                                             ));
                                         } else {
                                             // Max retries reached
-                                            app.status_message = Some(format!(
-                                                "Plugin update failed: {}",
-                                                e
-                                            ));
+                                            app.status_message =
+                                                Some(format!("Plugin update failed: {}", e));
                                         }
                                     }
                                 }

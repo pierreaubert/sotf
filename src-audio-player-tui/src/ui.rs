@@ -1,5 +1,4 @@
 use crate::app::{App, InputMode, LibraryViewMode, Screen, TreeItem};
-use sotf_audio_player::{PluginSettings, PluginType};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -8,6 +7,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use sotf_audio::get_speaker_config_by_channels;
+use sotf_audio_player::{PluginSettings, PluginType};
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
 fn format_channel_count(n: u32) -> String {
@@ -279,7 +279,9 @@ fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
                 .bg(app.theme.bg_primary)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(app.theme.fg_primary).bg(app.theme.bg_primary)
+            Style::default()
+                .fg(app.theme.fg_primary)
+                .bg(app.theme.bg_primary)
         };
 
         if is_active {
@@ -748,7 +750,9 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
                 .bg(app.theme.bg_selected)
                 .add_modifier(Modifier::BOLD);
         } else if is_current {
-            style = style.fg(app.theme.playing_indicator).add_modifier(Modifier::BOLD);
+            style = style
+                .fg(app.theme.playing_indicator)
+                .add_modifier(Modifier::BOLD);
         }
 
         items.push(ListItem::new(content).style(style));
@@ -1324,21 +1328,45 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     }
 
     status_spans.push(Span::raw("Keys: "));
-    status_spans.push(Span::styled("TAB", Style::default().fg(app.theme.accent_primary)));
+    status_spans.push(Span::styled(
+        "TAB",
+        Style::default().fg(app.theme.accent_primary),
+    ));
     status_spans.push(Span::raw("=Next "));
-    status_spans.push(Span::styled("L", Style::default().fg(app.theme.accent_primary)));
+    status_spans.push(Span::styled(
+        "L",
+        Style::default().fg(app.theme.accent_primary),
+    ));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("D", Style::default().fg(app.theme.accent_primary)));
+    status_spans.push(Span::styled(
+        "D",
+        Style::default().fg(app.theme.accent_primary),
+    ));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("Q", Style::default().fg(app.theme.accent_primary)));
+    status_spans.push(Span::styled(
+        "Q",
+        Style::default().fg(app.theme.accent_primary),
+    ));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("P", Style::default().fg(app.theme.accent_primary)));
+    status_spans.push(Span::styled(
+        "P",
+        Style::default().fg(app.theme.accent_primary),
+    ));
     status_spans.push(Span::raw("/"));
-    status_spans.push(Span::styled("O", Style::default().fg(app.theme.accent_primary)));
+    status_spans.push(Span::styled(
+        "O",
+        Style::default().fg(app.theme.accent_primary),
+    ));
     status_spans.push(Span::raw("=Screens "));
-    status_spans.push(Span::styled("+=/-_", Style::default().fg(app.theme.title_color)));
+    status_spans.push(Span::styled(
+        "+=/-_",
+        Style::default().fg(app.theme.title_color),
+    ));
     status_spans.push(Span::raw("=Volume "));
-    status_spans.push(Span::styled("ESC/%-Q", Style::default().fg(app.theme.accent_error)));
+    status_spans.push(Span::styled(
+        "ESC/%-Q",
+        Style::default().fg(app.theme.accent_error),
+    ));
     status_spans.push(Span::raw("=Quit "));
 
     let status_text = Line::from(status_spans);
@@ -1474,14 +1502,8 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 "HR Direct".to_string(),
                 if *enable_hr_direct { "On" } else { "Off" }.to_string(),
             ),
-            (
-                "HR Sharpen".to_string(),
-                format!("{:.2}", hr_sharpen),
-            ),
-            (
-                "Safety Cap".to_string(),
-                format!("{:.1} dB", safety_cap_db),
-            ),
+            ("HR Sharpen".to_string(), format!("{:.2}", hr_sharpen)),
+            ("Safety Cap".to_string(), format!("{:.1} dB", safety_cap_db)),
         ],
         PluginSettings::Compressor {
             threshold_db,
@@ -2148,7 +2170,9 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
             Span::raw("  Failed: "),
             Span::styled(
                 format!("{}", app.replay_gain_failed),
-                Style::default().fg(app.theme.accent_error).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(app.theme.accent_error)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(""),
@@ -2240,7 +2264,10 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
         Span::raw("  Decrease volume"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  Ctrl+Left/Right", Style::default().fg(app.theme.accent_primary)),
+        Span::styled(
+            "  Ctrl+Left/Right",
+            Style::default().fg(app.theme.accent_primary),
+        ),
         Span::raw("  Select output device"),
     ]));
     lines.push(Line::from(vec![
@@ -2248,7 +2275,10 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
         Span::raw("  Show this help"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled("  ESC/Ctrl+Q/Cmd+Q", Style::default().fg(app.theme.accent_primary)),
+        Span::styled(
+            "  ESC/Ctrl+Q/Cmd+Q",
+            Style::default().fg(app.theme.accent_primary),
+        ),
         Span::raw("  Quit"),
     ]));
     lines.push(Line::from(""));
@@ -2273,7 +2303,10 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
 
     for (key, description) in keybindings {
         lines.push(Line::from(vec![
-            Span::styled(format!("  {:<18}", key), Style::default().fg(app.theme.accent_primary)),
+            Span::styled(
+                format!("  {:<18}", key),
+                Style::default().fg(app.theme.accent_primary),
+            ),
             Span::raw(description),
         ]));
     }

@@ -5,7 +5,7 @@
 use crate::tauri_audio_recording::AudioError;
 use autoeq::iir::Biquad;
 use sotf_audio::{
-    AudioFileInfo, AudioStreamingManager, LoudnessCompensation, PluginConfig, StreamingState,
+    AudioEngineManager, AudioFileInfo, LoudnessCompensation, PluginConfig, StreamingState,
 };
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Mutex;
@@ -44,7 +44,7 @@ fn convert_audio_file_info(info: &AudioFileInfo) -> AudioFileInfoPayload {
 #[tauri::command]
 pub async fn stream_load_file(
     file_path: String,
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
     app_handle: AppHandle,
 ) -> Result<AudioFileInfoPayload, String> {
     println!("[TAURI] Loading file for streaming: {}", file_path);
@@ -110,7 +110,7 @@ fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
 pub async fn stream_start_playback(
     output_device: Option<String>,
     filters: Vec<FilterParams>,
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     println!("[TAURI] Starting playback with {} filters", filters.len());
@@ -190,7 +190,7 @@ pub async fn stream_start_playback(
 
 #[tauri::command]
 pub async fn stream_pause_playback(
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     println!("[TAURI] Pausing playback");
@@ -212,7 +212,7 @@ pub async fn stream_pause_playback(
 
 #[tauri::command]
 pub async fn stream_resume_playback(
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     println!("[TAURI] Resuming playback");
@@ -234,7 +234,7 @@ pub async fn stream_resume_playback(
 
 #[tauri::command]
 pub async fn stream_stop_playback(
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     println!("[TAURI] Stopping playback");
@@ -257,7 +257,7 @@ pub async fn stream_stop_playback(
 #[tauri::command]
 pub async fn stream_seek(
     seconds: f64,
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     println!("[TAURI] Seeking to {}s", seconds);
@@ -279,7 +279,7 @@ pub async fn stream_seek(
 
 #[tauri::command]
 pub async fn stream_get_state(
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
 ) -> Result<String, String> {
     let manager = streaming_manager.lock().await;
     let state = manager.get_state();
@@ -299,7 +299,7 @@ pub async fn stream_get_state(
 
 #[tauri::command]
 pub async fn stream_get_file_info(
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
 ) -> Result<Option<AudioFileInfoPayload>, String> {
     let manager = streaming_manager.lock().await;
     match manager.get_audio_info() {
@@ -312,7 +312,7 @@ pub async fn stream_get_file_info(
 pub async fn stream_update_filters(
     filters: Vec<FilterParams>,
     _loudness: Option<LoudnessCompensation>,
-    streaming_manager: State<'_, Mutex<AudioStreamingManager>>,
+    streaming_manager: State<'_, Mutex<AudioEngineManager>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     println!("[TAURI] Updating filters: {} filters", filters.len());

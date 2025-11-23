@@ -9,13 +9,9 @@
 // - Plugin selection and editing
 
 use sotf_audio_player_gpui::app::{App, InputMode, Screen, ToastMessage, ToastType};
-use sotf_audio_player::{Player, PluginChain};
-use std::sync::Arc;
-use parking_lot::Mutex;
 
 fn create_test_app() -> App {
-    let player = Arc::new(Mutex::new(Player::new().unwrap()));
-    App::new(player, None)
+    App::new()
 }
 
 #[test]

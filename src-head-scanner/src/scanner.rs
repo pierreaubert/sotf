@@ -156,7 +156,7 @@ impl Scanner {
                 vertices.push(
                     crate::mesh::Vertex::from_point(point.position)
                         .with_normal(point.normal)
-                        .with_color(point.color)
+                        .with_color(point.color),
                 );
             }
         } else {
@@ -165,7 +165,7 @@ impl Scanner {
                 vertices.push(
                     crate::mesh::Vertex::from_point(point.position)
                         .with_normal(point.normal)
-                        .with_color(point.color)
+                        .with_color(point.color),
                 );
             }
         }
@@ -277,7 +277,10 @@ mod tests {
     fn test_get_mesh_empty() {
         let scanner = Scanner::new();
         let result = scanner.get_mesh();
-        assert!(result.is_err(), "Should fail to generate mesh from empty cloud");
+        assert!(
+            result.is_err(),
+            "Should fail to generate mesh from empty cloud"
+        );
     }
 
     #[test]

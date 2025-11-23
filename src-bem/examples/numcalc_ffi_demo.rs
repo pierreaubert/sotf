@@ -12,8 +12,8 @@
 //! cargo run --release --example numcalc_ffi_demo --features ffi
 //! ```
 
-use bem::ffi::{NumCalcConfig, NumCalcRunner, ParallelBemRunner};
 use bem::ffi::SystemResources;
+use bem::ffi::{NumCalcConfig, NumCalcRunner, ParallelBemRunner};
 
 fn main() -> anyhow::Result<()> {
     // Initialize logging
@@ -24,11 +24,10 @@ fn main() -> anyhow::Result<()> {
     println!("╚════════════════════════════════════════════════════════╝\n");
 
     // Get project directory from environment or use example
-    let project_dir = std::env::var("TEST_PROJECT_DIR")
-        .unwrap_or_else(|_| {
-            eprintln!("Warning: TEST_PROJECT_DIR not set, using 'example_project'");
-            "example_project".to_string()
-        });
+    let project_dir = std::env::var("TEST_PROJECT_DIR").unwrap_or_else(|_| {
+        eprintln!("Warning: TEST_PROJECT_DIR not set, using 'example_project'");
+        "example_project".to_string()
+    });
 
     println!("Project directory: {}\n", project_dir);
 
@@ -60,8 +59,14 @@ fn demo_system_resources() -> anyhow::Result<()> {
     resources.print_summary();
 
     println!("\nResource checks:");
-    println!("  Can run 100 MB task? {}", resources.can_run_task(100.0, 95.0));
-    println!("  Can run 10 GB task? {}", resources.can_run_task(10_000.0, 95.0));
+    println!(
+        "  Can run 100 MB task? {}",
+        resources.can_run_task(100.0, 95.0)
+    );
+    println!(
+        "  Can run 10 GB task? {}",
+        resources.can_run_task(10_000.0, 95.0)
+    );
 
     Ok(())
 }
@@ -77,8 +82,7 @@ fn demo_single_frequency(project_dir: &str) -> anyhow::Result<()> {
             // Run single frequency
             println!("\nRunning frequency index 0...");
 
-            let config = NumCalcConfig::single_frequency(0)
-                .with_max_iterations(100);
+            let config = NumCalcConfig::single_frequency(0).with_max_iterations(100);
 
             match runner.run(&config) {
                 Ok(output) => {
@@ -121,7 +125,10 @@ fn demo_memory_estimation(project_dir: &str) -> anyhow::Result<()> {
 
                     let resources = SystemResources::current()?;
                     let fits = estimate.fits_in_ram(resources.available_ram_mb);
-                    println!("  Fits in available RAM ({:.1} MB)? {}", resources.available_ram_mb, fits);
+                    println!(
+                        "  Fits in available RAM ({:.1} MB)? {}",
+                        resources.available_ram_mb, fits
+                    );
                 }
                 Err(e) => {
                     println!("✗ Memory estimation failed: {}", e);
@@ -140,7 +147,7 @@ fn demo_parallel_execution(project_dir: &str) -> anyhow::Result<()> {
     match ParallelBemRunner::new(project_dir) {
         Ok(runner) => {
             let runner = runner
-                .with_max_concurrent(2)  // Limit for demo
+                .with_max_concurrent(2) // Limit for demo
                 .with_max_cpu_percent(90.0)
                 .with_max_ram_gb(4.0);
 
@@ -181,7 +188,10 @@ fn demo_parallel_execution(project_dir: &str) -> anyhow::Result<()> {
                     println!("\nSummary:");
                     println!("  Successful: {}/{}", successful, results.len());
                     println!("  Total time: {:.2}s", total_time.as_secs_f64());
-                    println!("  Average time: {:.2}s/freq", total_time.as_secs_f64() / results.len() as f64);
+                    println!(
+                        "  Average time: {:.2}s/freq",
+                        total_time.as_secs_f64() / results.len() as f64
+                    );
                 }
                 Err(e) => {
                     println!("✗ Parallel execution failed: {}", e);

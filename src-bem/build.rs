@@ -48,14 +48,21 @@ fn main() {
     // Try to build NumCalc from source
     match build_numcalc() {
         Ok(exe_path) => {
-            println!("cargo:warning=NumCalc built successfully: {}", exe_path.display());
+            println!(
+                "cargo:warning=NumCalc built successfully: {}",
+                exe_path.display()
+            );
             // Set environment variable for runtime
             println!("cargo:rustc-env=NUMCALC_BUILT_PATH={}", exe_path.display());
         }
         Err(e) => {
             println!("cargo:warning=NumCalc build failed: {}", e);
-            println!("cargo:warning=FFI functionality will require NumCalc to be installed separately");
-            println!("cargo:warning=Set NUMCALC_PATH environment variable to use pre-built NumCalc");
+            println!(
+                "cargo:warning=FFI functionality will require NumCalc to be installed separately"
+            );
+            println!(
+                "cargo:warning=Set NUMCALC_PATH environment variable to use pre-built NumCalc"
+            );
         }
     }
 }
@@ -79,7 +86,10 @@ fn check_existing_numcalc() -> bool {
     if let Ok(path) = env::var("NUMCALC_PATH") {
         let path = PathBuf::from(path);
         if path.exists() {
-            println!("cargo:warning=Found NumCalc at NUMCALC_PATH: {}", path.display());
+            println!(
+                "cargo:warning=Found NumCalc at NUMCALC_PATH: {}",
+                path.display()
+            );
             return true;
         }
     }
@@ -121,7 +131,10 @@ fn build_numcalc() -> Result<PathBuf, String> {
         ));
     }
 
-    println!("cargo:warning=Building NumCalc from source: {}", source_dir.display());
+    println!(
+        "cargo:warning=Building NumCalc from source: {}",
+        source_dir.display()
+    );
 
     // Try Makefile first (if available)
     if source_dir.join("Makefile").exists() {
@@ -156,13 +169,15 @@ fn build_with_makefile(source_dir: &Path, out_dir: &str) -> Result<PathBuf, Stri
 
     let exe_path = source_dir.join(exe_name);
     if !exe_path.exists() {
-        return Err(format!("NumCalc executable not found at: {}", exe_path.display()));
+        return Err(format!(
+            "NumCalc executable not found at: {}",
+            exe_path.display()
+        ));
     }
 
     // Copy to output directory
     let out_exe = PathBuf::from(out_dir).join(exe_name);
-    std::fs::copy(&exe_path, &out_exe)
-        .map_err(|e| format!("Failed to copy executable: {}", e))?;
+    std::fs::copy(&exe_path, &out_exe).map_err(|e| format!("Failed to copy executable: {}", e))?;
 
     Ok(out_exe)
 }
@@ -186,10 +201,10 @@ fn build_with_cc(source_dir: &Path, out_dir: &str) -> Result<PathBuf, String> {
     build
         .cpp(true)
         .flag_if_supported("-std=c++11")
-        .flag_if_supported("/std:c++11")  // MSVC
+        .flag_if_supported("/std:c++11") // MSVC
         .flag_if_supported("-O3")
-        .flag_if_supported("/O2")  // MSVC
-        .warnings(false);  // NumCalc may have warnings
+        .flag_if_supported("/O2") // MSVC
+        .warnings(false); // NumCalc may have warnings
 
     // Add all source files
     for file in &cpp_files {
@@ -208,7 +223,10 @@ fn build_with_cc(source_dir: &Path, out_dir: &str) -> Result<PathBuf, String> {
     let exe_path = PathBuf::from(out_dir).join(exe_name);
 
     println!("cargo:warning=NumCalc compilation complete");
-    println!("cargo:warning=Executable should be at: {}", exe_path.display());
+    println!(
+        "cargo:warning=Executable should be at: {}",
+        exe_path.display()
+    );
 
     // Note: cc crate creates a static library, not an executable
     // For a full executable, we'd need to link manually
@@ -221,9 +239,7 @@ fn build_with_cc(source_dir: &Path, out_dir: &str) -> Result<PathBuf, String> {
 fn find_cpp_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let mut files = Vec::new();
 
-    for entry in std::fs::read_dir(dir)
-        .map_err(|e| format!("Failed to read directory: {}", e))?
-    {
+    for entry in std::fs::read_dir(dir).map_err(|e| format!("Failed to read directory: {}", e))? {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let path = entry.path();
 

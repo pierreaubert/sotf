@@ -132,7 +132,11 @@ pub fn create_test_sofa_file(
 
     // Debug: Check if IR data is non-zero
     let non_zero_count = ir_data.iter().filter(|&&x| x != 0.0).count();
-    println!("  Non-zero IR samples: {}/{}", non_zero_count, ir_data.len());
+    println!(
+        "  Non-zero IR samples: {}/{}",
+        non_zero_count,
+        ir_data.len()
+    );
 
     ir_var.put_values(&ir_data, &[.., .., ..]).unwrap();
 

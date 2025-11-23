@@ -275,14 +275,14 @@ impl DecoderState {
                 }
 
                 // Log backpressure at debug level
-/*
-                if total_send_time > Duration::from_millis(10) {
-                    log::debug!(
-                        "[Decoder Thread] Backpressure (channel full): {:?} wait time",
-                        total_send_time
-                    );
-                }
-*/
+                /*
+                                if total_send_time > Duration::from_millis(10) {
+                                    log::debug!(
+                                        "[Decoder Thread] Backpressure (channel full): {:?} wait time",
+                                        total_send_time
+                                    );
+                                }
+                */
                 // Update position
                 let position_sec = decoder.position() as f64 / source_sample_rate as f64;
                 event_tx

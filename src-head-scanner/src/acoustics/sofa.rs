@@ -113,7 +113,8 @@ impl SOFAWriter {
 
         // Write timestamps
         let now = Utc::now();
-        let date_str: hdf5::types::VarLenUnicode = now.format("%Y-%m-%d %H:%M:%S").to_string().into();
+        let date_str: hdf5::types::VarLenUnicode =
+            now.format("%Y-%m-%d %H:%M:%S").to_string().into();
         file.new_attr::<hdf5::types::VarLenUnicode>()
             .create("DateCreated")?
             .write_scalar(&date_str)?;
@@ -181,7 +182,9 @@ impl SOFAWriter {
             .create("ApplicationVersion")?
             .write_scalar(&version)?;
 
-        let comment: VarLenUnicode = "Generated using analytical Woodworth-Schlosberg model".to_string().into();
+        let comment: VarLenUnicode = "Generated using analytical Woodworth-Schlosberg model"
+            .to_string()
+            .into();
         file.new_attr::<VarLenUnicode>()
             .create("Comment")?
             .write_scalar(&comment)?;
@@ -443,9 +446,9 @@ mod tests {
 
         // Create test data
         let source_positions = vec![
-            Point3::new(0.0, 0.0, 100.0),   // Front
-            Point3::new(100.0, 0.0, 0.0),   // Left
-            Point3::new(-100.0, 0.0, 0.0),  // Right
+            Point3::new(0.0, 0.0, 100.0),  // Front
+            Point3::new(100.0, 0.0, 0.0),  // Left
+            Point3::new(-100.0, 0.0, 0.0), // Right
         ];
 
         let impulse_responses = vec![

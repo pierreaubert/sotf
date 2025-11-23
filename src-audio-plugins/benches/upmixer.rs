@@ -4,9 +4,7 @@
 // UpmixerPlugin under realistic workloads (5.1, 7.1.4) and various
 // block sizes and FFT sizes.
 
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use sotf_plugins::{Plugin, ProcessContext, UpmixerPlugin};
 use std::time::Duration;
 
@@ -49,8 +47,7 @@ fn bench_upmixer_5_1_block_sizes(c: &mut Criterion) {
                     upmixer.initialize(sample_rate).unwrap();
 
                     let input = vec![0.5f32; block_size * 2];
-                    let mut output =
-                        vec![0.0f32; block_size * upmixer.output_channels()];
+                    let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
                     let context = ProcessContext {
                         num_frames: block_size,
                         sample_rate,
@@ -88,31 +85,27 @@ fn bench_upmixer_configs(c: &mut Criterion) {
     group.throughput(Throughput::Elements((block_size * 2) as u64));
 
     for &config in &configs {
-        group.bench_with_input(
-            BenchmarkId::from_parameter(config),
-            &config,
-            |b, &cfg| {
-                let mut upmixer = create_upmixer(fft_size, cfg);
-                upmixer.initialize(sample_rate).unwrap();
+        group.bench_with_input(BenchmarkId::from_parameter(config), &config, |b, &cfg| {
+            let mut upmixer = create_upmixer(fft_size, cfg);
+            upmixer.initialize(sample_rate).unwrap();
 
-                let input = vec![0.5f32; block_size * 2];
-                let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
-                let context = ProcessContext {
-                    num_frames: block_size,
-                    sample_rate,
-                };
+            let input = vec![0.5f32; block_size * 2];
+            let mut output = vec![0.0f32; block_size * upmixer.output_channels()];
+            let context = ProcessContext {
+                num_frames: block_size,
+                sample_rate,
+            };
 
-                b.iter(|| {
-                    upmixer
-                        .process(
-                            black_box(&input),
-                            black_box(&mut output),
-                            black_box(&context),
-                        )
-                        .unwrap();
-                });
-            },
-        );
+            b.iter(|| {
+                upmixer
+                    .process(
+                        black_box(&input),
+                        black_box(&mut output),
+                        black_box(&context),
+                    )
+                    .unwrap();
+            });
+        });
     }
 
     group.finish();

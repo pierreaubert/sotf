@@ -51,7 +51,10 @@ mod tests {
         assert!(inliers.len() >= 4, "Should have at least 4 inliers");
 
         // Essential matrix should not be zero
-        assert!(essential.norm() > 0.1, "Essential matrix should not be near zero");
+        assert!(
+            essential.norm() > 0.1,
+            "Essential matrix should not be near zero"
+        );
     }
 
     /// Test camera pose recovery from essential matrix
@@ -66,11 +69,7 @@ mod tests {
         let ty = translation.y;
         let tz = translation.z;
 
-        let t_skew = Matrix3::new(
-            0.0, -tz, ty,
-            tz, 0.0, -tx,
-            -ty, tx, 0.0,
-        );
+        let t_skew = Matrix3::new(0.0, -tz, ty, tz, 0.0, -tx, -ty, tx, 0.0);
 
         let essential = t_skew * rotation.matrix();
 
@@ -88,11 +87,17 @@ mod tests {
 
         // Check rotation is close to original (within tolerance due to numerical errors)
         let angle_diff = (r.transpose() * rotation.matrix()).trace();
-        assert!(angle_diff > 2.5, "Recovered rotation should be close to original");
+        assert!(
+            angle_diff > 2.5,
+            "Recovered rotation should be close to original"
+        );
 
         // Check translation direction is similar (may be scaled)
         let t_dot = t.normalize().dot(&translation);
-        assert!(t_dot.abs() > 0.9, "Recovered translation direction should be similar");
+        assert!(
+            t_dot.abs() > 0.9,
+            "Recovered translation direction should be similar"
+        );
     }
 
     /// Test triangulation of 3D points from two views
@@ -126,7 +131,11 @@ mod tests {
 
         // Check reconstructed point is close to original
         let error = (reconstructed - point_3d).norm();
-        assert!(error < 0.1, "Triangulation error should be small, got {}", error);
+        assert!(
+            error < 0.1,
+            "Triangulation error should be small, got {}",
+            error
+        );
     }
 
     /// Test SfM frame matching and feature tracking
@@ -165,7 +174,11 @@ mod tests {
 
         // Each track should have 3 observations
         for track in &tracks {
-            assert_eq!(track.observations.len(), 3, "Each track should have 3 observations");
+            assert_eq!(
+                track.observations.len(),
+                3,
+                "Each track should have 3 observations"
+            );
         }
     }
 
@@ -173,15 +186,9 @@ mod tests {
     #[test]
     fn test_sfm_inlier_validation() {
         // Test with too few points
-        let points1 = vec![
-            Point2::new(100.0, 100.0),
-            Point2::new(200.0, 100.0),
-        ];
+        let points1 = vec![Point2::new(100.0, 100.0), Point2::new(200.0, 100.0)];
 
-        let points2 = vec![
-            Point2::new(105.0, 102.0),
-            Point2::new(205.0, 102.0),
-        ];
+        let points2 = vec![Point2::new(105.0, 102.0), Point2::new(205.0, 102.0)];
 
         let focal = 500.0;
         let result = estimate_essential_matrix(&points1, &points2, focal);
@@ -214,6 +221,9 @@ mod tests {
         // 6. Bundle adjustment (optional)
 
         // For now, verify the components exist
-        assert!(true, "SfM pipeline components exist and are tested individually");
+        assert!(
+            true,
+            "SfM pipeline components exist and are tested individually"
+        );
     }
 }

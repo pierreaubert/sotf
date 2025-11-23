@@ -7,8 +7,8 @@
 // Note: Tests run without a SOFA file, so they verify the fixes work even with
 // silent/minimal output. When a SOFA file is loaded, the same fixes ensure clean audio.
 
-use sotf_plugins::Plugin;
 use sotf_plugins::BinauralDecoderPlugin;
+use sotf_plugins::Plugin;
 
 #[test]
 fn test_binaural_channel_normalization_no_clipping() {
@@ -139,24 +139,34 @@ fn test_binaural_denormal_flushing() {
     // Step 1: Verify passthrough works for normal values
     let mut input_normal = vec![0.5; num_samples * input_channels];
     let mut output_normal = vec![0.0; num_samples * 2];
-    plugin.process(&input_normal, &mut output_normal, &context).unwrap();
-    
+    plugin
+        .process(&input_normal, &mut output_normal, &context)
+        .unwrap();
+
     // Check first frame (should be 0.5)
-    assert_eq!(output_normal[0], 0.5, "Passthrough failed for normal values");
+    assert_eq!(
+        output_normal[0], 0.5,
+        "Passthrough failed for normal values"
+    );
 
     // Step 2: Verify flushing for denormal values
     // Create very low amplitude input (below denormal threshold)
     let mut input_denormal = vec![1e-35; num_samples * input_channels];
     let mut output_denormal = vec![0.0; num_samples * 2];
-    
-    plugin.process(&input_denormal, &mut output_denormal, &context).unwrap();
+
+    plugin
+        .process(&input_denormal, &mut output_denormal, &context)
+        .unwrap();
 
     // Count non-zero samples
     let non_zero_count = output_denormal.iter().filter(|&&x| x.abs() > 0.0).count();
-    
+
     if non_zero_count > 0 {
         let first_non_zero = output_denormal.iter().find(|&&x| x.abs() > 0.0).unwrap();
-        println!("Found {} non-zero samples. First one: {:e}", non_zero_count, first_non_zero);
+        println!(
+            "Found {} non-zero samples. First one: {:e}",
+            non_zero_count, first_non_zero
+        );
         println!("Input was 1e-35. Expected flush to 0.0.");
     }
 

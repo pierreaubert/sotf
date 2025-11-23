@@ -156,14 +156,16 @@ pub fn generate_sofa_analytical(
     // Step 3: Write SOFA file
     log::info!("Step 3/3: Writing SOFA file...");
     let sofa_writer = SOFAWriter::new(output_path);
-    sofa_writer.write_sofa(&acoustic_model, &source_positions, &impulse_responses, sample_rate)?;
+    sofa_writer.write_sofa(
+        &acoustic_model,
+        &source_positions,
+        &impulse_responses,
+        sample_rate,
+    )?;
 
     log::info!("✓ SOFA generation complete!");
     log::info!("  Output: {}", output_path);
-    log::info!(
-        "  Positions: {}",
-        source_positions.len()
-    );
+    log::info!("  Positions: {}", source_positions.len());
     log::info!("  Sample rate: {} Hz", sample_rate);
     log::info!(
         "  IR length: {} samples ({:.1}ms)",
@@ -240,12 +242,17 @@ pub fn generate_sofa_bem(
     log::info!("Starting SOFA generation pipeline (BEM)");
     log::warn!(
         "BEM simulation can take many hours (estimated: {:.1}h)",
-        estimate_bem_time(source_positions.len(), config.num_frequencies, mesh.vertex_count())
+        estimate_bem_time(
+            source_positions.len(),
+            config.num_frequencies,
+            mesh.vertex_count()
+        )
     );
 
     // Create work directory
-    std::fs::create_dir_all(work_dir)
-        .map_err(|e| crate::error::ScannerError::IoError(format!("Failed to create work dir: {}", e)))?;
+    std::fs::create_dir_all(work_dir).map_err(|e| {
+        crate::error::ScannerError::IoError(format!("Failed to create work dir: {}", e))
+    })?;
 
     // Step 1: Create acoustic model
     log::info!("Step 1/5: Analyzing head geometry...");
@@ -269,17 +276,24 @@ pub fn generate_sofa_bem(
     // Step 4: Run BEM simulation
     log::info!("Step 4/5: Running BEM simulation (this will take hours)...");
     let output_dir = work_dir.join("bem_output");
-    std::fs::create_dir_all(&output_dir)
-        .map_err(|e| crate::error::ScannerError::IoError(format!("Failed to create output dir: {}", e)))?;
+    std::fs::create_dir_all(&output_dir).map_err(|e| {
+        crate::error::ScannerError::IoError(format!("Failed to create output dir: {}", e))
+    })?;
 
     bem_solver.run_bem_simulation(&mesh_path, &config_path, &output_dir)?;
 
     // Step 5: Import results and write SOFA
     log::info!("Step 5/5: Importing BEM results and converting to SOFA...");
-    let (imported_positions, impulse_responses) = bem_solver.import_bem_results(&output_dir, sample_rate)?;
+    let (imported_positions, impulse_responses) =
+        bem_solver.import_bem_results(&output_dir, sample_rate)?;
 
     let sofa_writer = SOFAWriter::new(output_path);
-    sofa_writer.write_sofa(&acoustic_model, &imported_positions, &impulse_responses, sample_rate)?;
+    sofa_writer.write_sofa(
+        &acoustic_model,
+        &imported_positions,
+        &impulse_responses,
+        sample_rate,
+    )?;
 
     log::info!("✓ BEM-based SOFA generation complete!");
     log::info!("  Output: {}", output_path);

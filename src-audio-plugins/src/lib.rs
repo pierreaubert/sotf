@@ -29,7 +29,6 @@ mod host_rack;
 mod host_rack_shared;
 mod parameters;
 mod plugin;
-mod sofa;
 mod plugin_binaural_decoder;
 mod plugin_compressor;
 mod plugin_convolution;
@@ -44,6 +43,7 @@ mod plugin_matrix;
 mod plugin_resampler;
 mod plugin_upmixer;
 mod simd;
+mod sofa;
 mod speaker_config;
 
 // HAL plugins (macOS only)

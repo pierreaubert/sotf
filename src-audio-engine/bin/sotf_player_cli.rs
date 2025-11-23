@@ -1,7 +1,7 @@
 use autoeq_iir::{Biquad, BiquadFilterType};
 use clap::{Parser, Subcommand};
 use sotf_audio::LoudnessCompensation;
-use sotf_audio::{AudioStreamingManager, PluginConfig, StreamingState};
+use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState};
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::thread::sleep;
@@ -817,7 +817,7 @@ fn play_stream(
     log::info!("");
 
     // Create streaming manager with signal watching enabled (manager handles Ctrl+C)
-    let mut streaming_manager = AudioStreamingManager::with_signal_watching(true);
+    let mut streaming_manager = AudioEngineManager::with_signal_watching(true);
 
     // Load the audio file
     let audio_info = streaming_manager

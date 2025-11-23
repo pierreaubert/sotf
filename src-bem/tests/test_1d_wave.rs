@@ -3,16 +3,18 @@
 //! Tests plane wave, standing wave, and damped wave propagation.
 //! Generates JSON output for visualization.
 
-use bem::analytical::{plane_wave_1d, standing_wave_1d, damped_wave_1d};
+use autoeq_env::get_data_generated_dir;
+use bem::analytical::{damped_wave_1d, plane_wave_1d, standing_wave_1d};
 use bem::testing::ValidationResult;
 use num_complex::Complex64;
-use autoeq_env::get_data_generated_dir;
 use std::path::PathBuf;
 
 /// Get output directory from AUTOEQ_DIR environment variable
 fn get_output_dir() -> PathBuf {
     get_data_generated_dir()
-        .expect("Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable")
+        .expect(
+            "Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable",
+        )
         .join("bem")
         .join("1d")
 }
@@ -27,7 +29,7 @@ fn ensure_output_dir() -> std::io::Result<()> {
 fn test_1d_plane_wave_single_wavelength() {
     ensure_output_dir().unwrap();
 
-    let k = 2.0;  // wave number
+    let k = 2.0; // wave number
     let wavelength = 2.0 * std::f64::consts::PI / k;
 
     // Analytical solution
@@ -43,7 +45,7 @@ fn test_1d_plane_wave_single_wavelength() {
         &analytical,
         bem_pressure,
         start_time.elapsed().as_millis() as u64,
-        0.1,  // memory_mb (placeholder)
+        0.1, // memory_mb (placeholder)
     );
 
     // Save JSON
@@ -63,10 +65,10 @@ fn test_1d_plane_wave_multiple_wavelengths() {
     ensure_output_dir().unwrap();
 
     let test_cases = vec![
-        (0.5, "k0.5"),   // Long wavelength
+        (0.5, "k0.5"), // Long wavelength
         (1.0, "k1.0"),
         (2.0, "k2.0"),
-        (5.0, "k5.0"),   // Short wavelength
+        (5.0, "k5.0"), // Short wavelength
         (10.0, "k10.0"),
     ];
 
@@ -95,7 +97,7 @@ fn test_1d_standing_wave_nodes() {
     ensure_output_dir().unwrap();
 
     let k = 1.0;
-    let length = std::f64::consts::PI;  // One half-wavelength
+    let length = std::f64::consts::PI; // One half-wavelength
 
     let analytical = standing_wave_1d(k, 0.0, length, 100);
     let bem_pressure = analytical.pressure.clone();
@@ -128,7 +130,7 @@ fn test_1d_damped_wave_decay() {
     ensure_output_dir().unwrap();
 
     let k = 2.0;
-    let alpha = 0.2;  // Damping coefficient
+    let alpha = 0.2; // Damping coefficient
 
     let analytical = damped_wave_1d(k, alpha, 0.0, 10.0, 200);
     let bem_pressure = analytical.pressure.clone();
@@ -164,7 +166,7 @@ fn test_1d_convergence_with_resolution() {
     ensure_output_dir().unwrap();
 
     let k = 5.0;
-    let length = 4.0 * std::f64::consts::PI / k;  // 2 wavelengths
+    let length = 4.0 * std::f64::consts::PI / k; // 2 wavelengths
 
     let resolutions = vec![50, 100, 200, 500, 1000];
     let mut results = Vec::new();
@@ -198,8 +200,9 @@ fn test_1d_convergence_with_resolution() {
     let output_path = get_output_dir().join("convergence_study.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&convergence_data).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&convergence_data).unwrap(),
+    )
+    .unwrap();
 
     println!("\n=== Convergence Study ===");
     for (n, err) in &results {
@@ -265,7 +268,7 @@ fn test_1d_with_simulated_bem_error() {
     assert!(validation.errors.l2_relative > 1e-10);
     assert!(validation.errors.l2_relative < 0.02);
     assert!(!validation.passed(1e-10));
-    assert!(validation.passed(0.02));  // Should pass with 2% threshold
+    assert!(validation.passed(0.02)); // Should pass with 2% threshold
 }
 
 /// Generate comprehensive test suite for visualization
@@ -281,12 +284,8 @@ fn generate_1d_visualization_suite() {
         let analytical = plane_wave_1d(k, 0.0, 10.0, 200);
         let bem = analytical.pressure.clone();
 
-        let validation = ValidationResult::new(
-            format!("Plane Wave k={:.1}", k),
-            &analytical,
-            bem,
-            0, 0.1,
-        );
+        let validation =
+            ValidationResult::new(format!("Plane Wave k={:.1}", k), &analytical, bem, 0, 0.1);
 
         let output_path = get_output_dir().join(format!("viz_plane_wave_k{:.1}.json", k));
         validation.save_json(output_path).unwrap();
@@ -301,7 +300,8 @@ fn generate_1d_visualization_suite() {
             format!("Standing Wave k={:.1}", k),
             &analytical,
             bem,
-            0, 0.1,
+            0,
+            0.1,
         );
 
         let output_path = get_output_dir().join(format!("viz_standing_wave_k{:.1}.json", k));
@@ -317,7 +317,8 @@ fn generate_1d_visualization_suite() {
             format!("Damped Wave α={:.2}", alpha),
             &analytical,
             bem,
-            0, 0.1,
+            0,
+            0.1,
         );
 
         let output_path = get_output_dir().join(format!("viz_damped_alpha{:.2}.json", alpha));

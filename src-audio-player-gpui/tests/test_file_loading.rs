@@ -8,16 +8,12 @@
 // - Error handling for invalid files
 // - Input mode transitions during file loading
 
-use sotf_audio_player_gpui::app::{App, InputMode, ToastType};
-use sotf_audio_player::{Player, Plugin, PluginSettings, PluginType};
-use autoeq_iir::{Biquad, BiquadFilterType};
-use std::sync::Arc;
-use parking_lot::Mutex;
+use sotf_audio_player::{Plugin, PluginSettings, PluginType};
+use sotf_audio_player_gpui::app::{App, InputMode};
 use std::path::PathBuf;
 
 fn create_test_app() -> App {
-    let player = Arc::new(Mutex::new(Player::new().unwrap()));
-    App::new(player, None)
+    App::new()
 }
 
 #[test]
@@ -28,9 +24,7 @@ fn test_apo_file_loading_for_eq_plugin() {
     let eq_plugin = Plugin {
         plugin_type: PluginType::EQ,
         enabled: true,
-        settings: PluginSettings::EQ {
-            filters: vec![],
-        },
+        settings: PluginSettings::EQ { filters: vec![] },
     };
     app.plugin_chain.plugins.push(eq_plugin);
 
@@ -39,20 +33,26 @@ fn test_apo_file_loading_for_eq_plugin() {
     app.input_mode = InputMode::LoadApoFile;
 
     // Set path to test APO file
-    let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/test_eq.txt");
+    let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_eq.txt");
     app.apo_file_input = test_file.to_string_lossy().to_string();
 
     // Load the APO file
     let result = app.load_apo_file();
 
     // Should succeed
-    assert!(result.is_ok(), "APO file loading should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "APO file loading should succeed: {:?}",
+        result
+    );
 
     // Verify filters were loaded
     if let Some(plugin) = app.get_editing_plugin() {
         if let PluginSettings::EQ { ref filters } = plugin.settings {
-            assert!(!filters.is_empty(), "Filters should be loaded from APO file");
+            assert!(
+                !filters.is_empty(),
+                "Filters should be loaded from APO file"
+            );
             assert_eq!(filters.len(), 4, "Should have 4 filters from test file");
         } else {
             panic!("Plugin should be an EQ");
@@ -73,9 +73,7 @@ fn test_apo_file_loading_invalid_file() {
     let eq_plugin = Plugin {
         plugin_type: PluginType::EQ,
         enabled: true,
-        settings: PluginSettings::EQ {
-            filters: vec![],
-        },
+        settings: PluginSettings::EQ { filters: vec![] },
     };
     app.plugin_chain.plugins.push(eq_plugin);
 
@@ -99,16 +97,16 @@ fn test_apo_file_loading_wrong_plugin_type() {
         plugin_type: PluginType::Compressor,
         enabled: true,
         settings: PluginSettings::Compressor {
-            threshold: -20.0,
+            threshold_db: -20.0,
             ratio: 4.0,
             attack_ms: 10.0,
             release_ms: 100.0,
-            knee: 6.0,
-            makeup_gain: 0.0,
+            knee_db: 6.0,
+            makeup_gain_db: 0.0,
             mix: 1.0,
-            lookahead_ms: 0.0,
             auto_makeup: false,
-            rms_window_ms: 10.0,
+            link_channels: true,
+            sidechain_hpf_hz: 0.0,
         },
     };
     app.plugin_chain.plugins.push(compressor_plugin);
@@ -134,7 +132,10 @@ fn test_apo_file_loading_no_plugin_editing() {
 
     // Should fail
     let result = app.load_apo_file();
-    assert!(result.is_err(), "Loading APO with no editing plugin should fail");
+    assert!(
+        result.is_err(),
+        "Loading APO with no editing plugin should fail"
+    );
     assert!(result.unwrap_err().contains("No plugin"));
 }
 
@@ -147,12 +148,11 @@ fn test_sofa_file_loading_for_binaural_decoder() {
         plugin_type: PluginType::BinauralDecoder,
         enabled: true,
         settings: PluginSettings::BinauralDecoder {
-            sofa_file: None,
-            azimuth: 0.0,
-            elevation: 0.0,
-            distance: 1.0,
-            wet_gain: 1.0,
-            dry_gain: 0.0,
+            sofa_file: String::new(),
+            input_channels: 2,
+            enable_optimization: true,
+            externalization: 0.5,
+            near_field_strength: 0.0,
         },
     };
     app.plugin_chain.plugins.push(binaural_plugin);
@@ -165,16 +165,17 @@ fn test_sofa_file_loading_for_binaural_decoder() {
     let result = app.load_sofa_file();
 
     // Should succeed
-    assert!(result.is_ok(), "SOFA file loading should succeed: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "SOFA file loading should succeed: {:?}",
+        result
+    );
 
     // Verify path was set
     if let Some(plugin) = app.get_editing_plugin() {
         if let PluginSettings::BinauralDecoder { ref sofa_file, .. } = plugin.settings {
-            assert!(sofa_file.is_some(), "SOFA file path should be set");
-            assert_eq!(
-                sofa_file.as_ref().unwrap().to_string_lossy(),
-                "/path/to/hrtf.sofa"
-            );
+            assert!(!sofa_file.is_empty(), "SOFA file path should be set");
+            assert_eq!(sofa_file, "/path/to/hrtf.sofa");
         } else {
             panic!("Plugin should be a Binaural Decoder");
         }
@@ -194,9 +195,7 @@ fn test_sofa_file_loading_wrong_plugin_type() {
     let eq_plugin = Plugin {
         plugin_type: PluginType::EQ,
         enabled: true,
-        settings: PluginSettings::EQ {
-            filters: vec![],
-        },
+        settings: PluginSettings::EQ { filters: vec![] },
     };
     app.plugin_chain.plugins.push(eq_plugin);
 
@@ -206,7 +205,10 @@ fn test_sofa_file_loading_wrong_plugin_type() {
 
     // Should fail because plugin is not a Binaural Decoder
     let result = app.load_sofa_file();
-    assert!(result.is_err(), "Loading SOFA for non-Binaural plugin should fail");
+    assert!(
+        result.is_err(),
+        "Loading SOFA for non-Binaural plugin should fail"
+    );
     assert!(result.unwrap_err().contains("not a Binaural Decoder"));
 }
 
@@ -221,7 +223,10 @@ fn test_sofa_file_loading_no_plugin_editing() {
 
     // Should fail
     let result = app.load_sofa_file();
-    assert!(result.is_err(), "Loading SOFA with no editing plugin should fail");
+    assert!(
+        result.is_err(),
+        "Loading SOFA with no editing plugin should fail"
+    );
     assert!(result.unwrap_err().contains("No plugin"));
 }
 

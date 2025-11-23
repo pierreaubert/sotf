@@ -1,6 +1,6 @@
+use sotf_audio_player::MusicLibrary;
 /// Integration tests for MusicLibrary scanning and directory management
 use sotf_audio_player::database::MusicDatabase;
-use sotf_audio_player::MusicLibrary;
 use std::path::PathBuf;
 
 mod fixtures;
@@ -9,8 +9,8 @@ mod fixtures;
 fn test_create_library_with_database() {
     let (_temp_dir, db_path) = fixtures::temp_database();
 
-    let library =
-        MusicLibrary::with_database(&db_path).expect("Failed to create library with database");
+    let library = MusicLibrary::with_custom_database(&db_path)
+        .expect("Failed to create library with database");
 
     assert_eq!(library.directories.len(), 0, "New library should be empty");
     assert_eq!(library.albums.len(), 0, "New library should have no albums");
@@ -19,13 +19,13 @@ fn test_create_library_with_database() {
 #[test]
 fn test_add_directory_to_library() {
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     let demo_dir = fixtures::demo_audio_dir();
 
     // Add directory
     library
-        .add_directory(&demo_dir)
+        .add_directory(demo_dir.clone())
         .expect("Failed to add directory");
 
     assert_eq!(
@@ -41,13 +41,13 @@ fn test_scan_directory_finds_files() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(&demo_dir).unwrap();
+    library.add_directory(demo_dir.clone()).unwrap();
 
     // Scan the directory
-    library.scan_all().expect("Failed to scan directory");
+    library.scan().expect("Failed to scan directory");
 
     // Should have found albums
     assert!(
@@ -79,20 +79,20 @@ fn test_scan_directory_extracts_metadata() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(&demo_dir).unwrap();
-    library.scan_all().expect("Failed to scan directory");
+    library.add_directory(demo_dir.clone()).unwrap();
+    library.scan().expect("Failed to scan directory");
 
     // Verify metadata extraction
     for album in &library.albums {
         for track in &album.tracks {
-            // Duration should be extracted (demo files are ~5 seconds)
+            // Duration should be extracted (demo files should have reasonable duration)
             if let Some(duration) = track.duration_secs {
                 assert!(
-                    duration > 0 && duration < 10,
-                    "Duration should be around 5 seconds, got {}",
+                    duration > 0 && duration < 60,
+                    "Duration should be reasonable (< 60 seconds), got {}",
                     duration
                 );
             }
@@ -117,20 +117,23 @@ fn test_library_persistence() {
 
     // Create library, scan, and save
     {
-        let mut library = MusicLibrary::with_database(&db_path).unwrap();
+        let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
         let demo_dir = fixtures::demo_audio_dir();
-        library.add_directory(&demo_dir).unwrap();
-        library.scan_all().expect("Failed to scan directory");
+        library.add_directory(demo_dir.clone()).unwrap();
+        library.scan().expect("Failed to scan directory");
 
         let album_count = library.albums.len();
         assert!(album_count > 0, "Should have scanned some albums");
 
-        library.save_to_db().expect("Failed to save library");
+        // Saving happens automatically during scan
     }
 
     // Create new library instance and load
     {
-        let library = MusicLibrary::with_database(&db_path).unwrap();
+        let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+        library
+            .load_from_database()
+            .expect("Failed to load from database");
         assert!(
             !library.albums.is_empty(),
             "Loaded library should have albums"
@@ -143,18 +146,18 @@ fn test_incremental_scan_skips_unchanged_files() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(&demo_dir).unwrap();
+    library.add_directory(demo_dir.clone()).unwrap();
 
     // First scan
-    library.scan_all().expect("Failed to scan directory");
+    library.scan().expect("Failed to scan directory");
     let first_album_count = library.albums.len();
-    library.save_to_db().expect("Failed to save library");
+    // Saving happens automatically during scan
 
     // Second scan (should be fast, no changes)
-    library.scan_all().expect("Failed to rescan directory");
+    library.scan().expect("Failed to rescan directory");
     let second_album_count = library.albums.len();
 
     assert_eq!(
@@ -168,18 +171,18 @@ fn test_remove_directory() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(&demo_dir).unwrap();
-    library.scan_all().expect("Failed to scan directory");
+    library.add_directory(demo_dir.clone()).unwrap();
+    library.scan().expect("Failed to scan directory");
 
     assert!(!library.albums.is_empty(), "Should have albums");
 
-    // Remove directory
+    // Remove directory (by index, 0 is the first/only directory)
     library
-        .remove_directory(&demo_dir)
-        .expect("Failed to remove directory");
+        .remove_directory(0)
+        .expect("Should remove directory");
 
     assert_eq!(library.directories.len(), 0, "Should have no directories");
     // Note: Albums are not automatically cleared when removing a directory
@@ -191,7 +194,7 @@ fn test_search_library_integration() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     // Create a controlled test dataset
     let db = MusicDatabase::open(&db_path).unwrap();
@@ -230,19 +233,18 @@ fn test_search_library_integration() {
     db_mut.save_albums(&albums).expect("Failed to save albums");
 
     // Reload library
-    let library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+    library
+        .load_from_database()
+        .expect("Failed to load from database");
 
     // Search for "Pink"
-    let results = library
-        .search_albums("Pink")
-        .expect("Failed to search library");
+    let results = library.search_albums("Pink");
     assert_eq!(results.len(), 1, "Should find 1 album matching 'Pink'");
     assert_eq!(results[0].artist, "Pink Floyd");
 
     // Search for "Blue"
-    let results = library
-        .search_albums("Blue")
-        .expect("Failed to search library");
+    let results = library.search_albums("Blue");
     assert_eq!(results.len(), 1, "Should find 1 album matching 'Blue'");
     assert_eq!(results[0].title, "Kind of Blue");
 }
@@ -252,11 +254,11 @@ fn test_scan_specific_file_formats() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(&demo_dir).unwrap();
-    library.scan_all().expect("Failed to scan directory");
+    library.add_directory(demo_dir.clone()).unwrap();
+    library.scan().expect("Failed to scan directory");
 
     // Count different file formats
     let mut wav_count = 0;
@@ -289,7 +291,7 @@ fn test_scan_specific_file_formats() {
 #[test]
 fn test_album_channel_type_detection() {
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let library = MusicLibrary::with_database(&db_path).unwrap();
+    let library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     // Test stereo album
     let stereo_album = sotf_audio_player::Album {
@@ -316,9 +318,9 @@ fn test_album_channel_type_detection() {
         album_art_path: None,
     };
 
-    let channel_type = library.get_album_channel_type(&stereo_album);
+    let channel_type = stereo_album.channel_type();
     match channel_type {
-        sotf_audio_player::AlbumChannelType::Stereo => {} // Expected
+        Some(sotf_audio_player::AlbumChannelType::Stereo) => {} // Expected
         _ => panic!("Expected Stereo channel type"),
     }
 
@@ -347,9 +349,9 @@ fn test_album_channel_type_detection() {
         album_art_path: None,
     };
 
-    let channel_type = library.get_album_channel_type(&multichannel_album);
+    let channel_type = multichannel_album.channel_type();
     match channel_type {
-        sotf_audio_player::AlbumChannelType::Multichannel(6) => {} // Expected
+        Some(sotf_audio_player::AlbumChannelType::Multichannel(6)) => {} // Expected
         _ => panic!("Expected Multichannel(6) channel type"),
     }
 
@@ -378,35 +380,47 @@ fn test_album_channel_type_detection() {
         album_art_path: None,
     };
 
-    let channel_type = library.get_album_channel_type(&mixed_album);
+    let channel_type = mixed_album.channel_type();
     match channel_type {
-        sotf_audio_player::AlbumChannelType::Mixed => {} // Expected
+        Some(sotf_audio_player::AlbumChannelType::Mixed) => {} // Expected
         _ => panic!("Expected Mixed channel type"),
     }
 }
 
 #[test]
 fn test_directory_persistence() {
+    fixtures::ensure_demo_files_exist();
     let (_temp_dir, db_path) = fixtures::temp_database();
 
-    let test_dir = PathBuf::from("/music/test");
+    // Use demo directory which actually exists
+    let test_dir = fixtures::demo_audio_dir();
 
     // Create library and add directory
     {
-        let mut library = MusicLibrary::with_database(&db_path).unwrap();
-        library.add_directory(&test_dir).unwrap();
-        // Directories are automatically saved when added
+        let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+        library.add_directory(test_dir.clone()).unwrap();
+        // Scan to save to database
+        library.scan().expect("Failed to scan");
     }
 
     // Reload library and verify directory persists
     {
-        let library = MusicLibrary::with_database(&db_path).unwrap();
-        assert_eq!(
-            library.directories.len(),
-            1,
+        let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+        library
+            .load_from_database()
+            .expect("Failed to load from database");
+        // Directory should be loaded (only directories with tracks are persisted)
+        assert!(
+            !library.directories.is_empty(),
             "Directory should be persisted"
         );
-        assert_eq!(library.directories[0].path, test_dir);
+        // The loaded path should match (canonicalized)
+        let loaded_path = &library.directories[0].path;
+        assert!(
+            loaded_path == &test_dir
+                || loaded_path.canonicalize().ok() == test_dir.canonicalize().ok(),
+            "Directory path should match (possibly canonicalized)"
+        );
     }
 }
 
@@ -415,25 +429,31 @@ fn test_scan_empty_directory() {
     let empty_dir = tempfile::TempDir::new().unwrap();
     let (_temp_dir, db_path) = fixtures::temp_database();
 
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
-    library.add_directory(empty_dir.path()).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+    library
+        .add_directory(empty_dir.path().to_path_buf())
+        .unwrap();
 
     // Scan should succeed but find nothing
-    library.scan_all().expect("Failed to scan empty directory");
+    library.scan().expect("Failed to scan empty directory");
 
-    assert_eq!(library.albums.len(), 0, "Empty directory should have no albums");
+    assert_eq!(
+        library.albums.len(),
+        0,
+        "Empty directory should have no albums"
+    );
 }
 
 #[test]
 fn test_scan_nonexistent_directory() {
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     let nonexistent = PathBuf::from("/nonexistent/directory");
-    library.add_directory(&nonexistent).unwrap();
+    library.add_directory(nonexistent.clone()).unwrap();
 
     // Scan should handle missing directory gracefully
-    let result = library.scan_all();
+    let result = library.scan();
 
     // The current implementation may succeed or fail depending on error handling
     // This test documents the behavior

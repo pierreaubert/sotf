@@ -11,9 +11,9 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -237,7 +237,10 @@ fn setup_file_watcher(
                     // Only trigger on modify/write events
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) => {
-                            log::debug!("[Config Watcher] File changed: {:?} (debouncing)", config_path_clone);
+                            log::debug!(
+                                "[Config Watcher] File changed: {:?} (debouncing)",
+                                config_path_clone
+                            );
                             // Update the debounce state
                             let mut state = debounce_state.lock().unwrap();
                             state.last_event_time = Instant::now();

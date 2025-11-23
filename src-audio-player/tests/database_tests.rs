@@ -179,9 +179,7 @@ fn test_search_library_empty() {
     let (_temp_dir, db_path) = fixtures::temp_database();
     let db = MusicDatabase::open(&db_path).unwrap();
 
-    let results = db
-        .search_library("test")
-        .expect("Failed to search library");
+    let results = db.search_library("test").expect("Failed to search library");
     assert_eq!(results.len(), 0, "Empty library should return no results");
 }
 
@@ -225,14 +223,15 @@ fn test_search_library_by_artist() {
     db.save_albums(&albums).expect("Failed to save albums");
 
     // Search for Pink Floyd
-    let results = db
-        .search_library("Pink")
-        .expect("Failed to search library");
+    let results = db.search_library("Pink").expect("Failed to search library");
     assert_eq!(results.len(), 1, "Should find 1 album");
 
     // Verify we found the right album
     let all_albums = db.load_library().unwrap();
-    let found_album = all_albums.iter().find(|a| a.id == Some(results[0])).unwrap();
+    let found_album = all_albums
+        .iter()
+        .find(|a| a.id == Some(results[0]))
+        .unwrap();
     assert_eq!(found_album.artist, "Pink Floyd");
 }
 

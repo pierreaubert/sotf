@@ -409,14 +409,14 @@ fn run_playback_thread(
                 // Validate channel count matches current configuration
                 // This prevents audio corruption during hot-reload when channel count changes
                 if frame.num_channels != channels {
-/*
-                    log::debug!(
-                        "[Playback Thread] Skipping frame with mismatched channels: \
-                         frame has {}, expected {} (hot-reload transition)",
-                        frame.num_channels,
-                        channels
-                );
-*/
+                    /*
+                                        log::debug!(
+                                            "[Playback Thread] Skipping frame with mismatched channels: \
+                                             frame has {}, expected {} (hot-reload transition)",
+                                            frame.num_channels,
+                                            channels
+                                    );
+                    */
                     // Note: This is expected during hot-reload when UpdateChannels is pending
                     // The UpdateChannels command will drain these stale frames
                     continue; // Discard this frame and wait for UpdateChannels command
@@ -519,9 +519,7 @@ fn build_output_stream(
                         let current_underruns =
                             state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
                         if current_underruns != last_underrun_count {
-                            event_tx_data
-                                .send(ThreadEvent::PlaybackUnderrun)
-                                .ok();
+                            event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
                             last_underrun_count = current_underruns;
                         }
                         log::warn!(
@@ -563,7 +561,10 @@ fn build_output_stream(
             move |err| {
                 log::warn!("[Playback Thread] Stream error: {}", err);
                 event_tx
-                    .send(ThreadEvent::ProcessingError(format!("Stream error: {}", err)))
+                    .send(ThreadEvent::ProcessingError(format!(
+                        "Stream error: {}",
+                        err
+                    )))
                     .ok();
             },
             None,

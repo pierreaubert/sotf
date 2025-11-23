@@ -2,9 +2,9 @@
 //!
 //! These tests correspond to the test cases in the C++ convhull_3d library.
 
+use autoeq_env::env_utils::get_autoeq_dir;
 use convexhull3d::{ConvexHull3D, Vertex, export_html, export_obj, testdata};
 use std::fs;
-use autoeq_env::env_utils::get_autoeq_dir;
 
 /// Helper function to run a test and generate visualizations
 fn run_test_with_visualization(

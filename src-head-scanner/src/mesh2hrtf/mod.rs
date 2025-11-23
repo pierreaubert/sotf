@@ -48,17 +48,17 @@
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 
-pub mod types;
-pub mod mesh_io;
 pub mod evaluation_grid;
-pub mod source_config;
+pub mod mesh_io;
 pub mod nc_inp_writer;
 pub mod project_builder;
+pub mod source_config;
+pub mod types;
 
 // Re-exports for convenience
-pub use types::*;
-pub use mesh_io::MeshIO;
 pub use evaluation_grid::GridGenerator;
-pub use source_config::{BoundaryCondition, Material, SourceConfiguration};
+pub use mesh_io::MeshIO;
 pub use nc_inp_writer::{NCInpWriter, NumCalcParameters};
 pub use project_builder::{Project, ProjectBuilder};
+pub use source_config::{BoundaryCondition, Material, SourceConfiguration};
+pub use types::*;

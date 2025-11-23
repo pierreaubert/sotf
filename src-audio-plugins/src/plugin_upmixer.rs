@@ -17,8 +17,8 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::speaker_config::{SpeakerConfig, calculate_panning_gain, get_speaker_config};
 use super::simd::complex_mul_inplace_simd;
+use super::speaker_config::{SpeakerConfig, calculate_panning_gain, get_speaker_config};
 use autoeq_iir::{Biquad, BiquadFilterType};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -414,8 +414,7 @@ impl UpmixerPlugin {
 
         let hr_window: Vec<f32> = (0..hr_fft_size)
             .map(|i| {
-                0.5 * (1.0
-                    - ((2.0 * std::f32::consts::PI * i as f32) / hr_fft_size as f32).cos())
+                0.5 * (1.0 - ((2.0 * std::f32::consts::PI * i as f32) / hr_fft_size as f32).cos())
             })
             .collect();
 
@@ -625,21 +624,21 @@ impl UpmixerPlugin {
         const LEFT_AZIMUTH: f32 = 30.0;
         const RIGHT_AZIMUTH: f32 = -30.0;
 
-/*
-        log::debug!(
-            "[UPMIXER] recalculate_panning_gains() called for config: {}",
-            self.speaker_config.name
-        );
-        log::debug!(
-            "[UPMIXER]   num_output_channels: {}",
-            self.num_output_channels
-        );
-        log::debug!(
-            "[UPMIXER]   left_azimuth: {}, right_azimuth: {}",
-            LEFT_AZIMUTH,
-            RIGHT_AZIMUTH
-        );
-*/
+        /*
+                log::debug!(
+                    "[UPMIXER] recalculate_panning_gains() called for config: {}",
+                    self.speaker_config.name
+                );
+                log::debug!(
+                    "[UPMIXER]   num_output_channels: {}",
+                    self.num_output_channels
+                );
+                log::debug!(
+                    "[UPMIXER]   left_azimuth: {}, right_azimuth: {}",
+                    LEFT_AZIMUTH,
+                    RIGHT_AZIMUTH
+                );
+        */
 
         self.panning_gains_left.clear();
         self.panning_gains_right.clear();
@@ -654,17 +653,17 @@ impl UpmixerPlugin {
                     calculate_panning_gain(LEFT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
                 let right_gain =
                     calculate_panning_gain(RIGHT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
-/*
-                log::debug!(
-                    "[UPMIXER]   Speaker[{}] az={:>6.1}° el={:>6.1}° is_height={}: left={:.4}, right={:.4}",
-                    idx,
-                    speaker.azimuth,
-                    speaker.elevation,
-                    speaker.elevation > 10.0,
-                    left_gain,
-                    right_gain
-                );
-*/
+                /*
+                                log::debug!(
+                                    "[UPMIXER]   Speaker[{}] az={:>6.1}° el={:>6.1}° is_height={}: left={:.4}, right={:.4}",
+                                    idx,
+                                    speaker.azimuth,
+                                    speaker.elevation,
+                                    speaker.elevation > 10.0,
+                                    left_gain,
+                                    right_gain
+                                );
+                */
                 self.panning_gains_left.push(left_gain);
                 self.panning_gains_right.push(right_gain);
             }
@@ -675,13 +674,13 @@ impl UpmixerPlugin {
         let left_energy: f32 = self.panning_gains_left.iter().map(|g| g * g).sum();
         let right_energy: f32 = self.panning_gains_right.iter().map(|g| g * g).sum();
 
-/*
-        log::debug!(
-            "[UPMIXER]   Pre-normalization energies: left={:.6}, right={:.6}",
-            left_energy,
-            right_energy
-        );
-*/
+        /*
+                log::debug!(
+                    "[UPMIXER]   Pre-normalization energies: left={:.6}, right={:.6}",
+                    left_energy,
+                    right_energy
+                );
+        */
 
         if left_energy > 0.0 {
             let left_scale = 1.0 / left_energy.sqrt();
@@ -699,16 +698,16 @@ impl UpmixerPlugin {
             }
         }
 
-/*
-        log::debug!(
-            "[UPMIXER]   Final panning gains (left):  {:?}",
-            self.panning_gains_left
-        );
-        log::debug!(
-            "[UPMIXER]   Final panning gains (right): {:?}",
-            self.panning_gains_right
-        );
-*/
+        /*
+                log::debug!(
+                    "[UPMIXER]   Final panning gains (left):  {:?}",
+                    self.panning_gains_left
+                );
+                log::debug!(
+                    "[UPMIXER]   Final panning gains (right): {:?}",
+                    self.panning_gains_right
+                );
+        */
     }
 
     /// Phase 1: Apply window to input and perform forward FFT
@@ -723,8 +722,12 @@ impl UpmixerPlugin {
         }
 
         // Forward FFT (Real->Complex)
-        self.fft_forward.process(&mut self.time_domain_left, &mut self.freq_domain_left).unwrap();
-        self.fft_forward.process(&mut self.time_domain_right, &mut self.freq_domain_right).unwrap();
+        self.fft_forward
+            .process(&mut self.time_domain_left, &mut self.freq_domain_left)
+            .unwrap();
+        self.fft_forward
+            .process(&mut self.time_domain_right, &mut self.freq_domain_right)
+            .unwrap();
     }
 
     /// Phase 2: Process frequency domain with ERB bands and PCA decomposition
@@ -1097,12 +1100,10 @@ impl UpmixerPlugin {
                 // This prevents clicks and pops when sub-harmonic synthesis turns on/off
                 if lfe_amp > 0.001 {
                     // Attack: envelope moves toward 1.0
-                    self.subharmonic_envelope +=
-                        (1.0 - self.subharmonic_envelope) * attack_coeff;
+                    self.subharmonic_envelope += (1.0 - self.subharmonic_envelope) * attack_coeff;
                 } else {
                     // Release: envelope moves toward 0.0
-                    self.subharmonic_envelope +=
-                        (0.0 - self.subharmonic_envelope) * release_coeff;
+                    self.subharmonic_envelope += (0.0 - self.subharmonic_envelope) * release_coeff;
                 }
 
                 // Only generate sub-harmonic if envelope is above threshold
@@ -1178,13 +1179,13 @@ impl UpmixerPlugin {
         assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
         assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
 
-/*
-        log::trace!(
-            "[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
-            self.fft_size,
-            self.num_output_channels
-        );
-*/
+        /*
+                log::trace!(
+                    "[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
+                    self.fft_size,
+                    self.num_output_channels
+                );
+        */
 
         // Phase 1: Apply window and perform forward FFT
         self.apply_window_and_forward_fft(input);
@@ -1222,7 +1223,11 @@ impl UpmixerPlugin {
 
                 let attack_e = 0.5_f32;
                 let release_e = 0.1_f32;
-                let alpha_e = if energy > prev_smooth { attack_e } else { release_e };
+                let alpha_e = if energy > prev_smooth {
+                    attack_e
+                } else {
+                    release_e
+                };
                 self.hr_energy_smooth = prev_smooth + alpha_e * (energy - prev_smooth);
 
                 let ratio_clamped = ratio.clamp(1.0, 4.0);
@@ -1240,8 +1245,7 @@ impl UpmixerPlugin {
                 } else {
                     release_env
                 };
-                self.hr_transient_env =
-                    prev_env + alpha_env * (transient_target - prev_env);
+                self.hr_transient_env = prev_env + alpha_env * (transient_target - prev_env);
             }
         } else {
             self.hr_transient_env = 0.0;
@@ -1541,14 +1545,13 @@ impl Plugin for UpmixerPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_int("speaker_config", "Configuration", 0, 0, 9)
-                .with_description(
-                    "Speaker configuration index.
+            Parameter::new_int("speaker_config", "Configuration", 0, 0, 9).with_description(
+                "Speaker configuration index.
 0=5.1 (default), 1=7.1, 2=5.1.2, 3=5.1.4,
 4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6,
 8=2.0, 9=5.0.
 Controls output layout and number of channels.",
-                ),
+            ),
             Parameter::new_float("gain_front_direct", "Front Direct Gain", 1.0, 0.0, 2.0)
                 .with_description(
                     "Front direct gain for non-height front speakers.
@@ -1569,19 +1572,17 @@ decrease for a more center-focused, direct front.",
 Range: 0.0-2.0, default 1.0.
 Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
                 ),
-            Parameter::new_float("height_gain", "Height Gain", 1.0, 0.0, 2.0)
-                .with_description(
-                    "Gain for height/overhead channels (elevation > 0).
+            Parameter::new_float("height_gain", "Height Gain", 1.0, 0.0, 2.0).with_description(
+                "Gain for height/overhead channels (elevation > 0).
 Range: 0.0-2.0, default 1.0.
 0.0 disables height channels; higher values raise the contribution
 of height speakers relative to the bed layer.",
-                ),
-            Parameter::new_float("lfe_gain", "LFE Gain", 1.0, 0.0, 2.0)
-                .with_description(
-                    "Gain for LFE/subwoofer channel.
+            ),
+            Parameter::new_float("lfe_gain", "LFE Gain", 1.0, 0.0, 2.0).with_description(
+                "Gain for LFE/subwoofer channel.
 Range: 0.0-2.0, default 1.0.
 Controls overall subwoofer level after the mains/LFE crossover.",
-                ),
+            ),
             Parameter::new_float("lfe_cutoff_hz", "LFE Cutoff (Hz)", 120.0, 40.0, 200.0)
                 .with_description(
                     "Linkwitz-Riley crossover frequency between mains and LFE.
@@ -1589,20 +1590,18 @@ Range: 40-200 Hz, default 120 Hz.
 Lower values keep more bass in mains; higher values route
 more low-frequency energy into the subwoofer.",
                 ),
-            Parameter::new_float("stereo_width", "Stereo Width", 0.5, 0.0, 1.0)
-                .with_description(
-                    "Controls front stereo width for the direct component.
+            Parameter::new_float("stereo_width", "Stereo Width", 0.5, 0.0, 1.0).with_description(
+                "Controls front stereo width for the direct component.
 Range: 0.0-1.0, default 0.5.
 0.0 keeps L/R wide; 1.0 collapses toward mono/center;
 intermediate values balance width and center focus.",
-                ),
-            Parameter::new_float("center_spread", "Center Spread", 0.0, 0.0, 1.0)
-                .with_description(
-                    "Controls how much direct energy is focused in the physical center vs L/R.
+            ),
+            Parameter::new_float("center_spread", "Center Spread", 0.0, 0.0, 1.0).with_description(
+                "Controls how much direct energy is focused in the physical center vs L/R.
 Range: 0.0-1.0, default 0.0.
 0.0 sends coherent center energy to the C speaker;
 1.0 moves it into a phantom center across L/R.",
-                ),
+            ),
             Parameter::new_float("bandpass_hz", "Upmix Crossover (Hz)", 250.0, 200.0, 1000.0)
                 .with_description(
                     "Frequency above which upmixing to surrounds/height is applied.
@@ -1623,20 +1622,18 @@ Range: 0.0-1.0, default 0.5.
 Controls how loud the synthesized low-frequency component is
 relative to the original LFE signal.",
                 ),
-            Parameter::new_bool("enable_hr_direct", "High-Res Direct", false)
-                .with_description(
-                    "Enables the high-resolution direct-path enhancement.
+            Parameter::new_bool("enable_hr_direct", "High-Res Direct", false).with_description(
+                "Enables the high-resolution direct-path enhancement.
 Default: off. When on, detected high-frequency transients can
 be sharpened using a shorter FFT, mainly in the front speakers.",
-                ),
-            Parameter::new_float("hr_sharpen", "HR Sharpen", 1.0, 0.0, 1.0)
-                .with_description(
-                    "Depth control for the high-resolution direct path.
+            ),
+            Parameter::new_float("hr_sharpen", "HR Sharpen", 1.0, 0.0, 1.0).with_description(
+                "Depth control for the high-resolution direct path.
 Range: 0.0-1.0, default 1.0.
 0.0 effectively disables the HR contribution even if enabled;
 1.0 applies the full transient-driven HR emphasis and ducking
 of the main front field.",
-                ),
+            ),
             Parameter::new_float("safety_cap_db", "Safety Cap (dB)", 3.0, 0.0, 12.0)
                 .with_description(
                     "Peak safety cap for the upmixer output.
@@ -1930,19 +1927,19 @@ above unity, the block is scaled down to stay within the cap.",
             ));
         }
 
-/*
-        log::debug!(
-            "[UPMIXER] process() called: input={} frames, output={} frames",
-            context.num_frames,
-            context.num_frames
-        );
-        log::debug!(
-            "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-            self.input_buffer_fill,
-            self.output_accumulator_fill,
-            self.next_add_position
-        );
-*/
+        /*
+                log::debug!(
+                    "[UPMIXER] process() called: input={} frames, output={} frames",
+                    context.num_frames,
+                    context.num_frames
+                );
+                log::debug!(
+                    "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
+                    self.input_buffer_fill,
+                    self.output_accumulator_fill,
+                    self.next_add_position
+                );
+        */
 
         // Sanity check for threading issues
         if self.next_add_position > self.fft_size * 3 {
@@ -2077,8 +2074,7 @@ above unity, the block is scaled down to stay within the cap.",
                                 let dst_idx = (center + i) * self.num_output_channels;
                                 let src_idx = i * self.num_output_channels;
                                 for ch in 0..self.num_output_channels {
-                                    output_block[dst_idx + ch] +=
-                                        hr_output[src_idx + ch] * hr_mix;
+                                    output_block[dst_idx + ch] += hr_output[src_idx + ch] * hr_mix;
                                 }
                             }
                         }
@@ -2284,7 +2280,10 @@ impl UpmixerPlugin {
             .process(&mut self.hr_time_domain_left, &mut self.hr_freq_domain_left)
             .unwrap();
         self.hr_fft_forward
-            .process(&mut self.hr_time_domain_right, &mut self.hr_freq_domain_right)
+            .process(
+                &mut self.hr_time_domain_right,
+                &mut self.hr_freq_domain_right,
+            )
             .unwrap();
 
         // 3. Frequency-dependent processing for HF direct path only
@@ -2346,7 +2345,10 @@ impl UpmixerPlugin {
             }
 
             self.hr_fft_inverse
-                .process(&mut self.hr_temp_freq_out, &mut self.hr_time_out_channels[ch_idx])
+                .process(
+                    &mut self.hr_temp_freq_out,
+                    &mut self.hr_time_out_channels[ch_idx],
+                )
                 .unwrap();
 
             for i in 0..self.hr_fft_size {
@@ -2533,7 +2535,7 @@ mod tests {
             let t = i as f32 / 44100.0;
             let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
             input[i * 2] = s;
-            input[i * 2 + 1] = -s;  // Inverted phase = maximally incoherent
+            input[i * 2 + 1] = -s; // Inverted phase = maximally incoherent
         }
 
         plugin.process_fft_block(&input, &mut output);
@@ -2671,8 +2673,9 @@ mod tests {
         // non-zero energy on front speakers for high-frequency coherent input
         // while leaving non-front channels effectively silent.
 
-        let mut plugin =
-            UpmixerPlugin::new(2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5);
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
         plugin.initialize(44100).unwrap();
 
         let hr_size = plugin.hr_fft_size;
@@ -2889,14 +2892,14 @@ mod tests {
             // Check that we got significant output (accounting for latency)
             let total_output_samples = all_output.len() / 5;
             let non_zero_samples = all_output.iter().filter(|&&x| x.abs() > 1e-6).count();
-/*
-            log::info!(
-                "Buffer size {}: {} total frames, {} non-zero samples",
-                buffer_size,
-                total_output_samples,
-                non_zero_samples
-            );
-*/
+            /*
+                        log::info!(
+                            "Buffer size {}: {} total frames, {} non-zero samples",
+                            buffer_size,
+                            total_output_samples,
+                            non_zero_samples
+                        );
+            */
             assert!(
                 non_zero_samples > total_output_samples / 2,
                 "Buffer size {}: Too many zero samples, got {} non-zero out of {} total",
@@ -2949,14 +2952,14 @@ mod tests {
             }
         }
 
-/*
-        log::info!(
-            "Input energy: {}, Output energy: {}, Ratio: {}",
-            total_input_energy,
-            total_output_energy,
-            total_output_energy / total_input_energy
-        );
-*/
+        /*
+                log::info!(
+                    "Input energy: {}, Output energy: {}, Ratio: {}",
+                    total_input_energy,
+                    total_output_energy,
+                    total_output_energy / total_input_energy
+                );
+        */
 
         // Energy scaling factors:
         // 1. Hann window applied once during analysis: ~0.5 mean value
@@ -3106,19 +3109,19 @@ mod tests {
             }
         }
 
-/*
-        log::info!("5.1.4 Channel energies:");
-        log::info!("  [0] FL:  {:.6}", channel_energies[0]);
-        log::info!("  [1] FR:  {:.6}", channel_energies[1]);
-        log::info!("  [2] C:   {:.6}", channel_energies[2]);
-        log::info!("  [3] LFE: {:.6}", channel_energies[3]);
-        log::info!("  [4] SL:  {:.6}", channel_energies[4]);
-        log::info!("  [5] SR:  {:.6}", channel_energies[5]);
-        log::info!("  [6] TFL: {:.6}", channel_energies[6]);
-        log::info!("  [7] TFR: {:.6}", channel_energies[7]);
-        log::info!("  [8] TBL: {:.6}", channel_energies[8]);
-        log::info!("  [9] TBR: {:.6}", channel_energies[9]);
-*/
+        /*
+                log::info!("5.1.4 Channel energies:");
+                log::info!("  [0] FL:  {:.6}", channel_energies[0]);
+                log::info!("  [1] FR:  {:.6}", channel_energies[1]);
+                log::info!("  [2] C:   {:.6}", channel_energies[2]);
+                log::info!("  [3] LFE: {:.6}", channel_energies[3]);
+                log::info!("  [4] SL:  {:.6}", channel_energies[4]);
+                log::info!("  [5] SR:  {:.6}", channel_energies[5]);
+                log::info!("  [6] TFL: {:.6}", channel_energies[6]);
+                log::info!("  [7] TFR: {:.6}", channel_energies[7]);
+                log::info!("  [8] TBL: {:.6}", channel_energies[8]);
+                log::info!("  [9] TBR: {:.6}", channel_energies[9]);
+        */
 
         // Check that all non-LFE channels have some energy
         for (ch, &energy) in channel_energies.iter().enumerate() {

@@ -1,6 +1,6 @@
+use sotf_audio_player::MusicLibrary;
 /// Integration tests for ReplayGain scanning functionality
 use sotf_audio_player::database::MusicDatabase;
-use sotf_audio_player::MusicLibrary;
 use std::sync::Arc;
 
 mod fixtures;
@@ -10,10 +10,10 @@ fn test_replay_gain_scanner_creation() {
     use sotf_audio_player::ReplayGainScanner;
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let db = Arc::new(MusicDatabase::open(&db_path).expect("Failed to open database"));
+    let _db = Arc::new(MusicDatabase::open(&db_path).expect("Failed to open database"));
 
-    // Create scanner
-    let scanner = ReplayGainScanner::new(db.clone(), 2);
+    // Create scanner (new API: num_threads, db_path)
+    let scanner = ReplayGainScanner::new(2, db_path.clone());
 
     // Scanner should start successfully
     drop(scanner);
@@ -36,13 +36,13 @@ fn test_get_tracks_without_replay_gain_after_scan() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     // Scan demo files
     let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(&demo_dir).unwrap();
-    library.scan_all().expect("Failed to scan directory");
-    library.save_to_db().expect("Failed to save library");
+    library.add_directory(demo_dir.clone()).unwrap();
+    library.scan().expect("Failed to scan directory");
+    // Saving happens automatically during scan
 
     // All tracks should need ReplayGain
     let db = MusicDatabase::open(&db_path).unwrap();
@@ -64,7 +64,7 @@ fn test_update_replay_gain() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     // Add a single track
     let classical_file = fixtures::get_demo_file("classical.wav");
@@ -292,19 +292,24 @@ fn test_real_replay_gain_scanning() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     // Scan only a few files to keep test fast
     let demo_dir = fixtures::demo_audio_dir();
-    library.add_directory(&demo_dir).unwrap();
-    library.scan_all().expect("Failed to scan directory");
-    library.save_to_db().expect("Failed to save library");
+    library.add_directory(demo_dir.clone()).unwrap();
+    library.scan().expect("Failed to scan directory");
+    // Saving happens automatically during scan
 
     let db = Arc::new(MusicDatabase::open(&db_path).unwrap());
 
-    // Create scanner and start scanning
-    let scanner = ReplayGainScanner::new(db.clone(), 2);
-    scanner.start_scanning();
+    // Get tracks that need replay gain
+    let tracks_to_scan = db
+        .get_tracks_without_replay_gain()
+        .expect("Failed to get tracks");
+
+    // Create scanner and scan the tracks (new API: num_threads, db_path)
+    let scanner = ReplayGainScanner::new(2, db_path.clone());
+    scanner.scan_tracks(tracks_to_scan);
 
     // Wait for scanning to complete (with timeout)
     let max_wait = Duration::from_secs(60); // 60 seconds max

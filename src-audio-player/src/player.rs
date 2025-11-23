@@ -1,5 +1,5 @@
 use sotf_audio::engine::PluginConfig;
-use sotf_audio::manager::{AudioStreamingManager, StreamingEvent, StreamingState};
+use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
 use sotf_audio::{LoudnessInfo, SpectrumInfo};
 use std::path::PathBuf;
 
@@ -14,13 +14,13 @@ pub struct PlaybackState {
 }
 
 pub struct Player {
-    manager: AudioStreamingManager,
+    manager: AudioEngineManager,
 }
 
 impl Player {
     pub fn new() -> Self {
         Self {
-            manager: AudioStreamingManager::with_signal_watching(true),
+            manager: AudioEngineManager::with_signal_watching(true),
         }
     }
 
@@ -126,7 +126,7 @@ impl Player {
     }
 
     /// Get all playback state in a single call
-    /// No extra locking - AudioStreamingManager handles internal synchronization
+    /// No extra locking - AudioEngineManager handles internal synchronization
     pub fn get_playback_state(&self, include_spectrum: bool) -> PlaybackState {
         // Drain any pending streaming events and capture the last error (if any)
         let mut last_error: Option<String> = None;

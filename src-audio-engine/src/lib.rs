@@ -12,7 +12,7 @@ pub use decoder::stream::{StreamEvent, StreamPosition, StreamState};
 
 pub mod manager;
 pub use manager::{
-    AudioFileInfo, AudioStreamingManager, StreamingCommand, StreamingEvent, StreamingState,
+    AudioEngineManager, AudioFileInfo, StreamingCommand, StreamingEvent, StreamingState,
 };
 
 pub mod replaygain;
@@ -26,10 +26,6 @@ pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, Plu
 
 // Re-export plugin types for convenience
 pub use sotf_plugins::{
-    LoudnessCompensation, LoudnessInfo, SpectrumInfo,
-    HrtfData, SofaFile, SourcePosition,
-    get_speaker_config_by_channels
+    HrtfData, LoudnessCompensation, LoudnessInfo, SofaFile, SourcePosition, SpectrumInfo,
+    get_speaker_config_by_channels,
 };
-
-// pub mod audio_playback;
-// pub use audio_playback::{PlaybackRecorder, PlaybackRecordingConfig, AudioPlaybackError};

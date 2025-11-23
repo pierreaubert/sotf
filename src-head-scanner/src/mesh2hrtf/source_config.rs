@@ -226,9 +226,7 @@ impl SourceConfiguration {
     pub fn is_ear_source(&self) -> bool {
         matches!(
             self.source_type,
-            SourceType::BothEars { .. }
-                | SourceType::LeftEar { .. }
-                | SourceType::RightEar { .. }
+            SourceType::BothEars { .. } | SourceType::LeftEar { .. } | SourceType::RightEar { .. }
         )
     }
 

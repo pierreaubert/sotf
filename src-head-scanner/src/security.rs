@@ -83,9 +83,9 @@ pub fn validate_path(path: &str, base_dir: Option<&Path>) -> ScannerResult<PathB
         let full_path = base.join(path_obj);
 
         // Canonicalize to resolve symlinks and .. components
-        let canonical = full_path.canonicalize().map_err(|e| {
-            ScannerError::IoError(format!("Failed to canonicalize path: {}", e))
-        })?;
+        let canonical = full_path
+            .canonicalize()
+            .map_err(|e| ScannerError::IoError(format!("Failed to canonicalize path: {}", e)))?;
 
         // Canonicalize base directory
         let canonical_base = base.canonicalize().map_err(|e| {
@@ -104,9 +104,9 @@ pub fn validate_path(path: &str, base_dir: Option<&Path>) -> ScannerResult<PathB
         Ok(canonical)
     } else {
         // No base directory specified - just canonicalize and return
-        path_obj.canonicalize().map_err(|e| {
-            ScannerError::IoError(format!("Invalid path: {}", e))
-        })
+        path_obj
+            .canonicalize()
+            .map_err(|e| ScannerError::IoError(format!("Invalid path: {}", e)))
     }
 }
 
@@ -237,9 +237,9 @@ pub fn validate_model_path(path: &str, allowed_model_dirs: &[PathBuf]) -> Scanne
     }
 
     // Canonicalize to resolve symlinks
-    let canonical = path_obj.canonicalize().map_err(|e| {
-        ScannerError::IoError(format!("Failed to canonicalize model path: {}", e))
-    })?;
+    let canonical = path_obj
+        .canonicalize()
+        .map_err(|e| ScannerError::IoError(format!("Failed to canonicalize model path: {}", e)))?;
 
     // If allowed directories specified, check the path is within one of them
     if !allowed_model_dirs.is_empty() {

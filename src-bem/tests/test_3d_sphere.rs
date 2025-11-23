@@ -7,17 +7,19 @@
 //!
 //! Generates JSON output for 3D visualization and validation.
 
-use bem::analytical::{sphere_scattering_3d, sphere_rcs_3d, sphere_scattering_efficiency_3d};
+use autoeq_env::get_data_generated_dir;
+use bem::analytical::{sphere_rcs_3d, sphere_scattering_3d, sphere_scattering_efficiency_3d};
 use bem::testing::ValidationResult;
 use num_complex::Complex64;
 use std::f64::consts::PI;
-use autoeq_env::get_data_generated_dir;
 use std::path::PathBuf;
 
 /// Get output directory from AUTOEQ_DIR environment variable
 fn get_output_dir() -> PathBuf {
     get_data_generated_dir()
-        .expect("Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable")
+        .expect(
+            "Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable",
+        )
         .join("bem")
         .join("3d")
 }
@@ -36,7 +38,10 @@ fn test_3d_sphere_rayleigh_regime() {
     let a = 1.0;
     let ka = k * a;
 
-    println!("\n=== 3D Sphere Scattering: Rayleigh Regime (ka={:.2}) ===", ka);
+    println!(
+        "\n=== 3D Sphere Scattering: Rayleigh Regime (ka={:.2}) ===",
+        ka
+    );
 
     // Sample on sphere at r = 2a
     let r_points = vec![2.0];
@@ -49,7 +54,8 @@ fn test_3d_sphere_rayleigh_regime() {
         format!("3D Sphere Rayleigh (ka={:.2})", ka),
         &analytical,
         bem_pressure,
-        0, 0.5,
+        0,
+        0.5,
     );
 
     let output_path = get_output_dir().join("sphere_rayleigh_ka0.1.json");
@@ -65,7 +71,10 @@ fn test_3d_sphere_rayleigh_regime() {
     println!("RCS / (πa²) = {:.6e}", rcs_normalized);
     println!("(ka)^4 = {:.6e}", ka.powi(4));
 
-    assert!(rcs_normalized < 0.01, "RCS should be very small in Rayleigh regime");
+    assert!(
+        rcs_normalized < 0.01,
+        "RCS should be very small in Rayleigh regime"
+    );
     assert!(validation.passed(1e-10));
 }
 
@@ -90,7 +99,8 @@ fn test_3d_sphere_mie_regime() {
         format!("3D Sphere Mie (ka={:.2})", ka),
         &analytical,
         bem_pressure,
-        0, 1.0,
+        0,
+        1.0,
     );
 
     let output_path = get_output_dir().join("sphere_mie_ka1.0.json");
@@ -116,7 +126,10 @@ fn test_3d_sphere_geometric_regime() {
     let a = 1.0;
     let ka = k * a;
 
-    println!("\n=== 3D Sphere Scattering: Geometric Regime (ka={:.2}) ===", ka);
+    println!(
+        "\n=== 3D Sphere Scattering: Geometric Regime (ka={:.2}) ===",
+        ka
+    );
 
     let r_points = vec![2.0];
     let theta_points: Vec<f64> = (0..91).map(|i| PI * i as f64 / 90.0).collect();
@@ -130,7 +143,8 @@ fn test_3d_sphere_geometric_regime() {
         format!("3D Sphere Geometric (ka={:.2})", ka),
         &analytical,
         bem_pressure,
-        0, 3.0,
+        0,
+        3.0,
     );
 
     let output_path = get_output_dir().join("sphere_geometric_ka20.json");
@@ -187,8 +201,9 @@ fn test_3d_sphere_rcs_frequency_sweep() {
     let output_path = get_output_dir().join("sphere_rcs_sweep.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&rcs_data).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&rcs_data).unwrap(),
+    )
+    .unwrap();
 
     println!("RCS sweep saved: {} frequencies", ka_values.len());
 
@@ -212,7 +227,7 @@ fn test_3d_sphere_directivity_pattern() {
     println!("\n=== 3D Sphere Directivity Pattern ===");
 
     // Sample on sphere (r fixed, vary θ)
-    let r = 10.0;  // Far-field
+    let r = 10.0; // Far-field
     let theta_points: Vec<f64> = (0..181).map(|i| PI * i as f64 / 180.0).collect();
 
     let solution = sphere_scattering_3d(k, a, 30, vec![r], theta_points.clone());
@@ -233,8 +248,9 @@ fn test_3d_sphere_directivity_pattern() {
     let output_path = get_output_dir().join("sphere_directivity_ka2.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&directivity_data).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&directivity_data).unwrap(),
+    )
+    .unwrap();
 
     println!("Directivity pattern saved");
 }
@@ -267,8 +283,9 @@ fn test_3d_sphere_surface_pressure() {
     let output_path = get_output_dir().join("sphere_surface_pressure_ka3.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&surface_data).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&surface_data).unwrap(),
+    )
+    .unwrap();
 
     println!("Surface pressure distribution saved");
 }
@@ -301,7 +318,7 @@ fn test_3d_sphere_3d_field_slice() {
         let solution = sphere_scattering_3d(k, a, 30, vec![r], theta_points.clone());
 
         for (j, theta) in theta_points.iter().enumerate() {
-            let x = r * theta.sin();  // x-z plane
+            let x = r * theta.sin(); // x-z plane
             let z = r * theta.cos();
 
             let p = solution.pressure[j];
@@ -337,8 +354,9 @@ fn test_3d_sphere_3d_field_slice() {
     let output_path = get_output_dir().join("sphere_field_slice_ka2.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&field_data).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&field_data).unwrap(),
+    )
+    .unwrap();
 
     println!("3D field slice saved: {} points", num_r * num_theta);
 }
@@ -363,23 +381,27 @@ fn test_3d_sphere_convergence_with_series_terms() {
     let reference = sphere_scattering_3d(k, a, 150, r_points.clone(), theta_points.clone());
 
     for &num_terms in &term_counts {
-        let solution = sphere_scattering_3d(k, a, num_terms, r_points.clone(), theta_points.clone());
+        let solution =
+            sphere_scattering_3d(k, a, num_terms, r_points.clone(), theta_points.clone());
 
         // Compute error
-        let error_sq: f64 = solution.pressure.iter()
+        let error_sq: f64 = solution
+            .pressure
+            .iter()
             .zip(reference.pressure.iter())
             .map(|(p, p_ref)| (p - p_ref).norm_sqr())
             .sum();
 
-        let ref_norm_sq: f64 = reference.pressure.iter()
-            .map(|p| p.norm_sqr())
-            .sum();
+        let ref_norm_sq: f64 = reference.pressure.iter().map(|p| p.norm_sqr()).sum();
 
         let error_relative = (error_sq / ref_norm_sq).sqrt();
 
         convergence_data.push((num_terms, error_relative));
 
-        println!("{:3} terms: relative error = {:.2e}", num_terms, error_relative);
+        println!(
+            "{:3} terms: relative error = {:.2e}",
+            num_terms, error_relative
+        );
     }
 
     let conv_json = serde_json::json!({
@@ -392,8 +414,9 @@ fn test_3d_sphere_convergence_with_series_terms() {
     let output_path = get_output_dir().join("sphere_convergence.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&conv_json).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&conv_json).unwrap(),
+    )
+    .unwrap();
 
     // Error should decrease with more terms
     assert!(convergence_data[1].1 < convergence_data[0].1);
@@ -429,8 +452,10 @@ fn test_3d_sphere_mesh_convergence() {
 
         mesh_convergence.push((epw, num_elements, simulated_error));
 
-        println!("{:.1} elem/λ ({:6} elements): error ~ {:.2e}",
-                 epw, num_elements, simulated_error);
+        println!(
+            "{:.1} elem/λ ({:6} elements): error ~ {:.2e}",
+            epw, num_elements, simulated_error
+        );
     }
 
     let mesh_json = serde_json::json!({
@@ -445,8 +470,9 @@ fn test_3d_sphere_mesh_convergence() {
     let output_path = get_output_dir().join("sphere_mesh_convergence.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&mesh_json).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&mesh_json).unwrap(),
+    )
+    .unwrap();
 }
 
 /// Generate comprehensive visualization suite for 3D
@@ -481,8 +507,9 @@ fn generate_3d_visualization_suite() {
         let output_path = get_output_dir().join(format!("viz_directivity_ka{:.1}.json", ka));
         std::fs::write(
             output_path,
-            serde_json::to_string_pretty(&dir_data).unwrap()
-        ).unwrap();
+            serde_json::to_string_pretty(&dir_data).unwrap(),
+        )
+        .unwrap();
 
         // 2. Surface pressure
         let surface = sphere_scattering_3d(k, a, num_terms, vec![a], theta_points.clone());
@@ -498,8 +525,9 @@ fn generate_3d_visualization_suite() {
         let output_path = get_output_dir().join(format!("viz_surface_ka{:.1}.json", ka));
         std::fs::write(
             output_path,
-            serde_json::to_string_pretty(&surf_data).unwrap()
-        ).unwrap();
+            serde_json::to_string_pretty(&surf_data).unwrap(),
+        )
+        .unwrap();
     }
 
     println!("\nGenerated 3D visualization files");
@@ -525,11 +553,7 @@ fn bench_3d_sphere_performance() {
         let start = Instant::now();
 
         for _ in 0..num_iterations {
-            let _ = sphere_scattering_3d(
-                k, a, num_terms,
-                vec![2.0],
-                vec![0.0, PI / 4.0, PI / 2.0],
-            );
+            let _ = sphere_scattering_3d(k, a, num_terms, vec![2.0], vec![0.0, PI / 4.0, PI / 2.0]);
         }
 
         let elapsed = start.elapsed();

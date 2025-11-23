@@ -3,17 +3,21 @@
 //! Tests rigid cylinder scattering using Bessel/Hankel function series.
 //! Generates JSON output for 2D field plots and directivity patterns.
 
-use bem::analytical::{cylinder_scattering_2d, cylinder_directivity_2d, cylinder_scattering_cross_section_2d};
+use autoeq_env::get_data_generated_dir;
+use bem::analytical::{
+    cylinder_directivity_2d, cylinder_scattering_2d, cylinder_scattering_cross_section_2d,
+};
 use bem::testing::ValidationResult;
 use num_complex::Complex64;
 use std::f64::consts::PI;
-use autoeq_env::get_data_generated_dir;
 use std::path::PathBuf;
 
 /// Get output directory from AUTOEQ_DIR environment variable
 fn get_output_dir() -> PathBuf {
     get_data_generated_dir()
-        .expect("Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable")
+        .expect(
+            "Failed to get data_generated directory. Please set AUTOEQ_DIR environment variable",
+        )
         .join("bem")
         .join("2d")
 }
@@ -32,7 +36,10 @@ fn test_2d_cylinder_low_frequency_rayleigh() {
     let a = 1.0;
     let ka = k * a;
 
-    println!("\n=== 2D Cylinder Scattering: Rayleigh Regime (ka={:.2}) ===", ka);
+    println!(
+        "\n=== 2D Cylinder Scattering: Rayleigh Regime (ka={:.2}) ===",
+        ka
+    );
 
     // Sample on a circle at r = 2a (outside cylinder)
     let r_points = vec![2.0];
@@ -45,7 +52,8 @@ fn test_2d_cylinder_low_frequency_rayleigh() {
         format!("2D Cylinder Rayleigh (ka={:.2})", ka),
         &analytical,
         bem_pressure,
-        0, 0.5,
+        0,
+        0.5,
     );
 
     let output_path = get_output_dir().join("cylinder_rayleigh_ka0.1.json");
@@ -71,7 +79,10 @@ fn test_2d_cylinder_mie_regime() {
     let a = 1.0;
     let ka = k * a;
 
-    println!("\n=== 2D Cylinder Scattering: Mie Regime (ka={:.2}) ===", ka);
+    println!(
+        "\n=== 2D Cylinder Scattering: Mie Regime (ka={:.2}) ===",
+        ka
+    );
 
     let r_points = vec![2.0, 3.0, 5.0];
     let theta_points: Vec<f64> = (0..72).map(|i| 2.0 * PI * i as f64 / 72.0).collect();
@@ -83,7 +94,8 @@ fn test_2d_cylinder_mie_regime() {
         format!("2D Cylinder Mie (ka={:.2})", ka),
         &analytical,
         bem_pressure,
-        0, 1.0,
+        0,
+        1.0,
     );
 
     let output_path = get_output_dir().join("cylinder_mie_ka1.0.json");
@@ -102,7 +114,10 @@ fn test_2d_cylinder_high_frequency() {
     let a = 1.0;
     let ka = k * a;
 
-    println!("\n=== 2D Cylinder Scattering: High Frequency (ka={:.2}) ===", ka);
+    println!(
+        "\n=== 2D Cylinder Scattering: High Frequency (ka={:.2}) ===",
+        ka
+    );
 
     let r_points = vec![2.0];
     let theta_points: Vec<f64> = (0..180).map(|i| 2.0 * PI * i as f64 / 180.0).collect();
@@ -116,7 +131,8 @@ fn test_2d_cylinder_high_frequency() {
         format!("2D Cylinder High Freq (ka={:.2})", ka),
         &analytical,
         bem_pressure,
-        0, 2.0,
+        0,
+        2.0,
     );
 
     let output_path = get_output_dir().join("cylinder_high_freq_ka10.json");
@@ -137,12 +153,7 @@ fn test_2d_cylinder_symmetry() {
 
     // Plane wave from θ=0 should create symmetric pattern
     let r_points = vec![3.0];
-    let symmetric_angles = vec![
-        PI / 4.0,
-        -PI / 4.0,
-        PI / 3.0,
-        -PI / 3.0,
-    ];
+    let symmetric_angles = vec![PI / 4.0, -PI / 4.0, PI / 3.0, -PI / 3.0];
 
     let analytical = cylinder_scattering_2d(k, a, 30, r_points, symmetric_angles);
 
@@ -189,8 +200,9 @@ fn test_2d_cylinder_directivity_pattern() {
     let output_path = get_output_dir().join("cylinder_directivity_ka2.json");
     std::fs::write(
         &output_path,
-        serde_json::to_string_pretty(&directivity_data).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&directivity_data).unwrap(),
+    )
+    .unwrap();
 
     println!("Directivity pattern saved to {:?}", output_path);
 }
@@ -224,10 +236,7 @@ fn test_2d_cylinder_scattering_cross_section() {
     });
 
     let output_path = get_output_dir().join("cylinder_cross_section.json");
-    std::fs::write(
-        output_path,
-        serde_json::to_string_pretty(&cs_data).unwrap()
-    ).unwrap();
+    std::fs::write(output_path, serde_json::to_string_pretty(&cs_data).unwrap()).unwrap();
 
     println!("Scattering cross-section saved");
 
@@ -248,7 +257,7 @@ fn test_2d_cylinder_field_map() {
     println!("\n=== Generating 2D Cylinder Pressure Field Map ===");
 
     // Create 2D grid
-    let r_min = a + 0.1;  // Just outside cylinder
+    let r_min = a + 0.1; // Just outside cylinder
     let r_max = 5.0;
     let num_r = 50;
     let num_theta = 72;
@@ -260,9 +269,7 @@ fn test_2d_cylinder_field_map() {
 
     for i in 0..num_r {
         let r = r_min + i as f64 * r_step;
-        let theta_points: Vec<f64> = (0..num_theta)
-            .map(|j| j as f64 * theta_step)
-            .collect();
+        let theta_points: Vec<f64> = (0..num_theta).map(|j| j as f64 * theta_step).collect();
 
         let solution = cylinder_scattering_2d(k, a, 30, vec![r], theta_points);
 
@@ -301,8 +308,9 @@ fn test_2d_cylinder_field_map() {
     let output_path = get_output_dir().join("cylinder_field_map_ka2.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&field_data).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&field_data).unwrap(),
+    )
+    .unwrap();
 
     println!("2D field map saved: {} points", num_r * num_theta);
 }
@@ -323,26 +331,36 @@ fn test_2d_cylinder_convergence_with_series_terms() {
     let term_counts = vec![5, 10, 20, 30, 50, 100];
     let mut convergence_data = Vec::new();
 
-    let reference_solution = cylinder_scattering_2d(k, a, 150, r_points.clone(), theta_points.clone());
+    let reference_solution =
+        cylinder_scattering_2d(k, a, 150, r_points.clone(), theta_points.clone());
 
     for &num_terms in &term_counts {
-        let solution = cylinder_scattering_2d(k, a, num_terms, r_points.clone(), theta_points.clone());
+        let solution =
+            cylinder_scattering_2d(k, a, num_terms, r_points.clone(), theta_points.clone());
 
         // Compute error relative to reference
-        let error: f64 = solution.pressure.iter()
+        let error: f64 = solution
+            .pressure
+            .iter()
             .zip(reference_solution.pressure.iter())
             .map(|(p, p_ref)| (p - p_ref).norm_sqr())
             .sum::<f64>()
             .sqrt();
 
-        let error_relative = error / reference_solution.pressure.iter()
-            .map(|p| p.norm_sqr())
-            .sum::<f64>()
-            .sqrt();
+        let error_relative = error
+            / reference_solution
+                .pressure
+                .iter()
+                .map(|p| p.norm_sqr())
+                .sum::<f64>()
+                .sqrt();
 
         convergence_data.push((num_terms, error_relative));
 
-        println!("{:3} terms: relative error = {:.2e}", num_terms, error_relative);
+        println!(
+            "{:3} terms: relative error = {:.2e}",
+            num_terms, error_relative
+        );
     }
 
     let conv_json = serde_json::json!({
@@ -355,8 +373,9 @@ fn test_2d_cylinder_convergence_with_series_terms() {
     let output_path = get_output_dir().join("cylinder_convergence.json");
     std::fs::write(
         output_path,
-        serde_json::to_string_pretty(&conv_json).unwrap()
-    ).unwrap();
+        serde_json::to_string_pretty(&conv_json).unwrap(),
+    )
+    .unwrap();
 }
 
 /// Generate comprehensive visualization suite for 2D
@@ -389,8 +408,9 @@ fn generate_2d_visualization_suite() {
         let output_path = get_output_dir().join(format!("viz_directivity_ka{:.1}.json", ka));
         std::fs::write(
             output_path,
-            serde_json::to_string_pretty(&dir_data).unwrap()
-        ).unwrap();
+            serde_json::to_string_pretty(&dir_data).unwrap(),
+        )
+        .unwrap();
 
         // Field map (smaller grid for visualization)
         let r_points: Vec<f64> = (0..20).map(|i| a + 0.1 + i as f64 * 0.2).collect();
@@ -417,8 +437,9 @@ fn generate_2d_visualization_suite() {
         let output_path = get_output_dir().join(format!("viz_field_ka{:.1}.json", ka));
         std::fs::write(
             output_path,
-            serde_json::to_string_pretty(&field_data).unwrap()
-        ).unwrap();
+            serde_json::to_string_pretty(&field_data).unwrap(),
+        )
+        .unwrap();
     }
 
     println!("Generated 2D visualization files");

@@ -91,7 +91,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     autoeq::cli::validate_args_or_exit(&args.base);
 
     // Enumerate speakers as subdirectories of ./data_cached/speakers/org.spinorama/
-    let speakers_dir = PathBuf::from(DATA_CACHED).join("speakers").join("org.spinorama");
+    let speakers_dir = PathBuf::from(DATA_CACHED)
+        .join("speakers")
+        .join("org.spinorama");
     let speakers = list_speakers(speakers_dir)?;
     let speakers: Vec<String> = if args.smoke_test {
         speakers.into_iter().take(5).collect()

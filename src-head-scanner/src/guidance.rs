@@ -120,7 +120,7 @@ impl HeadRegion {
     /// Get priority (0 = highest, higher number = lower priority)
     pub fn priority(&self) -> u8 {
         match self {
-            HeadRegion::Front => 0,         // Highest priority
+            HeadRegion::Front => 0, // Highest priority
             HeadRegion::FrontLeft => 1,
             HeadRegion::FrontRight => 1,
             HeadRegion::Left => 2,
@@ -128,7 +128,7 @@ impl HeadRegion {
             HeadRegion::Top => 3,
             HeadRegion::BackLeft => 4,
             HeadRegion::BackRight => 4,
-            HeadRegion::Back => 5,          // Lower priority (hard to scan)
+            HeadRegion::Back => 5, // Lower priority (hard to scan)
             HeadRegion::TopLeft => 6,
             HeadRegion::TopRight => 6,
         }
@@ -427,13 +427,14 @@ impl ScanGuidance {
 
         // Use 90th percentile angular velocity (ignore outliers)
         angular_velocities.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let percentile_90 = angular_velocities[(angular_velocities.len() * 9 / 10).min(angular_velocities.len() - 1)];
+        let percentile_90 = angular_velocities
+            [(angular_velocities.len() * 9 / 10).min(angular_velocities.len() - 1)];
 
         // Map angular velocity to blur score
         // 0-60°/s → 0.0 (no blur)
         // 60-180°/s → 0.0-0.8 (moderate blur)
         // >180°/s → 0.8-1.0 (severe blur)
-        const LOW_THRESHOLD: f32 = 60.0;   // degrees/second - acceptable motion
+        const LOW_THRESHOLD: f32 = 60.0; // degrees/second - acceptable motion
         const HIGH_THRESHOLD: f32 = 180.0; // degrees/second - severe blur
 
         if percentile_90 < LOW_THRESHOLD {
@@ -492,10 +493,13 @@ impl ScanGuidance {
             median_error / EXCELLENT_THRESHOLD * 0.2
         } else if median_error < ACCEPTABLE_THRESHOLD {
             // Linear mapping from 0.2 to 0.6
-            0.2 + (median_error - EXCELLENT_THRESHOLD) / (ACCEPTABLE_THRESHOLD - EXCELLENT_THRESHOLD) * 0.4
+            0.2 + (median_error - EXCELLENT_THRESHOLD)
+                / (ACCEPTABLE_THRESHOLD - EXCELLENT_THRESHOLD)
+                * 0.4
         } else if median_error < POOR_THRESHOLD {
             // Linear mapping from 0.6 to 1.0
-            0.6 + (median_error - ACCEPTABLE_THRESHOLD) / (POOR_THRESHOLD - ACCEPTABLE_THRESHOLD) * 0.4
+            0.6 + (median_error - ACCEPTABLE_THRESHOLD) / (POOR_THRESHOLD - ACCEPTABLE_THRESHOLD)
+                * 0.4
         } else {
             1.0 // Cap at 1.0 for very poor quality
         }
@@ -602,11 +606,7 @@ impl ScanGuidance {
             ""
         };
 
-        format!(
-            "Please {} {}",
-            horizontal_dir,
-            vertical_dir
-        )
+        format!("Please {} {}", horizontal_dir, vertical_dir)
     }
 
     /// Get suggestions for improving scan quality
@@ -730,7 +730,11 @@ mod tests {
         }
 
         let blur_score = guidance.compute_blur_score();
-        assert!(blur_score < 0.3, "Slow movement should have low blur score, got {}", blur_score);
+        assert!(
+            blur_score < 0.3,
+            "Slow movement should have low blur score, got {}",
+            blur_score
+        );
 
         // Simulate fast camera movement (high blur)
         guidance.recent_poses.clear();
@@ -742,7 +746,11 @@ mod tests {
         }
 
         let blur_score_fast = guidance.compute_blur_score();
-        assert!(blur_score_fast > 0.8, "Fast movement should have high blur score, got {}", blur_score_fast);
+        assert!(
+            blur_score_fast > 0.8,
+            "Fast movement should have high blur score, got {}",
+            blur_score_fast
+        );
     }
 
     #[test]
@@ -760,7 +768,11 @@ mod tests {
             guidance.recent_poses.push_back((time, angle));
         }
         let blur_low = guidance.compute_blur_score();
-        assert!(blur_low < 0.1, "At 60°/s threshold, blur should be near 0.0, got {}", blur_low);
+        assert!(
+            blur_low < 0.1,
+            "At 60°/s threshold, blur should be near 0.0, got {}",
+            blur_low
+        );
 
         // Test at HIGH_THRESHOLD (180°/s) - should be ~0.8
         guidance.recent_poses.clear();
@@ -770,7 +782,11 @@ mod tests {
             guidance.recent_poses.push_back((time, angle));
         }
         let blur_high = guidance.compute_blur_score();
-        assert!(blur_high > 0.7 && blur_high < 0.9, "At 180°/s threshold, blur should be ~0.8, got {}", blur_high);
+        assert!(
+            blur_high > 0.7 && blur_high < 0.9,
+            "At 180°/s threshold, blur should be ~0.8, got {}",
+            blur_high
+        );
     }
 
     #[test]
@@ -782,7 +798,11 @@ mod tests {
             guidance.record_reprojection_error(0.5);
         }
         let error_excellent = guidance.compute_reconstruction_error();
-        assert!(error_excellent < 0.2, "Excellent reconstruction should have low error, got {}", error_excellent);
+        assert!(
+            error_excellent < 0.2,
+            "Excellent reconstruction should have low error, got {}",
+            error_excellent
+        );
 
         // Acceptable reconstruction (1-3 pixels)
         guidance.reprojection_errors.clear();
@@ -790,8 +810,11 @@ mod tests {
             guidance.record_reprojection_error(2.0);
         }
         let error_acceptable = guidance.compute_reconstruction_error();
-        assert!(error_acceptable > 0.2 && error_acceptable < 0.6,
-                "Acceptable reconstruction should have moderate error, got {}", error_acceptable);
+        assert!(
+            error_acceptable > 0.2 && error_acceptable < 0.6,
+            "Acceptable reconstruction should have moderate error, got {}",
+            error_acceptable
+        );
 
         // Poor reconstruction (> 3 pixels)
         guidance.reprojection_errors.clear();
@@ -799,7 +822,11 @@ mod tests {
             guidance.record_reprojection_error(5.0);
         }
         let error_poor = guidance.compute_reconstruction_error();
-        assert!(error_poor > 0.6, "Poor reconstruction should have high error, got {}", error_poor);
+        assert!(
+            error_poor > 0.6,
+            "Poor reconstruction should have high error, got {}",
+            error_poor
+        );
     }
 
     #[test]
@@ -828,21 +855,37 @@ mod tests {
 
         // Test NaN rejection
         guidance.record_reprojection_error(f32::NAN);
-        assert_eq!(guidance.reprojection_errors.len(), 1, "NaN should be rejected");
+        assert_eq!(
+            guidance.reprojection_errors.len(),
+            1,
+            "NaN should be rejected"
+        );
 
         // Test negative rejection
         guidance.record_reprojection_error(-1.0);
-        assert_eq!(guidance.reprojection_errors.len(), 1, "Negative should be rejected");
+        assert_eq!(
+            guidance.reprojection_errors.len(),
+            1,
+            "Negative should be rejected"
+        );
 
         // Test infinity rejection
         guidance.record_reprojection_error(f32::INFINITY);
-        assert_eq!(guidance.reprojection_errors.len(), 1, "Infinity should be rejected");
+        assert_eq!(
+            guidance.reprojection_errors.len(),
+            1,
+            "Infinity should be rejected"
+        );
 
         // Test buffer limit (max 100)
         for i in 0..150 {
             guidance.record_reprojection_error(i as f32);
         }
-        assert_eq!(guidance.reprojection_errors.len(), 100, "Should cap at 100 errors");
+        assert_eq!(
+            guidance.reprojection_errors.len(),
+            100,
+            "Should cap at 100 errors"
+        );
     }
 
     #[test]
@@ -855,7 +898,9 @@ mod tests {
 
         // Only 1 pose - should return 0.0
         let mut guidance_one = ScanGuidance::new();
-        guidance_one.recent_poses.push_back((std::time::Instant::now(), ViewAngle::new(0.0, 0.0, 50.0)));
+        guidance_one
+            .recent_poses
+            .push_back((std::time::Instant::now(), ViewAngle::new(0.0, 0.0, 50.0)));
         let blur_one = guidance_one.compute_blur_score();
         assert_eq!(blur_one, 0.0, "One pose should return 0.0 blur");
     }
@@ -915,7 +960,10 @@ mod tests {
         println!("Quality metrics:");
         println!("  Coverage: {:.1}%", metrics.coverage_percentage * 100.0);
         println!("  Blur score: {:.2}", metrics.blur_score);
-        println!("  Reconstruction error: {:.2}", metrics.reconstruction_error);
+        println!(
+            "  Reconstruction error: {:.2}",
+            metrics.reconstruction_error
+        );
     }
 
     #[test]

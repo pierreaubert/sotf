@@ -1,6 +1,6 @@
 //! Audio Engine Control Daemon
 //!
-//! A Unix socket daemon that provides IPC control for the AudioStreamingManager.
+//! A Unix socket daemon that provides IPC control for the AudioEngineManager.
 //! This allows external processes (like the Swift menubar app) to control audio playback,
 //! query status, and configure plugins via JSON messages over a Unix domain socket.
 //!
@@ -30,7 +30,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sotf_audio::PluginConfig;
-use sotf_audio::manager::AudioStreamingManager;
+use sotf_audio::manager::AudioEngineManager;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::Arc;
@@ -106,7 +106,7 @@ impl Response {
 }
 
 struct AudioDaemon {
-    manager: Arc<Mutex<AudioStreamingManager>>,
+    manager: Arc<Mutex<AudioEngineManager>>,
     last_activity: Arc<Mutex<std::time::Instant>>,
     running: Arc<Mutex<bool>>,
     hal_manager: Arc<Mutex<HalManager>>,
@@ -115,7 +115,7 @@ struct AudioDaemon {
 impl AudioDaemon {
     fn new() -> Self {
         Self {
-            manager: Arc::new(Mutex::new(AudioStreamingManager::new())),
+            manager: Arc::new(Mutex::new(AudioEngineManager::new())),
             last_activity: Arc::new(Mutex::new(std::time::Instant::now())),
             running: Arc::new(Mutex::new(true)),
             hal_manager: Arc::new(Mutex::new(HalManager::new())),
@@ -211,7 +211,7 @@ impl AudioDaemon {
     }
 
     async fn handle_set_device(&self, _device: &str) -> Response {
-        // Device selection is not exposed in current AudioStreamingManager API
+        // Device selection is not exposed in current AudioEngineManager API
         // Would need to be implemented via cpal device enumeration + selection
         Response::err("Device selection not yet implemented in streaming manager")
     }

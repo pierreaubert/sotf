@@ -10,7 +10,10 @@ use opencv::{
     imgproc, objdetect,
     prelude::*,
 };
-use ort::{session::{Session, builder::SessionBuilder}, value::Value};
+use ort::{
+    session::{Session, builder::SessionBuilder},
+    value::Value,
+};
 use serde::{Deserialize, Serialize};
 
 /// A detected facial or head feature
@@ -67,11 +70,18 @@ impl VisionModel {
 
         match enable_fn(builder) {
             Ok(_) => {
-                log::info!("✓ {} execution provider enabled successfully", provider_name);
+                log::info!(
+                    "✓ {} execution provider enabled successfully",
+                    provider_name
+                );
                 true
             }
             Err(e) => {
-                log::warn!("Failed to enable {}: {}. Falling back to CPU.", provider_name, e);
+                log::warn!(
+                    "Failed to enable {}: {}. Falling back to CPU.",
+                    provider_name,
+                    e
+                );
                 log::info!("Note: ONNX Runtime will use CPU optimizations (SIMD, multi-threading)");
                 false
             }
@@ -93,12 +103,14 @@ impl VisionModel {
         if prefer_gpu {
             #[cfg(target_os = "macos")]
             {
-                use_gpu = Self::try_enable_gpu_provider(&mut builder, "CoreML", Self::enable_coreml);
+                use_gpu =
+                    Self::try_enable_gpu_provider(&mut builder, "CoreML", Self::enable_coreml);
             }
 
             #[cfg(target_os = "windows")]
             {
-                use_gpu = Self::try_enable_gpu_provider(&mut builder, "DirectML", Self::enable_directml);
+                use_gpu =
+                    Self::try_enable_gpu_provider(&mut builder, "DirectML", Self::enable_directml);
             }
 
             #[cfg(target_os = "linux")]
@@ -934,20 +946,19 @@ mod tests {
         let mut dummy_builder = Session::builder().unwrap();
 
         // Test successful provider enable
-        let result = VisionModel::try_enable_gpu_provider(
-            &mut dummy_builder,
-            "MockGPU",
-            |_builder| Ok(()),
-        );
+        let result =
+            VisionModel::try_enable_gpu_provider(&mut dummy_builder, "MockGPU", |_builder| Ok(()));
         assert!(result, "GPU provider enable should return true on success");
 
         // Test failed provider enable
-        let result = VisionModel::try_enable_gpu_provider(
-            &mut dummy_builder,
-            "FailedGPU",
-            |_builder| Err(ScannerError::VisionModel("Mock failure".to_string())),
+        let result =
+            VisionModel::try_enable_gpu_provider(&mut dummy_builder, "FailedGPU", |_builder| {
+                Err(ScannerError::VisionModel("Mock failure".to_string()))
+            });
+        assert!(
+            !result,
+            "GPU provider enable should return false on failure"
         );
-        assert!(!result, "GPU provider enable should return false on failure");
     }
 
     #[test]

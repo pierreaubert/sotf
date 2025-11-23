@@ -9,16 +9,12 @@
 // - Search and filter workflows
 // - Error recovery scenarios
 
+use sotf_audio_player::{Plugin, PluginSettings, PluginType};
 use sotf_audio_player_gpui::app::{App, InputMode, Screen, ToastType};
-use sotf_audio_player::{Player, Plugin, PluginSettings, PluginType};
-use autoeq_iir::{Biquad, BiquadFilterType};
-use std::sync::Arc;
-use parking_lot::Mutex;
 use std::path::PathBuf;
 
 fn create_test_app() -> App {
-    let player = Arc::new(Mutex::new(Player::new().unwrap()));
-    App::new(player, None)
+    App::new()
 }
 
 // ============================================================================
@@ -129,9 +125,13 @@ fn scenario_build_and_edit_plugin_chain() {
         plugin_type: PluginType::EQ,
         enabled: true,
         settings: PluginSettings::EQ {
-            filters: vec![
-                Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 1.5, 3.0),
-            ],
+            filters: vec![Biquad::new(
+                BiquadFilterType::Peak,
+                1000.0,
+                48000.0,
+                1.5,
+                3.0,
+            )],
         },
     };
     app.plugin_chain.plugins.push(eq_plugin);
@@ -142,20 +142,20 @@ fn scenario_build_and_edit_plugin_chain() {
         plugin_type: PluginType::Upmixer,
         enabled: true,
         settings: PluginSettings::Upmixer {
-            speaker_config: sotf_audio_player::SpeakerConfig::Config5_0,
-            front_separation_degrees: 30.0,
-            rear_separation_degrees: 110.0,
-            center_gain_db: 0.0,
-            lfe_gain_db: 0.0,
-            surround_gain_db: 0.0,
-            front_balance: 0.0,
-            rear_balance: 0.0,
-            width: 1.0,
-            depth: 1.0,
-            phantom_center: false,
-            bass_redirect_hz: 0.0,
-            enable_lfe: false,
-            enable_optimization: true,
+            speaker_config: "5.0".to_string(),
+            gain_front_direct: 0.0,
+            gain_front_ambient: 0.0,
+            gain_rear_ambient: 0.0,
+            lfe_cutoff_hz: 80.0,
+            stereo_width: 1.0,
+            bandpass_hz: 200.0,
+            height_gain: 0.0,
+            lfe_gain: 0.0,
+            enable_subharmonic_synth: false,
+            subharmonic_gain: 0.0,
+            enable_hr_direct: true,
+            hr_sharpen: 1.0,
+            safety_cap_db: -3.0,
         },
     };
     app.plugin_chain.plugins.push(upmixer_plugin);
@@ -182,8 +182,7 @@ fn scenario_build_and_edit_plugin_chain() {
     assert_eq!(app.input_mode, InputMode::LoadApoFile);
 
     // Step 9: User enters file path
-    let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/test_eq.txt");
+    let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_eq.txt");
     app.apo_file_input = test_file.to_string_lossy().to_string();
 
     // Step 10: User presses Enter to load file
@@ -220,12 +219,11 @@ fn scenario_load_sofa_file_for_binaural() {
         plugin_type: PluginType::BinauralDecoder,
         enabled: true,
         settings: PluginSettings::BinauralDecoder {
-            sofa_file: None,
-            azimuth: 0.0,
-            elevation: 0.0,
-            distance: 1.0,
-            wet_gain: 1.0,
-            dry_gain: 0.0,
+            sofa_file: String::new(),
+            input_channels: 2,
+            enable_optimization: true,
+            externalization: 0.5,
+            near_field_strength: 0.0,
         },
     };
     app.plugin_chain.plugins.push(binaural_plugin);
@@ -251,8 +249,8 @@ fn scenario_load_sofa_file_for_binaural() {
     // Step 8: Verify SOFA path was set
     if let Some(plugin) = app.get_editing_plugin() {
         if let PluginSettings::BinauralDecoder { ref sofa_file, .. } = plugin.settings {
-            assert!(sofa_file.is_some());
-            assert_eq!(sofa_file.as_ref().unwrap().to_string_lossy(), "/path/to/IRC_1002_C.sofa");
+            assert!(!sofa_file.is_empty());
+            assert_eq!(sofa_file, "/path/to/IRC_1002_C.sofa");
         }
     }
 
@@ -276,9 +274,7 @@ fn scenario_error_recovery_invalid_apo_file() {
     let eq_plugin = Plugin {
         plugin_type: PluginType::EQ,
         enabled: true,
-        settings: PluginSettings::EQ {
-            filters: vec![],
-        },
+        settings: PluginSettings::EQ { filters: vec![] },
     };
     app.plugin_chain.plugins.push(eq_plugin);
 
@@ -296,9 +292,10 @@ fn scenario_error_recovery_invalid_apo_file() {
     assert!(result.is_err(), "Loading invalid file should fail");
 
     // Step 4: User sees error toast (would be set in UI layer)
-    app.toast_message = Some(sotf_audio_player_gpui::app::ToastMessage::error(
-        format!("Failed to load APO file: {}", result.unwrap_err())
-    ));
+    app.toast_message = Some(sotf_audio_player_gpui::app::ToastMessage::error(format!(
+        "Failed to load APO file: {}",
+        result.unwrap_err()
+    )));
 
     // Verify error toast
     if let Some(ref toast) = app.toast_message {
@@ -310,15 +307,16 @@ fn scenario_error_recovery_invalid_apo_file() {
     app.apo_file_input.clear();
 
     // Step 6: Load valid file
-    let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/test_eq.txt");
+    let test_file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_eq.txt");
     app.apo_file_input = test_file.to_string_lossy().to_string();
 
     let result = app.load_apo_file();
     assert!(result.is_ok(), "Loading valid file should succeed");
 
     // Step 7: Success toast
-    app.toast_message = Some(sotf_audio_player_gpui::app::ToastMessage::success("APO file loaded"));
+    app.toast_message = Some(sotf_audio_player_gpui::app::ToastMessage::success(
+        "APO file loaded",
+    ));
 
     if let Some(ref toast) = app.toast_message {
         assert_eq!(toast.toast_type, ToastType::Success);
@@ -341,16 +339,16 @@ fn scenario_error_recovery_wrong_plugin_type() {
         plugin_type: PluginType::Compressor,
         enabled: true,
         settings: PluginSettings::Compressor {
-            threshold: -20.0,
+            threshold_db: -20.0,
             ratio: 4.0,
             attack_ms: 10.0,
             release_ms: 100.0,
-            knee: 6.0,
-            makeup_gain: 0.0,
+            knee_db: 6.0,
+            makeup_gain_db: 0.0,
             mix: 1.0,
-            lookahead_ms: 0.0,
             auto_makeup: false,
-            rms_window_ms: 10.0,
+            link_channels: true,
+            sidechain_hpf_hz: 0.0,
         },
     };
     app.plugin_chain.plugins.push(compressor_plugin);
@@ -371,7 +369,7 @@ fn scenario_error_recovery_wrong_plugin_type() {
 
     // Step 4: User sees warning toast
     app.toast_message = Some(sotf_audio_player_gpui::app::ToastMessage::warning(
-        "APO files can only be loaded for EQ plugins"
+        "APO files can only be loaded for EQ plugins",
     ));
 
     if let Some(ref toast) = app.toast_message {
@@ -462,16 +460,16 @@ fn scenario_complete_plugin_chain_workflow() {
         plugin_type: PluginType::Compressor,
         enabled: true,
         settings: PluginSettings::Compressor {
-            threshold: -20.0,
+            threshold_db: -20.0,
             ratio: 4.0,
             attack_ms: 10.0,
             release_ms: 100.0,
-            knee: 6.0,
-            makeup_gain: 0.0,
+            knee_db: 6.0,
+            makeup_gain_db: 0.0,
             mix: 1.0,
-            lookahead_ms: 0.0,
             auto_makeup: false,
-            rms_window_ms: 10.0,
+            link_channels: true,
+            sidechain_hpf_hz: 0.0,
         },
     });
 
@@ -480,9 +478,9 @@ fn scenario_complete_plugin_chain_workflow() {
         plugin_type: PluginType::Limiter,
         enabled: true,
         settings: PluginSettings::Limiter {
-            threshold: -3.0,
+            threshold_db: -3.0,
             release_ms: 50.0,
-            lookahead_ms: 5.0,
+            mix: 1.0,
         },
     });
 
@@ -527,7 +525,7 @@ fn scenario_toast_message_lifecycle() {
     // Step 1: Success toast from adding directory
     app.current_screen = Screen::DirectoryManager;
     app.toast_message = Some(sotf_audio_player_gpui::app::ToastMessage::success(
-        "Directory added. Press 's' to scan."
+        "Directory added. Press 's' to scan.",
     ));
 
     assert!(app.toast_message.is_some());
@@ -541,7 +539,7 @@ fn scenario_toast_message_lifecycle() {
 
     // Step 3: Error toast from failed scan
     app.toast_message = Some(sotf_audio_player_gpui::app::ToastMessage::error(
-        "Scan failed: Permission denied"
+        "Scan failed: Permission denied",
     ));
 
     if let Some(ref toast) = app.toast_message {

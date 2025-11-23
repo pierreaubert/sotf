@@ -21,8 +21,8 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::speaker_config::{SpeakerConfig, SpeakerPosition, get_speaker_config_by_channels};
 use super::simd::{complex_mul_add_simd, complex_mul_simd};
+use super::speaker_config::{SpeakerConfig, SpeakerPosition, get_speaker_config_by_channels};
 
 use crate::sofa::{SofaFile, SourcePosition};
 use rubato::{
@@ -1458,5 +1458,4 @@ mod tests {
         assert_eq!(output[2], 0.6); // Frame 1, FL
         assert_eq!(output[3], 0.7); // Frame 1, FR
     }
-
 }

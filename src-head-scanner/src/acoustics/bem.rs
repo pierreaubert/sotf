@@ -48,10 +48,10 @@ impl Default for BEMConfig {
     fn default() -> Self {
         Self {
             solver_path: PathBuf::from("mesh2hrtf"),
-            freq_min: 100.0,          // 100 Hz
-            freq_max: 20000.0,        // 20 kHz
+            freq_min: 100.0,   // 100 Hz
+            freq_max: 20000.0, // 20 kHz
             num_frequencies: 512,
-            speed_of_sound: 343.0,    // m/s at 20°C
+            speed_of_sound: 343.0, // m/s at 20°C
             refinement_level: 1,
         }
     }
@@ -205,9 +205,7 @@ impl BEMSolver {
         output_dir: &Path,
     ) -> ScannerResult<()> {
         log::info!("Starting BEM simulation...");
-        log::warn!(
-            "BEM simulation can take several hours. Consider running overnight."
-        );
+        log::warn!("BEM simulation can take several hours. Consider running overnight.");
 
         // Check if solver exists
         if !self.config.solver_path.exists() {
@@ -226,9 +224,7 @@ impl BEMSolver {
             .arg("--output")
             .arg(output_dir)
             .output()
-            .map_err(|e| {
-                ScannerError::IoError(format!("Failed to execute BEM solver: {}", e))
-            })?;
+            .map_err(|e| ScannerError::IoError(format!("Failed to execute BEM solver: {}", e)))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -318,11 +314,9 @@ impl BEMSolver {
         // MESH2HRTF typically stores source positions in a variable named "sourcePosition"
         // with dimensions [num_sources, 3]
 
-        let var = file
-            .variable("sourcePosition")
-            .ok_or_else(|| {
-                ScannerError::InvalidConfig("sourcePosition variable not found in NetCDF".to_string())
-            })?;
+        let var = file.variable("sourcePosition").ok_or_else(|| {
+            ScannerError::InvalidConfig("sourcePosition variable not found in NetCDF".to_string())
+        })?;
 
         let data: Vec<f32> = var.get_values::<f32, _>(..)?.into_iter().collect();
 
@@ -342,18 +336,19 @@ impl BEMSolver {
 
     /// Read frequency-domain HRTFs from NetCDF file
     #[cfg(feature = "bem")]
-    fn read_frequency_hrtfs(&self, file: &netcdf::File) -> ScannerResult<Vec<Vec<Vec<(f32, f32)>>>> {
+    fn read_frequency_hrtfs(
+        &self,
+        file: &netcdf::File,
+    ) -> ScannerResult<Vec<Vec<Vec<(f32, f32)>>>> {
         use num_complex::Complex;
 
         // MESH2HRTF stores complex transfer functions
         // Typically: "transferFunction" variable with dimensions [num_sources, num_receivers, num_frequencies, 2]
         // Last dimension is [real, imag]
 
-        let var = file
-            .variable("transferFunction")
-            .ok_or_else(|| {
-                ScannerError::InvalidConfig("transferFunction variable not found in NetCDF".to_string())
-            })?;
+        let var = file.variable("transferFunction").ok_or_else(|| {
+            ScannerError::InvalidConfig("transferFunction variable not found in NetCDF".to_string())
+        })?;
 
         let dims = var.dimensions();
         if dims.len() < 4 {
@@ -376,7 +371,8 @@ impl BEMSolver {
         let data: Vec<f32> = var.get_values::<f32, _>(..)?.into_iter().collect();
 
         // Convert to nested structure: [source][receiver][frequency] = (real, imag)
-        let mut hrtfs = vec![vec![vec![(0.0f32, 0.0f32); num_frequencies]; num_receivers]; num_sources];
+        let mut hrtfs =
+            vec![vec![vec![(0.0f32, 0.0f32); num_frequencies]; num_receivers]; num_sources];
 
         for src in 0..num_sources {
             for rec in 0..num_receivers {
@@ -441,10 +437,7 @@ impl BEMSolver {
 
                 // Extract real part and normalize
                 let normalization = 1.0 / fft_size as f32;
-                let ir: Vec<f32> = freq_data
-                    .iter()
-                    .map(|c| c.re * normalization)
-                    .collect();
+                let ir: Vec<f32> = freq_data.iter().map(|c| c.re * normalization).collect();
 
                 // Truncate or pad to desired length (512 samples standard)
                 let target_length = 512;
@@ -474,7 +467,8 @@ impl BEMSolver {
         let n = ir.len();
         for (i, sample) in ir.iter_mut().enumerate() {
             // Hann window: 0.5 * (1 - cos(2π * i / (N-1)))
-            let window = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos());
+            let window =
+                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos());
             *sample *= window;
         }
     }

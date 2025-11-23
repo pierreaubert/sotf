@@ -334,7 +334,7 @@ impl Default for PhysicalParameters {
     fn default() -> Self {
         Self {
             speed_of_sound: 343.0, // Air at 20°C
-            density: 1.1839,        // Air at 20°C
+            density: 1.1839,       // Air at 20°C
         }
     }
 }

@@ -43,9 +43,9 @@
 //! ```
 
 use bem::ffi::{NumCalcConfig, NumCalcRunner, ParallelBemRunner, SystemResources};
-use std::path::{Path, PathBuf};
 use std::fs;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 /// Get test project directory from environment
 fn get_test_project_dir() -> Option<PathBuf> {
@@ -57,9 +57,7 @@ fn get_test_project_dir() -> Option<PathBuf> {
 
 /// Check if NumCalc is available
 fn is_numcalc_available() -> bool {
-    NumCalcRunner::new(".")
-        .map(|_| false)
-        .unwrap_or(false)
+    NumCalcRunner::new(".").map(|_| false).unwrap_or(false)
         || which::which("NumCalc").is_ok()
         || std::env::var("NUMCALC_PATH").is_ok()
 }
@@ -94,7 +92,10 @@ fn create_minimal_test_project(base_dir: &Path, name: &str) -> std::io::Result<P
     // Create dummy mesh file with a closed tetrahedron (4 triangles)
     let mesh_file = project_dir.join("mesh.msh");
     let mut mesh = fs::File::create(mesh_file)?;
-    writeln!(mesh, "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n4\n1 0 0 0\n2 1 0 0\n3 0 1 0\n4 0 0 1\n$EndNodes\n$Elements\n4\n1 2 2 1 1 1 2 3\n2 2 2 1 1 1 2 4\n3 2 2 1 1 2 3 4\n4 2 2 1 1 1 3 4\n$EndElements")?;
+    writeln!(
+        mesh,
+        "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n4\n1 0 0 0\n2 1 0 0\n3 0 1 0\n4 0 0 1\n$EndNodes\n$Elements\n4\n1 2 2 1 1 1 2 3\n2 2 2 1 1 1 2 4\n3 2 2 1 1 2 3 4\n4 2 2 1 1 1 3 4\n$EndElements"
+    )?;
 
     Ok(project_dir)
 }
@@ -142,7 +143,10 @@ fn test_numcalc_executable_discovery() {
                 );
             }
             Err(e) => {
-                println!("  Discovery successful, but runner creation failed (expected): {}", e);
+                println!(
+                    "  Discovery successful, but runner creation failed (expected): {}",
+                    e
+                );
                 println!("  This is normal - we just tested executable discovery");
             }
         }
@@ -174,7 +178,8 @@ fn test_runner_creation() {
         Some(dir) => dir,
         None => {
             println!("TEST_PROJECT_DIR not set, creating temporary test project...");
-            create_minimal_test_project(&temp_dir, "test_runner_creation").expect("Failed to create temp project")
+            create_minimal_test_project(&temp_dir, "test_runner_creation")
+                .expect("Failed to create temp project")
         }
     };
 
@@ -214,9 +219,10 @@ fn test_single_frequency_execution() {
 
     let temp_dir = std::env::temp_dir();
     let project_dir = get_test_project_dir().unwrap_or_else(|| {
-        create_minimal_test_project(&temp_dir, "test_single_freq").expect("Failed to create temp project")
+        create_minimal_test_project(&temp_dir, "test_single_freq")
+            .expect("Failed to create temp project")
     });
-    
+
     let runner = NumCalcRunner::new(&project_dir).expect("Failed to create runner");
 
     println!("Running NumCalc for frequency index 0...");
@@ -276,7 +282,8 @@ fn test_memory_estimation() {
 
     let temp_dir = std::env::temp_dir();
     let project_dir = get_test_project_dir().unwrap_or_else(|| {
-        create_minimal_test_project(&temp_dir, "test_memory").expect("Failed to create temp project")
+        create_minimal_test_project(&temp_dir, "test_memory")
+            .expect("Failed to create temp project")
     });
     let runner = NumCalcRunner::new(&project_dir).expect("Failed to create runner");
 
@@ -317,7 +324,8 @@ fn test_parallel_execution_small() {
 
     let temp_dir = std::env::temp_dir();
     let project_dir = get_test_project_dir().unwrap_or_else(|| {
-        create_minimal_test_project(&temp_dir, "test_parallel").expect("Failed to create temp project")
+        create_minimal_test_project(&temp_dir, "test_parallel")
+            .expect("Failed to create temp project")
     });
 
     let runner = ParallelBemRunner::new(&project_dir).expect("Failed to create parallel runner");
@@ -430,7 +438,10 @@ fn test_can_run_task() {
         (100.0, "100 MB task"),
         (1000.0, "1 GB task"),
         (5000.0, "5 GB task"),
-        (resources.total_ram_mb * 2.0, "Oversized task (2x total RAM)"),
+        (
+            resources.total_ram_mb * 2.0,
+            "Oversized task (2x total RAM)",
+        ),
     ];
 
     println!("\nTask feasibility checks (90% CPU threshold):");
@@ -440,7 +451,11 @@ fn test_can_run_task() {
             "  {} ({:.1} MB): {}",
             description,
             required_mb,
-            if can_run { "✓ Can run" } else { "✗ Cannot run" }
+            if can_run {
+                "✓ Can run"
+            } else {
+                "✗ Cannot run"
+            }
         );
     }
 

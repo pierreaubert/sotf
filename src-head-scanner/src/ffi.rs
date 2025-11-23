@@ -2,10 +2,10 @@
 //!
 //! This module provides C-compatible FFI functions that can be called from Swift.
 
+use crate::ScannerResult;
 use crate::guidance::{HeadRegion, QualityMetrics, ScanGuidance};
 use crate::mesh::Mesh;
 use crate::scanner::Scanner;
-use crate::ScannerResult;
 use nalgebra::{Point3, Quaternion as NalgebraQuaternion, UnitQuaternion};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -167,15 +167,21 @@ pub extern "C" fn scanner_process_frame(
 
     // Validate dimensions to prevent integer overflow and excessive memory access
     const MAX_DIMENSION: u32 = 16384; // 16K resolution max
-    const MIN_DIMENSION: u32 = 64;     // Minimum reasonable resolution
+    const MIN_DIMENSION: u32 = 64; // Minimum reasonable resolution
 
     if width < MIN_DIMENSION || width > MAX_DIMENSION {
-        set_last_error(format!("Invalid width: {} (must be {}-{})", width, MIN_DIMENSION, MAX_DIMENSION));
+        set_last_error(format!(
+            "Invalid width: {} (must be {}-{})",
+            width, MIN_DIMENSION, MAX_DIMENSION
+        ));
         return ScannerResultCode::InvalidInput;
     }
 
     if height < MIN_DIMENSION || height > MAX_DIMENSION {
-        set_last_error(format!("Invalid height: {} (must be {}-{})", height, MIN_DIMENSION, MAX_DIMENSION));
+        set_last_error(format!(
+            "Invalid height: {} (must be {}-{})",
+            height, MIN_DIMENSION, MAX_DIMENSION
+        ));
         return ScannerResultCode::InvalidInput;
     }
 
@@ -183,7 +189,10 @@ pub extern "C" fn scanner_process_frame(
     let pixel_count = match (width as u64).checked_mul(height as u64) {
         Some(count) if count <= (usize::MAX as u64) => count as usize,
         _ => {
-            set_last_error(format!("Dimensions too large: {}x{} would overflow", width, height));
+            set_last_error(format!(
+                "Dimensions too large: {}x{} would overflow",
+                width, height
+            ));
             return ScannerResultCode::InvalidInput;
         }
     };
@@ -200,24 +209,31 @@ pub extern "C" fn scanner_process_frame(
     let pose = unsafe { &*pose };
 
     // Validate pose values are not NaN or infinity
-    if !pose.position.x.is_finite() || !pose.position.y.is_finite() || !pose.position.z.is_finite() {
+    if !pose.position.x.is_finite() || !pose.position.y.is_finite() || !pose.position.z.is_finite()
+    {
         set_last_error("Invalid position: contains NaN or infinity".to_string());
         return ScannerResultCode::InvalidInput;
     }
 
-    if !pose.rotation.x.is_finite() || !pose.rotation.y.is_finite() ||
-       !pose.rotation.z.is_finite() || !pose.rotation.w.is_finite() {
+    if !pose.rotation.x.is_finite()
+        || !pose.rotation.y.is_finite()
+        || !pose.rotation.z.is_finite()
+        || !pose.rotation.w.is_finite()
+    {
         set_last_error("Invalid rotation: contains NaN or infinity".to_string());
         return ScannerResultCode::InvalidInput;
     }
 
     // Check quaternion is normalized (within tolerance)
-    let quat_len_sq = pose.rotation.x * pose.rotation.x +
-                       pose.rotation.y * pose.rotation.y +
-                       pose.rotation.z * pose.rotation.z +
-                       pose.rotation.w * pose.rotation.w;
+    let quat_len_sq = pose.rotation.x * pose.rotation.x
+        + pose.rotation.y * pose.rotation.y
+        + pose.rotation.z * pose.rotation.z
+        + pose.rotation.w * pose.rotation.w;
     if (quat_len_sq - 1.0).abs() > 0.01 {
-        set_last_error(format!("Quaternion not normalized: length^2 = {}", quat_len_sq));
+        set_last_error(format!(
+            "Quaternion not normalized: length^2 = {}",
+            quat_len_sq
+        ));
         return ScannerResultCode::InvalidInput;
     }
 
@@ -230,7 +246,8 @@ pub extern "C" fn scanner_process_frame(
     // Validate depth data (quick spot check to prevent garbage data)
     const MAX_DEPTH: f32 = 100.0; // 100 meters maximum
     let mut valid_depth_count = 0;
-    for (i, &d) in depth.iter().enumerate().take(100) { // Check first 100 samples
+    for (i, &d) in depth.iter().enumerate().take(100) {
+        // Check first 100 samples
         if d.is_finite() && d >= 0.0 && d <= MAX_DEPTH {
             valid_depth_count += 1;
         }
@@ -329,7 +346,9 @@ pub extern "C" fn guidance_is_region_covered(
     }
 
     let guidance = unsafe { &*guidance };
-    guidance.get_covered_regions().contains(&HeadRegion::from(region))
+    guidance
+        .get_covered_regions()
+        .contains(&HeadRegion::from(region))
 }
 
 #[unsafe(no_mangle)]
@@ -410,7 +429,11 @@ pub extern "C" fn mesh_export_obj(mesh: *const Mesh, path: *const c_char) -> Sca
     // Validate path length
     const MAX_PATH_LENGTH: usize = 4096;
     if path_str.len() > MAX_PATH_LENGTH {
-        set_last_error(format!("Path too long: {} bytes (max {})", path_str.len(), MAX_PATH_LENGTH));
+        set_last_error(format!(
+            "Path too long: {} bytes (max {})",
+            path_str.len(),
+            MAX_PATH_LENGTH
+        ));
         return ScannerResultCode::InvalidInput;
     }
 
@@ -460,7 +483,11 @@ pub extern "C" fn scanner_generate_sofa(
     // Validate path
     const MAX_PATH_LENGTH: usize = 4096;
     if path_str.len() > MAX_PATH_LENGTH {
-        set_last_error(format!("Path too long: {} bytes (max {})", path_str.len(), MAX_PATH_LENGTH));
+        set_last_error(format!(
+            "Path too long: {} bytes (max {})",
+            path_str.len(),
+            MAX_PATH_LENGTH
+        ));
         return ScannerResultCode::InvalidInput;
     }
 
@@ -475,7 +502,7 @@ pub extern "C" fn scanner_generate_sofa(
         return ScannerResultCode::InvalidInput;
     }
 
-    const MIN_SAMPLE_RATE: f32 = 8000.0;   // 8 kHz minimum
+    const MIN_SAMPLE_RATE: f32 = 8000.0; // 8 kHz minimum
     const MAX_SAMPLE_RATE: f32 = 192000.0; // 192 kHz maximum
 
     if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
@@ -512,7 +539,7 @@ pub extern "C" fn scanner_generate_sofa(
         return ScannerResultCode::InvalidInput;
     }
 
-    const MIN_DISTANCE: f32 = 0.1;  // 10 cm minimum
+    const MIN_DISTANCE: f32 = 0.1; // 10 cm minimum
     const MAX_DISTANCE: f32 = 100.0; // 100 m maximum
 
     if distance < MIN_DISTANCE || distance > MAX_DISTANCE {

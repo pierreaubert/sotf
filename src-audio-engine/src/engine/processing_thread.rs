@@ -9,11 +9,10 @@ use super::{
     ThreadEvent,
 };
 use sotf_plugins::{
-    AnalyzerPlugin, CompressorPluginParams, ConvolutionPlugin,
-    ConvolutionPluginParams, CrossoverPlugin, CrossoverPluginParams, DelayPlugin,
-    DelayPluginParams, EqPluginParams, GainPluginParams,
-    GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams, Plugin, PluginHost,
-    ProcessContext, UpmixerPluginParams,
+    AnalyzerPlugin, CompressorPluginParams, ConvolutionPlugin, ConvolutionPluginParams,
+    CrossoverPlugin, CrossoverPluginParams, DelayPlugin, DelayPluginParams, EqPluginParams,
+    GainPluginParams, GatePluginParams, Host, LimiterPluginParams,
+    LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext, UpmixerPluginParams,
 };
 
 use std::collections::HashMap;
@@ -356,9 +355,7 @@ impl ProcessingState {
                     "[Processing Thread] Updated output channels: {}",
                     self.channels
                 );
-                log::trace!(
-                    "[Processing Thread] Crossfade: Swap complete, recreating analyzers"
-                );
+                log::trace!("[Processing Thread] Crossfade: Swap complete, recreating analyzers");
 
                 // Recreate analyzers for new channel count
                 if old_channels != self.channels {
@@ -370,7 +367,9 @@ impl ProcessingState {
                     if let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
                         log::error!("[Processing Thread] Failed to recreate analyzers: {}", e);
                     } else {
-                        log::trace!("[Processing Thread] Crossfade: Analyzers recreated successfully");
+                        log::trace!(
+                            "[Processing Thread] Crossfade: Analyzers recreated successfully"
+                        );
                     }
                 }
 
@@ -499,16 +498,22 @@ fn run_processing_thread(
                                 "[Processing Thread] UpdatePlugins: Plugin host built successfully, output_channels={}",
                                 output_channels
                             );
-                            log::trace!("[Processing Thread] UpdatePlugins: Starting hot-reload with crossfade");
+                            log::trace!(
+                                "[Processing Thread] UpdatePlugins: Starting hot-reload with crossfade"
+                            );
                             state.start_reload(new_host);
-                            log::trace!("[Processing Thread] UpdatePlugins: Sending PluginChainUpdated response");
+                            log::trace!(
+                                "[Processing Thread] UpdatePlugins: Sending PluginChainUpdated response"
+                            );
                             response_tx
                                 .send(ProcessingResponse::PluginChainUpdated { output_channels })
                                 .ok();
                         }
                         Err(e) => {
                             log::debug!("[Processing Thread] Failed to build plugin chain: {}", e);
-                            log::trace!("[Processing Thread] UpdatePlugins: Sending Error response");
+                            log::trace!(
+                                "[Processing Thread] UpdatePlugins: Sending Error response"
+                            );
                             response_tx.send(ProcessingResponse::Error(e)).ok();
                         }
                     }
@@ -521,7 +526,7 @@ fn run_processing_thread(
                     // Update parameter on current host
                     // TODO: Implement parameter setting
                     log::info!(
-                        "[Processing Thread] Set parameter: plugin {} param {} = {}",
+                        "[Processing Thread] TODO Set parameter: plugin {} param {} = {}",
                         plugin_index,
                         param_id,
                         value

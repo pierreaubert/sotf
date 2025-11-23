@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 mod tests {
-    use head_scanner::{Scanner, ScannerConfig, ScanState};
+    use head_scanner::{ScanState, Scanner, ScannerConfig};
     use std::path::PathBuf;
 
     #[test]
@@ -34,7 +34,7 @@ mod tests {
 
     #[test]
     fn test_security_path_validation() {
-        use head_scanner::security::{validate_path, validate_export_path};
+        use head_scanner::security::{validate_export_path, validate_path};
         use std::path::PathBuf;
 
         let temp_dir = std::env::temp_dir();
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_guidance_system() {
-        use head_scanner::guidance::{ScanGuidance, HeadRegion};
+        use head_scanner::guidance::{HeadRegion, ScanGuidance};
         use head_scanner::reconstruction::CameraPose;
         use nalgebra::{Point3, UnitQuaternion};
 
@@ -115,7 +115,10 @@ mod tests {
 
         // Test bounds calculation
         let bounds = mesh.bounding_box();
-        assert!(bounds.is_some(), "Mesh with vertices should have bounding box");
+        assert!(
+            bounds.is_some(),
+            "Mesh with vertices should have bounding box"
+        );
     }
 
     #[test]
@@ -161,8 +164,8 @@ mod tests {
     #[test]
     #[cfg(feature = "sofa")]
     fn test_end_to_end_sofa_generation() {
-        use head_scanner::mesh::Mesh;
         use head_scanner::acoustics::generate_sofa_analytical;
+        use head_scanner::mesh::Mesh;
         use nalgebra::Point3;
         use std::fs;
 
@@ -188,14 +191,8 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let output_path = temp_dir.join("integration_test.sofa");
 
-        let result = generate_sofa_analytical(
-            &mesh,
-            output_path.to_str().unwrap(),
-            44100.0,
-            8,
-            4,
-            1.0,
-        );
+        let result =
+            generate_sofa_analytical(&mesh, output_path.to_str().unwrap(), 44100.0, 8, 4, 1.0);
 
         assert!(result.is_ok(), "SOFA generation should succeed");
         assert!(output_path.exists(), "SOFA file should be created");
@@ -231,20 +228,22 @@ mod tests {
 
     #[test]
     fn test_concurrent_scanner_usage() {
-        use std::thread;
         use std::sync::Arc;
+        use std::thread;
 
         // Test that Scanner can be used from multiple threads with Arc
         let config = ScannerConfig::default();
         let scanner = Arc::new(Scanner::new_with_config(config));
 
-        let handles: Vec<_> = (0..4).map(|i| {
-            let scanner_clone = Arc::clone(&scanner);
-            thread::spawn(move || {
-                let state = scanner_clone.get_state();
-                println!("Thread {} - Scanner state: {:?}", i, state);
+        let handles: Vec<_> = (0..4)
+            .map(|i| {
+                let scanner_clone = Arc::clone(&scanner);
+                thread::spawn(move || {
+                    let state = scanner_clone.get_state();
+                    println!("Thread {} - Scanner state: {:?}", i, state);
+                })
             })
-        }).collect();
+            .collect();
 
         for handle in handles {
             handle.join().expect("Thread should complete successfully");

@@ -129,10 +129,7 @@ impl NCInpWriter {
         Ok(())
     }
 
-    fn write_control_parameters(
-        writer: &mut impl Write,
-        params: &NumCalcParameters,
-    ) -> Result<()> {
+    fn write_control_parameters(writer: &mut impl Write, params: &NumCalcParameters) -> Result<()> {
         // Control parameter I (hard coded, not documented)
         writeln!(writer, "## Controlparameter I")?;
         writeln!(writer, "0 0 0 0 7 0")?;

@@ -196,8 +196,7 @@ impl SofaWriter {
         }
 
         // Create netCDF file
-        let mut file = netcdf::create(output_path)
-            .context("Failed to create SOFA file")?;
+        let mut file = netcdf::create(output_path).context("Failed to create SOFA file")?;
 
         // Write global attributes
         self.write_global_attributes(&mut file)?;
@@ -213,12 +212,7 @@ impl SofaWriter {
         self.write_data_vars_hrir(&mut file, hrir_data)?;
 
         // Write position variables
-        self.write_position_vars(
-            &mut file,
-            source_positions,
-            num_measurements,
-            num_receivers,
-        )?;
+        self.write_position_vars(&mut file, source_positions, num_measurements, num_receivers)?;
 
         Ok(())
     }
@@ -269,11 +263,7 @@ impl SofaWriter {
     }
 
     /// Write Data.* variables with HRIR data
-    fn write_data_vars_hrir(
-        &self,
-        file: &mut netcdf::FileMut,
-        hrir_data: &HrirData,
-    ) -> Result<()> {
+    fn write_data_vars_hrir(&self, file: &mut netcdf::FileMut, hrir_data: &HrirData) -> Result<()> {
         let num_points = hrir_data.num_points();
         let num_samples = hrir_data.num_samples();
 
@@ -293,8 +283,7 @@ impl SofaWriter {
         }
 
         // Write Data.IR
-        let mut ir_var = file
-            .add_variable::<f64>("Data.IR", &["M", "R", "N"])?;
+        let mut ir_var = file.add_variable::<f64>("Data.IR", &["M", "R", "N"])?;
         ir_var.put_values(&ir_data.into_raw_vec(), ..)?;
         ir_var.put_attribute("Units", "")?; // Dimensionless
 
@@ -305,8 +294,7 @@ impl SofaWriter {
 
         // Write Data.Delay [M, R] (all zeros for now)
         let delay_data = Array2::<f64>::zeros((num_points, 2));
-        let mut delay_var = file
-            .add_variable::<f64>("Data.Delay", &["M", "R"])?;
+        let mut delay_var = file.add_variable::<f64>("Data.Delay", &["M", "R"])?;
         delay_var.put_values(&delay_data.into_raw_vec(), ..)?;
         delay_var.put_attribute("Units", "samples")?;
 
@@ -344,8 +332,7 @@ impl SofaWriter {
         };
 
         // Write SourcePosition
-        let mut src_var = file
-            .add_variable::<f64>("SourcePosition", &["M", "C"])?;
+        let mut src_var = file.add_variable::<f64>("SourcePosition", &["M", "C"])?;
         src_var.put_values(&source_pos.into_raw_vec(), ..)?;
         src_var.put_attribute("Type", coord_type)?;
         src_var.put_attribute("Units", coord_units)?;
@@ -361,16 +348,14 @@ impl SofaWriter {
             Array2::from_shape_vec((2, 3), vec![az1, el1, r1, az2, el2, r2])?
         };
 
-        let mut rcv_var = file
-            .add_variable::<f64>("ReceiverPosition", &["R", "C"])?;
+        let mut rcv_var = file.add_variable::<f64>("ReceiverPosition", &["R", "C"])?;
         rcv_var.put_values(&receiver_pos.into_raw_vec(), ..)?;
         rcv_var.put_attribute("Type", coord_type)?;
         rcv_var.put_attribute("Units", coord_units)?;
 
         // Write ListenerPosition (all at origin)
         let listener_pos = Array2::<f64>::zeros((num_measurements, 3));
-        let mut lst_var = file
-            .add_variable::<f64>("ListenerPosition", &["M", "C"])?;
+        let mut lst_var = file.add_variable::<f64>("ListenerPosition", &["M", "C"])?;
         lst_var.put_values(&listener_pos.into_raw_vec(), ..)?;
         lst_var.put_attribute("Type", coord_type)?;
         lst_var.put_attribute("Units", coord_units)?;
@@ -383,8 +368,7 @@ impl SofaWriter {
         };
         let listener_view = Array2::from_shape_fn((num_measurements, 3), |(_, j)| view_dir[j]);
 
-        let mut view_var = file
-            .add_variable::<f64>("ListenerView", &["M", "C"])?;
+        let mut view_var = file.add_variable::<f64>("ListenerView", &["M", "C"])?;
         view_var.put_values(&listener_view.into_raw_vec(), ..)?;
         view_var.put_attribute("Type", coord_type)?;
         view_var.put_attribute("Units", coord_units)?;
@@ -397,8 +381,7 @@ impl SofaWriter {
         };
         let listener_up = Array2::from_shape_fn((num_measurements, 3), |(_, j)| up_dir[j]);
 
-        let mut up_var = file
-            .add_variable::<f64>("ListenerUp", &["M", "C"])?;
+        let mut up_var = file.add_variable::<f64>("ListenerUp", &["M", "C"])?;
         up_var.put_values(&listener_up.into_raw_vec(), ..)?;
         up_var.put_attribute("Type", coord_type)?;
         up_var.put_attribute("Units", coord_units)?;

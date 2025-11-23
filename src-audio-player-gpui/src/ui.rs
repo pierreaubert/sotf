@@ -270,28 +270,36 @@ impl PlayerView {
 
     fn set_sort_artist(&mut self, _: &SetSortArtist, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Artist);
+            state
+                .app
+                .set_library_sort_order(crate::app::LibrarySortOrder::Artist);
         });
         cx.notify();
     }
 
     fn set_sort_album(&mut self, _: &SetSortAlbum, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Album);
+            state
+                .app
+                .set_library_sort_order(crate::app::LibrarySortOrder::Album);
         });
         cx.notify();
     }
 
     fn set_sort_title(&mut self, _: &SetSortTitle, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Title);
+            state
+                .app
+                .set_library_sort_order(crate::app::LibrarySortOrder::Title);
         });
         cx.notify();
     }
 
     fn set_sort_year(&mut self, _: &SetSortYear, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_library_sort_order(crate::app::LibrarySortOrder::Year);
+            state
+                .app
+                .set_library_sort_order(crate::app::LibrarySortOrder::Year);
         });
         cx.notify();
     }
@@ -317,14 +325,18 @@ impl PlayerView {
 
     fn set_filter_mono(&mut self, _: &SetFilterMono, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_channel_filter(crate::app::ChannelFilter::Mono);
+            state
+                .app
+                .set_channel_filter(crate::app::ChannelFilter::Mono);
         });
         cx.notify();
     }
 
     fn set_filter_stereo(&mut self, _: &SetFilterStereo, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_channel_filter(crate::app::ChannelFilter::Stereo);
+            state
+                .app
+                .set_channel_filter(crate::app::ChannelFilter::Stereo);
         });
         cx.notify();
     }
@@ -336,21 +348,25 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_channel_filter(crate::app::ChannelFilter::Multichannel);
+            state
+                .app
+                .set_channel_filter(crate::app::ChannelFilter::Multichannel);
         });
         cx.notify();
     }
 
     fn set_filter_mixed(&mut self, _: &SetFilterMixed, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.set_channel_filter(crate::app::ChannelFilter::Mixed);
+            state
+                .app
+                .set_channel_filter(crate::app::ChannelFilter::Mixed);
         });
         cx.notify();
     }
 
     fn handle_search_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for search mode
-        match &event.keystroke.key {
+        match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.search_query.pop();
@@ -366,7 +382,7 @@ impl PlayerView {
             }
             _ => {
                 // Add character to search query
-                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
                         state.app.search_query.push_str(text);
                         state.app.selected_album_index = 0; // Reset selection when query changes
@@ -379,7 +395,7 @@ impl PlayerView {
 
     fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for add directory mode
-        match &event.keystroke.key {
+        match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.directory_input.pop();
@@ -406,7 +422,7 @@ impl PlayerView {
             }
             _ => {
                 // Add character to directory input
-                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
                         state.app.directory_input.push_str(text);
                         state.app.clear_autocomplete();
@@ -573,8 +589,8 @@ impl PlayerView {
         cx.notify();
     }
     fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            match state.app.current_screen {
+        self.state
+            .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Queue => {
                     state.app.remove_from_queue(state.app.selected_queue_index);
                 }
@@ -582,8 +598,7 @@ impl PlayerView {
                     state.app.remove_selected_directory();
                 }
                 _ => {}
-            }
-        });
+            });
         cx.notify();
     }
 
@@ -631,7 +646,10 @@ impl PlayerView {
             // Start scan (this will be async in reality, but for now we do it synchronously)
             if let Err(e) = state.app.scan_library() {
                 log::error!("Library scan failed: {}", e);
-                state.app.toast_message = Some(crate::app::ToastMessage::error(format!("Scan failed: {}", e)));
+                state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                    "Scan failed: {}",
+                    e
+                )));
             }
             // Save directories to config after successful scan
             if let Err(e) = state.app.save_config() {
@@ -651,14 +669,23 @@ impl PlayerView {
 
     fn quick_add_upmixer(&mut self, _: &QuickAddUpmixer, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.add_plugin(&sotf_audio_player::PluginType::Upmixer);
+            state
+                .app
+                .add_plugin(&sotf_audio_player::PluginType::Upmixer);
         });
         cx.notify();
     }
 
-    fn quick_add_compressor(&mut self, _: &QuickAddCompressor, _: &mut Window, cx: &mut Context<Self>) {
+    fn quick_add_compressor(
+        &mut self,
+        _: &QuickAddCompressor,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
-            state.app.add_plugin(&sotf_audio_player::PluginType::Compressor);
+            state
+                .app
+                .add_plugin(&sotf_audio_player::PluginType::Compressor);
         });
         cx.notify();
     }
@@ -672,21 +699,27 @@ impl PlayerView {
 
     fn quick_add_limiter(&mut self, _: &QuickAddLimiter, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.add_plugin(&sotf_audio_player::PluginType::Limiter);
+            state
+                .app
+                .add_plugin(&sotf_audio_player::PluginType::Limiter);
         });
         cx.notify();
     }
 
     fn quick_add_loudness(&mut self, _: &QuickAddLoudness, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.add_plugin(&sotf_audio_player::PluginType::LoudnessCompensation);
+            state
+                .app
+                .add_plugin(&sotf_audio_player::PluginType::LoudnessCompensation);
         });
         cx.notify();
     }
 
     fn quick_add_binaural(&mut self, _: &QuickAddBinaural, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.add_plugin(&sotf_audio_player::PluginType::BinauralDecoder);
+            state
+                .app
+                .add_plugin(&sotf_audio_player::PluginType::BinauralDecoder);
         });
         cx.notify();
     }
@@ -700,7 +733,7 @@ impl PlayerView {
 
     fn handle_plugin_edit_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle key input for plugin edit mode
-        match &event.keystroke.key {
+        match event.keystroke.key.as_str() {
             "up" | "k" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.select_previous_param();
@@ -734,9 +767,12 @@ impl PlayerView {
                         if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                             state.app.input_mode = InputMode::LoadApoFile;
                             state.app.apo_file_input.clear();
-                            state.app.toast_message = Some(crate::app::ToastMessage::info("Enter path to APO file:"));
+                            state.app.toast_message =
+                                Some(crate::app::ToastMessage::info("Enter path to APO file:"));
                         } else {
-                            state.app.toast_message = Some(crate::app::ToastMessage::warning("APO files can only be loaded for EQ plugins"));
+                            state.app.toast_message = Some(crate::app::ToastMessage::warning(
+                                "APO files can only be loaded for EQ plugins",
+                            ));
                         }
                     }
                 });
@@ -751,9 +787,12 @@ impl PlayerView {
                         if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
                             state.app.input_mode = InputMode::LoadSofaFile;
                             state.app.sofa_file_input.clear();
-                            state.app.toast_message = Some(crate::app::ToastMessage::info("Enter path to SOFA file:"));
+                            state.app.toast_message =
+                                Some(crate::app::ToastMessage::info("Enter path to SOFA file:"));
                         } else {
-                            state.app.toast_message = Some(crate::app::ToastMessage::warning("SOFA files can only be loaded for Binaural Decoder plugins"));
+                            state.app.toast_message = Some(crate::app::ToastMessage::warning(
+                                "SOFA files can only be loaded for Binaural Decoder plugins",
+                            ));
                         }
                     }
                 });
@@ -768,7 +807,7 @@ impl PlayerView {
 
     fn handle_apo_file_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for APO file loading mode
-        match &event.keystroke.key {
+        match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.apo_file_input.pop();
@@ -783,23 +822,26 @@ impl PlayerView {
             }
             "enter" => {
                 // Load the APO file
-                self.state.update(cx, |state, _cx| {
-                    match state.app.load_apo_file() {
+                self.state
+                    .update(cx, |state, _cx| match state.app.load_apo_file() {
                         Ok(()) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::success("APO file loaded successfully"));
+                            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                                "APO file loaded successfully",
+                            ));
                             state.app.apo_file_input.clear();
                             state.app.input_mode = crate::app::InputMode::EditPlugin;
                         }
                         Err(e) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!("Failed to load APO file: {}", e)));
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                                format!("Failed to load APO file: {}", e),
+                            ));
                         }
-                    }
-                });
+                    });
                 cx.notify();
             }
             _ => {
                 // Add character to input
-                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
                         state.app.apo_file_input.push_str(text);
                     });
@@ -811,7 +853,7 @@ impl PlayerView {
 
     fn handle_sofa_file_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for SOFA file loading mode
-        match &event.keystroke.key {
+        match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.sofa_file_input.pop();
@@ -826,23 +868,26 @@ impl PlayerView {
             }
             "enter" => {
                 // Load the SOFA file
-                self.state.update(cx, |state, _cx| {
-                    match state.app.load_sofa_file() {
+                self.state
+                    .update(cx, |state, _cx| match state.app.load_sofa_file() {
                         Ok(()) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::success("SOFA file loaded successfully"));
+                            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                                "SOFA file loaded successfully",
+                            ));
                             state.app.sofa_file_input.clear();
                             state.app.input_mode = crate::app::InputMode::EditPlugin;
                         }
                         Err(e) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!("Failed to load SOFA file: {}", e)));
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                                format!("Failed to load SOFA file: {}", e),
+                            ));
                         }
-                    }
-                });
+                    });
                 cx.notify();
             }
             _ => {
                 // Add character to input
-                if let Some(text) = event.keystroke.ime_key.as_ref() {
+                if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
                         state.app.sofa_file_input.push_str(text);
                     });
@@ -1085,7 +1130,16 @@ impl PlayerView {
     }
 
     fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (library_view_mode, albums_count, search_query, scan_in_progress, input_mode, sort_order, channel_filter, filtered_count) = {
+        let (
+            library_view_mode,
+            albums_count,
+            search_query,
+            scan_in_progress,
+            input_mode,
+            sort_order,
+            channel_filter,
+            filtered_count,
+        ) = {
             let state = self.state.read(cx);
             let filtered_count = state.app.filtered_albums().len();
             (
@@ -1877,8 +1931,8 @@ impl PlayerView {
                     .mb_4()
                     .child("Directory Manager"),
             )
-            .when(is_add_mode, |div| {
-                div.child(
+            .when(is_add_mode, |parent| {
+                parent.child(
                     div()
                         .p_3()
                         .mb_4()
@@ -1908,6 +1962,7 @@ impl PlayerView {
             })
             .child(
                 div()
+                    .id("directory-list")
                     .flex()
                     .flex_col()
                     .gap_1()
@@ -1934,8 +1989,8 @@ impl PlayerView {
                             )
                     }))
             )
-            .when(state.app.scan_in_progress, |div| {
-                div.child(
+            .when(state.app.scan_in_progress, |parent| {
+                parent.child(
                     div()
                         .p_3()
                         .mt_4()
@@ -2038,6 +2093,7 @@ impl PlayerView {
             .bg(rgba(0x000000aa)) // Semi-transparent background
             .child(
                 div()
+                    .id("help-modal")
                     .w(Rems(60.0)) // 80% approx
                     .h(Rems(40.0)) // 90% approx
                     .bg(rgb(0x1e1e1e))
@@ -2054,7 +2110,7 @@ impl PlayerView {
                             .child(format!(
                                 "Help - {} Screen (Press ESC or ? to close)",
                                 screen_name
-                            ))
+                            )),
                     )
                     .child(
                         div()
@@ -2068,9 +2124,12 @@ impl PlayerView {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(rgb(0x4ec9b0))
                                     .mb_2()
-                                    .child("GLOBAL KEYBINDINGS")
+                                    .child("GLOBAL KEYBINDINGS"),
                             )
-                            .child(self.render_keybinding("Shift-L/Q/P/O/D", "Jump to Library/Queue/Plugins/Devices/Directories"))
+                            .child(self.render_keybinding(
+                                "Shift-L/Q/P/O/D",
+                                "Jump to Library/Queue/Plugins/Devices/Directories",
+                            ))
                             .child(self.render_keybinding("+/=", "Increase volume"))
                             .child(self.render_keybinding("-/_", "Decrease volume"))
                             .child(self.render_keybinding("?", "Show this help"))
@@ -2082,14 +2141,14 @@ impl PlayerView {
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(rgb(0x4ec9b0))
                                     .mb_2()
-                                    .child(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
+                                    .child(format!("{} KEYBINDINGS", screen_name.to_uppercase())),
                             )
                             .children(
-                                keybindings.iter().map(|(key, desc)| {
-                                    self.render_keybinding(key, desc)
-                                })
-                            )
-                    )
+                                keybindings
+                                    .iter()
+                                    .map(|(key, desc)| self.render_keybinding(key, desc)),
+                            ),
+                    ),
             )
     }
 
@@ -2104,13 +2163,13 @@ impl PlayerView {
                     .text_sm()
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(0x569cd6))
-                    .child(format!("  {}", key))
+                    .child(format!("  {}", key)),
             )
             .child(
                 div()
                     .text_sm()
                     .text_color(rgb(0xcccccc))
-                    .child(description)
+                    .child(description.to_string()),
             )
     }
 
@@ -2127,10 +2186,8 @@ impl PlayerView {
 
             div()
                 .absolute()
-                .top(Pixels(20.0))
+                .top(px(20.0))
                 .left_1_2()
-                .transform(Transform::translate(-50.percent(), 0.percent()))
-                .z_index(1000)
                 .min_w(Rems(25.0))
                 .max_w(Rems(50.0))
                 .bg(bg_color)
@@ -2149,21 +2206,21 @@ impl PlayerView {
                                 .text_lg()
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(border_color)
-                                .child(icon)
+                                .child(icon),
                         )
                         .child(
                             div()
                                 .flex_1()
                                 .text_sm()
                                 .text_color(rgb(0xffffff))
-                                .child(toast.message.clone())
+                                .child(toast.message.clone()),
                         )
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(rgb(0x999999))
-                                .child("ESC to dismiss")
-                        )
+                                .child("ESC to dismiss"),
+                        ),
                 )
         } else {
             div() // Return empty div if no toast
@@ -2193,14 +2250,14 @@ impl PlayerView {
                             .text_lg()
                             .font_weight(FontWeight::BOLD)
                             .mb_4()
-                            .child("Load APO File for EQ Plugin")
+                            .child("Load APO File for EQ Plugin"),
                     )
                     .child(
                         div()
                             .text_sm()
                             .mb_2()
                             .text_color(rgb(0x999999))
-                            .child("Enter path to APO file:")
+                            .child("Enter path to APO file:"),
                     )
                     .child(
                         div()
@@ -2213,15 +2270,15 @@ impl PlayerView {
                             .child(
                                 div()
                                     .text_sm()
-                                    .child(format!("{}█", state.app.apo_file_input))
-                            )
+                                    .child(format!("{}█", state.app.apo_file_input)),
+                            ),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(rgb(0x999999))
-                            .child("Enter: Load file | ESC: Cancel")
-                    )
+                            .child("Enter: Load file | ESC: Cancel"),
+                    ),
             )
     }
 
@@ -2248,14 +2305,14 @@ impl PlayerView {
                             .text_lg()
                             .font_weight(FontWeight::BOLD)
                             .mb_4()
-                            .child("Load SOFA File for Binaural Decoder")
+                            .child("Load SOFA File for Binaural Decoder"),
                     )
                     .child(
                         div()
                             .text_sm()
                             .mb_2()
                             .text_color(rgb(0x999999))
-                            .child("Enter path to SOFA file:")
+                            .child("Enter path to SOFA file:"),
                     )
                     .child(
                         div()
@@ -2268,15 +2325,15 @@ impl PlayerView {
                             .child(
                                 div()
                                     .text_sm()
-                                    .child(format!("{}█", state.app.sofa_file_input))
-                            )
+                                    .child(format!("{}█", state.app.sofa_file_input)),
+                            ),
                     )
                     .child(
                         div()
                             .text_xs()
                             .text_color(rgb(0x999999))
-                            .child("Enter: Load file | ESC: Cancel")
-                    )
+                            .child("Enter: Load file | ESC: Cancel"),
+                    ),
             )
     }
 
@@ -2284,7 +2341,7 @@ impl PlayerView {
         let state = self.state.read(cx);
 
         if let Some(plugin) = state.app.get_editing_plugin() {
-            let plugin_name = plugin.plugin_type.to_string();
+            let plugin_name = plugin.plugin_type().name().to_string();
             let params = render_plugin_param_list(plugin, state.app.plugin_param_selection);
 
             // Create modal overlay
@@ -2297,6 +2354,7 @@ impl PlayerView {
                 .bg(rgba(0x000000aa)) // Semi-transparent background
                 .child(
                     div()
+                        .id("plugin-edit-modal")
                         .w(Rems(50.0))
                         .h(Rems(35.0))
                         .bg(rgb(0x1e1e1e))
@@ -2313,42 +2371,44 @@ impl PlayerView {
                                 .child(format!(
                                     "Edit Plugin: {} (Press ESC to close)",
                                     plugin_name
-                                ))
+                                )),
                         )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .children(
-                                    params.iter().enumerate().map(|(idx, (name, value))| {
-                                        let is_selected = idx == state.app.plugin_param_selection;
+                        .child(div().flex().flex_col().gap_2().children(
+                            params.iter().enumerate().map(|(idx, (name, value))| {
+                                let is_selected = idx == state.app.plugin_param_selection;
+                                div()
+                                    .p_2()
+                                    .rounded_md()
+                                    .when(is_selected, |div| div.bg(rgb(0x264f78)))
+                                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                                    .child(
                                         div()
-                                            .p_2()
-                                            .rounded_md()
-                                            .when(is_selected, |div| div.bg(rgb(0x264f78)))
-                                            .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                                            .flex()
+                                            .justify_between()
                                             .child(
                                                 div()
-                                                    .flex()
-                                                    .justify_between()
-                                                    .child(
-                                                        div()
-                                                            .text_sm()
-                                                            .font_weight(FontWeight::SEMIBOLD)
-                                                            .text_color(if is_selected { rgb(0xffffff) } else { rgb(0x569cd6) })
-                                                            .child(name.clone())
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_sm()
-                                                            .text_color(if is_selected { rgb(0xffffff) } else { rgb(0xcccccc) })
-                                                            .child(value.clone())
-                                                    )
+                                                    .text_sm()
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .text_color(if is_selected {
+                                                        rgb(0xffffff)
+                                                    } else {
+                                                        rgb(0x569cd6)
+                                                    })
+                                                    .child(name.clone()),
                                             )
-                                    })
-                                )
-                        )
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(if is_selected {
+                                                        rgb(0xffffff)
+                                                    } else {
+                                                        rgb(0xcccccc)
+                                                    })
+                                                    .child(value.clone()),
+                                            ),
+                                    )
+                            }),
+                        ))
                         .child(
                             div()
                                 .p_3()
@@ -2357,8 +2417,8 @@ impl PlayerView {
                                 .bg(rgb(0x1e1e1e))
                                 .text_xs()
                                 .text_color(rgb(0x999999))
-                                .child("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit")
-                        )
+                                .child("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit"),
+                        ),
                 )
         } else {
             div() // Return empty div if no plugin is being edited
@@ -2400,7 +2460,10 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         Screen::Plugins => vec![
             ("↑/↓ or K/J", "Navigate plugin chain"),
             ("A", "Add plugin (default)"),
-            ("Shift-1/2/3/4/5/6/7", "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural"),
+            (
+                "Shift-1/2/3/4/5/6/7",
+                "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural",
+            ),
             ("E or Enter", "Edit selected plugin"),
             ("Shift-T", "Toggle plugin enabled/disabled"),
             ("D/Delete", "Remove plugin"),
@@ -2411,15 +2474,15 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("↑/↓ or K/J", "Navigate output devices"),
             ("Enter/Space", "Select output device"),
         ],
-        Screen::Spectrum => vec![
-            ("Space", "Play/Pause"),
-            ("N", "Next track"),
-        ],
+        Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
     }
 }
 
 // Helper function to render plugin parameters for editing
-fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: usize) -> Vec<(String, String)> {
+fn render_plugin_param_list(
+    plugin: &sotf_audio_player::Plugin,
+    selected_idx: usize,
+) -> Vec<(String, String)> {
     use sotf_audio_player::PluginSettings;
 
     match &plugin.settings {
@@ -2440,17 +2503,43 @@ fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: us
             safety_cap_db,
         } => vec![
             ("Speaker Config".to_string(), speaker_config.clone()),
-            ("Gain Front Direct".to_string(), format!("{:.1} dB", gain_front_direct)),
-            ("Gain Front Ambient".to_string(), format!("{:.1} dB", gain_front_ambient)),
-            ("Gain Rear Ambient".to_string(), format!("{:.1} dB", gain_rear_ambient)),
+            (
+                "Gain Front Direct".to_string(),
+                format!("{:.1} dB", gain_front_direct),
+            ),
+            (
+                "Gain Front Ambient".to_string(),
+                format!("{:.1} dB", gain_front_ambient),
+            ),
+            (
+                "Gain Rear Ambient".to_string(),
+                format!("{:.1} dB", gain_rear_ambient),
+            ),
             ("LFE Cutoff".to_string(), format!("{:.0} Hz", lfe_cutoff_hz)),
             ("Stereo Width".to_string(), format!("{:.2}", stereo_width)),
             ("Bandpass".to_string(), format!("{:.0} Hz", bandpass_hz)),
             ("Height Gain".to_string(), format!("{:.1} dB", height_gain)),
             ("LFE Gain".to_string(), format!("{:.1} dB", lfe_gain)),
-            ("Subharmonic Synth".to_string(), if *enable_subharmonic_synth { "On".to_string() } else { "Off".to_string() }),
-            ("Subharmonic Gain".to_string(), format!("{:.1} dB", subharmonic_gain)),
-            ("HR Direct".to_string(), if *enable_hr_direct { "On".to_string() } else { "Off".to_string() }),
+            (
+                "Subharmonic Synth".to_string(),
+                if *enable_subharmonic_synth {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
+            (
+                "Subharmonic Gain".to_string(),
+                format!("{:.1} dB", subharmonic_gain),
+            ),
+            (
+                "HR Direct".to_string(),
+                if *enable_hr_direct {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
             ("HR Sharpen".to_string(), format!("{:.2}", hr_sharpen)),
             ("Safety Cap".to_string(), format!("{:.1} dB", safety_cap_db)),
         ],
@@ -2471,11 +2560,31 @@ fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: us
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
             ("Release".to_string(), format!("{:.0} ms", release_ms)),
             ("Knee".to_string(), format!("{:.1} dB", knee_db)),
-            ("Makeup Gain".to_string(), format!("{:.1} dB", makeup_gain_db)),
+            (
+                "Makeup Gain".to_string(),
+                format!("{:.1} dB", makeup_gain_db),
+            ),
             ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            ("Auto Makeup".to_string(), if *auto_makeup { "On".to_string() } else { "Off".to_string() }),
-            ("Link Channels".to_string(), if *link_channels { "On".to_string() } else { "Off".to_string() }),
-            ("Sidechain HPF".to_string(), format!("{:.0} Hz", sidechain_hpf_hz)),
+            (
+                "Auto Makeup".to_string(),
+                if *auto_makeup {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
+            (
+                "Link Channels".to_string(),
+                if *link_channels {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
+            (
+                "Sidechain HPF".to_string(),
+                format!("{:.0} Hz", sidechain_hpf_hz),
+            ),
         ],
         PluginSettings::Limiter {
             threshold_db,
@@ -2500,15 +2609,28 @@ fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: us
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
             ("Release".to_string(), format!("{:.0} ms", release_ms)),
             ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            ("Link Channels".to_string(), if *link_channels { "On".to_string() } else { "Off".to_string() }),
-            ("Sidechain HPF".to_string(), format!("{:.0} Hz", sidechain_hpf_hz)),
+            (
+                "Link Channels".to_string(),
+                if *link_channels {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
+            (
+                "Sidechain HPF".to_string(),
+                format!("{:.0} Hz", sidechain_hpf_hz),
+            ),
         ],
         PluginSettings::LoudnessCompensation {
             target_lufs,
             min_gain_db,
             max_gain_db,
         } => vec![
-            ("Target LUFS".to_string(), format!("{:.1} LUFS", target_lufs)),
+            (
+                "Target LUFS".to_string(),
+                format!("{:.1} LUFS", target_lufs),
+            ),
             ("Min Gain".to_string(), format!("{:.1} dB", min_gain_db)),
             ("Max Gain".to_string(), format!("{:.1} dB", max_gain_db)),
         ],
@@ -2519,10 +2641,7 @@ fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: us
                     format!("Filter {} Freq", i + 1),
                     format!("{:.0} Hz", filter.frequency),
                 ));
-                params.push((
-                    format!("Filter {} Q", i + 1),
-                    format!("{:.2}", filter.q),
-                ));
+                params.push((format!("Filter {} Q", i + 1), format!("{:.2}", filter.q)));
                 params.push((
                     format!("Filter {} Gain", i + 1),
                     format!("{:.1} dB", filter.gain_db),
@@ -2541,20 +2660,47 @@ fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: us
             externalization,
             near_field_strength,
         } => vec![
-            ("SOFA File".to_string(), sofa_file.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string())),
+            (
+                "SOFA File".to_string(),
+                if sofa_file.is_empty() {
+                    "None".to_string()
+                } else {
+                    sofa_file.clone()
+                },
+            ),
             ("Input Channels".to_string(), format!("{}", input_channels)),
-            ("Optimization".to_string(), if *enable_optimization { "On".to_string() } else { "Off".to_string() }),
-            ("Externalization".to_string(), format!("{:.2}", externalization)),
-            ("Near Field".to_string(), format!("{:.2}", near_field_strength)),
+            (
+                "Optimization".to_string(),
+                if *enable_optimization {
+                    "On".to_string()
+                } else {
+                    "Off".to_string()
+                },
+            ),
+            (
+                "Externalization".to_string(),
+                format!("{:.2}", externalization),
+            ),
+            (
+                "Near Field".to_string(),
+                format!("{:.2}", near_field_strength),
+            ),
         ],
-        PluginSettings::Gain { gain_db } => vec![
+        PluginSettings::Convolution {
+            ir_file,
+            mix,
+            gain_db,
+        } => vec![
+            (
+                "IR File".to_string(),
+                if ir_file.is_empty() {
+                    "None".to_string()
+                } else {
+                    ir_file.clone()
+                },
+            ),
+            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
             ("Gain".to_string(), format!("{:.1} dB", gain_db)),
-        ],
-        PluginSettings::Resampler { target_sample_rate } => vec![
-            ("Sample Rate".to_string(), format!("{} Hz", target_sample_rate)),
-        ],
-        PluginSettings::Matrix { .. } => vec![
-            ("Info".to_string(), "No adjustable parameters".to_string()),
         ],
     }
 }

@@ -48,15 +48,15 @@ pub mod camera;
 pub mod convexhull;
 pub mod coverage;
 pub mod error;
-pub mod hrtf;
 pub mod ffi; // FFI bindings for iOS/Swift
-pub mod security; // Security utilities for path validation
 pub mod guidance;
+pub mod hrtf;
 pub mod mesh;
 pub mod mesh2hrtf;
 pub mod pointcloud;
 pub mod reconstruction;
 pub mod scanner; // Simplified scanner interface for FFI
+pub mod security; // Security utilities for path validation
 pub mod stereo;
 pub mod texture;
 pub mod vision;
@@ -122,9 +122,9 @@ impl Default for ScannerConfig {
             use_gpu: true,
             model_path: None,
             model_base_dirs: Vec::new(), // Empty = allow any directory (less secure)
-            use_sfm: false,      // Disabled by default for compatibility
-            sfm_frame_count: 3,  // Use 3 frames for SfM
-            sfm_min_inliers: 20, // Minimum 20 inliers for valid pose
+            use_sfm: false,              // Disabled by default for compatibility
+            sfm_frame_count: 3,          // Use 3 frames for SfM
+            sfm_min_inliers: 20,         // Minimum 20 inliers for valid pose
         }
     }
 }
@@ -823,9 +823,15 @@ mod tests {
 
         // Cache should now exist with correct point count
         let cache = scanner.kd_tree_cache.read();
-        assert!(cache.is_some(), "K-d tree cache should be built after first use");
+        assert!(
+            cache.is_some(),
+            "K-d tree cache should be built after first use"
+        );
         let (_, cached_count) = cache.as_ref().unwrap();
-        assert_eq!(*cached_count, 3, "Cached point count should match point cloud size");
+        assert_eq!(
+            *cached_count, 3,
+            "Cached point count should match point cloud size"
+        );
     }
 
     #[test]
@@ -859,7 +865,11 @@ mod tests {
 
         // Cache should still have same size (was reused)
         let cache = scanner.kd_tree_cache.read();
-        assert_eq!(cache.as_ref().unwrap().0.size(), cache_ptr, "Cache should be reused");
+        assert_eq!(
+            cache.as_ref().unwrap().0.size(),
+            cache_ptr,
+            "Cache should be reused"
+        );
     }
 
     #[test]
@@ -900,7 +910,10 @@ mod tests {
         // Cache should reflect new point count
         let cache = scanner.kd_tree_cache.read();
         let (_, cached_count) = cache.as_ref().unwrap();
-        assert_eq!(*cached_count, 4, "Cache should be rebuilt with new point count");
+        assert_eq!(
+            *cached_count, 4,
+            "Cache should be rebuilt with new point count"
+        );
     }
 
     #[test]

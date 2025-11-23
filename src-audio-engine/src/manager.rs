@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
-use sotf_plugins::{LoudnessInfo, SpectrumInfo};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
+use sotf_plugins::{LoudnessInfo, SpectrumInfo};
 
 /// High-level audio streaming manager using native AudioEngine
-pub struct AudioStreamingManager {
+pub struct AudioEngineManager {
     /// Native audio engine
     engine: Arc<Mutex<Option<AudioEngine>>>,
     /// Current audio file information
@@ -65,7 +65,7 @@ pub struct AudioFileInfo {
     pub duration_seconds: Option<f64>,
 }
 
-impl AudioStreamingManager {
+impl AudioEngineManager {
     /// Create a new streaming manager
     pub fn new() -> Self {
         Self::with_signal_watching(false)
@@ -96,7 +96,7 @@ impl AudioStreamingManager {
         // Stop any current playback
         self.stop()?;
 
-        log::debug!("[AudioStreamingManager] Loading file: {:?}", path);
+        log::debug!("[AudioEngineManager] Loading file: {:?}", path);
 
         // Probe the file to get format and spec information
         let (format, spec) = probe_file(&path)?;
@@ -111,7 +111,7 @@ impl AudioStreamingManager {
         };
 
         log::info!(
-            "[AudioStreamingManager] Loaded {} file: {}Hz, {}ch, {:?}s duration",
+            "[AudioEngineManager] Loaded {} file: {}Hz, {}ch, {:?}s duration",
             audio_info.format,
             audio_info.spec.sample_rate,
             audio_info.spec.channels,
@@ -142,7 +142,7 @@ impl AudioStreamingManager {
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
-        log::debug!("[AudioStreamingManager] Starting playback");
+        log::debug!("[AudioEngineManager] Starting playback");
 
         // Create engine config
         let config = EngineConfig {
@@ -160,7 +160,7 @@ impl AudioStreamingManager {
         };
 
         log::info!(
-            "[AudioStreamingManager] Creating engine: {}Hz, {}ch",
+            "[AudioEngineManager] Creating engine: {}Hz, {}ch",
             config.output_sample_rate,
             config.output_channels
         );
@@ -178,23 +178,23 @@ impl AudioStreamingManager {
         *self.engine.lock() = Some(engine);
         self.set_state(StreamingState::Playing);
 
-        log::debug!("[AudioStreamingManager] Playback started");
+        log::debug!("[AudioEngineManager] Playback started");
 
         // Enable any pending analyzers that were requested before engine was running
         if *self.pending_spectrum_monitoring.lock() {
-            log::debug!("[AudioStreamingManager] Enabling pending spectrum monitoring");
+            log::debug!("[AudioEngineManager] Enabling pending spectrum monitoring");
             if let Err(e) = self.enable_spectrum_monitoring() {
                 log::error!(
-                    "[AudioStreamingManager] Failed to enable spectrum monitoring: {}",
+                    "[AudioEngineManager] Failed to enable spectrum monitoring: {}",
                     e
                 );
             }
         }
         if *self.pending_loudness_monitoring.lock() {
-            log::debug!("[AudioStreamingManager] Enabling pending loudness monitoring");
+            log::debug!("[AudioEngineManager] Enabling pending loudness monitoring");
             if let Err(e) = self.enable_loudness_monitoring() {
                 log::error!(
-                    "[AudioStreamingManager] Failed to enable loudness monitoring: {}",
+                    "[AudioEngineManager] Failed to enable loudness monitoring: {}",
                     e
                 );
             }
@@ -223,7 +223,7 @@ impl AudioStreamingManager {
         plugins: Vec<PluginConfig>,
         output_channels: usize,
     ) -> AudioDecoderResult<()> {
-        log::debug!("[AudioStreamingManager] Starting HAL playback");
+        log::debug!("[AudioEngineManager] Starting HAL playback");
 
         // Validate that we have a HAL input plugin
         if !plugins.iter().any(|p| p.plugin_type == "hal_input") {
@@ -248,7 +248,7 @@ impl AudioStreamingManager {
         };
 
         log::info!(
-            "[AudioStreamingManager] Creating HAL engine: {}Hz, {}ch output",
+            "[AudioEngineManager] Creating HAL engine: {}Hz, {}ch output",
             config.output_sample_rate,
             config.output_channels
         );
@@ -262,23 +262,23 @@ impl AudioStreamingManager {
         *self.engine.lock() = Some(engine);
         self.set_state(StreamingState::Playing);
 
-        log::debug!("[AudioStreamingManager] HAL playback started");
+        log::debug!("[AudioEngineManager] HAL playback started");
 
         // Enable any pending analyzers
         if *self.pending_spectrum_monitoring.lock() {
-            log::debug!("[AudioStreamingManager] Enabling pending spectrum monitoring");
+            log::debug!("[AudioEngineManager] Enabling pending spectrum monitoring");
             if let Err(e) = self.enable_spectrum_monitoring() {
                 log::error!(
-                    "[AudioStreamingManager] Failed to enable spectrum monitoring: {}",
+                    "[AudioEngineManager] Failed to enable spectrum monitoring: {}",
                     e
                 );
             }
         }
         if *self.pending_loudness_monitoring.lock() {
-            log::debug!("[AudioStreamingManager] Enabling pending loudness monitoring");
+            log::debug!("[AudioEngineManager] Enabling pending loudness monitoring");
             if let Err(e) = self.enable_loudness_monitoring() {
                 log::error!(
-                    "[AudioStreamingManager] Failed to enable loudness monitoring: {}",
+                    "[AudioEngineManager] Failed to enable loudness monitoring: {}",
                     e
                 );
             }
@@ -289,7 +289,7 @@ impl AudioStreamingManager {
 
     /// Pause streaming
     pub fn pause(&self) -> AudioDecoderResult<()> {
-        log::debug!("[AudioStreamingManager] Pausing");
+        log::debug!("[AudioEngineManager] Pausing");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.pause().map_err(AudioDecoderError::IoError)?;
@@ -301,7 +301,7 @@ impl AudioStreamingManager {
 
     /// Resume streaming
     pub fn resume(&self) -> AudioDecoderResult<()> {
-        log::debug!("[AudioStreamingManager] Resuming");
+        log::debug!("[AudioEngineManager] Resuming");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.resume().map_err(AudioDecoderError::IoError)?;
@@ -313,7 +313,7 @@ impl AudioStreamingManager {
 
     /// Stop streaming and cleanup
     pub fn stop(&mut self) -> AudioDecoderResult<()> {
-        log::debug!("[AudioStreamingManager] Stopping");
+        log::debug!("[AudioEngineManager] Stopping");
 
         if let Some(mut engine) = self.engine.lock().take() {
             // Check which analyzers are currently active before stopping
@@ -322,11 +322,11 @@ impl AudioStreamingManager {
             let has_spectrum = engine.get_analyzer_data("spectrum".to_string()).is_ok();
 
             if has_loudness {
-                log::debug!("[AudioStreamingManager] Preserving loudness monitoring state");
+                log::debug!("[AudioEngineManager] Preserving loudness monitoring state");
                 *self.pending_loudness_monitoring.lock() = true;
             }
             if has_spectrum {
-                log::debug!("[AudioStreamingManager] Preserving spectrum monitoring state");
+                log::debug!("[AudioEngineManager] Preserving spectrum monitoring state");
                 *self.pending_spectrum_monitoring.lock() = true;
             }
 
@@ -341,7 +341,7 @@ impl AudioStreamingManager {
 
     /// Seek to position in seconds
     pub fn seek(&self, seconds: f64) -> AudioDecoderResult<()> {
-        log::debug!("[AudioStreamingManager] Seeking to {:.2}s", seconds);
+        log::debug!("[AudioEngineManager] Seeking to {:.2}s", seconds);
 
         self.set_state(StreamingState::Seeking);
 
@@ -410,28 +410,28 @@ impl AudioStreamingManager {
     }
 
     // ========================================================================
-    // Monitoring Support (Phase 2 - Stubs for now)
+    // Monitoring Support
     // ========================================================================
 
     /// Enable loudness monitoring
     pub fn enable_loudness_monitoring(&mut self) -> Result<(), String> {
-        log::debug!("[AudioStreamingManager] Enabling loudness monitoring");
+        log::debug!("[AudioEngineManager] Enabling loudness monitoring");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             // Use the engine's output channel count (after processing/plugins)
             let channels = engine.get_state().num_channels;
             log::info!(
-                "[AudioStreamingManager] Adding loudness analyzer for {} channels",
+                "[AudioEngineManager] Adding loudness analyzer for {} channels",
                 channels
             );
             engine.add_loudness_analyzer("loudness".to_string(), channels)?;
-            log::debug!("[AudioStreamingManager] Loudness monitoring enabled");
+            log::debug!("[AudioEngineManager] Loudness monitoring enabled");
             *self.pending_loudness_monitoring.lock() = false;
             Ok(())
         } else {
             // Engine not running yet - mark as pending and will be enabled when playback starts
             log::info!(
-                "[AudioStreamingManager] Engine not running yet - loudness monitoring will be enabled when playback starts"
+                "[AudioEngineManager] Engine not running yet - loudness monitoring will be enabled when playback starts"
             );
             *self.pending_loudness_monitoring.lock() = true;
             Ok(())
@@ -440,7 +440,7 @@ impl AudioStreamingManager {
 
     /// Disable loudness monitoring
     pub fn disable_loudness_monitoring(&mut self) {
-        log::debug!("[AudioStreamingManager] Disabling loudness monitoring");
+        log::debug!("[AudioEngineManager] Disabling loudness monitoring");
         *self.pending_loudness_monitoring.lock() = false;
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.remove_analyzer("loudness".to_string()).ok();
@@ -483,23 +483,23 @@ impl AudioStreamingManager {
 
     /// Enable spectrum monitoring
     pub fn enable_spectrum_monitoring(&mut self) -> Result<(), String> {
-        log::debug!("[AudioStreamingManager] Enabling spectrum monitoring");
+        log::debug!("[AudioEngineManager] Enabling spectrum monitoring");
 
         if let Some(ref mut engine) = *self.engine.lock() {
             // Use the engine's output channel count (after processing/plugins)
             let channels = engine.get_state().num_channels;
             log::info!(
-                "[AudioStreamingManager] Adding spectrum analyzer for {} channels",
+                "[AudioEngineManager] Adding spectrum analyzer for {} channels",
                 channels
             );
             engine.add_spectrum_analyzer("spectrum".to_string(), channels)?;
-            log::debug!("[AudioStreamingManager] Spectrum monitoring enabled");
+            log::debug!("[AudioEngineManager] Spectrum monitoring enabled");
             *self.pending_spectrum_monitoring.lock() = false;
             Ok(())
         } else {
             // Engine not running yet - mark as pending and will be enabled when playback starts
             log::info!(
-                "[AudioStreamingManager] Engine not running yet - spectrum monitoring will be enabled when playback starts"
+                "[AudioEngineManager] Engine not running yet - spectrum monitoring will be enabled when playback starts"
             );
             *self.pending_spectrum_monitoring.lock() = true;
             Ok(())
@@ -508,7 +508,7 @@ impl AudioStreamingManager {
 
     /// Disable spectrum monitoring
     pub fn disable_spectrum_monitoring(&mut self) {
-        log::debug!("[AudioStreamingManager] Disabling spectrum monitoring");
+        log::debug!("[AudioEngineManager] Disabling spectrum monitoring");
         *self.pending_spectrum_monitoring.lock() = false;
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.remove_analyzer("spectrum".to_string()).ok();
@@ -566,13 +566,13 @@ impl AudioStreamingManager {
     /// Update plugin chain
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
         log::info!(
-            "[AudioStreamingManager] Updating plugin chain with {} plugins",
+            "[AudioEngineManager] Updating plugin chain with {} plugins",
             plugins.len()
         );
 
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.update_plugin_chain(plugins)?;
-            log::debug!("[AudioStreamingManager] Plugin chain updated successfully");
+            log::debug!("[AudioEngineManager] Plugin chain updated successfully");
             Ok(())
         } else {
             Err("No engine running".to_string())
@@ -632,13 +632,13 @@ impl AudioStreamingManager {
     }
 }
 
-impl Default for AudioStreamingManager {
+impl Default for AudioEngineManager {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Drop for AudioStreamingManager {
+impl Drop for AudioEngineManager {
     fn drop(&mut self) {
         // Synchronous stop for drop
         if let Some(mut engine) = self.engine.lock().take() {
@@ -653,14 +653,14 @@ mod tests {
 
     #[test]
     fn test_manager_creation() {
-        let manager = AudioStreamingManager::new();
+        let manager = AudioEngineManager::new();
         assert_eq!(manager.get_state(), StreamingState::Idle);
         assert!(manager.get_audio_info().is_none());
     }
 
     #[test]
     fn test_state_transitions() {
-        let manager = AudioStreamingManager::new();
+        let manager = AudioEngineManager::new();
 
         assert_eq!(manager.get_state(), StreamingState::Idle);
 
@@ -674,7 +674,7 @@ mod tests {
 
     #[test]
     fn try_recv_event_emits_end_of_stream_when_stopped_from_playing() {
-        let manager = AudioStreamingManager::new();
+        let manager = AudioEngineManager::new();
 
         // Simulate that we were previously playing; engine state defaults to Stopped
         manager.set_state(StreamingState::Playing);

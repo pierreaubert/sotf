@@ -47,10 +47,7 @@ pub struct AnalyticalHRTF {
 impl AnalyticalHRTF {
     /// Create a new analytical HRTF generator
     pub fn new(model: AcousticHeadModel, sample_rate: f32) -> Self {
-        Self {
-            model,
-            sample_rate,
-        }
+        Self { model, sample_rate }
     }
 
     /// Compute HRTF impulse responses for a source position
@@ -226,8 +223,7 @@ impl AnalyticalHRTF {
 
         // Generate grid in spherical coordinates
         for elev_idx in 0..elevation_resolution {
-            let elevation =
-                -45.0 + (90.0 * elev_idx as f32 / (elevation_resolution - 1) as f32);
+            let elevation = -45.0 + (90.0 * elev_idx as f32 / (elevation_resolution - 1) as f32);
 
             for az_idx in 0..azimuth_resolution {
                 let azimuth = -180.0 + (360.0 * az_idx as f32 / azimuth_resolution as f32);
@@ -253,7 +249,12 @@ impl AnalyticalHRTF {
     }
 
     /// Convert spherical coordinates to Cartesian relative to head center
-    fn spherical_to_cartesian(&self, azimuth_deg: f32, elevation_deg: f32, radius: f32) -> Point3<f32> {
+    fn spherical_to_cartesian(
+        &self,
+        azimuth_deg: f32,
+        elevation_deg: f32,
+        radius: f32,
+    ) -> Point3<f32> {
         let az_rad = azimuth_deg.to_radians();
         let el_rad = elevation_deg.to_radians();
 

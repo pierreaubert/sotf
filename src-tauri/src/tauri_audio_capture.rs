@@ -82,7 +82,7 @@ pub async fn record_channel(
 
     // Record and analyze
     // Note: This uses the existing signal_recorder::record_and_analyze function
-    // which handles playback and recording via AudioStreamingManager and cpal
+    // which handles playback and recording via AudioEngineManager and cpal
     // The function currently only supports one device (combined output/input)
     sotf_audio::signal_recorder::record_and_analyze(
         &temp_signal,

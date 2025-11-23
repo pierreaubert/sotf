@@ -36,17 +36,15 @@
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 
-pub mod types;
-pub mod numcalc_parser;
 pub mod hrir;
+pub mod numcalc_parser;
 pub mod sofa_writer;
+pub mod types;
 
 // Re-exports
-pub use types::*;
+pub use hrir::{apply_blackman_window, apply_hamming_window, apply_hann_window, compute_hrir};
 pub use numcalc_parser::NumCalcParser;
-pub use hrir::{
-    apply_blackman_window, apply_hamming_window, apply_hann_window, compute_hrir,
-};
 pub use sofa_writer::{
-    cartesian_to_spherical, spherical_to_cartesian, CoordinateSystem, SofaMetadata, SofaWriter,
+    CoordinateSystem, SofaMetadata, SofaWriter, cartesian_to_spherical, spherical_to_cartesian,
 };
+pub use types::*;
