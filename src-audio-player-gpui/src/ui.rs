@@ -36,6 +36,8 @@ actions!(
         SelectPrev,
         SelectNextPage,
         SelectPrevPage,
+        NextPage,      // For library pagination
+        PrevPage,      // For library pagination
         ToggleExpand,
         Enter,
         Cancel,
@@ -226,6 +228,7 @@ impl PlayerView {
             state.app.sofa_file_input.clear();
             state.app.clear_autocomplete();
             state.app.dismiss_toast();
+            state.app.context_menu = None; // Close context menu
         });
         cx.notify();
     }
@@ -502,6 +505,24 @@ impl PlayerView {
                 Screen::DirectoryManager => state.app.page_up_directories(PAGE_SIZE),
                 _ => {}
             });
+        cx.notify();
+    }
+
+    fn next_page(&mut self, _: &NextPage, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if state.app.current_screen == Screen::Library {
+                state.app.next_page();
+            }
+        });
+        cx.notify();
+    }
+
+    fn prev_page(&mut self, _: &PrevPage, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if state.app.current_screen == Screen::Library {
+                state.app.prev_page();
+            }
+        });
         cx.notify();
     }
 
@@ -997,6 +1018,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::select_prev))
             .on_action(cx.listener(Self::select_next_page))
             .on_action(cx.listener(Self::select_prev_page))
+            .on_action(cx.listener(Self::next_page))
+            .on_action(cx.listener(Self::prev_page))
             .on_action(cx.listener(Self::toggle_expand))
             .on_action(cx.listener(Self::handle_enter))
             .on_action(cx.listener(Self::cancel))
@@ -1066,6 +1089,9 @@ impl Render for PlayerView {
                 div.child(self.render_sofa_file_dialog(cx))
             })
             .child(self.render_toast(cx))
+            .when(self.state.read(cx).app.context_menu.is_some(), |div| {
+                div.child(self.render_context_menu(cx))
+            })
     }
 }
 
@@ -1309,17 +1335,102 @@ impl PlayerView {
                     ),
             )
             .child(content)
+            .child(self.render_pagination_controls(cx))
+    }
+
+    fn render_pagination_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let current_page = state.app.library_page + 1; // Display as 1-indexed
+        let total_pages = match state.app.library_view_mode {
+            crate::app::LibraryViewMode::Flat => state.app.get_flat_total_pages(),
+            crate::app::LibraryViewMode::TreeView => state.app.get_tree_total_pages(),
+        };
+        let items_per_page = state.app.library_items_per_page;
+
+        div()
+            .flex()
+            .justify_between()
+            .items_center()
+            .p_3()
+            .bg(rgb(0x1e1e1e))
+            .border_t_1()
+            .border_color(rgb(0x3e3e3e))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x999999))
+                    .child(format!(
+                        "Page {} of {} ({} items/page)",
+                        current_page, total_pages, items_per_page
+                    ))
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .rounded_md()
+                            .when(current_page > 1, |div| {
+                                div.bg(rgb(0x2d2d2d))
+                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
+                                    .cursor_pointer()
+                            })
+                            .when(current_page == 1, |div| {
+                                div.bg(rgb(0x1a1a1a))
+                                    .text_color(rgb(0x666666))
+                            })
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.prev_page();
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child("← Prev")
+                    )
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .rounded_md()
+                            .when(current_page < total_pages, |div| {
+                                div.bg(rgb(0x2d2d2d))
+                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
+                                    .cursor_pointer()
+                            })
+                            .when(current_page == total_pages, |div| {
+                                div.bg(rgb(0x1a1a1a))
+                                    .text_color(rgb(0x666666))
+                            })
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.next_page();
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child("Next →")
+                    )
+            )
     }
 
     fn render_library_flat(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let albums = state.app.filtered_albums();
+        let albums = state.app.get_paginated_albums();
 
         div()
             .flex()
             .flex_col()
             .gap_2()
             .flex_1()
+            .overflow_y_scroll()
             .children(albums.iter().enumerate().map(|(idx, album)| {
                 let is_selected = state.app.selected_album_index == idx;
                 div()
@@ -1333,7 +1444,22 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                             view.state
-                                .update(cx, |state, cx| state.app.selected_album_index = idx);
+                                .update(cx, |state, _cx| state.app.selected_album_index = idx);
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Right,
+                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.selected_album_index = idx;
+                                state.app.context_menu = Some(crate::app::ContextMenuState {
+                                    menu_type: crate::app::ContextMenuType::Album,
+                                    position_x: event.position.x.0,
+                                    position_y: event.position.y.0,
+                                    item_index: idx,
+                                });
+                            });
                             cx.notify();
                         }),
                     )
@@ -1364,13 +1490,14 @@ impl PlayerView {
 
     fn render_library_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let tree_items = state.app.get_tree_items();
+        let tree_items = state.app.get_paginated_tree_items();
 
         div()
             .flex()
             .flex_col()
             .gap_1()
             .flex_1()
+            .overflow_y_scroll()
             .children(tree_items.iter().enumerate().map(|(idx, item)| {
                 let is_selected = state.app.selected_tree_index == idx;
 
@@ -1459,7 +1586,7 @@ impl PlayerView {
                             .child("Clear"),
                     ),
             )
-            .child(div().flex().flex_col().gap_2().flex_1().children(
+            .child(div().flex().flex_col().gap_2().flex_1().overflow_y_scroll().children(
                 state.app.queue.iter().enumerate().map(|(idx, item)| {
                     let is_current = state.app.current_queue_index == Some(idx);
                     div()
@@ -1472,13 +1599,28 @@ impl PlayerView {
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, cx| {
+                                view.state.update(cx, |state, _cx| {
                                     state.app.current_queue_index = Some(idx);
                                     if let Some(path) =
                                         state.app.queue[idx].current_track().map(|t| t.path.clone())
                                     {
                                         Self::play_track(state, path);
                                     }
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .on_mouse_up(
+                            MouseButton::Right,
+                            cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.current_queue_index = Some(idx);
+                                    state.app.context_menu = Some(crate::app::ContextMenuState {
+                                        menu_type: crate::app::ContextMenuType::QueueItem,
+                                        position_x: event.position.x.0,
+                                        position_y: event.position.y.0,
+                                        item_index: idx,
+                                    });
                                 });
                                 cx.notify();
                             }),
@@ -1557,6 +1699,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
+            .overflow_y_scroll()
             .children(plugins.iter().enumerate().map(|(idx, plugin)| {
                 let is_selected = state.app.selected_plugin_index == idx;
                 let name = plugin.plugin_type().name().to_string();
@@ -1575,7 +1718,22 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                             view.state
-                                .update(cx, |state, cx| state.app.selected_plugin_index = idx);
+                                .update(cx, |state, _cx| state.app.selected_plugin_index = idx);
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Right,
+                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.selected_plugin_index = idx;
+                                state.app.context_menu = Some(crate::app::ContextMenuState {
+                                    menu_type: crate::app::ContextMenuType::Plugin,
+                                    position_x: event.position.x.0,
+                                    position_y: event.position.y.0,
+                                    item_index: idx,
+                                });
+                            });
                             cx.notify();
                         }),
                     )
@@ -1702,56 +1860,203 @@ impl PlayerView {
             .plugin_chain
             .get_plugin(state.app.selected_plugin_index)
         {
-            match &plugin.settings {
-                sotf_audio_player::PluginSettings::Upmixer {
-                    speaker_config,
-                    lfe_gain,
-                    gain_front_direct: _,
-                    gain_front_ambient: _,
-                    gain_rear_ambient: _,
-                    lfe_cutoff_hz: _,
-                    stereo_width: _,
-                    bandpass_hz: _,
-                    height_gain: _,
-                    enable_subharmonic_synth: _,
-                    subharmonic_gain: _,
-                    enable_hr_direct: _,
-                    hr_sharpen: _,
-                    safety_cap_db: _,
-                } => div()
-                    .p_4()
+            let plugin_name = plugin.plugin_type().name();
+
+            div()
+                .p_4()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .overflow_y_scroll()
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(FontWeight::BOLD)
+                        .mb_2()
+                        .child(plugin_name)
+                )
+                .child(match &plugin.settings {
+                    sotf_audio_player::PluginSettings::Upmixer {
+                        speaker_config,
+                        lfe_gain,
+                        gain_front_direct,
+                        gain_front_ambient,
+                        gain_rear_ambient,
+                        lfe_cutoff_hz,
+                        stereo_width,
+                        bandpass_hz: _,
+                        height_gain,
+                        enable_subharmonic_synth,
+                        subharmonic_gain,
+                        enable_hr_direct: _,
+                        hr_sharpen: _,
+                        safety_cap_db,
+                    } => div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(self.render_param_group("Speaker Configuration", vec![
+                            ("Layout", speaker_config.to_string()),
+                        ]))
+                        .child(self.render_param_group("Gain Settings", vec![
+                            ("LFE Gain", format!("{:.1} dB", lfe_gain)),
+                            ("Front Direct", format!("{:.1} dB", gain_front_direct)),
+                            ("Front Ambient", format!("{:.1} dB", gain_front_ambient)),
+                            ("Rear Ambient", format!("{:.1} dB", gain_rear_ambient)),
+                            ("Height Gain", format!("{:.1} dB", height_gain)),
+                            ("Safety Cap", format!("{:.1} dB", safety_cap_db)),
+                        ]))
+                        .child(self.render_param_group("Processing", vec![
+                            ("Stereo Width", format!("{:.2}", stereo_width)),
+                            ("LFE Cutoff", format!("{:.0} Hz", lfe_cutoff_hz)),
+                            ("Subharmonic Synth", if *enable_subharmonic_synth { "Enabled" } else { "Disabled" }.to_string()),
+                            ("Subharmonic Gain", format!("{:.1} dB", subharmonic_gain)),
+                        ]))
+                        .child(
+                            div()
+                                .mt_2()
+                                .p_2()
+                                .rounded_md()
+                                .bg(rgb(0x2d2d2d))
+                                .text_xs()
+                                .text_color(rgb(0x999999))
+                                .child("Press 'e' to edit parameters")
+                        ),
+                    sotf_audio_player::PluginSettings::EQ { filters } => div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(0x999999))
+                                .child(format!("{} bands", filters.len()))
+                        )
+                        .children(filters.iter().enumerate().map(|(i, f)| {
+                            div()
+                                .p_3()
+                                .mb_2()
+                                .rounded_md()
+                                .bg(rgb(0x2d2d2d))
+                                .border_l_2()
+                                .border_color(if f.gain_db > 0.0 { rgb(0x4ec9b0) } else if f.gain_db < 0.0 { rgb(0xf48771) } else { rgb(0x666666) })
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .child(format!("Band {}", i + 1))
+                                        )
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .gap_4()
+                                                .text_xs()
+                                                .text_color(rgb(0x999999))
+                                                .child(format!("{:.0} Hz", f.frequency))
+                                                .child(format!("Q: {:.2}", f.q))
+                                                .child(
+                                                    div()
+                                                        .font_weight(FontWeight::BOLD)
+                                                        .text_color(if f.gain_db > 0.0 {
+                                                            rgb(0x4ec9b0)
+                                                        } else if f.gain_db < 0.0 {
+                                                            rgb(0xf48771)
+                                                        } else {
+                                                            rgb(0xcccccc)
+                                                        })
+                                                        .child(format!("{:+.1} dB", f.gain_db))
+                                                )
+                                        )
+                                )
+                        }))
+                        .child(
+                            div()
+                                .mt_2()
+                                .p_2()
+                                .rounded_md()
+                                .bg(rgb(0x2d2d2d))
+                                .text_xs()
+                                .text_color(rgb(0x999999))
+                                .child("Press 'e' to edit EQ bands")
+                        ),
+                    sotf_audio_player::PluginSettings::Gain { gain_db } => div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(self.render_param_group("Gain", vec![
+                            ("Level", format!("{:+.1} dB", gain_db)),
+                        ])),
+                    sotf_audio_player::PluginSettings::Compressor { threshold, ratio, attack, release, makeup_gain } => div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(self.render_param_group("Compressor", vec![
+                            ("Threshold", format!("{:.1} dB", threshold)),
+                            ("Ratio", format!("1:{:.1}", ratio)),
+                            ("Attack", format!("{:.1} ms", attack)),
+                            ("Release", format!("{:.1} ms", release)),
+                            ("Makeup Gain", format!("{:+.1} dB", makeup_gain)),
+                        ])),
+                    sotf_audio_player::PluginSettings::Limiter { threshold, release } => div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .child(self.render_param_group("Limiter", vec![
+                            ("Threshold", format!("{:.1} dB", threshold)),
+                            ("Release", format!("{:.1} ms", release)),
+                        ])),
+                    _ => div()
+                        .text_sm()
+                        .text_color(rgb(0x999999))
+                        .child("No configurable parameters for this plugin"),
+                })
+        } else {
+            div()
+                .p_4()
+                .text_color(rgb(0x666666))
+                .child("No plugin selected")
+        }
+    }
+
+    fn render_param_group(&self, title: &str, params: Vec<(&str, String)>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(0x569cd6))
+                    .mb_1()
+                    .child(title)
+            )
+            .children(params.iter().map(|(name, value)| {
+                div()
                     .flex()
-                    .flex_col()
-                    .gap_4()
-                    .child(format!("Speaker Config: {}", speaker_config))
-                    .child(format!("LFE Gain: {:.2}", lfe_gain))
+                    .justify_between()
+                    .p_2()
+                    .rounded_md()
+                    .bg(rgb(0x2d2d2d))
                     .child(
                         div()
-                            .text_sm()
+                            .text_xs()
                             .text_color(rgb(0x999999))
-                            .child("Editing not yet implemented"),
-                    ),
-                sotf_audio_player::PluginSettings::EQ { filters } => div()
-                    .p_4()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(format!("EQ ({} bands)", filters.len()))
-                    .children(filters.iter().enumerate().map(|(i, f)| {
-                        div().child(format!(
-                            "Band {}: {:.0} Hz, {:.1} dB",
-                            i + 1,
-                            f.frequency,
-                            f.gain_db
-                        ))
-                    })),
-                _ => div()
-                    .p_4()
-                    .child("Settings not available for this plugin type"),
-            }
-        } else {
-            div().p_4().child("No plugin selected")
-        }
+                            .child(*name)
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(rgb(0xcccccc))
+                            .child(value.clone())
+                    )
+            }))
     }
 
     fn render_devices_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1767,78 +2072,121 @@ impl PlayerView {
                     .text_lg()
                     .font_weight(FontWeight::SEMIBOLD)
                     .mb_4()
-                    .child("Audio Devices"),
+                    .child("Audio Output Devices"),
             )
             .child(
-                div().flex().flex_col().gap_2().children(
-                    state
-                        .app
-                        .output_devices
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, device)| {
-                            let is_selected = state.app.selected_output_device_index == idx;
-                            div()
-                                .p_3()
-                                .rounded_md()
-                                .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                                .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                                .hover(|style| style.bg(rgb(0x3e3e3e)))
-                                .cursor_pointer()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                        view.state.update(cx, |state, cx| {
-                                            state.app.selected_output_device_index = idx;
-                                            if let Some(device) = state.app.output_devices.get(idx)
-                                            {
-                                                state.app.current_output_device_name =
-                                                    Some(device.name.clone());
+                // Grid layout with 2 columns
+                div()
+                    .grid()
+                    .grid_cols_2()
+                    .gap_3()
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .children(
+                        state
+                            .app
+                            .output_devices
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, device)| {
+                                let is_selected = state.app.selected_output_device_index == idx;
+                                let sample_rate = device
+                                    .default_config
+                                    .as_ref()
+                                    .map(|c| c.sample_rate)
+                                    .unwrap_or(0);
+                                let channels = device
+                                    .default_config
+                                    .as_ref()
+                                    .map(|c| c.channels)
+                                    .unwrap_or(0);
 
-                                                // If playing, restart track with new device
-                                                if state.app.is_playing {
-                                                    if let Some(queue_idx) =
-                                                        state.app.current_queue_index
-                                                    {
-                                                        if let Some(item) =
-                                                            state.app.queue.get(queue_idx)
+                                div()
+                                    .p_2()
+                                    .rounded_md()
+                                    .when(is_selected, |div| div.bg(rgb(0x007acc)))
+                                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
+                                    .cursor_pointer()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.selected_output_device_index = idx;
+                                                if let Some(device) = state.app.output_devices.get(idx)
+                                                {
+                                                    state.app.current_output_device_name =
+                                                        Some(device.name.clone());
+
+                                                    // If playing, restart track with new device
+                                                    if state.app.is_playing {
+                                                        if let Some(queue_idx) =
+                                                            state.app.current_queue_index
                                                         {
-                                                            if let Some(track) =
-                                                                item.current_track()
+                                                            if let Some(item) =
+                                                                state.app.queue.get(queue_idx)
                                                             {
-                                                                let path = track.path.clone();
-                                                                Self::play_track(state, path);
+                                                                if let Some(track) =
+                                                                    item.current_track()
+                                                                {
+                                                                    let path = track.path.clone();
+                                                                    Self::play_track(state, path);
+                                                                }
                                                             }
                                                         }
                                                     }
                                                 }
-                                            }
-                                        });
-                                        cx.notify();
-                                    }),
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .child(
-                                            div()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .child(device.name.clone()),
-                                        )
-                                        .child(div().text_sm().text_color(rgb(0x999999)).child(
-                                            format!(
-                                                    "{} channels",
-                                                    device
-                                                        .default_config
-                                                        .as_ref()
-                                                        .map(|c| c.channels)
-                                                        .unwrap_or(0)
-                                                ),
-                                        )),
-                                )
-                        }),
-                ),
+                                            });
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .font_weight(FontWeight::SEMIBOLD)
+                                                    .child(device.name.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .gap_3()
+                                                    .text_xs()
+                                                    .text_color(rgb(0x999999))
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .gap_1()
+                                                            .child("📊")
+                                                            .child(format!("{} ch", channels))
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .gap_1()
+                                                            .child("🎵")
+                                                            .child(if sample_rate >= 1000 {
+                                                                format!("{} kHz", sample_rate / 1000)
+                                                            } else {
+                                                                format!("{} Hz", sample_rate)
+                                                            })
+                                                    )
+                                            )
+                                            .when(device.is_default, |div| {
+                                                div.child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(rgb(0x4ec9b0))
+                                                        .child("✓ Default")
+                                                )
+                                            })
+                                    )
+                            }),
+                    ),
             )
     }
 
@@ -2224,6 +2572,127 @@ impl PlayerView {
                 )
         } else {
             div() // Return empty div if no toast
+        }
+    }
+
+    fn render_context_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+
+        if let Some(menu) = &state.app.context_menu {
+            let menu_items = match menu.menu_type {
+                crate::app::ContextMenuType::Album => vec![
+                    ("Add to Queue", "a"),
+                    ("Play Now", "enter"),
+                ],
+                crate::app::ContextMenuType::QueueItem => vec![
+                    ("Remove from Queue", "d"),
+                    ("Play from Here", "enter"),
+                ],
+                crate::app::ContextMenuType::Plugin => vec![
+                    ("Edit Plugin", "e"),
+                    ("Toggle Enabled", "shift-t"),
+                    ("Move Up", "u"),
+                    ("Move Down", "shift-n"),
+                    ("Remove Plugin", "d"),
+                ],
+                crate::app::ContextMenuType::Directory => vec![
+                    ("Remove Directory", "d"),
+                    ("Rescan Library", "shift-s"),
+                ],
+            };
+
+            div()
+                .absolute()
+                .top(px(menu.position_y))
+                .left(px(menu.position_x))
+                .w(Rems(15.0))
+                .bg(rgb(0x2d2d2d))
+                .border_1()
+                .border_color(rgb(0x007acc))
+                .rounded_md()
+                .shadow_lg()
+                .overflow_hidden()
+                .children(menu_items.iter().map(|(label, shortcut)| {
+                    div()
+                        .px_3()
+                        .py_2()
+                        .hover(|style| style.bg(rgb(0x3e3e3e)))
+                        .cursor_pointer()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                // Close menu and execute action based on menu type
+                                view.state.update(cx, |state, cx| {
+                                    let menu_type = state.app.context_menu.as_ref().map(|m| m.menu_type.clone());
+                                    let item_idx = state.app.context_menu.as_ref().map(|m| m.item_index).unwrap_or(0);
+                                    state.app.context_menu = None;
+
+                                    if let Some(mt) = menu_type {
+                                        match (mt, *label) {
+                                            (crate::app::ContextMenuType::Album, "Add to Queue") |
+                                            (crate::app::ContextMenuType::Album, "Play Now") => {
+                                                if let Some(path) = state.app.add_album_to_queue() {
+                                                    Self::play_track(state, path);
+                                                }
+                                            },
+                                            (crate::app::ContextMenuType::QueueItem, "Remove from Queue") => {
+                                                state.app.remove_from_queue(item_idx);
+                                            },
+                                            (crate::app::ContextMenuType::QueueItem, "Play from Here") => {
+                                                state.app.current_queue_index = Some(item_idx);
+                                                // Play the first track of the queue item
+                                                if let Some(queue_item) = state.app.queue.get(item_idx) {
+                                                    if let Some(first_track) = queue_item.tracks.first() {
+                                                        Self::play_track(state, first_track.path.clone());
+                                                    }
+                                                }
+                                            },
+                                            (crate::app::ContextMenuType::Plugin, "Edit Plugin") => {
+                                                state.app.enter_plugin_edit_mode();
+                                            },
+                                            (crate::app::ContextMenuType::Plugin, "Toggle Enabled") => {
+                                                state.app.plugin_chain.toggle_plugin(item_idx);
+                                            },
+                                            (crate::app::ContextMenuType::Plugin, "Move Up") => {
+                                                state.app.plugin_chain.move_plugin_up(item_idx);
+                                            },
+                                            (crate::app::ContextMenuType::Plugin, "Move Down") => {
+                                                state.app.plugin_chain.move_plugin_down(item_idx);
+                                            },
+                                            (crate::app::ContextMenuType::Plugin, "Remove Plugin") => {
+                                                state.app.plugin_chain.remove_plugin(item_idx);
+                                            },
+                                            (crate::app::ContextMenuType::Directory, "Remove Directory") => {
+                                                state.app.remove_directory(item_idx);
+                                            },
+                                            (crate::app::ContextMenuType::Directory, "Rescan Library") => {
+                                                if let Err(e) = state.app.scan_library() {
+                                                    log::error!("Scan failed: {}", e);
+                                                }
+                                            },
+                                            _ => {}
+                                        }
+                                    }
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .justify_between()
+                                .items_center()
+                                .child(div().text_sm().child(*label))
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(rgb(0x666666))
+                                        .child(*shortcut),
+                                ),
+                        )
+                }))
+        } else {
+            div() // Return empty div if no menu
         }
     }
 

@@ -206,6 +206,10 @@ pub struct App {
     pub library_sort_order: LibrarySortOrder,
     pub channel_filter: ChannelFilter,
 
+    // Pagination for library
+    pub library_page: usize,          // Current page (0-indexed)
+    pub library_items_per_page: usize, // Items per page
+
     // Plugin system
     pub plugin_chain: PluginChain,
     pub needs_plugin_update: bool,
@@ -241,6 +245,26 @@ pub struct App {
 
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
+
+    // Context menu state
+    pub context_menu: Option<ContextMenuState>,
+}
+
+/// Context menu state
+#[derive(Debug, Clone)]
+pub struct ContextMenuState {
+    pub menu_type: ContextMenuType,
+    pub position_x: f32,
+    pub position_y: f32,
+    pub item_index: usize, // Index of the item that was right-clicked
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContextMenuType {
+    Album,
+    QueueItem,
+    Plugin,
+    Directory,
 }
 
 /// GPUI-compatible state wrapper
@@ -282,10 +306,12 @@ impl App {
             selected_album_index: 0,
             selected_tree_index: 0,
             selected_plugin_index: 0,
-            library_view_mode: LibraryViewMode::Flat,
+            library_view_mode: LibraryViewMode::TreeView,
             artist_tree: Vec::new(),
             library_sort_order: LibrarySortOrder::Artist,
             channel_filter: ChannelFilter::All,
+            library_page: 0,
+            library_items_per_page: 50, // Show 50 items per page
             plugin_chain: PluginChain::new(),
             needs_plugin_update: false,
             editing_plugin_index: None,
@@ -306,6 +332,7 @@ impl App {
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
             last_loaded_preset: None,
+            context_menu: None,
         }
     }
 
@@ -649,6 +676,78 @@ impl App {
         }
 
         items
+    }
+
+    /// Get paginated tree items
+    pub fn get_paginated_tree_items(&self) -> Vec<TreeItem> {
+        let all_items = self.get_tree_items();
+        let start = self.library_page * self.library_items_per_page;
+        let end = (start + self.library_items_per_page).min(all_items.len());
+
+        all_items[start..end].to_vec()
+    }
+
+    /// Get total number of pages for tree view
+    pub fn get_tree_total_pages(&self) -> usize {
+        let total_items = self.get_tree_items().len();
+        if total_items == 0 {
+            1
+        } else {
+            (total_items + self.library_items_per_page - 1) / self.library_items_per_page
+        }
+    }
+
+    /// Get paginated albums for flat view
+    pub fn get_paginated_albums(&self) -> Vec<&Album> {
+        let all_albums = self.filtered_albums();
+        let start = self.library_page * self.library_items_per_page;
+        let end = (start + self.library_items_per_page).min(all_albums.len());
+
+        all_albums[start..end].to_vec()
+    }
+
+    /// Get total number of pages for flat view
+    pub fn get_flat_total_pages(&self) -> usize {
+        let total_items = self.filtered_albums().len();
+        if total_items == 0 {
+            1
+        } else {
+            (total_items + self.library_items_per_page - 1) / self.library_items_per_page
+        }
+    }
+
+    /// Go to next page
+    pub fn next_page(&mut self) {
+        let total_pages = match self.library_view_mode {
+            LibraryViewMode::Flat => self.get_flat_total_pages(),
+            LibraryViewMode::TreeView => self.get_tree_total_pages(),
+        };
+
+        if self.library_page + 1 < total_pages {
+            self.library_page += 1;
+            // Reset selection when changing pages
+            match self.library_view_mode {
+                LibraryViewMode::Flat => self.selected_album_index = 0,
+                LibraryViewMode::TreeView => self.selected_tree_index = 0,
+            }
+        }
+    }
+
+    /// Go to previous page
+    pub fn prev_page(&mut self) {
+        if self.library_page > 0 {
+            self.library_page -= 1;
+            // Reset selection when changing pages
+            match self.library_view_mode {
+                LibraryViewMode::Flat => self.selected_album_index = 0,
+                LibraryViewMode::TreeView => self.selected_tree_index = 0,
+            }
+        }
+    }
+
+    /// Reset to first page
+    pub fn reset_page(&mut self) {
+        self.library_page = 0;
     }
 
     /// Add a directory to the library (interactive version with UI feedback)

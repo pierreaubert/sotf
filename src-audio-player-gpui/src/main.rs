@@ -36,6 +36,11 @@ fn main() {
             KeyBinding::new("shift-p", ui::SwitchToPlugins, None),
             KeyBinding::new("shift-o", ui::SwitchToDevices, None),
             KeyBinding::new("shift-d", ui::SwitchToDirectoryManager, None),
+            KeyBinding::new("L", ui::SwitchToLibrary, None),
+            KeyBinding::new("Q", ui::SwitchToQueue, None),
+            KeyBinding::new("P", ui::SwitchToPlugins, None),
+            KeyBinding::new("O", ui::SwitchToDevices, None),
+            KeyBinding::new("D", ui::SwitchToDirectoryManager, None),
             // General actions
             KeyBinding::new("/", ui::ToggleSearch, None),
             KeyBinding::new("escape", ui::Cancel, None),
@@ -61,6 +66,11 @@ fn main() {
             KeyBinding::new("j", ui::SelectNext, None),
             KeyBinding::new("pageup", ui::SelectPrevPage, None),
             KeyBinding::new("pagedown", ui::SelectNextPage, None),
+            // Library pagination (Ctrl/Cmd + arrows)
+            KeyBinding::new("ctrl-left", ui::PrevPage, None),
+            KeyBinding::new("ctrl-right", ui::NextPage, None),
+            KeyBinding::new("cmd-left", ui::PrevPage, None),
+            KeyBinding::new("cmd-right", ui::NextPage, None),
             // Expand/collapse
             KeyBinding::new("left", ui::ToggleExpand, None),
             KeyBinding::new("h", ui::ToggleExpand, None),
