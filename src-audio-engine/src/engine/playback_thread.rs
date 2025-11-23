@@ -304,40 +304,74 @@ fn run_playback_thread(
                             channels,
                             new_channels
                         );
+                        log::trace!(
+                            "[Playback Thread] UpdateChannels: Draining pending frames with old channel count"
+                        );
 
-                        // Update channel count
-                        channels = new_channels;
+                        // CRITICAL: Drain all pending frames from the message queue
+                        // These frames have the OLD channel count and would cause mismatches
+                        let mut drained_count = 0;
+                        while let Ok(_) = message_rx.try_recv() {
+                            drained_count += 1;
+                        }
+                        if drained_count > 0 {
+                            log::debug!(
+                                "[Playback Thread] Drained {} stale frames during channel update",
+                                drained_count
+                            );
+                        }
 
-                        // Rebuild config
-                        config.channels = channels as u16;
+                        // Build new config and state, but only commit them if stream rebuild succeeds
+                        let new_config = StreamConfig {
+                            channels: new_channels as u16,
+                            sample_rate: config.sample_rate,
+                            buffer_size: config.buffer_size.clone(),
+                        };
 
-                        // Create new ring buffer with updated channel count
-                        state = Arc::new(PlaybackState::new(buffer_frames, channels));
+                        let new_state = Arc::new(PlaybackState::new(buffer_frames, new_channels));
 
                         // Rebuild and start new stream
                         match build_output_stream(
                             &device,
-                            &config,
-                            Arc::clone(&state),
+                            &new_config,
+                            Arc::clone(&new_state),
                             event_tx.clone(),
                         ) {
                             Ok(new_stream) => {
                                 if let Err(e) = new_stream.play() {
-                                    log::info!(
+                                    log::warn!(
                                         "[Playback Thread] Failed to start new stream: {}",
                                         e
                                     );
+                                    event_tx
+                                        .send(ThreadEvent::ProcessingError(format!(
+                                            "Playback stream start failed for {} channels: {}",
+                                            new_channels, e
+                                        )))
+                                        .ok();
                                 } else {
                                     // Replace old stream with new one (old one drops automatically)
                                     stream = new_stream;
+                                    config = new_config;
+                                    state = new_state;
+                                    channels = new_channels;
                                     log::info!(
                                         "[Playback Thread] Stream rebuilt with {} channels",
                                         channels
                                     );
+                                    log::trace!(
+                                        "[Playback Thread] UpdateChannels: Channel update complete, ready for new frames"
+                                    );
                                 }
                             }
                             Err(e) => {
-                                log::debug!("[Playback Thread] Failed to rebuild stream: {}", e);
+                                log::warn!("[Playback Thread] Failed to rebuild stream: {}", e);
+                                event_tx
+                                    .send(ThreadEvent::ProcessingError(format!(
+                                        "Playback stream rebuild failed for {} channels: {}",
+                                        new_channels, e
+                                    )))
+                                    .ok();
                             }
                         }
                     }
@@ -375,12 +409,16 @@ fn run_playback_thread(
                 // Validate channel count matches current configuration
                 // This prevents audio corruption during hot-reload when channel count changes
                 if frame.num_channels != channels {
-                    log::warn!(
-                        "[Playback Thread] Dropping frame with mismatched channels: \
-                         frame has {}, expected {} (hot-reload in progress)",
+/*
+                    log::debug!(
+                        "[Playback Thread] Skipping frame with mismatched channels: \
+                         frame has {}, expected {} (hot-reload transition)",
                         frame.num_channels,
                         channels
-                    );
+                );
+*/
+                    // Note: This is expected during hot-reload when UpdateChannels is pending
+                    // The UpdateChannels command will drain these stale frames
                     continue; // Discard this frame and wait for UpdateChannels command
                 }
 
@@ -533,4 +571,40 @@ fn build_output_stream(
         .map_err(|e| format!("Failed to build output stream: {}", e))?;
 
     Ok(stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RingBuffer;
+
+    #[test]
+    fn ring_buffer_write_then_read_round_trip() {
+        // 4 frames * 2 channels = 8 samples capacity (minus 1 for ring buffer semantics)
+        let mut rb = RingBuffer::new(4, 2);
+
+        // Write a small block of samples
+        let input = vec![1.0_f32, 2.0, 3.0, 4.0];
+        let written = rb.write(&input);
+        assert_eq!(written, input.len());
+        assert_eq!(rb.available_read(), written);
+
+        // Read back and verify round-trip
+        let mut output = vec![0.0_f32; input.len()];
+        let read = rb.read(&mut output);
+        assert_eq!(read, input.len());
+        assert_eq!(output, input);
+        assert_eq!(rb.available_read(), 0);
+    }
+
+    #[test]
+    fn ring_buffer_clear_empties_buffer() {
+        let mut rb = RingBuffer::new(2, 2); // 2 frames * 2 channels = 4 samples
+        let input = vec![1.0_f32, 2.0, 3.0, 4.0];
+        rb.write(&input);
+        assert!(rb.available_read() > 0);
+
+        rb.clear();
+        assert_eq!(rb.available_read(), 0);
+        assert!(rb.available_write() > 0);
+    }
 }

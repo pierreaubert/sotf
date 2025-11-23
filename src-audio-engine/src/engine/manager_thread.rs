@@ -779,8 +779,14 @@ fn apply_plugin_update(
     config_queue: &mut ConfigUpdateQueue,
     plugins: Vec<super::PluginConfig>,
 ) -> Result<(), String> {
+    log::trace!(
+        "[Manager] apply_plugin_update: Starting update with {} plugins",
+        plugins.len()
+    );
+
     // Send update command to processing thread
     processing.send_command(ProcessingCommand::UpdatePlugins(plugins.clone()))?;
+    log::trace!("[Manager] apply_plugin_update: Sent UpdatePlugins command to processing thread");
 
     // Calculate adaptive timeout based on plugin complexity
     let timeout = estimate_update_timeout(&plugins);
@@ -789,10 +795,15 @@ fn apply_plugin_update(
 
     while start.elapsed() < timeout {
         if let Some(response) = processing.try_recv_response() {
+            log::trace!(
+                "[Manager] apply_plugin_update: Received response after {:?}",
+                start.elapsed()
+            );
             match response {
                 super::ProcessingResponse::PluginChainUpdated { output_channels } => {
                     log::info!(
-                        "[Manager] Plugin chain updated, output channels: {}",
+                        "[Manager] Plugin chain updated in {:?}, output channels: {}",
+                        start.elapsed(),
                         output_channels
                     );
 
@@ -808,21 +819,50 @@ fn apply_plugin_update(
                         state_guard.num_channels = output_channels;
                     }
 
-                    // If channel count changed, update playback thread
+                    // Log whether channel count actually changed
                     if output_channels != old_channels {
                         log::info!(
-                            "[Manager] Channel count changed {}→{}, updating playback thread",
+                            "[Manager] Channel count changed {}→{}, no crossfade (clearing queues)",
                             old_channels,
                             output_channels
                         );
+                    } else {
+                        log::info!(
+                            "[Manager] Channel count unchanged ({}→{}), forcing playback reconfiguration",
+                            old_channels,
+                            output_channels
+                        );
+                    }
 
-                        // Clear ring buffer first to flush any pending frames with old channel count
-                        // This prevents audio corruption from channel count mismatches during hot-reload
-                        playback.send_command(PlaybackCommand::Stop)?;
+                    // Save current playback state to potentially resume after hot-reload
+                    let was_playing = if let Ok(state_guard) = safe_lock(state) {
+                        state_guard.playback_state == PlaybackState::Playing
+                    } else {
+                        false
+                    };
 
-                        // Send update command (fire-and-forget)
-                        // Playback thread will handle channel update asynchronously
-                        playback.send_command(PlaybackCommand::UpdateChannels(output_channels))?;
+                    // CRITICAL: When channel count changes, we CANNOT crossfade
+                    // The processing thread will do immediate swap (no crossfade)
+                    // We need to clear all queues to prevent channel mismatches:
+
+                    // 1. Clear playback ring buffer (removes old-channel-count frames)
+                    playback.send_command(PlaybackCommand::Stop)?;
+                    log::debug!("[Manager] Cleared playback ring buffer");
+
+                    // 2. Update playback thread channel configuration
+                    //    The UpdateChannels handler will:
+                    //    - Drain all pending frames from processing→playback queue
+                    //    - Update channel count
+                    //    - Rebuild audio stream
+                    playback.send_command(PlaybackCommand::UpdateChannels(output_channels))?;
+                    log::debug!("[Manager] Sent UpdateChannels({}) to playback thread", output_channels);
+
+                    // If playback was active, update state to reflect that we're ready to resume
+                    // The decoder thread should automatically continue feeding data
+                    if was_playing {
+                        log::debug!("[Manager] Playback was active during hot-reload, will auto-resume");
+                        // Note: We don't explicitly resume here - the processing pipeline will
+                        // automatically continue once the new channel configuration is applied
                     }
 
                     // Save this as the last working config for future rollback
@@ -898,9 +938,9 @@ fn apply_plugin_update(
 /// Validate plugin configurations before applying
 fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), ConfigError> {
     for (i, config) in configs.iter().enumerate() {
-        // Check if plugin type is recognized
+        // Check if plugin type is recognized (case-insensitive)
         let valid_types = [
-            "EQ",
+            "eq",
             "gain",
             "upmixer",
             "compressor",
@@ -914,7 +954,8 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "resampler",
         ];
 
-        if !valid_types.contains(&config.plugin_type.as_str()) {
+        let plugin_type_lower = config.plugin_type.to_lowercase();
+        if !valid_types.contains(&plugin_type_lower.as_str()) {
             return Err(ConfigError::ValidationError {
                 plugin_index: i,
                 reason: format!("Unknown plugin type '{}'", config.plugin_type),
@@ -929,9 +970,9 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             });
         }
 
-        // Type-specific validation
-        match config.plugin_type.as_str() {
-            "EQ" => {
+        // Type-specific validation (case-insensitive)
+        match plugin_type_lower.as_str() {
+            "eq" => {
                 // Validate EQ filter structure
                 if let Some(filters) = config.parameters.get("filters") {
                     if !filters.is_array() {
@@ -1095,6 +1136,10 @@ fn handle_command(
         }
         ManagerCommand::UpdatePluginChain(plugins) => {
             log::debug!("[Manager] Update plugin chain ({} plugins)", plugins.len());
+            log::trace!(
+                "[Manager] UpdatePluginChain: Validating configuration with {} plugins",
+                plugins.len()
+            );
 
             // Validate config before processing
             if let Err(e) = validate_plugin_configs(&plugins) {
@@ -1103,17 +1148,37 @@ fn handle_command(
                 return ManagerResponse::Error(e.to_string());
             }
 
+            log::trace!("[Manager] UpdatePluginChain: Configuration validated successfully");
+
             // If a config update is already in progress, enqueue this one
             if config_queue.is_processing() {
                 log::debug!("[Manager] Config update in progress, enqueuing new update");
-                config_queue.enqueue(plugins, ConfigUpdatePriority::UserDirect);
-                return ManagerResponse::Ok;
+                log::trace!(
+                    "[Manager] UpdatePluginChain: Queueing update (queue size before: {})",
+                    config_queue.queue.len()
+                );
+                let queued = config_queue.enqueue(plugins, ConfigUpdatePriority::UserDirect);
+                if queued {
+                    log::trace!("[Manager] UpdatePluginChain: Update queued successfully");
+                    return ManagerResponse::Ok;
+                } else {
+                    log::warn!("[Manager] UpdatePluginChain: Failed to queue update (queue full)");
+                    return ManagerResponse::Error("Plugin update queue is full".to_string());
+                }
             }
+
+            log::trace!("[Manager] UpdatePluginChain: Applying update immediately");
 
             // Otherwise, apply immediately using the synchronized apply function
             match apply_plugin_update(processing, playback, state, config_queue, plugins) {
-                Ok(()) => ManagerResponse::Ok,
-                Err(e) => ManagerResponse::Error(e),
+                Ok(()) => {
+                    log::trace!("[Manager] UpdatePluginChain: Update applied successfully");
+                    ManagerResponse::Ok
+                }
+                Err(e) => {
+                    log::trace!("[Manager] UpdatePluginChain: Update failed: {}", e);
+                    ManagerResponse::Error(e)
+                }
             }
         }
         ManagerCommand::SetPluginParameter {

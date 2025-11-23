@@ -564,7 +564,6 @@ impl AudioStreamingManager {
     }
 
     /// Update plugin chain
-    /// TODO: Phase 3 - Implement plugin hot-reload
     pub fn update_plugin_chain(&self, plugins: Vec<PluginConfig>) -> Result<(), String> {
         log::info!(
             "[AudioStreamingManager] Updating plugin chain with {} plugins",

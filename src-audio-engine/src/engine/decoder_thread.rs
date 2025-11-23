@@ -42,7 +42,7 @@ impl DecoderThread {
                     target_sample_rate,
                     frame_size,
                 ) {
-                    log::debug!("[Decoder Thread] Error: {}", e);
+                    log::error!("[Decoder Thread] Error: {}", e);
                 }
             })
             .map_err(|e| format!("Failed to spawn decoder thread: {}", e))?;
@@ -275,13 +275,14 @@ impl DecoderState {
                 }
 
                 // Log backpressure at debug level
+/*
                 if total_send_time > Duration::from_millis(10) {
                     log::debug!(
                         "[Decoder Thread] Backpressure (channel full): {:?} wait time",
                         total_send_time
                     );
                 }
-
+*/
                 // Update position
                 let position_sec = decoder.position() as f64 / source_sample_rate as f64;
                 event_tx
@@ -528,6 +529,6 @@ fn run_decoder_thread(
         }
     }
 
-    log::debug!("[Decoder Thread] Stopped");
+    // log::debug!("[Decoder Thread] Stopped");
     Ok(())
 }
