@@ -1498,12 +1498,21 @@ impl App {
         use sotf_audio_player::{EQFilter, PluginSettings};
         use std::path::Path;
 
+        // Check plugin state before loading file
+        if let Some(plugin) = self.get_editing_plugin() {
+            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                return Err("Selected plugin is not an EQ".to_string());
+            }
+        } else {
+            return Err("No plugin being edited".to_string());
+        }
+
         let path = Path::new(&self.apo_file_input);
 
         // Load filters from APO file
         let filters = EQFilter::from_apo_file(path)?;
 
-        // Update the currently editing plugin if it's an EQ
+        // Update the currently editing plugin
         if let Some(plugin) = self.get_editing_plugin_mut() {
             if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                 plugin.settings = PluginSettings::EQ { filters };
@@ -1521,10 +1530,19 @@ impl App {
     pub fn load_sofa_file(&mut self) -> Result<(), String> {
         use sotf_audio_player::PluginSettings;
 
+        // Check plugin state before loading file (or rather, setting path)
+        if let Some(plugin) = self.get_editing_plugin() {
+            if !matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
+                return Err("Selected plugin is not a Binaural Decoder".to_string());
+            }
+        } else {
+            return Err("No plugin being edited".to_string());
+        }
+
         // Clone the sofa_file_input before borrowing plugin mutably
         let sofa_file_path = self.sofa_file_input.clone();
 
-        // Update the currently editing plugin if it's a binaural decoder
+        // Update the currently editing plugin
         if let Some(plugin) = self.get_editing_plugin_mut() {
             if let PluginSettings::BinauralDecoder {
                 ref mut sofa_file, ..

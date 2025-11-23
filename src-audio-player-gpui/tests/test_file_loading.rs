@@ -8,7 +8,7 @@
 // - Error handling for invalid files
 // - Input mode transitions during file loading
 
-use sotf_audio_player::{Plugin, PluginSettings, PluginType};
+use sotf_audio_player::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::app::{App, InputMode};
 use std::path::PathBuf;
 
@@ -21,12 +21,10 @@ fn test_apo_file_loading_for_eq_plugin() {
     let mut app = create_test_app();
 
     // Add an EQ plugin to the chain
-    let eq_plugin = Plugin {
-        plugin_type: PluginType::EQ,
-        enabled: true,
-        settings: PluginSettings::EQ { filters: vec![] },
-    };
-    app.plugin_chain.plugins.push(eq_plugin);
+    let idx = app.plugin_chain.add_plugin(&PluginType::EQ);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::EQ { filters: vec![] };
+    }
 
     // Enter edit mode for the EQ plugin
     app.editing_plugin_index = Some(0);
@@ -70,12 +68,10 @@ fn test_apo_file_loading_invalid_file() {
     let mut app = create_test_app();
 
     // Add an EQ plugin
-    let eq_plugin = Plugin {
-        plugin_type: PluginType::EQ,
-        enabled: true,
-        settings: PluginSettings::EQ { filters: vec![] },
-    };
-    app.plugin_chain.plugins.push(eq_plugin);
+    let idx = app.plugin_chain.add_plugin(&PluginType::EQ);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::EQ { filters: vec![] };
+    }
 
     app.editing_plugin_index = Some(0);
     app.input_mode = InputMode::LoadApoFile;
@@ -93,10 +89,9 @@ fn test_apo_file_loading_wrong_plugin_type() {
     let mut app = create_test_app();
 
     // Add a non-EQ plugin (e.g., Compressor)
-    let compressor_plugin = Plugin {
-        plugin_type: PluginType::Compressor,
-        enabled: true,
-        settings: PluginSettings::Compressor {
+    let idx = app.plugin_chain.add_plugin(&PluginType::Compressor);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::Compressor {
             threshold_db: -20.0,
             ratio: 4.0,
             attack_ms: 10.0,
@@ -107,9 +102,8 @@ fn test_apo_file_loading_wrong_plugin_type() {
             auto_makeup: false,
             link_channels: true,
             sidechain_hpf_hz: 0.0,
-        },
-    };
-    app.plugin_chain.plugins.push(compressor_plugin);
+        };
+    }
 
     app.editing_plugin_index = Some(0);
     app.input_mode = InputMode::LoadApoFile;
@@ -144,18 +138,16 @@ fn test_sofa_file_loading_for_binaural_decoder() {
     let mut app = create_test_app();
 
     // Add a Binaural Decoder plugin
-    let binaural_plugin = Plugin {
-        plugin_type: PluginType::BinauralDecoder,
-        enabled: true,
-        settings: PluginSettings::BinauralDecoder {
+    let idx = app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::BinauralDecoder {
             sofa_file: String::new(),
             input_channels: 2,
             enable_optimization: true,
             externalization: 0.5,
             near_field_strength: 0.0,
-        },
-    };
-    app.plugin_chain.plugins.push(binaural_plugin);
+        };
+    }
 
     app.editing_plugin_index = Some(0);
     app.input_mode = InputMode::LoadSofaFile;
@@ -192,12 +184,10 @@ fn test_sofa_file_loading_wrong_plugin_type() {
     let mut app = create_test_app();
 
     // Add an EQ plugin (not Binaural Decoder)
-    let eq_plugin = Plugin {
-        plugin_type: PluginType::EQ,
-        enabled: true,
-        settings: PluginSettings::EQ { filters: vec![] },
-    };
-    app.plugin_chain.plugins.push(eq_plugin);
+    let idx = app.plugin_chain.add_plugin(&PluginType::EQ);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::EQ { filters: vec![] };
+    }
 
     app.editing_plugin_index = Some(0);
     app.input_mode = InputMode::LoadSofaFile;

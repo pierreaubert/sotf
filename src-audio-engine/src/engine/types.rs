@@ -214,6 +214,7 @@ pub enum ManagerResponse {
     Position(f64),
     AnalyzerData(Arc<dyn Any + Send + Sync>),
     Error(String),
+    Shutdown,
 }
 
 // ============================================================================
@@ -253,6 +254,8 @@ pub struct AudioEngineState {
     pub underruns: u64,
     /// Last error message, if any
     pub last_error: Option<String>,
+    /// Seek in progress flag
+    pub seeking: bool,
 }
 
 impl Default for AudioEngineState {
@@ -269,6 +272,7 @@ impl Default for AudioEngineState {
             processing_bypassed: false,
             underruns: 0,
             last_error: None,
+            seeking: false,
         }
     }
 }
@@ -292,6 +296,8 @@ pub enum ThreadEvent {
     ThreadPanic(String),
     /// Position update
     PositionUpdate(f64),
+    /// Seek completed
+    SeekComplete,
 }
 
 // ============================================================================

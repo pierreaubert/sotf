@@ -193,13 +193,16 @@ impl DecoderState {
                 let mut total_resample_time = Duration::ZERO;
                 let mut total_send_time = Duration::ZERO;
 
-                // Add to resampler buffer if we're resampling
-                if let Some(resampler) = &mut self.resampler {
-                    self.resampler_buffer
-                        .extend_from_slice(&decode_buffer.samples);
+                // Add to buffer (reusing resampler_buffer as general sample buffer)
+                self.resampler_buffer
+                    .extend_from_slice(&decode_buffer.samples);
 
-                    // Process resampler buffer in frame_size chunks
-                    while self.resampler_buffer.len() >= frame_size * channels {
+                // Process buffer in frame_size chunks
+                while self.resampler_buffer.len() >= frame_size * channels {
+                    // If resampling, we need enough input samples for one output frame
+                    // But here we simplify: just process fixed input chunks
+                    
+                    if let Some(resampler) = &mut self.resampler {
                         let chunk: Vec<f32> = self
                             .resampler_buffer
                             .drain(..frame_size * channels)
@@ -244,22 +247,26 @@ impl DecoderState {
                             .send(DecoderMessage::Frame(frame))
                             .map_err(|_| "Failed to send frame")?;
                         total_send_time += s_start.elapsed();
-                    }
-                } else {
-                    // No resampling - send decoded samples directly as frames
-                    let num_frames = decode_buffer.samples.len() / channels;
-                    let frame = AudioFrame::new(
-                        decode_buffer.samples.clone(),
-                        num_frames,
-                        channels,
-                        source_sample_rate,
-                    );
+                    } else {
+                        // No resampling - just take a chunk
+                        let chunk: Vec<f32> = self
+                            .resampler_buffer
+                            .drain(..frame_size * channels)
+                            .collect();
+                        
+                        let frame = AudioFrame::new(
+                            chunk,
+                            frame_size,
+                            channels,
+                            source_sample_rate,
+                        );
 
-                    let s_start = Instant::now();
-                    message_tx
-                        .send(DecoderMessage::Frame(frame))
-                        .map_err(|_| "Failed to send frame")?;
-                    total_send_time += s_start.elapsed();
+                        let s_start = Instant::now();
+                        message_tx
+                            .send(DecoderMessage::Frame(frame))
+                            .map_err(|_| "Failed to send frame")?;
+                        total_send_time += s_start.elapsed();
+                    }
                 }
 
                 let processing_time = decode_time + total_resample_time;
@@ -481,6 +488,8 @@ fn run_decoder_thread(
                     message_tx.send(DecoderMessage::Flush).ok();
                     if let Err(e) = state.seek(position) {
                         log::debug!("[Decoder Thread] Seek failed: {}", e);
+                    } else {
+                        event_tx.send(ThreadEvent::SeekComplete).ok();
                     }
                 }
                 DecoderCommand::Stop => {

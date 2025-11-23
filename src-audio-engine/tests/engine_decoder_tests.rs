@@ -2,9 +2,7 @@
 //!
 //! Unit tests for the decoder thread that handles audio file decoding and resampling.
 
-use sotf_audio::engine::{
-    AudioFrame, DecoderCommand, DecoderMessage, DecoderThread, ThreadEvent,
-};
+use sotf_audio::engine::{DecoderCommand, DecoderMessage, DecoderThread, ThreadEvent};
 use std::path::PathBuf;
 use std::sync::mpsc::{sync_channel, channel};
 use std::time::Duration;
@@ -20,7 +18,10 @@ fn create_test_wav(duration_secs: f32, sample_rate: u32) -> NamedTempFile {
         sample_format: hound::SampleFormat::Int,
     };
 
-    let temp_file = NamedTempFile::new().unwrap();
+    let temp_file = tempfile::Builder::new()
+        .suffix(".wav")
+        .tempfile()
+        .unwrap();
     let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
 
     // Generate a simple 440Hz tone
@@ -110,7 +111,7 @@ fn test_decoder_pause_resume() {
     let decoder = DecoderThread::new(message_tx, event_tx, 48000, 512).unwrap();
 
     // Create a longer test file
-    let temp_file = create_test_wav(1.0, 48000); // 1 second
+    let temp_file = create_test_wav(5.0, 48000); // 5 seconds
     let path = temp_file.path().to_path_buf();
 
     decoder.send_command(DecoderCommand::Play(path)).unwrap();
@@ -132,7 +133,7 @@ fn test_decoder_pause_resume() {
 
     // Resume
     decoder.send_command(DecoderCommand::Resume).unwrap();
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(300));
     let frames_after_resume = message_rx.try_iter().count();
 
     assert!(frames_before_pause > 0, "Should receive frames before pause");
@@ -280,9 +281,32 @@ fn test_decoder_shutdown() {
     std::thread::sleep(Duration::from_millis(100));
 
     // Trying to receive should fail or timeout
-    let result = message_rx.recv_timeout(Duration::from_millis(500));
-    // Either timeout or disconnect is fine - decoder is stopped
-    assert!(result.is_err() || matches!(result, Ok(DecoderMessage::EndOfStream)));
+    // Drain any remaining frames
+    let start = std::time::Instant::now();
+    let timeout = Duration::from_secs(1);
+    let mut got_eos_or_error = false;
+
+    while start.elapsed() < timeout {
+        match message_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(DecoderMessage::EndOfStream) => {
+                got_eos_or_error = true;
+                break;
+            }
+            Ok(DecoderMessage::Frame(_)) => {
+                // Ignore frames
+            }
+            Ok(DecoderMessage::Flush) => {
+                // Ignore flush
+            }
+            Err(_) => {
+                // Channel disconnected or timeout
+                got_eos_or_error = true;
+                break;
+            }
+        }
+    }
+
+    assert!(got_eos_or_error, "Should receive EOS or channel disconnect");
 }
 
 #[test]

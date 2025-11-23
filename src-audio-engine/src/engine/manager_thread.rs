@@ -585,23 +585,12 @@ fn run_manager_thread(
                     &mut config_update_queue,
                 );
 
-                if let ManagerResponse::Ok = response {
-                    // Check if shutdown
-                    let should_exit = if let Ok(state_guard) = safe_lock(&state) {
-                        state_guard.playback_state == PlaybackState::Stopped
-                            && matches!(response, ManagerResponse::Ok)
-                    } else {
-                        false
-                    };
+                let should_exit = matches!(response, ManagerResponse::Shutdown);
+                response_tx.send(response).ok();
 
-                    response_tx.send(response).ok();
-
-                    if should_exit {
-                        // This was a shutdown command
-                        break;
-                    }
-                } else {
-                    response_tx.send(response).ok();
+                if should_exit {
+                    log::debug!("[Manager Thread] Shutdown response sent, exiting loop");
+                    break;
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
@@ -673,7 +662,15 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
         }
         ThreadEvent::PositionUpdate(position) => {
             if let Ok(mut state) = safe_lock(state) {
-                state.position = position;
+                if state.playback_state != PlaybackState::Stopped && !state.seeking {
+                    state.position = position;
+                }
+            }
+        }
+        ThreadEvent::SeekComplete => {
+            log::debug!("[Manager Thread] Seek complete");
+            if let Ok(mut state) = safe_lock(state) {
+                state.seeking = false;
             }
         }
     }
@@ -1120,6 +1117,7 @@ fn handle_command(
 
             if let Ok(mut state_guard) = safe_lock(state) {
                 state_guard.position = position;
+                state_guard.seeking = true;
             }
 
             if let Err(e) = decoder.send_command(DecoderCommand::Seek(position)) {
@@ -1362,7 +1360,7 @@ fn handle_command(
             processing.send_command(ProcessingCommand::Shutdown).ok();
             playback.send_command(PlaybackCommand::Shutdown).ok();
 
-            ManagerResponse::Ok
+            ManagerResponse::Shutdown
         }
     }
 }

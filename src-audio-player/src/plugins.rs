@@ -98,9 +98,9 @@ impl EQFilter {
         // Parse filter type
         let filter_type = if line.contains(" PK ") || line.contains(" PEQ ") {
             BiquadFilterType::Peak
-        } else if line.contains(" LSC ") || line.contains(" LOW_SHELF ") {
+        } else if line.contains(" LSC ") || line.contains(" LOW_SHELF ") || line.contains(" LS ") {
             BiquadFilterType::Lowshelf
-        } else if line.contains(" HSC ") || line.contains(" HIGH_SHELF ") {
+        } else if line.contains(" HSC ") || line.contains(" HIGH_SHELF ") || line.contains(" HS ") {
             BiquadFilterType::Highshelf
         } else if line.contains(" LP ") || line.contains(" LPQ ") {
             BiquadFilterType::Lowpass

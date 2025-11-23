@@ -9,8 +9,8 @@
 // - Search and filter workflows
 // - Error recovery scenarios
 
-use sotf_audio_player::{Plugin, PluginSettings, PluginType};
-use sotf_audio_player_gpui::app::{App, InputMode, Screen, ToastType};
+use sotf_audio_player::{BiquadFilterType, EQFilter, PluginSettings, PluginType};
+use sotf_audio_player_gpui::app::{App, InputMode, LibrarySortOrder, Screen, ToastType};
 use std::path::PathBuf;
 
 fn create_test_app() -> App {
@@ -89,7 +89,7 @@ fn scenario_search_and_filter_library() {
     assert_eq!(app.search_query, "Pink Floyd");
 
     // Step 4: Results are filtered (verified by filtered_albums method)
-    let filtered = app.filtered_albums();
+    let _filtered = app.filtered_albums();
     // In real scenario, this would return matching albums
 
     // Step 5: User presses ESC to clear search
@@ -101,7 +101,7 @@ fn scenario_search_and_filter_library() {
     app.cycle_channel_filter();
 
     // Step 7: User presses 'S' to cycle sort order
-    app.cycle_library_sort_order();
+    app.set_library_sort_order(LibrarySortOrder::Artist);
 
     // Verify final state
     assert_eq!(app.input_mode, InputMode::Normal);
@@ -121,27 +121,25 @@ fn scenario_build_and_edit_plugin_chain() {
     assert_eq!(app.current_screen, Screen::Plugins);
 
     // Step 2: User presses Shift-1 to add EQ plugin
-    let eq_plugin = Plugin {
-        plugin_type: PluginType::EQ,
-        enabled: true,
-        settings: PluginSettings::EQ {
-            filters: vec![Biquad::new(
+    app.plugin_chain.add_plugin(&PluginType::EQ);
+    
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(0) {
+        plugin.settings = PluginSettings::EQ {
+            filters: vec![EQFilter::new(
                 BiquadFilterType::Peak,
                 1000.0,
-                48000.0,
                 1.5,
                 3.0,
             )],
-        },
-    };
-    app.plugin_chain.plugins.push(eq_plugin);
-    assert_eq!(app.plugin_chain.plugins.len(), 1);
+        };
+    }
+    assert_eq!(app.plugin_chain.len(), 1);
 
     // Step 3: User presses Shift-2 to add Upmixer plugin
-    let upmixer_plugin = Plugin {
-        plugin_type: PluginType::Upmixer,
-        enabled: true,
-        settings: PluginSettings::Upmixer {
+    let upmixer_idx = app.plugin_chain.add_plugin(&PluginType::Upmixer);
+    
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(upmixer_idx) {
+        plugin.settings = PluginSettings::Upmixer {
             speaker_config: "5.0".to_string(),
             gain_front_direct: 0.0,
             gain_front_ambient: 0.0,
@@ -156,10 +154,9 @@ fn scenario_build_and_edit_plugin_chain() {
             enable_hr_direct: true,
             hr_sharpen: 1.0,
             safety_cap_db: -3.0,
-        },
-    };
-    app.plugin_chain.plugins.push(upmixer_plugin);
-    assert_eq!(app.plugin_chain.plugins.len(), 2);
+        };
+    }
+    assert_eq!(app.plugin_chain.len(), 2);
 
     // Step 4: User selects first plugin (EQ)
     app.selected_plugin_index = 0;
@@ -200,7 +197,7 @@ fn scenario_build_and_edit_plugin_chain() {
     // Verify final state
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(app.editing_plugin_index.is_none());
-    assert_eq!(app.plugin_chain.plugins.len(), 2);
+    assert_eq!(app.plugin_chain.len(), 2);
 }
 
 // ============================================================================
@@ -215,18 +212,16 @@ fn scenario_load_sofa_file_for_binaural() {
     app.current_screen = Screen::Plugins;
 
     // Step 2: Add Binaural Decoder plugin
-    let binaural_plugin = Plugin {
-        plugin_type: PluginType::BinauralDecoder,
-        enabled: true,
-        settings: PluginSettings::BinauralDecoder {
+    let idx = app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::BinauralDecoder {
             sofa_file: String::new(),
             input_channels: 2,
             enable_optimization: true,
             externalization: 0.5,
             near_field_strength: 0.0,
-        },
-    };
-    app.plugin_chain.plugins.push(binaural_plugin);
+        };
+    }
 
     // Step 3: Select the plugin
     app.selected_plugin_index = 0;
@@ -271,12 +266,10 @@ fn scenario_error_recovery_invalid_apo_file() {
     let mut app = create_test_app();
 
     // Setup: Add EQ plugin
-    let eq_plugin = Plugin {
-        plugin_type: PluginType::EQ,
-        enabled: true,
-        settings: PluginSettings::EQ { filters: vec![] },
-    };
-    app.plugin_chain.plugins.push(eq_plugin);
+    let idx = app.plugin_chain.add_plugin(&PluginType::EQ);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::EQ { filters: vec![] };
+    }
 
     // Step 1: Enter edit mode
     app.current_screen = Screen::Plugins;
@@ -335,10 +328,9 @@ fn scenario_error_recovery_wrong_plugin_type() {
     let mut app = create_test_app();
 
     // Setup: Add Compressor plugin (not EQ)
-    let compressor_plugin = Plugin {
-        plugin_type: PluginType::Compressor,
-        enabled: true,
-        settings: PluginSettings::Compressor {
+    let idx = app.plugin_chain.add_plugin(&PluginType::Compressor);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::Compressor {
             threshold_db: -20.0,
             ratio: 4.0,
             attack_ms: 10.0,
@@ -349,9 +341,8 @@ fn scenario_error_recovery_wrong_plugin_type() {
             auto_makeup: false,
             link_channels: true,
             sidechain_hpf_hz: 0.0,
-        },
-    };
-    app.plugin_chain.plugins.push(compressor_plugin);
+        };
+    }
 
     // Step 1: User tries to load APO file for Compressor
     app.current_screen = Screen::Plugins;
@@ -409,16 +400,14 @@ fn scenario_multi_screen_navigation_with_state() {
     app.current_screen = Screen::Plugins;
 
     // Step 4: Add a plugin
-    let eq_plugin = Plugin {
-        plugin_type: PluginType::EQ,
-        enabled: true,
-        settings: PluginSettings::EQ { filters: vec![] },
-    };
-    app.plugin_chain.plugins.push(eq_plugin);
+    let idx = app.plugin_chain.add_plugin(&PluginType::EQ);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::EQ { filters: vec![] };
+    }
 
     // Step 5: Switch to Devices
     app.current_screen = Screen::Devices;
-    assert_eq!(app.plugin_chain.plugins.len(), 1); // Plugin preserved
+    assert_eq!(app.plugin_chain.len(), 1); // Plugin preserved
 
     // Step 6: Switch to Directory Manager
     app.current_screen = Screen::DirectoryManager;
@@ -432,7 +421,7 @@ fn scenario_multi_screen_navigation_with_state() {
     // Verify all state was preserved
     assert_eq!(app.search_query, "Beatles");
     assert_eq!(app.directory_input, "/music");
-    assert_eq!(app.plugin_chain.plugins.len(), 1);
+    assert_eq!(app.plugin_chain.len(), 1);
 }
 
 // ============================================================================
@@ -449,17 +438,15 @@ fn scenario_complete_plugin_chain_workflow() {
     // EQ -> Compressor -> Limiter -> Upmixer
 
     // Add EQ
-    app.plugin_chain.plugins.push(Plugin {
-        plugin_type: PluginType::EQ,
-        enabled: true,
-        settings: PluginSettings::EQ { filters: vec![] },
-    });
+    let idx = app.plugin_chain.add_plugin(&PluginType::EQ);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::EQ { filters: vec![] };
+    }
 
     // Add Compressor
-    app.plugin_chain.plugins.push(Plugin {
-        plugin_type: PluginType::Compressor,
-        enabled: true,
-        settings: PluginSettings::Compressor {
+    let idx = app.plugin_chain.add_plugin(&PluginType::Compressor);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::Compressor {
             threshold_db: -20.0,
             ratio: 4.0,
             attack_ms: 10.0,
@@ -470,21 +457,20 @@ fn scenario_complete_plugin_chain_workflow() {
             auto_makeup: false,
             link_channels: true,
             sidechain_hpf_hz: 0.0,
-        },
-    });
+        };
+    }
 
     // Add Limiter
-    app.plugin_chain.plugins.push(Plugin {
-        plugin_type: PluginType::Limiter,
-        enabled: true,
-        settings: PluginSettings::Limiter {
+    let idx = app.plugin_chain.add_plugin(&PluginType::Limiter);
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+        plugin.settings = PluginSettings::Limiter {
             threshold_db: -3.0,
             release_ms: 50.0,
             mix: 1.0,
-        },
-    });
+        };
+    }
 
-    assert_eq!(app.plugin_chain.plugins.len(), 3);
+    assert_eq!(app.plugin_chain.len(), 3);
 
     // Step 2: Edit middle plugin (Compressor)
     app.selected_plugin_index = 1;
@@ -503,15 +489,15 @@ fn scenario_complete_plugin_chain_workflow() {
     app.editing_plugin_index = None;
 
     // Step 5: Disable middle plugin
-    if let Some(plugin) = app.plugin_chain.plugins.get_mut(1) {
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(1) {
         plugin.enabled = false;
     }
 
     // Step 6: Verify chain state
-    assert_eq!(app.plugin_chain.plugins.len(), 3);
-    assert!(app.plugin_chain.plugins[0].enabled);
-    assert!(!app.plugin_chain.plugins[1].enabled);
-    assert!(app.plugin_chain.plugins[2].enabled);
+    assert_eq!(app.plugin_chain.len(), 3);
+    assert!(app.plugin_chain.get_plugin(0).unwrap().enabled);
+    assert!(!app.plugin_chain.get_plugin(1).unwrap().enabled);
+    assert!(app.plugin_chain.get_plugin(2).unwrap().enabled);
 }
 
 // ============================================================================

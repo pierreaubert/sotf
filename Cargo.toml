@@ -6,6 +6,7 @@ members = [
     "src-audio-player-midi",
     "src-audio-player-tui",
     "src-audio-plugins",
+    "src-audio-plugins-ffi",
     "src-autoeq",
     "src-bem",
     "src-cea2034",

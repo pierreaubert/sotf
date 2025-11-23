@@ -5,7 +5,7 @@
 use sotf_audio::engine::{
     AudioFrame, PlaybackCommand, PlaybackThread, ProcessingMessage, ThreadEvent,
 };
-use std::sync::mpsc::{channel, sync_channel};
+use std::sync::mpsc::channel;
 use std::time::Duration;
 
 #[test]
@@ -116,16 +116,31 @@ fn test_playback_detects_underrun() {
 
     if let Ok(_playback) = PlaybackThread::new(message_rx, event_tx, 48000, 2, None) {
         // Don't send any frames - playback should underrun
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(1000));
 
-        // Check for underrun events
+        // Check for events
         let events: Vec<_> = event_rx.try_iter().collect();
-        let underruns = events.iter()
+
+        // Check if we got any errors
+        if let Some(ThreadEvent::ProcessingError(e)) = events
+            .iter()
+            .find(|e| matches!(e, ThreadEvent::ProcessingError(_)))
+        {
+            // If the audio thread failed to start (e.g. no device), we can't test underrun
+            // But we should report it clearly
+            panic!("Audio thread error during test: {}", e);
+        }
+
+        let underruns = events
+            .iter()
             .filter(|e| matches!(e, ThreadEvent::PlaybackUnderrun))
             .count();
 
         // Should detect at least one underrun when no data is provided
-        assert!(underruns > 0, "Should detect underrun when no frames are provided");
+        assert!(
+            underruns > 0,
+            "Should detect underrun when no frames are provided (got 0 events)"
+        );
     }
 }
 

@@ -1,35 +1,39 @@
-.DS_Store
+# rust
 /target
-/data
 /docs
-/dist
-/node_modules
-/.chunkhound
-data_cached
-data_generated
 /coverage
-autoeq_*.html
-autoeq_*.png
+mutants.out
+
+# generated data
+/data
+/data_cached
+/data_generated
 /*.csv
 /*.html
+
+# node
+/node_modules
+/dist
+.sass-cache
+
+# docs
+.jekyll-cache
+.jekyll-metadata
+_site
+
+# MCP
+/.chunkhound
+autoeq_*.html
+autoeq_*.png
 bugs.md
-mutants.out
-*~
-.*~
-*#
-.#*
 src/unused.rs
-.idea
-.qwen
-TAGS
-ETAGS
-CTAGS
 
 # Logs
 logs
 *.log
 /*.csv
 /*.wav
+
 
 # Editor directories and files
 /.vs
@@ -43,8 +47,13 @@ logs
 *.njsproj
 *.sln
 *.sw?
-_site
-.sass-cache
-.jekyll-cache
-.jekyll-metadata
 vendor
+TAGS
+ETAGS
+CTAGS
+*~
+.*~
+*#
+.#*
+.idea
+.qwen

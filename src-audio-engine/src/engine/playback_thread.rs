@@ -38,6 +38,7 @@ impl PlaybackThread {
         let thread_handle = std::thread::Builder::new()
             .name("playback".to_string())
             .spawn(move || {
+                let error_tx = event_tx.clone();
                 if let Err(e) = run_playback_thread(
                     message_rx,
                     command_rx,
@@ -47,6 +48,12 @@ impl PlaybackThread {
                     output_device,
                 ) {
                     log::debug!("[Playback Thread] Error: {}", e);
+                    error_tx
+                        .send(ThreadEvent::ProcessingError(format!(
+                            "Playback thread error: {}",
+                            e
+                        )))
+                        .ok();
                 }
             })
             .map_err(|e| format!("Failed to spawn playback thread: {}", e))?;
@@ -468,7 +475,6 @@ fn build_output_stream(
     event_tx: Sender<ThreadEvent>,
 ) -> Result<Stream, String> {
     let state_clone = Arc::clone(&state);
-    let mut last_underrun_count = 0u64;
     let event_tx_data = event_tx.clone();
 
     let stream = device
@@ -518,10 +524,8 @@ fn build_output_stream(
                     if available < requested {
                         let current_underruns =
                             state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
-                        if current_underruns != last_underrun_count {
-                            event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
-                            last_underrun_count = current_underruns;
-                        }
+                        event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
+
                         log::warn!(
                             "[Playback] UNDERRUN #{}: buffer has {} samples but need {} ({}% full)",
                             current_underruns + 1,
