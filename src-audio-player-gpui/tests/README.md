@@ -81,6 +81,86 @@ Tests for input mode state machine:
 
 **Coverage**: 17 unit tests
 
+### 5. User Scenario Tests (`test_scenarios.rs`)
+
+High-level integration tests simulating complete user workflows:
+
+#### Scenario 1: Library Setup and Scan
+- Navigate to Directory Manager
+- Add directory with text input
+- Start library scan
+- Verify toast messages at each step
+- Return to Library screen
+
+#### Scenario 2: Search and Filter Workflow
+- Enter search mode
+- Type search query
+- Filter results
+- Cycle channel filters
+- Cycle sort orders
+- Clear search and return to normal
+
+#### Scenario 3: Plugin Chain Building and Editing
+- Navigate to Plugins screen
+- Add EQ plugin (Shift-1)
+- Add Upmixer plugin (Shift-2)
+- Select and edit EQ plugin
+- Navigate parameters with arrows
+- Load APO file from disk
+- Verify plugin updates
+
+#### Scenario 4: Binaural Decoder SOFA Loading
+- Add Binaural Decoder plugin
+- Enter edit mode
+- Trigger SOFA file input (press 'f')
+- Enter SOFA file path
+- Verify file path is set
+- Exit edit mode cleanly
+
+#### Scenario 5: Error Recovery - Invalid APO File
+- Try to load non-existent APO file
+- See error toast
+- Dismiss error
+- Retry with valid file
+- Verify successful recovery
+
+#### Scenario 6: Error Recovery - Wrong Plugin Type
+- Try to load APO file for Compressor plugin
+- Get appropriate error message
+- See warning toast
+- Cancel operation cleanly
+
+#### Scenario 7: Multi-Screen Navigation
+- Start on Library with search active
+- Navigate through Queue, Plugins, Devices, Directory Manager
+- Verify all state is preserved across screens
+- Return to Library with state intact
+
+#### Scenario 8: Complete Plugin Chain Workflow
+- Build 3-plugin chain (EQ → Compressor → Limiter)
+- Edit middle plugin parameters
+- Adjust multiple parameter values
+- Disable middle plugin
+- Verify entire chain state
+
+#### Scenario 9: Toast Message Lifecycle
+- Trigger success toast (add directory)
+- Dismiss toast
+- Trigger error toast (scan failed)
+- Dismiss error
+- Trigger persistent info toast (scanning)
+- Verify persistent toast doesn't auto-dismiss
+- Manual dismiss
+
+#### Scenario 10: Help Modal Usage
+- Open help from Library screen
+- Close help
+- Switch to Plugins screen
+- Open help again from Plugins
+- Verify help works on all screens
+
+**Coverage**: 10 scenario tests covering end-to-end workflows
+
 ## Test Fixtures
 
 ### `fixtures/test_eq.txt`
@@ -99,12 +179,22 @@ cargo test -p sotf-audio-player-gpui
 
 # Run specific test file
 cargo test -p sotf-audio-player-gpui --test test_toast_messages
+cargo test -p sotf-audio-player-gpui --test test_scenarios
 
 # Run with output
 cargo test -p sotf-audio-player-gpui -- --nocapture
 
 # Run specific test
 cargo test -p sotf-audio-player-gpui test_toast_message_success_creation
+cargo test -p sotf-audio-player-gpui scenario_build_and_edit_plugin_chain
+
+# Run only scenario tests
+cargo test -p sotf-audio-player-gpui --test test_scenarios
+
+# Run only unit tests
+cargo test -p sotf-audio-player-gpui --test test_toast_messages
+cargo test -p sotf-audio-player-gpui --test test_app_state
+cargo test -p sotf-audio-player-gpui --test test_input_modes
 ```
 
 ## Test Organization
@@ -117,10 +207,27 @@ Tests follow the standard Rust testing pattern:
 
 ## Coverage Summary
 
-- **Total Tests**: 56 tests
+- **Total Tests**: 66 tests
 - **Unit Tests**: 45
+  - Toast messages: 10
+  - App state: 18
+  - Input modes: 17
 - **Integration Tests**: 11
+  - File loading workflows
+- **Scenario Tests**: 10
+  - End-to-end user workflows
 - **Test Fixtures**: 1 APO file
+
+## Test Categories
+
+### Unit Tests (45 tests)
+Fast, isolated tests for individual components and functions.
+
+### Integration Tests (11 tests)
+Tests for interactions between components (file loading, plugin updates).
+
+### Scenario Tests (10 tests)
+High-level workflow tests simulating real user interactions across multiple screens and features.
 
 ## CI/CD Integration
 
@@ -136,4 +243,9 @@ These tests should be run as part of:
 - App state tests create isolated instances for each test
 - File loading tests verify both success and error paths
 - Input mode tests ensure proper state machine behavior
+- **Scenario tests** simulate complete user workflows step-by-step
+- **Error recovery scenarios** ensure graceful handling of invalid inputs
+- **State preservation scenarios** verify data persists across screen changes
 - All tests are deterministic and don't require external resources
+- Tests cover both happy paths and error cases
+- Toast message lifecycle is validated across all scenarios
