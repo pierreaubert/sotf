@@ -4,8 +4,7 @@
 // under various configurations and workloads.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use sotf_audio::plugins::BinauralDecoderPlugin;
-use sotf_audio::{Plugin, ProcessContext};
+use sotf_plugins::{BinauralDecoderPlugin, Plugin, ProcessContext};
 use std::time::Duration;
 
 /// Create a binaural decoder for benchmarking

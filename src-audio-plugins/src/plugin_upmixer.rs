@@ -625,6 +625,7 @@ impl UpmixerPlugin {
         const LEFT_AZIMUTH: f32 = 30.0;
         const RIGHT_AZIMUTH: f32 = -30.0;
 
+/*
         log::debug!(
             "[UPMIXER] recalculate_panning_gains() called for config: {}",
             self.speaker_config.name
@@ -638,13 +639,14 @@ impl UpmixerPlugin {
             LEFT_AZIMUTH,
             RIGHT_AZIMUTH
         );
+*/
 
         self.panning_gains_left.clear();
         self.panning_gains_right.clear();
 
         for (idx, speaker) in self.speaker_config.speakers.iter().enumerate() {
             if speaker.is_lfe {
-                log::debug!("[UPMIXER]   Speaker[{}] LFE: left=0.5, right=0.5", idx);
+                // log::debug!("[UPMIXER]   Speaker[{}] LFE: left=0.5, right=0.5", idx);
                 self.panning_gains_left.push(0.5);
                 self.panning_gains_right.push(0.5);
             } else {
@@ -652,6 +654,7 @@ impl UpmixerPlugin {
                     calculate_panning_gain(LEFT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
                 let right_gain =
                     calculate_panning_gain(RIGHT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
+/*
                 log::debug!(
                     "[UPMIXER]   Speaker[{}] az={:>6.1}° el={:>6.1}° is_height={}: left={:.4}, right={:.4}",
                     idx,
@@ -661,6 +664,7 @@ impl UpmixerPlugin {
                     left_gain,
                     right_gain
                 );
+*/
                 self.panning_gains_left.push(left_gain);
                 self.panning_gains_right.push(right_gain);
             }
@@ -671,11 +675,13 @@ impl UpmixerPlugin {
         let left_energy: f32 = self.panning_gains_left.iter().map(|g| g * g).sum();
         let right_energy: f32 = self.panning_gains_right.iter().map(|g| g * g).sum();
 
+/*
         log::debug!(
             "[UPMIXER]   Pre-normalization energies: left={:.6}, right={:.6}",
             left_energy,
             right_energy
         );
+*/
 
         if left_energy > 0.0 {
             let left_scale = 1.0 / left_energy.sqrt();
@@ -693,6 +699,7 @@ impl UpmixerPlugin {
             }
         }
 
+/*
         log::debug!(
             "[UPMIXER]   Final panning gains (left):  {:?}",
             self.panning_gains_left
@@ -701,6 +708,7 @@ impl UpmixerPlugin {
             "[UPMIXER]   Final panning gains (right): {:?}",
             self.panning_gains_right
         );
+*/
     }
 
     /// Phase 1: Apply window to input and perform forward FFT
@@ -1170,11 +1178,13 @@ impl UpmixerPlugin {
         assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
         assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
 
+/*
         log::trace!(
             "[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
             self.fft_size,
             self.num_output_channels
         );
+*/
 
         // Phase 1: Apply window and perform forward FFT
         self.apply_window_and_forward_fft(input);
@@ -1920,17 +1930,19 @@ above unity, the block is scaled down to stay within the cap.",
             ));
         }
 
-        // log::debug!(
-        //     "[UPMIXER] process() called: input={} frames, output={} frames",
-        //     context.num_frames,
-        //     context.num_frames
-        // );
-        // log::debug!(
-        //     "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-        //     self.input_buffer_fill,
-        //     self.output_accumulator_fill,
-        //     self.next_add_position
-        // );
+/*
+        log::debug!(
+            "[UPMIXER] process() called: input={} frames, output={} frames",
+            context.num_frames,
+            context.num_frames
+        );
+        log::debug!(
+            "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
+            self.input_buffer_fill,
+            self.output_accumulator_fill,
+            self.next_add_position
+        );
+*/
 
         // Sanity check for threading issues
         if self.next_add_position > self.fft_size * 3 {
@@ -1954,7 +1966,7 @@ above unity, the block is scaled down to stay within the cap.",
         loop {
             iteration += 1;
             if iteration > 1000 {
-                log::debug!("[UPMIXER] ERROR: Infinite loop detected after 1000 iterations!");
+                log::error!("[UPMIXER] ERROR: Infinite loop detected after 1000 iterations!");
                 log::info!(
                     "[UPMIXER] State: input_pos={}/{}, output_pos={}/{}",
                     input_pos / 2,
@@ -2439,7 +2451,7 @@ mod tests {
 
         // Verify output is not all zeros (some processing occurred)
         let sum: f32 = output.iter().map(|x| x.abs()).sum();
-        log::info!("Output sum (abs): {}", sum);
+        // log::info!("Output sum (abs): {}", sum);
         assert!(sum > 0.0, "Output should not be all zeros");
 
         // Check that we have output in multiple channels
@@ -2450,7 +2462,7 @@ mod tests {
                 channel_sums[ch] += output[i * num_channels + ch].abs();
             }
         }
-        log::info!("Channel sums: {:?}", channel_sums);
+        // log::info!("Channel sums: {:?}", channel_sums);
         // At least center and front channels should have content
         assert!(
             channel_sums[0] > 0.0 || channel_sums[1] > 0.0 || channel_sums[2] > 0.0,
@@ -2728,7 +2740,7 @@ mod tests {
 
         // Verify output is effectively silent (allow for small numerical artifacts from normalization)
         let max_abs = output.iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
-        log::info!("Max abs value with zero gains: {}", max_abs);
+        // log::info!("Max abs value with zero gains: {}", max_abs);
         assert!(
             max_abs < 1e-3,
             "With all gains at 0, output should be effectively silent (<-60dB), but max abs = {}",
@@ -2806,7 +2818,7 @@ mod tests {
             }
         }
 
-        log::info!("Channel energies: {:?}", channel_energies);
+        // log::info!("Channel energies: {:?}", channel_energies);
 
         // Front left and right should have signal
         assert!(channel_energies[0] > 0.1, "Front left should have signal");
@@ -2841,7 +2853,7 @@ mod tests {
         // INVARIANT: Processing continuous audio in chunks should produce continuous output
         // Test with various buffer sizes
         for buffer_size in [256, 512, 1024] {
-            log::info!("\n=== Testing buffer size {} ===", buffer_size);
+            // log::info!("\n=== Testing buffer size {} ===", buffer_size);
             let mut plugin = UpmixerPlugin::new(
                 2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
             );
@@ -2877,13 +2889,14 @@ mod tests {
             // Check that we got significant output (accounting for latency)
             let total_output_samples = all_output.len() / 5;
             let non_zero_samples = all_output.iter().filter(|&&x| x.abs() > 1e-6).count();
+/*
             log::info!(
                 "Buffer size {}: {} total frames, {} non-zero samples",
                 buffer_size,
                 total_output_samples,
                 non_zero_samples
             );
-
+*/
             assert!(
                 non_zero_samples > total_output_samples / 2,
                 "Buffer size {}: Too many zero samples, got {} non-zero out of {} total",
@@ -2936,12 +2949,14 @@ mod tests {
             }
         }
 
+/*
         log::info!(
             "Input energy: {}, Output energy: {}, Ratio: {}",
             total_input_energy,
             total_output_energy,
             total_output_energy / total_input_energy
         );
+*/
 
         // Energy scaling factors:
         // 1. Hann window applied once during analysis: ~0.5 mean value
@@ -2991,7 +3006,7 @@ mod tests {
 
             if iteration >= 5 && max_abs < 1e-6 {
                 gap_count += 1;
-                log::info!("GAP at iteration {}: max_abs = {}", iteration, max_abs);
+                // log::info!("GAP at iteration {}: max_abs = {}", iteration, max_abs);
             }
         }
 
@@ -3091,6 +3106,7 @@ mod tests {
             }
         }
 
+/*
         log::info!("5.1.4 Channel energies:");
         log::info!("  [0] FL:  {:.6}", channel_energies[0]);
         log::info!("  [1] FR:  {:.6}", channel_energies[1]);
@@ -3102,6 +3118,7 @@ mod tests {
         log::info!("  [7] TFR: {:.6}", channel_energies[7]);
         log::info!("  [8] TBL: {:.6}", channel_energies[8]);
         log::info!("  [9] TBR: {:.6}", channel_energies[9]);
+*/
 
         // Check that all non-LFE channels have some energy
         for (ch, &energy) in channel_energies.iter().enumerate() {

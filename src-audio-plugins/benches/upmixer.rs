@@ -7,7 +7,7 @@
 use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
 };
-use sotf_audio::{Plugin, ProcessContext, UpmixerPlugin};
+use sotf_plugins::{Plugin, ProcessContext, UpmixerPlugin};
 use std::time::Duration;
 
 /// Create an upmixer with typical parameters for benchmarking
