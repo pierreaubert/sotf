@@ -238,9 +238,9 @@ impl MidiManager {
 
     /// Send a MIDI message
     pub fn send_message(&self, message: &MidiMessage) -> Result<()> {
-        let conn = self.output_connection.lock();
+        let mut conn = self.output_connection.lock();
         let connection = conn
-            .as_ref()
+            .as_mut()
             .ok_or(MidiError::NotConnected)?;
 
         let bytes = message.to_bytes();
@@ -255,9 +255,9 @@ impl MidiManager {
 
     /// Send raw MIDI bytes
     pub fn send_raw(&self, bytes: &[u8]) -> Result<()> {
-        let conn = self.output_connection.lock();
+        let mut conn = self.output_connection.lock();
         let connection = conn
-            .as_ref()
+            .as_mut()
             .ok_or(MidiError::NotConnected)?;
 
         connection

@@ -67,8 +67,6 @@ impl From<midir::ConnectError<midir::MidiOutput>> for MidiError {
     }
 }
 
-impl<T> From<midir::SendError> for MidiError {
-    fn from(err: midir::SendError) -> Self {
-        MidiError::SendError(err.to_string())
-    }
-}
+// Note: midir::SendError is generic over the message type
+// We can't implement From directly due to type parameter constraints
+// Use MidiError::SendError(err.to_string()) at call sites instead

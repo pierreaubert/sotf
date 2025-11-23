@@ -32,7 +32,6 @@ pub enum MidiDeviceType {
 }
 
 /// Represents a MIDI device (either input or output)
-#[derive(Debug)]
 pub enum MidiDevice {
     /// An input device with its connection
     Input {
@@ -45,6 +44,23 @@ pub enum MidiDevice {
         info: MidiDeviceInfo,
         connection: Option<midir::MidiOutputConnection>,
     },
+}
+
+impl std::fmt::Debug for MidiDevice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MidiDevice::Input { info, connection } => f
+                .debug_struct("MidiDevice::Input")
+                .field("info", info)
+                .field("connection", &connection.is_some())
+                .finish(),
+            MidiDevice::Output { info, connection } => f
+                .debug_struct("MidiDevice::Output")
+                .field("info", info)
+                .field("connection", &connection.is_some())
+                .finish(),
+        }
+    }
 }
 
 impl MidiDevice {

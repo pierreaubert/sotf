@@ -154,6 +154,18 @@ fn create_binaural_decoder_plugin_config(
     })
 }
 
+/// Create loudness analyzer PluginConfig
+fn create_loudness_analyzer_plugin_config() -> Result<PluginConfig, String> {
+    use serde_json::json;
+
+    let parameters = json!({});
+
+    Ok(PluginConfig {
+        plugin_type: "loudness_monitor".to_string(),
+        parameters,
+    })
+}
+
 /// Convert Biquad filters to PluginConfig for EQ plugin
 fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
     use serde_json::json;
@@ -984,17 +996,25 @@ fn play_stream(
         output_channels // No mapping, use current channel count
     };
 
+    // Add loudness analyzer plugin if LUFS monitoring is requested
+    let loudness_plugin_index = if lufs {
+        let analyzer_plugin = create_loudness_analyzer_plugin_config()?;
+        let plugin_index = plugins.len();
+        plugins.push(analyzer_plugin);
+        log::info!("Real-time LUFS monitoring enabled (plugin index: {})", plugin_index);
+        Some(plugin_index)
+    } else {
+        None
+    };
+
     // Start playback (signal handling is done by the manager)
     streaming_manager
         .start_playback(device, plugins, output_channels)
         .map_err(|e| format!("Failed to start streaming playback: {}", e))?;
 
-    // Enable loudness monitoring if requested (must be after playback starts)
-    if lufs {
-        streaming_manager
-            .enable_loudness_monitoring()
-            .map_err(|e| format!("Failed to enable loudness monitoring: {}", e))?;
-        log::info!("Real-time LUFS monitoring enabled");
+    // Set loudness plugin index if monitoring is enabled
+    if let Some(index) = loudness_plugin_index {
+        streaming_manager.set_loudness_plugin_index(index);
     }
 
     // Seek to start time if specified
@@ -1042,36 +1062,37 @@ fn play_stream(
         }
 
         // Print loudness measurements if monitoring is enabled
-        if lufs
+        if loudness_plugin_index.is_some()
             && current_state == StreamingState::Playing
-            && let Some(loudness) = streaming_manager.get_loudness()
         {
-            let st = loudness.shortterm_lufs;
-            let changed = match last_shortterm {
-                None => true,
-                Some(prev) => (st - prev).abs() >= 0.1,
-            };
-            if changed {
-                let momentary_str = if loudness.momentary_lufs.is_infinite() {
-                    "-∞".to_string()
-                } else {
-                    format!("{:5.1}", loudness.momentary_lufs)
+            if let Some(loudness) = streaming_manager.get_loudness() {
+                let st = loudness.shortterm_lufs;
+                let changed = match last_shortterm {
+                    None => true,
+                    Some(prev) => (st - prev).abs() >= 0.1,
                 };
-                let shortterm_str = if st.is_infinite() {
-                    "-∞".to_string()
-                } else {
-                    format!("{:5.1}", st)
-                };
-                // Dynamic ReplayGain relative to -18.0 LUFS reference
-                let rg = if st.is_infinite() { 0.0 } else { -18.0 - st };
-                log::debug!(
-                    "LUFS: M={} S={}  RG={:+4.1} dB  Peak={:.3}",
-                    momentary_str,
-                    shortterm_str,
-                    rg,
-                    loudness.peak
-                );
-                last_shortterm = Some(st);
+                if changed {
+                    let momentary_str = if loudness.momentary_lufs.is_infinite() {
+                        "-∞".to_string()
+                    } else {
+                        format!("{:5.1}", loudness.momentary_lufs)
+                    };
+                    let shortterm_str = if st.is_infinite() {
+                        "-∞".to_string()
+                    } else {
+                        format!("{:5.1}", st)
+                    };
+                    // Dynamic ReplayGain relative to -18.0 LUFS reference
+                    let rg = if st.is_infinite() { 0.0 } else { -18.0 - st };
+                    log::debug!(
+                        "LUFS: M={} S={}  RG={:+4.1} dB  Peak={:.3}",
+                        momentary_str,
+                        shortterm_str,
+                        rg,
+                        loudness.peak
+                    );
+                    last_shortterm = Some(st);
+                }
             }
         }
 

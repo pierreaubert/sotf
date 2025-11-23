@@ -36,7 +36,7 @@ fn main() -> Result<(), String> {
 ///
 /// This demonstrates basic sequential processing.
 fn linear_chain_example() -> Result<(), String> {
-    let mut graph = DawHost::new(48000);
+    let mut graph = DawHost::new(2, 48000);
 
     // Create nodes
     let gain1 = GainPlugin::new(2, -6.0); // -6dB attenuation
@@ -88,7 +88,7 @@ fn linear_chain_example() -> Result<(), String> {
 /// - Parallel processing (Gain2 and Gain3 run concurrently)
 /// - Stream merging at Gain4
 fn parallel_diamond_example() -> Result<(), String> {
-    let mut graph = DawHost::new(48000);
+    let mut graph = DawHost::new(2, 48000);
     graph.set_parallel_enabled(true); // Enable parallel processing
 
     // Create nodes
@@ -154,7 +154,7 @@ fn parallel_diamond_example() -> Result<(), String> {
 /// - The merge node waits for all inputs (stream synchronization)
 /// - Inputs are summed at the merge point
 fn stream_merge_example() -> Result<(), String> {
-    let mut graph = DawHost::new(48000);
+    let mut graph = DawHost::new(2, 48000);
 
     let split = graph.add_node(
         "split".to_string(),

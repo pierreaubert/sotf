@@ -12,8 +12,20 @@ RUN apt-get update && \
     make \
     && rm -rf /var/lib/apt/lists/*
 
-# Install just (command runner)
+# Install just using the existing rust toolchain in the base image
 RUN cargo install just --locked
+
+# Pre-install the exact Rust version required by rust-toolchain.toml with all components
+# This avoids cross trying to install it at build time with permission issues
+RUN rustup toolchain install 1.90.0-x86_64-unknown-linux-gnu --component cargo,clippy,llvm-tools-preview,rust-analyzer,rust-src,rust-std,rustc,rustc-dev,rustfmt && \
+    rustup target add --toolchain 1.90.0-x86_64-unknown-linux-gnu x86_64-unknown-linux-musl && \
+    rustup default 1.90.0-x86_64-unknown-linux-gnu
+
+# Fix rustup permissions after all installations
+# Create temp directory with world-writable permissions to avoid permission issues
+RUN mkdir -p /root/.rustup/tmp && \
+    mkdir -p /root/.rustup/downloads && \
+    chmod -R 777 /root/.rustup/tmp /root/.rustup/downloads
 
 # Set up environment for static linking
 ENV RUSTFLAGS="-C target-feature=+crt-static"

@@ -164,4 +164,4 @@ panic = "unwind"
 [profile.release]
 lto = true
 codegen-units = 1
-panic = "abort"
+panic = "unwind"  # Changed from "abort" to allow tests to run

@@ -9,8 +9,9 @@
 //! Shows how to use control surfaces to control audio hardware.
 
 use sotf_audio_player_midi::profiles::{
-    GLMControl, GenelecGLMProfile, LaunchControlXLProfile, LCXLTemplate, RMETotalMixProfile,
-    TotalMixControl, TotalMixRow, XoneK2Profile, K2Control,
+    GLMControl, LaunchControlXLProfile, LCXLTemplate,
+    TotalMixControl, TotalMixRow, XoneK2Profile,
+    xone_k2::K2Control,
 };
 use sotf_audio_player_midi::{MidiManager, MidiMessage};
 use std::sync::{Arc, Mutex};

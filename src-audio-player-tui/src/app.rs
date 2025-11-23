@@ -2513,6 +2513,10 @@ mod tests {
                 track_number: Some(i as u32),
                 duration_secs: None,
                 channels: None,
+                replay_gain: None,
+                replay_peak: None,
+                album_gain: None,
+                album_peak: None,
             });
         }
         Album {
