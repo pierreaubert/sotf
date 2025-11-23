@@ -2168,6 +2168,107 @@ fn render_plugin_param_list(plugin: &sotf_audio_player::Plugin, selected_idx: us
             ("HR Sharpen".to_string(), format!("{:.2}", hr_sharpen)),
             ("Safety Cap".to_string(), format!("{:.1} dB", safety_cap_db)),
         ],
-        _ => vec![("Not editable yet".to_string(), "".to_string())],
+        PluginSettings::Compressor {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            makeup_gain_db,
+            mix,
+            auto_makeup,
+            link_channels,
+            sidechain_hpf_hz,
+        } => vec![
+            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+            ("Release".to_string(), format!("{:.0} ms", release_ms)),
+            ("Knee".to_string(), format!("{:.1} dB", knee_db)),
+            ("Makeup Gain".to_string(), format!("{:.1} dB", makeup_gain_db)),
+            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+            ("Auto Makeup".to_string(), if *auto_makeup { "On".to_string() } else { "Off".to_string() }),
+            ("Link Channels".to_string(), if *link_channels { "On".to_string() } else { "Off".to_string() }),
+            ("Sidechain HPF".to_string(), format!("{:.0} Hz", sidechain_hpf_hz)),
+        ],
+        PluginSettings::Limiter {
+            threshold_db,
+            release_ms,
+            mix,
+        } => vec![
+            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+            ("Release".to_string(), format!("{:.0} ms", release_ms)),
+            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+        ],
+        PluginSettings::Gate {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
+        } => vec![
+            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+            ("Release".to_string(), format!("{:.0} ms", release_ms)),
+            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+            ("Link Channels".to_string(), if *link_channels { "On".to_string() } else { "Off".to_string() }),
+            ("Sidechain HPF".to_string(), format!("{:.0} Hz", sidechain_hpf_hz)),
+        ],
+        PluginSettings::LoudnessCompensation {
+            target_lufs,
+            min_gain_db,
+            max_gain_db,
+        } => vec![
+            ("Target LUFS".to_string(), format!("{:.1} LUFS", target_lufs)),
+            ("Min Gain".to_string(), format!("{:.1} dB", min_gain_db)),
+            ("Max Gain".to_string(), format!("{:.1} dB", max_gain_db)),
+        ],
+        PluginSettings::EQ { filters } => {
+            let mut params = vec![];
+            for (i, filter) in filters.iter().enumerate() {
+                params.push((
+                    format!("Filter {} Freq", i + 1),
+                    format!("{:.0} Hz", filter.frequency),
+                ));
+                params.push((
+                    format!("Filter {} Q", i + 1),
+                    format!("{:.2}", filter.q),
+                ));
+                params.push((
+                    format!("Filter {} Gain", i + 1),
+                    format!("{:.1} dB", filter.gain_db),
+                ));
+                params.push((
+                    format!("Filter {} Type", i + 1),
+                    format!("{:?}", filter.filter_type),
+                ));
+            }
+            params
+        }
+        PluginSettings::BinauralDecoder {
+            sofa_file,
+            input_channels,
+            enable_optimization,
+            externalization,
+            near_field_strength,
+        } => vec![
+            ("SOFA File".to_string(), sofa_file.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "None".to_string())),
+            ("Input Channels".to_string(), format!("{}", input_channels)),
+            ("Optimization".to_string(), if *enable_optimization { "On".to_string() } else { "Off".to_string() }),
+            ("Externalization".to_string(), format!("{:.2}", externalization)),
+            ("Near Field".to_string(), format!("{:.2}", near_field_strength)),
+        ],
+        PluginSettings::Gain { gain_db } => vec![
+            ("Gain".to_string(), format!("{:.1} dB", gain_db)),
+        ],
+        PluginSettings::Resampler { target_sample_rate } => vec![
+            ("Sample Rate".to_string(), format!("{} Hz", target_sample_rate)),
+        ],
+        PluginSettings::Matrix { .. } => vec![
+            ("Info".to_string(), "No adjustable parameters".to_string()),
+        ],
     }
 }

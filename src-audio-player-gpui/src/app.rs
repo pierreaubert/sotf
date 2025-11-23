@@ -1149,8 +1149,273 @@ impl App {
                         _ => false,
                     }
                 }
-                // For other plugin types, we can add later. For now return false
-                _ => false,
+                PluginSettings::Compressor {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    knee_db,
+                    makeup_gain_db,
+                    mix,
+                    auto_makeup,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => {
+                    match param_idx {
+                        0 => {
+                            *threshold_db = (*threshold_db + delta as f32).max(-60.0).min(0.0);
+                            true
+                        }
+                        1 => {
+                            *ratio = (*ratio + delta as f32 * 0.1).max(1.0).min(20.0);
+                            true
+                        }
+                        2 => {
+                            *attack_ms = (*attack_ms + delta as f32 * 0.1).max(0.1).min(100.0);
+                            true
+                        }
+                        3 => {
+                            *release_ms = (*release_ms + delta as f32).max(1.0).min(1000.0);
+                            true
+                        }
+                        4 => {
+                            *knee_db = (*knee_db + delta as f32 * 0.1).max(0.0).min(12.0);
+                            true
+                        }
+                        5 => {
+                            *makeup_gain_db = (*makeup_gain_db + delta as f32 * 0.1).max(-20.0).min(20.0);
+                            true
+                        }
+                        6 => {
+                            *mix = (*mix + delta as f32 * 0.01).max(0.0).min(1.0);
+                            true
+                        }
+                        7 => {
+                            *auto_makeup = !*auto_makeup;
+                            true
+                        }
+                        8 => {
+                            *link_channels = !*link_channels;
+                            true
+                        }
+                        9 => {
+                            *sidechain_hpf_hz = (*sidechain_hpf_hz + delta as f32).max(20.0).min(500.0);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::Limiter {
+                    threshold_db,
+                    release_ms,
+                    mix,
+                } => {
+                    match param_idx {
+                        0 => {
+                            *threshold_db = (*threshold_db + delta as f32 * 0.1).max(-20.0).min(0.0);
+                            true
+                        }
+                        1 => {
+                            *release_ms = (*release_ms + delta as f32).max(1.0).min(500.0);
+                            true
+                        }
+                        2 => {
+                            *mix = (*mix + delta as f32 * 0.05).max(0.0).min(1.0);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::Gate {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    mix,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => {
+                    match param_idx {
+                        0 => {
+                            *threshold_db = (*threshold_db + delta as f32).max(-80.0).min(0.0);
+                            true
+                        }
+                        1 => {
+                            *ratio = (*ratio + delta as f32 * 0.1).max(1.0).min(100.0);
+                            true
+                        }
+                        2 => {
+                            *attack_ms = (*attack_ms + delta as f32 * 0.1).max(0.1).min(100.0);
+                            true
+                        }
+                        3 => {
+                            *release_ms = (*release_ms + delta as f32).max(1.0).min(1000.0);
+                            true
+                        }
+                        4 => {
+                            *mix = (*mix + delta as f32 * 0.05).max(0.0).min(1.0);
+                            true
+                        }
+                        5 => {
+                            *link_channels = !*link_channels;
+                            true
+                        }
+                        6 => {
+                            *sidechain_hpf_hz = (*sidechain_hpf_hz + delta as f32 * 5.0).max(0.0).min(200.0);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::LoudnessCompensation {
+                    target_lufs,
+                    min_gain_db,
+                    max_gain_db,
+                } => {
+                    match param_idx {
+                        0 => {
+                            *target_lufs = (*target_lufs + delta as f32).max(-40.0).min(0.0);
+                            true
+                        }
+                        1 => {
+                            *min_gain_db = (*min_gain_db + delta as f32).max(-20.0).min(0.0);
+                            true
+                        }
+                        2 => {
+                            *max_gain_db = (*max_gain_db + delta as f32).max(0.0).min(20.0);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::EQ { filters } => {
+                    if filters.is_empty() {
+                        return false;
+                    }
+
+                    let total_params = filters.len() * 4;
+                    if param_idx >= total_params {
+                        return false;
+                    }
+
+                    let filter_idx = param_idx / 4;
+                    let field_idx = param_idx % 4;
+
+                    if let Some(filter) = filters.get_mut(filter_idx) {
+                        match field_idx {
+                            0 => {
+                                // Frequency
+                                filter.frequency = (filter.frequency + delta * 10.0).max(20.0).min(20_000.0);
+                                true
+                            }
+                            1 => {
+                                // Q
+                                filter.q = (filter.q + delta * 0.1).max(0.1).min(10.0);
+                                true
+                            }
+                            2 => {
+                                // Gain
+                                filter.gain_db = (filter.gain_db + delta * 0.5).max(-24.0).min(24.0);
+                                true
+                            }
+                            3 => {
+                                // Filter type
+                                use sotf_audio_player::BiquadFilterType;
+
+                                let types = [
+                                    BiquadFilterType::Peak,
+                                    BiquadFilterType::Lowshelf,
+                                    BiquadFilterType::Highshelf,
+                                    BiquadFilterType::Lowpass,
+                                    BiquadFilterType::Highpass,
+                                    BiquadFilterType::Bandpass,
+                                    BiquadFilterType::Notch,
+                                ];
+
+                                let current_idx = types
+                                    .iter()
+                                    .position(|t| *t == filter.filter_type)
+                                    .unwrap_or(0);
+                                let new_idx = if delta > 0.0 {
+                                    (current_idx + 1) % types.len()
+                                } else {
+                                    if current_idx == 0 {
+                                        types.len() - 1
+                                    } else {
+                                        current_idx - 1
+                                    }
+                                };
+                                filter.filter_type = types[new_idx];
+                                true
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
+                }
+                PluginSettings::BinauralDecoder {
+                    input_channels,
+                    enable_optimization,
+                    externalization,
+                    near_field_strength,
+                    ..
+                } => {
+                    // sofa_file (param 0) is set via file browser - not adjustable here
+                    match param_idx {
+                        1 => {
+                            *input_channels = ((*input_channels as i64) + delta as i64).max(2).min(16) as usize;
+                            true
+                        }
+                        2 => {
+                            *enable_optimization = !*enable_optimization;
+                            true
+                        }
+                        3 => {
+                            *externalization = (*externalization + delta as f32 * 0.05).max(0.0).min(1.0);
+                            true
+                        }
+                        4 => {
+                            *near_field_strength = (*near_field_strength + delta as f32 * 0.05).max(0.0).min(1.0);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::Gain { gain_db } => {
+                    if param_idx == 0 {
+                        *gain_db = (*gain_db + delta as f32 * 0.1).max(-60.0).min(20.0);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                PluginSettings::Resampler { target_sample_rate } => {
+                    if param_idx == 0 {
+                        let rates = [44100, 48000, 88200, 96000, 176400, 192000];
+                        let current_idx = rates
+                            .iter()
+                            .position(|&r| r == *target_sample_rate)
+                            .unwrap_or(1);
+                        let new_idx = if delta > 0.0 {
+                            (current_idx + 1) % rates.len()
+                        } else {
+                            if current_idx == 0 {
+                                rates.len() - 1
+                            } else {
+                                current_idx - 1
+                            }
+                        };
+                        *target_sample_rate = rates[new_idx];
+                        true
+                    } else {
+                        false
+                    }
+                }
+                PluginSettings::Matrix { .. } => {
+                    // Matrix has no adjustable parameters for now
+                    false
+                }
             }
         } else {
             false
@@ -1267,14 +1532,14 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
     use sotf_audio_player::PluginSettings;
     match settings {
         PluginSettings::Upmixer { .. } => 14,
-        PluginSettings::EQ { .. } => 1, // Just the filter count for now
+        PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Gain { .. } => 1,
-        PluginSettings::Compressor { .. } => 5,
-        PluginSettings::Gate { .. } => 4,
-        PluginSettings::Limiter { .. } => 3,
-        PluginSettings::LoudnessCompensation { .. } => 3,
-        PluginSettings::BinauralDecoder { .. } => 2,
-        PluginSettings::Resampler { .. } => 1,
+        PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
+        PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
+        PluginSettings::Limiter { .. } => 3, // threshold, release, mix
+        PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
+        PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
+        PluginSettings::Resampler { .. } => 1, // target_sample_rate
         PluginSettings::Matrix { .. } => 0, // No adjustable params for now
     }
 }
