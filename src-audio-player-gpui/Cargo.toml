@@ -50,6 +50,10 @@ env_logger = "0.11"
 # Smol runtime (used by GPUI)
 smol = "2.0"
 
+[lib]
+name = "sotf_audio_player_gpui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sotf_player_gpui"
 path = "src/main.rs"
