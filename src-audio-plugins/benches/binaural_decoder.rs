@@ -170,8 +170,10 @@ fn bench_externalization(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("{:.1}", ext_level)),
             &ext_level,
             |b, &ext_level| {
-                let mut decoder =
-                    BinauralDecoderPlugin::new(channels, fft_size, None, true, ext_level, 0.0);
+                let mut decoder = BinauralDecoderPlugin::new(
+                    channels, fft_size, None, true, ext_level, 0.0,
+                    false, 120.0, 2.0, 0.0, RoomModel::default()
+                );
                 decoder.initialize(sample_rate).unwrap();
 
                 let input = vec![0.5f32; block_size * channels];
@@ -298,8 +300,10 @@ fn bench_atmos_7_1_4(c: &mut Criterion) {
 
     group.bench_function("with_externalization", |b| {
         let mut decoder = BinauralDecoderPlugin::new(
-            channels, fft_size, None, true, 0.3, // Moderate externalization
+            channels, fft_size, None, true,
+            0.3, // Moderate externalization
             0.5, // Some near-field
+            false, 120.0, 2.0, 0.0, RoomModel::default()
         );
         decoder.initialize(sample_rate).unwrap();
 

@@ -599,3 +599,131 @@ mod tests {
         }
     }
 }
+
+// ============================================================================
+// SIMD Covariance Calculation for ERB Band Processing
+// ============================================================================
+//
+// Computes covariance statistics for two complex arrays (left/right channels):
+//   cov_xx = sum(|left[i]|^2)
+//   cov_yy = sum(|right[i]|^2)
+//   cov_xy = sum(left[i] * conj(right[i]))
+//
+// These are used for PCA-based direct/ambient decomposition in the upmixer.
+
+/// SIMD-accelerated covariance calculation for ERB bands
+///
+/// Returns (cov_xx, cov_yy, cov_xy) where:
+/// - cov_xx: sum of left channel energy
+/// - cov_yy: sum of right channel energy
+/// - cov_xy: complex cross-correlation
+pub fn compute_covariance_simd(
+    left: &[Complex<f32>],
+    right: &[Complex<f32>],
+    start: usize,
+    end: usize,
+) -> (f32, f32, Complex<f32>) {
+    assert_eq!(left.len(), right.len());
+    assert!(end <= left.len());
+    assert!(start < end);
+
+    let count = end - start;
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let mut cov_xx = 0.0_f32;
+        let mut cov_yy = 0.0_f32;
+        let mut cov_xy = Complex::new(0.0, 0.0);
+
+        // SIMD path: process 4 complex numbers at once
+        let simd_len = (count / 4) * 4;
+        let simd_end = start + simd_len;
+
+        unsafe {
+            let mut sum_xx = _mm256_setzero_ps();
+            let mut sum_yy = _mm256_setzero_ps();
+            let mut sum_xy_re = _mm256_setzero_ps();
+            let mut sum_xy_im = _mm256_setzero_ps();
+
+            for i in (start..simd_end).step_by(4) {
+                let left_ptr = left.as_ptr().add(i) as *const f32;
+                let right_ptr = right.as_ptr().add(i) as *const f32;
+
+                // Load 4 complex numbers: [re0, im0, re1, im1, re2, im2, re3, im3]
+                let l = _mm256_loadu_ps(left_ptr);
+                let r = _mm256_loadu_ps(right_ptr);
+
+                // Compute norm_sqr: re^2 + im^2
+                let l_sqr = _mm256_mul_ps(l, l);
+                let r_sqr = _mm256_mul_ps(r, r);
+
+                // Horizontal add pairs: [re0^2 + im0^2, re1^2 + im1^2, ...]
+                let l_norm = _mm256_hadd_ps(l_sqr, l_sqr);
+                let r_norm = _mm256_hadd_ps(r_sqr, r_sqr);
+
+                sum_xx = _mm256_add_ps(sum_xx, l_norm);
+                sum_yy = _mm256_add_ps(sum_yy, r_norm);
+
+                // Compute cross-correlation: left * conj(right)
+                let sign_mask = _mm256_set_ps(-0.0, 0.0, -0.0, 0.0, -0.0, 0.0, -0.0, 0.0);
+                let r_conj = _mm256_xor_ps(r, sign_mask);
+
+                // Complex multiplication: left * r_conj
+                let l_re = _mm256_moveldup_ps(l);
+                let l_im = _mm256_movehdup_ps(l);
+
+                let ac_ad = _mm256_mul_ps(l_re, r_conj);
+                let r_conj_swap = _mm256_shuffle_ps(r_conj, r_conj, 0b10110001);
+                let bd_bc = _mm256_mul_ps(l_im, r_conj_swap);
+
+                let result = _mm256_addsub_ps(ac_ad, bd_bc);
+
+                // Accumulate real parts (even indices) and imaginary parts (odd indices)
+                sum_xy_re = _mm256_add_ps(sum_xy_re, result);
+            }
+
+            // Horizontal reduction to scalars
+            let xx_arr = std::mem::transmute::<_, [f32; 8]>(sum_xx);
+            let yy_arr = std::mem::transmute::<_, [f32; 8]>(sum_yy);
+            let xy_arr = std::mem::transmute::<_, [f32; 8]>(sum_xy_re);
+
+            // Sum hadd results (duplicated in pairs)
+            cov_xx = xx_arr[0] + xx_arr[2] + xx_arr[4] + xx_arr[6];
+            cov_yy = yy_arr[0] + yy_arr[2] + yy_arr[4] + yy_arr[6];
+
+            // Sum re (even) and im (odd) separately
+            cov_xy.re = xy_arr[0] + xy_arr[2] + xy_arr[4] + xy_arr[6];
+            cov_xy.im = xy_arr[1] + xy_arr[3] + xy_arr[5] + xy_arr[7];
+        }
+
+        // Scalar tail for remaining elements
+        for i in simd_end..end {
+            let l = left[i];
+            let r = right[i];
+            cov_xx += l.norm_sqr();
+            cov_yy += r.norm_sqr();
+            cov_xy += l * r.conj();
+        }
+
+        (cov_xx, cov_yy, cov_xy)
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+    {
+        let mut cov_xx = 0.0_f32;
+        let mut cov_yy = 0.0_f32;
+        let mut cov_xy = Complex::new(0.0, 0.0);
+
+        for i in start..end {
+            let l = left[i];
+            let r = right[i];
+            cov_xx += l.norm_sqr();
+            cov_yy += r.norm_sqr();
+            cov_xy += l * r.conj();
+        }
+
+        (cov_xx, cov_yy, cov_xy)
+    }
+}

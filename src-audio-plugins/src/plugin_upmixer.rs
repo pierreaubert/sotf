@@ -501,7 +501,7 @@ impl UpmixerPlugin {
             subharmonic_gain,
 
             param_enable_hr_direct: ParameterId::from("enable_hr_direct"),
-            enable_hr_direct: false,
+            enable_hr_direct: true, // Enable by default for multi-resolution analysis
             param_hr_sharpen: ParameterId::from("hr_sharpen"),
             hr_sharpen: 1.0,
             param_safety_cap_db: ParameterId::from("safety_cap_db"),
@@ -880,18 +880,13 @@ impl UpmixerPlugin {
                 continue;
             }
 
-            // Calculate Band Statistics (Covariance)
-            let mut cov_xx = 0.0;
-            let mut cov_yy = 0.0;
-            let mut cov_xy = Complex::new(0.0, 0.0);
-
-            for i in start_bin..end_bin {
-                let l = self.freq_domain_left[i];
-                let r = self.freq_domain_right[i];
-                cov_xx += l.norm_sqr();
-                cov_yy += r.norm_sqr();
-                cov_xy += l * r.conj();
-            }
+            // Calculate Band Statistics (Covariance) - SIMD accelerated
+            let (cov_xx, cov_yy, cov_xy) = super::simd::compute_covariance_simd(
+                &self.freq_domain_left,
+                &self.freq_domain_right,
+                start_bin,
+                end_bin,
+            );
 
             // Logic Steering (Smoothing)
             let inst_energy = cov_xx + cov_yy;
@@ -1927,10 +1922,10 @@ Range: 0.0-1.0, default 0.5.
 Controls how loud the synthesized low-frequency component is
 relative to the original LFE signal.",
                 ),
-            Parameter::new_bool("enable_hr_direct", "High-Res Direct", false).with_description(
-                "Enables the high-resolution direct-path enhancement.
-Default: off. When on, detected high-frequency transients can
-be sharpened using a shorter FFT, mainly in the front speakers.",
+            Parameter::new_bool("enable_hr_direct", "Multi-Resolution Analysis", true).with_description(
+                "Enables multi-resolution analysis for optimal time/frequency resolution.
+Default: ON. Uses short FFT (512 samples) for transients and long FFT (2048) for ambient.
+Adaptively blends based on transient detection for sharper attacks and smooth ambience.",
             ),
             Parameter::new_float("hr_sharpen", "HR Sharpen", 1.0, 0.0, 1.0).with_description(
                 "Depth control for the high-resolution direct path.

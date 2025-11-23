@@ -131,19 +131,19 @@ fn test_upmixer_parameter_adjustment() {
     let rear_ambient = plugin.get_parameter(&ParameterId::from("gain_rear_ambient"));
     assert_eq!(rear_ambient, Some(ParameterValue::Float(1.5)));
 
-    // Verify enable_hr_direct parameter roundtrip
+    // Verify enable_hr_direct parameter roundtrip (now defaults to true)
     let hr_direct = plugin.get_parameter(&ParameterId::from("enable_hr_direct"));
-    assert_eq!(hr_direct, Some(ParameterValue::Bool(false)));
+    assert_eq!(hr_direct, Some(ParameterValue::Bool(true)));
 
     plugin
         .set_parameter(
             ParameterId::from("enable_hr_direct"),
-            ParameterValue::Bool(true),
+            ParameterValue::Bool(false),
         )
         .unwrap();
 
     let hr_direct_after = plugin.get_parameter(&ParameterId::from("enable_hr_direct"));
-    assert_eq!(hr_direct_after, Some(ParameterValue::Bool(true)));
+    assert_eq!(hr_direct_after, Some(ParameterValue::Bool(false)));
 
     // Verify hr_sharpen parameter roundtrip
     let hr_sharpen = plugin.get_parameter(&ParameterId::from("hr_sharpen"));
@@ -267,18 +267,20 @@ fn test_upmixer_hr_direct_increases_front_energy() {
         fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
     plugin_off.initialize(sample_rate).unwrap();
+    // Explicitly disable HR direct (it now defaults to true)
+    plugin_off
+        .set_parameter(
+            ParameterId::from("enable_hr_direct"),
+            ParameterValue::Bool(false),
+        )
+        .unwrap();
 
-    // Upmixer with HR direct enabled
+    // Upmixer with HR direct enabled (uses default which is now true)
     let mut plugin_on = UpmixerPlugin::new(
         fft_size, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
     );
     plugin_on.initialize(sample_rate).unwrap();
-    plugin_on
-        .set_parameter(
-            ParameterId::from("enable_hr_direct"),
-            ParameterValue::Bool(true),
-        )
-        .unwrap();
+    // HR direct is already enabled by default
 
     // Create transient by starting with low-frequency content, then introducing high-frequency
     // This allows the HR transient detector to identify the change in HF energy

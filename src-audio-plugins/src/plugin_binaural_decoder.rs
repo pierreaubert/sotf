@@ -307,6 +307,8 @@ pub struct BinauralDecoderPlugin {
     output_accumulator: Vec<Vec<f32>>,
     output_accumulator_fill: usize,
     next_add_position: usize,
+    /// Ring buffer read position
+    output_read_position: usize,
 
     /// Temporary buffers (reused to avoid allocations)
     temp_input_block: Vec<f32>,
@@ -465,6 +467,7 @@ impl BinauralDecoderPlugin {
             output_accumulator: vec![vec![0.0; output_acc_size]; 2], // 2 output channels, enough space for overlap
             output_accumulator_fill: 0,
             next_add_position: 0,
+            output_read_position: 0,
 
             temp_input_block: vec![0.0; input_buffer_size], // Interleaved multi-channel input
             temp_output_block: vec![0.0; output_acc_size],  // Stereo output
@@ -1399,7 +1402,7 @@ impl BinauralDecoderPlugin {
         }
     }
 
-    /// Drain output accumulator to output buffer
+    /// Drain output accumulator to output buffer (ring buffer implementation)
     ///
     /// Returns number of stereo samples written to output
     fn drain_output_accumulator(&mut self, output: &mut [f32], output_pos: usize) -> usize {
@@ -1407,27 +1410,25 @@ impl BinauralDecoderPlugin {
         let frames_to_drain = self.output_accumulator_fill.min(frames_available);
 
         if frames_to_drain > 0 {
+            let buffer_size = self.output_accumulator[0].len();
+
             for i in 0..frames_to_drain {
-                // Direct copy - no clipping needed since HRTFs are normalized
-                output[output_pos + i * 2] = self.output_accumulator[0][i];
-                output[output_pos + i * 2 + 1] = self.output_accumulator[1][i];
+                // Ring buffer read with modulo indexing (zero-copy drain)
+                let read_idx = (self.output_read_position + i) % buffer_size;
+                output[output_pos + i * 2] = self.output_accumulator[0][read_idx];
+                output[output_pos + i * 2 + 1] = self.output_accumulator[1][read_idx];
+
+                // Clear after reading
+                self.output_accumulator[0][read_idx] = 0.0;
+                self.output_accumulator[1][read_idx] = 0.0;
             }
 
-            // Shift accumulator
-            for ch in 0..2 {
-                self.output_accumulator[ch]
-                    .copy_within(frames_to_drain..self.output_accumulator_fill, 0);
-                for i in
-                    (self.output_accumulator_fill - frames_to_drain)..self.output_accumulator_fill
-                {
-                    self.output_accumulator[ch][i] = 0.0;
-                }
-            }
-
+            // Update ring buffer state
+            self.output_read_position = (self.output_read_position + frames_to_drain) % buffer_size;
             self.output_accumulator_fill -= frames_to_drain;
-            self.next_add_position = self.next_add_position.saturating_sub(frames_to_drain);
 
             if self.output_accumulator_fill == 0 {
+                self.output_read_position = 0;
                 self.next_add_position = 0;
             }
         }
@@ -1617,17 +1618,17 @@ impl BinauralDecoderPlugin {
             self.apply_externalization();
         }
 
-        // Accumulate output (overlap-add)
+        // Accumulate output (overlap-add with ring buffer)
+        let buffer_size = self.output_accumulator[0].len();
         for i in 0..self.fft_size {
-            self.output_accumulator[0][self.next_add_position + i] += self.temp_output_block[i * 2];
-            self.output_accumulator[1][self.next_add_position + i] +=
-                self.temp_output_block[i * 2 + 1];
+            let write_idx = (self.next_add_position + i) % buffer_size;
+            self.output_accumulator[0][write_idx] += self.temp_output_block[i * 2];
+            self.output_accumulator[1][write_idx] += self.temp_output_block[i * 2 + 1];
         }
 
         // Update state
-        self.next_add_position += self.hop_size;
-        let new_end = (self.next_add_position - self.hop_size) + self.fft_size;
-        self.output_accumulator_fill = self.output_accumulator_fill.max(new_end);
+        self.next_add_position = (self.next_add_position + self.hop_size) % buffer_size;
+        self.output_accumulator_fill = (self.output_accumulator_fill + self.hop_size).min(buffer_size);
 
         // Shift input buffer
         // Note: This multiplication is safe - overflow is checked during initialization in new()
