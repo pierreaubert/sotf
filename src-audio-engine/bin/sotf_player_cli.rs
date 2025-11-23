@@ -1,7 +1,7 @@
 use autoeq_iir::{Biquad, BiquadFilterType};
 use clap::{Parser, Subcommand};
 use sotf_audio::LoudnessCompensation;
-use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState};
+use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState, run_preflight_checks};
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::thread::sleep;
@@ -381,6 +381,17 @@ fn main() {
         .init();
 
     log::info!("SOTF CLI Player starting...");
+
+    // Run pre-flight checks before initializing the player
+    // Skip for non-playback commands (devices, replay-gain, status)
+    if matches!(cli.command, Commands::Play { .. }) {
+        if let Err(e) = run_preflight_checks() {
+            eprintln!("\nPre-flight check failed:\n");
+            eprintln!("{}\n", e);
+            log::error!("Pre-flight check failed: {}", e);
+            std::process::exit(1);
+        }
+    }
 
     match cli.command {
         Commands::Devices => {

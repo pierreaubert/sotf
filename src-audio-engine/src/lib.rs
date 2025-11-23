@@ -15,6 +15,9 @@ pub use manager::{
     AudioEngineManager, AudioFileInfo, StreamingCommand, StreamingEvent, StreamingState,
 };
 
+pub mod preflight;
+pub use preflight::{run_preflight_checks, PreflightError};
+
 pub mod replaygain;
 pub mod signal_recorder;
 pub mod signals;
