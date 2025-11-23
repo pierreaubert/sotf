@@ -107,30 +107,6 @@ impl AudioEngine {
         Ok(())
     }
 
-    /// Add a loudness analyzer
-    pub fn add_loudness_analyzer(&mut self, id: String, channels: usize) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::AddLoudnessAnalyzer { id, channels })?;
-        self.manager.recv_response()?;
-        Ok(())
-    }
-
-    /// Add a spectrum analyzer
-    pub fn add_spectrum_analyzer(&mut self, id: String, channels: usize) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::AddSpectrumAnalyzer { id, channels })?;
-        self.manager.recv_response()?;
-        Ok(())
-    }
-
-    /// Remove an analyzer
-    pub fn remove_analyzer(&mut self, id: String) -> Result<(), String> {
-        self.manager
-            .send_command(ManagerCommand::RemoveAnalyzer(id))?;
-        self.manager.recv_response()?;
-        Ok(())
-    }
-
     /// Get current engine state
     pub fn get_state(&self) -> AudioEngineState {
         self.manager.get_state()
@@ -146,15 +122,15 @@ impl AudioEngine {
         }
     }
 
-    /// Get analyzer data
-    pub fn get_analyzer_data(
+    /// Get plugin data (e.g. analyzer results)
+    pub fn get_plugin_data(
         &mut self,
-        analyzer_id: String,
+        index: usize,
     ) -> Result<std::sync::Arc<dyn std::any::Any + Send + Sync>, String> {
         self.manager
-            .send_command(ManagerCommand::GetAnalyzerData(analyzer_id))?;
+            .send_command(ManagerCommand::GetPluginData(index))?;
         match self.manager.recv_response()? {
-            ManagerResponse::AnalyzerData(data) => Ok(data),
+            ManagerResponse::PluginData(data) => Ok(data),
             ManagerResponse::Error(e) => Err(e),
             _ => Err("Unexpected response".to_string()),
         }

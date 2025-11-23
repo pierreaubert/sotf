@@ -9,13 +9,13 @@ use super::{
     ThreadEvent,
 };
 use sotf_plugins::{
-    AnalyzerPlugin, CompressorPluginParams, ConvolutionPlugin, ConvolutionPluginParams,
-    CrossoverPlugin, CrossoverPluginParams, DelayPlugin, DelayPluginParams, EqPluginParams,
-    GainPluginParams, GatePluginParams, Host, LimiterPluginParams,
-    LoudnessCompensationPluginParams, Plugin, PluginHost, ProcessContext, UpmixerPluginParams,
+    CompressorPluginParams, ConvolutionPlugin, ConvolutionPluginParams, CrossoverPlugin,
+    CrossoverPluginParams, DelayPlugin, DelayPluginParams, EqPluginParams, GainPluginParams,
+    GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
+    LoudnessMonitorPlugin, Plugin, PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig,
+    UpmixerPluginParams,
 };
 
-use std::collections::HashMap;
 use std::sync::{
     Arc,
     mpsc::{Receiver, Sender, SyncSender},
@@ -97,361 +97,37 @@ impl Drop for ProcessingThread {
 struct ProcessingState {
     /// Current plugin host
     host: PluginHost,
-    /// Next plugin host (for hot-reload)
-    next_host: Option<PluginHost>,
-    /// Analyzer plugins (by ID)
-    analyzers: HashMap<String, Box<dyn AnalyzerPlugin>>,
-    /// Sample rate
-    sample_rate: u32,
     /// Number of channels
     channels: usize,
-    /// Bypass flag
     bypassed: bool,
-    /// Crossfade position (0.0 = current, 1.0 = next)
-    crossfade_pos: f32,
-    /// Crossfade duration in frames
-    crossfade_frames: usize,
-    /// Current crossfade frame
-    crossfade_current: usize,
-    // Reusable buffers to avoid allocations
     process_buffer: Vec<f32>,
-    crossfade_buffer_old: Vec<f32>,
-    crossfade_buffer_new: Vec<f32>,
 }
 
 impl ProcessingState {
     fn new(channels: usize, sample_rate: u32) -> Self {
         Self {
             host: PluginHost::new(channels, sample_rate),
-            next_host: None,
             channels,
             bypassed: false,
-            crossfade_pos: 0.0,
-            crossfade_frames: (0.1 * sample_rate as f32) as usize, // 100ms crossfade
-            crossfade_current: 0,
             process_buffer: Vec::new(),
-            crossfade_buffer_old: Vec::new(),
-            crossfade_buffer_new: Vec::new(),
-            sample_rate,
-            analyzers: HashMap::new(),
         }
     }
 
-    /// Start plugin chain update (hot-reload)
-    fn start_reload(&mut self, new_host: PluginHost) {
-        let old_channels = self.host.output_channels();
-        let new_channels = new_host.output_channels();
-
-        self.next_host = Some(new_host);
-        self.crossfade_pos = 0.0;
-        self.crossfade_current = 0;
-
-        if old_channels != new_channels {
-            log::info!(
-                "[Processing Thread] Starting plugin hot-reload with IMMEDIATE SWAP (channels: {} -> {}, crossfade not possible)",
-                old_channels,
-                new_channels
-            );
-        } else {
-            log::info!(
-                "[Processing Thread] Starting plugin hot-reload with crossfade ({} frames, channels: {})",
-                self.crossfade_frames,
-                old_channels
-            );
-        }
-    }
-
-    /// Get the actual output channel count (accounting for pending hot-reload)
-    /// If a hot-reload is pending with different channel count, returns the new channel count
-    /// since the swap will happen immediately (no crossfade possible)
+    /// Get the actual output channel count
     fn output_channels(&self) -> usize {
-        if let Some(next_host) = &self.next_host {
-            // If next_host has different channel count, it will be swapped immediately
-            if self.host.output_channels() != next_host.output_channels() {
-                return next_host.output_channels();
-            }
-        }
-        // Otherwise use current host's output or tracked channel count
         self.host.output_channels()
     }
 
-    /// Recreate all analyzers with new channel count
-    fn recreate_analyzers_for_channels(&mut self, new_channels: usize) -> Result<(), String> {
-        use sotf_plugins::{LoudnessMonitorPlugin, SpectrumAnalyzerPlugin};
-
-        // Collect analyzer IDs and types before recreating
-        let analyzer_info: Vec<(String, bool)> = self
-            .analyzers
-            .keys()
-            .map(|id| {
-                let is_spectrum = id.contains("spectrum");
-                (id.clone(), is_spectrum)
-            })
-            .collect();
-
-        if analyzer_info.is_empty() {
-            return Ok(());
-        }
-
-        log::info!(
-            "[Processing Thread] Recreating {} analyzers for {} channels",
-            analyzer_info.len(),
-            new_channels
-        );
-
-        // Track recreation results
-        let mut failed_analyzers = Vec::new();
-        let mut succeeded = 0;
-
-        // Recreate each analyzer with new channel count
-        for (id, is_spectrum) in analyzer_info {
-            self.analyzers.remove(&id);
-
-            let result = if is_spectrum {
-                SpectrumAnalyzerPlugin::new(new_channels)
-                    .and_then(|mut plugin| {
-                        plugin.initialize(self.sample_rate)?;
-                        Ok(plugin)
-                    })
-                    .map(|plugin| {
-                        self.analyzers.insert(id.clone(), Box::new(plugin));
-                        log::debug!(
-                            "[Processing Thread] Recreated spectrum analyzer '{}' with {} channels",
-                            id,
-                            new_channels
-                        );
-                    })
-            } else {
-                LoudnessMonitorPlugin::new(new_channels)
-                    .and_then(|mut plugin| {
-                        plugin.initialize(self.sample_rate)?;
-                        Ok(plugin)
-                    })
-                    .map(|plugin| {
-                        self.analyzers.insert(id.clone(), Box::new(plugin));
-                        log::debug!(
-                            "[Processing Thread] Recreated loudness analyzer '{}' with {} channels",
-                            id,
-                            new_channels
-                        );
-                    })
-            };
-
-            match result {
-                Ok(()) => succeeded += 1,
-                Err(e) => {
-                    log::error!(
-                        "[Processing Thread] Failed to recreate analyzer '{}': {}",
-                        id,
-                        e
-                    );
-                    failed_analyzers.push((id, e));
-                }
-            }
-        }
-
-        // Report results
-        if !failed_analyzers.is_empty() {
-            log::warn!(
-                "[Processing Thread] Analyzer recreation: {}/{} succeeded, {} failed",
-                succeeded,
-                succeeded + failed_analyzers.len(),
-                failed_analyzers.len()
-            );
-            // Continue with partial success - don't fail the entire update
-        } else {
-            log::info!(
-                "[Processing Thread] Successfully recreated all {} analyzers",
-                succeeded
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Add an analyzer plugin
-    fn add_analyzer(
-        &mut self,
-        id: String,
-        mut analyzer: Box<dyn AnalyzerPlugin>,
-    ) -> Result<(), String> {
-        // Initialize the analyzer with current sample rate
-        analyzer.initialize(self.sample_rate)?;
-
-        log::debug!("[Processing Thread] Added analyzer: {}", id);
-        self.analyzers.insert(id, analyzer);
-        Ok(())
-    }
-
-    /// Remove an analyzer plugin
-    fn remove_analyzer(&mut self, id: &str) -> Option<Box<dyn AnalyzerPlugin>> {
-        log::debug!("[Processing Thread] Removed analyzer: {}", id);
-        self.analyzers.remove(id)
-    }
-
-    /// Get analyzer data
-    fn get_analyzer_data(&self, id: &str) -> Result<Arc<dyn std::any::Any + Send + Sync>, String> {
-        use sotf_plugins::{LoudnessData, SpectrumData};
-
-        let analyzer = self
-            .analyzers
-            .get(id)
-            .ok_or_else(|| format!("Analyzer '{}' not found", id))?;
-
-        // Get data from the analyzer (returns Box<dyn Any + Send>)
-        let data = analyzer.get_data();
-
-        // Try downcasting to known types and re-wrapping in Arc
-        if let Some(loudness) = data.downcast_ref::<LoudnessData>() {
-            return Ok(Arc::new(loudness.clone()) as Arc<dyn std::any::Any + Send + Sync>);
-        }
-
-        if let Some(spectrum) = data.downcast_ref::<SpectrumData>() {
-            return Ok(Arc::new(spectrum.clone()) as Arc<dyn std::any::Any + Send + Sync>);
-        }
-
-        Err(format!("Unknown analyzer data type for '{}'", id))
-    }
-
-    /// Process a frame with seamless crossfade
+    /// Process a frame
     fn process_frame(&mut self, input: &[f32], output: &mut Vec<f32>) -> Result<(), String> {
-        // Apply analyzers to input
-        let context = ProcessContext {
-            sample_rate: self.sample_rate,
-            num_frames: input.len() / self.channels,
-        };
-
-        for analyzer in self.analyzers.values_mut() {
-            analyzer.process(input, &context).ok();
-        }
-
         if self.bypassed {
             // Bypass - just copy
             output.copy_from_slice(input);
             return Ok(());
         }
 
-        if let Some(next_host) = &mut self.next_host {
-            // Check if channel counts differ - crossfade only works for same channel count
-            if self.host.output_channels() != next_host.output_channels() {
-                log::info!(
-                    "[Processing Thread] Channel count change detected ({}→{}), immediate swap (no crossfade)",
-                    self.host.output_channels(),
-                    next_host.output_channels()
-                );
-                log::trace!(
-                    "[Processing Thread] Crossfade: Immediate swap due to channel count mismatch"
-                );
-
-                // Immediate swap - no crossfade possible when channel count changes
-                let old_channels = self.channels;
-                std::mem::swap(&mut self.host, next_host);
-                self.channels = self.host.output_channels();
-                self.next_host = None;
-                self.crossfade_pos = 0.0;
-                self.crossfade_current = 0;
-
-                log::info!(
-                    "[Processing Thread] Updated output channels: {}",
-                    self.channels
-                );
-                log::trace!("[Processing Thread] Crossfade: Swap complete, recreating analyzers");
-
-                // Recreate analyzers for new channel count
-                if old_channels != self.channels {
-                    log::trace!(
-                        "[Processing Thread] Crossfade: Analyzer recreation required ({}→{} channels)",
-                        old_channels,
-                        self.channels
-                    );
-                    if let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
-                        log::error!("[Processing Thread] Failed to recreate analyzers: {}", e);
-                    } else {
-                        log::trace!(
-                            "[Processing Thread] Crossfade: Analyzers recreated successfully"
-                        );
-                    }
-                }
-
-                // Process with new host
-                self.host.process(input, output)?;
-            } else {
-                // Crossfading between old and new plugin chains (same channel count)
-                let output_samples = output.len(); // Should be num_frames * channels
-
-                // Resize reusable buffers if needed
-                if self.crossfade_buffer_old.len() != output_samples {
-                    self.crossfade_buffer_old.resize(output_samples, 0.0);
-                }
-                if self.crossfade_buffer_new.len() != output_samples {
-                    self.crossfade_buffer_new.resize(output_samples, 0.0);
-                }
-
-                // Clear buffers (optional if process overwrites, but safer)
-                // self.crossfade_buffer_old.fill(0.0);
-                // self.crossfade_buffer_new.fill(0.0);
-
-                // Process with both hosts
-                self.host.process(input, &mut self.crossfade_buffer_old)?;
-                next_host.process(input, &mut self.crossfade_buffer_new)?;
-
-                // Mix
-                let frames = output_samples / self.channels;
-                let step = 1.0 / self.crossfade_frames as f32;
-
-                for i in 0..frames {
-                    let t = self.crossfade_pos;
-                    // Constant power crossfade (approximate)
-                    // t goes from 0.0 (old) to 1.0 (new)
-                    let gain_old = (std::f32::consts::PI * 0.5 * (1.0 - t)).cos();
-                    let gain_new = (std::f32::consts::PI * 0.5 * t).sin();
-
-                    for c in 0..self.channels {
-                        let idx = i * self.channels + c;
-                        output[idx] = self.crossfade_buffer_old[idx] * gain_old
-                            + self.crossfade_buffer_new[idx] * gain_new;
-                    }
-
-                    self.crossfade_pos += step;
-                    if self.crossfade_pos > 1.0 {
-                        self.crossfade_pos = 1.0;
-                    }
-                }
-
-                self.crossfade_current += frames;
-
-                // Check if crossfade complete
-                if self.crossfade_current >= self.crossfade_frames {
-                    log::info!("[Processing Thread] Crossfade complete");
-                    // Swap in the new host
-                    let old_channels = self.channels;
-                    std::mem::swap(&mut self.host, next_host);
-                    self.channels = self.host.output_channels();
-                    self.next_host = None;
-                    self.crossfade_pos = 0.0;
-                    self.crossfade_current = 0;
-
-                    // Recreate analyzers if channel count changed (shouldn't happen in crossfade path, but be safe)
-                    if old_channels != self.channels {
-                        if let Err(e) = self.recreate_analyzers_for_channels(self.channels) {
-                            log::warn!("[Processing Thread] Failed to recreate analyzers: {}", e);
-                        }
-                    }
-                }
-            }
-        } else {
-            // Normal processing
-            self.host.process(input, output)?;
-        }
-
-        // Apply analyzers to output
-        let output_context = ProcessContext {
-            sample_rate: self.sample_rate,
-            num_frames: output.len() / self.channels,
-        };
-        for analyzer in self.analyzers.values_mut() {
-            analyzer.process(output, &output_context).ok();
-        }
+        // Normal processing
+        self.host.process(input, output)?;
 
         Ok(())
     }
@@ -484,11 +160,6 @@ fn run_processing_thread(
                         "[Processing Thread] UpdatePlugins: Received command with {} configs",
                         configs.len()
                     );
-                    log::trace!(
-                        "[Processing Thread] UpdatePlugins: Building plugin host (sample_rate={}, channels={})",
-                        sample_rate,
-                        channels
-                    );
 
                     // Create new plugin host
                     match build_plugin_host(&configs, sample_rate, channels) {
@@ -498,22 +169,18 @@ fn run_processing_thread(
                                 "[Processing Thread] UpdatePlugins: Plugin host built successfully, output_channels={}",
                                 output_channels
                             );
-                            log::trace!(
-                                "[Processing Thread] UpdatePlugins: Starting hot-reload with crossfade"
-                            );
-                            state.start_reload(new_host);
-                            log::trace!(
-                                "[Processing Thread] UpdatePlugins: Sending PluginChainUpdated response"
-                            );
+                            
+                            // Simple swap - updates handled by ManagerThread pausing/resuming if needed
+                            // But here we just swap the host for next process call
+                            state.host = new_host;
+                            state.channels = output_channels;
+                            
                             response_tx
                                 .send(ProcessingResponse::PluginChainUpdated { output_channels })
                                 .ok();
                         }
                         Err(e) => {
                             log::debug!("[Processing Thread] Failed to build plugin chain: {}", e);
-                            log::trace!(
-                                "[Processing Thread] UpdatePlugins: Sending Error response"
-                            );
                             response_tx.send(ProcessingResponse::Error(e)).ok();
                         }
                     }
@@ -523,8 +190,7 @@ fn run_processing_thread(
                     param_id,
                     value,
                 } => {
-                    // Update parameter on current host
-                    // TODO: Implement parameter setting
+                    // TODO: Implement parameter setting on Host
                     log::info!(
                         "[Processing Thread] TODO Set parameter: plugin {} param {} = {}",
                         plugin_index,
@@ -538,82 +204,19 @@ fn run_processing_thread(
                     log::debug!("[Processing Thread] Bypass: {}", bypass);
                     response_tx.send(ProcessingResponse::Ok).ok();
                 }
-                ProcessingCommand::AddLoudnessAnalyzer { id, channels } => {
-                    use sotf_plugins::LoudnessMonitorPlugin;
-                    match LoudnessMonitorPlugin::new(channels) {
-                        Ok(plugin) => match state.add_analyzer(id.clone(), Box::new(plugin)) {
-                            Ok(_) => {
-                                log::debug!("[Processing Thread] Added loudness analyzer: {}", id);
-                                response_tx.send(ProcessingResponse::Ok).ok();
-                            }
-                            Err(e) => {
-                                log::info!(
-                                    "[Processing Thread] Failed to add loudness analyzer: {}",
-                                    e
-                                );
-                                response_tx.send(ProcessingResponse::Error(e)).ok();
-                            }
-                        },
-                        Err(e) => {
-                            log::info!(
-                                "[Processing Thread] Failed to create loudness analyzer: {}",
-                                e
-                            );
-                            response_tx.send(ProcessingResponse::Error(e)).ok();
-                        }
-                    }
-                }
-                ProcessingCommand::AddSpectrumAnalyzer { id, channels } => {
-                    use sotf_plugins::SpectrumAnalyzerPlugin;
-                    match SpectrumAnalyzerPlugin::new(channels) {
-                        Ok(plugin) => match state.add_analyzer(id.clone(), Box::new(plugin)) {
-                            Ok(_) => {
-                                log::debug!("[Processing Thread] Added spectrum analyzer: {}", id);
-                                response_tx.send(ProcessingResponse::Ok).ok();
-                            }
-                            Err(e) => {
-                                log::info!(
-                                    "[Processing Thread] Failed to add spectrum analyzer: {}",
-                                    e
-                                );
-                                response_tx.send(ProcessingResponse::Error(e)).ok();
-                            }
-                        },
-                        Err(e) => {
-                            log::info!(
-                                "[Processing Thread] Failed to create spectrum analyzer: {}",
-                                e
-                            );
-                            response_tx.send(ProcessingResponse::Error(e)).ok();
-                        }
-                    }
-                }
-                ProcessingCommand::RemoveAnalyzer(id) => match state.remove_analyzer(&id) {
-                    Some(_) => {
-                        log::debug!("[Processing Thread] Removed analyzer: {}", id);
-                        response_tx.send(ProcessingResponse::Ok).ok();
-                    }
-                    None => {
-                        let err = format!("Analyzer '{}' not found", id);
-                        log::debug!("[Processing Thread] {}", err);
-                        response_tx.send(ProcessingResponse::Error(err)).ok();
-                    }
-                },
-                ProcessingCommand::GetAnalyzerData(analyzer_id) => {
-                    // log::debug!("[Processing Thread] Get analyzer data: {}", analyzer_id);
-                    match state.get_analyzer_data(&analyzer_id) {
-                        Ok(data) => {
+                ProcessingCommand::GetPluginData(index) => {
+                    match state.host.get_plugin_data(index) {
+                        Some(data) => {
                             response_tx
-                                .send(ProcessingResponse::AnalyzerData(data))
+                                .send(ProcessingResponse::PluginData(data))
                                 .ok();
                         }
-                        Err(e) => {
-                            response_tx.send(ProcessingResponse::Error(e)).ok();
+                        None => {
+                            response_tx.send(ProcessingResponse::Error(format!("Plugin {} data not available", index))).ok();
                         }
                     }
                 }
                 ProcessingCommand::Stop => {
-                    // Stop processing - just clear state
                     log::debug!("[Processing Thread] Stopped");
                 }
                 ProcessingCommand::Shutdown => {
@@ -626,16 +229,10 @@ fn run_processing_thread(
         // Process audio from decoder
         match decoder_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(DecoderMessage::Frame(frame)) => {
-                // Process frame
-                // IMPORTANT: Output buffer size must match plugin chain output channels, not input!
-                // Use output_channels() which accounts for pending                    // Process audio frame
                 let output_channels = state.output_channels();
                 let output_samples = frame.num_frames * output_channels;
 
-                // Use reusable buffer
-                // Temporarily take buffer out of state to avoid double mutable borrow
                 let mut process_buffer = std::mem::take(&mut state.process_buffer);
-
                 if process_buffer.len() != output_samples {
                     process_buffer.resize(output_samples, 0.0);
                 }
@@ -652,7 +249,6 @@ fn run_processing_thread(
                             );
                         }
 
-                        // Send processed frame with correct output channel count
                         let processed_frame = super::AudioFrame::new(
                             process_buffer.clone(),
                             frame.num_frames,
@@ -668,8 +264,6 @@ fn run_processing_thread(
                         event_tx.send(ThreadEvent::ProcessingError(e)).ok();
                     }
                 }
-
-                // Put buffer back
                 state.process_buffer = process_buffer;
             }
             Ok(DecoderMessage::EndOfStream) => {
@@ -678,9 +272,7 @@ fn run_processing_thread(
             Ok(DecoderMessage::Flush) => {
                 message_tx.send(ProcessingMessage::Flush).ok();
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // No message, continue
-            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
                 log::debug!("[Processing Thread] Decoder queue disconnected");
                 break;
@@ -824,6 +416,26 @@ fn create_plugin(
 
             let plugin = LimiterPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "loudness_monitor" => {
+            let plugin = LoudnessMonitorPlugin::new(channels)
+                .map_err(|e| format!("Failed to create loudness monitor: {}", e))?;
+            Ok(Box::new(plugin))
+        }
+
+        "spectrum_analyzer" => {
+            // Check for config in parameters
+            let config: SpectrumConfig = if parameters.is_null() {
+                SpectrumConfig::default()
+            } else {
+                serde_json::from_value(parameters.clone())
+                    .unwrap_or_else(|_| SpectrumConfig::default())
+            };
+
+            let plugin = SpectrumAnalyzerPlugin::with_config(channels, config)
+                .map_err(|e| format!("Failed to create spectrum analyzer: {}", e))?;
+            Ok(Box::new(plugin))
         }
 
         "convolution" => {

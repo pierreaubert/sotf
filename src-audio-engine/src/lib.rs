@@ -26,6 +26,6 @@ pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, Plu
 
 // Re-export plugin types for convenience
 pub use sotf_plugins::{
-    HrtfData, LoudnessCompensation, LoudnessInfo, SofaFile, SourcePosition, SpectrumInfo,
-    get_speaker_config_by_channels,
+    HrtfData, LoudnessCompensation, LoudnessData, LoudnessInfo, SofaFile, SourcePosition,
+    SpectrumData, SpectrumInfo, get_speaker_config_by_channels,
 };

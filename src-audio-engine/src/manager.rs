@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
-use sotf_plugins::{LoudnessInfo, SpectrumInfo};
 
 /// High-level audio streaming manager using native AudioEngine
 pub struct AudioEngineManager {
@@ -20,10 +19,6 @@ pub struct AudioEngineManager {
     state: Arc<Mutex<StreamingState>>,
     /// Enable signal watching (Ctrl-C, SIGTERM)
     watch_signals: bool,
-    /// Pending request to enable spectrum monitoring (before engine starts)
-    pending_spectrum_monitoring: Arc<Mutex<bool>>,
-    /// Pending request to enable loudness monitoring (before engine starts)
-    pending_loudness_monitoring: Arc<Mutex<bool>>,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -82,8 +77,6 @@ impl AudioEngineManager {
             current_audio_info: Arc::new(Mutex::new(None)),
             state: Arc::new(Mutex::new(StreamingState::Idle)),
             watch_signals,
-            pending_spectrum_monitoring: Arc::new(Mutex::new(false)),
-            pending_loudness_monitoring: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -180,26 +173,6 @@ impl AudioEngineManager {
 
         log::debug!("[AudioEngineManager] Playback started");
 
-        // Enable any pending analyzers that were requested before engine was running
-        if *self.pending_spectrum_monitoring.lock() {
-            log::debug!("[AudioEngineManager] Enabling pending spectrum monitoring");
-            if let Err(e) = self.enable_spectrum_monitoring() {
-                log::error!(
-                    "[AudioEngineManager] Failed to enable spectrum monitoring: {}",
-                    e
-                );
-            }
-        }
-        if *self.pending_loudness_monitoring.lock() {
-            log::debug!("[AudioEngineManager] Enabling pending loudness monitoring");
-            if let Err(e) = self.enable_loudness_monitoring() {
-                log::error!(
-                    "[AudioEngineManager] Failed to enable loudness monitoring: {}",
-                    e
-                );
-            }
-        }
-
         Ok(())
     }
 
@@ -264,26 +237,6 @@ impl AudioEngineManager {
 
         log::debug!("[AudioEngineManager] HAL playback started");
 
-        // Enable any pending analyzers
-        if *self.pending_spectrum_monitoring.lock() {
-            log::debug!("[AudioEngineManager] Enabling pending spectrum monitoring");
-            if let Err(e) = self.enable_spectrum_monitoring() {
-                log::error!(
-                    "[AudioEngineManager] Failed to enable spectrum monitoring: {}",
-                    e
-                );
-            }
-        }
-        if *self.pending_loudness_monitoring.lock() {
-            log::debug!("[AudioEngineManager] Enabling pending loudness monitoring");
-            if let Err(e) = self.enable_loudness_monitoring() {
-                log::error!(
-                    "[AudioEngineManager] Failed to enable loudness monitoring: {}",
-                    e
-                );
-            }
-        }
-
         Ok(())
     }
 
@@ -316,20 +269,6 @@ impl AudioEngineManager {
         log::debug!("[AudioEngineManager] Stopping");
 
         if let Some(mut engine) = self.engine.lock().take() {
-            // Check which analyzers are currently active before stopping
-            // so we can restore them on next playback
-            let has_loudness = engine.get_analyzer_data("loudness".to_string()).is_ok();
-            let has_spectrum = engine.get_analyzer_data("spectrum".to_string()).is_ok();
-
-            if has_loudness {
-                log::debug!("[AudioEngineManager] Preserving loudness monitoring state");
-                *self.pending_loudness_monitoring.lock() = true;
-            }
-            if has_spectrum {
-                log::debug!("[AudioEngineManager] Preserving spectrum monitoring state");
-                *self.pending_spectrum_monitoring.lock() = true;
-            }
-
             engine.stop().map_err(AudioDecoderError::IoError)?;
             engine.shutdown().map_err(AudioDecoderError::IoError)?;
         }
@@ -410,143 +349,9 @@ impl AudioEngineManager {
     }
 
     // ========================================================================
-    // Monitoring Support
+    // Monitoring Support - REMOVED
+    // Analyzers are now treated as normal plugins managed via update_plugin_chain
     // ========================================================================
-
-    /// Enable loudness monitoring
-    pub fn enable_loudness_monitoring(&mut self) -> Result<(), String> {
-        log::debug!("[AudioEngineManager] Enabling loudness monitoring");
-
-        if let Some(ref mut engine) = *self.engine.lock() {
-            // Use the engine's output channel count (after processing/plugins)
-            let channels = engine.get_state().num_channels;
-            log::info!(
-                "[AudioEngineManager] Adding loudness analyzer for {} channels",
-                channels
-            );
-            engine.add_loudness_analyzer("loudness".to_string(), channels)?;
-            log::debug!("[AudioEngineManager] Loudness monitoring enabled");
-            *self.pending_loudness_monitoring.lock() = false;
-            Ok(())
-        } else {
-            // Engine not running yet - mark as pending and will be enabled when playback starts
-            log::info!(
-                "[AudioEngineManager] Engine not running yet - loudness monitoring will be enabled when playback starts"
-            );
-            *self.pending_loudness_monitoring.lock() = true;
-            Ok(())
-        }
-    }
-
-    /// Disable loudness monitoring
-    pub fn disable_loudness_monitoring(&mut self) {
-        log::debug!("[AudioEngineManager] Disabling loudness monitoring");
-        *self.pending_loudness_monitoring.lock() = false;
-        if let Some(ref mut engine) = *self.engine.lock() {
-            engine.remove_analyzer("loudness".to_string()).ok();
-        }
-    }
-
-    /// Get current loudness info
-    pub fn get_loudness(&self) -> Option<LoudnessInfo> {
-        use sotf_plugins::LoudnessData;
-
-        if let Some(ref mut engine) = *self.engine.lock() {
-            match engine.get_analyzer_data("loudness".to_string()) {
-                Ok(data) => {
-                    // Downcast Arc<dyn Any + Send + Sync> to LoudnessData
-                    // Convert LoudnessData to LoudnessInfo
-                    data.downcast_ref::<LoudnessData>()
-                        .map(|loudness_data| LoudnessInfo {
-                            momentary_lufs: loudness_data.momentary_lufs,
-                            shortterm_lufs: loudness_data.shortterm_lufs,
-                            peak: loudness_data.peak,
-                            channel_peaks: loudness_data.channel_peaks.clone(),
-                        })
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Check if loudness monitoring is enabled
-    pub fn is_loudness_monitoring_enabled(&self) -> bool {
-        if let Some(ref mut engine) = *self.engine.lock() {
-            // Try to get data - if it succeeds, analyzer is enabled
-            engine.get_analyzer_data("loudness".to_string()).is_ok()
-        } else {
-            false
-        }
-    }
-
-    /// Enable spectrum monitoring
-    pub fn enable_spectrum_monitoring(&mut self) -> Result<(), String> {
-        log::debug!("[AudioEngineManager] Enabling spectrum monitoring");
-
-        if let Some(ref mut engine) = *self.engine.lock() {
-            // Use the engine's output channel count (after processing/plugins)
-            let channels = engine.get_state().num_channels;
-            log::info!(
-                "[AudioEngineManager] Adding spectrum analyzer for {} channels",
-                channels
-            );
-            engine.add_spectrum_analyzer("spectrum".to_string(), channels)?;
-            log::debug!("[AudioEngineManager] Spectrum monitoring enabled");
-            *self.pending_spectrum_monitoring.lock() = false;
-            Ok(())
-        } else {
-            // Engine not running yet - mark as pending and will be enabled when playback starts
-            log::info!(
-                "[AudioEngineManager] Engine not running yet - spectrum monitoring will be enabled when playback starts"
-            );
-            *self.pending_spectrum_monitoring.lock() = true;
-            Ok(())
-        }
-    }
-
-    /// Disable spectrum monitoring
-    pub fn disable_spectrum_monitoring(&mut self) {
-        log::debug!("[AudioEngineManager] Disabling spectrum monitoring");
-        *self.pending_spectrum_monitoring.lock() = false;
-        if let Some(ref mut engine) = *self.engine.lock() {
-            engine.remove_analyzer("spectrum".to_string()).ok();
-        }
-    }
-
-    /// Get current spectrum info
-    pub fn get_spectrum(&self) -> Option<SpectrumInfo> {
-        use sotf_plugins::SpectrumData;
-
-        if let Some(ref mut engine) = *self.engine.lock() {
-            match engine.get_analyzer_data("spectrum".to_string()) {
-                Ok(data) => {
-                    // Downcast Arc<dyn Any + Send + Sync> to SpectrumData
-                    // Convert SpectrumData to SpectrumInfo
-                    data.downcast_ref::<SpectrumData>()
-                        .map(|spectrum_data| SpectrumInfo {
-                            frequencies: spectrum_data.frequencies.clone(),
-                            magnitudes: spectrum_data.magnitudes.clone(),
-                            peak_magnitude: spectrum_data.peak_magnitude,
-                        })
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Check if spectrum monitoring is enabled
-    pub fn is_spectrum_monitoring_enabled(&self) -> bool {
-        if let Some(ref mut engine) = *self.engine.lock() {
-            // Try to get data - if it succeeds, analyzer is enabled
-            engine.get_analyzer_data("spectrum".to_string()).is_ok()
-        } else {
-            false
-        }
-    }
 
     /// Enable plugin host
     pub fn enable_plugin_host(&mut self) -> Result<(), String> {
@@ -576,6 +381,22 @@ impl AudioEngineManager {
             Ok(())
         } else {
             Err("No engine running".to_string())
+        }
+    }
+
+    /// Get plugin data (e.g. analyzer results)
+    pub fn get_plugin_data(
+        &self,
+        index: usize,
+    ) -> AudioDecoderResult<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
+        if let Some(ref mut engine) = *self.engine.lock() {
+            engine
+                .get_plugin_data(index)
+                .map_err(|e| AudioDecoderError::ConfigError(e))
+        } else {
+            Err(AudioDecoderError::ConfigError(
+                "No engine running".to_string(),
+            ))
         }
     }
 

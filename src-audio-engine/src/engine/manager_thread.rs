@@ -1242,72 +1242,6 @@ fn handle_command(
 
             ManagerResponse::Ok
         }
-        ManagerCommand::AddLoudnessAnalyzer { id, channels } => {
-            log::info!(
-                "[Manager Thread] Add loudness analyzer: {} ({} channels)",
-                id,
-                channels
-            );
-
-            if let Err(e) =
-                processing.send_command(ProcessingCommand::AddLoudnessAnalyzer { id, channels })
-            {
-                return ManagerResponse::Error(e);
-            }
-
-            // Wait for response
-            if let Some(response) = processing.try_recv_response() {
-                match response {
-                    super::ProcessingResponse::Ok => ManagerResponse::Ok,
-                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
-                    _ => ManagerResponse::Error("Unexpected response".to_string()),
-                }
-            } else {
-                ManagerResponse::Error("No response from processing thread".to_string())
-            }
-        }
-        ManagerCommand::AddSpectrumAnalyzer { id, channels } => {
-            log::info!(
-                "[Manager Thread] Add spectrum analyzer: {} ({} channels)",
-                id,
-                channels
-            );
-
-            if let Err(e) =
-                processing.send_command(ProcessingCommand::AddSpectrumAnalyzer { id, channels })
-            {
-                return ManagerResponse::Error(e);
-            }
-
-            // Wait for response
-            if let Some(response) = processing.try_recv_response() {
-                match response {
-                    super::ProcessingResponse::Ok => ManagerResponse::Ok,
-                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
-                    _ => ManagerResponse::Error("Unexpected response".to_string()),
-                }
-            } else {
-                ManagerResponse::Error("No response from processing thread".to_string())
-            }
-        }
-        ManagerCommand::RemoveAnalyzer(id) => {
-            log::debug!("[Manager Thread] Remove analyzer: {}", id);
-
-            if let Err(e) = processing.send_command(ProcessingCommand::RemoveAnalyzer(id)) {
-                return ManagerResponse::Error(e);
-            }
-
-            // Wait for response
-            if let Some(response) = processing.try_recv_response() {
-                match response {
-                    super::ProcessingResponse::Ok => ManagerResponse::Ok,
-                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
-                    _ => ManagerResponse::Error("Unexpected response".to_string()),
-                }
-            } else {
-                ManagerResponse::Error("No response from processing thread".to_string())
-            }
-        }
         ManagerCommand::GetState => {
             if let Ok(state_guard) = safe_lock(state) {
                 ManagerResponse::State(state_guard.clone())
@@ -1322,10 +1256,8 @@ fn handle_command(
                 ManagerResponse::Error("Failed to lock state".to_string())
             }
         }
-        ManagerCommand::GetAnalyzerData(analyzer_id) => {
-            // log::debug!("[Manager Thread] Get analyzer data: {}", analyzer_id);
-
-            if let Err(e) = processing.send_command(ProcessingCommand::GetAnalyzerData(analyzer_id))
+        ManagerCommand::GetPluginData(index) => {
+            if let Err(e) = processing.send_command(ProcessingCommand::GetPluginData(index))
             {
                 return ManagerResponse::Error(e);
             }
@@ -1333,8 +1265,8 @@ fn handle_command(
             // Wait for response from processing thread
             if let Some(response) = processing.try_recv_response() {
                 match response {
-                    super::ProcessingResponse::AnalyzerData(data) => {
-                        ManagerResponse::AnalyzerData(data)
+                    super::ProcessingResponse::PluginData(data) => {
+                        ManagerResponse::PluginData(data)
                     }
                     super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
                     _ => ManagerResponse::Error("Unexpected response".to_string()),

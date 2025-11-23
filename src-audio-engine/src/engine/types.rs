@@ -120,14 +120,8 @@ pub enum ProcessingCommand {
     },
     /// Bypass all processing (pass-through)
     Bypass(bool),
-    /// Add a loudness analyzer
-    AddLoudnessAnalyzer { id: String, channels: usize },
-    /// Add a spectrum analyzer
-    AddSpectrumAnalyzer { id: String, channels: usize },
-    /// Remove an analyzer
-    RemoveAnalyzer(String),
-    /// Query analyzer data
-    GetAnalyzerData(String),
+    /// Query plugin data (e.g. analyzer results)
+    GetPluginData(usize),
     /// Stop processing
     Stop,
     /// Shutdown the thread
@@ -141,8 +135,8 @@ pub enum ProcessingResponse {
     Ok,
     /// Plugin chain updated with new output channel count
     PluginChainUpdated { output_channels: usize },
-    /// Analyzer data
-    AnalyzerData(Arc<dyn Any + Send + Sync>),
+    /// Plugin data
+    PluginData(Arc<dyn Any + Send + Sync>),
     /// Error
     Error(String),
 }
@@ -185,21 +179,10 @@ pub enum ManagerCommand {
     },
     BypassProcessing(bool),
 
-    // Analyzer control
-    AddLoudnessAnalyzer {
-        id: String,
-        channels: usize,
-    },
-    AddSpectrumAnalyzer {
-        id: String,
-        channels: usize,
-    },
-    RemoveAnalyzer(String),
-
     // Queries
     GetState,
     GetPosition,
-    GetAnalyzerData(String),
+    GetPluginData(usize),
 
     // Lifecycle
     ReloadConfig,
@@ -212,7 +195,7 @@ pub enum ManagerResponse {
     Ok,
     State(AudioEngineState),
     Position(f64),
-    AnalyzerData(Arc<dyn Any + Send + Sync>),
+    PluginData(Arc<dyn Any + Send + Sync>),
     Error(String),
     Shutdown,
 }
