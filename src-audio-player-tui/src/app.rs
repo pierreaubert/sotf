@@ -150,6 +150,9 @@ pub struct App {
     pub needs_plugin_update: bool,
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize, // Which parameter is selected in edit mode
+    pub plugin_update_last_attempt: Option<std::time::Instant>,
+    pub plugin_update_retry_count: u32,
+    pub plugin_update_in_progress: bool,
 
     // Playback state
     pub is_playing: bool,
@@ -233,6 +236,9 @@ impl App {
             needs_plugin_update: false,
             editing_plugin_index: None,
             plugin_param_selection: 0,
+            plugin_update_last_attempt: None,
+            plugin_update_retry_count: 0,
+            plugin_update_in_progress: false,
             is_playing: false,
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume
@@ -993,7 +999,7 @@ impl App {
                     self.plugin_chain.update_binaural_decoder_channels();
 
                     self.last_loaded_preset = Some(preset_name.clone());
-                    self.needs_plugin_update = true;
+                    self.request_plugin_update();
                     log::info!("Restored plugin preset: {}", preset_name);
                 }
                 Err(e) => {
@@ -1331,11 +1337,20 @@ impl App {
     }
 
     // Plugin management
+
+    /// Request a plugin update and reset retry state
+    /// This should be called whenever the plugin chain is modified
+    pub fn request_plugin_update(&mut self) {
+        self.needs_plugin_update = true;
+        self.plugin_update_retry_count = 0;
+        self.plugin_update_in_progress = false;
+    }
+
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
         self.plugin_chain.add_plugin(plugin_type);
         // Update BinauralDecoder input channels after adding
         self.plugin_chain.update_binaural_decoder_channels();
-        self.needs_plugin_update = true;
+        self.request_plugin_update();
     }
 
     pub fn remove_plugin(&mut self, index: usize) {
@@ -1345,14 +1360,14 @@ impl App {
         }
         // Update BinauralDecoder input channels after removal
         self.plugin_chain.update_binaural_decoder_channels();
-        self.needs_plugin_update = true;
+        self.request_plugin_update();
     }
 
     pub fn toggle_plugin(&mut self, index: usize) {
         self.plugin_chain.toggle_plugin(index);
         // Update BinauralDecoder input channels after toggle
         self.plugin_chain.update_binaural_decoder_channels();
-        self.needs_plugin_update = true;
+        self.request_plugin_update();
     }
 
     pub fn move_plugin_up(&mut self, index: usize) {
@@ -1361,7 +1376,7 @@ impl App {
             self.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
             self.plugin_chain.update_binaural_decoder_channels();
-            self.needs_plugin_update = true;
+            self.request_plugin_update();
         }
     }
 
@@ -1371,7 +1386,7 @@ impl App {
             self.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
             self.plugin_chain.update_binaural_decoder_channels();
-            self.needs_plugin_update = true;
+            self.request_plugin_update();
         }
     }
 
@@ -1778,7 +1793,7 @@ impl App {
                 };
 
                 self.status_message = Some(format!("Loaded preset: {}", filename));
-                self.needs_plugin_update = true;
+                self.request_plugin_update();
                 self.last_loaded_preset = Some(filename);
             }
             Err(e) => {
@@ -1846,16 +1861,17 @@ impl App {
         if let Some(preset_filename) = self
             .available_plugin_presets
             .get(self.selected_preset_index)
+            .cloned()
         {
             // Use the plugin chain's own load method (handles path construction)
-            match self.plugin_chain.load_from_file(preset_filename) {
+            match self.plugin_chain.load_from_file(&preset_filename) {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
                     self.plugin_chain.update_binaural_decoder_channels();
 
                     self.status_message = Some(format!("Loaded preset: {}", preset_filename));
-                    self.needs_plugin_update = true;
-                    self.last_loaded_preset = Some(preset_filename.clone());
+                    self.request_plugin_update();
+                    self.last_loaded_preset = Some(preset_filename);
                 }
                 Err(e) => {
                     self.status_message = Some(format!("Error loading preset: {}", e));

@@ -1304,9 +1304,21 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     }
 
     if !app.plugin_chain.is_empty() {
+        let plugin_status = if app.plugin_update_in_progress {
+            format!("Plugins: {} [updating...] ", app.plugin_chain.len())
+        } else {
+            format!("Plugins: {} ", app.plugin_chain.len())
+        };
+
+        let plugin_color = if app.plugin_update_in_progress {
+            app.theme.accent_warning
+        } else {
+            app.theme.accent_secondary
+        };
+
         status_spans.push(Span::styled(
-            format!("Plugins: {} ", app.plugin_chain.len()),
-            Style::default().fg(app.theme.accent_secondary),
+            plugin_status,
+            Style::default().fg(plugin_color),
         ));
         status_spans.push(Span::raw("| "));
     }

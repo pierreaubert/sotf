@@ -264,21 +264,81 @@ fn run_app<B: ratatui::backend::Backend>(
                         }
                     }
 
-                    // Apply pending plugin updates with simple debouncing
-                    if app.needs_plugin_update {
-                        let sample_rate = 48000.0;
-                        let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
-                        match player.update_plugins(plugins) {
-                            Ok(()) => {
-                                app.needs_plugin_update = false;
-                            }
-                            Err(e) => {
-                                log::error!("[TUI] Plugin update failed: {}", e);
+                    // Apply pending plugin updates with debouncing and retry logic
+                    if app.needs_plugin_update && !app.plugin_update_in_progress {
+                        const MAX_RETRIES: u32 = 3;
+                        const DEBOUNCE_MS: u64 = 500;
+
+                        // Check if enough time has passed since last attempt
+                        let should_attempt = match app.plugin_update_last_attempt {
+                            None => true,
+                            Some(last) => last.elapsed().as_millis() >= DEBOUNCE_MS as u128,
+                        };
+
+                        if should_attempt {
+                            // Check retry limit
+                            if app.plugin_update_retry_count >= MAX_RETRIES {
+                                log::error!(
+                                    "[TUI] Plugin update failed after {} retries, giving up",
+                                    MAX_RETRIES
+                                );
                                 app.status_message = Some(format!(
-                                    "Plugin update failed: {}",
-                                    e
+                                    "Plugin update failed after {} retries. Check logs for details.",
+                                    MAX_RETRIES
                                 ));
-                                // Keep needs_plugin_update true so user can retry after fixing config
+                                app.needs_plugin_update = false;
+                                app.plugin_update_retry_count = 0;
+                                app.plugin_update_in_progress = false;
+                            } else {
+                                // Mark update as in progress and clear the trigger flag immediately
+                                app.plugin_update_in_progress = true;
+                                app.needs_plugin_update = false;
+                                app.plugin_update_last_attempt = Some(std::time::Instant::now());
+
+                                log::debug!(
+                                    "[TUI] Attempting plugin update (attempt {}/{})",
+                                    app.plugin_update_retry_count + 1,
+                                    MAX_RETRIES
+                                );
+
+                                let sample_rate = 48000.0;
+                                let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
+
+                                match player.update_plugins(plugins) {
+                                    Ok(()) => {
+                                        log::info!("[TUI] Plugin update successful");
+                                        app.status_message = Some("Plugin chain updated".to_string());
+                                        app.plugin_update_retry_count = 0;
+                                        app.plugin_update_in_progress = false;
+                                    }
+                                    Err(e) => {
+                                        app.plugin_update_retry_count += 1;
+                                        app.plugin_update_in_progress = false;
+
+                                        log::warn!(
+                                            "[TUI] Plugin update failed (attempt {}/{}): {}",
+                                            app.plugin_update_retry_count,
+                                            MAX_RETRIES,
+                                            e
+                                        );
+
+                                        if app.plugin_update_retry_count < MAX_RETRIES {
+                                            // Retry on next tick (after debounce delay)
+                                            app.needs_plugin_update = true;
+                                            app.status_message = Some(format!(
+                                                "Plugin update failed, retrying... ({}/{})",
+                                                app.plugin_update_retry_count,
+                                                MAX_RETRIES
+                                            ));
+                                        } else {
+                                            // Max retries reached
+                                            app.status_message = Some(format!(
+                                                "Plugin update failed: {}",
+                                                e
+                                            ));
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -354,10 +414,6 @@ fn handle_player_command(
         }
         PlayerCommand::SetVolume(volume) => {
             player.set_volume(volume)?;
-        }
-        PlayerCommand::UpdatePlugins => {
-            // Deprecated: plugin updates are now applied in the Tick handler
-            app.needs_plugin_update = true;
         }
         PlayerCommand::SetOutputDevice(device_name) => {
             // Store the device name for future playback

@@ -591,7 +591,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         KeyCode::Left | KeyCode::Char('h') => {
             // Decrease parameter value
             if app.adjust_selected_param(-1.0) {
-                app.needs_plugin_update = true;
+                app.request_plugin_update();
                 None
             } else {
                 None
@@ -600,7 +600,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         KeyCode::Right | KeyCode::Char('l') => {
             // Increase parameter value
             if app.adjust_selected_param(1.0) {
-                app.needs_plugin_update = true;
+                app.request_plugin_update();
                 None
             } else {
                 None
@@ -609,7 +609,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         KeyCode::Char('[') => {
             // Large decrease
             if app.adjust_selected_param(-10.0) {
-                app.needs_plugin_update = true;
+                app.request_plugin_update();
                 None
             } else {
                 None
@@ -618,7 +618,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         KeyCode::Char(']') => {
             // Large increase
             if app.adjust_selected_param(10.0) {
-                app.needs_plugin_update = true;
+                app.request_plugin_update();
                 None
             } else {
                 None
@@ -754,7 +754,7 @@ fn handle_load_apo_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
             match app.load_apo_file() {
                 Ok(()) => {
                     app.status_message = Some("APO file loaded successfully".to_string());
-                    app.needs_plugin_update = true;
+                    app.request_plugin_update();
                 }
                 Err(e) => {
                     app.status_message = Some(format!("Failed to load APO file: {}", e));
@@ -803,7 +803,7 @@ fn handle_load_sofa_file_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComm
             match app.load_sofa_file() {
                 Ok(()) => {
                     app.status_message = Some("SOFA file path set successfully".to_string());
-                    app.needs_plugin_update = true;
+                    app.request_plugin_update();
                 }
                 Err(e) => {
                     app.status_message = Some(format!("Failed to set SOFA file: {}", e));
@@ -876,6 +876,5 @@ pub enum PlayerCommand {
     Resume,
     Stop,
     SetVolume(f32),
-    UpdatePlugins,
     SetOutputDevice(String),
 }
