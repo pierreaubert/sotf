@@ -53,7 +53,7 @@ pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
-pub use plugin_binaural_decoder::{BinauralDecoderParams, BinauralDecoderPlugin};
+pub use plugin_binaural_decoder::{BinauralDecoderParams, BinauralDecoderPlugin, RoomModel};
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};

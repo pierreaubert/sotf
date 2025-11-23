@@ -4,7 +4,7 @@
 // under various configurations and workloads.
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use sotf_plugins::{BinauralDecoderPlugin, Plugin, ProcessContext};
+use sotf_plugins::{BinauralDecoderPlugin, Plugin, ProcessContext, RoomModel};
 use std::time::Duration;
 
 /// Create a binaural decoder for benchmarking
@@ -20,6 +20,9 @@ fn create_decoder(
         optimization,
         0.0, // No externalization
         0.0, // No near-field
+        false, // No diffuse-field EQ (for performance benchmarking)
+        120.0, 2.0, 0.0, // LFE defaults
+        RoomModel::default(),
     )
 }
 

@@ -121,6 +121,95 @@ fn default_near_field_strength() -> f32 {
     0.0
 }
 
+fn default_diffuse_field_eq() -> bool {
+    true // Enable by default for better timbre
+}
+
+fn default_lfe_crossover() -> f32 {
+    120.0 // Hz - typical subwoofer crossover
+}
+
+fn default_lfe_distance() -> f32 {
+    2.0 // meters - typical subwoofer distance in home theater
+}
+
+fn default_lfe_level() -> f32 {
+    0.0 // dB - no additional boost/cut by default
+}
+
+// ============================================================================
+// Room Model Configuration
+// ============================================================================
+
+/// Room dimensions and acoustic properties for externalization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomModel {
+    /// Room dimensions in meters [width, depth, height]
+    #[serde(default = "default_room_dimensions")]
+    pub dimensions: [f32; 3],
+
+    /// Listener position in room [x, y, z] in meters from corner (0,0,0)
+    #[serde(default = "default_listener_position")]
+    pub listener_position: [f32; 3],
+
+    /// Wall absorption coefficients [front, back, left, right, floor, ceiling]
+    /// Range 0.0 (perfect reflection) to 1.0 (complete absorption)
+    #[serde(default = "default_absorption_coefficients")]
+    pub absorption: [f32; 6],
+
+    /// Maximum reflection order (0 = direct only, 1 = first-order reflections, etc.)
+    #[serde(default = "default_max_reflection_order")]
+    pub max_order: usize,
+
+    /// Speed of sound in m/s (typically 343.0 at 20°C)
+    #[serde(default = "default_speed_of_sound")]
+    pub speed_of_sound: f32,
+}
+
+fn default_room_dimensions() -> [f32; 3] {
+    [4.0, 5.0, 2.5] // Small listening room: 4m wide × 5m deep × 2.5m high
+}
+
+fn default_listener_position() -> [f32; 3] {
+    [2.0, 2.0, 1.2] // Center of room, seated height
+}
+
+fn default_absorption_coefficients() -> [f32; 6] {
+    [0.15, 0.15, 0.20, 0.20, 0.30, 0.25] // Typical living room
+}
+
+fn default_max_reflection_order() -> usize {
+    1 // First-order reflections only (early reflections)
+}
+
+fn default_speed_of_sound() -> f32 {
+    343.0 // m/s at 20°C
+}
+
+impl Default for RoomModel {
+    fn default() -> Self {
+        Self {
+            dimensions: default_room_dimensions(),
+            listener_position: default_listener_position(),
+            absorption: default_absorption_coefficients(),
+            max_order: default_max_reflection_order(),
+            speed_of_sound: default_speed_of_sound(),
+        }
+    }
+}
+
+/// Represents a single reflection path from source to listener
+#[derive(Debug, Clone)]
+struct Reflection {
+    /// Delay in samples
+    delay_samples: usize,
+    /// Linear gain (after absorption and distance attenuation)
+    gain: f32,
+    /// Left/right channel multipliers for asymmetric reflections
+    left_gain: f32,
+    right_gain: f32,
+}
+
 /// Helper to convert SpeakerPosition to SourcePosition
 fn speaker_to_source_position(speaker: &SpeakerPosition) -> SourcePosition {
     // Use a fixed distance of 1.0 for all speakers
@@ -147,6 +236,21 @@ pub struct BinauralDecoderParams {
     /// Near-field shadowing strength (0.0 to 1.0)
     #[serde(default = "default_near_field_strength")]
     pub near_field_strength: f32,
+    /// Enable diffuse-field equalization to compensate for HRTF coloration
+    #[serde(default = "default_diffuse_field_eq")]
+    pub diffuse_field_eq: bool,
+    /// LFE low-pass crossover frequency in Hz
+    #[serde(default = "default_lfe_crossover")]
+    pub lfe_crossover: f32,
+    /// LFE (subwoofer) distance in meters for distance attenuation
+    #[serde(default = "default_lfe_distance")]
+    pub lfe_distance: f32,
+    /// LFE level adjustment in dB
+    #[serde(default = "default_lfe_level")]
+    pub lfe_level: f32,
+    /// Room model for externalization (optional, uses defaults if not specified)
+    #[serde(default)]
+    pub room_model: RoomModel,
 }
 
 // ============================================================================
@@ -181,6 +285,16 @@ pub struct BinauralDecoderPlugin {
     /// LFE channels have zero HRTFs and are handled separately
     hrtf_filters_freq: Vec<Vec<Complex<f32>>>,
 
+    /// Diffuse-field equalization filter (inverse of diffuse-field response)
+    /// Applied to both ears to compensate for HRTF coloration
+    /// [left_eq, right_eq] in frequency domain
+    diffuse_field_eq_filter: Option<[Vec<Complex<f32>>; 2]>,
+
+    /// LFE low-pass filter in frequency domain (band-limits LFE to subwoofer range)
+    lfe_lowpass_filter: Vec<Complex<f32>>,
+    /// LFE gain including distance attenuation and level adjustment
+    lfe_gain: f32,
+
     /// LFE channel indices (channels that should not be spatially processed)
     lfe_channels: Vec<usize>,
 
@@ -207,6 +321,18 @@ pub struct BinauralDecoderPlugin {
     externalization: f32,
     param_near_field_strength: ParameterId,
     near_field_strength: f32,
+    param_diffuse_field_eq: ParameterId,
+    diffuse_field_eq: bool,
+
+    // LFE parameters
+    lfe_crossover: f32,
+    lfe_distance: f32,
+    lfe_level: f32,
+
+    /// Room model for externalization
+    room_model: RoomModel,
+    /// Cached reflections for current room configuration
+    cached_reflections: Vec<Reflection>,
 }
 
 impl BinauralDecoderPlugin {
@@ -219,6 +345,11 @@ impl BinauralDecoderPlugin {
     /// * `enable_optimization` - Enable Sum-Before-IFFT optimization
     /// * `externalization` - Externalization factor (0.0 to 1.0)
     /// * `near_field_strength` - Near-field shadowing strength (0.0 to 1.0)
+    /// * `diffuse_field_eq` - Enable diffuse-field equalization
+    /// * `lfe_crossover` - LFE low-pass crossover frequency in Hz
+    /// * `lfe_distance` - LFE subwoofer distance in meters
+    /// * `lfe_level` - LFE level adjustment in dB
+    /// * `room_model` - Room model for externalization
     pub fn new(
         input_channels: usize,
         fft_size: usize,
@@ -226,6 +357,11 @@ impl BinauralDecoderPlugin {
         enable_optimization: bool,
         externalization: f32,
         near_field_strength: f32,
+        diffuse_field_eq: bool,
+        lfe_crossover: f32,
+        lfe_distance: f32,
+        lfe_level: f32,
+        room_model: RoomModel,
     ) -> Self {
         assert!(fft_size.is_power_of_two(), "FFT size must be power of 2");
         assert!(input_channels > 0, "Must have at least 1 input channel");
@@ -279,10 +415,11 @@ impl BinauralDecoderPlugin {
             .collect();
 
         log::info!(
-            "[BinauralDecoder] Created with {} input channels ({}), FFT size {}",
+            "[BinauralDecoder] Created with {} input channels ({}), FFT size {}, LFE channels: {:?}",
             input_channels,
             speaker_config.name,
-            fft_size
+            fft_size,
+            lfe_channels
         );
         for speaker in speaker_config.speakers {
             let lfe_marker = if speaker.is_lfe {
@@ -317,6 +454,9 @@ impl BinauralDecoderPlugin {
                 vec![Complex::new(0.0, 0.0); hrtf_buffer_per_channel];
                 input_channels
             ],
+            diffuse_field_eq_filter: None, // Will be computed when SOFA is loaded
+            lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); fft_size], // Unity gain initially
+            lfe_gain: 1.0, // Will be computed in initialize()
             lfe_channels,
 
             input_buffer: vec![0.0; input_buffer_size], // Interleaved, size for one hop
@@ -337,6 +477,15 @@ impl BinauralDecoderPlugin {
             externalization,
             param_near_field_strength: ParameterId::from("near_field_strength"),
             near_field_strength,
+            param_diffuse_field_eq: ParameterId::from("diffuse_field_eq"),
+            diffuse_field_eq,
+
+            lfe_crossover,
+            lfe_distance,
+            lfe_level,
+
+            room_model,
+            cached_reflections: Vec::new(), // Will be computed on first use
         }
     }
 
@@ -355,6 +504,11 @@ impl BinauralDecoderPlugin {
             params.enable_optimization,
             params.externalization,
             params.near_field_strength,
+            params.diffuse_field_eq,
+            params.lfe_crossover,
+            params.lfe_distance,
+            params.lfe_level,
+            params.room_model,
         )
     }
 
@@ -574,6 +728,11 @@ impl BinauralDecoderPlugin {
         // Normalize HRTFs to prevent clipping when all channels are active
         // Calculate the worst-case gain (sum of all frequency domain magnitudes)
         self.normalize_hrtf_gains();
+
+        // Compute and apply diffuse-field equalization if enabled
+        if self.diffuse_field_eq {
+            self.compute_diffuse_field_eq()?;
+        }
 
         Ok(())
     }
@@ -834,6 +993,156 @@ impl BinauralDecoderPlugin {
                 max_magnitude
             );
         }
+    }
+
+    /// Compute diffuse-field equalization filter
+    ///
+    /// Calculates the average frequency response over all directions (diffuse field)
+    /// and creates an inverse filter to compensate for HRTF coloration.
+    ///
+    /// This improves timbre neutrality by removing the "average" spectral signature
+    /// of the HRTF set, while preserving the spatial cues (ITD/ILD variations).
+    ///
+    /// Reference: Schörkhuber et al., "Linearly and Quadratically Constrained Least-Squares
+    /// Decoder for Signal-Dependent Binaural Rendering" (2018)
+    fn compute_diffuse_field_eq(&mut self) -> Result<(), String> {
+        let sofa = self.sofa.as_ref().ok_or("SOFA file not loaded")?;
+
+        log::info!("[BinauralDecoder] Computing diffuse-field equalization...");
+
+        // Accumulate magnitude-squared responses for all measurements
+        let mut left_power = vec![0.0f32; self.fft_size];
+        let mut right_power = vec![0.0f32; self.fft_size];
+
+        for m in 0..sofa.num_measurements {
+            if let Some(hrtf) = sofa.get_hrtf(m) {
+                // Convert IRs to frequency domain
+                let left_fft = self.ir_to_freq(&hrtf.ir_left);
+                let right_fft = self.ir_to_freq(&hrtf.ir_right);
+
+                // Accumulate power (magnitude squared)
+                for k in 0..self.fft_size {
+                    left_power[k] += left_fft[k].norm_sqr();
+                    right_power[k] += right_fft[k].norm_sqr();
+                }
+            }
+        }
+
+        // Average the power spectra
+        let num_measurements = sofa.num_measurements as f32;
+        for k in 0..self.fft_size {
+            left_power[k] /= num_measurements;
+            right_power[k] /= num_measurements;
+        }
+
+        // Compute inverse filter (1 / sqrt(power)) with regularization
+        // Regularization prevents excessive boost at frequencies with very low energy
+        let regularization = 0.001; // -60 dB
+        let mut left_eq = vec![Complex::new(0.0, 0.0); self.fft_size];
+        let mut right_eq = vec![Complex::new(0.0, 0.0); self.fft_size];
+
+        for k in 0..self.fft_size {
+            // Compute magnitude of inverse filter with regularization
+            let left_mag_inv = 1.0 / (left_power[k] + regularization).sqrt();
+            let right_mag_inv = 1.0 / (right_power[k] + regularization).sqrt();
+
+            // Limit maximum boost to +12 dB for stability
+            let max_boost = 10.0_f32.powf(12.0 / 20.0); // ~4.0
+            let left_gain = left_mag_inv.min(max_boost);
+            let right_gain = right_mag_inv.min(max_boost);
+
+            // Zero phase filter (real-valued, symmetric)
+            left_eq[k] = Complex::new(left_gain, 0.0);
+            right_eq[k] = Complex::new(right_gain, 0.0);
+        }
+
+        // Normalize to unity gain at 1 kHz for perceptually neutral response
+        let freq_1khz = (1000.0 * self.fft_size as f32 / self.sample_rate as f32) as usize;
+        let left_ref = left_eq[freq_1khz].norm().max(0.001);
+        let right_ref = right_eq[freq_1khz].norm().max(0.001);
+
+        for k in 0..self.fft_size {
+            left_eq[k] /= left_ref;
+            right_eq[k] /= right_ref;
+        }
+
+        self.diffuse_field_eq_filter = Some([left_eq, right_eq]);
+
+        log::info!("[BinauralDecoder] Diffuse-field equalization computed (normalized to 1 kHz)");
+        Ok(())
+    }
+
+    /// Compute LFE low-pass filter and gain
+    ///
+    /// Creates a Butterworth low-pass filter for band-limiting LFE to subwoofer range
+    /// and calculates distance-dependent attenuation plus level adjustment.
+    ///
+    /// Reference: ITU-R BS.775-3 (multichannel stereophonic sound system with surround channels)
+    fn compute_lfe_filter(&mut self) {
+        // Compute 2nd-order Butterworth low-pass filter (12 dB/octave rolloff)
+        // This is typical for LFE/subwoofer crossover
+        let fc = self.lfe_crossover; // Cutoff frequency in Hz
+        let fs = self.sample_rate as f32;
+
+        // Pre-warp frequency for bilinear transform
+        // Use standard bilinear transform: k = tan(π * fc / fs)
+        let k = (std::f32::consts::PI * fc / fs).tan();
+        let k_sq = k * k;
+
+        // Butterworth coefficients (s-domain): H(s) = 1 / (s^2 + sqrt(2)*s + 1)
+        // After bilinear transform to z-domain
+        let a0 = 1.0 + std::f32::consts::SQRT_2 * k + k_sq;
+        let b0 = k_sq / a0;
+        let b1 = 2.0 * k_sq / a0;
+        let b2 = k_sq / a0;
+        let a1 = (2.0 * k_sq - 2.0) / a0;
+        let a2 = (1.0 - std::f32::consts::SQRT_2 * k + k_sq) / a0;
+
+        // Convert to frequency domain response
+        for k in 0..self.fft_size {
+            let freq = k as f32 * fs / self.fft_size as f32;
+            let omega = 2.0 * std::f32::consts::PI * freq / fs;
+
+            // Z-transform evaluation: H(z) at z = e^(jω)
+            let cos_w = omega.cos();
+            let sin_w = omega.sin();
+            let cos_2w = (2.0 * omega).cos();
+            let sin_2w = (2.0 * omega).sin();
+
+            // Numerator: b0 + b1*z^-1 + b2*z^-2
+            let num_re = b0 + b1 * cos_w + b2 * cos_2w;
+            let num_im = -(b1 * sin_w + b2 * sin_2w);
+
+            // Denominator: 1 + a1*z^-1 + a2*z^-2
+            let den_re = 1.0 + a1 * cos_w + a2 * cos_2w;
+            let den_im = -(a1 * sin_w + a2 * sin_2w);
+
+            // Complex division: (num_re + j*num_im) / (den_re + j*den_im)
+            let denom = den_re * den_re + den_im * den_im;
+            let h_re = (num_re * den_re + num_im * den_im) / denom;
+            let h_im = (num_im * den_re - num_re * den_im) / denom;
+
+            self.lfe_lowpass_filter[k] = Complex::new(h_re, h_im);
+        }
+
+        // Compute LFE gain: distance attenuation + level adjustment
+        // Distance attenuation: 1/r law with reference distance of 1m
+        let distance_atten = 1.0 / self.lfe_distance.max(0.1);
+
+        // Level adjustment from dB
+        let level_gain = 10.0_f32.powf(self.lfe_level / 20.0);
+
+        // Combined gain (also include -3dB for dual-mono mixing)
+        self.lfe_gain = distance_atten * level_gain * std::f32::consts::FRAC_1_SQRT_2;
+
+        log::info!(
+            "[BinauralDecoder] LFE filter: fc={}Hz, distance={}m ({:.2}dB atten), level={:.1}dB, total_gain={:.3}",
+            fc,
+            self.lfe_distance,
+            -20.0 * distance_atten.log10(),
+            self.lfe_level,
+            self.lfe_gain
+        );
     }
 
     /// Calculate VBAP gains using barycentric interpolation
@@ -1181,6 +1490,14 @@ impl BinauralDecoderPlugin {
                 );
             }
 
+            // Apply diffuse-field equalization before IFFT if enabled
+            if let Some(ref df_eq) = self.diffuse_field_eq_filter {
+                for k in 0..self.fft_size {
+                    sum_left[k] *= df_eq[0][k];
+                    sum_right[k] *= df_eq[1][k];
+                }
+            }
+
             // IFFT and scale
             self.fft_inverse.process(&mut sum_left);
             self.fft_inverse.process(&mut sum_right);
@@ -1217,6 +1534,14 @@ impl BinauralDecoderPlugin {
                     &self.temp_time_buffer,
                     &self.hrtf_filters_freq[ch][0..self.fft_size],
                 );
+
+                // Apply diffuse-field EQ before IFFT if enabled
+                if let Some(ref df_eq) = self.diffuse_field_eq_filter {
+                    for k in 0..self.fft_size {
+                        self.temp_freq_buffer[k] *= df_eq[0][k];
+                    }
+                }
+
                 self.fft_inverse.process(&mut self.temp_freq_buffer);
 
                 let scale = 1.0 / self.fft_size as f32;
@@ -1230,6 +1555,14 @@ impl BinauralDecoderPlugin {
                     &self.temp_time_buffer,
                     &self.hrtf_filters_freq[ch][self.fft_size..],
                 );
+
+                // Apply diffuse-field EQ before IFFT if enabled
+                if let Some(ref df_eq) = self.diffuse_field_eq_filter {
+                    for k in 0..self.fft_size {
+                        self.temp_freq_buffer[k] *= df_eq[1][k];
+                    }
+                }
+
                 self.fft_inverse.process(&mut self.temp_freq_buffer);
 
                 for i in 0..self.fft_size {
@@ -1242,14 +1575,39 @@ impl BinauralDecoderPlugin {
         self.temp_input_block = input_block;
         self.temp_output_block = output_block;
 
-        // Mix LFE channels directly (no HRTF)
+        // Process LFE channels with low-pass filtering and proper bass management
         if !self.lfe_channels.is_empty() {
-            let lfe_gain = std::f32::consts::FRAC_1_SQRT_2; // -3dB (~0.7071)
+            // Use separate buffer to avoid overwriting temp_time_buffer
+            let mut lfe_freq_buffer = vec![Complex::new(0.0, 0.0); self.fft_size];
+
             for &lfe_ch in &self.lfe_channels {
+                // Extract LFE channel and zero-pad
                 for i in 0..self.hop_size {
-                    let lfe_sample = self.temp_input_block[i * self.input_channels + lfe_ch];
-                    self.temp_output_block[i * 2] += lfe_sample * lfe_gain;
-                    self.temp_output_block[i * 2 + 1] += lfe_sample * lfe_gain;
+                    lfe_freq_buffer[i] =
+                        Complex::new(self.temp_input_block[i * self.input_channels + lfe_ch], 0.0);
+                }
+                for i in self.hop_size..self.fft_size {
+                    lfe_freq_buffer[i] = Complex::new(0.0, 0.0);
+                }
+
+                // Transform to frequency domain
+                self.fft_forward.process(&mut lfe_freq_buffer);
+
+                // Apply low-pass filter
+                for k in 0..self.fft_size {
+                    lfe_freq_buffer[k] *= self.lfe_lowpass_filter[k];
+                }
+
+                // Transform back to time domain
+                self.fft_inverse.process(&mut lfe_freq_buffer);
+
+                // Mix to both ears with proper gain (distance + level + -3dB for dual-mono)
+                // Note: Only add the valid hop_size portion for overlap-add consistency
+                let scale = self.lfe_gain / self.fft_size as f32;
+                for i in 0..self.hop_size {
+                    let lfe_sample = lfe_freq_buffer[i].re * scale;
+                    self.temp_output_block[i * 2] += lfe_sample;
+                    self.temp_output_block[i * 2 + 1] += lfe_sample;
                 }
             }
         }
@@ -1296,46 +1654,125 @@ impl BinauralDecoderPlugin {
         samples_to_copy
     }
 
+    /// Calculate reflections using Image Source Method
+    ///
+    /// Implements the image source method for computing early reflections in a rectangular room.
+    /// For each wall/floor/ceiling, the sound source is mirrored to create an "image source",
+    /// and the reflection path is calculated geometrically.
+    ///
+    /// Reference: Allen & Berkley, "Image method for efficiently simulating small-room acoustics" (1979)
+    fn calculate_reflections(&mut self) {
+        self.cached_reflections.clear();
+
+        if self.room_model.max_order == 0 {
+            return; // No reflections requested
+        }
+
+        let [room_width, room_depth, room_height] = self.room_model.dimensions;
+        let [listener_x, listener_y, listener_z] = self.room_model.listener_position;
+
+        // Virtual source position (assuming centered in front of listener for simplicity)
+        // In a real implementation, this would be calculated per input channel
+        let source_x = listener_x;
+        let source_y = listener_y + 1.0; // 1m in front
+        let source_z = listener_z;
+
+        // Wall definitions: (normal_axis, position, absorption_index)
+        // 0=x, 1=y, 2=z
+        let walls = [
+            (0, 0.0, 2),          // Left wall (x=0)
+            (0, room_width, 3),   // Right wall (x=width)
+            (1, 0.0, 0),          // Front wall (y=0)
+            (1, room_depth, 1),   // Back wall (y=depth)
+            (2, 0.0, 4),          // Floor (z=0)
+            (2, room_height, 5),  // Ceiling (z=height)
+        ];
+
+        // Generate first-order reflections
+        for &(axis, wall_pos, abs_idx) in &walls {
+            // Calculate image source position (mirror source across wall)
+            let mut image_source = [source_x, source_y, source_z];
+            image_source[axis] = 2.0 * wall_pos - image_source[axis];
+
+            // Calculate distance from image source to listener
+            let dx = image_source[0] - listener_x;
+            let dy = image_source[1] - listener_y;
+            let dz = image_source[2] - listener_z;
+            let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+
+            // Calculate delay in samples
+            let delay_seconds = distance / self.room_model.speed_of_sound;
+            let delay_samples = (delay_seconds * self.sample_rate as f32) as usize;
+
+            // Skip if delay is too long for our buffer
+            if delay_samples >= self.fft_size || delay_samples == 0 {
+                continue;
+            }
+
+            // Calculate gain with distance attenuation (1/r law) and wall absorption
+            let distance_attenuation = 1.0 / distance.max(0.1);
+            let wall_reflection = 1.0 - self.room_model.absorption[abs_idx];
+            let gain = distance_attenuation * wall_reflection;
+
+            // Calculate stereo positioning based on reflection angle
+            // This is a simplified model - proper implementation would apply HRTF to each reflection
+            let azimuth = dy.atan2(dx);
+            let left_gain = ((azimuth + std::f32::consts::FRAC_PI_2) / std::f32::consts::PI)
+                .clamp(0.0, 1.0);
+            let right_gain = 1.0 - left_gain;
+
+            self.cached_reflections.push(Reflection {
+                delay_samples,
+                gain,
+                left_gain,
+                right_gain,
+            });
+        }
+
+        // Sort reflections by delay for better cache coherency during processing
+        self.cached_reflections
+            .sort_by_key(|r| r.delay_samples);
+
+        log::debug!(
+            "[BinauralDecoder] Computed {} first-order reflections",
+            self.cached_reflections.len()
+        );
+    }
+
     /// Apply externalization effect to temp_output_block
     ///
     /// Simulates room acoustics by adding early reflections.
     /// This reduces the "in-head localization" effect common with pure HRTF rendering.
     ///
     /// Implementation:
-    /// - Adds multiple delayed and attenuated copies of the direct sound
-    /// - Simulates first-order reflections from walls, floor, ceiling
-    /// - Uses simple geometric delay model for small room
+    /// - Uses image source method to calculate reflections based on room geometry
+    /// - Accounts for wall absorption and distance attenuation
+    /// - Supports configurable room dimensions and listener position
     ///
-    /// Reference: Begault, "3-D Sound for Virtual Reality and Multimedia", Chapter 6
+    /// Reference: Allen & Berkley, "Image method for efficiently simulating small-room acoustics" (1979)
     fn apply_externalization(&mut self) {
-        // Early reflection parameters (for a small listening room ~4m x 5m x 2.5m)
-        // Each reflection: (delay_ms, gain_db, left_gain, right_gain)
-        // left_gain and right_gain allow for asymmetric reflections
-        let reflections = [
-            (8.0, -12.0, 0.9, 1.0),  // Front wall
-            (15.0, -15.0, 0.7, 0.9), // Side wall (left bias)
-            (18.0, -15.0, 1.0, 0.7), // Side wall (right bias)
-            (22.0, -18.0, 0.8, 0.8), // Back wall
-            (12.0, -20.0, 1.0, 1.0), // Floor
-            (14.0, -20.0, 1.0, 1.0), // Ceiling
-        ];
+        // Compute reflections if cache is empty
+        if self.cached_reflections.is_empty() {
+            self.calculate_reflections();
+        }
 
-        for &(delay_ms, gain_db, left_mul, right_mul) in &reflections {
-            let delay_samples = ((delay_ms / 1000.0) * self.sample_rate as f32) as usize;
+        // Apply each reflection from the room model
+        for reflection in &self.cached_reflections {
+            let delay_samples = reflection.delay_samples;
 
-            // Convert dB to linear gain, scaled by externalization parameter
-            let reflection_gain = 10.0_f32.powf(gain_db / 20.0) * self.externalization;
+            // Scale reflection gain by externalization parameter
+            let reflection_gain = reflection.gain * self.externalization;
 
             if delay_samples < self.fft_size && delay_samples > 0 {
                 for i in delay_samples..self.fft_size {
                     let src_idx = (i - delay_samples) * 2;
                     let dst_idx = i * 2;
 
-                    // Add delayed reflection to output
+                    // Add delayed reflection to output with stereo positioning
                     self.temp_output_block[dst_idx] +=
-                        self.temp_output_block[src_idx] * reflection_gain * left_mul;
+                        self.temp_output_block[src_idx] * reflection_gain * reflection.left_gain;
                     self.temp_output_block[dst_idx + 1] +=
-                        self.temp_output_block[src_idx + 1] * reflection_gain * right_mul;
+                        self.temp_output_block[src_idx + 1] * reflection_gain * reflection.right_gain;
                 }
             }
         }
@@ -1386,6 +1823,8 @@ impl Plugin for BinauralDecoderPlugin {
                 .with_description("Room simulation / externalization factor"),
             Parameter::new_float("near_field_strength", "Near-Field", 0.0, 0.0, 1.0)
                 .with_description("Near-field shadowing strength"),
+            Parameter::new_bool("diffuse_field_eq", "Diffuse-Field EQ", true)
+                .with_description("Compensate for HRTF coloration (improves timbre)"),
         ]
     }
 
@@ -1414,6 +1853,18 @@ impl Plugin for BinauralDecoderPlugin {
                     return Ok(());
                 }
             }
+        } else if id == self.param_diffuse_field_eq {
+            if let Some(v) = value.as_bool() {
+                self.diffuse_field_eq = v;
+                // Re-compute diffuse-field EQ filter
+                if v && self.sofa.is_some() {
+                    self.compute_diffuse_field_eq()
+                        .map_err(|e| format!("Failed to compute diffuse-field EQ: {}", e))?;
+                } else if !v {
+                    self.diffuse_field_eq_filter = None;
+                }
+                return Ok(());
+            }
         }
         Err(format!("Unknown parameter or invalid value: {}", id))
     }
@@ -1425,6 +1876,8 @@ impl Plugin for BinauralDecoderPlugin {
             Some(ParameterValue::Float(self.externalization))
         } else if id == &self.param_near_field_strength {
             Some(ParameterValue::Float(self.near_field_strength))
+        } else if id == &self.param_diffuse_field_eq {
+            Some(ParameterValue::Bool(self.diffuse_field_eq))
         } else {
             None
         }
@@ -1432,6 +1885,9 @@ impl Plugin for BinauralDecoderPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+
+        // Compute LFE filter and gain
+        self.compute_lfe_filter();
 
         // Load SOFA file if path was provided
         if let Some(path) = self.sofa_path.clone() {
@@ -1587,7 +2043,7 @@ mod tests {
 
     #[test]
     fn test_binaural_decoder_creation() {
-        let plugin = BinauralDecoderPlugin::new(5, 4096, None, true, 0.0, 0.0);
+        let plugin = BinauralDecoderPlugin::new(5, 4096, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
         assert_eq!(plugin.input_channels(), 5);
         assert_eq!(plugin.output_channels(), 2);
         assert_eq!(plugin.fft_size, 4096);
@@ -1599,7 +2055,7 @@ mod tests {
 
     #[test]
     fn test_binaural_decoder_parameters() {
-        let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0);
+        let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
 
         // Test optimization
         plugin
@@ -1646,7 +2102,7 @@ mod tests {
     #[test]
     fn test_passthrough_without_sofa() {
         // Test stereo passthrough
-        let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0);
+        let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
         plugin.initialize(48000).unwrap();
 
         let input = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6]; // 3 stereo frames
@@ -1665,7 +2121,7 @@ mod tests {
     #[test]
     fn test_passthrough_mono_to_stereo() {
         // Test mono to stereo passthrough
-        let mut plugin = BinauralDecoderPlugin::new(1, 2048, None, true, 0.0, 0.0);
+        let mut plugin = BinauralDecoderPlugin::new(1, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
         plugin.initialize(48000).unwrap();
 
         let input = vec![0.1, 0.2, 0.3]; // 3 mono frames
@@ -1689,7 +2145,7 @@ mod tests {
     #[test]
     fn test_passthrough_multichannel_to_stereo() {
         // Test 5.0 to stereo passthrough (takes first 2 channels)
-        let mut plugin = BinauralDecoderPlugin::new(5, 2048, None, true, 0.0, 0.0);
+        let mut plugin = BinauralDecoderPlugin::new(5, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
         plugin.initialize(48000).unwrap();
 
         // 2 frames of 5-channel audio: [FL, FR, C, SL, SR, FL, FR, C, SL, SR]

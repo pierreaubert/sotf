@@ -7,7 +7,7 @@
 // Note: Tests run without a SOFA file, so they verify the fixes work even with
 // silent/minimal output. When a SOFA file is loaded, the same fixes ensure clean audio.
 
-use sotf_plugins::BinauralDecoderPlugin;
+use sotf_plugins::{BinauralDecoderPlugin, RoomModel};
 use sotf_plugins::Plugin;
 
 #[test]
@@ -27,6 +27,11 @@ fn test_binaural_channel_normalization_no_clipping() {
         true, // enable_optimization
         0.0,  // externalization
         0.0,  // near_field_strength
+        false, // diffuse_field_eq (disabled for tests without SOFA)
+        120.0, // lfe_crossover
+        2.0,   // lfe_distance
+        0.0,   // lfe_level
+        RoomModel::default(), // Default room model
     );
     plugin.initialize(sample_rate).unwrap();
 
@@ -127,6 +132,11 @@ fn test_binaural_denormal_flushing() {
         true, // enable_optimization
         0.0,  // externalization
         0.0,  // near_field_strength
+        false, // diffuse_field_eq (disabled for tests without SOFA)
+        120.0, // lfe_crossover
+        2.0,   // lfe_distance
+        0.0,   // lfe_level
+        RoomModel::default(), // Default room model
     );
     plugin.initialize(sample_rate).unwrap();
 
