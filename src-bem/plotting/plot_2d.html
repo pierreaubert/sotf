@@ -163,23 +163,23 @@
             <select id="testSelect">
                 <option value="">-- Choose a test --</option>
                 <optgroup label="Directivity Patterns">
-                    <option value="../tests/output/2d/viz_directivity_ka0.5.json">Directivity (ka=0.5 - Rayleigh)</option>
-                    <option value="../tests/output/2d/viz_directivity_ka1.0.json">Directivity (ka=1.0 - Mie)</option>
-                    <option value="../tests/output/2d/viz_directivity_ka2.0.json">Directivity (ka=2.0)</option>
-                    <option value="../tests/output/2d/viz_directivity_ka5.0.json">Directivity (ka=5.0)</option>
-                    <option value="../tests/output/2d/viz_directivity_ka10.0.json">Directivity (ka=10.0 - Geometric)</option>
+                    <option value="2d/viz_directivity_ka0.5.json">Directivity (ka=0.5 - Rayleigh)</option>
+                    <option value="2d/viz_directivity_ka1.0.json">Directivity (ka=1.0 - Mie)</option>
+                    <option value="2d/viz_directivity_ka2.0.json">Directivity (ka=2.0)</option>
+                    <option value="2d/viz_directivity_ka5.0.json">Directivity (ka=5.0)</option>
+                    <option value="2d/viz_directivity_ka10.0.json">Directivity (ka=10.0 - Geometric)</option>
                 </optgroup>
                 <optgroup label="Pressure Fields">
-                    <option value="../tests/output/2d/viz_field_ka0.5.json">Field Map (ka=0.5)</option>
-                    <option value="../tests/output/2d/viz_field_ka1.0.json">Field Map (ka=1.0)</option>
-                    <option value="../tests/output/2d/viz_field_ka2.0.json">Field Map (ka=2.0)</option>
-                    <option value="../tests/output/2d/viz_field_ka5.0.json">Field Map (ka=5.0)</option>
-                    <option value="../tests/output/2d/viz_field_ka10.0.json">Field Map (ka=10.0)</option>
+                    <option value="2d/viz_field_ka0.5.json">Field Map (ka=0.5)</option>
+                    <option value="2d/viz_field_ka1.0.json">Field Map (ka=1.0)</option>
+                    <option value="2d/viz_field_ka2.0.json">Field Map (ka=2.0)</option>
+                    <option value="2d/viz_field_ka5.0.json">Field Map (ka=5.0)</option>
+                    <option value="2d/viz_field_ka10.0.json">Field Map (ka=10.0)</option>
                 </optgroup>
                 <optgroup label="Validation Tests">
-                    <option value="../tests/output/2d/cylinder_rayleigh_ka0.1.json">Rayleigh Validation</option>
-                    <option value="../tests/output/2d/cylinder_mie_ka1.0.json">Mie Validation</option>
-                    <option value="../tests/output/2d/cylinder_high_freq_ka10.json">High Freq Validation</option>
+                    <option value="2d/cylinder_rayleigh_ka0.1.json">Rayleigh Validation</option>
+                    <option value="2d/cylinder_mie_ka1.0.json">Mie Validation</option>
+                    <option value="2d/cylinder_high_freq_ka10.json">High Freq Validation</option>
                 </optgroup>
             </select>
         </div>
@@ -272,7 +272,7 @@
         }
 
         function loadCrossSection() {
-            fetch('../tests/output/2d/cylinder_cross_section.json')
+            fetch('2d/cylinder_cross_section.json')
                 .then(response => response.json())
                 .then(data => plotCrossSectionData(data))
                 .catch(error => alert('Error loading cross-section: ' + error.message));

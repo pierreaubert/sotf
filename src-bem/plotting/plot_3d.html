@@ -182,28 +182,28 @@
             <select id="testSelect">
                 <option value="">-- Choose a test --</option>
                 <optgroup label="Directivity Patterns">
-                    <option value="../tests/output/3d/viz_directivity_ka0.1.json">Directivity (ka=0.1 - Rayleigh)</option>
-                    <option value="../tests/output/3d/viz_directivity_ka0.5.json">Directivity (ka=0.5)</option>
-                    <option value="../tests/output/3d/viz_directivity_ka1.0.json">Directivity (ka=1.0 - Mie)</option>
-                    <option value="../tests/output/3d/viz_directivity_ka2.0.json">Directivity (ka=2.0)</option>
-                    <option value="../tests/output/3d/viz_directivity_ka5.0.json">Directivity (ka=5.0)</option>
-                    <option value="../tests/output/3d/viz_directivity_ka10.0.json">Directivity (ka=10.0 - Geometric)</option>
+                    <option value="3d/viz_directivity_ka0.1.json">Directivity (ka=0.1 - Rayleigh)</option>
+                    <option value="3d/viz_directivity_ka0.5.json">Directivity (ka=0.5)</option>
+                    <option value="3d/viz_directivity_ka1.0.json">Directivity (ka=1.0 - Mie)</option>
+                    <option value="3d/viz_directivity_ka2.0.json">Directivity (ka=2.0)</option>
+                    <option value="3d/viz_directivity_ka5.0.json">Directivity (ka=5.0)</option>
+                    <option value="3d/viz_directivity_ka10.0.json">Directivity (ka=10.0 - Geometric)</option>
                 </optgroup>
                 <optgroup label="Surface Pressure">
-                    <option value="../tests/output/3d/viz_surface_ka0.1.json">Surface (ka=0.1)</option>
-                    <option value="../tests/output/3d/viz_surface_ka0.5.json">Surface (ka=0.5)</option>
-                    <option value="../tests/output/3d/viz_surface_ka1.0.json">Surface (ka=1.0)</option>
-                    <option value="../tests/output/3d/viz_surface_ka2.0.json">Surface (ka=2.0)</option>
-                    <option value="../tests/output/3d/viz_surface_ka5.0.json">Surface (ka=5.0)</option>
-                    <option value="../tests/output/3d/viz_surface_ka10.0.json">Surface (ka=10.0)</option>
+                    <option value="3d/viz_surface_ka0.1.json">Surface (ka=0.1)</option>
+                    <option value="3d/viz_surface_ka0.5.json">Surface (ka=0.5)</option>
+                    <option value="3d/viz_surface_ka1.0.json">Surface (ka=1.0)</option>
+                    <option value="3d/viz_surface_ka2.0.json">Surface (ka=2.0)</option>
+                    <option value="3d/viz_surface_ka5.0.json">Surface (ka=5.0)</option>
+                    <option value="3d/viz_surface_ka10.0.json">Surface (ka=10.0)</option>
                 </optgroup>
                 <optgroup label="Field Slices">
-                    <option value="../tests/output/3d/sphere_field_slice_ka2.json">Field Slice (ka=2.0)</option>
+                    <option value="3d/sphere_field_slice_ka2.json">Field Slice (ka=2.0)</option>
                 </optgroup>
                 <optgroup label="Validation Tests">
-                    <option value="../tests/output/3d/sphere_rayleigh_ka0.1.json">Rayleigh Validation</option>
-                    <option value="../tests/output/3d/sphere_mie_ka1.0.json">Mie Validation</option>
-                    <option value="../tests/output/3d/sphere_geometric_ka20.json">Geometric Validation</option>
+                    <option value="3d/sphere_rayleigh_ka0.1.json">Rayleigh Validation</option>
+                    <option value="3d/sphere_mie_ka1.0.json">Mie Validation</option>
+                    <option value="3d/sphere_geometric_ka20.json">Geometric Validation</option>
                 </optgroup>
             </select>
         </div>
@@ -375,7 +375,7 @@
         }
 
         function loadRCSSweep() {
-            fetch('../tests/output/3d/sphere_rcs_sweep.json')
+            fetch('3d/sphere_rcs_sweep.json')
                 .then(response => response.json())
                 .then(data => plotRCSData(data))
                 .catch(error => alert('Error loading RCS: ' + error.message));
