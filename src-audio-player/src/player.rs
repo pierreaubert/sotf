@@ -1,6 +1,6 @@
 use sotf_audio::engine::PluginConfig;
 use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
-use sotf_audio::{LoudnessInfo, SpectrumInfo};
+use sotf_audio::{LoudnessData, SpectrumData};
 use std::path::PathBuf;
 
 /// Batched playback state to reduce mutex locking
@@ -8,20 +8,33 @@ use std::path::PathBuf;
 pub struct PlaybackState {
     pub position_secs: f64,
     pub is_playing: bool,
-    pub loudness: Option<LoudnessInfo>,
-    pub spectrum: Option<SpectrumInfo>,
+    pub loudness: Option<LoudnessData>,
+    pub spectrum: Option<SpectrumData>,
     pub last_error: Option<String>,
 }
 
 pub struct Player {
     manager: AudioEngineManager,
+    loudness_index: Option<usize>,
+    spectrum_index: Option<usize>,
 }
 
 impl Player {
     pub fn new() -> Self {
         Self {
             manager: AudioEngineManager::with_signal_watching(true),
+            loudness_index: None,
+            spectrum_index: None,
         }
+    }
+
+    fn update_analyzer_indices(&mut self, plugins: &[PluginConfig]) {
+        self.loudness_index = plugins
+            .iter()
+            .position(|p| p.plugin_type == "loudness_monitor");
+        self.spectrum_index = plugins
+            .iter()
+            .position(|p| p.plugin_type == "spectrum_analyzer");
     }
 
     pub fn load_and_play(
@@ -31,6 +44,9 @@ impl Player {
         output_channels: usize,
         output_device: Option<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Update analyzer indices
+        self.update_analyzer_indices(&plugins);
+
         // Stop current playback if any
         self.manager.stop()?;
 
@@ -45,9 +61,12 @@ impl Player {
     }
 
     pub fn update_plugins(
-        &self,
+        &mut self,
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Update analyzer indices
+        self.update_analyzer_indices(&plugins);
+
         match self.manager.update_plugin_chain(plugins) {
             Ok(()) => Ok(()),
             Err(e) if e == "No engine running" => {
@@ -78,20 +97,6 @@ impl Player {
         Ok(())
     }
 
-    pub fn enable_loudness_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.manager.enable_loudness_monitoring()?;
-        Ok(())
-    }
-
-    pub fn enable_spectrum_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.manager.enable_spectrum_monitoring()?;
-        Ok(())
-    }
-
-    pub fn disable_spectrum_monitoring(&mut self) {
-        self.manager.disable_spectrum_monitoring();
-    }
-
     pub fn get_position(&self) -> f64 {
         self.manager.get_position()
     }
@@ -101,12 +106,26 @@ impl Player {
         matches!(state, StreamingState::Playing)
     }
 
-    pub fn get_loudness(&self) -> Option<LoudnessInfo> {
-        self.manager.get_loudness()
+    pub fn get_loudness(&self) -> Option<LoudnessData> {
+        if let Some(index) = self.loudness_index {
+            if let Ok(data) = self.manager.get_plugin_data(index) {
+                if let Some(loudness) = data.downcast_ref::<LoudnessData>() {
+                    return Some(loudness.clone());
+                }
+            }
+        }
+        None
     }
 
-    pub fn get_spectrum(&self) -> Option<SpectrumInfo> {
-        self.manager.get_spectrum()
+    pub fn get_spectrum(&self) -> Option<SpectrumData> {
+        if let Some(index) = self.spectrum_index {
+            if let Ok(data) = self.manager.get_plugin_data(index) {
+                if let Some(spectrum) = data.downcast_ref::<SpectrumData>() {
+                    return Some(spectrum.clone());
+                }
+            }
+        }
+        None
     }
 
     pub fn set_output_device(
@@ -142,15 +161,13 @@ impl Player {
 
         // Only query analyzers when actually playing to reduce overhead
         let loudness = if is_playing {
-            self.manager.get_loudness()
+            self.get_loudness()
         } else {
             None
         };
 
         let spectrum = if include_spectrum && is_playing {
-            // This Player wrapper does not currently expose spectrum monitoring,
-            // so always return None for spectrum data.
-            None
+            self.get_spectrum()
         } else {
             None
         };
@@ -189,7 +206,7 @@ mod tests {
 
     #[test]
     fn update_plugins_is_ok_when_no_engine_running() {
-        let player = Player::new();
+        let mut player = Player::new();
         let result = player.update_plugins(Vec::new());
         assert!(result.is_ok());
     }

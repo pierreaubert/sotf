@@ -80,9 +80,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(theme);
     let mut player = Player::new();
 
-    // Enable loudness monitoring
-    let _ = player.enable_loudness_monitoring();
-
     // Configure binaural decoder if requested
     if args.binaural {
         // Validate that SOFA file is provided
@@ -377,6 +374,9 @@ fn handle_player_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
         PlayerCommand::Play(path) => {
+            // Load album images when starting playback
+            app.load_album_images();
+
             // Get plugin configs and output channels
             let sample_rate = 48000.0; // Default sample rate
             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);

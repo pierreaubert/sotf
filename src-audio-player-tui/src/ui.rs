@@ -124,7 +124,10 @@ mod tests {
     }
 }
 
-pub fn draw(f: &mut Frame, app: &App) {
+// Minimum height threshold for showing both library and queue simultaneously
+const DUAL_VIEW_HEIGHT_THRESHOLD: u16 = 40;
+
+pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -159,13 +162,33 @@ pub fn draw(f: &mut Frame, app: &App) {
         ])
         .split(chunks[1]);
 
-    // Main content based on current screen
-    match app.current_screen {
-        Screen::Library => draw_library_screen(f, main_chunks[0], app),
-        Screen::DirectoryManager => draw_directory_manager(f, main_chunks[0], app),
-        Screen::Queue => draw_queue_screen(f, main_chunks[0], app),
-        Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
-        Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
+    // Check if window is tall enough for dual view (library + queue)
+    let window_height = f.area().height;
+    let show_dual_view = window_height >= DUAL_VIEW_HEIGHT_THRESHOLD
+        && (app.current_screen == Screen::Library || app.current_screen == Screen::Queue);
+
+    if show_dual_view {
+        // Split main area vertically to show both library and queue
+        let dual_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(50), // Library
+                Constraint::Percentage(50), // Queue
+            ])
+            .split(main_chunks[0]);
+
+        // Draw both views with focus indication
+        draw_library_screen(f, dual_chunks[0], app);
+        draw_queue_screen(f, dual_chunks[1], app);
+    } else {
+        // Standard single-view mode
+        match app.current_screen {
+            Screen::Library => draw_library_screen(f, main_chunks[0], app),
+            Screen::DirectoryManager => draw_directory_manager(f, main_chunks[0], app),
+            Screen::Queue => draw_queue_screen(f, main_chunks[0], app),
+            Screen::Plugins => draw_plugins_screen(f, main_chunks[0], app),
+            Screen::Devices => draw_devices_screen(f, main_chunks[0], app),
+        }
     }
 
     // Right column with meters
@@ -319,7 +342,8 @@ fn draw_library_screen(f: &mut Frame, area: Rect, app: &App) {
     draw_search_box(f, chunks[0], app);
 
     // Album list
-    draw_album_list(f, chunks[1], app);
+    let is_focused = app.current_screen == Screen::Library;
+    draw_album_list(f, chunks[1], app, is_focused);
 }
 
 fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
@@ -390,7 +414,7 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(search_box, area);
 }
 
-fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
+fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
     use ratatui::widgets::StatefulWidget;
 
     // Calculate channel count for truncation logic
@@ -429,11 +453,22 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .collect();
 
+            let border_type = if is_focused {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            };
+
             let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(format!(
-                    "Albums ({}) - 'a' to add, 't' to toggle tree view",
-                    albums.len()
-                )))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(border_type)
+                        .title(format!(
+                            "Albums ({}) - 'a' to add, 't' to toggle tree view",
+                            albums.len()
+                        )),
+                )
                 .highlight_style(
                     Style::default()
                         .fg(app.theme.fg_selected)
@@ -492,11 +527,20 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App) {
                 })
                 .collect();
 
+            let border_type = if is_focused {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            };
+
             let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(format!(
-                    "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
-                    app.artist_tree.len()
-                )))
+                .block(Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(border_type)
+                    .title(format!(
+                        "Artists ({}) - 'h/l' to expand/collapse, 'a' to add, 't' to toggle view",
+                        app.artist_tree.len()
+                    )))
                 .highlight_style(
                     Style::default()
                         .fg(app.theme.fg_selected)
@@ -719,7 +763,26 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     StatefulWidget::render(list, chunks[2], f.buffer_mut(), &mut state);
 }
 
-fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
+fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
+    let is_focused = app.current_screen == Screen::Queue;
+
+    // Check if we have album images to display
+    let has_images = !app.album_images.is_empty();
+
+    // Split the area horizontally if we have images
+    let (queue_area, image_area) = if has_images {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(60), // Queue list
+                Constraint::Percentage(40), // Album art
+            ])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let mut items: Vec<ListItem> = Vec::new();
 
     for (i, item) in app.queue.iter().enumerate() {
@@ -807,9 +870,161 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &App) {
         )
     };
 
-    let list = List::new(items).block(Block::default().borders(Borders::ALL).title(title));
+    let border_type = if is_focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
 
-    f.render_widget(list, area);
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(border_type)
+            .title(title),
+    );
+
+    f.render_widget(list, queue_area);
+
+    // Render album art if available
+    if let Some(image_area) = image_area {
+        draw_album_art(f, image_area, app);
+    }
+}
+
+fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
+    use ratatui_image::StatefulImage;
+
+    // Create a border block
+    let title = if app.album_images.is_empty() {
+        "Album Art (none)".to_string()
+    } else if app.album_images.len() > 1 {
+        format!(
+            "Album Art ({}/{}) - [] to cycle",
+            app.selected_image_index + 1,
+            app.album_images.len()
+        )
+    } else {
+        "Album Art".to_string()
+    };
+
+    let block = Block::default().borders(Borders::ALL).title(title);
+    let inner_area = block.inner(area);
+    f.render_widget(block, area);
+
+    // Split area: image on top, ReplayGain info at bottom
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(10),   // Image area (takes most space)
+            Constraint::Length(5), // ReplayGain info (fixed 5 lines)
+        ])
+        .split(inner_area);
+
+    let image_area = chunks[0];
+    let info_area = chunks[1];
+
+    // Render the image if available
+    // Clone the path to avoid borrow conflicts
+    if let Some(image_path) = app.get_current_album_image().cloned() {
+        if let Some(picker) = &mut app.image_picker {
+            // Try to load and render the image
+            if let Ok(img) = image::open(&image_path) {
+                // Create protocol with the picker - new_resize_protocol returns StatefulProtocol
+                let mut protocol = picker.new_resize_protocol(img);
+                // Render using stateful widget
+                let image = StatefulImage::new(None);
+                f.render_stateful_widget(image, image_area, &mut protocol);
+            } else {
+                // Fallback if image loading fails
+                let error_text = Paragraph::new("Failed to load image")
+                    .style(Style::default().fg(ratatui::style::Color::Red));
+                f.render_widget(error_text, image_area);
+            }
+        }
+    } else {
+        // No image available
+        let no_image_text = Paragraph::new("No album art found");
+        f.render_widget(no_image_text, image_area);
+    }
+
+    // Render ReplayGain info below the image
+    draw_replay_gain_info(f, info_area, app);
+}
+
+fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
+    // Get currently playing track
+    let track_info = if let Some(queue_index) = app.current_queue_index {
+        if let Some(queue_item) = app.queue.get(queue_index) {
+            if let Some(track) = queue_item.album.tracks.get(queue_item.current_track_index) {
+                Some((track, &queue_item.album))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut lines = Vec::new();
+
+    if let Some((track, _album)) = track_info {
+        // Track title
+        if let Some(title) = &track.title {
+            lines.push(Line::from(vec![
+                Span::styled("Track: ", Style::default().fg(app.theme.title_color)),
+                Span::raw(title),
+            ]));
+        }
+
+        // Track ReplayGain
+        if let Some(gain) = track.replay_gain {
+            let peak_str = if let Some(peak) = track.replay_peak {
+                format!(" (peak: {:.3})", peak)
+            } else {
+                String::new()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("Track RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled(
+                    format!("{:+.2} dB{}", gain, peak_str),
+                    Style::default().fg(app.theme.accent_success),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("Track RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled("not available", Style::default().fg(app.theme.fg_muted)),
+            ]));
+        }
+
+        // Album ReplayGain
+        if let Some(gain) = track.album_gain {
+            let peak_str = if let Some(peak) = track.album_peak {
+                format!(" (peak: {:.3})", peak)
+            } else {
+                String::new()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("Album RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled(
+                    format!("{:+.2} dB{}", gain, peak_str),
+                    Style::default().fg(app.theme.accent_success),
+                ),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("Album RG: ", Style::default().fg(app.theme.title_color)),
+                Span::styled("not available", Style::default().fg(app.theme.fg_muted)),
+            ]));
+        }
+    } else {
+        lines.push(Line::from("No track playing"));
+    }
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+    f.render_widget(paragraph, area);
 }
 
 fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
@@ -1664,14 +1879,29 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Mix (Dry/Wet)".to_string(), format!("{:.2}", mix)),
             ("Gain".to_string(), format!("{:.1} dB", gain_db)),
         ],
+        PluginSettings::LoudnessMonitor => vec![(
+            "Info".to_string(),
+            "Real-time LUFS and peak meters".to_string(),
+        )],
+        PluginSettings::SpectrumAnalyzer {
+            num_bins,
+            min_freq,
+            max_freq,
+            smoothing,
+        } => vec![
+            ("Frequency Bins".to_string(), format!("{}", num_bins)),
+            ("Min Frequency".to_string(), format!("{:.0} Hz", min_freq)),
+            ("Max Frequency".to_string(), format!("{:.0} Hz", max_freq)),
+            ("Smoothing".to_string(), format!("{:.2}", smoothing)),
+        ],
     }
 }
 
 fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
-    // Create a centered dialog (60% width, larger to show info)
+    // Create a larger centered dialog for preset list (70% width, 60% height)
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.6) as u16;
-    let dialog_height = 9;
+    let dialog_width = (area.width as f32 * 0.7) as u16;
+    let dialog_height = (area.height as f32 * 0.6) as u16;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height - dialog_height) / 2;
 
@@ -1690,7 +1920,7 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
 
     f.render_widget(block, dialog_area);
 
-    // Inner area for text
+    // Inner area for content
     let inner = Rect {
         x: dialog_area.x + 1,
         y: dialog_area.y + 1,
@@ -1698,36 +1928,103 @@ fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
         height: dialog_area.height.saturating_sub(2),
     };
 
-    let lines = vec![
-        Line::from("Enter preset name (without .json extension):"),
-        Line::from(vec![
-            Span::styled("  Saved to: ", Style::default().fg(app.theme.fg_muted)),
-            Span::styled(
-                "plugin_presets/",
+    // If user is typing, show filename input; otherwise show preset list
+    if !app.plugin_file_input.is_empty() {
+        // Manual filename entry mode
+        let lines = vec![
+            Line::from("Enter preset name (without .json extension):"),
+            Line::from(vec![
+                Span::styled("  Saved to: ", Style::default().fg(app.theme.fg_muted)),
+                Span::styled(
+                    "plugin_presets/",
+                    Style::default()
+                        .fg(app.theme.fg_muted)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
+                Span::raw(&app.plugin_file_input),
+                Span::styled("_", Style::default().fg(app.theme.accent_success)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Note: ", Style::default().fg(app.theme.title_color)),
+                Span::raw(".json extension will be added automatically"),
+            ]),
+            Line::from("Press Enter to save, ESC to cancel"),
+        ];
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default())
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, inner);
+    } else if app.available_plugin_presets.is_empty() {
+        // No presets available - show instructions
+        let lines = vec![
+            Line::from("No existing presets found in plugin_presets directory"),
+            Line::from(""),
+            Line::from("Type a preset name to save"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Note: ", Style::default().fg(app.theme.title_color)),
+                Span::raw(".json extension will be added automatically"),
+            ]),
+            Line::from(""),
+            Line::from("Press ESC to cancel"),
+        ];
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default())
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(app.theme.title_color));
+
+        f.render_widget(paragraph, inner);
+    } else {
+        // Show preset list - user can select one to overwrite or type a new name
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("Existing Presets ", Style::default()),
+                Span::styled(
+                    "(↑/↓ to select, Enter to overwrite, or type new name)",
+                    Style::default().fg(app.theme.fg_muted),
+                ),
+            ]),
+            Line::from(""),
+        ];
+
+        // Add each preset to the list
+        for (i, preset) in app.available_plugin_presets.iter().enumerate() {
+            let is_selected = i == app.selected_preset_index;
+            let style = if is_selected {
                 Style::default()
-                    .fg(app.theme.fg_muted)
-                    .add_modifier(Modifier::ITALIC),
-            ),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("> ", Style::default().fg(app.theme.accent_primary)),
-            Span::raw(&app.plugin_file_input),
-            Span::styled("_", Style::default().fg(app.theme.accent_success)),
-        ]),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("Note: ", Style::default().fg(app.theme.title_color)),
-            Span::raw(".json extension will be added automatically"),
-        ]),
-        Line::from("Press Enter to save, ESC to cancel"),
-    ];
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
 
-    let paragraph = Paragraph::new(lines)
-        .block(Block::default())
-        .wrap(Wrap { trim: false });
+            let marker = if is_selected { "► " } else { "  " };
+            lines.push(Line::from(vec![
+                Span::styled(marker, style),
+                Span::styled(preset, style),
+            ]));
+        }
 
-    f.render_widget(paragraph, inner);
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Hint: ", Style::default().fg(app.theme.title_color)),
+            Span::raw("Select and press Enter to overwrite, or type to create new preset"),
+        ]));
+
+        let paragraph = Paragraph::new(lines)
+            .block(Block::default())
+            .wrap(Wrap { trim: false });
+
+        f.render_widget(paragraph, inner);
+    }
 }
 
 fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
@@ -2356,9 +2653,10 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("↑/↓ or k/j", "Navigate plugin chain"),
             ("a", "Add plugin (default)"),
             (
-                "1/2/3/4/5/6/7",
-                "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural",
+                "1-8",
+                "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural/Convolution",
             ),
+            ("9/0", "Quick add: LoudnessMonitor/SpectrumAnalyzer"),
             ("e or Enter", "Edit selected plugin"),
             ("t", "Toggle plugin enabled/disabled"),
             ("d/Delete", "Remove plugin"),

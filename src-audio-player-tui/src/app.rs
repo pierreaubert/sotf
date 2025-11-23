@@ -1,5 +1,5 @@
 use crate::theme::Theme;
-use sotf_audio::LoudnessInfo;
+use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{Album, MusicLibrary, PluginChain, PluginType, Track};
 use std::path::PathBuf;
@@ -161,7 +161,7 @@ pub struct App {
     pub position_secs: f64,
 
     // Loudness monitoring
-    pub loudness_info: Option<LoudnessInfo>,
+    pub loudness_info: Option<LoudnessData>,
 
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
@@ -192,6 +192,11 @@ pub struct App {
 
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
+
+    // Album cover image display
+    pub album_images: Vec<PathBuf>, // List of image files in current album directory
+    pub selected_image_index: usize, // Current image being displayed
+    pub image_picker: Option<ratatui_image::picker::Picker>, // Image protocol picker
 }
 
 impl App {
@@ -232,7 +237,12 @@ impl App {
             channel_filter: ChannelFilter::All,
             artist_tree: Vec::new(),
             selected_tree_index: 0,
-            plugin_chain: PluginChain::new(),
+            plugin_chain: {
+                let mut chain = PluginChain::new();
+                // Add default analyzer plugins for LUFS and level meters
+                chain.add_plugin(&PluginType::LoudnessMonitor);
+                chain
+            },
             needs_plugin_update: false,
             editing_plugin_index: None,
             plugin_param_selection: 0,
@@ -262,6 +272,9 @@ impl App {
             replay_gain_succeeded: 0,
             replay_gain_failed: 0,
             last_loaded_preset: None,
+            album_images: Vec::new(),
+            selected_image_index: 0,
+            image_picker: None,
         }
     }
 
@@ -1726,6 +1739,34 @@ impl App {
                         _ => false,
                     }
                 }
+                PluginSettings::LoudnessMonitor => {
+                    // Analyzer plugin - no parameters to adjust
+                    false
+                }
+                PluginSettings::SpectrumAnalyzer {
+                    num_bins,
+                    min_freq,
+                    max_freq,
+                    smoothing,
+                } => match param_idx {
+                    0 => {
+                        *num_bins = (*num_bins as i64 + delta as i64).clamp(10, 100) as usize;
+                        true
+                    }
+                    1 => {
+                        *min_freq = (*min_freq + delta as f32).clamp(10.0, 100.0);
+                        true
+                    }
+                    2 => {
+                        *max_freq = (*max_freq + delta as f32 * 100.0).clamp(1000.0, 24000.0);
+                        true
+                    }
+                    3 => {
+                        *smoothing = (*smoothing + delta as f32 * 0.01).clamp(0.0, 1.0);
+                        true
+                    }
+                    _ => false,
+                },
             }
         } else {
             false
@@ -1746,24 +1787,66 @@ impl App {
             return;
         }
 
+        // Check if file exists and show warning if overwriting
+        let filename_with_ext = if self.plugin_file_input.ends_with(".json") {
+            self.plugin_file_input.clone()
+        } else {
+            format!("{}.json", self.plugin_file_input)
+        };
+
+        if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
+            let full_path = presets_dir.join(&filename_with_ext);
+            if full_path.exists() {
+                self.status_message = Some(format!(
+                    "Warning: Overwriting existing preset: {}",
+                    filename_with_ext
+                ));
+                log::warn!("Overwriting existing preset: {}", filename_with_ext);
+            }
+        }
+
         // Save using the plugin chain's own save method (handles path, validation, etc.)
         match self.plugin_chain.save_to_file(&self.plugin_file_input) {
             Ok(_) => {
-                // Get the final filename (with .json appended if needed)
-                let filename = if self.plugin_file_input.ends_with(".json") {
-                    self.plugin_file_input.clone()
-                } else {
-                    format!("{}.json", self.plugin_file_input)
-                };
-
-                self.status_message = Some(format!("Saved preset: {}", filename));
-                self.last_loaded_preset = Some(filename);
+                self.status_message = Some(format!("Saved preset: {}", filename_with_ext));
+                self.last_loaded_preset = Some(filename_with_ext);
                 // Refresh presets list
                 self.refresh_plugin_presets();
             }
             Err(e) => {
                 self.status_message = Some(format!("Error saving: {}", e));
                 log::error!("Failed to save plugin chain: {}", e);
+            }
+        }
+    }
+
+    /// Save plugin chain to selected preset file (overwrite confirmation shown in UI)
+    pub fn save_selected_preset(&mut self) {
+        if self.available_plugin_presets.is_empty() {
+            self.status_message = Some("No presets available".to_string());
+            return;
+        }
+
+        if let Some(preset_filename) = self
+            .available_plugin_presets
+            .get(self.selected_preset_index)
+            .cloned()
+        {
+            // Remove .json extension if present (save_to_file will add it back)
+            let filename = preset_filename.trim_end_matches(".json");
+
+            // Save using the plugin chain's own save method
+            match self.plugin_chain.save_to_file(filename) {
+                Ok(_) => {
+                    self.status_message = Some(format!("Overwritten preset: {}", preset_filename));
+                    self.last_loaded_preset = Some(preset_filename);
+                    // Refresh presets list
+                    self.refresh_plugin_presets();
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Error saving: {}", e));
+                    log::error!("Failed to save plugin chain: {}", e);
+                }
             }
         }
     }
@@ -2142,6 +2225,71 @@ impl App {
             Err("No plugin selected".to_string())
         }
     }
+
+    /// Find and load all image files in the currently playing album's directory
+    pub fn load_album_images(&mut self) {
+        self.album_images.clear();
+        self.selected_image_index = 0;
+
+        // Initialize image picker if not already done
+        if self.image_picker.is_none() {
+            self.image_picker = ratatui_image::picker::Picker::from_termios().ok();
+            if self.image_picker.is_none() {
+                self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
+            }
+        }
+
+        // Get the currently playing album
+        if let Some(queue_index) = self.current_queue_index {
+            if let Some(queue_item) = self.queue.get(queue_index) {
+                if let Some(first_track) = queue_item.album.tracks.first() {
+                    if let Some(parent_dir) = first_track.path.parent() {
+                        // Find all image files in the directory
+                        if let Ok(entries) = std::fs::read_dir(parent_dir) {
+                            for entry in entries.flatten() {
+                                if let Ok(path) = entry.path().canonicalize() {
+                                    if let Some(ext) = path.extension() {
+                                        let ext_lower = ext.to_string_lossy().to_lowercase();
+                                        if matches!(
+                                            ext_lower.as_str(),
+                                            "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp"
+                                        ) {
+                                            self.album_images.push(path);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Sort images for consistent order
+                        self.album_images.sort();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Cycle to the next image in the album directory
+    pub fn next_album_image(&mut self) {
+        if !self.album_images.is_empty() {
+            self.selected_image_index = (self.selected_image_index + 1) % self.album_images.len();
+        }
+    }
+
+    /// Cycle to the previous image in the album directory
+    pub fn prev_album_image(&mut self) {
+        if !self.album_images.is_empty() {
+            if self.selected_image_index == 0 {
+                self.selected_image_index = self.album_images.len() - 1;
+            } else {
+                self.selected_image_index -= 1;
+            }
+        }
+    }
+
+    /// Get the currently selected album image path
+    pub fn get_current_album_image(&self) -> Option<&PathBuf> {
+        self.album_images.get(self.selected_image_index)
+    }
 }
 
 // Helper function to get parameter count for a plugin
@@ -2156,6 +2304,8 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 3,     // ir_file, mix, gain_db
+        PluginSettings::LoudnessMonitor => 0,        // No parameters
+        PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
     }
 }
 

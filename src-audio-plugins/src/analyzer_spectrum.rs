@@ -428,7 +428,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        // Spectrum analyzer has latency equal to FFT size but since it is pass-through, 
+        // Spectrum analyzer has latency equal to FFT size but since it is pass-through,
         // it doesn't delay the audio signal.
         0
     }

@@ -169,12 +169,12 @@ fn run_processing_thread(
                                 "[Processing Thread] UpdatePlugins: Plugin host built successfully, output_channels={}",
                                 output_channels
                             );
-                            
+
                             // Simple swap - updates handled by ManagerThread pausing/resuming if needed
                             // But here we just swap the host for next process call
                             state.host = new_host;
                             state.channels = output_channels;
-                            
+
                             response_tx
                                 .send(ProcessingResponse::PluginChainUpdated { output_channels })
                                 .ok();
@@ -207,12 +207,15 @@ fn run_processing_thread(
                 ProcessingCommand::GetPluginData(index) => {
                     match state.host.get_plugin_data(index) {
                         Some(data) => {
-                            response_tx
-                                .send(ProcessingResponse::PluginData(data))
-                                .ok();
+                            response_tx.send(ProcessingResponse::PluginData(data)).ok();
                         }
                         None => {
-                            response_tx.send(ProcessingResponse::Error(format!("Plugin {} data not available", index))).ok();
+                            response_tx
+                                .send(ProcessingResponse::Error(format!(
+                                    "Plugin {} data not available",
+                                    index
+                                )))
+                                .ok();
                         }
                     }
                 }

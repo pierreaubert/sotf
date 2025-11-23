@@ -1,6 +1,6 @@
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{
-    Album, LoudnessInfo, MusicLibrary, Player, PluginChain, SpectrumInfo, Track,
+    Album, LoudnessData, MusicLibrary, Player, PluginChain, PluginType, SpectrumData, Track,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -207,7 +207,7 @@ pub struct App {
     pub channel_filter: ChannelFilter,
 
     // Pagination for library
-    pub library_page: usize,          // Current page (0-indexed)
+    pub library_page: usize,           // Current page (0-indexed)
     pub library_items_per_page: usize, // Items per page
 
     // Plugin system
@@ -223,11 +223,11 @@ pub struct App {
     pub position_secs: f64,
 
     // Loudness monitoring
-    pub loudness_info: Option<LoudnessInfo>,
+    pub loudness_info: Option<LoudnessData>,
 
     // Spectrum analyzer
     pub spectrum_visible: bool,
-    pub spectrum_info: Option<SpectrumInfo>,
+    pub spectrum_info: Option<SpectrumData>,
 
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
@@ -312,7 +312,12 @@ impl App {
             channel_filter: ChannelFilter::All,
             library_page: 0,
             library_items_per_page: 50, // Show 50 items per page
-            plugin_chain: PluginChain::new(),
+            plugin_chain: {
+                let mut chain = PluginChain::new();
+                // Add default analyzer plugins for LUFS and level meters
+                chain.add_plugin(&PluginType::LoudnessMonitor);
+                chain
+            },
             needs_plugin_update: false,
             editing_plugin_index: None,
             plugin_param_selection: 0,
@@ -1576,6 +1581,34 @@ impl App {
                     // Convolution has no adjustable parameters for now
                     false
                 }
+                PluginSettings::LoudnessMonitor => {
+                    // Analyzer plugin - no parameters to adjust
+                    false
+                }
+                PluginSettings::SpectrumAnalyzer {
+                    num_bins,
+                    min_freq,
+                    max_freq,
+                    smoothing,
+                } => match param_idx {
+                    0 => {
+                        *num_bins = (*num_bins as i64 + delta as i64).max(10).min(100) as usize;
+                        true
+                    }
+                    1 => {
+                        *min_freq = (*min_freq + delta as f32).max(10.0).min(100.0);
+                        true
+                    }
+                    2 => {
+                        *max_freq = (*max_freq + delta as f32 * 100.0).max(1000.0).min(24000.0);
+                        true
+                    }
+                    3 => {
+                        *smoothing = (*smoothing + delta as f32 * 0.01).max(0.0).min(1.0);
+                        true
+                    }
+                    _ => false,
+                },
             }
         } else {
             false
@@ -1779,5 +1812,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 0,     // No adjustable params for now
+        PluginSettings::LoudnessMonitor => 0,        // No parameters
+        PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
     }
 }

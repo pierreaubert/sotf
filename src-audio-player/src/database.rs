@@ -53,7 +53,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 4;
+        const LATEST_VERSION: i64 = 5;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -372,6 +372,44 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 5: Add album ReplayGain columns to tracks table
+        migrations.insert(
+            5,
+            Migration {
+                description: "Add album ReplayGain columns to tracks table",
+                apply: |db| {
+                    // Check if columns already exist
+                    let has_album_gain = db
+                        .conn
+                        .prepare("SELECT album_gain FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_album_gain {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN album_gain REAL", [])?;
+                        log::info!("Added album_gain column to tracks table");
+                    } else {
+                        log::info!("album_gain column already exists, skipping");
+                    }
+
+                    let has_album_peak = db
+                        .conn
+                        .prepare("SELECT album_peak FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_album_peak {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN album_peak REAL", [])?;
+                        log::info!("Added album_peak column to tracks table");
+                    } else {
+                        log::info!("album_peak column already exists, skipping");
+                    }
+
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -452,7 +490,8 @@ impl MusicDatabase {
 
             // Load tracks for this album
             let mut tracks_stmt = self.conn.prepare(
-                "SELECT path, title, track_number, duration_secs, channels
+                "SELECT path, title, track_number, duration_secs, channels,
+                        replay_gain, replay_peak, album_gain, album_peak
                  FROM tracks
                  WHERE album_id = ?1
                  ORDER BY track_number",
@@ -466,6 +505,10 @@ impl MusicDatabase {
                         track_number: row.get::<_, Option<i64>>(2)?.map(|n| n as u32),
                         duration_secs: row.get::<_, Option<i64>>(3)?.map(|n| n as u64),
                         channels: row.get::<_, Option<i64>>(4)?.map(|n| n as u32),
+                        replay_gain: row.get::<_, Option<f64>>(5)?,
+                        replay_peak: row.get::<_, Option<f64>>(6)?,
+                        album_gain: row.get::<_, Option<f64>>(7)?,
+                        album_peak: row.get::<_, Option<f64>>(8)?,
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;

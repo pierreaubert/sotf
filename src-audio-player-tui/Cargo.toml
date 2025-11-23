@@ -31,3 +31,7 @@ env_logger = "0.11"
 
 # Utilities
 parking_lot = { workspace = true }
+
+# ASCII art image rendering
+image = "0.25"
+ratatui-image = { version = "1.0", features = ["serde"] }

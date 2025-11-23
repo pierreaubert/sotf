@@ -147,10 +147,6 @@ fn main() {
                     }
 
                     let mut player = Player::new();
-                    // Enable loudness monitoring
-                    if let Err(e) = player.enable_loudness_monitoring() {
-                        log::warn!("Failed to enable loudness monitoring: {}", e);
-                    }
 
                     AppState {
                         app,

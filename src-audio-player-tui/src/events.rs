@@ -373,6 +373,16 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Previous track
             app.previous_track().map(PlayerCommand::Play)
         }
+        KeyCode::Char('[') => {
+            // Previous album image
+            app.prev_album_image();
+            None
+        }
+        KeyCode::Char(']') => {
+            // Next album image
+            app.next_album_image();
+            None
+        }
         // Note: Volume controls (+/-) are now global (see handle_normal_mode)
         _ => None,
     }
@@ -386,6 +396,8 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
+            app.search_query.clear();
+            app.selected_album_index = 0;
             None
         }
         KeyCode::Enter => {
@@ -499,6 +511,8 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Save plugin chain
             app.input_mode = InputMode::SavePlugins;
             app.plugin_file_input.clear();
+            // Refresh available presets to show in dialog
+            app.refresh_plugin_presets();
             None
         }
         KeyCode::Char('l') => {
@@ -568,6 +582,21 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('7') => {
             // Quick add Binaural Decoder
             app.add_plugin(&PluginType::BinauralDecoder);
+            None
+        }
+        KeyCode::Char('8') => {
+            // Quick add Convolution
+            app.add_plugin(&PluginType::Convolution);
+            None
+        }
+        KeyCode::Char('9') => {
+            // Quick add Loudness Monitor
+            app.add_plugin(&PluginType::LoudnessMonitor);
+            None
+        }
+        KeyCode::Char('0') => {
+            // Quick add Spectrum Analyzer
+            app.add_plugin(&PluginType::SpectrumAnalyzer);
             None
         }
         _ => None,
@@ -665,8 +694,31 @@ fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
             None
         }
         KeyCode::Enter => {
-            app.save_plugin_chain();
+            // If there are presets shown and input is empty, use selected preset (overwrite)
+            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
+                app.save_selected_preset();
+            } else if !app.plugin_file_input.is_empty() {
+                app.save_plugin_chain();
+            }
             app.input_mode = InputMode::Normal;
+            None
+        }
+        KeyCode::Up => {
+            // Navigate preset list when input is empty
+            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
+                if app.selected_preset_index > 0 {
+                    app.selected_preset_index -= 1;
+                }
+            }
+            None
+        }
+        KeyCode::Down => {
+            // Navigate preset list when input is empty
+            if app.plugin_file_input.is_empty() && !app.available_plugin_presets.is_empty() {
+                if app.selected_preset_index < app.available_plugin_presets.len() - 1 {
+                    app.selected_preset_index += 1;
+                }
+            }
             None
         }
         KeyCode::Char(c) => {

@@ -1257,8 +1257,7 @@ fn handle_command(
             }
         }
         ManagerCommand::GetPluginData(index) => {
-            if let Err(e) = processing.send_command(ProcessingCommand::GetPluginData(index))
-            {
+            if let Err(e) = processing.send_command(ProcessingCommand::GetPluginData(index)) {
                 return ManagerResponse::Error(e);
             }
 

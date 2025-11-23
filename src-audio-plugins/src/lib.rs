@@ -49,7 +49,7 @@ mod plugin_hal_input;
 mod plugin_hal_output;
 
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
-pub use host::{Host, DawHost, GraphEdge as DawGraphEdge, NodeId as DawNodeId};
+pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 

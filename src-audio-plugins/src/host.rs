@@ -7,7 +7,6 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
-
 /// Common trait for plugin hosts
 ///
 /// Plugin hosts manage a collection of audio plugins and route audio through them.
@@ -1234,7 +1233,11 @@ mod tests {
         // Merge adds them: 0.5 + 0.5 = 1.0
         // Output through merge (0dB): 1.0
         for &sample in &output {
-            assert!((sample - 1.0_f32).abs() < 0.01, "Expected ~1.0, got {}", sample);
+            assert!(
+                (sample - 1.0_f32).abs() < 0.01,
+                "Expected ~1.0, got {}",
+                sample
+            );
         }
     }
 

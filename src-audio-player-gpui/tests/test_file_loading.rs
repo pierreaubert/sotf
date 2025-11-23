@@ -21,8 +21,9 @@ fn test_apo_file_loading_for_eq_plugin() {
     let mut app = create_test_app();
 
     // Add an EQ plugin to the chain
-    let idx = app.plugin_chain.add_plugin(&PluginType::EQ);
-    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+    app.plugin_chain.add_plugin(&PluginType::EQ);
+
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(0) {
         plugin.settings = PluginSettings::EQ { filters: vec![] };
     }
 
@@ -138,8 +139,9 @@ fn test_sofa_file_loading_for_binaural_decoder() {
     let mut app = create_test_app();
 
     // Add a Binaural Decoder plugin
-    let idx = app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
-    if let Some(plugin) = app.plugin_chain.get_plugin_mut(idx) {
+    app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
+
+    if let Some(plugin) = app.plugin_chain.get_plugin_mut(0) {
         plugin.settings = PluginSettings::BinauralDecoder {
             sofa_file: String::new(),
             input_channels: 2,

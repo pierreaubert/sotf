@@ -36,8 +36,8 @@ actions!(
         SelectPrev,
         SelectNextPage,
         SelectPrevPage,
-        NextPage,      // For library pagination
-        PrevPage,      // For library pagination
+        NextPage, // For library pagination
+        PrevPage, // For library pagination
         ToggleExpand,
         Enter,
         Cancel,
@@ -1355,15 +1355,10 @@ impl PlayerView {
             .bg(rgb(0x1e1e1e))
             .border_t_1()
             .border_color(rgb(0x3e3e3e))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(0x999999))
-                    .child(format!(
-                        "Page {} of {} ({} items/page)",
-                        current_page, total_pages, items_per_page
-                    ))
-            )
+            .child(div().text_sm().text_color(rgb(0x999999)).child(format!(
+                "Page {} of {} ({} items/page)",
+                current_page, total_pages, items_per_page
+            )))
             .child(
                 div()
                     .flex()
@@ -1379,8 +1374,7 @@ impl PlayerView {
                                     .cursor_pointer()
                             })
                             .when(current_page == 1, |div| {
-                                div.bg(rgb(0x1a1a1a))
-                                    .text_color(rgb(0x666666))
+                                div.bg(rgb(0x1a1a1a)).text_color(rgb(0x666666))
                             })
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -1391,7 +1385,7 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child("← Prev")
+                            .child("← Prev"),
                     )
                     .child(
                         div()
@@ -1404,8 +1398,7 @@ impl PlayerView {
                                     .cursor_pointer()
                             })
                             .when(current_page == total_pages, |div| {
-                                div.bg(rgb(0x1a1a1a))
-                                    .text_color(rgb(0x666666))
+                                div.bg(rgb(0x1a1a1a)).text_color(rgb(0x666666))
                             })
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -1416,8 +1409,8 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child("Next →")
-                    )
+                            .child("Next →"),
+                    ),
             )
     }
 
@@ -1430,7 +1423,6 @@ impl PlayerView {
             .flex_col()
             .gap_2()
             .flex_1()
-            .overflow_y_scroll()
             .children(albums.iter().enumerate().map(|(idx, album)| {
                 let is_selected = state.app.selected_album_index == idx;
                 div()
@@ -1455,8 +1447,8 @@ impl PlayerView {
                                 state.app.selected_album_index = idx;
                                 state.app.context_menu = Some(crate::app::ContextMenuState {
                                     menu_type: crate::app::ContextMenuType::Album,
-                                    position_x: event.position.x.0,
-                                    position_y: event.position.y.0,
+                                    position_x: event.position.x.into(),
+                                    position_y: event.position.y.into(),
                                     item_index: idx,
                                 });
                             });
@@ -1497,7 +1489,6 @@ impl PlayerView {
             .flex_col()
             .gap_1()
             .flex_1()
-            .overflow_y_scroll()
             .children(tree_items.iter().enumerate().map(|(idx, item)| {
                 let is_selected = state.app.selected_tree_index == idx;
 
@@ -1586,7 +1577,7 @@ impl PlayerView {
                             .child("Clear"),
                     ),
             )
-            .child(div().flex().flex_col().gap_2().flex_1().overflow_y_scroll().children(
+            .child(div().flex().flex_col().gap_2().flex_1().children(
                 state.app.queue.iter().enumerate().map(|(idx, item)| {
                     let is_current = state.app.current_queue_index == Some(idx);
                     div()
@@ -1617,8 +1608,8 @@ impl PlayerView {
                                     state.app.current_queue_index = Some(idx);
                                     state.app.context_menu = Some(crate::app::ContextMenuState {
                                         menu_type: crate::app::ContextMenuType::QueueItem,
-                                        position_x: event.position.x.0,
-                                        position_y: event.position.y.0,
+                                        position_x: event.position.x.into(),
+                                        position_y: event.position.y.into(),
                                         item_index: idx,
                                     });
                                 });
@@ -1699,7 +1690,6 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .overflow_y_scroll()
             .children(plugins.iter().enumerate().map(|(idx, plugin)| {
                 let is_selected = state.app.selected_plugin_index == idx;
                 let name = plugin.plugin_type().name().to_string();
@@ -1729,8 +1719,8 @@ impl PlayerView {
                                 state.app.selected_plugin_index = idx;
                                 state.app.context_menu = Some(crate::app::ContextMenuState {
                                     menu_type: crate::app::ContextMenuType::Plugin,
-                                    position_x: event.position.x.0,
-                                    position_y: event.position.y.0,
+                                    position_x: event.position.x.into(),
+                                    position_y: event.position.y.into(),
                                     item_index: idx,
                                 });
                             });
@@ -1860,20 +1850,19 @@ impl PlayerView {
             .plugin_chain
             .get_plugin(state.app.selected_plugin_index)
         {
-            let plugin_name = plugin.plugin_type().name();
+            let plugin_name = plugin.plugin_type().name().to_string();
 
             div()
                 .p_4()
                 .flex()
                 .flex_col()
                 .gap_4()
-                .overflow_y_scroll()
                 .child(
                     div()
                         .text_lg()
                         .font_weight(FontWeight::BOLD)
                         .mb_2()
-                        .child(plugin_name)
+                        .child(plugin_name),
                 )
                 .child(match &plugin.settings {
                     sotf_audio_player::PluginSettings::Upmixer {
@@ -1895,23 +1884,40 @@ impl PlayerView {
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .child(self.render_param_group("Speaker Configuration", vec![
-                            ("Layout", speaker_config.to_string()),
-                        ]))
-                        .child(self.render_param_group("Gain Settings", vec![
-                            ("LFE Gain", format!("{:.1} dB", lfe_gain)),
-                            ("Front Direct", format!("{:.1} dB", gain_front_direct)),
-                            ("Front Ambient", format!("{:.1} dB", gain_front_ambient)),
-                            ("Rear Ambient", format!("{:.1} dB", gain_rear_ambient)),
-                            ("Height Gain", format!("{:.1} dB", height_gain)),
-                            ("Safety Cap", format!("{:.1} dB", safety_cap_db)),
-                        ]))
-                        .child(self.render_param_group("Processing", vec![
-                            ("Stereo Width", format!("{:.2}", stereo_width)),
-                            ("LFE Cutoff", format!("{:.0} Hz", lfe_cutoff_hz)),
-                            ("Subharmonic Synth", if *enable_subharmonic_synth { "Enabled" } else { "Disabled" }.to_string()),
-                            ("Subharmonic Gain", format!("{:.1} dB", subharmonic_gain)),
-                        ]))
+                        .child(self.render_param_group(
+                            "Speaker Configuration",
+                            vec![("Layout", speaker_config.to_string())],
+                        ))
+                        .child(self.render_param_group(
+                            "Gain Settings",
+                            vec![
+                                ("LFE Gain", format!("{:.1} dB", lfe_gain)),
+                                ("Front Direct", format!("{:.1} dB", gain_front_direct)),
+                                ("Front Ambient", format!("{:.1} dB", gain_front_ambient)),
+                                ("Rear Ambient", format!("{:.1} dB", gain_rear_ambient)),
+                                ("Height Gain", format!("{:.1} dB", height_gain)),
+                                ("Safety Cap", format!("{:.1} dB", safety_cap_db)),
+                            ],
+                        ))
+                        .child(
+                            self.render_param_group(
+                                "Processing",
+                                vec![
+                                    ("Stereo Width", format!("{:.2}", stereo_width)),
+                                    ("LFE Cutoff", format!("{:.0} Hz", lfe_cutoff_hz)),
+                                    (
+                                        "Subharmonic Synth",
+                                        if *enable_subharmonic_synth {
+                                            "Enabled"
+                                        } else {
+                                            "Disabled"
+                                        }
+                                        .to_string(),
+                                    ),
+                                    ("Subharmonic Gain", format!("{:.1} dB", subharmonic_gain)),
+                                ],
+                            ),
+                        )
                         .child(
                             div()
                                 .mt_2()
@@ -1920,7 +1926,7 @@ impl PlayerView {
                                 .bg(rgb(0x2d2d2d))
                                 .text_xs()
                                 .text_color(rgb(0x999999))
-                                .child("Press 'e' to edit parameters")
+                                .child("Press 'e' to edit parameters"),
                         ),
                     sotf_audio_player::PluginSettings::EQ { filters } => div()
                         .flex()
@@ -1930,7 +1936,7 @@ impl PlayerView {
                             div()
                                 .text_sm()
                                 .text_color(rgb(0x999999))
-                                .child(format!("{} bands", filters.len()))
+                                .child(format!("{} bands", filters.len())),
                         )
                         .children(filters.iter().enumerate().map(|(i, f)| {
                             div()
@@ -1939,7 +1945,13 @@ impl PlayerView {
                                 .rounded_md()
                                 .bg(rgb(0x2d2d2d))
                                 .border_l_2()
-                                .border_color(if f.gain_db > 0.0 { rgb(0x4ec9b0) } else if f.gain_db < 0.0 { rgb(0xf48771) } else { rgb(0x666666) })
+                                .border_color(if f.gain_db > 0.0 {
+                                    rgb(0x4ec9b0)
+                                } else if f.gain_db < 0.0 {
+                                    rgb(0xf48771)
+                                } else {
+                                    rgb(0x666666)
+                                })
                                 .child(
                                     div()
                                         .flex()
@@ -1949,7 +1961,7 @@ impl PlayerView {
                                             div()
                                                 .text_sm()
                                                 .font_weight(FontWeight::SEMIBOLD)
-                                                .child(format!("Band {}", i + 1))
+                                                .child(format!("Band {}", i + 1)),
                                         )
                                         .child(
                                             div()
@@ -1969,9 +1981,9 @@ impl PlayerView {
                                                         } else {
                                                             rgb(0xcccccc)
                                                         })
-                                                        .child(format!("{:+.1} dB", f.gain_db))
-                                                )
-                                        )
+                                                        .child(format!("{:+.1} dB", f.gain_db)),
+                                                ),
+                                        ),
                                 )
                         }))
                         .child(
@@ -1982,34 +1994,44 @@ impl PlayerView {
                                 .bg(rgb(0x2d2d2d))
                                 .text_xs()
                                 .text_color(rgb(0x999999))
-                                .child("Press 'e' to edit EQ bands")
+                                .child("Press 'e' to edit EQ bands"),
                         ),
-                    sotf_audio_player::PluginSettings::Gain { gain_db } => div()
+                    sotf_audio_player::PluginSettings::Compressor {
+                        threshold_db,
+                        ratio,
+                        attack_ms,
+                        release_ms,
+                        makeup_gain_db,
+                        ..
+                    } => div()
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .child(self.render_param_group("Gain", vec![
-                            ("Level", format!("{:+.1} dB", gain_db)),
-                        ])),
-                    sotf_audio_player::PluginSettings::Compressor { threshold, ratio, attack, release, makeup_gain } => div()
+                        .child(self.render_param_group(
+                            "Compressor",
+                            vec![
+                                ("Threshold", format!("{:.1} dB", threshold_db)),
+                                ("Ratio", format!("1:{:.1}", ratio)),
+                                ("Attack", format!("{:.1} ms", attack_ms)),
+                                ("Release", format!("{:.1} ms", release_ms)),
+                                ("Makeup Gain", format!("{:+.1} dB", makeup_gain_db)),
+                            ],
+                        )),
+                    sotf_audio_player::PluginSettings::Limiter {
+                        threshold_db,
+                        release_ms,
+                        ..
+                    } => div()
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .child(self.render_param_group("Compressor", vec![
-                            ("Threshold", format!("{:.1} dB", threshold)),
-                            ("Ratio", format!("1:{:.1}", ratio)),
-                            ("Attack", format!("{:.1} ms", attack)),
-                            ("Release", format!("{:.1} ms", release)),
-                            ("Makeup Gain", format!("{:+.1} dB", makeup_gain)),
-                        ])),
-                    sotf_audio_player::PluginSettings::Limiter { threshold, release } => div()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(self.render_param_group("Limiter", vec![
-                            ("Threshold", format!("{:.1} dB", threshold)),
-                            ("Release", format!("{:.1} ms", release)),
-                        ])),
+                        .child(self.render_param_group(
+                            "Limiter",
+                            vec![
+                                ("Threshold", format!("{:.1} dB", threshold_db)),
+                                ("Release", format!("{:.1} ms", release_ms)),
+                            ],
+                        )),
                     _ => div()
                         .text_sm()
                         .text_color(rgb(0x999999))
@@ -2034,7 +2056,7 @@ impl PlayerView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(rgb(0x569cd6))
                     .mb_1()
-                    .child(title)
+                    .child(title.to_string()),
             )
             .children(params.iter().map(|(name, value)| {
                 div()
@@ -2047,14 +2069,14 @@ impl PlayerView {
                         div()
                             .text_xs()
                             .text_color(rgb(0x999999))
-                            .child(*name)
+                            .child(name.to_string()),
                     )
                     .child(
                         div()
                             .text_xs()
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(rgb(0xcccccc))
-                            .child(value.clone())
+                            .child(value.clone()),
                     )
             }))
     }
@@ -2076,117 +2098,107 @@ impl PlayerView {
             )
             .child(
                 // Grid layout with 2 columns
-                div()
-                    .grid()
-                    .grid_cols_2()
-                    .gap_3()
-                    .flex_1()
-                    .overflow_y_scroll()
-                    .children(
-                        state
-                            .app
-                            .output_devices
-                            .iter()
-                            .enumerate()
-                            .map(|(idx, device)| {
-                                let is_selected = state.app.selected_output_device_index == idx;
-                                let sample_rate = device
-                                    .default_config
-                                    .as_ref()
-                                    .map(|c| c.sample_rate)
-                                    .unwrap_or(0);
-                                let channels = device
-                                    .default_config
-                                    .as_ref()
-                                    .map(|c| c.channels)
-                                    .unwrap_or(0);
+                div().grid().grid_cols(2).gap_3().flex_1().children(
+                    state
+                        .app
+                        .output_devices
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, device)| {
+                            let is_selected = state.app.selected_output_device_index == idx;
+                            let sample_rate = device
+                                .default_config
+                                .as_ref()
+                                .map(|c| c.sample_rate)
+                                .unwrap_or(0);
+                            let channels = device
+                                .default_config
+                                .as_ref()
+                                .map(|c| c.channels)
+                                .unwrap_or(0);
 
-                                div()
-                                    .p_2()
-                                    .rounded_md()
-                                    .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
-                                    .cursor_pointer()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.selected_output_device_index = idx;
-                                                if let Some(device) = state.app.output_devices.get(idx)
-                                                {
-                                                    state.app.current_output_device_name =
-                                                        Some(device.name.clone());
+                            div()
+                                .p_2()
+                                .rounded_md()
+                                .when(is_selected, |div| div.bg(rgb(0x007acc)))
+                                .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                                .hover(|style| style.bg(rgb(0x3e3e3e)))
+                                .cursor_pointer()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.selected_output_device_index = idx;
+                                            if let Some(device) = state.app.output_devices.get(idx)
+                                            {
+                                                state.app.current_output_device_name =
+                                                    Some(device.name.clone());
 
-                                                    // If playing, restart track with new device
-                                                    if state.app.is_playing {
-                                                        if let Some(queue_idx) =
-                                                            state.app.current_queue_index
+                                                // If playing, restart track with new device
+                                                if state.app.is_playing {
+                                                    if let Some(queue_idx) =
+                                                        state.app.current_queue_index
+                                                    {
+                                                        if let Some(item) =
+                                                            state.app.queue.get(queue_idx)
                                                         {
-                                                            if let Some(item) =
-                                                                state.app.queue.get(queue_idx)
+                                                            if let Some(track) =
+                                                                item.current_track()
                                                             {
-                                                                if let Some(track) =
-                                                                    item.current_track()
-                                                                {
-                                                                    let path = track.path.clone();
-                                                                    Self::play_track(state, path);
-                                                                }
+                                                                let path = track.path.clone();
+                                                                Self::play_track(state, path);
                                                             }
                                                         }
                                                     }
                                                 }
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .gap_1()
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .child(device.name.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .gap_3()
-                                                    .text_xs()
-                                                    .text_color(rgb(0x999999))
-                                                    .child(
-                                                        div()
-                                                            .flex()
-                                                            .gap_1()
-                                                            .child("📊")
-                                                            .child(format!("{} ch", channels))
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .flex()
-                                                            .gap_1()
-                                                            .child("🎵")
-                                                            .child(if sample_rate >= 1000 {
-                                                                format!("{} kHz", sample_rate / 1000)
-                                                            } else {
-                                                                format!("{} Hz", sample_rate)
-                                                            })
-                                                    )
-                                            )
-                                            .when(device.is_default, |div| {
-                                                div.child(
+                                            }
+                                        });
+                                        cx.notify();
+                                    }),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .font_weight(FontWeight::SEMIBOLD)
+                                                .child(device.name.clone()),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .gap_3()
+                                                .text_xs()
+                                                .text_color(rgb(0x999999))
+                                                .child(
                                                     div()
-                                                        .text_xs()
-                                                        .text_color(rgb(0x4ec9b0))
-                                                        .child("✓ Default")
+                                                        .flex()
+                                                        .gap_1()
+                                                        .child("📊")
+                                                        .child(format!("{} ch", channels)),
                                                 )
-                                            })
-                                    )
-                            }),
-                    ),
+                                                .child(div().flex().gap_1().child("🎵").child(
+                                                    if sample_rate >= 1000 {
+                                                        format!("{} kHz", sample_rate / 1000)
+                                                    } else {
+                                                        format!("{} Hz", sample_rate)
+                                                    },
+                                                )),
+                                        )
+                                        .when(device.is_default, |this| {
+                                            this.child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(rgb(0x4ec9b0))
+                                                    .child("✓ Default"),
+                                            )
+                                        }),
+                                )
+                        }),
+                ),
             )
     }
 
@@ -2315,8 +2327,7 @@ impl PlayerView {
                     .flex_col()
                     .gap_1()
                     .flex_1()
-                    .overflow_y_scroll()
-                    .children(tree_items.iter().enumerate().map(|(i, (path, level, expanded))| {
+                                        .children(tree_items.iter().enumerate().map(|(i, (path, level, expanded))| {
                         let is_selected = i == state.app.selected_directory_index;
                         let indent = "  ".repeat(*level);
                         let prefix = if *level == 0 {
@@ -2449,7 +2460,6 @@ impl PlayerView {
                     .border_color(rgb(0x007acc))
                     .rounded_md()
                     .p_4()
-                    .overflow_y_scroll()
                     .child(
                         div()
                             .text_xl()
@@ -2579,15 +2589,13 @@ impl PlayerView {
         let state = self.state.read(cx);
 
         if let Some(menu) = &state.app.context_menu {
-            let menu_items = match menu.menu_type {
-                crate::app::ContextMenuType::Album => vec![
-                    ("Add to Queue", "a"),
-                    ("Play Now", "enter"),
-                ],
-                crate::app::ContextMenuType::QueueItem => vec![
-                    ("Remove from Queue", "d"),
-                    ("Play from Here", "enter"),
-                ],
+            let menu_items: Vec<(&'static str, &'static str)> = match menu.menu_type {
+                crate::app::ContextMenuType::Album => {
+                    vec![("Add to Queue", "a"), ("Play Now", "enter")]
+                }
+                crate::app::ContextMenuType::QueueItem => {
+                    vec![("Remove from Queue", "d"), ("Play from Here", "enter")]
+                }
                 crate::app::ContextMenuType::Plugin => vec![
                     ("Edit Plugin", "e"),
                     ("Toggle Enabled", "shift-t"),
@@ -2595,10 +2603,9 @@ impl PlayerView {
                     ("Move Down", "shift-n"),
                     ("Remove Plugin", "d"),
                 ],
-                crate::app::ContextMenuType::Directory => vec![
-                    ("Remove Directory", "d"),
-                    ("Rescan Library", "shift-s"),
-                ],
+                crate::app::ContextMenuType::Directory => {
+                    vec![("Remove Directory", "d"), ("Rescan Library", "shift-s")]
+                }
             };
 
             div()
@@ -2612,7 +2619,7 @@ impl PlayerView {
                 .rounded_md()
                 .shadow_lg()
                 .overflow_hidden()
-                .children(menu_items.iter().map(|(label, shortcut)| {
+                .children(menu_items.into_iter().map(|(label, shortcut)| {
                     div()
                         .px_3()
                         .py_2()
@@ -2623,53 +2630,94 @@ impl PlayerView {
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 // Close menu and execute action based on menu type
                                 view.state.update(cx, |state, cx| {
-                                    let menu_type = state.app.context_menu.as_ref().map(|m| m.menu_type.clone());
-                                    let item_idx = state.app.context_menu.as_ref().map(|m| m.item_index).unwrap_or(0);
+                                    let menu_type = state
+                                        .app
+                                        .context_menu
+                                        .as_ref()
+                                        .map(|m| m.menu_type.clone());
+                                    let item_idx = state
+                                        .app
+                                        .context_menu
+                                        .as_ref()
+                                        .map(|m| m.item_index)
+                                        .unwrap_or(0);
                                     state.app.context_menu = None;
 
                                     if let Some(mt) = menu_type {
-                                        match (mt, *label) {
-                                            (crate::app::ContextMenuType::Album, "Add to Queue") |
-                                            (crate::app::ContextMenuType::Album, "Play Now") => {
+                                        match (mt, label) {
+                                            (
+                                                crate::app::ContextMenuType::Album,
+                                                "Add to Queue",
+                                            )
+                                            | (crate::app::ContextMenuType::Album, "Play Now") => {
                                                 if let Some(path) = state.app.add_album_to_queue() {
                                                     Self::play_track(state, path);
                                                 }
-                                            },
-                                            (crate::app::ContextMenuType::QueueItem, "Remove from Queue") => {
+                                            }
+                                            (
+                                                crate::app::ContextMenuType::QueueItem,
+                                                "Remove from Queue",
+                                            ) => {
                                                 state.app.remove_from_queue(item_idx);
-                                            },
-                                            (crate::app::ContextMenuType::QueueItem, "Play from Here") => {
+                                            }
+                                            (
+                                                crate::app::ContextMenuType::QueueItem,
+                                                "Play from Here",
+                                            ) => {
                                                 state.app.current_queue_index = Some(item_idx);
                                                 // Play the first track of the queue item
-                                                if let Some(queue_item) = state.app.queue.get(item_idx) {
-                                                    if let Some(first_track) = queue_item.tracks.first() {
-                                                        Self::play_track(state, first_track.path.clone());
+                                                if let Some(queue_item) =
+                                                    state.app.queue.get(item_idx)
+                                                {
+                                                    if let Some(first_track) =
+                                                        queue_item.album.tracks.first()
+                                                    {
+                                                        Self::play_track(
+                                                            state,
+                                                            first_track.path.clone(),
+                                                        );
                                                     }
                                                 }
-                                            },
-                                            (crate::app::ContextMenuType::Plugin, "Edit Plugin") => {
+                                            }
+                                            (
+                                                crate::app::ContextMenuType::Plugin,
+                                                "Edit Plugin",
+                                            ) => {
                                                 state.app.enter_plugin_edit_mode();
-                                            },
-                                            (crate::app::ContextMenuType::Plugin, "Toggle Enabled") => {
+                                            }
+                                            (
+                                                crate::app::ContextMenuType::Plugin,
+                                                "Toggle Enabled",
+                                            ) => {
                                                 state.app.plugin_chain.toggle_plugin(item_idx);
-                                            },
+                                            }
                                             (crate::app::ContextMenuType::Plugin, "Move Up") => {
-                                                state.app.plugin_chain.move_plugin_up(item_idx);
-                                            },
+                                                state.app.move_plugin_up(item_idx);
+                                            }
                                             (crate::app::ContextMenuType::Plugin, "Move Down") => {
-                                                state.app.plugin_chain.move_plugin_down(item_idx);
-                                            },
-                                            (crate::app::ContextMenuType::Plugin, "Remove Plugin") => {
+                                                state.app.move_plugin_down(item_idx);
+                                            }
+                                            (
+                                                crate::app::ContextMenuType::Plugin,
+                                                "Remove Plugin",
+                                            ) => {
                                                 state.app.plugin_chain.remove_plugin(item_idx);
-                                            },
-                                            (crate::app::ContextMenuType::Directory, "Remove Directory") => {
-                                                state.app.remove_directory(item_idx);
-                                            },
-                                            (crate::app::ContextMenuType::Directory, "Rescan Library") => {
+                                            }
+                                            (
+                                                crate::app::ContextMenuType::Directory,
+                                                "Remove Directory",
+                                            ) => {
+                                                state.app.selected_directory_index = item_idx;
+                                                state.app.remove_selected_directory();
+                                            }
+                                            (
+                                                crate::app::ContextMenuType::Directory,
+                                                "Rescan Library",
+                                            ) => {
                                                 if let Err(e) = state.app.scan_library() {
                                                     log::error!("Scan failed: {}", e);
                                                 }
-                                            },
+                                            }
                                             _ => {}
                                         }
                                     }
@@ -2682,13 +2730,8 @@ impl PlayerView {
                                 .flex()
                                 .justify_between()
                                 .items_center()
-                                .child(div().text_sm().child(*label))
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(rgb(0x666666))
-                                        .child(*shortcut),
-                                ),
+                                .child(div().text_sm().child(label))
+                                .child(div().text_xs().text_color(rgb(0x666666)).child(shortcut)),
                         )
                 }))
         } else {
@@ -2831,7 +2874,6 @@ impl PlayerView {
                         .border_color(rgb(0x4ec9b0))
                         .rounded_md()
                         .p_4()
-                        .overflow_y_scroll()
                         .child(
                             div()
                                 .text_xl()
@@ -3170,6 +3212,21 @@ fn render_plugin_param_list(
             ),
             ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
             ("Gain".to_string(), format!("{:.1} dB", gain_db)),
+        ],
+        PluginSettings::LoudnessMonitor => vec![(
+            "Info".to_string(),
+            "Real-time LUFS and peak meters".to_string(),
+        )],
+        PluginSettings::SpectrumAnalyzer {
+            num_bins,
+            min_freq,
+            max_freq,
+            smoothing,
+        } => vec![
+            ("Frequency Bins".to_string(), format!("{}", num_bins)),
+            ("Min Frequency".to_string(), format!("{:.0} Hz", min_freq)),
+            ("Max Frequency".to_string(), format!("{:.0} Hz", max_freq)),
+            ("Smoothing".to_string(), format!("{:.2}", smoothing)),
         ],
     }
 }

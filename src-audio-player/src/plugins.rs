@@ -13,6 +13,8 @@ pub enum PluginType {
     LoudnessCompensation,
     BinauralDecoder,
     Convolution,
+    LoudnessMonitor,
+    SpectrumAnalyzer,
 }
 
 impl PluginType {
@@ -26,6 +28,8 @@ impl PluginType {
             Self::LoudnessCompensation => "[6] Loudness Compensation",
             Self::BinauralDecoder => "[7] Binaural Decoder",
             Self::Convolution => "[8] Convolution",
+            Self::LoudnessMonitor => "[9] Loudness Monitor",
+            Self::SpectrumAnalyzer => "[0] Spectrum Analyzer",
         }
     }
 
@@ -39,6 +43,8 @@ impl PluginType {
             Self::LoudnessCompensation => "Equal Loudness Compensation",
             Self::BinauralDecoder => "Multi-channel to Binaural (HRTF)",
             Self::Convolution => "FFT-based Convolution (IR Processing)",
+            Self::LoudnessMonitor => "Real-time EBU R128 loudness monitoring",
+            Self::SpectrumAnalyzer => "Real-time frequency spectrum analysis",
         }
     }
 
@@ -52,6 +58,8 @@ impl PluginType {
             Self::LoudnessCompensation,
             Self::BinauralDecoder,
             Self::Convolution,
+            Self::LoudnessMonitor,
+            Self::SpectrumAnalyzer,
         ]
     }
 }
@@ -268,6 +276,13 @@ pub enum PluginSettings {
         mix: f64,
         gain_db: f64,
     },
+    LoudnessMonitor,
+    SpectrumAnalyzer {
+        num_bins: usize,
+        min_freq: f32,
+        max_freq: f32,
+        smoothing: f32,
+    },
 }
 
 impl PluginSettings {
@@ -281,6 +296,8 @@ impl PluginSettings {
             Self::LoudnessCompensation { .. } => PluginType::LoudnessCompensation,
             Self::BinauralDecoder { .. } => PluginType::BinauralDecoder,
             Self::Convolution { .. } => PluginType::Convolution,
+            Self::LoudnessMonitor => PluginType::LoudnessMonitor,
+            Self::SpectrumAnalyzer { .. } => PluginType::SpectrumAnalyzer,
         }
     }
 
@@ -439,6 +456,21 @@ impl PluginSettings {
                     "gain_db": gain_db,
                 }),
             ),
+            Self::LoudnessMonitor => PluginConfig::new("loudness_monitor", json!({})),
+            Self::SpectrumAnalyzer {
+                num_bins,
+                min_freq,
+                max_freq,
+                smoothing,
+            } => PluginConfig::new(
+                "spectrum_analyzer",
+                json!({
+                    "num_bins": num_bins,
+                    "min_freq": min_freq,
+                    "max_freq": max_freq,
+                    "smoothing": smoothing,
+                }),
+            ),
         }
     }
 
@@ -518,6 +550,13 @@ impl PluginSettings {
                 ir_file: String::new(),
                 mix: 1.0,
                 gain_db: 0.0,
+            },
+            PluginType::LoudnessMonitor => Self::LoudnessMonitor,
+            PluginType::SpectrumAnalyzer => Self::SpectrumAnalyzer {
+                num_bins: 30,
+                min_freq: 20.0,
+                max_freq: 20000.0,
+                smoothing: 0.7,
             },
         }
     }
