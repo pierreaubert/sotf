@@ -28,9 +28,9 @@ use std::sync::Arc;
 /*
 const PHASE_SHIFT_0   : Complex<f32> = Complex::new(1.0, 0.0); // +1
 const PHASE_SHIFT_90: Complex<f32> = Complex::new(0.0, 1.0); // +i
-*/
 const PHASE_SHIFT_180: Complex<f32> = Complex::new(-1.0, 0.0); // -1
 const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
+*/
 
 // ============================================================================
 // Configuration
@@ -145,6 +145,9 @@ pub struct UpmixerPluginParams {
 
     #[serde(default = "default_safety_cap_db")]
     pub safety_cap_db: f32,
+
+    #[serde(default)]
+    pub decorrelation_mode: usize,
 }
 
 // ============================================================================
@@ -247,9 +250,15 @@ pub struct UpmixerPlugin {
     coherence_instant: Vec<f32>,
     smoothed_coherence: Vec<f32>,
 
+    // Decorrelation Mode
+    param_decorrelation_mode: ParameterId,
+    decorrelation_mode: usize, // 0=Velvet, 1=LFO
+
     // Decorrelation
     decorrelation_filter_left: Vec<Complex<f32>>,
     decorrelation_filter_right: Vec<Complex<f32>>,
+
+    // LFO Decorrelation State
     decor_base_phases_left: Vec<f32>,
     decor_base_phases_right: Vec<f32>,
     decor_lfo_phase: f32,
@@ -506,6 +515,9 @@ impl UpmixerPlugin {
             hr_sharpen: 1.0,
             param_safety_cap_db: ParameterId::from("safety_cap_db"),
             safety_cap_db: default_safety_cap_db(),
+            param_decorrelation_mode: ParameterId::from("decorrelation_mode"),
+            decorrelation_mode: 0, // Default to Velvet Noise
+
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
 
@@ -518,6 +530,7 @@ impl UpmixerPlugin {
             decor_base_phases_left: Vec::new(),
             decor_base_phases_right: Vec::new(),
             decor_lfo_phase: 0.0,
+            
             pca_cov_xx: Vec::new(),
             pca_cov_yy: Vec::new(),
             pca_cov_xy: Vec::new(),
@@ -572,7 +585,6 @@ impl UpmixerPlugin {
             hr_transient_env: 0.0,
             hr_energy_smooth: 0.0,
 
-            // Dialogue detection
             dialogue_spectral_centroid: 0.0,
             dialogue_envelope_variance: 0.0,
             dialogue_prev_rms: 0.0,
@@ -605,6 +617,7 @@ impl UpmixerPlugin {
         plugin.enable_hr_direct = params.enable_hr_direct;
         plugin.hr_sharpen = params.hr_sharpen.clamp(0.0, 1.0);
         plugin.safety_cap_db = params.safety_cap_db.max(0.0);
+        plugin.decorrelation_mode = params.decorrelation_mode;
         plugin
     }
 
@@ -643,28 +656,11 @@ impl UpmixerPlugin {
         const LEFT_AZIMUTH: f32 = 30.0;
         const RIGHT_AZIMUTH: f32 = -30.0;
 
-        /*
-                log::debug!(
-                    "[UPMIXER] recalculate_panning_gains() called for config: {}",
-                    self.speaker_config.name
-                );
-                log::debug!(
-                    "[UPMIXER]   num_output_channels: {}",
-                    self.num_output_channels
-                );
-                log::debug!(
-                    "[UPMIXER]   left_azimuth: {}, right_azimuth: {}",
-                    LEFT_AZIMUTH,
-                    RIGHT_AZIMUTH
-                );
-        */
-
         self.panning_gains_left.clear();
         self.panning_gains_right.clear();
 
         for (idx, speaker) in self.speaker_config.speakers.iter().enumerate() {
             if speaker.is_lfe {
-                // log::debug!("[UPMIXER]   Speaker[{}] LFE: left=0.5, right=0.5", idx);
                 self.panning_gains_left.push(0.5);
                 self.panning_gains_right.push(0.5);
             } else {
@@ -672,17 +668,6 @@ impl UpmixerPlugin {
                     calculate_panning_gain(LEFT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
                 let right_gain =
                     calculate_panning_gain(RIGHT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
-                /*
-                                log::debug!(
-                                    "[UPMIXER]   Speaker[{}] az={:>6.1}° el={:>6.1}° is_height={}: left={:.4}, right={:.4}",
-                                    idx,
-                                    speaker.azimuth,
-                                    speaker.elevation,
-                                    speaker.elevation > 10.0,
-                                    left_gain,
-                                    right_gain
-                                );
-                */
                 self.panning_gains_left.push(left_gain);
                 self.panning_gains_right.push(right_gain);
             }
@@ -693,17 +678,8 @@ impl UpmixerPlugin {
         let left_energy: f32 = self.panning_gains_left.iter().map(|g| g * g).sum();
         let right_energy: f32 = self.panning_gains_right.iter().map(|g| g * g).sum();
 
-        /*
-                log::debug!(
-                    "[UPMIXER]   Pre-normalization energies: left={:.6}, right={:.6}",
-                    left_energy,
-                    right_energy
-                );
-        */
-
         if left_energy > 0.0 {
             let left_scale = 1.0 / left_energy.sqrt();
-            log::debug!("[UPMIXER]   Left normalization scale: {:.6}", left_scale);
             for i in 0..self.num_output_channels {
                 self.panning_gains_left[i] *= left_scale;
             }
@@ -711,22 +687,10 @@ impl UpmixerPlugin {
 
         if right_energy > 0.0 {
             let right_scale = 1.0 / right_energy.sqrt();
-            log::debug!("[UPMIXER]   Right normalization scale: {:.6}", right_scale);
             for i in 0..self.num_output_channels {
                 self.panning_gains_right[i] *= right_scale;
             }
         }
-
-        /*
-                log::debug!(
-                    "[UPMIXER]   Final panning gains (left):  {:?}",
-                    self.panning_gains_left
-                );
-                log::debug!(
-                    "[UPMIXER]   Final panning gains (right): {:?}",
-                    self.panning_gains_right
-                );
-        */
     }
 
     /// Detect dialogue-like signals using spectral centroid and temporal envelope
@@ -858,7 +822,9 @@ impl UpmixerPlugin {
     /// Phase 2: Process frequency domain with ERB bands and PCA decomposition
     #[inline]
     fn process_frequency_domain_erb_bands(&mut self) {
-        self.update_decorrelation_filters_time_varying();
+        if self.decorrelation_mode == 1 {
+            self.update_lfo_decorrelation();
+        }
 
         let lfe_cutoff_bin =
             ((self.lfe_cutoff_hz * self.fft_size as f32) / self.sample_rate as f32) as usize;
@@ -1255,7 +1221,8 @@ impl UpmixerPlugin {
                 let mut direct_gain = if is_front && !is_height {
                     self.gain_front_direct
                 } else {
-                    self.gain_rear_ambient * 0.15
+                    // Allow 20% direct bleed into surrounds for cohesion
+                    0.20
                 };
 
                 let mut ambient_gain = if is_front && !is_height {
@@ -1282,35 +1249,32 @@ impl UpmixerPlugin {
                 }
 
                 if is_height {
+                    // Allow 15% direct bleed into heights for "air"
+                    let height_direct_leak = 0.15;
+                    
                     for i in 0..spectrum_size {
                         // 1. Direct component
-                        let direct_component = self.direct_left[i] * panning_gain_left
-                            + self.direct_right[i] * panning_gain_right;
+                        let direct_component = (self.direct_left[i] * panning_gain_left
+                            + self.direct_right[i] * panning_gain_right) * height_direct_leak;
 
-                        // 2. Ambient component
+                        // 2. Ambient component (decorrelated)
+                        // Use the static Velvet Noise filters (decorrelation_filter_left/right)
+                        // instead of phase-shifted copies of ambient_left/right
+                        let decor_l = self.decorrelation_filter_left[i];
+                        let decor_r = self.decorrelation_filter_right[i];
+                        
+                        let ambient_raw_l = self.ambient_left[i];
+                        let ambient_raw_r = self.ambient_right[i];
+                        
+                        // Apply decorrelation to ambient
+                        let ambient_decor_l = ambient_raw_l * decor_l;
+                        let ambient_decor_r = ambient_raw_r * decor_r;
+                        
                         let is_left = speaker.azimuth > 0.0;
-
-                        let ambient_component = if is_front {
-                            // Front Height
-                            if is_left {
-                                self.ambient_left[i] * PHASE_SHIFT_180
-                                    + self.ambient_right[i] * PHASE_SHIFT_270
-                            } else {
-                                self.ambient_left[i] * PHASE_SHIFT_270
-                                    + self.ambient_right[i] * PHASE_SHIFT_180
-                            }
+                        let ambient_component = if is_left {
+                            ambient_decor_l * panning_gain_left + ambient_decor_r * panning_gain_right
                         } else {
-                            // Rear Height
-                            let decorrelated = if is_left {
-                                self.ambient_left[i] * PHASE_SHIFT_270
-                                    + self.ambient_right[i] * PHASE_SHIFT_180
-                            } else {
-                                self.ambient_left[i] * PHASE_SHIFT_180
-                                    + self.ambient_right[i] * PHASE_SHIFT_270
-                            };
-                            let late_reflection =
-                                (self.direct_left[i] + self.direct_right[i]) * 0.10;
-                            decorrelated + late_reflection
+                            ambient_decor_r * panning_gain_left + ambient_decor_l * panning_gain_right
                         };
 
                         // Height mask
@@ -1325,8 +1289,20 @@ impl UpmixerPlugin {
                     for i in 0..spectrum_size {
                         let mut direct_component = self.direct_left[i] * panning_gain_left
                             + self.direct_right[i] * panning_gain_right;
-                        let ambient_component = self.ambient_left[i] * panning_gain_left
-                            + self.ambient_right[i] * panning_gain_right;
+                        
+                        // Apply decorrelation for surround channels (non-front)
+                        let ambient_component = if !is_front {
+                            let decor_l = self.decorrelation_filter_left[i];
+                            let decor_r = self.decorrelation_filter_right[i];
+                            
+                            let amb_l = self.ambient_left[i] * decor_l;
+                            let amb_r = self.ambient_right[i] * decor_r;
+                            
+                            amb_l * panning_gain_left + amb_r * panning_gain_right
+                        } else {
+                             self.ambient_left[i] * panning_gain_left
+                            + self.ambient_right[i] * panning_gain_right
+                        };
 
                         if is_front && !is_height && is_center {
                             let spread = self.center_spread.clamp(0.0, 1.0);
@@ -1652,9 +1628,18 @@ impl UpmixerPlugin {
         }
     }
 
-    /// Generate static decorrelation filters (random phase)
     fn generate_decorrelation_filters(&mut self) {
-        // Simple pseudo-random generator to avoid dependencies
+        if self.decorrelation_mode == 1 {
+            self.generate_lfo_base_phases();
+            self.update_lfo_decorrelation();
+        } else {
+            self.generate_velvet_noise_decorrelators();
+        }
+    }
+
+    /// Generate base phases for LFO-based decorrelation (random anchor points)
+    fn generate_lfo_base_phases(&mut self) {
+        // Simple pseudo-random generator
         let mut seed = 12345u32;
         let mut rand_f32 = || {
             seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -1664,10 +1649,6 @@ impl UpmixerPlugin {
         let n = self.fft_size;
         let half = n / 2;
 
-        // Generate spectrally-smooth random phase for positive frequencies
-        // using a small set of random anchor points and linear interpolation
-        // between them. This avoids per-bin white-noise phase that can sound
-        // "grainy" while keeping full decorrelation.
         let num_anchors = 16usize.min(half.max(2));
         let step = (half as f32) / (num_anchors.saturating_sub(1).max(1) as f32);
 
@@ -1680,7 +1661,6 @@ impl UpmixerPlugin {
             let idx = idx.min(half);
             anchor_indices.push(idx);
 
-            // DC and Nyquist: keep phase 0 (no decorrelation)
             if idx == 0 || idx == half {
                 anchor_phases_left.push(0.0);
                 anchor_phases_right.push(0.0);
@@ -1690,7 +1670,6 @@ impl UpmixerPlugin {
             }
         }
 
-        // Ensure first and last anchors are exactly at 0 and Nyquist
         *anchor_indices.first_mut().unwrap() = 0;
         *anchor_indices.last_mut().unwrap() = half;
         anchor_phases_left[0] = 0.0;
@@ -1698,7 +1677,6 @@ impl UpmixerPlugin {
         anchor_phases_left[num_anchors - 1] = 0.0;
         anchor_phases_right[num_anchors - 1] = 0.0;
 
-        // Helper to interpolate phase with wrap-around handling
         let interp_phase =
             |i: usize, idx_a: usize, idx_b: usize, phase_a: f32, phase_b: f32| -> f32 {
                 if idx_b == idx_a {
@@ -1706,7 +1684,6 @@ impl UpmixerPlugin {
                 }
                 let t = (i as f32 - idx_a as f32) / (idx_b as f32 - idx_a as f32);
                 let mut d = phase_b - phase_a;
-                // Wrap to [-pi, pi] for smooth interpolation
                 let pi = std::f32::consts::PI;
                 if d > pi {
                     d -= 2.0 * pi;
@@ -1716,7 +1693,6 @@ impl UpmixerPlugin {
                 phase_a + d * t
             };
 
-        // Build full-phase arrays for [0, half]
         let mut phases_left = vec![0.0f32; half + 1];
         let mut phases_right = vec![0.0f32; half + 1];
 
@@ -1737,11 +1713,10 @@ impl UpmixerPlugin {
         self.decor_base_phases_left = phases_left;
         self.decor_base_phases_right = phases_right;
         self.decor_lfo_phase = 0.0;
-
-        self.update_decorrelation_filters_time_varying();
     }
 
-    fn update_decorrelation_filters_time_varying(&mut self) {
+    /// Update LFO-based decorrelation filters per frame
+    fn update_lfo_decorrelation(&mut self) {
         if self.sample_rate == 0 || self.fft_size == 0 {
             return;
         }
@@ -1774,7 +1749,6 @@ impl UpmixerPlugin {
         for i in 0..=half {
             let freq = i as f32 * freq_per_bin;
 
-            // High-frequency ratio (bandpass_hz to Nyquist)
             let hf_ratio = if freq <= hf_start {
                 0.0
             } else if freq >= nyquist {
@@ -1783,18 +1757,15 @@ impl UpmixerPlugin {
                 (freq - hf_start) / (nyquist - hf_start)
             };
 
-            // Mid-frequency reduction (reduces phasiness in vocal range)
             let mid_reduction = if freq < mid_start {
                 1.0
             } else if freq > mid_end {
                 1.0
             } else {
-                // Cosine taper through mid-range: 1.0 -> 0.3 -> 1.0
                 let t = (freq - mid_start) / (mid_end - mid_start);
                 0.3 + 0.7 * (std::f32::consts::PI * t).cos().abs()
             };
 
-            // Reduced from 0.3 to 0.08, with mid-frequency reduction
             let max_depth = 0.08_f32;
             let depth = max_depth * hf_ratio * mid_reduction;
             let phase_warp = (self.decor_lfo_phase + 0.37_f32 * i as f32).sin() * depth;
@@ -1809,6 +1780,7 @@ impl UpmixerPlugin {
             self.decorrelation_filter_right[i] = Complex::from_polar(1.0, phi_r);
         }
 
+        // Mirror for negative frequencies (though RealFFT mostly uses positive)
         for i in 1..half {
             let mirror_idx = n - i;
             self.decorrelation_filter_left[mirror_idx] = self.decorrelation_filter_left[i].conj();
@@ -1819,6 +1791,85 @@ impl UpmixerPlugin {
         self.decorrelation_filter_right[0] = Complex::new(1.0, 0.0);
         self.decorrelation_filter_left[half] = Complex::new(1.0, 0.0);
         self.decorrelation_filter_right[half] = Complex::new(1.0, 0.0);
+    }
+
+    /// Generate static decorrelation filters using Velvet Noise sequences.
+    /// This creates a smooth, diffuse phase response without the "swooshing" artifacts
+    /// of LFO-modulated phase shifters or the "metallic" sound of white noise.
+    fn generate_velvet_noise_decorrelators(&mut self) {
+        // Generate two independent Velvet Noise sequences (Left and Right)
+        // 30ms duration (approx 1323 samples at 44.1k)
+        let duration_ms = 30.0;
+        let seq_len = ((duration_ms / 1000.0) * self.sample_rate as f32) as usize;
+        // Limit to half FFT size to avoid wrap-around issues while maintaining length
+        let seq_len = seq_len.min(self.fft_size / 2).max(128);
+        
+        // Pulse density: 2000 pulses/sec
+        let pulses_per_sec = 2000.0;
+        let grid_size = (self.sample_rate as f32 / pulses_per_sec).max(1.0) as usize;
+        
+        // Simple LCG for determinism
+        let mut rng_seed = 12345u64;
+        let mut rand_u32 = || {
+            rng_seed = rng_seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            (rng_seed >> 32) as u32
+        };
+        let mut rand_f32 = || rand_u32() as f32 / u32::MAX as f32;
+
+        for ch in 0..2 {
+            let mut time_buf = vec![0.0; self.fft_size];
+            
+            // Generate Velvet Noise
+            let mut cursor = 0;
+            // Add a small initial delay
+            cursor += (rand_f32() * grid_size as f32) as usize;
+
+            while cursor < seq_len {
+                // Random position within grid
+                let offset = (rand_f32() * grid_size as f32) as usize;
+                let pos = (cursor + offset).min(self.fft_size - 1);
+                
+                // Random polarity (+1 or -1)
+                let val = if rand_f32() > 0.5 { 1.0 } else { -1.0 };
+                time_buf[pos] = val;
+                
+                cursor += grid_size;
+            }
+            
+            // FFT to get frequency response
+            let mut input_fft = self.fft_forward.make_input_vec();
+            input_fft.copy_from_slice(&time_buf);
+            let mut output_fft = self.fft_forward.make_output_vec();
+            
+            self.fft_forward.process(&mut input_fft, &mut output_fft).unwrap();
+            
+            // Normalize Magnitude to 1.0 (All-Pass)
+            for i in 0..output_fft.len() {
+                let val = output_fft[i];
+                let norm = val.norm();
+                if norm > 1e-9 {
+                    output_fft[i] = val / norm;
+                } else {
+                    output_fft[i] = Complex::new(1.0, 0.0);
+                }
+            }
+            
+            // Store in decorrelation filters
+            let target = if ch == 0 {
+                &mut self.decorrelation_filter_left
+            } else {
+                &mut self.decorrelation_filter_right
+            };
+            
+            // Fill buffer up to its length
+            for i in 0..target.len() {
+                if i < output_fft.len() {
+                    target[i] = output_fft[i];
+                } else {
+                    target[i] = Complex::new(0.0, 0.0);
+                }
+            }
+        }
     }
 }
 
@@ -1941,6 +1992,11 @@ Range: 0.0-12.0 dB, default 3.0 dB.
 If a block's peak level after upmixing would exceed this value
 above unity, the block is scaled down to stay within the cap.",
                 ),
+            Parameter::new_int("decorrelation_mode", "Decorrelation Mode", 0, 0, 1).with_description(
+                "Mode for ambient decorrelation.
+0 = Velvet Noise (Static, smooth, no artifacts) - Default
+1 = LFO Phase (Dynamic, subtle motion, may have metallic artifacts)",
+            ),
         ]
     }
 
@@ -2045,13 +2101,23 @@ above unity, the block is scaled down to stay within the cap.",
                 return Ok(());
             }
         } else if id == self.param_hr_sharpen
-            && let Some(val) = value.as_float()
+            && let Some(sharpen) = value.as_float()
         {
-            if (0.0..=1.0).contains(&val) {
-                self.hr_sharpen = val;
+            if (0.0..=1.0).contains(&sharpen) {
+                self.hr_sharpen = sharpen;
                 return Ok(());
             }
-            return Err("HR Sharpen must be between 0.0 and 1.0".to_string());
+            return Err("HR sharpen must be between 0.0 and 1.0".to_string());
+        } else if id == self.param_decorrelation_mode {
+            if let Some(mode) = value.as_int() {
+                if mode == 0 || mode == 1 {
+                    self.decorrelation_mode = mode as usize;
+                    // Re-generate filters when mode changes
+                    self.generate_decorrelation_filters();
+                    return Ok(());
+                }
+                return Err("Invalid decorrelation mode".to_string());
+            }
         } else if id == self.param_safety_cap_db
             && let Some(val) = value.as_float()
         {
@@ -2159,8 +2225,6 @@ above unity, the block is scaled down to stay within the cap.",
             &mut self.ambient_left,
             &mut self.ambient_right,
             &mut self.lfe,
-            &mut self.decorrelation_filter_left,
-            &mut self.decorrelation_filter_right,
             &mut self.hr_freq_domain_left,
             &mut self.hr_freq_domain_right,
         ]
@@ -2194,7 +2258,6 @@ above unity, the block is scaled down to stay within the cap.",
         self.pca_cov_xy.fill(Complex::new(0.0, 0.0));
         self.coherence_instant.fill(0.0);
         self.smoothed_coherence.fill(0.0);
-        self.decor_lfo_phase = 0.0;
         self.hr_transient_env = 0.0;
         self.hr_energy_smooth = 0.0;
 
