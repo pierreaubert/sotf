@@ -1,0 +1,94 @@
+[package]
+name = "autoeq-de"
+version = "0.2.52"
+description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+# Core numerical computing
+ndarray = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+csv = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+plotly = { workspace = true }
+autoeq-testfunctions = { path = "../math-testfunctions", version="0.2" }
+autoeq-env = { path = "../autoeq-env", version="0.2" }
+nlopt = { workspace = true, optional = true }
+plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"], optional = true }
+
+[features]
+default = ["nlopt"]
+nlopt = ["dep:nlopt"]
+plotly_static = ["dep:plotly_static"]
+
+[dev-dependencies]
+tempfile = "3.23"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["accelerate"] }
+accelerate-src = "0.3"
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(any(target_os = "ios", target_os="ios_sim"), target_arch = "aarch64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["accelerate"] }
+accelerate-src = "0.3"
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(target_os = "linux", target_arch="x86_64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(target_os = "linux", target_arch="aarch64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+signal-hook-tokio = { workspace = true }
+
+# Linux x86_64 musl configuration (static linking)
+[target.'cfg(all(target_os = "linux", target_arch="x86_64", target_env="musl"))'.dependencies]
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "static"] }
+signal-hook-tokio = { workspace = true }
+
+# Linux ARM64 musl configuration (static linking)
+[target.'cfg(all(target_os = "linux", target_arch="aarch64", target_env="musl"))'.dependencies]
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "static"] }
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(target_os = "windows", target_arch="x86_64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["intel-mkl-dynamic-parallel"] }
+intel-mkl-src = "0.8.1"
+
+[target.'cfg(all(target_os = "windows", target_arch="aarch64"))'.dependencies]
+# blas folklore: intel-mkl not supported on arm :)
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+
+[[bin]]
+name = "plot_autoeq_de"
+path = "bin/plot_autoeq_de.rs"
+
+[[bin]]
+name = "benchmark_convergence"
+path = "bench/benchmark_convergence.rs"
+
+[[bin]]
+name = "run_autoeq_de"
+path = "bin/run_autoeq_de.rs"
+
+[lib]
+name = "autoeq_de"
+path = "src/mod.rs"

@@ -1,0 +1,61 @@
+[package]
+name = "sotf-audio-player"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Shared business logic for SOTF audio players"
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "sotf_audio_player"
+path = "src/lib.rs"
+
+[dependencies]
+# Audio engine
+sotf-audio-plugins = { path = "../sotf-audio-plugins" }
+sotf-audio-engine = { path = "../sotf-audio-engine" }
+autoeq-iir = { path = "../math-iir" }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# File system and utilities
+walkdir = "2"
+symphonia = { workspace = true }
+symphonia-core = { workspace = true }
+symphonia-metadata = { workspace = true }
+symphonia-bundle-flac = { workspace = true }
+symphonia-bundle-mp3 = { workspace = true }
+symphonia-codec-aac = { workspace = true }
+symphonia-format-riff = { workspace = true }
+symphonia-format-ogg = { workspace = true }
+symphonia-format-isomp4 = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+log = "0.4"
+
+# Path and config
+directories = "5.0"
+
+# Date/time
+chrono = { workspace = true }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Async runtime for background tasks
+tokio = { workspace = true }
+
+# Synchronous mutex
+parking_lot = { workspace = true }
+
+# EBU R128 loudness measurement for ReplayGain
+ebur128 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

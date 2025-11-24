@@ -1,0 +1,100 @@
+[package]
+name = "autoeq"
+version = "0.2.250"
+description = "Automatic equalization for speakers, headphones and rooms!"
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+build_html = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+csv = { workspace = true }
+num_cpus = { workspace = true }
+metaheuristics-nature = { workspace = true }
+plotly = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strsim = { workspace = true }
+tokio = { workspace = true }
+urlencoding = { workspace = true }
+
+# AutoEQ crates
+autoeq-iir = { path = "../math-iir", version="0.2" }
+autoeq-de = { path = "../math-de", version="0.2" }
+autoeq-cea2034 = { path = "../autoeq-cea2034", version="0.2" }
+autoeq-env = { path = "../autoeq-env", version="0.2" }
+
+# Core numerical computing
+ndarray = { workspace = true }
+blas-src = { workspace = true }
+
+# Optional features
+nlopt = { workspace = true, optional = true }
+plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"], optional = true }
+
+[features]
+default = ["nlopt"]
+nlopt = ["dep:nlopt"]
+plotly_static = ["dep:plotly_static"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["accelerate"] }
+accelerate-src = "0.3"
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(any(target_os = "ios", target_os="ios_sim"), target_arch = "aarch64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["accelerate"] }
+accelerate-src = "0.3"
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(target_os = "linux", target_arch="x86_64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(target_os = "linux", target_arch="aarch64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+signal-hook-tokio = { workspace = true }
+
+[target.'cfg(all(target_os = "windows", target_arch="x86_64"))'.dependencies]
+# blas folklore
+blas-src = { version = "0.14", features = ["intel-mkl-dynamic-parallel"] }
+intel-mkl-src = "0.8.1"
+
+[target.'cfg(all(target_os = "windows", target_arch="aarch64"))'.dependencies]
+# blas folklore: intel-mkl not supported on arm :)
+blas-src = { version = "0.14", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+
+[[bin]]
+name = "autoeq"
+path = "bin/autoeq.rs"
+
+[[bin]]
+name = "benchmark_autoeq_speaker"
+path = "bin/autoeq_benchmark_speaker.rs"
+
+[[bin]]
+name = "autoeq_download_speakers"
+path = "bin/autoeq_download_speaker.rs"
+
+[[bin]]
+name = "roomeq"
+path = "bin/roomeq.rs"
+
+[lib]
+name = "autoeq"
+path = "src/lib.rs"
+
+[dev-dependencies]
+tempfile = "3.23"
