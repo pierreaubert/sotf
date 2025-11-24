@@ -145,6 +145,7 @@ impl AudioEngineManager {
 
         // Create engine config
         let config = EngineConfig {
+            version: 1,
             frame_size: 1024,
             buffer_ms: 200, // 200ms latency
             output_sample_rate: audio_info.spec.sample_rate,
@@ -213,6 +214,7 @@ impl AudioEngineManager {
 
         // Create engine config for HAL (no file source)
         let config = EngineConfig {
+            version: 1,
             frame_size: 1024,
             buffer_ms: 200,            // 200ms latency
             output_sample_rate: 48000, // HAL default sample rate

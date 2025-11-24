@@ -581,6 +581,18 @@ impl PluginSettings {
     }
 }
 
+/// Versioned wrapper for plugin presets
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PluginPreset {
+    #[serde(default = "default_plugin_preset_version")]
+    version: u32,
+    plugins: Vec<Plugin>,
+}
+
+fn default_plugin_preset_version() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plugin {
     pub id: usize,
@@ -755,8 +767,14 @@ impl PluginChain {
 
         let full_path = presets_dir.join(&filename);
 
+        // Wrap plugins in versioned preset
+        let preset = PluginPreset {
+            version: default_plugin_preset_version(),
+            plugins: self.plugins.clone(),
+        };
+
         // Save to file
-        let json = serde_json::to_string_pretty(&self.plugins)?;
+        let json = serde_json::to_string_pretty(&preset)?;
         std::fs::write(&full_path, json)?;
 
         log::info!("Saved plugin chain to {}", full_path.display());
@@ -793,17 +811,88 @@ impl PluginChain {
         let json = std::fs::read_to_string(&full_path)?;
         log::debug!("Read {} bytes from file", json.len());
 
-        let plugins: Vec<Plugin> = serde_json::from_str(&json)?;
-        log::debug!("Deserialized {} plugins", plugins.len());
+        // Try to load as versioned preset first
+        let mut preset: PluginPreset = match serde_json::from_str(&json) {
+            Ok(p) => p,
+            Err(_) => {
+                // Fall back to loading as legacy format (direct Vec<Plugin>)
+                log::info!("Loading legacy plugin preset format (no version field)");
+                let plugins: Vec<Plugin> = serde_json::from_str(&json)?;
+                PluginPreset {
+                    version: 0, // Mark as legacy
+                    plugins,
+                }
+            }
+        };
+
+        // Check if migration is needed
+        const LATEST_VERSION: u32 = 1;
+        let original_version = preset.version;
+
+        if preset.version < LATEST_VERSION {
+            log::info!(
+                "Migrating plugin preset from version {} to {}",
+                original_version,
+                LATEST_VERSION
+            );
+
+            // Apply migrations
+            preset = Self::migrate_preset(preset)?;
+
+            // Save upgraded preset back to disk
+            self.plugins = preset.plugins.clone();
+            self.save_to_file(&final_filename)?;
+
+            log::info!(
+                "Successfully migrated plugin preset from version {} to {}",
+                original_version,
+                LATEST_VERSION
+            );
+        }
+
+        log::debug!("Deserialized {} plugins", preset.plugins.len());
 
         // Update next_id to be higher than any loaded plugin id
-        let max_id = plugins.iter().map(|p| p.id).max().unwrap_or(0);
+        let max_id = preset.plugins.iter().map(|p| p.id).max().unwrap_or(0);
         self.next_id = max_id + 1;
 
-        self.plugins = plugins;
+        self.plugins = preset.plugins;
 
         log::info!("Loaded plugin chain from {} ({} plugins)", full_path.display(), self.plugins.len());
         Ok(())
+    }
+
+    /// Apply all necessary migrations to bring a plugin preset to the latest version
+    fn migrate_preset(mut preset: PluginPreset) -> Result<PluginPreset, Box<dyn std::error::Error>> {
+        const LATEST_VERSION: u32 = 1;
+
+        // Apply migrations sequentially
+        while preset.version < LATEST_VERSION {
+            match preset.version {
+                // Migration from legacy format (version 0) to version 1
+                0 => {
+                    log::info!("Applying plugin preset migration: v0 (legacy) -> v1");
+                    // No structural changes needed for now
+                    // Future migrations might need to transform plugin settings
+                    preset.version = 1;
+                }
+
+                // Example migration from version 1 to 2:
+                // 1 => {
+                //     log::info!("Applying plugin preset migration: v1 -> v2");
+                //     // Apply migration logic here
+                //     // e.g., transform plugin parameters, rename fields, etc.
+                //     preset.version = 2;
+                // }
+
+                // If we reach here with no match, we have an unknown version
+                v => {
+                    return Err(format!("Unknown plugin preset version: {}", v).into());
+                }
+            }
+        }
+
+        Ok(preset)
     }
 
     /// Update BinauralDecoder input_channels based on the output of plugins before them

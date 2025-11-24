@@ -496,6 +496,16 @@ fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
 fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
+        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift+Up: Move plugin up in the list
+            app.move_plugin_up(app.selected_plugin_index);
+            None
+        }
+        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift+Down: Move plugin down in the list
+            app.move_plugin_down(app.selected_plugin_index);
+            None
+        }
         KeyCode::Up | KeyCode::Char('k') => {
             app.select_previous_plugin();
             None

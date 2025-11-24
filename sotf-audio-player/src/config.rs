@@ -2,8 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Application state that persists between sessions
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    /// Configuration version for migration support
+    #[serde(default = "default_app_config_version")]
+    pub version: u32,
+
     /// Currently selected output device name
     pub output_device: Option<String>,
     /// Queue of albums (artist, title pairs)
@@ -14,6 +18,23 @@ pub struct AppConfig {
     pub track_index: usize,
     /// Currently loaded plugin preset name
     pub plugin_preset: Option<String>,
+}
+
+fn default_app_config_version() -> u32 {
+    1
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            version: default_app_config_version(),
+            output_device: None,
+            queue: Vec::new(),
+            queue_index: None,
+            track_index: 0,
+            plugin_preset: None,
+        }
+    }
 }
 
 /// Get the application configuration directory
@@ -104,12 +125,37 @@ pub fn save_app_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Err
     }
 }
 
-/// Load app configuration from disk
+/// Load app configuration from disk, applying migrations if needed
 pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
     if let Some(path) = get_app_state_path() {
         if path.exists() {
-            let json = std::fs::read_to_string(path)?;
-            let config = serde_json::from_str(&json)?;
+            let json = std::fs::read_to_string(&path)?;
+            let mut config: AppConfig = serde_json::from_str(&json)?;
+
+            // Check if migration is needed
+            const LATEST_VERSION: u32 = 1;
+            let original_version = config.version;
+
+            if config.version < LATEST_VERSION {
+                log::info!(
+                    "Migrating AppConfig from version {} to {}",
+                    original_version,
+                    LATEST_VERSION
+                );
+
+                // Apply migrations
+                config = migrate_app_config(config)?;
+
+                // Save upgraded config back to disk
+                save_app_config(&config)?;
+
+                log::info!(
+                    "Successfully migrated AppConfig from version {} to {}",
+                    original_version,
+                    LATEST_VERSION
+                );
+            }
+
             Ok(config)
         } else {
             Ok(AppConfig::default())
@@ -117,6 +163,31 @@ pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
     } else {
         Err("Could not determine config directory".into())
     }
+}
+
+/// Apply all necessary migrations to bring AppConfig to the latest version
+fn migrate_app_config(config: AppConfig) -> Result<AppConfig, Box<dyn std::error::Error>> {
+    const LATEST_VERSION: u32 = 1;
+
+    // Apply migrations sequentially
+    while config.version < LATEST_VERSION {
+        match config.version {
+            // Example migration from version 1 to 2:
+            // 1 => {
+            //     log::info!("Applying AppConfig migration: v1 -> v2");
+            //     // Apply migration logic here
+            //     // e.g., add new field with default value, transform data, etc.
+            //     config.version = 2;
+            // }
+
+            // If we reach here with no match, we have an unknown version
+            v => {
+                return Err(format!("Unknown AppConfig version: {}", v).into());
+            }
+        }
+    }
+
+    Ok(config)
 }
 
 #[cfg(test)]

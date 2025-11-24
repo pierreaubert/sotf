@@ -9,6 +9,10 @@ use std::path::PathBuf;
 /// Audio engine configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngineConfig {
+    /// Configuration version for migration support
+    #[serde(default = "default_engine_config_version")]
+    pub version: u32,
+
     /// Processing frame size (number of frames per block)
     pub frame_size: usize,
 
@@ -46,9 +50,14 @@ pub struct EngineConfig {
     pub watch_config: bool,
 }
 
+fn default_engine_config_version() -> u32 {
+    1
+}
+
 impl Default for EngineConfig {
     fn default() -> Self {
         Self {
+            version: default_engine_config_version(),
             frame_size: 1024,
             buffer_ms: 200,
             output_sample_rate: 48000,
@@ -74,6 +83,70 @@ impl EngineConfig {
     /// Calculate total buffer size in frames
     pub fn total_buffer_frames(&self) -> usize {
         (self.output_sample_rate as u64 * self.buffer_ms as u64 / 1000) as usize
+    }
+
+    /// Load configuration from a JSON file, applying migrations if needed
+    pub fn load_from_file(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+        let json = std::fs::read_to_string(path)?;
+        let mut config: EngineConfig = serde_json::from_str(&json)?;
+
+        // Check if migration is needed
+        const LATEST_VERSION: u32 = 1;
+        let original_version = config.version;
+
+        if config.version < LATEST_VERSION {
+            log::info!(
+                "Migrating EngineConfig from version {} to {}",
+                original_version,
+                LATEST_VERSION
+            );
+
+            // Apply migrations
+            config = Self::migrate(config)?;
+
+            // Save upgraded config back to disk
+            config.save_to_file(path)?;
+
+            log::info!(
+                "Successfully migrated EngineConfig from version {} to {}",
+                original_version,
+                LATEST_VERSION
+            );
+        }
+
+        Ok(config)
+    }
+
+    /// Save configuration to a JSON file
+    pub fn save_to_file(&self, path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Apply all necessary migrations to bring EngineConfig to the latest version
+    fn migrate(config: EngineConfig) -> Result<EngineConfig, Box<dyn std::error::Error>> {
+        const LATEST_VERSION: u32 = 1;
+
+        // Apply migrations sequentially
+        while config.version < LATEST_VERSION {
+            match config.version {
+                // Example migration from version 1 to 2:
+                // 1 => {
+                //     log::info!("Applying EngineConfig migration: v1 -> v2");
+                //     // Apply migration logic here
+                //     // e.g., add new field with default value, transform plugin configs, etc.
+                //     config.version = 2;
+                // }
+
+                // If we reach here with no match, we have an unknown version
+                v => {
+                    return Err(format!("Unknown EngineConfig version: {}", v).into());
+                }
+            }
+        }
+
+        Ok(config)
     }
 }
 

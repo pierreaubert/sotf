@@ -960,6 +960,7 @@ impl App {
     /// Save current app state to config file
     pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
         let config = sotf_audio_player::config::AppConfig {
+            version: 1,
             output_device: self.current_output_device_name.clone(),
             queue: self
                 .queue
@@ -2379,7 +2380,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Gain { .. } => 1, // gain_db
-        PluginSettings::Upmixer { .. } => 14, // + enable_hr_direct, hr_sharpen, safety_cap_db
+        PluginSettings::Upmixer { .. } => 15, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 3,     // threshold, release, mix
         PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
