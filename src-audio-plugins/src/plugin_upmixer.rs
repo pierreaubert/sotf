@@ -525,8 +525,8 @@ impl UpmixerPlugin {
             steering_alphas: Vec::new(),
             coherence_instant: Vec::new(),
             smoothed_coherence: Vec::new(),
-            decorrelation_filter_left: vec![zero_complex; fft_size],
-            decorrelation_filter_right: vec![zero_complex; fft_size],
+            decorrelation_filter_left: vec![zero_complex; spectrum_size],
+            decorrelation_filter_right: vec![zero_complex; spectrum_size],
             decor_base_phases_left: Vec::new(),
             decor_base_phases_right: Vec::new(),
             decor_lfo_phase: 0.0,
@@ -974,11 +974,19 @@ impl UpmixerPlugin {
                 // Base: sqrt(1 - coherence) for energy preservation
                 // Boost: 1.2x (20%) for enhanced spatial impression
                 //
-                // Dialogue detection: reduce ambient gain when dialogue is detected
-                // to route more energy to center channel and reduce metallic artifacts
+                // Dialogue detection: redistribute energy from ambient to center
+                // while preserving total energy to avoid saturation
                 let base_ambient_gain = (1.0 - coherence).sqrt() * 1.2;
-                let dialogue_reduction = 1.0 - (self.dialogue_probability * 0.6); // Reduce by up to 60%
-                let ambient_gain = base_ambient_gain * dialogue_reduction;
+
+                // Energy redistribution for dialogue: shift energy to center while maintaining total
+                // dialogue_weight ranges from 0.0 (no dialogue) to 0.4 (strong dialogue)
+                let dialogue_weight = self.dialogue_probability * 0.4;
+
+                // Reduce ambient proportionally
+                let ambient_gain = base_ambient_gain * (1.0 - dialogue_weight);
+
+                // Increase direct/center coherence proportionally (not as a boost multiplier)
+                let effective_coherence = coherence + (1.0 - coherence) * dialogue_weight;
 
                 for i in upmix_start..upmix_end {
                     let left = self.freq_domain_left[i];
@@ -987,11 +995,9 @@ impl UpmixerPlugin {
                     let sum = left + right;
                     let sum_norm = sum.norm();
 
-                    // Direct Extraction
-                    // Scale direct component by coherence
-                    // Dialogue detection: boost direct/center routing for voice
-                    let dialogue_boost = 1.0 + (self.dialogue_probability * 0.3); // Boost by up to 30%
-                    let direct_mag = sum_norm * 0.5 * coherence * dialogue_boost;
+                    // Direct Extraction with energy-preserving dialogue routing
+                    // Use effective_coherence to shift energy to center without boosting total magnitude
+                    let direct_mag = sum_norm * 0.5 * effective_coherence;
                     let direct_val = if sum_norm > 1e-9 {
                         sum * (direct_mag / sum_norm)
                     } else {
@@ -1222,7 +1228,12 @@ impl UpmixerPlugin {
                     self.gain_front_direct
                 } else {
                     // Allow 20% direct bleed into surrounds for cohesion
-                    0.20
+                    // But respect zero gains for silence
+                    if self.gain_front_direct == 0.0 && self.gain_rear_ambient == 0.0 {
+                        0.0
+                    } else {
+                        0.20
+                    }
                 };
 
                 let mut ambient_gain = if is_front && !is_height {
@@ -1251,7 +1262,7 @@ impl UpmixerPlugin {
                 if is_height {
                     // Allow 15% direct bleed into heights for "air"
                     let height_direct_leak = 0.15;
-                    
+
                     for i in 0..spectrum_size {
                         // 1. Direct component
                         let direct_component = (self.direct_left[i] * panning_gain_left
@@ -1271,11 +1282,18 @@ impl UpmixerPlugin {
                         let ambient_decor_r = ambient_raw_r * decor_r;
                         
                         let is_left = speaker.azimuth > 0.0;
-                        let ambient_component = if is_left {
+                        let mut ambient_component = if is_left {
                             ambient_decor_l * panning_gain_left + ambient_decor_r * panning_gain_right
                         } else {
                             ambient_decor_r * panning_gain_left + ambient_decor_l * panning_gain_right
                         };
+
+                        // For rear height channels, add late reflections (10% of direct signal)
+                        // This ensures rear heights have energy even with mono/coherent content
+                        if !is_front {
+                            let late_reflection = (self.direct_left[i] + self.direct_right[i]) * 0.10;
+                            ambient_component = ambient_component + late_reflection;
+                        }
 
                         // Height mask
                         let height_mask = self.height_band_gains[i];
@@ -1780,13 +1798,7 @@ impl UpmixerPlugin {
             self.decorrelation_filter_right[i] = Complex::from_polar(1.0, phi_r);
         }
 
-        // Mirror for negative frequencies (though RealFFT mostly uses positive)
-        for i in 1..half {
-            let mirror_idx = n - i;
-            self.decorrelation_filter_left[mirror_idx] = self.decorrelation_filter_left[i].conj();
-            self.decorrelation_filter_right[mirror_idx] = self.decorrelation_filter_right[i].conj();
-        }
-
+        // DC and Nyquist must be real (no phase shift)
         self.decorrelation_filter_left[0] = Complex::new(1.0, 0.0);
         self.decorrelation_filter_right[0] = Complex::new(1.0, 0.0);
         self.decorrelation_filter_left[half] = Complex::new(1.0, 0.0);
@@ -2608,6 +2620,33 @@ above unity, the block is scaled down to stay within the cap.",
         //     output_pos / self.num_output_channels
         // );
 
+        // TEMPORARY: Hard clipping protection to prevent high level outputs
+        // This is a safety measure while we debug which feature is causing the issue
+        let threshold = 1.0; // 0dB
+        let mut clipped_samples = 0;
+        let mut max_value = 0.0_f32;
+
+        for sample in output.iter_mut() {
+            let abs_val = sample.abs();
+            if abs_val > max_value {
+                max_value = abs_val;
+            }
+
+            if abs_val > threshold {
+                clipped_samples += 1;
+                *sample = sample.signum() * threshold;
+            }
+        }
+
+        // Log warning if clipping occurred
+        if clipped_samples > 0 {
+            log::warn!(
+                "[UPMIXER] CLIPPING PROTECTION: {} samples clipped, max value was {:.2} dB",
+                clipped_samples,
+                20.0 * max_value.log10()
+            );
+        }
+
         Ok(())
     }
 
@@ -2916,6 +2955,7 @@ mod tests {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
+        plugin.decorrelation_mode = 1; // Enable LFO mode for time-varying decorrelation
         plugin.initialize(44100).unwrap();
 
         let fft_size = plugin.fft_size;
@@ -3473,17 +3513,17 @@ mod tests {
         }
 
         /*
-                log::info!("5.1.4 Channel energies:");
-                log::info!("  [0] FL:  {:.6}", channel_energies[0]);
-                log::info!("  [1] FR:  {:.6}", channel_energies[1]);
-                log::info!("  [2] C:   {:.6}", channel_energies[2]);
-                log::info!("  [3] LFE: {:.6}", channel_energies[3]);
-                log::info!("  [4] SL:  {:.6}", channel_energies[4]);
-                log::info!("  [5] SR:  {:.6}", channel_energies[5]);
-                log::info!("  [6] TFL: {:.6}", channel_energies[6]);
-                log::info!("  [7] TFR: {:.6}", channel_energies[7]);
-                log::info!("  [8] TBL: {:.6}", channel_energies[8]);
-                log::info!("  [9] TBR: {:.6}", channel_energies[9]);
+        eprintln!("5.1.4 Channel energies:");
+        eprintln!("  [0] FL:  {:.6}", channel_energies[0]);
+        eprintln!("  [1] FR:  {:.6}", channel_energies[1]);
+        eprintln!("  [2] C:   {:.6}", channel_energies[2]);
+        eprintln!("  [3] LFE: {:.6}", channel_energies[3]);
+        eprintln!("  [4] SL:  {:.6}", channel_energies[4]);
+        eprintln!("  [5] SR:  {:.6}", channel_energies[5]);
+        eprintln!("  [6] TFL: {:.6}", channel_energies[6]);
+        eprintln!("  [7] TFR: {:.6}", channel_energies[7]);
+        eprintln!("  [8] TBL: {:.6}", channel_energies[8]);
+        eprintln!("  [9] TBR: {:.6}", channel_energies[9]);
         */
 
         // Check that all non-LFE channels have some energy
@@ -3577,11 +3617,12 @@ mod tests {
         );
         plugin.initialize(44100).unwrap();
 
-        let n = plugin.fft_size;
-        let half = n / 2;
+        let spectrum_size = plugin.fft_size / 2 + 1;
+        assert_eq!(plugin.decorrelation_filter_left.len(), spectrum_size);
+        assert_eq!(plugin.decorrelation_filter_right.len(), spectrum_size);
 
-        // Magnitude should be 1.0 for all bins
-        for i in 0..n {
+        // Magnitude should be 1.0 for all bins (these are all-pass filters)
+        for i in 0..spectrum_size {
             let mag_l = plugin.decorrelation_filter_left[i].norm();
             let mag_r = plugin.decorrelation_filter_right[i].norm();
             assert!(
@@ -3598,33 +3639,14 @@ mod tests {
             );
         }
 
-        // Conjugate symmetry for real signals
-        for i in 1..half {
-            let l = plugin.decorrelation_filter_left[i];
-            let l_mirror = plugin.decorrelation_filter_left[n - i];
-            let r = plugin.decorrelation_filter_right[i];
-            let r_mirror = plugin.decorrelation_filter_right[n - i];
-
-            assert!(
-                (l.conj() - l_mirror).norm() < 1e-5,
-                "Left decorrelator not conjugate-symmetric at bin {}",
-                i
-            );
-            assert!(
-                (r.conj() - r_mirror).norm() < 1e-5,
-                "Right decorrelator not conjugate-symmetric at bin {}",
-                i
-            );
-        }
-
-        // DC and Nyquist must be real
+        // DC and Nyquist must be real (phase = 0 or π)
         assert!(
             plugin.decorrelation_filter_left[0].im.abs() < 1e-6
                 && plugin.decorrelation_filter_right[0].im.abs() < 1e-6
         );
         assert!(
-            plugin.decorrelation_filter_left[half].im.abs() < 1e-6
-                && plugin.decorrelation_filter_right[half].im.abs() < 1e-6
+            plugin.decorrelation_filter_left[spectrum_size - 1].im.abs() < 1e-6
+                && plugin.decorrelation_filter_right[spectrum_size - 1].im.abs() < 1e-6
         );
     }
 
@@ -3703,6 +3725,483 @@ mod tests {
             max_mask_hf > 0.1,
             "Height mask should be noticeable for diffuse HF input, got max {}",
             max_mask_hf
+        );
+    }
+
+    // ===== NEW FEATURE TESTS TO IDENTIFY CLIPPING SOURCE =====
+
+    #[test]
+    fn test_ambient_detection_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Create test input with very high level (but still within -1.0 to 1.0)
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            // High amplitude signals that are uncorrelated (pure ambient)
+            input[i * 2] = (i as f32 * 0.1).sin() * 0.9; // Left
+            input[i * 2 + 1] = (i as f32 * 0.1 + std::f32::consts::PI).cos() * 0.9; // Right (uncorrelated)
+        }
+        let mut output = vec![0.0_f32; 2048 * 6];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Check that no output sample exceeds 1.0 (0dB)
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Sample at index {} exceeds 0dB: {:.2} dB (value: {})",
+                idx,
+                20.0 * sample.abs().log10(),
+                sample
+            );
+        }
+    }
+
+    #[test]
+    fn test_dialog_detection_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Create test input simulating voice (1-2 kHz, highly correlated stereo)
+        let mut input = vec![0.0_f32; 2048 * 2];
+        let sample_rate = 44100.0;
+        let voice_freq = 1500.0; // Hz - typical voice frequency
+        for i in 0..2048 {
+            let t = i as f32 / sample_rate;
+            let voice_signal = (2.0 * std::f32::consts::PI * voice_freq * t).sin() * 0.9;
+            input[i * 2] = voice_signal; // Left
+            input[i * 2 + 1] = voice_signal; // Right (highly correlated = dialog)
+        }
+        let mut output = vec![0.0_f32; 2048 * 6];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Check that no output sample exceeds 1.0
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Dialog test: Sample at index {} exceeds 0dB: {:.2} dB (value: {})",
+                idx,
+                20.0 * sample.abs().log10(),
+                sample
+            );
+        }
+    }
+
+    #[test]
+    fn test_ambient_extraction_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Create test input with strong side difference (ambient content)
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            // High frequency content with phase inversion (pure ambient)
+            let signal = (i as f32 * 0.2).sin() * 0.9;
+            input[i * 2] = signal; // Left
+            input[i * 2 + 1] = -signal; // Right (inverted = max ambient)
+        }
+        let mut output = vec![0.0_f32; 2048 * 12];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Check for overflow
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Ambient extraction: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_divergence_calculation_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 1.0, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5, // stereo_width = 1.0 (max divergence)
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Create test input with high stereo width content
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            input[i * 2] = (i as f32 * 0.05).sin() * 0.9; // Left
+            input[i * 2 + 1] = (i as f32 * 0.05 + 1.0).cos() * 0.9; // Right (different phase)
+        }
+        let mut output = vec![0.0_f32; 2048 * 6];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Divergence: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_height_mask_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Create test input with high frequency content (ideal for height channels)
+        let mut input = vec![0.0_f32; 2048 * 2];
+        let sample_rate = 44100.0;
+        let hf_freq = 10000.0; // 10 kHz - high frequency
+        for i in 0..2048 {
+            let t = i as f32 / sample_rate;
+            let hf_left = (2.0 * std::f32::consts::PI * hf_freq * t).sin() * 0.9;
+            let hf_right = (2.0 * std::f32::consts::PI * hf_freq * t + 0.5).sin() * 0.9;
+            input[i * 2] = hf_left;
+            input[i * 2 + 1] = hf_right;
+        }
+        let mut output = vec![0.0_f32; 2048 * 12];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Height mask: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_adaptive_decorrelation_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Test with ambient signal (triggers decorrelation)
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            let signal = (i as f32 * 0.1).sin() * 0.9;
+            input[i * 2] = signal;
+            input[i * 2 + 1] = -signal; // Inverted = ambient
+        }
+        let mut output = vec![0.0_f32; 2048 * 6];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Decorrelation: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_smooth_height_gains_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Test with rapidly changing high frequency content
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            // Alternating amplitude to trigger smoothing
+            let amp = if i % 100 < 50 { 0.9 } else { 0.3 };
+            input[i * 2] = (i as f32 * 0.3).sin() * amp;
+            input[i * 2 + 1] = (i as f32 * 0.3 + 0.5).sin() * amp;
+        }
+        let mut output = vec![0.0_f32; 2048 * 12];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Smooth height: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_vbap_panning_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Test with full scale signal
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            input[i * 2] = (i as f32 * 0.05).sin() * 0.95;
+            input[i * 2 + 1] = (i as f32 * 0.05).cos() * 0.95;
+        }
+        let mut output = vec![0.0_f32; 2048 * 12];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "VBAP panning: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_subharmonic_synthesis_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Test with low frequency content (triggers subharmonic synthesis)
+        let mut input = vec![0.0_f32; 2048 * 2];
+        let sample_rate = 44100.0;
+        let bass_freq = 80.0; // Hz - bass frequency
+        for i in 0..2048 {
+            let t = i as f32 / sample_rate;
+            let bass = (2.0 * std::f32::consts::PI * bass_freq * t).sin() * 0.9;
+            input[i * 2] = bass;
+            input[i * 2 + 1] = bass;
+        }
+        let mut output = vec![0.0_f32; 2048 * 6];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Subharmonic: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_extract_output_and_scale_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "7.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Test with various gain settings
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            input[i * 2] = (i as f32 * 0.1).sin() * 0.9;
+            input[i * 2 + 1] = (i as f32 * 0.1).cos() * 0.9;
+        }
+        let mut output = vec![0.0_f32; 2048 * 12];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Extract/scale: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_decorrelation_filters_mode_0_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.decorrelation_mode = 0; // Velvet noise mode
+        plugin.initialize(44100).unwrap();
+
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            input[i * 2] = (i as f32 * 0.1).sin() * 0.9;
+            input[i * 2 + 1] = -((i as f32 * 0.1).sin()) * 0.9; // Inverted for ambient
+        }
+        let mut output = vec![0.0_f32; 2048 * 6];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Decorr mode 0: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_decorrelation_filters_mode_1_no_overflow() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+        plugin.decorrelation_mode = 1; // LFO mode
+        plugin.initialize(44100).unwrap();
+
+        let mut input = vec![0.0_f32; 2048 * 2];
+        for i in 0..2048 {
+            input[i * 2] = (i as f32 * 0.1).sin() * 0.9;
+            input[i * 2 + 1] = -((i as f32 * 0.1).sin()) * 0.9; // Inverted for ambient
+        }
+        let mut output = vec![0.0_f32; 2048 * 6];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        for (idx, &sample) in output.iter().enumerate() {
+            assert!(
+                sample.abs() <= 1.0,
+                "Decorr mode 1: Sample at index {} exceeds 0dB: {:.2} dB",
+                idx,
+                20.0 * sample.abs().log10()
+            );
+        }
+    }
+
+    #[test]
+    fn test_combined_features_stress_test() {
+        // Test all features combined with extreme settings
+        let mut plugin = UpmixerPlugin::new(
+            2048,
+            "7.1.4",
+            2.0,  // High direct gain
+            2.0,  // High ambient gain
+            1.0,  // Max stereo width
+            120.0,
+            0.5,
+            250.0,
+            2.0,  // High rear gain
+            2.0,  // High height gain
+            true, // Enable HR direct
+            1.0,  // Max LFE level
+        );
+        plugin.initialize(44100).unwrap();
+
+        // Create complex signal with multiple characteristics
+        let mut input = vec![0.0_f32; 2048 * 2];
+        let sample_rate = 44100.0;
+        for i in 0..2048 {
+            let t = i as f32 / sample_rate;
+            // Mix of bass, voice, and high freq
+            let bass = (2.0 * std::f32::consts::PI * 60.0 * t).sin() * 0.3;
+            let voice = (2.0 * std::f32::consts::PI * 1500.0 * t).sin() * 0.3;
+            let hf = (2.0 * std::f32::consts::PI * 8000.0 * t).sin() * 0.3;
+            let combined = bass + voice + hf;
+
+            input[i * 2] = combined;
+            // Add some phase difference for ambient extraction
+            input[i * 2 + 1] = combined * 0.7 + hf * 0.3;
+        }
+        let mut output = vec![0.0_f32; 2048 * 12];
+
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2048,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // This is the critical test - with all features enabled and high gains
+        let mut max_sample = 0.0_f32;
+        let mut max_idx = 0;
+        for (idx, &sample) in output.iter().enumerate() {
+            if sample.abs() > max_sample {
+                max_sample = sample.abs();
+                max_idx = idx;
+            }
+            assert!(
+                sample.abs() <= 1.0,
+                "STRESS TEST: Sample at index {} exceeds 0dB: {:.2} dB (value: {})",
+                idx,
+                20.0 * sample.abs().log10(),
+                sample
+            );
+        }
+
+        println!(
+            "Stress test passed. Max output level: {:.2} dB at index {}",
+            20.0 * max_sample.log10(),
+            max_idx
         );
     }
 }

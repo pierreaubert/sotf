@@ -107,7 +107,7 @@ fn test_upmixer_parameter_adjustment() {
 
     // Test parameter queries
     let params = plugin.parameters();
-    assert_eq!(params.len(), 15); // + hr_sharpen, safety_cap_db
+    assert_eq!(params.len(), 16); // + hr_sharpen, safety_cap_db, decorrelation_mode
 
     // Modify gains
     plugin
