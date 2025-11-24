@@ -31,6 +31,10 @@
       "public/headphone-targets/*.csv"
     ],
     "externalBin": [
+      "../target/sotf_player_cli",
+      "../target/sotf_player_tui",
+      "../target/sotf_player_gpui",
+      "../target/libnetcdf.22.dylib"
     ],
     "icon": [
       "icons/32x32.png",
