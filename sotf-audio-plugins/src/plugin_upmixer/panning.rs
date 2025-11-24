@@ -71,7 +71,8 @@ impl UpmixerPlugin {
                     for i in 0..spectrum_size {
                         // 1. Direct component
                         let direct_component = (self.direct_left[i] * panning_gain_left
-                            + self.direct_right[i] * panning_gain_right) * height_direct_leak;
+                            + self.direct_right[i] * panning_gain_right)
+                            * height_direct_leak;
 
                         // 2. Ambient component (decorrelated)
                         // Use the static Velvet Noise filters (decorrelation_filter_left/right)
@@ -88,16 +89,19 @@ impl UpmixerPlugin {
 
                         let is_left = speaker.azimuth > 0.0;
                         let mut ambient_component = if is_left {
-                            ambient_decor_l * panning_gain_left + ambient_decor_r * panning_gain_right
+                            ambient_decor_l * panning_gain_left
+                                + ambient_decor_r * panning_gain_right
                         } else {
-                            ambient_decor_r * panning_gain_left + ambient_decor_l * panning_gain_right
+                            ambient_decor_r * panning_gain_left
+                                + ambient_decor_l * panning_gain_right
                         };
 
                         // For rear height channels, add late reflections (10% of direct signal)
                         // This ensures rear heights have energy even with mono/coherent content
                         if !is_front {
-                            let late_reflection = (self.direct_left[i] + self.direct_right[i]) * 0.10;
-                            ambient_component = ambient_component + late_reflection;
+                            let late_reflection =
+                                (self.direct_left[i] + self.direct_right[i]) * 0.10;
+                            ambient_component += late_reflection;
                         }
 
                         // Height mask
@@ -123,13 +127,13 @@ impl UpmixerPlugin {
 
                             amb_l * panning_gain_left + amb_r * panning_gain_right
                         } else {
-                             self.ambient_left[i] * panning_gain_left
-                            + self.ambient_right[i] * panning_gain_right
+                            self.ambient_left[i] * panning_gain_left
+                                + self.ambient_right[i] * panning_gain_right
                         };
 
                         if is_front && !is_height && is_center {
                             let spread = self.center_spread.clamp(0.0, 1.0);
-                            direct_component = direct_component * (1.0 - spread);
+                            direct_component *= (1.0 - spread);
                         }
                         self.temp_freq_out[i] =
                             direct_component * direct_gain + ambient_component * ambient_gain;

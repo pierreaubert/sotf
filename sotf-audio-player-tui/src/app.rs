@@ -1659,15 +1659,13 @@ impl App {
                     }
                     true
                 }
-                PluginSettings::Gain { gain_db } => {
-                    match param_idx {
-                        0 => {
-                            *gain_db = (*gain_db + delta * 0.5).clamp(-40.0, 40.0);
-                            true
-                        }
-                        _ => false,
+                PluginSettings::Gain { gain_db } => match param_idx {
+                    0 => {
+                        *gain_db = (*gain_db + delta * 0.5).clamp(-40.0, 40.0);
+                        true
                     }
-                }
+                    _ => false,
+                },
                 PluginSettings::EQ { filters } => {
                     if filters.is_empty() {
                         return false;
@@ -1981,14 +1979,22 @@ impl App {
             .get(self.selected_preset_index)
             .cloned()
         {
-            log::info!("Loading preset: {} (index {})", preset_filename, self.selected_preset_index);
+            log::info!(
+                "Loading preset: {} (index {})",
+                preset_filename,
+                self.selected_preset_index
+            );
             // Use the plugin chain's own load method (handles path construction)
             match self.plugin_chain.load_from_file(&preset_filename) {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
                     self.plugin_chain.update_binaural_decoder_channels();
 
-                    log::info!("Successfully loaded preset: {} ({} plugins)", preset_filename, self.plugin_chain.len());
+                    log::info!(
+                        "Successfully loaded preset: {} ({} plugins)",
+                        preset_filename,
+                        self.plugin_chain.len()
+                    );
                     self.status_message = Some(format!("Loaded preset: {}", preset_filename));
                     self.request_plugin_update();
                     self.last_loaded_preset = Some(preset_filename);
@@ -1999,7 +2005,10 @@ impl App {
                 }
             }
         } else {
-            log::error!("Failed to get preset at index {}", self.selected_preset_index);
+            log::error!(
+                "Failed to get preset at index {}",
+                self.selected_preset_index
+            );
         }
     }
 
@@ -2379,7 +2388,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
     use sotf_audio_player::PluginSettings;
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
-        PluginSettings::Gain { .. } => 1, // gain_db
+        PluginSettings::Gain { .. } => 1,                    // gain_db
         PluginSettings::Upmixer { .. } => 15, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 3,     // threshold, release, mix

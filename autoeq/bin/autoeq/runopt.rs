@@ -111,8 +111,8 @@ pub(super) fn perform_optimization_with_bounds(
 
     Ok(OptimizationResult {
         params: x,
-        converged: converged,
-        pre_objective: pre_objective,
-        post_objective: post_objective,
+        converged,
+        pre_objective,
+        post_objective,
     })
 }

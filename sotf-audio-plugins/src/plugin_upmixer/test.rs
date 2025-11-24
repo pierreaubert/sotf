@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod upmixer_tests {
-    use super::*;
+    use super::super::*;
+    use crate::{ProcessContext, UpmixerPlugin};
 
     #[test]
     fn test_upmixer_creation_5_1() {
@@ -883,7 +884,10 @@ mod upmixer_tests {
         );
         assert!(
             plugin.decorrelation_filter_left[spectrum_size - 1].im.abs() < 1e-6
-                && plugin.decorrelation_filter_right[spectrum_size - 1].im.abs() < 1e-6
+                && plugin.decorrelation_filter_right[spectrum_size - 1]
+                    .im
+                    .abs()
+                    < 1e-6
         );
     }
 
@@ -1078,7 +1082,8 @@ mod upmixer_tests {
     #[test]
     fn test_divergence_calculation_no_overflow() {
         let mut plugin = UpmixerPlugin::new(
-            2048, "5.1", 1.0, 1.0, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5, // stereo_width = 1.0 (max divergence)
+            2048, "5.1", 1.0, 1.0, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false,
+            0.5, // stereo_width = 1.0 (max divergence)
         );
         plugin.initialize(44100).unwrap();
 
@@ -1379,15 +1384,10 @@ mod upmixer_tests {
     fn test_combined_features_stress_test() {
         // Test all features combined with extreme settings
         let mut plugin = UpmixerPlugin::new(
-            2048,
-            "7.1.4",
-            2.0,  // High direct gain
-            2.0,  // High ambient gain
-            1.0,  // Max stereo width
-            120.0,
-            0.5,
-            250.0,
-            2.0,  // High rear gain
+            2048, "7.1.4", 2.0, // High direct gain
+            2.0, // High ambient gain
+            1.0, // Max stereo width
+            120.0, 0.5, 250.0, 2.0,  // High rear gain
             2.0,  // High height gain
             true, // Enable HR direct
             1.0,  // Max LFE level

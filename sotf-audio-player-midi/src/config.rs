@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Complete MIDI configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MidiConfig {
     /// Device profiles keyed by profile name
     pub profiles: HashMap<String, DeviceProfile>,
@@ -26,19 +26,6 @@ pub struct MidiConfig {
 
     /// MIDI channel for listening (0-15, None = all channels)
     pub listen_channel: Option<u8>,
-}
-
-impl Default for MidiConfig {
-    fn default() -> Self {
-        Self {
-            profiles: HashMap::new(),
-            active_profile: None,
-            default_input: None,
-            default_output: None,
-            learn_mode: false,
-            listen_channel: None,
-        }
-    }
 }
 
 impl MidiConfig {

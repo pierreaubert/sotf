@@ -447,8 +447,8 @@ impl InPlacePlugin for CompressorPlugin {
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 
-        for frame in 0..num_frames {
-            if self.link_channels && self.channels > 1 {
+        if self.link_channels && self.channels > 1 {
+            for frame in 0..num_frames {
                 let mut detection_level = 0.0_f32;
 
                 for ch in 0..self.channels {
@@ -476,7 +476,9 @@ impl InPlacePlugin for CompressorPlugin {
                         wet_mix,
                     );
                 }
-            } else {
+            }
+        } else {
+            for frame in 0..num_frames {
                 for ch in 0..self.channels {
                     let sample_idx = frame * self.channels + ch;
                     let input_sample = buffer[sample_idx];

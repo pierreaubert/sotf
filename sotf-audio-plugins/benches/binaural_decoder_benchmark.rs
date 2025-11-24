@@ -18,10 +18,12 @@ fn create_decoder(
         fft_size,
         None, // No SOFA file for basic benchmarks
         optimization,
-        0.0, // No externalization
-        0.0, // No near-field
+        0.0,   // No externalization
+        0.0,   // No near-field
         false, // No diffuse-field EQ (for performance benchmarking)
-        120.0, 2.0, 0.0, // LFE defaults
+        120.0,
+        2.0,
+        0.0, // LFE defaults
         RoomModel::default(),
     )
 }
@@ -171,8 +173,17 @@ fn bench_externalization(c: &mut Criterion) {
             &ext_level,
             |b, &ext_level| {
                 let mut decoder = BinauralDecoderPlugin::new(
-                    channels, fft_size, None, true, ext_level, 0.0,
-                    false, 120.0, 2.0, 0.0, RoomModel::default()
+                    channels,
+                    fft_size,
+                    None,
+                    true,
+                    ext_level,
+                    0.0,
+                    false,
+                    120.0,
+                    2.0,
+                    0.0,
+                    RoomModel::default(),
                 );
                 decoder.initialize(sample_rate).unwrap();
 
@@ -300,10 +311,17 @@ fn bench_atmos_7_1_4(c: &mut Criterion) {
 
     group.bench_function("with_externalization", |b| {
         let mut decoder = BinauralDecoderPlugin::new(
-            channels, fft_size, None, true,
+            channels,
+            fft_size,
+            None,
+            true,
             0.3, // Moderate externalization
             0.5, // Some near-field
-            false, 120.0, 2.0, 0.0, RoomModel::default()
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
         );
         decoder.initialize(sample_rate).unwrap();
 

@@ -51,11 +51,11 @@ impl LCXLTemplate {
             number: 1,
             channel: 0,
             knob_ccs: [
-                [13, 14, 15, 16, 17, 18, 19, 20],  // Top row (Send A)
-                [29, 30, 31, 32, 33, 34, 35, 36],  // Middle row (Send B)
-                [49, 50, 51, 52, 53, 54, 55, 56],  // Bottom row (Pan)
+                [13, 14, 15, 16, 17, 18, 19, 20], // Top row (Send A)
+                [29, 30, 31, 32, 33, 34, 35, 36], // Middle row (Send B)
+                [49, 50, 51, 52, 53, 54, 55, 56], // Bottom row (Pan)
             ],
-            fader_ccs: [77, 78, 79, 80, 81, 82, 83, 84],  // Faders (Volume)
+            fader_ccs: [77, 78, 79, 80, 81, 82, 83, 84], // Faders (Volume)
             is_factory: true,
         }
     }
@@ -69,12 +69,7 @@ impl LCXLTemplate {
     }
 
     /// Create a custom template
-    pub fn custom(
-        number: u8,
-        channel: u8,
-        knob_ccs: [[u8; 8]; 3],
-        fader_ccs: [u8; 8],
-    ) -> Self {
+    pub fn custom(number: u8, channel: u8, knob_ccs: [[u8; 8]; 3], fader_ccs: [u8; 8]) -> Self {
         Self {
             number,
             channel,
@@ -183,7 +178,11 @@ impl LaunchControlXLProfile {
     /// Identify which control a MIDI message corresponds to
     pub fn identify_control(msg: &MidiMessage, template: &LCXLTemplate) -> Option<String> {
         match msg {
-            MidiMessage::ControlChange { controller, channel, .. } => {
+            MidiMessage::ControlChange {
+                controller,
+                channel,
+                ..
+            } => {
                 if *channel != template.channel {
                     return None;
                 }
@@ -212,7 +211,8 @@ impl LaunchControlXLProfile {
 
                 None
             }
-            MidiMessage::NoteOn { note, channel, .. } | MidiMessage::NoteOff { note, channel, .. } => {
+            MidiMessage::NoteOn { note, channel, .. }
+            | MidiMessage::NoteOff { note, channel, .. } => {
                 if *channel != template.channel {
                     return None;
                 }
@@ -256,7 +256,9 @@ impl LaunchControlXLProfile {
     pub fn set_button_led(button_note: u8, color: u8, template: u8) -> Vec<u8> {
         vec![
             0xF0, // SysEx start
-            0x00, 0x20, 0x29, // Novation manufacturer ID
+            0x00,
+            0x20,
+            0x29, // Novation manufacturer ID
             0x02, // Device ID (Launch Control XL)
             0x0A, // Product ID
             0x78, // LED command

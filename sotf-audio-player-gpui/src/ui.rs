@@ -1899,10 +1899,9 @@ impl PlayerView {
                                 ("Safety Cap", format!("{:.1} dB", safety_cap_db)),
                             ],
                         ))
-                        .child(
-                            self.render_param_group(
-                                "Processing",
-                                vec![
+                        .child(self.render_param_group(
+                            "Processing",
+                            vec![
                                     ("Stereo Width", format!("{:.2}", stereo_width)),
                                     ("LFE Cutoff", format!("{:.0} Hz", lfe_cutoff_hz)),
                                     (
@@ -1916,8 +1915,7 @@ impl PlayerView {
                                     ),
                                     ("Subharmonic Gain", format!("{:.1} dB", subharmonic_gain)),
                                 ],
-                            ),
-                        )
+                        ))
                         .child(
                             div()
                                 .mt_2()

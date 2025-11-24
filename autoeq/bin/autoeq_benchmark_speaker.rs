@@ -255,26 +255,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         ])?;
 
                         // Accumulate deltas vs metadata when both values are present and finite
-                        if let (Some(v), Some(m)) = (s1, meta_pref) {
-                            if v.is_finite() && m.is_finite() {
+                        if let (Some(v), Some(m)) = (s1, meta_pref)
+                            && v.is_finite() && m.is_finite() {
                                 deltas_s1.push(v - m);
                             }
-                        }
-                        if let (Some(v), Some(m)) = (s2, meta_pref) {
-                            if v.is_finite() && m.is_finite() {
+                        if let (Some(v), Some(m)) = (s2, meta_pref)
+                            && v.is_finite() && m.is_finite() {
                                 deltas_s2.push(v - m);
                             }
-                        }
-                        if let (Some(v), Some(m)) = (s3, meta_pref) {
-                            if v.is_finite() && m.is_finite() {
+                        if let (Some(v), Some(m)) = (s3, meta_pref)
+                            && v.is_finite() && m.is_finite() {
                                 deltas_s3.push(v - m);
                             }
-                        }
-                        if let (Some(v), Some(m)) = (s4, meta_pref) {
-                            if v.is_finite() && m.is_finite() {
+                        if let (Some(v), Some(m)) = (s4, meta_pref)
+                            && v.is_finite() && m.is_finite() {
                                 deltas_s4.push(v - m);
                             }
-                        }
                     }
                     None => {
                         // Channel closed, all tasks are done
@@ -387,14 +383,13 @@ fn list_speakers<P: AsRef<Path>>(data_dir: P) -> Result<Vec<String>, Box<dyn Err
     for ent in entries {
         let ent = ent?;
         let p = ent.path();
-        if p.is_dir() {
-            if let Some(name) = p
+        if p.is_dir()
+            && let Some(name) = p
                 .file_name()
                 .and_then(|s| s.to_str())
                 .map(|s| s.to_string())
-            {
-                out.push(name);
-            }
+        {
+            out.push(name);
         }
     }
     out.sort();

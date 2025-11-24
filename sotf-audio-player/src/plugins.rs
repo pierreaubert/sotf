@@ -798,7 +798,11 @@ impl PluginChain {
             format!("{}.json", filename)
         };
 
-        log::debug!("Loading plugin chain from filename: {} (original: {})", final_filename, filename);
+        log::debug!(
+            "Loading plugin chain from filename: {} (original: {})",
+            final_filename,
+            filename
+        );
 
         // Get plugin_presets directory
         let presets_dir = crate::config::get_plugin_presets_dir()
@@ -858,12 +862,18 @@ impl PluginChain {
 
         self.plugins = preset.plugins;
 
-        log::info!("Loaded plugin chain from {} ({} plugins)", full_path.display(), self.plugins.len());
+        log::info!(
+            "Loaded plugin chain from {} ({} plugins)",
+            full_path.display(),
+            self.plugins.len()
+        );
         Ok(())
     }
 
     /// Apply all necessary migrations to bring a plugin preset to the latest version
-    fn migrate_preset(mut preset: PluginPreset) -> Result<PluginPreset, Box<dyn std::error::Error>> {
+    fn migrate_preset(
+        mut preset: PluginPreset,
+    ) -> Result<PluginPreset, Box<dyn std::error::Error>> {
         const LATEST_VERSION: u32 = 1;
 
         // Apply migrations sequentially

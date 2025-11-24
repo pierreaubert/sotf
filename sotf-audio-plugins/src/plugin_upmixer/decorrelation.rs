@@ -123,8 +123,8 @@ impl UpmixerPlugin {
         let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
 
         // Critical frequencies for decorrelation shaping
-        let mid_start = 800.0_f32;   // Start reducing decorrelation in vocal range
-        let mid_end = 4000.0_f32;    // End of critical mid-range
+        let mid_start = 800.0_f32; // Start reducing decorrelation in vocal range
+        let mid_end = 4000.0_f32; // End of critical mid-range
 
         for i in 0..=half {
             let freq = i as f32 * freq_per_bin;
@@ -215,7 +215,9 @@ impl UpmixerPlugin {
             input_fft.copy_from_slice(&time_buf);
             let mut output_fft = self.fft_forward.make_output_vec();
 
-            self.fft_forward.process(&mut input_fft, &mut output_fft).unwrap();
+            self.fft_forward
+                .process(&mut input_fft, &mut output_fft)
+                .unwrap();
 
             // Normalize Magnitude to 1.0 (All-Pass)
             for i in 0..output_fft.len() {
@@ -250,12 +252,7 @@ impl UpmixerPlugin {
     ///
     /// Blends between decorrelated and original signals based on strength parameter.
     /// Uses SIMD optimization for full decorrelation (strength >= 0.99).
-    pub(super) fn apply_adaptive_decorrelation(
-        &mut self,
-        start: usize,
-        end: usize,
-        strength: f32,
-    ) {
+    pub(super) fn apply_adaptive_decorrelation(&mut self, start: usize, end: usize, strength: f32) {
         // Fast path: full decorrelation (common case during steady-state)
         if strength >= 0.99 {
             let left_slice = &mut self.ambient_left[start..end];

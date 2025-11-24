@@ -3,8 +3,8 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use rustfft::num_complex::Complex;
 use crate::simd::compute_covariance_simd;
+use rustfft::num_complex::Complex;
 
 impl UpmixerPlugin {
     /// Phase 2: Process frequency domain using ERB bands and Logic Steering
@@ -133,8 +133,8 @@ impl UpmixerPlugin {
                     // mono sum) and mains (high-passed left/right).
 
                     let bin = i.min(self.lfe_low_gains.len() - 1);
-                    let low_gain = self.lfe_low_gains[bin] as f32;
-                    let high_gain = self.mains_high_gains[bin] as f32;
+                    let low_gain = self.lfe_low_gains[bin];
+                    let high_gain = self.mains_high_gains[bin];
 
                     let mono = (left + right) * Complex::new(0.5 * low_gain, 0.0);
                     self.lfe[i] = mono;
@@ -270,14 +270,11 @@ impl UpmixerPlugin {
                 // to keep vocals coherent and prevent metallic artifacts
                 let base_decorr_strength = (1.0 - self.hr_transient_env * 0.85).max(0.15);
                 let dialogue_decorr_reduction = 1.0 - (self.dialogue_probability * 0.7); // Reduce by up to 70%
-                let decorrelation_strength = (base_decorr_strength * dialogue_decorr_reduction).max(0.05);
+                let decorrelation_strength =
+                    (base_decorr_strength * dialogue_decorr_reduction).max(0.05);
 
                 // Apply transient-adaptive and dialogue-adaptive decorrelation
-                self.apply_adaptive_decorrelation(
-                    upmix_start,
-                    upmix_end,
-                    decorrelation_strength,
-                );
+                self.apply_adaptive_decorrelation(upmix_start, upmix_end, decorrelation_strength);
             }
         }
 

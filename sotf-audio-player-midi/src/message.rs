@@ -7,25 +7,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MidiMessage {
     /// Note Off: channel (0-15), note (0-127), velocity (0-127)
-    NoteOff {
-        channel: u8,
-        note: u8,
-        velocity: u8,
-    },
+    NoteOff { channel: u8, note: u8, velocity: u8 },
 
     /// Note On: channel (0-15), note (0-127), velocity (0-127)
-    NoteOn {
-        channel: u8,
-        note: u8,
-        velocity: u8,
-    },
+    NoteOn { channel: u8, note: u8, velocity: u8 },
 
     /// Polyphonic Aftertouch: channel (0-15), note (0-127), pressure (0-127)
-    PolyphonicAftertouch {
-        channel: u8,
-        note: u8,
-        pressure: u8,
-    },
+    PolyphonicAftertouch { channel: u8, note: u8, pressure: u8 },
 
     /// Control Change: channel (0-15), controller (0-127), value (0-127)
     ControlChange {
@@ -147,7 +135,9 @@ impl MidiMessage {
             0xE0 => {
                 // Pitch Bend
                 if bytes.len() < 3 {
-                    return Err(MidiError::InvalidMessage("Pitch Bend too short".to_string()));
+                    return Err(MidiError::InvalidMessage(
+                        "Pitch Bend too short".to_string(),
+                    ));
                 }
                 let lsb = bytes[1] & 0x7F;
                 let msb = bytes[2] & 0x7F;
@@ -206,11 +196,7 @@ impl MidiMessage {
                 controller,
                 value,
             } => {
-                vec![
-                    0xB0 | (channel & 0x0F),
-                    controller & 0x7F,
-                    value & 0x7F,
-                ]
+                vec![0xB0 | (channel & 0x0F), controller & 0x7F, value & 0x7F]
             }
             MidiMessage::ProgramChange { channel, program } => {
                 vec![0xC0 | (channel & 0x0F), program & 0x7F]
@@ -236,10 +222,7 @@ impl MidiMessage {
                 note,
                 velocity,
             } => {
-                format!(
-                    "Note Off: ch={}, note={}, vel={}",
-                    channel, note, velocity
-                )
+                format!("Note Off: ch={}, note={}, vel={}", channel, note, velocity)
             }
             MidiMessage::NoteOn {
                 channel,

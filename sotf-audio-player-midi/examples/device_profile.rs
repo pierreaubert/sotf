@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Add initialization messages
     // Example: Set controller to specific mode (this is device-specific)
     profile.add_init_message(vec![0xB0, 0x00, 0x00]); // Bank select MSB
-    profile.add_init_message(vec![0xC0, 0x00]);       // Program change
+    profile.add_init_message(vec![0xC0, 0x00]); // Program change
 
     // Create MIDI configuration
     let mut config = MidiConfig::default();
@@ -57,7 +57,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  CC {} -> {}", cc, function);
     }
 
-    println!("\nInitialization Messages: {} message(s)", profile.init_messages.len());
+    println!(
+        "\nInitialization Messages: {} message(s)",
+        profile.init_messages.len()
+    );
 
     // Save configuration to file
     let temp_dir = tempfile::tempdir()?;

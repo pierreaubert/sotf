@@ -153,14 +153,14 @@ pub fn load_obj_vertices<P: AsRef<Path>>(path: P) -> Result<Vec<Vertex>, ConvexH
         // Parse vertex lines (format: "v x y z")
         if line.starts_with("v ") {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() >= 4 {
-                if let (Ok(x), Ok(y), Ok(z)) = (
+            if parts.len() >= 4
+                && let (Ok(x), Ok(y), Ok(z)) = (
                     parts[1].parse::<f64>(),
                     parts[2].parse::<f64>(),
                     parts[3].parse::<f64>(),
-                ) {
-                    vertices.push(Vertex::new(x, y, z));
-                }
+                )
+            {
+                vertices.push(Vertex::new(x, y, z));
             }
         }
     }

@@ -2,8 +2,8 @@
 //!
 //! Demonstrates MIDI control of Genelec SAM monitors via GLM software.
 
-use sotf_audio_player_midi::profiles::{GLMControl, GenelecGLMProfile};
 use sotf_audio_player_midi::MidiManager;
+use sotf_audio_player_midi::profiles::{GLMControl, GenelecGLMProfile};
 use std::io::{self, Write};
 
 fn print_menu() {
@@ -51,7 +51,10 @@ fn get_percent(prompt: &str) -> Option<f32> {
     print!("{} (0-100): ", prompt);
     io::stdout().flush().unwrap();
     let input = get_input();
-    input.parse::<f32>().ok().filter(|&n| n >= 0.0 && n <= 100.0)
+    input
+        .parse::<f32>()
+        .ok()
+        .filter(|&n| n >= 0.0 && n <= 100.0)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -202,22 +205,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("  Mute:         CC {}", GenelecGLMProfile::MUTE_CC);
                 println!("  Dim:          CC {}", GenelecGLMProfile::DIM_CC);
                 println!("  Solo:         CC {}", GenelecGLMProfile::SOLO_CC);
-                println!(
-                    "  Mon. Group:   CC {}",
-                    GenelecGLMProfile::MONITOR_GROUP_CC
-                );
-                println!(
-                    "  Vol. Preset:  CC {}",
-                    GenelecGLMProfile::VOLUME_PRESET_CC
-                );
-                println!(
-                    "  Bass Mgmt:    CC {}",
-                    GenelecGLMProfile::BASS_MGMT_CC
-                );
-                println!(
-                    "  System Power: CC {}",
-                    GenelecGLMProfile::SYSTEM_POWER_CC
-                );
+                println!("  Mon. Group:   CC {}", GenelecGLMProfile::MONITOR_GROUP_CC);
+                println!("  Vol. Preset:  CC {}", GenelecGLMProfile::VOLUME_PRESET_CC);
+                println!("  Bass Mgmt:    CC {}", GenelecGLMProfile::BASS_MGMT_CC);
+                println!("  System Power: CC {}", GenelecGLMProfile::SYSTEM_POWER_CC);
                 println!(
                     "  Solo/Mute:    CC {} (value = MIDI ID)",
                     GenelecGLMProfile::SOLO_MUTE_DEV_CC

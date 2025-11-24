@@ -17,27 +17,24 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::complex_mul_inplace_simd;
-use super::speaker_config::{SpeakerConfig, calculate_panning_gain, get_speaker_config};
-use autoeq_iir::{Biquad, BiquadFilterType};
+use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 // Module declarations for refactored functionality
+mod bass;
 mod config;
-mod setup;
+mod decorrelation;
 mod detection;
 mod fft;
-mod decorrelation;
-mod bass;
-mod height;
-mod panning;
-mod output;
 mod frequency_domain;
+mod height;
 mod hr_processing;
+mod output;
+mod panning;
 mod process;
+mod setup;
 
 // Re-export configuration types from config module
 pub use config::*;
@@ -521,20 +518,7 @@ impl UpmixerPlugin {
     }
 }
 
-use setup::*;
-use detection::*;
-use fft::*;
-use decorrelation::*;
-use bass::*;
-use height::*;
-use panning::*;
-use output::*;
-use frequency_domain::*;
-use hr_processing::*;
-use process::*;
-
 impl Plugin for UpmixerPlugin {
-
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: format!("Stereo to {} Upmixer", self.speaker_config.name),
@@ -634,11 +618,12 @@ Range: 0.0-1.0, default 0.5.
 Controls how loud the synthesized low-frequency component is
 relative to the original LFE signal.",
                 ),
-            Parameter::new_bool("enable_hr_direct", "Multi-Resolution Analysis", true).with_description(
-                "Enables multi-resolution analysis for optimal time/frequency resolution.
+            Parameter::new_bool("enable_hr_direct", "Multi-Resolution Analysis", true)
+                .with_description(
+                    "Enables multi-resolution analysis for optimal time/frequency resolution.
 Default: ON. Uses short FFT (512 samples) for transients and long FFT (2048) for ambient.
 Adaptively blends based on transient detection for sharper attacks and smooth ambience.",
-            ),
+                ),
             Parameter::new_float("hr_sharpen", "HR Sharpen", 1.0, 0.0, 1.0).with_description(
                 "Depth control for the high-resolution direct path.
 Range: 0.0-1.0, default 1.0.
@@ -653,11 +638,12 @@ Range: 0.0-12.0 dB, default 3.0 dB.
 If a block's peak level after upmixing would exceed this value
 above unity, the block is scaled down to stay within the cap.",
                 ),
-            Parameter::new_int("decorrelation_mode", "Decorrelation Mode", 0, 0, 1).with_description(
-                "Mode for ambient decorrelation.
+            Parameter::new_int("decorrelation_mode", "Decorrelation Mode", 0, 0, 1)
+                .with_description(
+                    "Mode for ambient decorrelation.
 0 = Velvet Noise (Static, smooth, no artifacts) - Default
 1 = LFO Phase (Dynamic, subtle motion, may have metallic artifacts)",
-            ),
+                ),
         ]
     }
 

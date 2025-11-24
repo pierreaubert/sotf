@@ -542,7 +542,11 @@ fn design_fir_lowpass(
     kaiser_beta: f64,
 ) -> Vec<f64> {
     // Ensure odd number of taps for symmetry
-    let n = if n_taps % 2 == 0 { n_taps + 1 } else { n_taps };
+    let n = if n_taps.is_multiple_of(2) {
+        n_taps + 1
+    } else {
+        n_taps
+    };
 
     let mut h = vec![0.0; n];
     let fc = cutoff / srate; // Normalized cutoff frequency
@@ -606,7 +610,11 @@ fn design_fir_bandpass(
     kaiser_beta: f64,
 ) -> Vec<f64> {
     // Ensure odd number of taps
-    let n = if n_taps % 2 == 0 { n_taps + 1 } else { n_taps };
+    let n = if n_taps.is_multiple_of(2) {
+        n_taps + 1
+    } else {
+        n_taps
+    };
 
     let mut h = vec![0.0; n];
     let fc_low = freq_low / srate;

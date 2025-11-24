@@ -75,7 +75,7 @@ impl GenelecGLMProfile {
     pub const DEFAULT_CHANNEL: u8 = 0;
 
     /// Suggested default CC assignments (user-configurable in GLM)
-    pub const VOLUME_CC: u8 = 7;           // Standard volume CC
+    pub const VOLUME_CC: u8 = 7; // Standard volume CC
     pub const MUTE_CC: u8 = 102;
     pub const DIM_CC: u8 = 103;
     pub const SOLO_CC: u8 = 104;
@@ -83,7 +83,7 @@ impl GenelecGLMProfile {
     pub const VOLUME_PRESET_CC: u8 = 106;
     pub const BASS_MGMT_CC: u8 = 107;
     pub const SYSTEM_POWER_CC: u8 = 108;
-    pub const SOLO_MUTE_DEV_CC: u8 = 109;  // Value = MIDI ID of device
+    pub const SOLO_MUTE_DEV_CC: u8 = 109; // Value = MIDI ID of device
 
     /// Create a device profile for Genelec GLM
     pub fn create_profile() -> DeviceProfile {
@@ -343,7 +343,10 @@ mod tests {
     #[test]
     fn test_custom_profile() {
         let profile = GenelecGLMProfile::create_custom_profile(10, 11, 12, 13);
-        assert_eq!(profile.mappings.get(&10), Some(&"System Volume".to_string()));
+        assert_eq!(
+            profile.mappings.get(&10),
+            Some(&"System Volume".to_string())
+        );
         assert_eq!(profile.mappings.get(&11), Some(&"System Mute".to_string()));
     }
 }

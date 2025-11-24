@@ -291,14 +291,14 @@ fn main() {
             println!("            x = [{}]", x_buffer);
         }
 
-        if let Some(limit) = time_limit {
-            if overall_start.elapsed().as_secs_f64() >= limit {
-                println!(
-                    "Stopping early after {:.2} seconds (time limit reached)",
-                    limit
-                );
-                return CallbackAction::Stop;
-            }
+        if let Some(limit) = time_limit
+            && overall_start.elapsed().as_secs_f64() >= limit
+        {
+            println!(
+                "Stopping early after {:.2} seconds (time limit reached)",
+                limit
+            );
+            return CallbackAction::Stop;
         }
 
         CallbackAction::Continue
@@ -356,10 +356,10 @@ fn resolve_function(
 
     let requested_lower = requested.to_lowercase();
     for name in registry.list_functions() {
-        if name.to_lowercase() == requested_lower {
-            if let Some(func) = registry.get(&name) {
-                return Some((name, func));
-            }
+        if name.to_lowercase() == requested_lower
+            && let Some(func) = registry.get(&name)
+        {
+            return Some((name, func));
         }
     }
     None
@@ -371,10 +371,10 @@ fn determine_dimension(args: &Cli, metadata: Option<&FunctionMetadata>) -> usize
     }
 
     if let Some(meta) = metadata {
-        if let Some(&preferred) = meta.dimensions.first() {
-            if preferred > 0 {
-                return preferred;
-            }
+        if let Some(&preferred) = meta.dimensions.first()
+            && preferred > 0
+        {
+            return preferred;
         }
         if !meta.bounds.is_empty() {
             return meta.bounds.len();

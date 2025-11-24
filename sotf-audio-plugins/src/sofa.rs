@@ -16,7 +16,6 @@
 // - https://www.sofaconventions.org/
 // - AES69-2015: AES standard for file exchange - Spatial acoustic data file format
 
-use netcdf;
 use std::path::Path;
 
 // ============================================================================

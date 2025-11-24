@@ -42,11 +42,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         speakers
     };
 
-    if speakers_to_process.is_empty() {
-        if let Some(ref filter) = args.speaker {
-            eprintln!("No speakers found matching '{}'", filter);
-            return Ok(());
-        }
+    if speakers_to_process.is_empty()
+        && let Some(ref filter) = args.speaker
+    {
+        eprintln!("No speakers found matching '{}'", filter);
+        return Ok(());
     }
 
     println!("Processing {} speaker(s)", speakers_to_process.len());

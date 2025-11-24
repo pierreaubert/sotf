@@ -65,11 +65,11 @@ pub fn build_channel_dsp_chain(
     let mut plugins = Vec::new();
 
     // Add gain if specified
-    if let Some(gain) = gain_db {
-        if gain.abs() > 0.01 {
-            // Only add if gain is non-zero
-            plugins.push(create_gain_plugin(gain));
-        }
+    if let Some(gain) = gain_db
+        && gain.abs() > 0.01
+    {
+        // Only add if gain is non-zero
+        plugins.push(create_gain_plugin(gain));
     }
 
     // Add crossover filters

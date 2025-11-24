@@ -34,6 +34,7 @@ walkdir = "2"
 autoeq-env = { path = "../autoeq-env" }
 autoeq-iir = { path = "../math-iir" }
 rand = { workspace = true }
+rayon = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 sotf_hal = { path = "../sotf-macos-hal" }
@@ -66,13 +67,19 @@ criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bin]]
 name = "plugin_fuzzer"
-path = "src/bin/plugin_fuzzer.rs"
+path = "bin/plugin_fuzzer.rs"
 
 [[bench]]
-name = "binaural_decoder"
+name = "binaural_decoder_benchmark"
 harness = false
 
 [[bench]]
-name = "upmixer"
+name = "upmixer_benchmark"
 harness = false
+
+[[bench]]
+name = "compressor_benchmark"
+harness = false
+
+
 

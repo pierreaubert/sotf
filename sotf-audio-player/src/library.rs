@@ -622,22 +622,21 @@ impl MusicLibrary {
 
     pub fn search_albums(&self, query: &str) -> Vec<&Album> {
         // Try to use FTS5 search if database is available
-        if let Some(db) = &self.db {
-            if let Ok(album_ids) = db.search_library(query) {
-                if !album_ids.is_empty() {
-                    return self
-                        .albums
-                        .iter()
-                        .filter(|album| {
-                            if let Some(id) = album.id {
-                                album_ids.contains(&id)
-                            } else {
-                                false
-                            }
-                        })
-                        .collect();
-                }
-            }
+        if let Some(db) = &self.db
+            && let Ok(album_ids) = db.search_library(query)
+            && !album_ids.is_empty()
+        {
+            return self
+                .albums
+                .iter()
+                .filter(|album| {
+                    if let Some(id) = album.id {
+                        album_ids.contains(&id)
+                    } else {
+                        false
+                    }
+                })
+                .collect();
         }
 
         // Fallback to legacy search if DB search fails or returns no results

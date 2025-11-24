@@ -1859,9 +1859,9 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             }
             params
         }
-        PluginSettings::Gain { gain_db } => vec![
-            ("Gain".to_string(), format!("{:.1} dB", gain_db)),
-        ],
+        PluginSettings::Gain { gain_db } => {
+            vec![("Gain".to_string(), format!("{:.1} dB", gain_db))]
+        }
         PluginSettings::BinauralDecoder {
             sofa_file,
             input_channels,
@@ -2788,8 +2788,14 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
 
         // Add error icon and message
         lines.push(Line::from(vec![
-            Span::styled("✗ ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-            Span::styled("Audio Playback Error", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "✗ ",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "Audio Playback Error",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
         ]));
         lines.push(Line::from(""));
 
@@ -2804,11 +2810,26 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
         // Add instructions
         lines.push(Line::from(vec![
             Span::styled("Press ", Style::default()),
-            Span::styled("ESC", Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "ESC",
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(", ", Style::default()),
-            Span::styled("Enter", Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Enter",
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(", or ", Style::default()),
-            Span::styled("Space", Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Space",
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" to close", Style::default()),
         ]));
 

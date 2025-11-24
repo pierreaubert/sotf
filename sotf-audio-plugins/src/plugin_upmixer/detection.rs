@@ -93,8 +93,8 @@ impl UpmixerPlugin {
 
         // Low variance indicates steady dialogue (vs. dynamic music)
         let variance_threshold = 0.4;
-        let variance_score = (1.0 - (self.dialogue_envelope_variance / variance_threshold).min(1.0))
-            .max(0.0);
+        let variance_score =
+            (1.0 - (self.dialogue_envelope_variance / variance_threshold).min(1.0)).max(0.0);
 
         // Combined score with weighting
         let dialogue_prob = centroid_score * 0.6 + variance_score * 0.4;

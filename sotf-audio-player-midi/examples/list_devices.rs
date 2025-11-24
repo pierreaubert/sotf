@@ -35,9 +35,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    println!("Total: {} input(s), {} output(s)",
-             input_devices.len(),
-             output_devices.len());
+    println!(
+        "Total: {} input(s), {} output(s)",
+        input_devices.len(),
+        output_devices.len()
+    );
 
     Ok(())
 }

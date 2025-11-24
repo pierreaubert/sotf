@@ -1339,7 +1339,8 @@ impl App {
                             true
                         }
                         13 => {
-                            *safety_cap_db = (*safety_cap_db + delta as f64 * 0.5).max(0.0).min(12.0);
+                            *safety_cap_db =
+                                (*safety_cap_db + delta as f64 * 0.5).max(0.0).min(12.0);
                             true
                         }
                         14 => {

@@ -434,10 +434,7 @@ fn find_horizon(hull_faces: &[HullFace], visible_faces: &[usize]) -> Vec<Edge> {
 
         for (v0, v1) in oriented_edges {
             let normalized = Edge::new(v0, v1);
-            edge_to_faces
-                .entry(normalized)
-                .or_insert_with(Vec::new)
-                .push(face_idx);
+            edge_to_faces.entry(normalized).or_default().push(face_idx);
         }
     }
 

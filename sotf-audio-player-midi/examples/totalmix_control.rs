@@ -2,8 +2,8 @@
 //!
 //! Demonstrates comprehensive control of RME TotalMix FX via MIDI.
 
-use sotf_audio_player_midi::profiles::{RMETotalMixProfile, TotalMixControl, TotalMixRow};
 use sotf_audio_player_midi::MidiManager;
+use sotf_audio_player_midi::profiles::{RMETotalMixProfile, TotalMixControl, TotalMixRow};
 use std::io::{self, Write};
 
 fn print_menu() {
@@ -49,7 +49,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_devices = manager.list_output_devices()?;
     let totalmix_idx = output_devices
         .iter()
-        .position(|d| d.name.contains("TotalMix") || d.name.contains("UFX") || d.name.contains("RME"))
+        .position(|d| {
+            d.name.contains("TotalMix") || d.name.contains("UFX") || d.name.contains("RME")
+        })
         .or_else(|| {
             if !output_devices.is_empty() {
                 println!("TotalMix not found. Available devices:");
@@ -189,7 +191,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(r) = row {
                     if let Some(bank) = get_number("  Bank", 3) {
                         if let Some(ch) = get_number("  Channel (Mackie)", 7) {
-                            if let Some(pan) = get_number("  Pan (0=left, 64=center, 127=right)", 127)
+                            if let Some(pan) =
+                                get_number("  Pan (0=left, 64=center, 127=right)", 127)
                             {
                                 totalmix.set_pan(r, bank, ch, pan)?;
                                 println!("✓ Pan set to {}", pan);

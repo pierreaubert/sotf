@@ -175,41 +175,6 @@ pub fn complex_mul_add_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf
         }
     }
 
-    #[test]
-    fn test_simd_complex_mul_inplace_correctness() {
-        use rustfft::num_complex::Complex;
-
-        let src = vec![
-            Complex::new(2.0, 3.0),
-            Complex::new(-1.5, 2.5),
-            Complex::new(0.5, -1.0),
-            Complex::new(4.0, -2.0),
-        ];
-
-        let hrtf = vec![
-            Complex::new(1.0, 0.5),
-            Complex::new(2.0, -1.0),
-            Complex::new(-0.5, 1.5),
-            Complex::new(0.75, 0.25),
-        ];
-
-        // Scalar reference
-        let mut expected = src.clone();
-        for i in 0..expected.len() {
-            expected[i] *= hrtf[i];
-        }
-
-        // SIMD in-place computation
-        let mut result = src.clone();
-        complex_mul_inplace_simd(&mut result, &hrtf);
-
-        const EPSILON: f32 = 1e-6;
-        for i in 0..result.len() {
-            assert!((result[i].re - expected[i].re).abs() < EPSILON);
-            assert!((result[i].im - expected[i].im).abs() < EPSILON);
-        }
-    }
-
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
         // Process 2 complex at a time with NEON
@@ -598,6 +563,833 @@ mod tests {
             }
         }
     }
+
+    // ============================================================================
+    // Comprehensive Tests for complex_mul_inplace_simd
+    // ============================================================================
+
+    #[test]
+    fn test_simd_complex_mul_inplace_correctness() {
+        // Basic correctness test for in-place complex multiplication
+        use rustfft::num_complex::Complex;
+
+        let src = vec![
+            Complex::new(2.0, 3.0),
+            Complex::new(-1.5, 2.5),
+            Complex::new(0.5, -1.0),
+            Complex::new(4.0, -2.0),
+        ];
+
+        let hrtf = vec![
+            Complex::new(1.0, 0.5),
+            Complex::new(2.0, -1.0),
+            Complex::new(-0.5, 1.5),
+            Complex::new(0.75, 0.25),
+        ];
+
+        // Scalar reference
+        let mut expected = src.clone();
+        for i in 0..expected.len() {
+            expected[i] *= hrtf[i];
+        }
+
+        // SIMD in-place computation
+        let mut result = src.clone();
+        complex_mul_inplace_simd(&mut result, &hrtf);
+
+        const EPSILON: f32 = 1e-6;
+        for i in 0..result.len() {
+            assert!(
+                (result[i].re - expected[i].re).abs() < EPSILON,
+                "Index {}: re mismatch {} vs {}",
+                i,
+                result[i].re,
+                expected[i].re
+            );
+            assert!(
+                (result[i].im - expected[i].im).abs() < EPSILON,
+                "Index {}: im mismatch {} vs {}",
+                i,
+                result[i].im,
+                expected[i].im
+            );
+        }
+    }
+
+    #[test]
+    fn test_simd_inplace_large_buffers() {
+        // Test in-place multiplication with realistic FFT buffer sizes
+        use rustfft::num_complex::Complex;
+
+        for fft_size in [128, 256, 512, 1024, 2048] {
+            let mut src: Vec<Complex<f32>> = (0..fft_size)
+                .map(|i| {
+                    let phase = (i as f32) * 0.01;
+                    Complex::new(phase.cos(), phase.sin())
+                })
+                .collect();
+
+            let hrtf: Vec<Complex<f32>> = (0..fft_size)
+                .map(|i| Complex::new(0.5 + (i as f32) * 0.001, 0.25))
+                .collect();
+
+            // Scalar reference
+            let mut expected = src.clone();
+            for i in 0..fft_size {
+                expected[i] *= hrtf[i];
+            }
+
+            // SIMD computation
+            complex_mul_inplace_simd(&mut src, &hrtf);
+
+            // Verify all elements match
+            for i in 0..fft_size {
+                assert!(
+                    (src[i].re - expected[i].re).abs() < 1e-5,
+                    "FFT size {}, index {}: re mismatch",
+                    fft_size,
+                    i
+                );
+                assert!(
+                    (src[i].im - expected[i].im).abs() < 1e-5,
+                    "FFT size {}, index {}: im mismatch",
+                    fft_size,
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_simd_inplace_unaligned() {
+        // Test with sizes that don't align to SIMD width (4 for AVX2, 2 for NEON)
+        use rustfft::num_complex::Complex;
+
+        for size in [1, 2, 3, 5, 6, 7, 9, 10, 11, 15, 17, 19, 23] {
+            let mut src: Vec<Complex<f32>> = (0..size)
+                .map(|i| Complex::new((i as f32) * 0.5, (i as f32) * -0.3))
+                .collect();
+
+            let hrtf: Vec<Complex<f32>> = (0..size)
+                .map(|i| Complex::new(1.0 + (i as f32) * 0.1, 0.5))
+                .collect();
+
+            // Scalar reference
+            let mut expected = src.clone();
+            for i in 0..size {
+                expected[i] *= hrtf[i];
+            }
+
+            // SIMD computation
+            complex_mul_inplace_simd(&mut src, &hrtf);
+
+            // Verify
+            for i in 0..size {
+                assert!(
+                    (src[i].re - expected[i].re).abs() < 1e-6,
+                    "Size {}, index {}: re mismatch",
+                    size,
+                    i
+                );
+                assert!(
+                    (src[i].im - expected[i].im).abs() < 1e-6,
+                    "Size {}, index {}: im mismatch",
+                    size,
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_simd_inplace_edge_cases() {
+        // Test edge cases: zeros, ones, conjugates, negative values
+        use rustfft::num_complex::Complex;
+
+        // Test 1: Multiply by zero (should zero out the buffer)
+        let mut src = vec![
+            Complex::new(1.0, 2.0),
+            Complex::new(3.0, 4.0),
+            Complex::new(5.0, 6.0),
+            Complex::new(7.0, 8.0),
+        ];
+        let zero = vec![Complex::new(0.0, 0.0); 4];
+        complex_mul_inplace_simd(&mut src, &zero);
+        for i in 0..4 {
+            assert!(src[i].re.abs() < 1e-6, "Expected zero, got {}", src[i].re);
+            assert!(src[i].im.abs() < 1e-6, "Expected zero, got {}", src[i].im);
+        }
+
+        // Test 2: Multiply by one (should be identity)
+        let original = vec![
+            Complex::new(1.5, 2.5),
+            Complex::new(-3.5, 4.5),
+            Complex::new(5.5, -6.5),
+            Complex::new(-7.5, -8.5),
+        ];
+        let mut src = original.clone();
+        let one = vec![Complex::new(1.0, 0.0); 4];
+        complex_mul_inplace_simd(&mut src, &one);
+        for i in 0..4 {
+            assert!((src[i].re - original[i].re).abs() < 1e-6);
+            assert!((src[i].im - original[i].im).abs() < 1e-6);
+        }
+
+        // Test 3: Multiply by conjugate (should give real result with magnitude |a|^2)
+        let a = Complex::new(3.0, 4.0);
+        let a_conj = Complex::new(3.0, -4.0);
+        let mut src = vec![a; 8];
+        let conj = vec![a_conj; 8];
+        complex_mul_inplace_simd(&mut src, &conj);
+        // a * conj(a) = |a|^2 = 3^2 + 4^2 = 25
+        for i in 0..8 {
+            assert!((src[i].re - 25.0).abs() < 1e-5, "Expected 25.0, got {}", src[i].re);
+            assert!(src[i].im.abs() < 1e-5, "Expected ~0, got {}", src[i].im);
+        }
+
+        // Test 4: Multiply by i (rotation by 90 degrees)
+        let mut src = vec![Complex::new(1.0, 0.0); 4];
+        let i_val = vec![Complex::new(0.0, 1.0); 4];
+        complex_mul_inplace_simd(&mut src, &i_val);
+        for idx in 0..4 {
+            assert!(src[idx].re.abs() < 1e-6, "Expected 0, got {}", src[idx].re);
+            assert!((src[idx].im - 1.0).abs() < 1e-6, "Expected 1, got {}", src[idx].im);
+        }
+    }
+
+    #[test]
+    fn test_simd_inplace_negative_values() {
+        // Test with all negative values
+        use rustfft::num_complex::Complex;
+
+        let mut src = vec![
+            Complex::new(-1.0, -2.0),
+            Complex::new(-3.0, -4.0),
+            Complex::new(-5.0, -6.0),
+            Complex::new(-7.0, -8.0),
+        ];
+
+        let hrtf = vec![
+            Complex::new(-0.5, -0.25),
+            Complex::new(-1.0, -1.5),
+            Complex::new(-2.0, 0.5),
+            Complex::new(0.75, -0.75),
+        ];
+
+        // Scalar reference
+        let mut expected = src.clone();
+        for i in 0..expected.len() {
+            expected[i] *= hrtf[i];
+        }
+
+        // SIMD computation
+        complex_mul_inplace_simd(&mut src, &hrtf);
+
+        const EPSILON: f32 = 1e-6;
+        for i in 0..src.len() {
+            assert!((src[i].re - expected[i].re).abs() < EPSILON);
+            assert!((src[i].im - expected[i].im).abs() < EPSILON);
+        }
+    }
+
+    // ============================================================================
+    // Comprehensive Tests for compute_covariance_simd
+    // ============================================================================
+
+    #[test]
+    fn test_covariance_basic_correctness() {
+        // Test basic covariance computation against scalar reference
+        use rustfft::num_complex::Complex;
+
+        let left = vec![
+            Complex::new(1.0, 2.0),
+            Complex::new(3.0, 4.0),
+            Complex::new(-1.0, 0.5),
+            Complex::new(0.0, -2.0),
+            Complex::new(2.5, -1.5),
+            Complex::new(-3.5, 2.5),
+            Complex::new(1.1, -0.9),
+            Complex::new(-0.8, 1.2),
+        ];
+
+        let right = vec![
+            Complex::new(0.5, 0.25),
+            Complex::new(-1.0, 1.5),
+            Complex::new(2.0, -0.5),
+            Complex::new(0.75, 0.75),
+            Complex::new(-0.5, 2.0),
+            Complex::new(1.5, -1.0),
+            Complex::new(0.9, 0.3),
+            Complex::new(-1.1, 0.7),
+        ];
+
+        // Scalar reference
+        let mut expected_xx = 0.0_f32;
+        let mut expected_yy = 0.0_f32;
+        let mut expected_xy = Complex::new(0.0, 0.0);
+        for i in 0..left.len() {
+            expected_xx += left[i].norm_sqr();
+            expected_yy += right[i].norm_sqr();
+            expected_xy += left[i] * right[i].conj();
+        }
+
+        // SIMD computation
+        let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&left, &right, 0, left.len());
+
+        const EPSILON: f32 = 1e-5;
+        assert!(
+            (cov_xx - expected_xx).abs() < EPSILON,
+            "cov_xx mismatch: {} vs {}",
+            cov_xx,
+            expected_xx
+        );
+        assert!(
+            (cov_yy - expected_yy).abs() < EPSILON,
+            "cov_yy mismatch: {} vs {}",
+            cov_yy,
+            expected_yy
+        );
+        assert!(
+            (cov_xy.re - expected_xy.re).abs() < EPSILON,
+            "cov_xy.re mismatch: {} vs {}",
+            cov_xy.re,
+            expected_xy.re
+        );
+        assert!(
+            (cov_xy.im - expected_xy.im).abs() < EPSILON,
+            "cov_xy.im mismatch: {} vs {}",
+            cov_xy.im,
+            expected_xy.im
+        );
+    }
+
+    #[test]
+    fn test_covariance_with_ranges() {
+        // Test covariance computation with different start/end ranges
+        use rustfft::num_complex::Complex;
+
+        let left: Vec<Complex<f32>> = (0..32)
+            .map(|i| Complex::new(i as f32 * 0.5, i as f32 * -0.3))
+            .collect();
+        let right: Vec<Complex<f32>> = (0..32)
+            .map(|i| Complex::new(i as f32 * -0.4, i as f32 * 0.6))
+            .collect();
+
+        // Test various ranges
+        for (start, end) in [(0, 8), (4, 12), (10, 20), (5, 25), (0, 32)] {
+            // Scalar reference
+            let mut expected_xx = 0.0_f32;
+            let mut expected_yy = 0.0_f32;
+            let mut expected_xy = Complex::new(0.0, 0.0);
+            for i in start..end {
+                expected_xx += left[i].norm_sqr();
+                expected_yy += right[i].norm_sqr();
+                expected_xy += left[i] * right[i].conj();
+            }
+
+            // SIMD computation
+            let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&left, &right, start, end);
+
+            const EPSILON: f32 = 1e-4;
+            assert!(
+                (cov_xx - expected_xx).abs() < EPSILON,
+                "Range [{}, {}): cov_xx mismatch: {} vs {}",
+                start,
+                end,
+                cov_xx,
+                expected_xx
+            );
+            assert!(
+                (cov_yy - expected_yy).abs() < EPSILON,
+                "Range [{}, {}): cov_yy mismatch: {} vs {}",
+                start,
+                end,
+                cov_yy,
+                expected_yy
+            );
+            assert!(
+                (cov_xy.re - expected_xy.re).abs() < EPSILON,
+                "Range [{}, {}): cov_xy.re mismatch: {} vs {}",
+                start,
+                end,
+                cov_xy.re,
+                expected_xy.re
+            );
+            assert!(
+                (cov_xy.im - expected_xy.im).abs() < EPSILON,
+                "Range [{}, {}): cov_xy.im mismatch: {} vs {}",
+                start,
+                end,
+                cov_xy.im,
+                expected_xy.im
+            );
+        }
+    }
+
+    #[test]
+    fn test_covariance_large_buffers() {
+        // Test with realistic FFT buffer sizes
+        use rustfft::num_complex::Complex;
+
+        for fft_size in [128, 256, 512, 1024, 2048, 4096] {
+            let left: Vec<Complex<f32>> = (0..fft_size)
+                .map(|i| {
+                    let phase = (i as f32) * 0.01;
+                    Complex::new(phase.cos(), phase.sin())
+                })
+                .collect();
+
+            let right: Vec<Complex<f32>> = (0..fft_size)
+                .map(|i| {
+                    let phase = (i as f32) * 0.02;
+                    Complex::new(phase.sin(), phase.cos())
+                })
+                .collect();
+
+            // Scalar reference
+            let mut expected_xx = 0.0_f32;
+            let mut expected_yy = 0.0_f32;
+            let mut expected_xy = Complex::new(0.0, 0.0);
+            for i in 0..fft_size {
+                expected_xx += left[i].norm_sqr();
+                expected_yy += right[i].norm_sqr();
+                expected_xy += left[i] * right[i].conj();
+            }
+
+            // SIMD computation
+            let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&left, &right, 0, fft_size);
+
+            // Relative tolerance for larger sums
+            let rel_epsilon = 1e-4;
+            assert!(
+                (cov_xx - expected_xx).abs() < expected_xx * rel_epsilon,
+                "FFT size {}: cov_xx mismatch",
+                fft_size
+            );
+            assert!(
+                (cov_yy - expected_yy).abs() < expected_yy * rel_epsilon,
+                "FFT size {}: cov_yy mismatch",
+                fft_size
+            );
+            assert!(
+                (cov_xy.re - expected_xy.re).abs() < expected_xy.re.abs() * rel_epsilon + 1e-5,
+                "FFT size {}: cov_xy.re mismatch",
+                fft_size
+            );
+            assert!(
+                (cov_xy.im - expected_xy.im).abs() < expected_xy.im.abs() * rel_epsilon + 1e-5,
+                "FFT size {}: cov_xy.im mismatch",
+                fft_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_covariance_unaligned_ranges() {
+        // Test with ranges that don't align to SIMD width
+        use rustfft::num_complex::Complex;
+
+        let left: Vec<Complex<f32>> = (0..50)
+            .map(|i| Complex::new(i as f32 * 0.2, i as f32 * 0.3))
+            .collect();
+        let right: Vec<Complex<f32>> = (0..50)
+            .map(|i| Complex::new(i as f32 * -0.1, i as f32 * 0.4))
+            .collect();
+
+        // Test with various unaligned ranges
+        for (start, end) in [(0, 1), (0, 3), (1, 4), (2, 7), (5, 11), (10, 23), (15, 37)] {
+            // Scalar reference
+            let mut expected_xx = 0.0_f32;
+            let mut expected_yy = 0.0_f32;
+            let mut expected_xy = Complex::new(0.0, 0.0);
+            for i in start..end {
+                expected_xx += left[i].norm_sqr();
+                expected_yy += right[i].norm_sqr();
+                expected_xy += left[i] * right[i].conj();
+            }
+
+            // SIMD computation
+            let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&left, &right, start, end);
+
+            const EPSILON: f32 = 1e-5;
+            assert!(
+                (cov_xx - expected_xx).abs() < EPSILON,
+                "Range [{}, {}): cov_xx mismatch",
+                start,
+                end
+            );
+            assert!(
+                (cov_yy - expected_yy).abs() < EPSILON,
+                "Range [{}, {}): cov_yy mismatch",
+                start,
+                end
+            );
+            assert!(
+                (cov_xy.re - expected_xy.re).abs() < EPSILON,
+                "Range [{}, {}): cov_xy.re mismatch",
+                start,
+                end
+            );
+            assert!(
+                (cov_xy.im - expected_xy.im).abs() < EPSILON,
+                "Range [{}, {}): cov_xy.im mismatch",
+                start,
+                end
+            );
+        }
+    }
+
+    #[test]
+    fn test_covariance_edge_cases() {
+        // Test covariance with edge cases
+        use rustfft::num_complex::Complex;
+
+        // Test 1: All zeros
+        let zero_left = vec![Complex::new(0.0, 0.0); 8];
+        let zero_right = vec![Complex::new(0.0, 0.0); 8];
+        let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&zero_left, &zero_right, 0, 8);
+        assert!(cov_xx.abs() < 1e-6, "Expected zero cov_xx");
+        assert!(cov_yy.abs() < 1e-6, "Expected zero cov_yy");
+        assert!(cov_xy.norm_sqr() < 1e-6, "Expected zero cov_xy");
+
+        // Test 2: Real-only signals
+        let real_left: Vec<Complex<f32>> = (0..8).map(|i| Complex::new(i as f32, 0.0)).collect();
+        let real_right: Vec<Complex<f32>> = (0..8).map(|i| Complex::new((i as f32) * 0.5, 0.0)).collect();
+        let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&real_left, &real_right, 0, 8);
+
+        // cov_xy should be real (imaginary part should be ~0)
+        assert!(cov_xy.im.abs() < 1e-5, "Expected real cov_xy for real signals");
+
+        // Verify values match scalar computation
+        let mut expected_xx = 0.0;
+        let mut expected_yy = 0.0;
+        for i in 0..8 {
+            expected_xx += (i * i) as f32;
+            expected_yy += ((i as f32) * 0.5).powi(2);
+        }
+        assert!((cov_xx - expected_xx).abs() < 1e-5);
+        assert!((cov_yy - expected_yy).abs() < 1e-5);
+
+        // Test 3: Imaginary-only signals
+        let imag_left: Vec<Complex<f32>> = (0..8).map(|i| Complex::new(0.0, i as f32)).collect();
+        let imag_right: Vec<Complex<f32>> = (0..8).map(|i| Complex::new(0.0, (i as f32) * 2.0)).collect();
+        let (_cov_xx, _cov_yy, cov_xy) = compute_covariance_simd(&imag_left, &imag_right, 0, 8);
+
+        // cov_xy should be real (because conj flips imaginary sign)
+        assert!(cov_xy.im.abs() < 1e-5, "Expected real cov_xy for imaginary signals");
+
+        // Test 4: Single element range
+        let single_left = vec![Complex::new(3.0, 4.0)];
+        let single_right = vec![Complex::new(1.0, 2.0)];
+        let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&single_left, &single_right, 0, 1);
+        assert!((cov_xx - 25.0).abs() < 1e-5); // 3^2 + 4^2 = 25
+        assert!((cov_yy - 5.0).abs() < 1e-5);  // 1^2 + 2^2 = 5
+        // (3 + 4i) * (1 - 2i) = 3 - 6i + 4i - 8i^2 = 3 - 2i + 8 = 11 - 2i
+        assert!((cov_xy.re - 11.0).abs() < 1e-5);
+        assert!((cov_xy.im - (-2.0)).abs() < 1e-5);
+    }
+
+    // ============================================================================
+    // Numerical Accuracy and Stress Tests
+    // ============================================================================
+
+    #[test]
+    fn test_numerical_accuracy_small_values() {
+        // Test with very small values to check for denormal handling
+        use rustfft::num_complex::Complex;
+
+        let small = 1e-20_f32;
+        let src = vec![
+            Complex::new(small, small),
+            Complex::new(small * 2.0, small * 3.0),
+            Complex::new(small * 4.0, small * 5.0),
+            Complex::new(small * 6.0, small * 7.0),
+        ];
+
+        let hrtf = vec![
+            Complex::new(1.0, 0.5),
+            Complex::new(2.0, -1.0),
+            Complex::new(-0.5, 1.5),
+            Complex::new(0.75, 0.25),
+        ];
+
+        // Scalar reference
+        let expected: Vec<Complex<f32>> = src.iter().zip(hrtf.iter()).map(|(a, b)| a * b).collect();
+
+        // SIMD computation
+        let mut result = vec![Complex::new(0.0, 0.0); src.len()];
+        complex_mul_simd(&mut result, &src, &hrtf);
+
+        // Relative tolerance for very small numbers
+        for i in 0..src.len() {
+            let re_diff = (result[i].re - expected[i].re).abs();
+            let im_diff = (result[i].im - expected[i].im).abs();
+
+            // For very small numbers, check relative error or absolute error for near-zero
+            if expected[i].re.abs() > 1e-15 {
+                assert!(re_diff / expected[i].re.abs() < 1e-3);
+            } else {
+                assert!(re_diff < 1e-25);
+            }
+
+            if expected[i].im.abs() > 1e-15 {
+                assert!(im_diff / expected[i].im.abs() < 1e-3);
+            } else {
+                assert!(im_diff < 1e-25);
+            }
+        }
+    }
+
+    #[test]
+    fn test_numerical_accuracy_large_values() {
+        // Test with large values to check for overflow handling
+        use rustfft::num_complex::Complex;
+
+        let large = 1e10_f32;
+        let src = vec![
+            Complex::new(large, large * 0.5),
+            Complex::new(large * 2.0, large * 1.5),
+            Complex::new(large * 0.3, large * 0.7),
+            Complex::new(large * 1.2, large * 0.8),
+        ];
+
+        let hrtf = vec![
+            Complex::new(1e-5, 5e-6),
+            Complex::new(2e-5, -1e-5),
+            Complex::new(-5e-6, 1.5e-5),
+            Complex::new(7.5e-6, 2.5e-6),
+        ];
+
+        // Scalar reference
+        let mut expected = vec![Complex::new(0.0, 0.0); src.len()];
+        for i in 0..src.len() {
+            expected[i] = src[i] * hrtf[i];
+        }
+
+        // SIMD computation
+        let mut result = vec![Complex::new(0.0, 0.0); src.len()];
+        complex_mul_simd(&mut result, &src, &hrtf);
+
+        // Relative tolerance
+        for i in 0..src.len() {
+            let re_rel_err = (result[i].re - expected[i].re).abs() / expected[i].re.abs().max(1.0);
+            let im_rel_err = (result[i].im - expected[i].im).abs() / expected[i].im.abs().max(1.0);
+            assert!(re_rel_err < 1e-5, "Index {}: re rel error too large: {}", i, re_rel_err);
+            assert!(im_rel_err < 1e-5, "Index {}: im rel error too large: {}", i, im_rel_err);
+        }
+    }
+
+    #[test]
+    fn test_accumulation_accuracy() {
+        // Test that repeated accumulation doesn't degrade accuracy significantly
+        use rustfft::num_complex::Complex;
+
+        let src = vec![
+            Complex::new(0.1, 0.2),
+            Complex::new(0.3, 0.4),
+            Complex::new(0.5, 0.6),
+            Complex::new(0.7, 0.8),
+        ];
+
+        let hrtf = vec![
+            Complex::new(0.5, 0.25),
+            Complex::new(-1.0, 1.5),
+            Complex::new(2.0, -0.5),
+            Complex::new(0.75, 0.75),
+        ];
+
+        // Scalar reference: accumulate 100 times
+        let mut expected = vec![Complex::new(0.0, 0.0); src.len()];
+        for _ in 0..100 {
+            for i in 0..src.len() {
+                expected[i] += src[i] * hrtf[i];
+            }
+        }
+
+        // SIMD computation: accumulate 100 times
+        let mut result = vec![Complex::new(0.0, 0.0); src.len()];
+        for _ in 0..100 {
+            complex_mul_add_simd(&mut result, &src, &hrtf);
+        }
+
+        // Check relative error
+        const REL_EPSILON: f32 = 1e-4;
+        for i in 0..src.len() {
+            let re_abs_err = (result[i].re - expected[i].re).abs();
+            let im_abs_err = (result[i].im - expected[i].im).abs();
+
+            // Use relative error if expected value is large enough, otherwise use absolute error
+            let re_err = if expected[i].re.abs() > 1e-6 {
+                re_abs_err / expected[i].re.abs()
+            } else {
+                re_abs_err
+            };
+            let im_err = if expected[i].im.abs() > 1e-6 {
+                im_abs_err / expected[i].im.abs()
+            } else {
+                im_abs_err
+            };
+
+            assert!(
+                re_err < REL_EPSILON,
+                "Index {}: re accumulated error too large: {} (abs: {}, expected: {})",
+                i,
+                re_err,
+                re_abs_err,
+                expected[i].re
+            );
+            assert!(
+                im_err < REL_EPSILON,
+                "Index {}: im accumulated error too large: {} (abs: {}, expected: {})",
+                i,
+                im_err,
+                im_abs_err,
+                expected[i].im
+            );
+        }
+    }
+
+    #[test]
+    fn test_platform_specific_simd_widths() {
+        // Test that SIMD code paths are correctly exercised
+        use rustfft::num_complex::Complex;
+
+        // Test sizes that exercise SIMD boundaries:
+        // - AVX2 processes 4 complex at a time
+        // - NEON processes 2 complex at a time
+        let test_sizes = vec![
+            1,  // No SIMD, scalar only
+            2,  // NEON: 1 iteration, AVX2: scalar only
+            3,  // NEON: 1 iteration + 1 scalar, AVX2: scalar only
+            4,  // NEON: 2 iterations, AVX2: 1 iteration
+            5,  // NEON: 2 iterations + 1 scalar, AVX2: 1 iteration + 1 scalar
+            8,  // NEON: 4 iterations, AVX2: 2 iterations
+            9,  // Mixed
+            12, // NEON: 6 iterations, AVX2: 3 iterations
+            16, // NEON: 8 iterations, AVX2: 4 iterations
+        ];
+
+        for size in test_sizes {
+            let src: Vec<Complex<f32>> = (0..size)
+                .map(|i| Complex::new(i as f32 * 0.3, i as f32 * -0.2))
+                .collect();
+            let hrtf: Vec<Complex<f32>> = (0..size)
+                .map(|i| Complex::new(1.0 + i as f32 * 0.1, 0.5))
+                .collect();
+
+            // Test all three functions
+
+            // 1. complex_mul_add_simd
+            let mut result_add = vec![Complex::new(1.0, 2.0); size];
+            let mut expected_add = result_add.clone();
+            for i in 0..size {
+                expected_add[i] += src[i] * hrtf[i];
+            }
+            complex_mul_add_simd(&mut result_add, &src, &hrtf);
+            for i in 0..size {
+                assert!(
+                    (result_add[i].re - expected_add[i].re).abs() < 1e-6,
+                    "mul_add size {}, index {}: re mismatch",
+                    size,
+                    i
+                );
+                assert!(
+                    (result_add[i].im - expected_add[i].im).abs() < 1e-6,
+                    "mul_add size {}, index {}: im mismatch",
+                    size,
+                    i
+                );
+            }
+
+            // 2. complex_mul_simd
+            let mut result_mul = vec![Complex::new(0.0, 0.0); size];
+            let expected_mul: Vec<Complex<f32>> =
+                src.iter().zip(hrtf.iter()).map(|(a, b)| a * b).collect();
+            complex_mul_simd(&mut result_mul, &src, &hrtf);
+            for i in 0..size {
+                assert!(
+                    (result_mul[i].re - expected_mul[i].re).abs() < 1e-6,
+                    "mul size {}, index {}: re mismatch",
+                    size,
+                    i
+                );
+                assert!(
+                    (result_mul[i].im - expected_mul[i].im).abs() < 1e-6,
+                    "mul size {}, index {}: im mismatch",
+                    size,
+                    i
+                );
+            }
+
+            // 3. complex_mul_inplace_simd
+            let mut result_inplace = src.clone();
+            let mut expected_inplace = src.clone();
+            for i in 0..size {
+                expected_inplace[i] *= hrtf[i];
+            }
+            complex_mul_inplace_simd(&mut result_inplace, &hrtf);
+            for i in 0..size {
+                assert!(
+                    (result_inplace[i].re - expected_inplace[i].re).abs() < 1e-6,
+                    "inplace size {}, index {}: re mismatch",
+                    size,
+                    i
+                );
+                assert!(
+                    (result_inplace[i].im - expected_inplace[i].im).abs() < 1e-6,
+                    "inplace size {}, index {}: im mismatch",
+                    size,
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_stress_test_random_data() {
+        // Stress test with pseudo-random data
+        use rustfft::num_complex::Complex;
+
+        // Simple LCG for deterministic "random" values
+        let mut seed = 12345_u32;
+        let lcg = |s: &mut u32| -> f32 {
+            *s = s.wrapping_mul(1103515245).wrapping_add(12345);
+            ((*s / 65536) % 32768) as f32 / 32768.0 - 0.5
+        };
+
+        for size in [64, 128, 256, 512] {
+            let src: Vec<Complex<f32>> = (0..size)
+                .map(|_| Complex::new(lcg(&mut seed), lcg(&mut seed)))
+                .collect();
+            let hrtf: Vec<Complex<f32>> = (0..size)
+                .map(|_| Complex::new(lcg(&mut seed), lcg(&mut seed)))
+                .collect();
+
+            // Scalar reference
+            let expected: Vec<Complex<f32>> =
+                src.iter().zip(hrtf.iter()).map(|(a, b)| a * b).collect();
+
+            // SIMD computation
+            let mut result = vec![Complex::new(0.0, 0.0); size];
+            complex_mul_simd(&mut result, &src, &hrtf);
+
+            // Verify
+            for i in 0..size {
+                assert!(
+                    (result[i].re - expected[i].re).abs() < 1e-5,
+                    "Stress test size {}, index {}: re mismatch",
+                    size,
+                    i
+                );
+                assert!(
+                    (result[i].im - expected[i].im).abs() < 1e-5,
+                    "Stress test size {}, index {}: im mismatch",
+                    size,
+                    i
+                );
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -627,6 +1419,7 @@ pub fn compute_covariance_simd(
     assert!(end <= left.len());
     assert!(start < end);
 
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     let count = end - start;
 
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]

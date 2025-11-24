@@ -80,7 +80,7 @@ fn set_last_error(msg: &str) {
 
 /// Get the last error message
 /// Returns NULL if no error
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_get_last_error() -> *const c_char {
     LAST_ERROR.with(|e| {
         e.borrow()
@@ -110,7 +110,7 @@ pub extern "C" fn plugin_get_last_error() -> *const c_char {
 /// # Safety
 /// * Caller must ensure plugin_type and config_json are valid UTF-8 C strings
 /// * Caller must call plugin_destroy() when done
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_create(
     plugin_type: *const c_char,
     config_json: *const c_char,
@@ -193,7 +193,7 @@ pub extern "C" fn plugin_create(
 /// # Safety
 /// * handle must be a valid pointer returned by plugin_create()
 /// * handle must not be used after this call
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_destroy(handle: *mut PluginHandle) {
     if !handle.is_null() {
         let _ = panic::catch_unwind(AssertUnwindSafe(|| unsafe {
@@ -206,7 +206,7 @@ pub extern "C" fn plugin_destroy(handle: *mut PluginHandle) {
 ///
 /// # Safety
 /// * handle must be a valid pointer returned by plugin_create()
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_reset(handle: *mut PluginHandle) -> c_int {
     if handle.is_null() {
         set_last_error("NULL handle in plugin_reset");
@@ -248,7 +248,7 @@ pub extern "C" fn plugin_reset(handle: *mut PluginHandle) -> c_int {
 /// * input must point to num_frames * input_channels samples
 /// * output must have space for num_frames * output_channels samples
 /// * This function is designed to be real-time safe (no allocations)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_process(
     handle: *mut PluginHandle,
     input: *const f32,
@@ -284,13 +284,15 @@ unsafe fn process_impl(
     output: *mut f32,
     num_frames: usize,
 ) -> PluginError {
-    let handle_ref = &mut *handle;
+    // SAFETY: Caller must ensure handle is valid and non-null
+    let handle_ref = unsafe { &mut *handle };
 
     let input_samples = num_frames * handle_ref.input_channels;
     let output_samples = num_frames * handle_ref.output_channels;
 
-    let input_slice = slice::from_raw_parts(input, input_samples);
-    let output_slice = slice::from_raw_parts_mut(output, output_samples);
+    // SAFETY: Caller must ensure input/output pointers are valid with correct sizes
+    let input_slice = unsafe { slice::from_raw_parts(input, input_samples) };
+    let output_slice = unsafe { slice::from_raw_parts_mut(output, output_samples) };
 
     let context = ProcessContext {
         sample_rate: handle_ref.sample_rate,
@@ -311,7 +313,7 @@ unsafe fn process_impl(
 // ============================================================================
 
 /// Get the number of parameters
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_get_parameter_count(handle: *const PluginHandle) -> c_int {
     if handle.is_null() {
         return 0;
@@ -328,7 +330,7 @@ pub extern "C" fn plugin_get_parameter_count(handle: *const PluginHandle) -> c_i
 /// # Returns
 /// * Pointer to parameter info (valid until plugin is destroyed)
 /// * NULL if index is out of bounds
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_get_parameter_info(
     handle: *const PluginHandle,
     index: usize,
@@ -357,7 +359,7 @@ pub extern "C" fn plugin_get_parameter_info(
 /// # Returns
 /// * 0 on success
 /// * Error code on failure
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_set_parameter(
     handle: *mut PluginHandle,
     param_id: *const c_char,
@@ -405,7 +407,7 @@ pub extern "C" fn plugin_set_parameter(
 /// # Returns
 /// * Normalized value on success
 /// * -1.0 on error
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_get_parameter(
     handle: *const PluginHandle,
     param_id: *const c_char,
@@ -440,7 +442,7 @@ pub extern "C" fn plugin_get_parameter(
 /// # Returns
 /// * JSON string (caller must free with plugin_free_string())
 /// * NULL on error
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_get_info_json(handle: *const PluginHandle) -> *mut c_char {
     if handle.is_null() {
         return ptr::null_mut();
@@ -470,7 +472,7 @@ pub extern "C" fn plugin_get_info_json(handle: *const PluginHandle) -> *mut c_ch
 }
 
 /// Free a string returned by the plugin
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn plugin_free_string(s: *mut c_char) {
     if !s.is_null() {
         unsafe {

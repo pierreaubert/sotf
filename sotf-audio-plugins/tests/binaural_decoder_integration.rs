@@ -48,7 +48,9 @@ fn test_binaural_with_minimal_sofa() {
         0.0,  // No externalization
         0.0,  // No near-field
         true, // diffuse_field_eq (enabled by default)
-        120.0, 2.0, 0.0, // LFE: crossover, distance, level
+        120.0,
+        2.0,
+        0.0,                  // LFE: crossover, distance, level
         RoomModel::default(), // Default room model
     );
 
@@ -97,7 +99,19 @@ fn test_binaural_sample_rate_resampling() {
     let sofa_path = create_test_sofa_file("test_resample.sofa", 5, 256, 48000.0);
 
     // Initialize decoder at 44.1kHz (different rate)
-    let mut decoder = BinauralDecoderPlugin::new(5, 512, Some(sofa_path.clone()), true, 0.0, 0.0, true, 120.0, 2.0, 0.0, RoomModel::default());
+    let mut decoder = BinauralDecoderPlugin::new(
+        5,
+        512,
+        Some(sofa_path.clone()),
+        true,
+        0.0,
+        0.0,
+        true,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
 
     // This should trigger automatic resampling
     decoder.initialize(44100).unwrap();
@@ -135,7 +149,9 @@ fn test_binaural_lfe_handling() {
         0.0,
         0.0,
         true,
-        120.0, 2.0, 0.0,
+        120.0,
+        2.0,
+        0.0,
         RoomModel::default(),
     );
 
@@ -190,7 +206,9 @@ fn test_binaural_externalization() {
         0.0, // No externalization
         0.0,
         true,
-        120.0, 2.0, 0.0,
+        120.0,
+        2.0,
+        0.0,
         RoomModel::default(),
     );
     decoder_no_ext.initialize(48000).unwrap();
@@ -204,7 +222,9 @@ fn test_binaural_externalization() {
         0.8, // High externalization
         0.0,
         true,
-        120.0, 2.0, 0.0,
+        120.0,
+        2.0,
+        0.0,
         RoomModel::default(),
     );
     decoder_with_ext.initialize(48000).unwrap();
@@ -257,7 +277,9 @@ fn test_binaural_optimization_equivalence() {
         0.0,
         0.0,
         true,
-        120.0, 2.0, 0.0,
+        120.0,
+        2.0,
+        0.0,
         RoomModel::default(),
     );
     decoder_standard.initialize(48000).unwrap();
@@ -270,7 +292,9 @@ fn test_binaural_optimization_equivalence() {
         0.0,
         0.0,
         true,
-        120.0, 2.0, 0.0,
+        120.0,
+        2.0,
+        0.0,
         RoomModel::default(),
     );
     decoder_optimized.initialize(48000).unwrap();
@@ -326,7 +350,9 @@ fn test_binaural_atmos_7_1_4() {
         0.3, // Some externalization
         0.2, // Some near-field
         true,
-        120.0, 2.0, 0.0,
+        120.0,
+        2.0,
+        0.0,
         RoomModel::default(),
     );
 
@@ -363,7 +389,19 @@ fn test_binaural_atmos_7_1_4() {
 fn test_binaural_continuous_processing() {
     let sofa_path = create_test_sofa_file("test_continuous.sofa", 5, 256, 48000.0);
 
-    let mut decoder = BinauralDecoderPlugin::new(5, 512, Some(sofa_path.clone()), true, 0.0, 0.0, true, 120.0, 2.0, 0.0, RoomModel::default());
+    let mut decoder = BinauralDecoderPlugin::new(
+        5,
+        512,
+        Some(sofa_path.clone()),
+        true,
+        0.0,
+        0.0,
+        true,
+        120.0,
+        2.0,
+        0.0,
+        RoomModel::default(),
+    );
 
     decoder.initialize(48000).unwrap();
 

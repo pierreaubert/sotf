@@ -42,9 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Listening for MIDI messages (press Ctrl+C to stop)...\n");
 
     manager.connect_input(device_index, |message| {
-        println!("[{}] {}",
-                 chrono::Local::now().format("%H:%M:%S%.3f"),
-                 message.description());
+        println!(
+            "[{}] {}",
+            chrono::Local::now().format("%H:%M:%S%.3f"),
+            message.description()
+        );
     })?;
 
     // Keep the program running

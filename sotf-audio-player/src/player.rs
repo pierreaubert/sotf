@@ -107,23 +107,21 @@ impl Player {
     }
 
     pub fn get_loudness(&self) -> Option<LoudnessData> {
-        if let Some(index) = self.loudness_index {
-            if let Ok(data) = self.manager.get_plugin_data(index) {
-                if let Some(loudness) = data.downcast_ref::<LoudnessData>() {
-                    return Some(loudness.clone());
-                }
-            }
+        if let Some(index) = self.loudness_index
+            && let Ok(data) = self.manager.get_plugin_data(index)
+            && let Some(loudness) = data.downcast_ref::<LoudnessData>()
+        {
+            return Some(loudness.clone());
         }
         None
     }
 
     pub fn get_spectrum(&self) -> Option<SpectrumData> {
-        if let Some(index) = self.spectrum_index {
-            if let Ok(data) = self.manager.get_plugin_data(index) {
-                if let Some(spectrum) = data.downcast_ref::<SpectrumData>() {
-                    return Some(spectrum.clone());
-                }
-            }
+        if let Some(index) = self.spectrum_index
+            && let Ok(data) = self.manager.get_plugin_data(index)
+            && let Some(spectrum) = data.downcast_ref::<SpectrumData>()
+        {
+            return Some(spectrum.clone());
         }
         None
     }

@@ -458,7 +458,7 @@ impl BinauralDecoderPlugin {
             ],
             diffuse_field_eq_filter: None, // Will be computed when SOFA is loaded
             lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); fft_size], // Unity gain initially
-            lfe_gain: 1.0, // Will be computed in initialize()
+            lfe_gain: 1.0,                 // Will be computed in initialize()
             lfe_channels,
 
             input_buffer: vec![0.0; input_buffer_size], // Interleaved, size for one hop
@@ -801,8 +801,10 @@ impl BinauralDecoderPlugin {
         }
 
         // Interpolate ITDs
-        let target_left_itd = gains[0] * left_itds[0] + gains[1] * left_itds[1] + gains[2] * left_itds[2];
-        let target_right_itd = gains[0] * right_itds[0] + gains[1] * right_itds[1] + gains[2] * right_itds[2];
+        let target_left_itd =
+            gains[0] * left_itds[0] + gains[1] * left_itds[1] + gains[2] * left_itds[2];
+        let target_right_itd =
+            gains[0] * right_itds[0] + gains[1] * right_itds[1] + gains[2] * right_itds[2];
 
         // Interpolate left ear HRTF
         let left_fft = Self::interpolate_hrtf_complex(
@@ -910,10 +912,7 @@ impl BinauralDecoderPlugin {
             let final_phase = phase + target_phase_shift;
 
             // Reconstruct complex HRTF
-            result[k] = Complex::new(
-                magnitude * final_phase.cos(),
-                magnitude * final_phase.sin(),
-            );
+            result[k] = Complex::new(magnitude * final_phase.cos(), magnitude * final_phase.sin());
         }
 
         result
@@ -1375,7 +1374,9 @@ impl BinauralDecoderPlugin {
             let diffraction_atten = if ka < 2.0 {
                 // Minimal shadowing at low frequencies due to diffraction
                 let diffraction_factor = (ka / 2.0).powi(2);
-                -2.0 * diffraction_factor * (shadow_angle / std::f32::consts::PI).powi(2) * elevation_factor
+                -2.0 * diffraction_factor
+                    * (shadow_angle / std::f32::consts::PI).powi(2)
+                    * elevation_factor
             } else {
                 0.0
             };
@@ -1392,12 +1393,12 @@ impl BinauralDecoderPlugin {
             let gain = 10.0_f32.powf(scaled_atten_db / 20.0);
 
             // Apply to shadowed ear
-            shadowed_ear[k] = shadowed_ear[k] * gain;
+            shadowed_ear[k] *= gain;
 
             // Mirror to negative frequencies (complex conjugate symmetry)
             if k > 0 && k < self.fft_size / 2 {
                 let mirror_k = self.fft_size - k;
-                shadowed_ear[mirror_k] = shadowed_ear[mirror_k] * gain;
+                shadowed_ear[mirror_k] *= gain;
             }
         }
     }
@@ -1628,7 +1629,8 @@ impl BinauralDecoderPlugin {
 
         // Update state
         self.next_add_position = (self.next_add_position + self.hop_size) % buffer_size;
-        self.output_accumulator_fill = (self.output_accumulator_fill + self.hop_size).min(buffer_size);
+        self.output_accumulator_fill =
+            (self.output_accumulator_fill + self.hop_size).min(buffer_size);
 
         // Shift input buffer
         // Note: This multiplication is safe - overflow is checked during initialization in new()
@@ -1681,12 +1683,12 @@ impl BinauralDecoderPlugin {
         // Wall definitions: (normal_axis, position, absorption_index)
         // 0=x, 1=y, 2=z
         let walls = [
-            (0, 0.0, 2),          // Left wall (x=0)
-            (0, room_width, 3),   // Right wall (x=width)
-            (1, 0.0, 0),          // Front wall (y=0)
-            (1, room_depth, 1),   // Back wall (y=depth)
-            (2, 0.0, 4),          // Floor (z=0)
-            (2, room_height, 5),  // Ceiling (z=height)
+            (0, 0.0, 2),         // Left wall (x=0)
+            (0, room_width, 3),  // Right wall (x=width)
+            (1, 0.0, 0),         // Front wall (y=0)
+            (1, room_depth, 1),  // Back wall (y=depth)
+            (2, 0.0, 4),         // Floor (z=0)
+            (2, room_height, 5), // Ceiling (z=height)
         ];
 
         // Generate first-order reflections
@@ -1718,8 +1720,8 @@ impl BinauralDecoderPlugin {
             // Calculate stereo positioning based on reflection angle
             // This is a simplified model - proper implementation would apply HRTF to each reflection
             let azimuth = dy.atan2(dx);
-            let left_gain = ((azimuth + std::f32::consts::FRAC_PI_2) / std::f32::consts::PI)
-                .clamp(0.0, 1.0);
+            let left_gain =
+                ((azimuth + std::f32::consts::FRAC_PI_2) / std::f32::consts::PI).clamp(0.0, 1.0);
             let right_gain = 1.0 - left_gain;
 
             self.cached_reflections.push(Reflection {
@@ -1731,8 +1733,7 @@ impl BinauralDecoderPlugin {
         }
 
         // Sort reflections by delay for better cache coherency during processing
-        self.cached_reflections
-            .sort_by_key(|r| r.delay_samples);
+        self.cached_reflections.sort_by_key(|r| r.delay_samples);
 
         log::debug!(
             "[BinauralDecoder] Computed {} first-order reflections",
@@ -1772,8 +1773,9 @@ impl BinauralDecoderPlugin {
                     // Add delayed reflection to output with stereo positioning
                     self.temp_output_block[dst_idx] +=
                         self.temp_output_block[src_idx] * reflection_gain * reflection.left_gain;
-                    self.temp_output_block[dst_idx + 1] +=
-                        self.temp_output_block[src_idx + 1] * reflection_gain * reflection.right_gain;
+                    self.temp_output_block[dst_idx + 1] += self.temp_output_block[src_idx + 1]
+                        * reflection_gain
+                        * reflection.right_gain;
                 }
             }
         }
@@ -1836,36 +1838,36 @@ impl Plugin for BinauralDecoderPlugin {
                 return Ok(());
             }
         } else if id == self.param_externalization {
-            if let Some(v) = value.as_float() {
-                if (0.0..=1.0).contains(&v) {
-                    self.externalization = v;
-                    return Ok(());
-                }
+            if let Some(v) = value.as_float()
+                && (0.0..=1.0).contains(&v)
+            {
+                self.externalization = v;
+                return Ok(());
             }
         } else if id == self.param_near_field_strength {
-            if let Some(v) = value.as_float() {
-                if (0.0..=1.0).contains(&v) {
-                    self.near_field_strength = v;
-                    // Re-calculate filters to apply shadowing
-                    if self.sofa.is_some() {
-                        self.prepare_hrtf_filters()
-                            .map_err(|e| format!("Failed to update filters: {}", e))?;
-                    }
-                    return Ok(());
-                }
-            }
-        } else if id == self.param_diffuse_field_eq {
-            if let Some(v) = value.as_bool() {
-                self.diffuse_field_eq = v;
-                // Re-compute diffuse-field EQ filter
-                if v && self.sofa.is_some() {
-                    self.compute_diffuse_field_eq()
-                        .map_err(|e| format!("Failed to compute diffuse-field EQ: {}", e))?;
-                } else if !v {
-                    self.diffuse_field_eq_filter = None;
+            if let Some(v) = value.as_float()
+                && (0.0..=1.0).contains(&v)
+            {
+                self.near_field_strength = v;
+                // Re-calculate filters to apply shadowing
+                if self.sofa.is_some() {
+                    self.prepare_hrtf_filters()
+                        .map_err(|e| format!("Failed to update filters: {}", e))?;
                 }
                 return Ok(());
             }
+        } else if id == self.param_diffuse_field_eq
+            && let Some(v) = value.as_bool()
+        {
+            self.diffuse_field_eq = v;
+            // Re-compute diffuse-field EQ filter
+            if v && self.sofa.is_some() {
+                self.compute_diffuse_field_eq()
+                    .map_err(|e| format!("Failed to compute diffuse-field EQ: {}", e))?;
+            } else if !v {
+                self.diffuse_field_eq_filter = None;
+            }
+            return Ok(());
         }
         Err(format!("Unknown parameter or invalid value: {}", id))
     }
@@ -2044,7 +2046,19 @@ mod tests {
 
     #[test]
     fn test_binaural_decoder_creation() {
-        let plugin = BinauralDecoderPlugin::new(5, 4096, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
+        let plugin = BinauralDecoderPlugin::new(
+            5,
+            4096,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
         assert_eq!(plugin.input_channels(), 5);
         assert_eq!(plugin.output_channels(), 2);
         assert_eq!(plugin.fft_size, 4096);
@@ -2056,7 +2070,19 @@ mod tests {
 
     #[test]
     fn test_binaural_decoder_parameters() {
-        let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            2048,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
 
         // Test optimization
         plugin
@@ -2103,7 +2129,19 @@ mod tests {
     #[test]
     fn test_passthrough_without_sofa() {
         // Test stereo passthrough
-        let mut plugin = BinauralDecoderPlugin::new(2, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
+        let mut plugin = BinauralDecoderPlugin::new(
+            2,
+            2048,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
         plugin.initialize(48000).unwrap();
 
         let input = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6]; // 3 stereo frames
@@ -2122,7 +2160,19 @@ mod tests {
     #[test]
     fn test_passthrough_mono_to_stereo() {
         // Test mono to stereo passthrough
-        let mut plugin = BinauralDecoderPlugin::new(1, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
+        let mut plugin = BinauralDecoderPlugin::new(
+            1,
+            2048,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
         plugin.initialize(48000).unwrap();
 
         let input = vec![0.1, 0.2, 0.3]; // 3 mono frames
@@ -2146,7 +2196,19 @@ mod tests {
     #[test]
     fn test_passthrough_multichannel_to_stereo() {
         // Test 5.0 to stereo passthrough (takes first 2 channels)
-        let mut plugin = BinauralDecoderPlugin::new(5, 2048, None, true, 0.0, 0.0, false, 120.0, 2.0, 0.0, RoomModel::default());
+        let mut plugin = BinauralDecoderPlugin::new(
+            5,
+            2048,
+            None,
+            true,
+            0.0,
+            0.0,
+            false,
+            120.0,
+            2.0,
+            0.0,
+            RoomModel::default(),
+        );
         plugin.initialize(48000).unwrap();
 
         // 2 frames of 5-channel audio: [FL, FR, C, SL, SR, FL, FR, C, SL, SR]

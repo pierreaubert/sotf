@@ -53,9 +53,9 @@ impl TotalMixRow {
     /// Get the base MIDI channel for this row
     pub fn base_channel(&self) -> u8 {
         match self {
-            TotalMixRow::Input => 0,     // Channels 1-4 (MIDI 0-3)
-            TotalMixRow::Playback => 4,  // Channels 5-8 (MIDI 4-7)
-            TotalMixRow::Output => 8,    // Channels 9-12 (MIDI 8-11)
+            TotalMixRow::Input => 0,    // Channels 1-4 (MIDI 0-3)
+            TotalMixRow::Playback => 4, // Channels 5-8 (MIDI 4-7)
+            TotalMixRow::Output => 8,   // Channels 9-12 (MIDI 8-11)
         }
     }
 }
@@ -152,10 +152,16 @@ impl<'a> TotalMixControl<'a> {
     /// * `value` - Fader value (0-127)
     pub fn set_fader(&self, row: TotalMixRow, bank: u8, fader: u8, value: u8) -> Result<()> {
         if bank > 3 {
-            return Err(MidiError::InvalidMessage(format!("Bank must be 0-3, got {}", bank)));
+            return Err(MidiError::InvalidMessage(format!(
+                "Bank must be 0-3, got {}",
+                bank
+            )));
         }
         if fader > 15 {
-            return Err(MidiError::InvalidMessage(format!("Fader must be 0-15, got {}", fader)));
+            return Err(MidiError::InvalidMessage(format!(
+                "Fader must be 0-15, got {}",
+                fader
+            )));
         }
 
         let channel = RMETotalMixProfile::channel_for_bank(row, bank);
@@ -176,9 +182,10 @@ impl<'a> TotalMixControl<'a> {
     /// * `value` - Fader value (0-127)
     pub fn set_fader_global(&self, row: TotalMixRow, global_index: u8, value: u8) -> Result<()> {
         if global_index > 63 {
-            return Err(MidiError::InvalidMessage(
-                format!("Global index must be 0-63, got {}", global_index)
-            ));
+            return Err(MidiError::InvalidMessage(format!(
+                "Global index must be 0-63, got {}",
+                global_index
+            )));
         }
 
         let (bank, fader) = RMETotalMixProfile::fader_to_bank(global_index);
@@ -205,9 +212,10 @@ impl<'a> TotalMixControl<'a> {
     /// * `channel` - Channel within bank (0-7 for Mackie)
     pub fn mute_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
         if channel > 7 {
-            return Err(MidiError::InvalidMessage(
-                format!("Mackie channel must be 0-7, got {}", channel)
-            ));
+            return Err(MidiError::InvalidMessage(format!(
+                "Mackie channel must be 0-7, got {}",
+                channel
+            )));
         }
 
         let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
@@ -223,9 +231,10 @@ impl<'a> TotalMixControl<'a> {
     /// Unmute a channel
     pub fn unmute_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
         if channel > 7 {
-            return Err(MidiError::InvalidMessage(
-                format!("Mackie channel must be 0-7, got {}", channel)
-            ));
+            return Err(MidiError::InvalidMessage(format!(
+                "Mackie channel must be 0-7, got {}",
+                channel
+            )));
         }
 
         let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
@@ -241,9 +250,10 @@ impl<'a> TotalMixControl<'a> {
     /// Solo a channel (Mackie Control protocol)
     pub fn solo_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
         if channel > 7 {
-            return Err(MidiError::InvalidMessage(
-                format!("Mackie channel must be 0-7, got {}", channel)
-            ));
+            return Err(MidiError::InvalidMessage(format!(
+                "Mackie channel must be 0-7, got {}",
+                channel
+            )));
         }
 
         let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
@@ -259,9 +269,10 @@ impl<'a> TotalMixControl<'a> {
     /// Unsolo a channel
     pub fn unsolo_channel(&self, row: TotalMixRow, bank: u8, channel: u8) -> Result<()> {
         if channel > 7 {
-            return Err(MidiError::InvalidMessage(
-                format!("Mackie channel must be 0-7, got {}", channel)
-            ));
+            return Err(MidiError::InvalidMessage(format!(
+                "Mackie channel must be 0-7, got {}",
+                channel
+            )));
         }
 
         let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
@@ -283,9 +294,10 @@ impl<'a> TotalMixControl<'a> {
     /// * `value` - Pan value (0=left, 64=center, 127=right)
     pub fn set_pan(&self, row: TotalMixRow, bank: u8, channel: u8, value: u8) -> Result<()> {
         if channel > 7 {
-            return Err(MidiError::InvalidMessage(
-                format!("Mackie channel must be 0-7, got {}", channel)
-            ));
+            return Err(MidiError::InvalidMessage(format!(
+                "Mackie channel must be 0-7, got {}",
+                channel
+            )));
         }
 
         let midi_channel = RMETotalMixProfile::channel_for_bank(row, bank);
@@ -323,10 +335,22 @@ mod tests {
 
     #[test]
     fn test_bank_calculation() {
-        assert_eq!(RMETotalMixProfile::channel_for_bank(TotalMixRow::Input, 0), 0);
-        assert_eq!(RMETotalMixProfile::channel_for_bank(TotalMixRow::Input, 1), 1);
-        assert_eq!(RMETotalMixProfile::channel_for_bank(TotalMixRow::Playback, 0), 4);
-        assert_eq!(RMETotalMixProfile::channel_for_bank(TotalMixRow::Output, 3), 11);
+        assert_eq!(
+            RMETotalMixProfile::channel_for_bank(TotalMixRow::Input, 0),
+            0
+        );
+        assert_eq!(
+            RMETotalMixProfile::channel_for_bank(TotalMixRow::Input, 1),
+            1
+        );
+        assert_eq!(
+            RMETotalMixProfile::channel_for_bank(TotalMixRow::Playback, 0),
+            4
+        );
+        assert_eq!(
+            RMETotalMixProfile::channel_for_bank(TotalMixRow::Output, 3),
+            11
+        );
     }
 
     #[test]

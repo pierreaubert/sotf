@@ -71,53 +71,39 @@ impl XoneK2Profile {
 
     // Rotary Potentiometer CC numbers (Layer 1)
     pub const POT_CC: [u8; 12] = [
-        0, 1, 2, 3,     // Top row
-        4, 5, 6, 7,     // Middle row
-        8, 9, 10, 11,   // Bottom row
+        0, 1, 2, 3, // Top row
+        4, 5, 6, 7, // Middle row
+        8, 9, 10, 11, // Bottom row
     ];
 
     // Endless Encoder CC numbers (Layer 1)
     pub const ENCODER_CC: [u8; 6] = [
-        12, 13, 14,     // Top row
-        15, 16, 17,     // Bottom row
+        12, 13, 14, // Top row
+        15, 16, 17, // Bottom row
     ];
 
     // Encoder Switch Note numbers (Layer 1)
     pub const ENCODER_SWITCH_NOTE: [u8; 6] = [
-        48, 49, 50,     // Top row
-        51, 52, 53,     // Bottom row
+        48, 49, 50, // Top row
+        51, 52, 53, // Bottom row
     ];
 
     // Linear Fader CC numbers (Layer 1)
-    pub const FADER_CC: [u8; 4] = [
-        44, 45, 46, 47,
-    ];
+    pub const FADER_CC: [u8; 4] = [44, 45, 46, 47];
 
     // Button Note numbers (Layer 1)
     // Top row (8 buttons above pots)
-    pub const BUTTON_TOP_NOTE: [u8; 8] = [
-        24, 25, 26, 27, 28, 29, 30, 31,
-    ];
+    pub const BUTTON_TOP_NOTE: [u8; 8] = [24, 25, 26, 27, 28, 29, 30, 31];
     // Bottom row (8 buttons below pots)
-    pub const BUTTON_BOTTOM_NOTE: [u8; 8] = [
-        32, 33, 34, 35, 36, 37, 38, 39,
-    ];
+    pub const BUTTON_BOTTOM_NOTE: [u8; 8] = [32, 33, 34, 35, 36, 37, 38, 39];
     // Side buttons (4 buttons)
-    pub const BUTTON_SIDE_NOTE: [u8; 4] = [
-        40, 41, 42, 43,
-    ];
+    pub const BUTTON_SIDE_NOTE: [u8; 4] = [40, 41, 42, 43];
     // Encoder layer buttons (3 buttons)
-    pub const BUTTON_ENCODER_LAYER_NOTE: [u8; 3] = [
-        54, 55, 56,
-    ];
+    pub const BUTTON_ENCODER_LAYER_NOTE: [u8; 3] = [54, 55, 56];
     // Navigation buttons (4 buttons: up, down, left, right)
-    pub const BUTTON_NAV_NOTE: [u8; 4] = [
-        57, 58, 59, 60,
-    ];
+    pub const BUTTON_NAV_NOTE: [u8; 4] = [57, 58, 59, 60];
     // Additional layer buttons
-    pub const BUTTON_LAYER_NOTE: [u8; 3] = [
-        61, 62, 63,
-    ];
+    pub const BUTTON_LAYER_NOTE: [u8; 3] = [61, 62, 63];
 
     /// Create a device profile for Xone:K2/K3
     pub fn create_profile() -> DeviceProfile {
@@ -151,7 +137,9 @@ impl XoneK2Profile {
     /// Returns (control_type, value) if the message is from a known control.
     pub fn identify_control(msg: &MidiMessage) -> Option<(K2Control, u8)> {
         match msg {
-            MidiMessage::ControlChange { controller, value, .. } => {
+            MidiMessage::ControlChange {
+                controller, value, ..
+            } => {
                 // Check rotary pots
                 if let Some(pos) = Self::POT_CC.iter().position(|&cc| cc == *controller) {
                     return Some((K2Control::RotaryPot(pos as u8), *value));

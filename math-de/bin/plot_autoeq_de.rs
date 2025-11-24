@@ -571,15 +571,15 @@ fn main() {
         println!("Processing function: {}", name);
 
         // Check if function requires more than 2D (skip if so)
-        if let Some(meta) = metadata.get(&name) {
-            if meta.bounds.len() > 2 {
-                println!(
-                    "  Skipping '{}': requires {}D input, plotting only supports 2D",
-                    name,
-                    meta.bounds.len()
-                );
-                continue;
-            }
+        if let Some(meta) = metadata.get(&name)
+            && meta.bounds.len() > 2
+        {
+            println!(
+                "  Skipping '{}': requires {}D input, plotting only supports 2D",
+                name,
+                meta.bounds.len()
+            );
+            continue;
         }
 
         // Determine bounds to use
@@ -694,10 +694,10 @@ fn main() {
         }
 
         // Create convergence plot if requested and trace is available
-        if args.convergence_plots {
-            if let Some(ref trace) = trace {
-                plot_convergence(trace, &output_dir, args.width, args.height);
-            }
+        if args.convergence_plots
+            && let Some(ref trace) = trace
+        {
+            plot_convergence(trace, &output_dir, args.width, args.height);
         }
     }
 

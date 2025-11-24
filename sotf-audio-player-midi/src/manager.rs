@@ -128,10 +128,7 @@ impl MidiManager {
             self.midi_input = Some(MidiInput::new("SOTF MIDI Input")?);
         }
 
-        let midi_in = self
-            .midi_input
-            .take()
-            .ok_or(MidiError::NotConnected)?;
+        let midi_in = self.midi_input.take().ok_or(MidiError::NotConnected)?;
 
         let ports = midi_in.ports();
         let port = ports
@@ -193,10 +190,7 @@ impl MidiManager {
             self.midi_output = Some(MidiOutput::new("SOTF MIDI Output")?);
         }
 
-        let midi_out = self
-            .midi_output
-            .take()
-            .ok_or(MidiError::NotConnected)?;
+        let midi_out = self.midi_output.take().ok_or(MidiError::NotConnected)?;
 
         let ports = midi_out.ports();
         let port = ports
@@ -239,9 +233,7 @@ impl MidiManager {
     /// Send a MIDI message
     pub fn send_message(&self, message: &MidiMessage) -> Result<()> {
         let mut conn = self.output_connection.lock();
-        let connection = conn
-            .as_mut()
-            .ok_or(MidiError::NotConnected)?;
+        let connection = conn.as_mut().ok_or(MidiError::NotConnected)?;
 
         let bytes = message.to_bytes();
         connection
@@ -256,9 +248,7 @@ impl MidiManager {
     /// Send raw MIDI bytes
     pub fn send_raw(&self, bytes: &[u8]) -> Result<()> {
         let mut conn = self.output_connection.lock();
-        let connection = conn
-            .as_mut()
-            .ok_or(MidiError::NotConnected)?;
+        let connection = conn.as_mut().ok_or(MidiError::NotConnected)?;
 
         connection
             .send(bytes)

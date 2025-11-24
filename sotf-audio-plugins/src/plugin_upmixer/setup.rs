@@ -45,7 +45,7 @@ impl UpmixerPlugin {
         self.panning_gains_left.clear();
         self.panning_gains_right.clear();
 
-        for (_idx, speaker) in self.speaker_config.speakers.iter().enumerate() {
+        for speaker in self.speaker_config.speakers.iter() {
             if speaker.is_lfe {
                 self.panning_gains_left.push(0.5);
                 self.panning_gains_right.push(0.5);
