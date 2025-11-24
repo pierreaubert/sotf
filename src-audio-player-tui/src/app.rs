@@ -41,6 +41,7 @@ pub enum LibrarySortOrder {
     Album,
     Title,
     Year,
+    Popularity,
 }
 
 /// Channel filter options
@@ -160,6 +161,11 @@ pub struct App {
     pub volume: f32,
     pub position_secs: f64,
 
+    // Play tracking for statistics (30s threshold)
+    pub current_track_path: Option<PathBuf>,
+    pub current_track_start_time: Option<std::time::Instant>,
+    pub current_track_already_recorded: bool,
+
     // Loudness monitoring
     pub loudness_info: Option<LoudnessData>,
 
@@ -253,6 +259,9 @@ impl App {
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume
             position_secs: 0.0,
+            current_track_path: None,
+            current_track_start_time: None,
+            current_track_already_recorded: false,
             loudness_info: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
@@ -393,6 +402,15 @@ impl App {
                     // Sort by year descending (newest first), then artist, then title
                     b.year
                         .cmp(&a.year)
+                        .then(a.artist.cmp(&b.artist))
+                        .then(a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Popularity => {
+                albums.sort_by(|a, b| {
+                    // Sort by play count descending (most played first), then artist, then title
+                    b.play_count
+                        .cmp(&a.play_count)
                         .then(a.artist.cmp(&b.artist))
                         .then(a.title.cmp(&b.title))
                 });
@@ -1491,6 +1509,7 @@ impl App {
                     enable_hr_direct,
                     hr_sharpen,
                     safety_cap_db,
+                    decorrelation_mode,
                 } => {
                     match param_idx {
                         0 => {
@@ -1538,6 +1557,12 @@ impl App {
                         }
                         12 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0),
                         13 => *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0),
+                        14 => {
+                            // Toggle decorrelation mode (0 or 1)
+                            if delta.abs() > 0.1 {
+                                *decorrelation_mode = if *decorrelation_mode == 0 { 1 } else { 0 };
+                            }
+                        }
                         _ => return false,
                     }
                     true
@@ -2290,6 +2315,45 @@ impl App {
     pub fn get_current_album_image(&self) -> Option<&PathBuf> {
         self.album_images.get(self.selected_image_index)
     }
+
+    /// Start tracking a new track for play statistics
+    pub fn start_track_tracking(&mut self, track_path: PathBuf) {
+        self.current_track_path = Some(track_path);
+        self.current_track_start_time = Some(std::time::Instant::now());
+        self.current_track_already_recorded = false;
+    }
+
+    /// Check if current track has been played for 30+ seconds and record it
+    pub fn check_and_record_play(&mut self) {
+        if self.current_track_already_recorded {
+            return;
+        }
+
+        if let (Some(path), Some(start_time)) =
+            (&self.current_track_path, self.current_track_start_time)
+        {
+            let elapsed = start_time.elapsed().as_secs();
+            if elapsed >= 30 {
+                // Record the play in the database
+                if let Some(db) = self.library.get_database() {
+                    let duration = self.position_secs as u64;
+                    if let Err(e) = db.record_play(path, duration) {
+                        log::error!("Failed to record play: {}", e);
+                    } else {
+                        log::info!("Recorded play for {:?} ({}s)", path, duration);
+                        self.current_track_already_recorded = true;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Stop tracking the current track (called when track changes or stops)
+    pub fn stop_track_tracking(&mut self) {
+        self.current_track_path = None;
+        self.current_track_start_time = None;
+        self.current_track_already_recorded = false;
+    }
 }
 
 // Helper function to get parameter count for a plugin
@@ -2526,6 +2590,7 @@ mod tests {
             year: None,
             tracks,
             album_art_path: None,
+            play_count: 0,
         }
     }
 

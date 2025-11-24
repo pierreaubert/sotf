@@ -225,6 +225,11 @@ fn run_app<B: ratatui::backend::Backend>(
                     app.position_secs = state.position_secs;
                     app.loudness_info = state.loudness;
 
+                    // Check if we should record a play (30s threshold)
+                    if app.is_playing && state.is_playing {
+                        app.check_and_record_play();
+                    }
+
                     // Handle playback errors explicitly and avoid auto-advance on failure
                     if let Some(err) = state.last_error {
                         log::error!("[TUI] Playback error: {}", err);
@@ -235,7 +240,10 @@ fn run_app<B: ratatui::backend::Backend>(
                         && app.current_queue_index.is_some()
                     {
                         log::info!("[TUI] Track ended, attempting auto-advance...");
-                        // Track ended cleanly, advance to next
+                        // Track ended cleanly, stop tracking the previous track
+                        app.stop_track_tracking();
+
+                        // Advance to next
                         if let Some(path) = app.next_track() {
                             log::info!("[TUI] Auto-advancing to: {:?}", path);
                             let sample_rate = 48000.0;
@@ -252,17 +260,22 @@ fn run_app<B: ratatui::backend::Backend>(
                                     max_channels
                                 );
                                 app.is_playing = false;
-                            } else if let Err(e) = player.load_and_play(
-                                path,
-                                plugins,
-                                output_channels,
-                                app.current_output_device_name.clone(),
-                            ) {
-                                log::error!("[TUI] Failed to auto-advance: {}", e);
-                                app.is_playing = false;
-                                app.status_message = Some(format!("Failed to auto-advance: {}", e));
                             } else {
-                                log::info!("[TUI] Auto-advance successful");
+                                let path_clone = path.clone();
+                                if let Err(e) = player.load_and_play(
+                                    path,
+                                    plugins,
+                                    output_channels,
+                                    app.current_output_device_name.clone(),
+                                ) {
+                                    log::error!("[TUI] Failed to auto-advance: {}", e);
+                                    app.is_playing = false;
+                                    app.status_message = Some(format!("Failed to auto-advance: {}", e));
+                                } else {
+                                    log::info!("[TUI] Auto-advance successful");
+                                    // Start tracking the new track
+                                    app.start_track_tracking(path_clone);
+                                }
                             }
                         } else {
                             log::info!("[TUI] No more tracks in queue, stopping playback");
@@ -383,6 +396,9 @@ fn handle_player_command(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match cmd {
         PlayerCommand::Play(path) => {
+            // Stop tracking previous track if any
+            app.stop_track_tracking();
+
             // Load album images when starting playback
             app.load_album_images();
 
@@ -403,12 +419,16 @@ fn handle_player_command(
                 return Err(error_msg.into());
             }
 
+            let path_clone = path.clone();
             player.load_and_play(
                 path,
                 plugins,
                 output_channels,
                 app.current_output_device_name.clone(),
             )?;
+
+            // Start tracking the new track
+            app.start_track_tracking(path_clone);
         }
         PlayerCommand::Pause => {
             player.pause()?;
@@ -418,6 +438,8 @@ fn handle_player_command(
         }
         PlayerCommand::Stop => {
             player.stop()?;
+            // Stop tracking when playback stops
+            app.stop_track_tracking();
         }
         PlayerCommand::SetVolume(volume) => {
             player.set_volume(volume)?;

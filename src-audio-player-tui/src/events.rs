@@ -146,7 +146,8 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 LibrarySortOrder::Artist => LibrarySortOrder::Album,
                 LibrarySortOrder::Album => LibrarySortOrder::Title,
                 LibrarySortOrder::Title => LibrarySortOrder::Year,
-                LibrarySortOrder::Year => LibrarySortOrder::Artist,
+                LibrarySortOrder::Year => LibrarySortOrder::Popularity,
+                LibrarySortOrder::Popularity => LibrarySortOrder::Artist,
             };
             app.set_library_sort_order(next_order);
             None

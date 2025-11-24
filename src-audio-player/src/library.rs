@@ -41,6 +41,7 @@ pub struct Album {
     pub year: Option<u32>,
     pub tracks: Vec<Track>,
     pub album_art_path: Option<PathBuf>,
+    pub play_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,6 +147,11 @@ impl MusicLibrary {
             albums: Vec::new(),
             db: Some(db),
         })
+    }
+
+    /// Get a reference to the database
+    pub fn get_database(&self) -> Option<&MusicDatabase> {
+        self.db.as_ref()
     }
 
     /// Load library from database
@@ -582,6 +588,7 @@ impl MusicLibrary {
                             year: metadata.year,
                             tracks: Vec::new(),
                             album_art_path: None,
+                            play_count: 0,
                         });
 
                         let track = Track {
@@ -950,6 +957,7 @@ mod tests {
             year: Some(1973),
             tracks: vec![],
             album_art_path: None,
+            play_count: 0,
         });
 
         lib.albums.push(Album {
@@ -959,6 +967,7 @@ mod tests {
             year: Some(1969),
             tracks: vec![],
             album_art_path: None,
+            play_count: 0,
         });
 
         lib.albums.push(Album {
@@ -968,6 +977,7 @@ mod tests {
             year: Some(1971),
             tracks: vec![],
             album_art_path: None,
+            play_count: 0,
         });
 
         // Search by artist (case insensitive)
@@ -1005,6 +1015,7 @@ mod tests {
             year: Some(1986),
             tracks: vec![],
             album_art_path: None,
+            play_count: 0,
         });
 
         // Test various case combinations

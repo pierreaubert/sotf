@@ -228,6 +228,7 @@ pub enum PluginSettings {
         enable_hr_direct: bool,
         hr_sharpen: f64,
         safety_cap_db: f64,
+        decorrelation_mode: usize,
     },
     Compressor {
         threshold_db: f64,
@@ -339,6 +340,7 @@ impl PluginSettings {
                 enable_hr_direct,
                 hr_sharpen,
                 safety_cap_db,
+                decorrelation_mode,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -356,6 +358,7 @@ impl PluginSettings {
                     "enable_hr_direct": enable_hr_direct,
                     "hr_sharpen": hr_sharpen,
                     "safety_cap_db": safety_cap_db,
+                    "decorrelation_mode": decorrelation_mode,
                 }),
             ),
             Self::Compressor {
@@ -507,6 +510,7 @@ impl PluginSettings {
                 enable_hr_direct: false,
                 hr_sharpen: 1.0,
                 safety_cap_db: 3.0,
+                decorrelation_mode: 0,
             },
             PluginType::Compressor => Self::Compressor {
                 threshold_db: -20.0,
@@ -890,6 +894,7 @@ mod tests {
                 enable_hr_direct: false,
                 hr_sharpen: 1.0,
                 safety_cap_db: 3.0,
+                decorrelation_mode: 0,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -937,6 +942,7 @@ mod tests {
                 enable_hr_direct: false,
                 hr_sharpen: 1.0,
                 safety_cap_db: 3.0,
+                decorrelation_mode: 0,
             };
         }
 

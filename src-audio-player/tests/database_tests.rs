@@ -53,6 +53,7 @@ fn test_save_and_load_single_album() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     // Save album
@@ -99,6 +100,7 @@ fn test_save_multiple_albums() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
         Album {
             id: None,
@@ -117,6 +119,7 @@ fn test_save_multiple_albums() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
     ];
 
@@ -180,6 +183,7 @@ fn test_album_with_multiple_tracks() {
             },
         ],
         album_art_path: None,
+    play_count: 0,
     };
 
     // Save album
@@ -231,6 +235,7 @@ fn test_search_library_by_artist() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
         Album {
             id: None,
@@ -249,6 +254,7 @@ fn test_search_library_by_artist() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
     ];
 
@@ -289,6 +295,7 @@ fn test_search_library_by_album_title() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     db.save_albums(&[album]).expect("Failed to save album");
@@ -320,6 +327,7 @@ fn test_search_library_by_track_title() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     db.save_albums(&[album]).expect("Failed to save album");
@@ -353,6 +361,7 @@ fn test_search_library_case_insensitive() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     db.save_albums(&[album]).expect("Failed to save album");
@@ -393,6 +402,7 @@ fn test_search_library_prefix_matching() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     db.save_albums(&[album]).expect("Failed to save album");
@@ -438,6 +448,7 @@ fn test_clean_missing_files() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
         Album {
             id: None,
@@ -456,6 +467,7 @@ fn test_clean_missing_files() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
     ];
 
@@ -499,6 +511,7 @@ fn test_replay_gain_storage() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     db.save_albums(&[album]).expect("Failed to save album");
@@ -543,6 +556,7 @@ fn test_get_tracks_without_replay_gain() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
         Album {
             id: None,
@@ -561,6 +575,7 @@ fn test_get_tracks_without_replay_gain() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
     ];
 
@@ -631,6 +646,7 @@ fn test_update_existing_album() {
         album_peak: None,
         }],
         album_art_path: None,
+        play_count: 0,
     };
 
     db.save_albums(&[album]).expect("Failed to save album");
@@ -670,6 +686,7 @@ fn test_update_existing_album() {
             },
         ],
         album_art_path: None,
+        play_count: 0,
     };
 
     db.save_albums(&[updated_album])

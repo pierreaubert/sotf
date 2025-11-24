@@ -367,6 +367,7 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
         LibrarySortOrder::Album => "Album",
         LibrarySortOrder::Title => "Title",
         LibrarySortOrder::Year => "Year",
+        LibrarySortOrder::Popularity => "Popularity",
     };
 
     // Display current channel filter (will be rendered in green)
@@ -433,13 +434,20 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
                 .enumerate()
                 .map(|(i, album)| {
                     // Clean and truncate to prevent overflow into meters column
-                    // Truncation length adjusted based on right column width
-                    // For stereo (12% right column): 100 chars is safe
-                    // For 5.1 (20% right column): 85 chars to be safe
+                    // Truncation length adjusted based on right column width and play count display
+                    // For stereo (12% right column): 90 chars is safe (reduced to make room for play count)
+                    // For 5.1 (20% right column): 75 chars to be safe
                     let raw_content = album.display_name();
                     let cleaned = clean_text(&raw_content);
-                    let max_len = if num_channels > 4 { 85 } else { 100 };
+                    let max_len = if num_channels > 4 { 75 } else { 90 };
                     let content = truncate_with_ellipsis(&cleaned, max_len);
+
+                    // Add play count to the display if > 0
+                    let display_text = if album.play_count > 0 {
+                        format!("{}  \u{1F3B5} {}", content, album.play_count)
+                    } else {
+                        content
+                    };
 
                     let style = if i == app.selected_album_index {
                         Style::default()
@@ -449,7 +457,7 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
                     } else {
                         Style::default()
                     };
-                    ListItem::new(content).style(style)
+                    ListItem::new(display_text).style(style)
                 })
                 .collect();
 
@@ -508,8 +516,15 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
                                 // Use display_name for consistency, clean and truncate
                                 let raw_album = album.display_name();
                                 let cleaned = clean_text(&raw_album);
-                                let truncated = truncate_with_ellipsis(&cleaned, 90);
-                                let content = format!("  └─ {}", truncated);
+                                let truncated = truncate_with_ellipsis(&cleaned, 80);
+
+                                // Add play count if > 0
+                                let content = if album.play_count > 0 {
+                                    format!("  └─ {}  \u{1F3B5} {}", truncated, album.play_count)
+                                } else {
+                                    format!("  └─ {}", truncated)
+                                };
+
                                 let mut style = Style::default();
                                 if i == app.selected_tree_index {
                                     style = Style::default()
@@ -1682,6 +1697,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             enable_hr_direct,
             hr_sharpen,
             safety_cap_db,
+            decorrelation_mode,
         } => vec![
             ("Speaker Config".to_string(), speaker_config.clone()),
             (
@@ -1719,6 +1735,14 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ),
             ("HR Sharpen".to_string(), format!("{:.2}", hr_sharpen)),
             ("Safety Cap".to_string(), format!("{:.1} dB", safety_cap_db)),
+            (
+                "Decorrelation".to_string(),
+                match decorrelation_mode {
+                    0 => "Velvet Noise".to_string(),
+                    1 => "LFO Phase".to_string(),
+                    _ => "Unknown".to_string(),
+                },
+            ),
         ],
         PluginSettings::Compressor {
             threshold_db,

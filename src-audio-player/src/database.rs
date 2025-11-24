@@ -53,7 +53,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 5;
+        const LATEST_VERSION: i64 = 6;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -410,6 +410,45 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 6: Add play_history table for listening statistics
+        migrations.insert(
+            6,
+            Migration {
+                description: "Add play_history table for tracking listening statistics",
+                apply: |db| {
+                    // Create play_history table
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS play_history (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            track_path TEXT NOT NULL,
+                            album_id INTEGER,
+                            played_at INTEGER NOT NULL,
+                            duration_played_secs INTEGER NOT NULL,
+                            FOREIGN KEY(album_id) REFERENCES albums(id) ON DELETE CASCADE
+                        )",
+                        [],
+                    )?;
+
+                    // Create indexes for efficient queries
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_play_history_track_path ON play_history(track_path)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_play_history_album_id ON play_history(album_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_play_history_played_at ON play_history(played_at)",
+                        [],
+                    )?;
+
+                    log::info!("Created play_history table and indexes");
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -485,6 +524,9 @@ impl MusicDatabase {
             ))
         })?;
 
+        // Get all play counts at once for efficiency
+        let play_counts = self.get_all_album_play_counts()?;
+
         for album_row in album_rows {
             let (album_id, artist, title, year, album_art_path) = album_row?;
 
@@ -513,6 +555,8 @@ impl MusicDatabase {
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
 
+            let play_count = *play_counts.get(&album_id).unwrap_or(&0);
+
             albums.push(Album {
                 id: Some(album_id),
                 artist,
@@ -520,6 +564,7 @@ impl MusicDatabase {
                 year: year.map(|y| y as u32),
                 tracks,
                 album_art_path: album_art_path.map(PathBuf::from),
+                play_count,
             });
         }
 
@@ -756,6 +801,106 @@ impl MusicDatabase {
             .collect::<SqlResult<Vec<_>>>()?;
 
         Ok(paths)
+    }
+
+    /// Record a play event for a track
+    /// Only records if duration_played_secs >= 30
+    pub fn record_play(&self, track_path: &Path, duration_played_secs: u64) -> SqlResult<()> {
+        // Only record if played for at least 30 seconds
+        if duration_played_secs < 30 {
+            return Ok(());
+        }
+
+        let now = current_timestamp();
+        let path_str = track_path.to_string_lossy();
+
+        // Get album_id for this track
+        let album_id: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT album_id FROM tracks WHERE path = ?1",
+                params![path_str.as_ref()],
+                |row| row.get(0),
+            )
+            .ok();
+
+        self.conn.execute(
+            "INSERT INTO play_history (track_path, album_id, played_at, duration_played_secs)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                path_str.as_ref(),
+                album_id,
+                now,
+                duration_played_secs as i64
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get play count for a specific track
+    pub fn get_track_play_count(&self, track_path: &Path) -> SqlResult<usize> {
+        let path_str = track_path.to_string_lossy();
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM play_history WHERE track_path = ?1",
+            params![path_str.as_ref()],
+            |row| row.get(0),
+        )?;
+
+        Ok(count as usize)
+    }
+
+    /// Get play count for all tracks in an album
+    pub fn get_album_play_count(&self, album_id: i64) -> SqlResult<usize> {
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM play_history WHERE album_id = ?1",
+            params![album_id],
+            |row| row.get(0),
+        )?;
+
+        Ok(count as usize)
+    }
+
+    /// Get play counts for all albums
+    /// Returns a HashMap of album_id -> play_count
+    pub fn get_all_album_play_counts(&self) -> SqlResult<std::collections::HashMap<i64, usize>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT album_id, COUNT(*) as play_count
+             FROM play_history
+             WHERE album_id IS NOT NULL
+             GROUP BY album_id",
+        )?;
+
+        let counts = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? as usize))
+            })?
+            .collect::<SqlResult<std::collections::HashMap<_, _>>>()?;
+
+        Ok(counts)
+    }
+
+    /// Get last played timestamp for a track
+    pub fn get_track_last_played(&self, track_path: &Path) -> SqlResult<Option<u64>> {
+        let path_str = track_path.to_string_lossy();
+        let result = self.conn.query_row(
+            "SELECT MAX(played_at) FROM play_history WHERE track_path = ?1",
+            params![path_str.as_ref()],
+            |row| row.get::<_, Option<i64>>(0),
+        )?;
+
+        Ok(result.map(|t| t as u64))
+    }
+
+    /// Get last played timestamp for an album
+    pub fn get_album_last_played(&self, album_id: i64) -> SqlResult<Option<u64>> {
+        let result = self.conn.query_row(
+            "SELECT MAX(played_at) FROM play_history WHERE album_id = ?1",
+            params![album_id],
+            |row| row.get::<_, Option<i64>>(0),
+        )?;
+
+        Ok(result.map(|t| t as u64))
     }
 }
 

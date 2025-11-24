@@ -1258,6 +1258,7 @@ impl App {
                     enable_hr_direct,
                     hr_sharpen,
                     safety_cap_db,
+                    decorrelation_mode,
                 } => {
                     match param_idx {
                         0 => {
@@ -1334,11 +1335,18 @@ impl App {
                             true
                         }
                         12 => {
-                            *hr_sharpen = (*hr_sharpen + delta as f64 * 0.1).max(0.0).min(2.0);
+                            *hr_sharpen = (*hr_sharpen + delta as f64 * 0.05).max(0.0).min(1.0);
                             true
                         }
                         13 => {
-                            *safety_cap_db = (*safety_cap_db + delta as f64).max(-30.0).min(0.0);
+                            *safety_cap_db = (*safety_cap_db + delta as f64 * 0.5).max(0.0).min(12.0);
+                            true
+                        }
+                        14 => {
+                            // Toggle decorrelation mode (0 or 1)
+                            if delta.abs() > 0.1 {
+                                *decorrelation_mode = if *decorrelation_mode == 0 { 1 } else { 0 };
+                            }
                             true
                         }
                         _ => false,

@@ -85,6 +85,7 @@ fn test_update_replay_gain() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     let db = MusicDatabase::open(&db_path).unwrap();
@@ -135,6 +136,7 @@ fn test_replay_gain_values_persistence() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         };
 
         let db = MusicDatabase::open(&db_path).unwrap();
@@ -188,6 +190,7 @@ fn test_partial_replay_gain_scanning() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
         sotf_audio_player::Album {
             id: None,
@@ -206,6 +209,7 @@ fn test_partial_replay_gain_scanning() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
         sotf_audio_player::Album {
             id: None,
@@ -224,6 +228,7 @@ fn test_partial_replay_gain_scanning() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
     ];
 
@@ -276,6 +281,7 @@ fn test_replay_gain_range_values() {
         album_peak: None,
         }],
         album_art_path: None,
+    play_count: 0,
     };
 
     let db = MusicDatabase::open(&db_path).unwrap();

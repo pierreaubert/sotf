@@ -216,6 +216,7 @@ fn test_search_library_integration() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
         sotf_audio_player::Album {
             id: None,
@@ -234,6 +235,7 @@ fn test_search_library_integration() {
             album_peak: None,
             }],
             album_art_path: None,
+        play_count: 0,
         },
     ];
 
@@ -332,6 +334,7 @@ fn test_album_channel_type_detection() {
             },
         ],
         album_art_path: None,
+    play_count: 0,
     };
 
     let channel_type = stereo_album.channel_type();
@@ -371,6 +374,7 @@ fn test_album_channel_type_detection() {
             },
         ],
         album_art_path: None,
+    play_count: 0,
     };
 
     let channel_type = multichannel_album.channel_type();
@@ -410,6 +414,7 @@ fn test_album_channel_type_detection() {
             },
         ],
         album_art_path: None,
+    play_count: 0,
     };
 
     let channel_type = mixed_album.channel_type();
