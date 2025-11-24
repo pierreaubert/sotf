@@ -17,7 +17,7 @@ pub fn default_gain_front_ambient() -> f32 {
 }
 
 pub fn default_gain_rear_ambient() -> f32 {
-    1.2 // Boosted from 1.0 (20% increase) for better rear/height envelopment
+    1.1 // Boosted from 1.0 (10% increase) for better rear/height envelopment
 }
 
 pub fn default_lfe_cutoff_hz() -> f32 {
@@ -29,7 +29,7 @@ pub fn default_stereo_width() -> f32 {
 }
 
 pub fn default_bandpass_hz() -> f32 {
-    220.0 // Lowered from 300Hz for more mid-range content in surrounds
+    250.0 // Lowered from 300Hz for more mid-range content in surrounds
 }
 
 pub fn default_speaker_config() -> String {
@@ -37,7 +37,7 @@ pub fn default_speaker_config() -> String {
 }
 
 pub fn default_height_gain() -> f32 {
-    0.2
+    0.5
 }
 
 pub fn default_lfe_gain() -> f32 {
@@ -57,7 +57,7 @@ pub fn default_hr_sharpen() -> f32 {
 }
 
 pub fn default_safety_cap_db() -> f32 {
-    3.0
+    2.0
 }
 
 /// Configuration parameters for UpmixerPlugin

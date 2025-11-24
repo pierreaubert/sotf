@@ -6,6 +6,12 @@ use super::UpmixerPlugin;
 use crate::simd::compute_covariance_simd;
 use rustfft::num_complex::Complex;
 
+fn base_ambient_gain_from_coherence(coherence: f32) -> f32 {
+    let coherence_clamped = coherence.clamp(0.0, 1.0);
+    let ambient_base = (1.0 - coherence_clamped).max(0.0);
+    ambient_base.sqrt() * 1.2
+}
+
 impl UpmixerPlugin {
     /// Phase 2: Process frequency domain using ERB bands and Logic Steering
     ///
@@ -23,6 +29,13 @@ impl UpmixerPlugin {
     /// 4. Dialogue detection and adaptive decorrelation
     /// 5. Height channel masking
     pub(super) fn process_frequency_domain_erb_bands(&mut self) {
+        // Guard against uninitialized state
+        if self.sample_rate == 0 || self.fft_size == 0 {
+            log::error!("[UPMIXER] process_frequency_domain_erb_bands called with sample_rate={} fft_size={}",
+                self.sample_rate, self.fft_size);
+            return;
+        }
+
         if self.decorrelation_mode == 1 {
             self.update_lfo_decorrelation();
         }
@@ -101,6 +114,7 @@ impl UpmixerPlugin {
             } else {
                 0.0
             };
+            coherence = coherence.clamp(0.0, 1.0);
 
             self.coherence_instant[band_idx] = coherence;
 
@@ -177,7 +191,7 @@ impl UpmixerPlugin {
                 //
                 // Dialogue detection: redistribute energy from ambient to center
                 // while preserving total energy to avoid saturation
-                let base_ambient_gain = (1.0 - coherence).sqrt() * 1.2;
+                let base_ambient_gain = base_ambient_gain_from_coherence(coherence);
 
                 // Energy redistribution for dialogue: shift energy to center while maintaining total
                 // dialogue_weight ranges from 0.0 (no dialogue) to 0.4 (strong dialogue)
@@ -280,5 +294,20 @@ impl UpmixerPlugin {
 
         // Apply spectral and temporal smoothing to height_band_gains
         self.smooth_height_gains();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::base_ambient_gain_from_coherence;
+
+    #[test]
+    fn base_ambient_gain_is_finite_for_out_of_range_coherence() {
+        let values = [-10.0_f32, -1.0, 0.0, 0.5, 0.999_999, 1.0, 1.000_001, 10.0];
+        for &c in &values {
+            let g = base_ambient_gain_from_coherence(c);
+            assert!(g.is_finite(), "base_ambient_gain not finite for coherence={}", c);
+            assert!(g >= 0.0);
+        }
     }
 }

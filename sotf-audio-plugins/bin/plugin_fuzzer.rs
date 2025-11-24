@@ -15,7 +15,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use sotf_plugins::{
-    BiquadFilterConfig, CompressorPlugin, CompressorPluginParams, CrossoverPlugin,
+    CompressorPlugin, CompressorPluginParams, CrossoverPlugin,
     CrossoverPluginParams, DawHost, DelayPlugin, DelayPluginParams, EqPlugin, EqPluginParams,
     GainPlugin, GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter,
     LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
@@ -123,7 +123,8 @@ impl AbnormalityReport {
         if self.has_clipping {
             if let Some(error_db) = self.clipping_error_db {
                 println!(
-                    "  - Clipping detected (values >= 1.0 or <= -1.0, max error: {:.2} dB)",
+                    "  - Clipping detected (peak: {:.2} dBFS, {:.2} dB above threshold)",
+                    error_db,
                     error_db
                 );
             } else {
@@ -197,8 +198,8 @@ fn detect_abnormalities(
     };
     let has_dc_offset = dc_offset.abs() > max_dc_threshold;
 
-    // Calculate clipping error in dB
-    let clipping_error_db = if has_clipping && max_clipping_value > 1.0 {
+    // Calculate clipping error in dB (relative to 0dBFS threshold)
+    let clipping_error_db = if has_clipping {
         Some(20.0 * max_clipping_value.log10())
     } else {
         None
@@ -359,23 +360,22 @@ fn load_audio_file(path: &PathBuf) -> Result<(Vec<f32>, usize, u32), String> {
 // ============================================================================
 
 trait PluginFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin>;
-    fn parameter_description(&self) -> String;
+    /// Create a plugin with random parameters and return both the plugin and a description
+    /// of the actual parameters used for debugging.
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String);
 }
 
 struct GainFuzzer;
 
 impl PluginFuzzer for GainFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let gain_db = rng.random_range(-60.0..0.0);
         let params = GainPluginParams { gain_db };
-        Box::new(InPlacePluginAdapter::new(GainPlugin::from_params(
+        let plugin = Box::new(InPlacePluginAdapter::new(GainPlugin::from_params(
             channels, params,
-        )))
-    }
-
-    fn parameter_description(&self) -> String {
-        "gain_db: -60.0 to 20.0 dB".to_string()
+        )));
+        let desc = format!("gain_db={:.2}", gain_db);
+        (plugin, desc)
     }
 }
 
@@ -384,7 +384,7 @@ struct EqFuzzer {
 }
 
 impl PluginFuzzer for EqFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         use autoeq_iir::{Biquad, BiquadFilterType, Peq, peq_loudness_gain};
         use sotf_plugins::BiquadFilterConfig;
 
@@ -435,23 +435,30 @@ impl PluginFuzzer for EqFuzzer {
             filter.db_gain -= loudness_gain;
         }
 
+        // Build parameter description
+        let mut desc = format!("filters={} loudness_comp={:.2}dB [", filters.len(), loudness_gain);
+        for (i, f) in filters.iter().enumerate() {
+            if i > 0 {
+                desc.push_str(", ");
+            }
+            desc.push_str(&format!("{}:{:.0}Hz q={:.2} gain={:.2}dB",
+                f.filter_type, f.freq, f.q, f.db_gain));
+        }
+        desc.push(']');
+
         let params = EqPluginParams {
             filters,
             channel_filters: None,
         };
-        Box::new(EqPlugin::from_params(channels, self.sample_rate, params).unwrap())
-    }
-
-    fn parameter_description(&self) -> String {
-        "1-5 filters, freq: 20-20000 Hz, Q: 0.1-10.0, gain: -20 to +20 dB (loudness compensated)"
-            .to_string()
+        let plugin = Box::new(EqPlugin::from_params(channels, self.sample_rate, params).unwrap());
+        (plugin, desc)
     }
 }
 
 struct CompressorFuzzer;
 
 impl PluginFuzzer for CompressorFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let threshold_db = rng.random_range(-60.0..0.0);
         let ratio = rng.random_range(1.0..20.0);
         let attack_ms = rng.random_range(0.1..100.0);
@@ -476,18 +483,20 @@ impl PluginFuzzer for CompressorFuzzer {
             sidechain_hpf_hz,
         };
         let plugin = CompressorPlugin::from_params(channels, params);
-        Box::new(InPlacePluginAdapter::new(plugin))
-    }
 
-    fn parameter_description(&self) -> String {
-        "threshold: -60 to 0 dB, ratio: 1-20, attack: 0.1-100 ms, release: 10-1000 ms".to_string()
+        let desc = format!(
+            "threshold={:.1}dB ratio={:.2}:1 attack={:.1}ms release={:.0}ms knee={:.1}dB makeup={:.1}dB mix={:.2} auto_makeup={} link={} sc_hpf={:.0}Hz",
+            threshold_db, ratio, attack_ms, release_ms, knee_db, makeup_gain_db, mix, auto_makeup, link_channels, sidechain_hpf_hz
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
 }
 
 struct LimiterFuzzer;
 
 impl PluginFuzzer for LimiterFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let threshold_db = rng.random_range(-20.0..0.0);
         let release_ms = rng.random_range(10.0..1000.0);
         let lookahead_ms = rng.random_range(0.0..20.0);
@@ -502,18 +511,20 @@ impl PluginFuzzer for LimiterFuzzer {
             mix,
         };
         let plugin = LimiterPlugin::from_params(channels, params);
-        Box::new(InPlacePluginAdapter::new(plugin))
-    }
 
-    fn parameter_description(&self) -> String {
-        "threshold: -20 to 0 dB, release: 10-1000 ms, lookahead: 0-20 ms".to_string()
+        let desc = format!(
+            "threshold={:.1}dB release={:.0}ms lookahead={:.1}ms soft={} mix={:.2}",
+            threshold_db, release_ms, lookahead_ms, soft, mix
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
 }
 
 struct GateFuzzer;
 
 impl PluginFuzzer for GateFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let threshold_db = rng.random_range(-80.0..0.0);
         let ratio = rng.random_range(1.0..100.0);
         let attack_ms = rng.random_range(0.1..50.0);
@@ -534,18 +545,20 @@ impl PluginFuzzer for GateFuzzer {
             sidechain_hpf_hz,
         };
         let plugin = GatePlugin::from_params(channels, params);
-        Box::new(InPlacePluginAdapter::new(plugin))
-    }
 
-    fn parameter_description(&self) -> String {
-        "threshold: -80 to 0 dB, ratio: 1-100, attack: 0.1-50 ms, hold: 0-1000 ms, release: 10-2000 ms".to_string()
+        let desc = format!(
+            "threshold={:.1}dB ratio={:.1}:1 attack={:.1}ms hold={:.0}ms release={:.0}ms mix={:.2} link={} sc_hpf={:.0}Hz",
+            threshold_db, ratio, attack_ms, hold_ms, release_ms, mix, link_channels, sidechain_hpf_hz
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
 }
 
 struct DelayFuzzer;
 
 impl PluginFuzzer for DelayFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let delay_ms = rng.random_range(0.1..5000.0);
         let feedback = rng.random_range(0.0..0.95);
         let mix = rng.random_range(0.0..1.0);
@@ -555,20 +568,25 @@ impl PluginFuzzer for DelayFuzzer {
             feedback,
             mix,
         };
-        Box::new(InPlacePluginAdapter::new(DelayPlugin::from_params(
-            channels, params,
-        )))
-    }
 
-    fn parameter_description(&self) -> String {
-        "delay: 0.1-5000 ms, feedback: 0-0.95, mix: 0-1".to_string()
+        let desc = format!(
+            "delay={:.1}ms feedback={:.2} mix={:.2}",
+            delay_ms, feedback, mix
+        );
+
+        (
+            Box::new(InPlacePluginAdapter::new(DelayPlugin::from_params(
+                channels, params,
+            ))),
+            desc,
+        )
     }
 }
 
 struct LoudnessCompensationFuzzer;
 
 impl PluginFuzzer for LoudnessCompensationFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let low_freq = rng.random_range(20.0..500.0);
         let low_gain = rng.random_range(0.0..20.0);
         let high_freq = rng.random_range(5000.0..20000.0);
@@ -581,19 +599,20 @@ impl PluginFuzzer for LoudnessCompensationFuzzer {
             high_gain,
         };
         let plugin = LoudnessCompensationPlugin::from_params(channels, params);
-        Box::new(plugin)
-    }
 
-    fn parameter_description(&self) -> String {
-        "low_freq: 20-500 Hz, low_gain: 0-20 dB, high_freq: 5000-20000 Hz, high_gain: 0-20 dB"
-            .to_string()
+        let desc = format!(
+            "low_freq={:.0}Hz low_gain={:.1}dB high_freq={:.0}Hz high_gain={:.1}dB",
+            low_freq, low_gain, high_freq, high_gain
+        );
+
+        (Box::new(plugin), desc)
     }
 }
 
 struct CrossoverFuzzer;
 
 impl PluginFuzzer for CrossoverFuzzer {
-    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let crossover_types = vec!["LR24", "LR48", "Butterworth24", "Butterworth12"];
         let crossover_type = crossover_types[rng.random_range(0..crossover_types.len())].to_string();
         let frequency = rng.random_range(20.0..20000.0);
@@ -601,24 +620,25 @@ impl PluginFuzzer for CrossoverFuzzer {
         let output = outputs[rng.random_range(0..outputs.len())].to_string();
 
         let params = CrossoverPluginParams {
-            crossover_type,
+            crossover_type: crossover_type.clone(),
             frequency,
-            output,
+            output: output.clone(),
         };
         let plugin = CrossoverPlugin::from_params(channels, &params).unwrap();
-        Box::new(InPlacePluginAdapter::new(plugin))
-    }
 
-    fn parameter_description(&self) -> String {
-        "type: LR24/LR48/Butterworth24/Butterworth12, freq: 20-20000 Hz, output: low/high"
-            .to_string()
+        let desc = format!(
+            "type={} freq={:.0}Hz output={}",
+            crossover_type, frequency, output
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
     }
 }
 
 struct UpmixerFuzzer;
 
 impl PluginFuzzer for UpmixerFuzzer {
-    fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
+    fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         // Upmixer always takes 2 channels input
         let speaker_configs = ["5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4"];
         let speaker_config = speaker_configs[rng.random_range(0..speaker_configs.len())].to_string();
@@ -643,11 +663,11 @@ impl PluginFuzzer for UpmixerFuzzer {
 
         let enable_subharmonic_synth = rng.random_bool(0.5);
         let enable_hr_direct = rng.random_bool(0.3); // Less frequent, experimental feature
-        let decorrelation_mode = rng.random_range(0..=2); // 0, 1, or 2
+        let decorrelation_mode = rng.random_range(0..=1); // 0=Velvet, 1=LFO
 
         let params = UpmixerPluginParams {
             fft_size,
-            speaker_config,
+            speaker_config: speaker_config.clone(),
             gain_front_direct,
             gain_front_ambient,
             gain_rear_ambient,
@@ -665,12 +685,15 @@ impl PluginFuzzer for UpmixerFuzzer {
             decorrelation_mode,
         };
 
-        Box::new(UpmixerPlugin::from_params(params))
-    }
+        let desc = format!(
+            "config={} fft={} g_fd={:.2} g_fa={:.2} g_ra={:.2} lfe_co={:.0}Hz sw={:.2} bp={:.0}Hz cs={:.2} hg={:.2} lfeg={:.2} subh={}/{:.2} hr={}/{:.2} cap={:.1}dB decor={}",
+            speaker_config, fft_size, gain_front_direct, gain_front_ambient, gain_rear_ambient,
+            lfe_cutoff_hz, stereo_width, bandpass_hz, center_spread, height_gain, lfe_gain,
+            enable_subharmonic_synth, subharmonic_gain, enable_hr_direct, hr_sharpen,
+            safety_cap_db, decorrelation_mode
+        );
 
-    fn parameter_description(&self) -> String {
-        "configs: 5.0/5.1/7.1/5.1.2/5.1.4/7.1.2/7.1.4, fft: 1024/2048/4096, gains: 0-2.0"
-            .to_string()
+        (Box::new(UpmixerPlugin::from_params(params)), desc)
     }
 }
 
@@ -866,8 +889,8 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
                 }
             };
 
-            // Create plugin with random parameters
-            let plugin = fuzzer.create_plugin(channels, &mut rng);
+            // Create plugin with random parameters and get parameter description
+            let (plugin, params_desc) = fuzzer.create_plugin(channels, &mut rng);
 
             // Build host and add plugin
             let mut host = DawHost::new(channels, *test_sample_rate);
@@ -907,8 +930,8 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
             // This is especially important for compressor/limiter plugins
             let gain_compensation_db = normalize_output(&mut output);
 
-            // Detect abnormalities after normalization
-            let mut param_desc = format!("iteration_{}_@{}Hz", i, test_sample_rate);
+            // Build parameter description with all details for debugging
+            let mut param_desc = format!("{} @{}Hz", params_desc, test_sample_rate);
             if gain_compensation_db > 0.1 {
                 param_desc.push_str(&format!(" (normalized -{:.1}dB)", gain_compensation_db));
             }
@@ -942,7 +965,8 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
                     if let Some(error_db) = report.clipping_error_db {
                         writeln!(
                             handle,
-                            "  - Clipping detected (values >= 1.0 or <= -1.0, max error: {:.2} dB)",
+                            "  - Clipping detected (peak: {:.2} dBFS, {:.2} dB above threshold)",
+                            error_db,
                             error_db
                         ).ok();
                     } else {

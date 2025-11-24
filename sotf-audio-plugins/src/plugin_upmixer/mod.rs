@@ -1255,30 +1255,61 @@ above unity, the block is scaled down to stay within the cap.",
         //     output_pos / self.num_output_channels
         // );
 
-        // TEMPORARY: Hard clipping protection to prevent high level outputs
-        // This is a safety measure while we debug which feature is causing the issue
-        let threshold = 1.0; // 0dB
-        let mut clipped_samples = 0;
+        // Detection only: Check for NaN/Inf and log level warnings
+        // Actual limiting is handled by safety_cap_db + channel normalization
+        let threshold = 1.0; // 0dBFS
+        let mut clipping_samples = 0;
+        let mut nan_count = 0;
+        let mut inf_count = 0;
         let mut max_value = 0.0_f32;
+        let mut max_clipping_value = 1.0_f32;
 
-        for sample in output.iter_mut() {
+        for sample in output.iter() {
+            if sample.is_nan() {
+                nan_count += 1;
+                continue;
+            }
+            if sample.is_infinite() {
+                inf_count += 1;
+                continue;
+            }
+
             let abs_val = sample.abs();
             if abs_val > max_value {
                 max_value = abs_val;
             }
 
-            if abs_val > threshold {
-                clipped_samples += 1;
-                *sample = sample.signum() * threshold;
+            if abs_val >= threshold {
+                clipping_samples += 1;
+                if abs_val > max_clipping_value {
+                    max_clipping_value = abs_val;
+                }
             }
         }
 
-        // Log warning if clipping occurred
-        if clipped_samples > 0 {
+        // Log critical errors for NaN/Inf
+        if nan_count > 0 {
+            log::error!(
+                "[UPMIXER] CRITICAL: {} NaN samples detected in output!",
+                nan_count
+            );
+        }
+        if inf_count > 0 {
+            log::error!(
+                "[UPMIXER] CRITICAL: {} infinite samples detected in output!",
+                inf_count
+            );
+        }
+
+        // Log warning if clipping occurred (only if valid samples exist)
+        if clipping_samples > 0 && max_clipping_value >= threshold && max_clipping_value.is_finite() {
+            let peak_db = 20.0 * max_clipping_value.log10();
             log::warn!(
-                "[UPMIXER] CLIPPING PROTECTION: {} samples clipped, max value was {:.2} dB",
-                clipped_samples,
-                20.0 * max_value.log10()
+                "[UPMIXER] CLIPPING: {} samples exceeded threshold, peak: {:.2} dBFS ({:.2} dB above 0dBFS), safety_cap_db={:.1} dB",
+                clipping_samples,
+                peak_db,
+                peak_db,
+                self.safety_cap_db
             );
         }
 
