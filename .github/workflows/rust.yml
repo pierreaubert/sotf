@@ -18,8 +18,8 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          apt update
-          apt install -y build-essential gcc g++ pkg-config libssl-dev ca-certificates
+          sudo apt update
+          sudo apt install -y build-essential gcc g++ pkg-config libssl-dev ca-certificates
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -31,20 +31,30 @@ jobs:
 
       - name: Install for Linux
         run: |
-          just install-ubuntu-x86
+          sudo just install-linux-root
+          sudo just install-ubuntu-common
+          sudo just install-ubuntu-x86
+          just post-install-npm
         env:
           AUTOEQ_DIR: $GITHUB_WORKSPACE
           JUST_JUSTFILE: $GITHUB_WORKSPACE/Justfile
 
       - name: Build
-        run: cargo build --verbose
+        run: just build
         env:
           AUTOEQ_DIR: $GITHUB_WORKSPACE
           BROWSER_PATH: /usr/bin/chromium-browser
           WEBDRIVER_PATH: /usr/bin/chromedriver
 
       - name: Run tests
-        run: cargo test --verbose
+        run: just test
+        env:
+          AUTOEQ_DIR: $GITHUB_WORKSPACE
+          BROWSER_PATH: /usr/bin/chromium-browser
+          WEBDRIVER_PATH: /usr/bin/chromedriver
+
+      - name: QA for AutoEQ
+        run: just qa
         env:
           AUTOEQ_DIR: $GITHUB_WORKSPACE
           BROWSER_PATH: /usr/bin/chromium-browser
