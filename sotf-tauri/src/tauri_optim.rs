@@ -300,7 +300,7 @@ pub fn validate_params(
         .filter(|d| d.is_some())
         .count();
 
-        if n_drivers < 2 || n_drivers > 4 {
+        if !(2..=4).contains(&n_drivers) {
             return Err(format!(
                 "Multi-driver optimization requires 2-4 drivers, got {}",
                 n_drivers

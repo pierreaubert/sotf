@@ -2,7 +2,6 @@
 ///
 /// These checks verify that the system is properly configured for audio playback
 /// and provide helpful error messages if configuration is needed.
-
 use std::fmt;
 
 #[derive(Debug)]
@@ -98,9 +97,9 @@ fn check_linux_audio_group() -> Result<(), PreflightError> {
     let username = get_current_username()?;
 
     // Check if user is in the 'audio' group
-    let output = Command::new("groups")
-        .output()
-        .map_err(|e| PreflightError::ConfigError(format!("Failed to run 'groups' command: {}", e)))?;
+    let output = Command::new("groups").output().map_err(|e| {
+        PreflightError::ConfigError(format!("Failed to run 'groups' command: {}", e))
+    })?;
 
     if !output.status.success() {
         return Err(PreflightError::ConfigError(
@@ -142,11 +141,10 @@ fn check_linux_audio_cards() -> Result<(), PreflightError> {
 
     // Check if /proc/asound/cards exists
     if !cards_path.exists() {
-        log::warn!(
-            "[Preflight] /proc/asound/cards does not exist - ALSA may not be available"
-        );
+        log::warn!("[Preflight] /proc/asound/cards does not exist - ALSA may not be available");
         return Err(PreflightError::ConfigError(
-            "/proc/asound/cards does not exist. ALSA sound system may not be available.".to_string()
+            "/proc/asound/cards does not exist. ALSA sound system may not be available."
+                .to_string(),
         ));
     }
 
@@ -165,7 +163,10 @@ fn check_linux_audio_cards() -> Result<(), PreflightError> {
 
     // Look for at least one card (lines starting with a number)
     let has_cards = contents.lines().any(|line| {
-        line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit())
+        line.trim_start()
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_digit())
     });
 
     if !has_cards {
@@ -176,7 +177,12 @@ fn check_linux_audio_cards() -> Result<(), PreflightError> {
     // Log the detected cards for debugging
     let card_count = contents
         .lines()
-        .filter(|line| line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit()))
+        .filter(|line| {
+            line.trim_start()
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_digit())
+        })
         .count();
 
     log::debug!(
@@ -238,7 +244,10 @@ mod tests {
         let sample1 = " 0 [PCH            ]: HDA-Intel - HDA Intel PCH\n\
                        HDA Intel PCH at 0xf7230000 irq 131\n";
         let has_cards = sample1.lines().any(|line| {
-            line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit())
+            line.trim_start()
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_digit())
         });
         assert!(has_cards, "Should detect card in sample1");
 
@@ -249,14 +258,22 @@ mod tests {
                        HDA Intel HDMI at 0xf7234000 irq 132\n";
         let card_count = sample2
             .lines()
-            .filter(|line| line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit()))
+            .filter(|line| {
+                line.trim_start()
+                    .chars()
+                    .next()
+                    .map_or(false, |c| c.is_ascii_digit())
+            })
             .count();
         assert_eq!(card_count, 2, "Should detect 2 cards in sample2");
 
         // Example 3: Empty file
         let sample3 = "";
         let has_cards_empty = sample3.lines().any(|line| {
-            line.trim_start().chars().next().map_or(false, |c| c.is_ascii_digit())
+            line.trim_start()
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_digit())
         });
         assert!(!has_cards_empty, "Should not detect cards in empty file");
 

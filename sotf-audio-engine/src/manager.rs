@@ -400,7 +400,7 @@ impl AudioEngineManager {
         if let Some(ref mut engine) = *self.engine.lock() {
             engine
                 .get_plugin_data(index)
-                .map_err(|e| AudioDecoderError::ConfigError(e))
+                .map_err(AudioDecoderError::ConfigError)
         } else {
             Err(AudioDecoderError::ConfigError(
                 "No engine running".to_string(),
@@ -442,9 +442,15 @@ impl AudioEngineManager {
             // The caller should add the loudness plugin to their initial chain
             // This is a limitation of the current architecture
 
-            log::warn!("[AudioEngineManager] enable_loudness_monitoring() called after playback started");
-            log::warn!("[AudioEngineManager] This is not yet supported - add loudness_monitor plugin before start_playback()");
-            return Err("Must add loudness_monitor plugin to chain before start_playback()".to_string());
+            log::warn!(
+                "[AudioEngineManager] enable_loudness_monitoring() called after playback started"
+            );
+            log::warn!(
+                "[AudioEngineManager] This is not yet supported - add loudness_monitor plugin before start_playback()"
+            );
+            return Err(
+                "Must add loudness_monitor plugin to chain before start_playback()".to_string(),
+            );
         }
 
         Ok(())
@@ -474,7 +480,10 @@ impl AudioEngineManager {
     /// Set the loudness plugin index (call this after adding loudness_monitor to plugin chain)
     pub fn set_loudness_plugin_index(&mut self, index: usize) {
         *self.loudness_plugin_index.lock() = Some(index);
-        log::debug!("[AudioEngineManager] Loudness plugin index set to {}", index);
+        log::debug!(
+            "[AudioEngineManager] Loudness plugin index set to {}",
+            index
+        );
     }
 
     /// Enable real-time spectrum monitoring
@@ -507,8 +516,12 @@ impl AudioEngineManager {
             // The caller should add the spectrum plugin to their initial chain
             // This is a limitation of the current architecture
 
-            log::warn!("[AudioEngineManager] enable_spectrum_monitoring() called after playback started");
-            log::warn!("[AudioEngineManager] This is not yet supported - add spectrum plugin before start_playback()");
+            log::warn!(
+                "[AudioEngineManager] enable_spectrum_monitoring() called after playback started"
+            );
+            log::warn!(
+                "[AudioEngineManager] This is not yet supported - add spectrum plugin before start_playback()"
+            );
             return Err("Must add spectrum plugin to chain before start_playback()".to_string());
         }
 
@@ -539,7 +552,10 @@ impl AudioEngineManager {
     /// Set the spectrum plugin index (call this after adding spectrum to plugin chain)
     pub fn set_spectrum_plugin_index(&mut self, index: usize) {
         *self.spectrum_plugin_index.lock() = Some(index);
-        log::debug!("[AudioEngineManager] Spectrum plugin index set to {}", index);
+        log::debug!(
+            "[AudioEngineManager] Spectrum plugin index set to {}",
+            index
+        );
     }
 
     // ========================================================================
@@ -553,11 +569,12 @@ impl AudioEngineManager {
         let current_state = self.get_state();
 
         if engine_state.playback_state == PlaybackState::Stopped {
-            if let Some(err) = engine_state.last_error.clone() {
-                if !err.is_empty() && current_state != StreamingState::Idle {
-                    self.set_state(StreamingState::Error);
-                    return Some(StreamingEvent::Error(err));
-                }
+            if let Some(err) = engine_state.last_error.clone()
+                && !err.is_empty()
+                && current_state != StreamingState::Idle
+            {
+                self.set_state(StreamingState::Error);
+                return Some(StreamingEvent::Error(err));
             }
 
             if current_state == StreamingState::Playing {

@@ -318,7 +318,7 @@ fn run_playback_thread(
                         // CRITICAL: Drain all pending frames from the message queue
                         // These frames have the OLD channel count and would cause mismatches
                         let mut drained_count = 0;
-                        while let Ok(_) = message_rx.try_recv() {
+                        while message_rx.try_recv().is_ok() {
                             drained_count += 1;
                         }
                         if drained_count > 0 {
@@ -332,7 +332,7 @@ fn run_playback_thread(
                         let new_config = StreamConfig {
                             channels: new_channels as u16,
                             sample_rate: config.sample_rate,
-                            buffer_size: config.buffer_size.clone(),
+                            buffer_size: config.buffer_size,
                         };
 
                         let new_state = Arc::new(PlaybackState::new(buffer_frames, new_channels));

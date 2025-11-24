@@ -9755,6 +9755,7 @@ dependencies = [
  "notify",
  "parking_lot",
  "rand 0.9.2",
+ "rayon",
  "realfft",
  "rubato",
  "rusqlite",

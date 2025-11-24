@@ -384,13 +384,13 @@ fn main() {
 
     // Run pre-flight checks before initializing the player
     // Skip for non-playback commands (devices, replay-gain, status)
-    if matches!(cli.command, Commands::Play { .. }) {
-        if let Err(e) = run_preflight_checks() {
-            eprintln!("\nPre-flight check failed:\n");
-            eprintln!("{}\n", e);
-            log::error!("Pre-flight check failed: {}", e);
-            std::process::exit(1);
-        }
+    if matches!(cli.command, Commands::Play { .. })
+        && let Err(e) = run_preflight_checks()
+    {
+        eprintln!("\nPre-flight check failed:\n");
+        eprintln!("{}\n", e);
+        log::error!("Pre-flight check failed: {}", e);
+        std::process::exit(1);
     }
 
     match cli.command {
@@ -1012,7 +1012,10 @@ fn play_stream(
         let analyzer_plugin = create_loudness_analyzer_plugin_config()?;
         let plugin_index = plugins.len();
         plugins.push(analyzer_plugin);
-        log::info!("Real-time LUFS monitoring enabled (plugin index: {})", plugin_index);
+        log::info!(
+            "Real-time LUFS monitoring enabled (plugin index: {})",
+            plugin_index
+        );
         Some(plugin_index)
     } else {
         None
@@ -1075,35 +1078,34 @@ fn play_stream(
         // Print loudness measurements if monitoring is enabled
         if loudness_plugin_index.is_some()
             && current_state == StreamingState::Playing
+            && let Some(loudness) = streaming_manager.get_loudness()
         {
-            if let Some(loudness) = streaming_manager.get_loudness() {
-                let st = loudness.shortterm_lufs;
-                let changed = match last_shortterm {
-                    None => true,
-                    Some(prev) => (st - prev).abs() >= 0.1,
+            let st = loudness.shortterm_lufs;
+            let changed = match last_shortterm {
+                None => true,
+                Some(prev) => (st - prev).abs() >= 0.1,
+            };
+            if changed {
+                let momentary_str = if loudness.momentary_lufs.is_infinite() {
+                    "-∞".to_string()
+                } else {
+                    format!("{:5.1}", loudness.momentary_lufs)
                 };
-                if changed {
-                    let momentary_str = if loudness.momentary_lufs.is_infinite() {
-                        "-∞".to_string()
-                    } else {
-                        format!("{:5.1}", loudness.momentary_lufs)
-                    };
-                    let shortterm_str = if st.is_infinite() {
-                        "-∞".to_string()
-                    } else {
-                        format!("{:5.1}", st)
-                    };
-                    // Dynamic ReplayGain relative to -18.0 LUFS reference
-                    let rg = if st.is_infinite() { 0.0 } else { -18.0 - st };
-                    log::debug!(
-                        "LUFS: M={} S={}  RG={:+4.1} dB  Peak={:.3}",
-                        momentary_str,
-                        shortterm_str,
-                        rg,
-                        loudness.peak
-                    );
-                    last_shortterm = Some(st);
-                }
+                let shortterm_str = if st.is_infinite() {
+                    "-∞".to_string()
+                } else {
+                    format!("{:5.1}", st)
+                };
+                // Dynamic ReplayGain relative to -18.0 LUFS reference
+                let rg = if st.is_infinite() { 0.0 } else { -18.0 - st };
+                log::debug!(
+                    "LUFS: M={} S={}  RG={:+4.1} dB  Peak={:.3}",
+                    momentary_str,
+                    shortterm_str,
+                    rg,
+                    loudness.peak
+                );
+                last_shortterm = Some(st);
             }
         }
 

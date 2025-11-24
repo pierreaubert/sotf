@@ -225,11 +225,11 @@ pub async fn load_recordings_zip(zip_path: String) -> Result<Vec<RecordingResult
             fs::create_dir_all(&outpath)
                 .map_err(|e| format!("Failed to create directory: {}", e))?;
         } else {
-            if let Some(p) = outpath.parent() {
-                if !p.exists() {
-                    fs::create_dir_all(p)
-                        .map_err(|e| format!("Failed to create parent directory: {}", e))?;
-                }
+            if let Some(p) = outpath.parent()
+                && !p.exists()
+            {
+                fs::create_dir_all(p)
+                    .map_err(|e| format!("Failed to create parent directory: {}", e))?;
             }
             let mut outfile =
                 fs::File::create(&outpath).map_err(|e| format!("Failed to create file: {}", e))?;

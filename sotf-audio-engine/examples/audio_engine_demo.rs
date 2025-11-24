@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create engine with custom config
     let config = EngineConfig {
+        version: 1,
         frame_size: 1024,
         buffer_ms: 200, // 200ms latency
         output_sample_rate: 48000,

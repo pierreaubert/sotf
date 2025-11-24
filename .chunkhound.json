@@ -1,9 +1,8 @@
 {
   "embedding": {
     "provider": "openai",
-    "model": "qwen3-embed",
-    "base_url": "http://192.168.1.36:8080/v1",
-    "rerank_model": "qwen3-rerank"
+    "model": "text-embedding-qwen3-embedding-8b",
+    "base_url": "http://localhost:1234/v1"
   },
   "indexing": {
     "include": ["**/*.ts", "**/*.rs", "**/*.sh", "**/*.py", "**/*.swift"],

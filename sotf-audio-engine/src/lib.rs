@@ -16,7 +16,7 @@ pub use manager::{
 };
 
 pub mod preflight;
-pub use preflight::{run_preflight_checks, PreflightError};
+pub use preflight::{PreflightError, run_preflight_checks};
 
 pub mod replaygain;
 pub mod signal_recorder;

@@ -557,20 +557,20 @@ fn run_manager_thread(
         }
 
         // Process pending config updates (one at a time)
-        if config_update_queue.can_process_next() {
-            if let Some(plugins) = config_update_queue.start_processing() {
-                log::debug!("[Manager Thread] Processing queued config update");
-                if let Err(e) = apply_plugin_update(
-                    &mut processing_thread,
-                    &mut playback_thread,
-                    &state,
-                    &mut config_update_queue,
-                    plugins,
-                ) {
-                    log::error!("[Manager Thread] Failed to apply config update: {}", e);
-                }
-                config_update_queue.complete_processing();
+        if config_update_queue.can_process_next()
+            && let Some(plugins) = config_update_queue.start_processing()
+        {
+            log::debug!("[Manager Thread] Processing queued config update");
+            if let Err(e) = apply_plugin_update(
+                &mut processing_thread,
+                &mut playback_thread,
+                &state,
+                &mut config_update_queue,
+                plugins,
+            ) {
+                log::error!("[Manager Thread] Failed to apply config update: {}", e);
             }
+            config_update_queue.complete_processing();
         }
 
         // Check for commands (blocking with timeout)
@@ -661,10 +661,11 @@ fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>)
             }
         }
         ThreadEvent::PositionUpdate(position) => {
-            if let Ok(mut state) = safe_lock(state) {
-                if state.playback_state != PlaybackState::Stopped && !state.seeking {
-                    state.position = position;
-                }
+            if let Ok(mut state) = safe_lock(state)
+                && state.playback_state != PlaybackState::Stopped
+                && !state.seeking
+            {
+                state.position = position;
             }
         }
         ThreadEvent::SeekComplete => {
@@ -991,13 +992,13 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
         match plugin_type_lower.as_str() {
             "eq" => {
                 // Validate EQ filter structure
-                if let Some(filters) = config.parameters.get("filters") {
-                    if !filters.is_array() {
-                        return Err(ConfigError::ValidationError {
-                            plugin_index: i,
-                            reason: "Invalid 'filters' parameter (must be array)".to_string(),
-                        });
-                    }
+                if let Some(filters) = config.parameters.get("filters")
+                    && !filters.is_array()
+                {
+                    return Err(ConfigError::ValidationError {
+                        plugin_index: i,
+                        reason: "Invalid 'filters' parameter (must be array)".to_string(),
+                    });
                 }
             }
             "gain" => {
@@ -1011,13 +1012,13 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             }
             "upmixer" => {
                 // Validate upmixer mode
-                if let Some(mode) = config.parameters.get("mode") {
-                    if !mode.is_string() {
-                        return Err(ConfigError::ValidationError {
-                            plugin_index: i,
-                            reason: "Invalid 'mode' parameter (must be string)".to_string(),
-                        });
-                    }
+                if let Some(mode) = config.parameters.get("mode")
+                    && !mode.is_string()
+                {
+                    return Err(ConfigError::ValidationError {
+                        plugin_index: i,
+                        reason: "Invalid 'mode' parameter (must be string)".to_string(),
+                    });
                 }
             }
             _ => {

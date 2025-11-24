@@ -7,7 +7,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::Mutex;
 
 use crate::tauri_optim::{
     CancellationState, OptimizationParams, OptimizationResult, ProgressCallback, ProgressUpdate,
@@ -203,10 +202,9 @@ async fn optimize_channel(
     cancellation_state: Arc<CancellationState>,
 ) -> Result<ChannelResult, String> {
     println!(
-        "[ROOMEQ] Optimizing channel {} ({}/{})",
+        "[ROOMEQ] Optimizing channel {} ({}/total)",
         channel.channel_name,
-        channel_index + 1,
-        "total"
+        channel_index + 1
     );
 
     // Check if this is a multi-way speaker (has drivers and crossover)
@@ -305,15 +303,15 @@ async fn optimize_multiway_channel(
             params.driver2_path = Some(path.clone());
         }
     }
-    if drivers.len() >= 3 {
-        if let MeasurementSource::File { path } = &drivers[2].measurement {
-            params.driver3_path = Some(path.clone());
-        }
+    if drivers.len() >= 3
+        && let MeasurementSource::File { path } = &drivers[2].measurement
+    {
+        params.driver3_path = Some(path.clone());
     }
-    if drivers.len() >= 4 {
-        if let MeasurementSource::File { path } = &drivers[3].measurement {
-            params.driver4_path = Some(path.clone());
-        }
+    if drivers.len() >= 4
+        && let MeasurementSource::File { path } = &drivers[3].measurement
+    {
+        params.driver4_path = Some(path.clone());
     }
 
     // Stage 1: Optimize crossover (if enabled)
