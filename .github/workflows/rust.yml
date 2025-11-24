@@ -31,9 +31,9 @@ jobs:
 
       - name: Install for Linux
         run: |
-          sudo just install-linux-root
-          sudo just install-ubuntu-common
-          sudo just install-ubuntu-x86
+          sudo AUTOEQ_DIR="$GITHUB_WORKSPACE" just install-linux-root
+          sudo AUTOEQ_DIR="$GITHUB_WORKSPACE" just install-ubuntu-common
+          sudo AUTOEQ_DIR="$GITHUB_WORKSPACE" just install-ubuntu-x86
           just post-install-npm
         env:
           AUTOEQ_DIR: $GITHUB_WORKSPACE
