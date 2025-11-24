@@ -19,8 +19,3 @@ log = { workspace = true }
 
 [build-dependencies]
 cbindgen = "0.29"
-
-[profile.release]
-lto = true
-opt-level = 3
-codegen-units = 1
