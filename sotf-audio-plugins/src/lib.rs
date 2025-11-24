@@ -25,7 +25,7 @@ mod analyzer_spectrum;
 mod host;
 mod parameters;
 mod plugin;
-mod plugin_binaural_decoder;
+mod plugin_binaural;
 mod plugin_compressor;
 mod plugin_convolution;
 mod plugin_crossover;
@@ -53,7 +53,7 @@ pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
-pub use plugin_binaural_decoder::{BinauralDecoderParams, BinauralDecoderPlugin, RoomModel};
+pub use plugin_binaural::{BinauralDecoderParams, BinauralDecoderPlugin, RoomModel};
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
