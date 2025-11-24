@@ -16,26 +16,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install rustup and just
-	run: |
-	  sudo apt install -y wget build-essential gcc g++ pkg-config libssl-dev ca-certificates
-	  wget -O /tmp/scripts/install-rustup https://sh.rustup.rs
-	  chmod +x /tmp/scripts/install-rustup && /tmp/scripts/install-rustup -y
-	  source ~/.cargo/env
-	  cargo install just
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential gcc g++ pkg-config libssl-dev ca-certificates
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install just
+        run: |
+          cargo install just
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install for Linux
-	run: |
-	  sudo just install-ubuntu-x86
+        run: |
+          just install-ubuntu-x86
 
       - name: Build
-	run: cargo build --verbose
-	env:
-	  BROWSER_PATH: /usr/bin/chromium-browser
-	  WEBDRIVER_PATH: /usr/bin/chromedriver
+        run: cargo build --verbose
+        env:
+          BROWSER_PATH: /usr/bin/chromium-browser
+          WEBDRIVER_PATH: /usr/bin/chromedriver
 
       - name: Run tests
-	run: AUTOEQ_DIR=$HOME cargo test --verbose
-	env:
-	  BROWSER_PATH: /usr/bin/chromium-browser
-	  WEBDRIVER_PATH: /usr/bin/chromedriver
+        run: AUTOEQ_DIR=$HOME cargo test --verbose
+        env:
+          BROWSER_PATH: /usr/bin/chromium-browser
+          WEBDRIVER_PATH: /usr/bin/chromedriver

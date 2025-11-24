@@ -222,6 +222,44 @@ fn detect_abnormalities(
     }
 }
 
+/// Normalize audio output to prevent gain-related clipping while preserving
+/// signal characteristics. This allows us to isolate numerical issues from
+/// legitimate gain changes.
+///
+/// Returns the gain compensation applied in dB (positive value = attenuation)
+fn normalize_output(output: &mut [f32]) -> f32 {
+    // First, check for NaN/Inf which shouldn't be normalized
+    for &sample in output.iter() {
+        if sample.is_nan() || sample.is_infinite() {
+            return 0.0; // Don't normalize if there are NaN/Inf values
+        }
+    }
+
+    // Find peak absolute value
+    let peak = output
+        .iter()
+        .map(|&s| s.abs())
+        .fold(f32::NEG_INFINITY, f32::max);
+
+    // If peak is above threshold, normalize to target level
+    const NORMALIZATION_THRESHOLD: f32 = 0.95; // Start normalizing above -0.5dB
+    const TARGET_PEAK: f32 = 0.89; // Target -1dB peak to leave headroom
+
+    if peak > NORMALIZATION_THRESHOLD {
+        let gain = TARGET_PEAK / peak;
+        let gain_db = 20.0 * (1.0 / gain).log10(); // Positive = attenuation
+
+        // Apply gain compensation
+        for sample in output.iter_mut() {
+            *sample *= gain;
+        }
+
+        gain_db
+    } else {
+        0.0
+    }
+}
+
 // ============================================================================
 // Audio File Loading
 // ============================================================================
@@ -329,7 +367,7 @@ struct GainFuzzer;
 
 impl PluginFuzzer for GainFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
-        let gain_db = rng.gen_range(-60.0..0.0);
+        let gain_db = rng.random_range(-60.0..0.0);
         let params = GainPluginParams { gain_db };
         Box::new(InPlacePluginAdapter::new(GainPlugin::from_params(
             channels, params,
@@ -351,19 +389,19 @@ impl PluginFuzzer for EqFuzzer {
         use sotf_plugins::BiquadFilterConfig;
 
         // Generate 1-5 random filters
-        let num_filters = rng.gen_range(1..=5);
+        let num_filters = rng.random_range(1..=5);
         let mut filters = Vec::new();
 
         for _ in 0..num_filters {
-            let filter_type = match rng.gen_range(0..3) {
+            let filter_type = match rng.random_range(0..3) {
                 0 => "peak",
                 1 => "lowshelf",
                 _ => "highshelf",
             };
 
-            let freq = rng.gen_range(20.0..20000.0);
-            let q = rng.gen_range(0.1..10.0);
-            let db_gain = rng.gen_range(-20.0..20.0);
+            let freq = rng.random_range(20.0..20000.0);
+            let q = rng.random_range(0.1..10.0);
+            let db_gain = rng.random_range(-20.0..20.0);
 
             filters.push(BiquadFilterConfig {
                 filter_type: filter_type.to_string(),
@@ -414,16 +452,16 @@ struct CompressorFuzzer;
 
 impl PluginFuzzer for CompressorFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
-        let threshold_db = rng.gen_range(-60.0..0.0);
-        let ratio = rng.gen_range(1.0..20.0);
-        let attack_ms = rng.gen_range(0.1..100.0);
-        let release_ms = rng.gen_range(10.0..1000.0);
-        let knee_db = rng.gen_range(0.0..20.0);
-        let makeup_gain_db = rng.gen_range(-24.0..24.0);
-        let mix = rng.gen_range(0.0..1.0);
-        let auto_makeup = rng.gen_bool(0.5);
-        let link_channels = rng.gen_bool(0.5);
-        let sidechain_hpf_hz = rng.gen_range(0.0..200.0);
+        let threshold_db = rng.random_range(-60.0..0.0);
+        let ratio = rng.random_range(1.0..20.0);
+        let attack_ms = rng.random_range(0.1..100.0);
+        let release_ms = rng.random_range(10.0..1000.0);
+        let knee_db = rng.random_range(0.0..20.0);
+        let makeup_gain_db = rng.random_range(-24.0..24.0);
+        let mix = rng.random_range(0.0..1.0);
+        let auto_makeup = rng.random_bool(0.5);
+        let link_channels = rng.random_bool(0.5);
+        let sidechain_hpf_hz = rng.random_range(0.0..200.0);
 
         let params = CompressorPluginParams {
             threshold_db,
@@ -450,11 +488,11 @@ struct LimiterFuzzer;
 
 impl PluginFuzzer for LimiterFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
-        let threshold_db = rng.gen_range(-20.0..0.0);
-        let release_ms = rng.gen_range(10.0..1000.0);
-        let lookahead_ms = rng.gen_range(0.0..20.0);
-        let soft = rng.gen_bool(0.5);
-        let mix = rng.gen_range(0.0..1.0);
+        let threshold_db = rng.random_range(-20.0..0.0);
+        let release_ms = rng.random_range(10.0..1000.0);
+        let lookahead_ms = rng.random_range(0.0..20.0);
+        let soft = rng.random_bool(0.5);
+        let mix = rng.random_range(0.0..1.0);
 
         let params = LimiterPluginParams {
             threshold_db,
@@ -476,14 +514,14 @@ struct GateFuzzer;
 
 impl PluginFuzzer for GateFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
-        let threshold_db = rng.gen_range(-80.0..0.0);
-        let ratio = rng.gen_range(1.0..100.0);
-        let attack_ms = rng.gen_range(0.1..50.0);
-        let hold_ms = rng.gen_range(0.0..1000.0);
-        let release_ms = rng.gen_range(10.0..2000.0);
-        let mix = rng.gen_range(0.0..1.0);
-        let link_channels = rng.gen_bool(0.5);
-        let sidechain_hpf_hz = rng.gen_range(0.0..200.0);
+        let threshold_db = rng.random_range(-80.0..0.0);
+        let ratio = rng.random_range(1.0..100.0);
+        let attack_ms = rng.random_range(0.1..50.0);
+        let hold_ms = rng.random_range(0.0..1000.0);
+        let release_ms = rng.random_range(10.0..2000.0);
+        let mix = rng.random_range(0.0..1.0);
+        let link_channels = rng.random_bool(0.5);
+        let sidechain_hpf_hz = rng.random_range(0.0..200.0);
 
         let params = GatePluginParams {
             threshold_db,
@@ -508,9 +546,9 @@ struct DelayFuzzer;
 
 impl PluginFuzzer for DelayFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
-        let delay_ms = rng.gen_range(0.1..5000.0);
-        let feedback = rng.gen_range(0.0..0.95);
-        let mix = rng.gen_range(0.0..1.0);
+        let delay_ms = rng.random_range(0.1..5000.0);
+        let feedback = rng.random_range(0.0..0.95);
+        let mix = rng.random_range(0.0..1.0);
 
         let params = DelayPluginParams {
             delay_ms,
@@ -531,10 +569,10 @@ struct LoudnessCompensationFuzzer;
 
 impl PluginFuzzer for LoudnessCompensationFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
-        let low_freq = rng.gen_range(20.0..500.0);
-        let low_gain = rng.gen_range(0.0..20.0);
-        let high_freq = rng.gen_range(5000.0..20000.0);
-        let high_gain = rng.gen_range(0.0..20.0);
+        let low_freq = rng.random_range(20.0..500.0);
+        let low_gain = rng.random_range(0.0..20.0);
+        let high_freq = rng.random_range(5000.0..20000.0);
+        let high_gain = rng.random_range(0.0..20.0);
 
         let params = LoudnessCompensationPluginParams {
             low_freq,
@@ -557,10 +595,10 @@ struct CrossoverFuzzer;
 impl PluginFuzzer for CrossoverFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
         let crossover_types = vec!["LR24", "LR48", "Butterworth24", "Butterworth12"];
-        let crossover_type = crossover_types[rng.gen_range(0..crossover_types.len())].to_string();
-        let frequency = rng.gen_range(20.0..20000.0);
+        let crossover_type = crossover_types[rng.random_range(0..crossover_types.len())].to_string();
+        let frequency = rng.random_range(20.0..20000.0);
         let outputs = vec!["low", "high"];
-        let output = outputs[rng.gen_range(0..outputs.len())].to_string();
+        let output = outputs[rng.random_range(0..outputs.len())].to_string();
 
         let params = CrossoverPluginParams {
             crossover_type,
@@ -583,29 +621,29 @@ impl PluginFuzzer for UpmixerFuzzer {
     fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> Box<dyn Plugin> {
         // Upmixer always takes 2 channels input
         let speaker_configs = ["5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4"];
-        let speaker_config = speaker_configs[rng.gen_range(0..speaker_configs.len())].to_string();
+        let speaker_config = speaker_configs[rng.random_range(0..speaker_configs.len())].to_string();
 
         // Random FFT size (power of 2)
         let fft_sizes = [1024, 2048, 4096];
-        let fft_size = fft_sizes[rng.gen_range(0..fft_sizes.len())];
+        let fft_size = fft_sizes[rng.random_range(0..fft_sizes.len())];
 
         // Random parameters with reasonable ranges
-        let gain_front_direct = rng.gen_range(0.5..1.5);
-        let gain_front_ambient = rng.gen_range(0.0..1.0);
-        let gain_rear_ambient = rng.gen_range(0.5..2.0);
-        let lfe_cutoff_hz = rng.gen_range(80.0..150.0);
-        let stereo_width = rng.gen_range(0.0..1.0);
-        let bandpass_hz = rng.gen_range(150.0..400.0);
-        let center_spread = rng.gen_range(0.0..0.5);
-        let height_gain = rng.gen_range(0.0..0.5);
-        let lfe_gain = rng.gen_range(0.5..1.5);
-        let subharmonic_gain = rng.gen_range(0.0..1.0);
-        let hr_sharpen = rng.gen_range(0.5..2.0);
-        let safety_cap_db = rng.gen_range(0.0..6.0);
+        let gain_front_direct = rng.random_range(0.5..1.5);
+        let gain_front_ambient = rng.random_range(0.0..1.0);
+        let gain_rear_ambient = rng.random_range(0.5..2.0);
+        let lfe_cutoff_hz = rng.random_range(80.0..150.0);
+        let stereo_width = rng.random_range(0.0..1.0);
+        let bandpass_hz = rng.random_range(150.0..400.0);
+        let center_spread = rng.random_range(0.0..0.5);
+        let height_gain = rng.random_range(0.0..0.5);
+        let lfe_gain = rng.random_range(0.5..1.5);
+        let subharmonic_gain = rng.random_range(0.0..1.0);
+        let hr_sharpen = rng.random_range(0.5..2.0);
+        let safety_cap_db = rng.random_range(0.0..6.0);
 
-        let enable_subharmonic_synth = rng.gen_bool(0.5);
-        let enable_hr_direct = rng.gen_bool(0.3); // Less frequent, experimental feature
-        let decorrelation_mode = rng.gen_range(0..=2); // 0, 1, or 2
+        let enable_subharmonic_synth = rng.random_bool(0.5);
+        let enable_hr_direct = rng.random_bool(0.3); // Less frequent, experimental feature
+        let decorrelation_mode = rng.random_range(0..=2); // 0, 1, or 2
 
         let params = UpmixerPluginParams {
             fft_size,
@@ -710,15 +748,35 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
 
     // Load audio file
     println!("Loading audio file...");
-    let (audio_data, channels, sample_rate) = load_audio_file(&args.file)?;
-    let num_frames = audio_data.len() / channels;
+    let (mut audio_data, channels, sample_rate) = load_audio_file(&args.file)?;
+    let mut num_frames = audio_data.len() / channels;
+    let duration = num_frames as f32 / sample_rate as f32;
     println!("  Channels: {}", channels);
     println!("  Sample rate: {} Hz", sample_rate);
     println!("  Frames: {}", num_frames);
-    println!(
-        "  Duration: {:.2}s\n",
-        num_frames as f32 / sample_rate as f32
-    );
+    println!("  Duration: {:.2}s", duration);
+
+    // Extract 30 seconds from middle if file is long enough
+    const MAX_DURATION_SEC: f32 = 30.0;
+    if duration > MAX_DURATION_SEC {
+        let target_frames = (MAX_DURATION_SEC * sample_rate as f32) as usize;
+        let start_frame = (num_frames - target_frames) / 2;
+        let end_frame = start_frame + target_frames;
+
+        let start_sample = start_frame * channels;
+        let end_sample = end_frame * channels;
+
+        println!(
+            "  Extracting middle {:.1}s segment (frames {} to {} of {})...",
+            MAX_DURATION_SEC, start_frame, end_frame, num_frames
+        );
+
+        audio_data = audio_data[start_sample..end_sample].to_vec();
+        num_frames = audio_data.len() / channels;
+        println!("  Using {} frames for fuzzing\n", num_frames);
+    } else {
+        println!();
+    }
 
     // Check original audio for issues before fuzzing
     println!("Checking original audio file for abnormalities...");
@@ -785,16 +843,18 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
             let mut rng = StdRng::seed_from_u64(base_seed.wrapping_add(i as u64));
 
             // Randomly select a sample rate
-            let rate_idx = rng.gen_range(0..TARGET_RATES.len());
+            let rate_idx = rng.random_range(0..TARGET_RATES.len());
             let (test_sample_rate, test_audio_data) = &audio_versions[rate_idx];
             let test_num_frames = test_audio_data.len() / channels;
 
-            // Update progress
+            // Update progress - show current test on one line
             let completed = progress.fetch_add(1, Ordering::Relaxed) + 1;
-            if !args.verbose && completed % 10 == 0 {
-                print!(".");
+            if !args.verbose {
                 use std::io::Write;
-                std::io::stdout().flush().unwrap();
+                let stdout = std::io::stdout();
+                let mut handle = stdout.lock();
+                write!(handle, "\r[{}/{}] Testing @ {} Hz    ", completed, args.iterations, test_sample_rate).ok();
+                handle.flush().ok();
             }
 
             // Get fuzzer for this sample rate
@@ -843,8 +903,15 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
                 pos += frames_to_process;
             }
 
-            // Detect abnormalities
-            let param_desc = format!("iteration_{}_@{}Hz", i, test_sample_rate);
+            // Apply gain compensation to isolate numerical issues from gain changes
+            // This is especially important for compressor/limiter plugins
+            let gain_compensation_db = normalize_output(&mut output);
+
+            // Detect abnormalities after normalization
+            let mut param_desc = format!("iteration_{}_@{}Hz", i, test_sample_rate);
+            if gain_compensation_db > 0.1 {
+                param_desc.push_str(&format!(" (normalized -{:.1}dB)", gain_compensation_db));
+            }
             let report =
                 detect_abnormalities(&output, i, param_desc, args.max_value, args.max_dc_offset);
 
