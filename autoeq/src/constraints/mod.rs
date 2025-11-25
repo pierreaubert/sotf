@@ -16,9 +16,11 @@
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 pub mod ceiling;
+pub mod crossover_monotonicity;
 pub mod min_gain;
 pub mod min_spacing;
 
 pub use ceiling::*;
+pub use crossover_monotonicity::*;
 pub use min_gain::*;
 pub use min_spacing::*;

@@ -242,6 +242,23 @@ pub struct ChannelDspChain {
 
     /// Ordered list of plugins (AudioEngine PluginConfig format)
     pub plugins: Vec<PluginConfigWrapper>,
+
+    /// Per-driver DSP chains for active crossover (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drivers: Option<Vec<DriverDspChain>>,
+}
+
+/// DSP chain for an individual driver in a multi-driver speaker
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriverDspChain {
+    /// Driver name (e.g., "woofer", "tweeter")
+    pub name: String,
+
+    /// Driver index in the array (0 = lowest frequency)
+    pub index: usize,
+
+    /// Ordered list of plugins for this driver (gain, crossover filters)
+    pub plugins: Vec<PluginConfigWrapper>,
 }
 
 /// Wrapper for AudioEngine PluginConfig (re-exported from src-audio)

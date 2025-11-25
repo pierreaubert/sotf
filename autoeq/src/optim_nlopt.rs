@@ -1,10 +1,12 @@
 // NLOPT-specific optimization code
 
 use super::constraints::{
-    CeilingConstraintData, MinGainConstraintData, constraint_ceiling, constraint_min_gain,
+    CeilingConstraintData, CrossoverMonotonicityConstraintData, MinGainConstraintData,
+    constraint_ceiling, constraint_crossover_monotonicity, constraint_min_gain,
 };
 use super::optim::ObjectiveData;
 use super::optim::compute_fitness_penalties;
+use crate::LossType;
 use nlopt::{Algorithm, Nlopt, Target};
 
 /// Optimize filter parameters using NLOPT algorithms
@@ -45,6 +47,22 @@ pub fn optimize_filters_nlopt(
         peq_model: objective_data.peq_model,
     };
 
+    // Prepare crossover monotonicity constraint for multi-driver optimization
+    let crossover_monotonicity_data = if objective_data.loss_type == LossType::DriversFlat {
+        if let Some(ref drivers_data) = objective_data.drivers_data {
+            Some(CrossoverMonotonicityConstraintData {
+                n_drivers: drivers_data.drivers.len(),
+                // Require at least 0.15 in log10 space (about 40% frequency separation)
+                // This ensures crossover frequencies don't converge to the same value
+                min_log_separation: 0.15,
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Configure penalty weights when needed
     let mut objective_data = objective_data;
     if use_penalties {
@@ -74,6 +92,15 @@ pub fn optimize_filters_nlopt(
         let _ = optimizer.add_inequality_constraint(constraint_ceiling, ceiling_data, 1e-6);
         // let _ = optimizer.add_inequality_constraint(constraint_spacing, spacing_data, 1e-9);
         let _ = optimizer.add_inequality_constraint(constraint_min_gain, min_gain_data, 1e-6);
+
+        // Add crossover monotonicity constraint for multi-driver optimization
+        if let Some(xover_data) = crossover_monotonicity_data {
+            let _ = optimizer.add_inequality_constraint(
+                constraint_crossover_monotonicity,
+                xover_data,
+                1e-6,
+            );
+        }
     }
 
     let _ = optimizer.set_population(population);

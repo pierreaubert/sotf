@@ -18,12 +18,12 @@ use super::types::OptimizerConfig;
 /// * `sample_rate` - Sample rate for filter design
 ///
 /// # Returns
-/// * Vector of optimized Biquad filters
+/// * Tuple of (optimized Biquad filters, final loss value)
 pub fn optimize_channel_eq(
     curve: &Curve,
     config: &OptimizerConfig,
     sample_rate: f64,
-) -> Result<Vec<Biquad>, Box<dyn Error>> {
+) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
     // Create flat target curve
     let target_curve = Curve {
         freq: curve.freq.clone(),
@@ -172,5 +172,5 @@ pub fn optimize_channel_eq(
         final_loss
     );
 
-    Ok(filters)
+    Ok((filters, final_loss))
 }

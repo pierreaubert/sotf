@@ -16,6 +16,15 @@ pub fn parse_crossover_type(type_str: &str) -> Result<CrossoverType, Box<dyn Err
     }
 }
 
+/// Convert CrossoverType enum to plugin string format
+pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
+    match ct {
+        CrossoverType::Butterworth2 => "Butterworth12",
+        CrossoverType::LinkwitzRiley2 => "LR12",
+        CrossoverType::LinkwitzRiley4 => "LR24",
+    }
+}
+
 /// Optimize crossover for a group of driver measurements using autoeq's workflow
 ///
 /// # Arguments

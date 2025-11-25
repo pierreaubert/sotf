@@ -74,13 +74,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Process each speaker
     let mut channel_chains = HashMap::new();
+    let mut pre_scores = Vec::new();
+    let mut post_scores = Vec::new();
 
     for (channel_name, speaker_config) in &room_config.speakers {
         if args.verbose {
             println!("\nProcessing channel: {}", channel_name);
         }
 
-        let chain = process_speaker(
+        let (chain, pre_score, post_score) = process_speaker(
             channel_name,
             speaker_config,
             &room_config,
@@ -89,14 +91,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         )?;
 
         channel_chains.insert(channel_name.clone(), chain);
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
     }
+
+    // Aggregate scores (average across channels)
+    let avg_pre_score = if !pre_scores.is_empty() {
+        pre_scores.iter().sum::<f64>() / pre_scores.len() as f64
+    } else {
+        0.0
+    };
+    let avg_post_score = if !post_scores.is_empty() {
+        post_scores.iter().sum::<f64>() / post_scores.len() as f64
+    } else {
+        0.0
+    };
 
     // Create DSP chain output
     let dsp_output = output::create_dsp_chain_output(
         channel_chains,
         Some(OptimizationMetadata {
-            pre_score: 0.0, // TODO: Compute actual scores
-            post_score: 0.0,
+            pre_score: avg_pre_score,
+            post_score: avg_post_score,
             algorithm: room_config.optimizer.algorithm.clone(),
             iterations: room_config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -118,13 +134,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 /// Process a single speaker (simple or group)
+///
+/// Returns: (DSP chain, pre_score, post_score)
 fn process_speaker(
     channel_name: &str,
     speaker_config: &SpeakerConfig,
     room_config: &RoomConfig,
     sample_rate: f64,
     verbose: bool,
-) -> Result<ChannelDspChain, Box<dyn Error>> {
+) -> Result<(ChannelDspChain, f64, f64), Box<dyn Error>> {
     match speaker_config {
         SpeakerConfig::Single(measurement) => {
             // Simple case: single measurement
@@ -138,13 +156,15 @@ fn process_speaker(
 }
 
 /// Process a simple speaker with a single measurement
+///
+/// Returns: (DSP chain, pre_score, post_score)
 fn process_single_speaker(
     channel_name: &str,
     measurement: &types::MeasurementRef,
     room_config: &RoomConfig,
     sample_rate: f64,
     verbose: bool,
-) -> Result<ChannelDspChain, Box<dyn Error>> {
+) -> Result<(ChannelDspChain, f64, f64), Box<dyn Error>> {
     // Load measurement
     let curve = load::load_measurement(measurement)?;
 
@@ -156,30 +176,52 @@ fn process_single_speaker(
         );
     }
 
-    // Optimize EQ
-    let eq_filters = eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, sample_rate)?;
+    // Compute pre-score: normalize curve and compute flat loss
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+
+    // Normalize curve (subtract mean in evaluation range)
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= min_freq && curve.freq[i] <= max_freq {
+            sum += curve.spl[i];
+            count += 1;
+        }
+    }
+    let mean = if count > 0 { sum / count as f64 } else { 0.0 };
+    let normalized_spl = &curve.spl - mean;
+    let pre_score = autoeq::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
+
+    // Optimize EQ (returns filters and post_score)
+    let (eq_filters, post_score) = eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, sample_rate)?;
 
     if verbose {
         println!("  Optimized {} EQ filters", eq_filters.len());
+        println!("  Pre-score: {:.6}, Post-score: {:.6}", pre_score, post_score);
     }
 
     // Build DSP chain (no gain, no crossover for simple speaker)
-    Ok(output::build_channel_dsp_chain(
+    let chain = output::build_channel_dsp_chain(
         channel_name,
         None,
         Vec::new(),
         &eq_filters,
-    ))
+    );
+
+    Ok((chain, pre_score, post_score))
 }
 
 /// Process a speaker group with multiple drivers and crossovers
+///
+/// Returns: (DSP chain, pre_score, post_score)
 fn process_speaker_group(
     channel_name: &str,
     group: &types::SpeakerGroup,
     room_config: &RoomConfig,
     sample_rate: f64,
     verbose: bool,
-) -> Result<ChannelDspChain, Box<dyn Error>> {
+) -> Result<(ChannelDspChain, f64, f64), Box<dyn Error>> {
     // Load all measurements in the group
     let mut driver_curves = Vec::new();
     for measurement in &group.measurements {
@@ -204,6 +246,39 @@ fn process_speaker_group(
 
     let crossover_type = crossover_optim::parse_crossover_type(&crossover_config.crossover_type)?;
 
+    // Compute pre-score: use initial gains (0 dB) and geometric mean crossover frequencies
+    let n_drivers = driver_curves.len();
+    let initial_gains = vec![0.0; n_drivers];
+
+    // Compute geometric mean crossover frequencies as initial guess
+    let mut initial_xover_freqs = Vec::new();
+    for i in 0..(n_drivers - 1) {
+        // Geometric mean between adjacent driver frequency ranges
+        let lower_mean = driver_curves[i].freq.iter().sum::<f64>() / driver_curves[i].freq.len() as f64;
+        let upper_mean = driver_curves[i + 1].freq.iter().sum::<f64>() / driver_curves[i + 1].freq.len() as f64;
+        let geom_mean = (lower_mean * upper_mean).sqrt();
+        initial_xover_freqs.push(geom_mean);
+    }
+
+    // Convert curves to DriverMeasurement
+    let driver_measurements: Vec<autoeq::loss::DriverMeasurement> = driver_curves.iter()
+        .map(|curve| autoeq::loss::DriverMeasurement {
+            freq: curve.freq.clone(),
+            spl: curve.spl.clone(),
+            phase: None,
+        })
+        .collect();
+
+    let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
+    let pre_score = autoeq::loss::drivers_flat_loss(
+        &drivers_data,
+        &initial_gains,
+        &initial_xover_freqs,
+        sample_rate,
+        room_config.optimizer.min_freq,
+        room_config.optimizer.max_freq,
+    );
+
     // Optimize crossover
     let (gains, crossover_freqs, combined_curve) = crossover_optim::optimize_crossover(
         driver_curves,
@@ -220,24 +295,23 @@ fn process_speaker_group(
         );
     }
 
-    // Optimize EQ on the combined response
-    let eq_filters =
+    // Optimize EQ on the combined response (returns filters and post_score)
+    let (eq_filters, post_score) =
         eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, sample_rate)?;
 
     if verbose {
         println!("  Optimized {} EQ filters", eq_filters.len());
+        println!("  Pre-score: {:.6}, Post-score: {:.6}", pre_score, post_score);
     }
 
-    // Build crossover plugins
-    // For now, we'll create a simplified chain. A full implementation would
-    // create separate paths for each driver with appropriate crossovers.
-    let crossover_plugins = Vec::new(); // TODO: Implement full multi-driver DSP chain
-
-    // Build DSP chain
-    Ok(output::build_channel_dsp_chain(
+    // Build multi-driver DSP chain with per-driver crossovers
+    let chain = output::build_multidriver_dsp_chain(
         channel_name,
-        Some(gains[0]), // Use first driver's gain as overall gain
-        crossover_plugins,
+        &gains,
+        &crossover_freqs,
+        crossover_optim::crossover_type_to_string(&crossover_type),
         &eq_filters,
-    ))
+    );
+
+    Ok((chain, pre_score, post_score))
 }

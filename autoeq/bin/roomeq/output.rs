@@ -1,6 +1,6 @@
 //! Output generation for room EQ DSP chains
 
-use super::types::{ChannelDspChain, DspChainOutput, OptimizationMetadata, PluginConfigWrapper};
+use super::types::{ChannelDspChain, DriverDspChain, DspChainOutput, OptimizationMetadata, PluginConfigWrapper};
 use autoeq_iir::Biquad;
 use serde_json::json;
 use std::collections::HashMap;
@@ -39,7 +39,6 @@ pub fn create_eq_plugin(filters: &[Biquad]) -> PluginConfigWrapper {
 }
 
 /// Create a crossover plugin configuration
-#[allow(dead_code)]
 pub fn create_crossover_plugin(
     crossover_type: &str,
     frequency: f64,
@@ -53,6 +52,23 @@ pub fn create_crossover_plugin(
             "output": output
         }),
     }
+}
+
+/// Get a descriptive name for a driver based on its index and total count
+fn get_driver_name(index: usize, n_drivers: usize) -> String {
+    match (n_drivers, index) {
+        (2, 0) => "woofer",
+        (2, 1) => "tweeter",
+        (3, 0) => "woofer",
+        (3, 1) => "midrange",
+        (3, 2) => "tweeter",
+        (4, 0) => "woofer",
+        (4, 1) => "lower_midrange",
+        (4, 2) => "upper_midrange",
+        (4, 3) => "tweeter",
+        _ => return format!("driver_{}", index),
+    }
+    .to_string()
 }
 
 /// Build a DSP chain for a single channel
@@ -83,6 +99,78 @@ pub fn build_channel_dsp_chain(
     ChannelDspChain {
         channel: channel_name.to_string(),
         plugins,
+        drivers: None, // Single speakers don't have per-driver chains
+    }
+}
+
+/// Build a DSP chain for a multi-driver speaker with active crossover
+///
+/// # Arguments
+/// * `channel_name` - Channel name (e.g., "left")
+/// * `gains` - Per-driver gains in dB (one per driver)
+/// * `crossover_freqs` - Crossover frequencies in Hz (n_drivers - 1 values)
+/// * `crossover_type` - Crossover type string (e.g., "LR24", "Butterworth12")
+/// * `eq_filters` - EQ filters for the combined response
+///
+/// # Returns
+/// * ChannelDspChain with per-driver chains and combined EQ
+pub fn build_multidriver_dsp_chain(
+    channel_name: &str,
+    gains: &[f64],
+    crossover_freqs: &[f64],
+    crossover_type: &str,
+    eq_filters: &[Biquad],
+) -> ChannelDspChain {
+    let n_drivers = gains.len();
+
+    // Build per-driver chains
+    let mut driver_chains = Vec::new();
+
+    for i in 0..n_drivers {
+        let mut driver_plugins = Vec::new();
+
+        // Add gain plugin if non-zero
+        if gains[i].abs() > 0.01 {
+            driver_plugins.push(create_gain_plugin(gains[i]));
+        }
+
+        // Add highpass crossover from previous driver (if not first driver)
+        if i > 0 {
+            let crossover_freq = crossover_freqs[i - 1];
+            driver_plugins.push(create_crossover_plugin(
+                crossover_type,
+                crossover_freq,
+                "high",
+            ));
+        }
+
+        // Add lowpass crossover to next driver (if not last driver)
+        if i < n_drivers - 1 {
+            let crossover_freq = crossover_freqs[i];
+            driver_plugins.push(create_crossover_plugin(
+                crossover_type,
+                crossover_freq,
+                "low",
+            ));
+        }
+
+        driver_chains.push(DriverDspChain {
+            name: get_driver_name(i, n_drivers),
+            index: i,
+            plugins: driver_plugins,
+        });
+    }
+
+    // Build combined EQ (applied to summed output)
+    let mut combined_plugins = Vec::new();
+    if !eq_filters.is_empty() {
+        combined_plugins.push(create_eq_plugin(eq_filters));
+    }
+
+    ChannelDspChain {
+        channel: channel_name.to_string(),
+        plugins: combined_plugins,
+        drivers: Some(driver_chains),
     }
 }
 
