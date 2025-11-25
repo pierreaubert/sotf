@@ -452,7 +452,9 @@ impl MusicDatabase {
         migrations
     }
 
-    /// Search for albums using FTS5
+    /// Search for albums using FTS5 with fuzzy matching
+    /// Searches across artist, album_title, and track_title fields
+    /// Works regardless of how the view is sorted - returns matching album IDs
     pub fn search_library(&self, query: &str) -> SqlResult<Vec<i64>> {
         // If query is empty, return empty
         if query.trim().is_empty() {
@@ -460,13 +462,14 @@ impl MusicDatabase {
         }
 
         // Build FTS5 query with prefix matching on each term
+        // For multi-word queries like "pink floyd", we use AND to require all terms
         // e.g. "pink floyd" -> "pink* AND floyd*"
-        // This allows partial matches and is more user-friendly
+        // This provides fuzzy matching while being more precise than OR
         let terms: Vec<String> = query
             .split_whitespace()
             .filter(|s| !s.is_empty())
             .map(|s| {
-                // Escape double quotes and add wildcard for prefix matching
+                // Escape double quotes and add wildcard for prefix matching (fuzzy search)
                 let escaped = s.replace("\"", "\"\"");
                 format!("{}*", escaped)
             })
@@ -476,10 +479,12 @@ impl MusicDatabase {
             return Ok(Vec::new());
         }
 
-        // Join with OR for more flexible search (any term matches)
-        // Use AND if you want all terms to match
-        let fts_query = terms.join(" OR ");
+        // Join with AND so all terms must match somewhere in artist/album/track fields
+        // This makes "pink floyd" find albums where both "pink*" and "floyd*" appear
+        // Since FTS5 searches across all indexed columns, this works great for fuzzy search
+        let fts_query = terms.join(" AND ");
 
+        // Use rank for relevance-based ordering
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT album_id FROM library_fts WHERE library_fts MATCH ?1 ORDER BY rank",
         )?;

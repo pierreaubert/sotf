@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, LibraryViewMode, Screen, TreeItem};
+use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, Screen, TreeItem};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -141,24 +141,37 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_title(f, chunks[0], app);
 
     // Split main content into left (main) and right (meters) columns
-    // Adjust right column width based on number of channels
+    // Calculate exact width needed for right column based on channel groups
     let num_channels = app
         .loudness_info
         .as_ref()
         .map(|info| info.channel_peaks.len())
         .unwrap_or(2);
 
-    let right_col_pct = if num_channels > 4 {
-        20 // For 5.1 and above, use wider right column
+    // Calculate exact width needed for meters:
+    // 2 (borders) + 1 (padding) + groups + 1 (padding)
+    let mut meters_width = 2 + 1; // borders + left padding
+    if !app.level_meter_groups.is_empty() {
+        for group in &app.level_meter_groups {
+            let num_channels_in_group = group.channels.len();
+            let group_width = num_channels_in_group.max(3);
+            meters_width += group_width + 1; // group width + spacing
+        }
+        // Remove last spacing, add right padding instead
+        meters_width -= 1;
+        meters_width += 1; // right padding
     } else {
-        12 // For stereo/quad, use standard width
-    };
+        meters_width += 1; // right padding even if no groups
+    }
+
+    // Use fixed width for right column to avoid extra space
+    let right_col_width = meters_width.max(20) as u16; // Minimum 20 for LUFS/Volume boxes
 
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(100 - right_col_pct), // Main content
-            Constraint::Percentage(right_col_pct),       // Right column (LUFS, level meter, volume)
+            Constraint::Min(0),                      // Main content (takes remaining space)
+            Constraint::Length(right_col_width),     // Right column (exact width)
         ])
         .split(chunks[1]);
 
@@ -1209,7 +1222,7 @@ fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(list, chunks[1]);
 }
 
-fn draw_meters_column(f: &mut Frame, area: Rect, app: &App) {
+fn draw_meters_column(f: &mut Frame, area: Rect, app: &mut App) {
     // Split the right column - LUFS, level meter, volume
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1281,72 +1294,142 @@ fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(paragraph, area);
 }
 
-fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
-    if let Some(ref loudness) = app.loudness_info {
-        let num_channels = loudness.channel_peaks.len();
-        if num_channels == 0 {
-            let paragraph = Paragraph::new("No channels")
-                .block(Block::default().borders(Borders::ALL).title("Levels"));
-            f.render_widget(paragraph, area);
-            return;
-        }
+fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
+    // Check for loudness info first
+    let has_loudness = app.loudness_info.is_some();
+    if !has_loudness {
+        let paragraph = Paragraph::new("No audio")
+            .block(Block::default().borders(Borders::ALL).title("Levels"))
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
 
-        // Create inner area for meters (without borders)
-        let inner = Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: area.width.saturating_sub(2),
-            height: area.height.saturating_sub(2),
-        };
+    let num_channels = app
+        .loudness_info
+        .as_ref()
+        .map(|l| l.channel_peaks.len())
+        .unwrap_or(0);
+    if num_channels == 0 {
+        let paragraph = Paragraph::new("No channels")
+            .block(Block::default().borders(Borders::ALL).title("Levels"));
+        f.render_widget(paragraph, area);
+        return;
+    }
 
-        // Draw border
-        let block = Block::default().borders(Borders::ALL).title("Levels");
-        f.render_widget(block, area);
+    // Update channel groups if not initialized or if channel count changed
+    // Do this BEFORE borrowing loudness immutably
+    if app.level_meter_groups.is_empty()
+        || app
+            .level_meter_groups
+            .iter()
+            .flat_map(|g| &g.channels)
+            .count()
+            != num_channels
+    {
+        app.update_level_meter_groups();
+    }
 
-        // Reserve space for legend on the left (4 characters: "-60 ")
-        let legend_width = 4;
-        let meters_start_x = inner.x + legend_width;
-        let meters_width = inner.width.saturating_sub(legend_width);
+    // Now borrow loudness immutably for the rest of the function
+    let loudness = app.loudness_info.as_ref().unwrap();
 
-        // Calculate meter dimensions
-        let meter_height = inner.height as usize;
-        let channel_width = (meters_width as usize) / num_channels.max(1);
+    // Draw border with simple title
+    let title_lines = vec![Line::from("Levels (help: ?)")];
+    let title_height = 1;
 
-        // Draw each channel as a vertical meter
-        for (ch_idx, &peak) in loudness.channel_peaks.iter().enumerate() {
+    // Highlight border when focused
+    let block = if app.focused_pane == FocusedPane::Meters {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            )
+    } else {
+        Block::default().borders(Borders::ALL)
+    };
+    f.render_widget(block, area);
+
+    // Render title lines at the top inside the border
+    for (i, line) in title_lines.iter().enumerate() {
+        f.render_widget(
+            Paragraph::new(line.clone()),
+            Rect {
+                x: area.x + 1,
+                y: area.y + 1 + i as u16,
+                width: area.width.saturating_sub(2),
+                height: 1,
+            },
+        );
+    }
+
+    // Create inner area for meters (after title lines and borders)
+    let inner = Rect {
+        x: area.x + 1,
+        y: area.y + 1 + title_height,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2 + title_height),
+    };
+
+    // Calculate dimensions
+    let max_name_lines = app
+        .level_meter_groups
+        .iter()
+        .flat_map(|g| &g.channels)
+        .map(|ch| ch.display_name.len())
+        .max()
+        .unwrap_or(1);
+
+    // Reserve space for M/S controls (2 lines)
+    let meter_height = (inner.height as usize).saturating_sub(max_name_lines + 2);
+    if meter_height == 0 {
+        return;
+    }
+
+    let mut x_offset = 1usize; // Start with 1 space padding
+    let available_width = inner.width as usize;
+
+    // Draw each group
+    for (group_idx, group) in app.level_meter_groups.iter().enumerate() {
+        let is_selected = group_idx == app.selected_level_meter_group;
+
+        // Calculate width for this group: max(num_channels, 3 for M/S)
+        let num_channels = group.channels.len();
+        let group_width = num_channels.max(3);
+
+        // Draw each channel in the group
+        for (ch_idx, channel) in group.channels.iter().enumerate() {
+            let ch_x_offset = x_offset + ch_idx;
+            if ch_x_offset >= available_width {
+                break;
+            }
+
+            // Get the peak level for this channel
+            let peak = loudness
+                .channel_peaks
+                .get(channel.index)
+                .copied()
+                .unwrap_or(0.0);
             let peak_db = 20.0 * peak.max(0.0001).log10();
 
-            // Non-linear meter scaling for better resolution at higher levels:
-            // [-20, 0]   -> 50% of meter (top half)
-            // [-40, -20] -> 30% of meter
-            // [-60, -40] -> 20% of meter (bottom)
+            // Non-linear meter scaling
             let fill_ratio = if peak_db >= -20.0 {
-                // Top 50%: -20 to 0 dB
                 0.5 + ((peak_db + 20.0) / 40.0)
             } else if peak_db >= -40.0 {
-                // Middle 30%: -40 to -20 dB
                 0.2 + ((peak_db + 40.0) / 20.0) * 0.3
             } else {
-                // Bottom 20%: -60 to -40 dB
                 ((peak_db + 60.0) / 20.0) * 0.2
             };
-            let fill_ratio = fill_ratio.clamp(0.0_f64, 1.0_f64);
+            let fill_ratio = fill_ratio.clamp(0.0, 1.0);
             let filled_rows = (fill_ratio * meter_height as f64).round() as usize;
 
-            let ch_x = meters_start_x + (ch_idx * channel_width) as u16;
-            let ch_width = channel_width
-                .min((meters_width as usize - ch_idx * channel_width).min(channel_width))
-                as u16;
-
-            // Build the entire meter as a single multi-line widget to ensure proper clearing
-            let mut meter_lines = Vec::new();
-
-            // Draw vertical meter from top to bottom (reversed iteration for display)
+            // Draw vertical meter (1 char wide)
+            let meter_x = inner.x + ch_x_offset as u16;
             for row_idx in (0..meter_height).rev() {
-                // Determine if this row should be filled
+                let y = inner.y + (meter_height - 1 - row_idx) as u16;
                 let is_filled = row_idx < filled_rows;
 
-                // Color based on level (top = red, middle = yellow, bottom = green)
                 let level_ratio = row_idx as f64 / meter_height as f64;
                 let color = if level_ratio > 0.95 {
                     app.theme.accent_error
@@ -1356,126 +1439,96 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &App) {
                     app.theme.accent_success
                 };
 
-                if is_filled {
-                    // Draw filled bar
-                    let bar = "█".repeat(ch_width.saturating_sub(1) as usize);
-                    meter_lines.push(Line::from(Span::styled(bar, Style::default().fg(color))));
+                let bar = if is_filled { "█" } else { "░" };
+                let style = if is_filled {
+                    Style::default().fg(color)
                 } else {
-                    // Draw empty bar
-                    let bar = "░".repeat(ch_width.saturating_sub(1) as usize);
-                    meter_lines.push(Line::from(Span::styled(
-                        bar,
-                        Style::default().fg(app.theme.fg_muted),
-                    )));
-                }
+                    Style::default().fg(app.theme.fg_muted)
+                };
+
+                f.render_widget(
+                    Paragraph::new(bar).style(style),
+                    Rect {
+                        x: meter_x,
+                        y,
+                        width: 1,
+                        height: 1,
+                    },
+                );
             }
 
-            // Render the entire meter column as a single widget
-            f.render_widget(
-                Paragraph::new(meter_lines),
-                Rect {
-                    x: ch_x,
-                    y: inner.y,
-                    width: ch_width.saturating_sub(1),
-                    height: meter_height as u16,
-                },
-            );
-
-            // Draw channel label at bottom using speaker config
-            let label = if let Some(config) = get_speaker_config_by_channels(num_channels) {
-                // Find speaker by channel index
-                config
-                    .speakers
-                    .iter()
-                    .find(|s| s.channel == ch_idx)
-                    .map(|s| s.label.to_string())
-                    .unwrap_or_else(|| format!("{}", ch_idx + 1))
-            } else {
-                // Fallback to channel number if no config found
-                format!("{}", ch_idx + 1)
-            };
-
-            f.render_widget(
-                Paragraph::new(label)
-                    .style(Style::default().fg(app.theme.accent_primary))
-                    .alignment(Alignment::Center),
-                Rect {
-                    x: ch_x,
-                    y: inner.y + inner.height,
-                    width: ch_width.saturating_sub(1),
-                    height: 1,
-                },
-            );
-        }
-
-        // Draw dB scale legend on the left
-        if legend_width > 0 && meter_height > 0 {
-            // Helper function to convert dB to non-linear fill ratio
-            // Same scale as meter bars: [-20,0] = 50%, [-40,-20] = 30%, [-60,-40] = 20%
-            let db_to_ratio = |db: i32| -> f64 {
-                let db = db as f64;
-                if db >= -20.0 {
-                    0.5 + ((db + 20.0) / 40.0)
-                } else if db >= -40.0 {
-                    0.2 + ((db + 40.0) / 20.0) * 0.3
-                } else {
-                    ((db + 60.0) / 20.0) * 0.2
-                }
-            };
-
-            // Draw scale marks - show 0dB at top with "dB", then just numbers
-            let db_marks = [
-                (0, true),
-                (-5, false),
-                (-10, false),
-                (-20, false),
-                (-30, false),
-                (-40, false),
-                (-50, false),
-                (-60, false),
-            ];
-
-            for &(db, show_db_suffix) in &db_marks {
-                // Calculate Y position using non-linear scale
-                let ratio = db_to_ratio(db);
-                let y_pos =
-                    inner.y + inner.height - 1 - (ratio * meter_height as f64).round() as u16;
-
-                // Only draw if within bounds
-                if y_pos >= inner.y && y_pos < inner.y + inner.height {
-                    let label = if show_db_suffix {
-                        format!("{:>3}dB", db)
-                    } else if db == 0 {
-                        "   0".to_string()
-                    } else {
-                        format!("{:>4}", db)
-                    };
-
-                    let color = if db >= -6 {
-                        app.theme.accent_error
-                    } else if db >= -20 {
-                        app.theme.accent_warning
-                    } else {
-                        app.theme.fg_muted
-                    };
-
+            // Draw vertical channel name below meter
+            let name_start_y = inner.y + meter_height as u16;
+            for (line_idx, line) in channel.display_name.iter().enumerate() {
+                let y = name_start_y + line_idx as u16;
+                if y < inner.y + inner.height - 2 {
+                    // -2 for M/S controls
                     f.render_widget(
-                        Paragraph::new(label).style(Style::default().fg(color)),
+                        Paragraph::new(line.as_str())
+                            .style(Style::default().fg(app.theme.fg_primary)),
                         Rect {
-                            x: inner.x,
-                            y: y_pos,
-                            width: legend_width,
+                            x: meter_x,
+                            y,
+                            width: 1,
                             height: 1,
                         },
                     );
                 }
             }
         }
-    } else {
-        let paragraph = Paragraph::new("No audio")
-            .block(Block::default().borders(Borders::ALL).title("Levels"))
-            .alignment(Alignment::Center);
-        f.render_widget(paragraph, area);
+
+        // Draw M/S controls for this group (if multiple groups exist)
+        if app.level_meter_groups.len() > 1 && x_offset + 3 <= available_width {
+            let controls_x = inner.x + x_offset as u16;
+            let controls_y = inner.y + meter_height as u16 + max_name_lines as u16;
+
+            // Mute button
+            let mute_style = if is_selected && app.level_meter_control_selection == 0 {
+                Style::default()
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
+                    .add_modifier(Modifier::BOLD)
+            } else if group.muted {
+                Style::default().fg(app.theme.accent_error)
+            } else {
+                Style::default().fg(app.theme.fg_muted)
+            };
+
+            f.render_widget(
+                Paragraph::new("[M]").style(mute_style),
+                Rect {
+                    x: controls_x,
+                    y: controls_y,
+                    width: 3,
+                    height: 1,
+                },
+            );
+
+            // Solo button
+            let solo_style = if is_selected && app.level_meter_control_selection == 1 {
+                Style::default()
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
+                    .add_modifier(Modifier::BOLD)
+            } else if group.soloed {
+                Style::default().fg(app.theme.accent_warning)
+            } else {
+                Style::default().fg(app.theme.fg_muted)
+            };
+
+            f.render_widget(
+                Paragraph::new("[S]").style(solo_style),
+                Rect {
+                    x: controls_x,
+                    y: controls_y + 1,
+                    width: 3,
+                    height: 1,
+                },
+            );
+        }
+
+        // Advance by group width + 1 space between groups
+        x_offset += group_width + 1;
     }
 }
 
@@ -1926,6 +1979,17 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Max Frequency".to_string(), format!("{:.0} Hz", max_freq)),
             ("Smoothing".to_string(), format!("{:.2}", smoothing)),
         ],
+        PluginSettings::ChannelMuteSolo { enabled, channel_states } => {
+            // Show basic info about mute/solo state
+            let muted_count = channel_states.iter().filter(|s| s.muted).count();
+            let soloed_count = channel_states.iter().filter(|s| s.soloed).count();
+            vec![
+                ("Status".to_string(), if *enabled { "Active".to_string() } else { "Bypassed".to_string() }),
+                ("Total Channels".to_string(), format!("{}", channel_states.len())),
+                ("Muted Channels".to_string(), format!("{}", muted_count)),
+                ("Soloed Channels".to_string(), format!("{}", soloed_count)),
+            ]
+        }
     }
 }
 
@@ -2578,11 +2642,15 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  TAB", Style::default().fg(app.theme.accent_primary)),
-        Span::raw("  Next screen"),
+        Span::raw("  Cycle through screens and level meters pane"),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  L/D/Q/P/O", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Jump to Library/Directories/Queue/Plugins/Devices"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Shift+M", Style::default().fg(app.theme.accent_primary)),
+        Span::raw("  Focus level meters pane"),
     ]));
     lines.push(Line::from(vec![
         Span::styled("  +/=", Style::default().fg(app.theme.accent_primary)),
@@ -2599,16 +2667,79 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
         ),
         Span::raw("  Select output device"),
     ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "LEVEL METERS (when Meters pane is focused)",
+        Style::default()
+            .fg(app.theme.border_color)
+            .add_modifier(Modifier::BOLD),
+    )]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "  Left/Right",
+            Style::default().fg(app.theme.accent_primary),
+        ),
+        Span::raw("  Navigate between channel groups"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "  Up/Down",
+            Style::default().fg(app.theme.accent_primary),
+        ),
+        Span::raw("  Select mute/solo control"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  m/s", Style::default().fg(app.theme.accent_primary)),
+        Span::raw("  Toggle mute/solo on selected group"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  c", Style::default().fg(app.theme.accent_primary)),
+        Span::raw("  Clear all mutes and solos"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  ESC", Style::default().fg(app.theme.accent_primary)),
+        Span::raw("  Return to main pane"),
+    ]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        "LEVEL METERS (global shortcuts)",
+        Style::default()
+            .fg(app.theme.border_color)
+            .add_modifier(Modifier::BOLD),
+    )]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "  Shift+Left/Right",
+            Style::default().fg(app.theme.accent_primary),
+        ),
+        Span::raw("  Navigate level meter groups"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "  Shift+Up/Down",
+            Style::default().fg(app.theme.accent_primary),
+        ),
+        Span::raw("  Select mute/solo control"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Shift+S", Style::default().fg(app.theme.accent_primary)),
+        Span::raw("  Toggle solo on selected group"),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("  Shift+C", Style::default().fg(app.theme.accent_primary)),
+        Span::raw("  Clear all mutes and solos"),
+    ]));
+    lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::styled("  ?", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Show this help"),
     ]));
     lines.push(Line::from(vec![
         Span::styled(
-            "  ESC/Ctrl+Q/Cmd+Q",
+            "  Ctrl+Q/Cmd+Q",
             Style::default().fg(app.theme.accent_primary),
         ),
-        Span::raw("  Quit"),
+        Span::raw("  Quit (ESC quits from main pane)"),
     ]));
     lines.push(Line::from(""));
 

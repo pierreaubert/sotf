@@ -28,6 +28,12 @@ pub enum InputMode {
     ShowError,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusedPane {
+    Main,   // Main content area (library, queue, etc.)
+    Meters, // Right column with level meters
+}
+
 /// Tree view mode for library
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibraryViewMode {
@@ -69,6 +75,23 @@ pub struct ArtistNode {
 pub enum TreeItem {
     Artist { name: String, expanded: bool },
     Album { index: usize },
+}
+
+/// Channel group for level meter display
+#[derive(Debug, Clone)]
+pub struct ChannelGroup {
+    pub name: String,
+    pub channels: Vec<ChannelInfo>,
+    pub muted: bool,
+    pub soloed: bool,
+}
+
+/// Individual channel information
+#[derive(Debug, Clone)]
+pub struct ChannelInfo {
+    pub index: usize,      // Index in loudness.channel_peaks
+    pub name: String,      // e.g., "FL", "FR", "C"
+    pub display_name: Vec<String>, // Multi-line display: ["F", "L"] or ["T", "B", "R"]
 }
 
 #[derive(Debug)]
@@ -115,6 +138,7 @@ pub struct App {
     pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
     pub current_screen: Screen,
     pub input_mode: InputMode,
+    pub focused_pane: FocusedPane, // Which pane (Main or Meters) has focus
 
     // Theme
     pub theme: Theme,
@@ -171,6 +195,11 @@ pub struct App {
     // Loudness monitoring
     pub loudness_info: Option<LoudnessData>,
 
+    // Level meters
+    pub level_meter_groups: Vec<ChannelGroup>,
+    pub selected_level_meter_group: usize,
+    pub level_meter_control_selection: usize, // 0 = Mute, 1 = Solo
+
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
     pub selected_output_device_index: usize,
@@ -224,6 +253,7 @@ impl App {
             expanded_queue_items: Vec::new(),
             current_screen: Screen::Library,
             input_mode: InputMode::Normal,
+            focused_pane: FocusedPane::Main,
             theme,
             search_query: String::new(),
             directory_input: String::new(),
@@ -250,6 +280,8 @@ impl App {
                 let mut chain = PluginChain::new();
                 // Add default analyzer plugins for LUFS and level meters
                 chain.add_plugin(&PluginType::LoudnessMonitor);
+                // Add ChannelMuteSolo plugin as last plugin (disabled by default)
+                chain.add_plugin(&PluginType::ChannelMuteSolo);
                 chain
             },
             needs_plugin_update: false,
@@ -266,6 +298,9 @@ impl App {
             current_track_start_time: None,
             current_track_already_recorded: false,
             loudness_info: None,
+            level_meter_groups: Vec::new(),
+            selected_level_meter_group: 0,
+            level_meter_control_selection: 0,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
@@ -1803,6 +1838,10 @@ impl App {
                     }
                     _ => false,
                 },
+                PluginSettings::ChannelMuteSolo { .. } => {
+                    // ChannelMuteSolo is automatically managed, not user-editable
+                    false
+                }
             }
         } else {
             false
@@ -1868,11 +1907,9 @@ impl App {
             .get(self.selected_preset_index)
             .cloned()
         {
-            // Remove .json extension if present (save_to_file will add it back)
-            let filename = preset_filename.trim_end_matches(".json");
-
+            // Pass filename as-is; save_to_file handles .json extension correctly
             // Save using the plugin chain's own save method
-            match self.plugin_chain.save_to_file(filename) {
+            match self.plugin_chain.save_to_file(&preset_filename) {
                 Ok(_) => {
                     self.status_message = Some(format!("Overwritten preset: {}", preset_filename));
                     self.last_loaded_preset = Some(preset_filename);
@@ -2102,6 +2139,32 @@ impl App {
     pub fn clear_autocomplete(&mut self) {
         self.autocomplete_suggestions.clear();
         self.autocomplete_index = 0;
+    }
+
+    /// Generate autocomplete suggestions for saving presets (restricted to preset directory)
+    /// This filters available presets by the current input and provides suggestions
+    pub fn generate_autocomplete_suggestions_for_save_preset(&mut self) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
+
+        // Get the current input (without .json extension if present)
+        let input = self
+            .plugin_file_input
+            .trim_end_matches(".json")
+            .to_lowercase();
+
+        // Filter available presets by prefix match
+        for preset in &self.available_plugin_presets {
+            let preset_without_ext = preset.trim_end_matches(".json");
+            if preset_without_ext.to_lowercase().starts_with(&input) {
+                // Add suggestion without .json extension (save_to_file will add it)
+                self.autocomplete_suggestions
+                    .push(preset_without_ext.to_string());
+            }
+        }
+
+        // Sort suggestions alphabetically
+        self.autocomplete_suggestions.sort();
     }
 
     /// Generate autocomplete suggestions for plugin file input
@@ -2343,6 +2406,443 @@ impl App {
         self.album_images.get(self.selected_image_index)
     }
 
+    /// Build channel groups from current channel count
+    pub fn update_level_meter_groups(&mut self) {
+        self.level_meter_groups.clear();
+
+        let num_channels = self
+            .loudness_info
+            .as_ref()
+            .map(|l| l.channel_peaks.len())
+            .unwrap_or(0);
+
+        if num_channels == 0 {
+            return;
+        }
+
+        // Standard channel layouts based on channel count
+        match num_channels {
+            1 => {
+                // Mono
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Mono".to_string(),
+                    channels: vec![ChannelInfo {
+                        index: 0,
+                        name: "M".to_string(),
+                        display_name: vec!["M".to_string()],
+                    }],
+                    muted: false,
+                    soloed: false,
+                });
+            }
+            2 => {
+                // Stereo
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Fronts".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 0,
+                            name: "FL".to_string(),
+                            display_name: vec!["F".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 1,
+                            name: "FR".to_string(),
+                            display_name: vec!["F".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+            }
+            4 => {
+                // Quad (FL, FR, SL, SR)
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Fronts".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 0,
+                            name: "FL".to_string(),
+                            display_name: vec!["F".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 1,
+                            name: "FR".to_string(),
+                            display_name: vec!["F".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Surrounds".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 2,
+                            name: "SL".to_string(),
+                            display_name: vec!["S".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 3,
+                            name: "SR".to_string(),
+                            display_name: vec!["S".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+            }
+            6 => {
+                // 5.1 (FL, FR, FC, LFE, SL, SR)
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Fronts".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 0,
+                            name: "FL".to_string(),
+                            display_name: vec!["F".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 1,
+                            name: "FR".to_string(),
+                            display_name: vec!["F".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Center".to_string(),
+                    channels: vec![ChannelInfo {
+                        index: 2,
+                        name: "C".to_string(),
+                        display_name: vec!["C".to_string()],
+                    }],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "LFE".to_string(),
+                    channels: vec![ChannelInfo {
+                        index: 3,
+                        name: "LFE".to_string(),
+                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
+                    }],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Surrounds".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 4,
+                            name: "SL".to_string(),
+                            display_name: vec!["S".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 5,
+                            name: "SR".to_string(),
+                            display_name: vec!["S".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+            }
+            8 => {
+                // 7.1 (FL, FR, FC, LFE, SL, SR, BL, BR)
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Fronts".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 0,
+                            name: "FL".to_string(),
+                            display_name: vec!["F".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 1,
+                            name: "FR".to_string(),
+                            display_name: vec!["F".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Center".to_string(),
+                    channels: vec![ChannelInfo {
+                        index: 2,
+                        name: "C".to_string(),
+                        display_name: vec!["C".to_string()],
+                    }],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "LFE".to_string(),
+                    channels: vec![ChannelInfo {
+                        index: 3,
+                        name: "LFE".to_string(),
+                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
+                    }],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Surrounds".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 4,
+                            name: "SL".to_string(),
+                            display_name: vec!["S".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 5,
+                            name: "SR".to_string(),
+                            display_name: vec!["S".to_string(), "R".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 6,
+                            name: "BL".to_string(),
+                            display_name: vec!["B".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 7,
+                            name: "BR".to_string(),
+                            display_name: vec!["B".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+            }
+            10 => {
+                // 5.1.4 (FL, FR, FC, LFE, SL, SR, TFL, TFR, TBL, TBR)
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Fronts".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 0,
+                            name: "FL".to_string(),
+                            display_name: vec!["F".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 1,
+                            name: "FR".to_string(),
+                            display_name: vec!["F".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Center".to_string(),
+                    channels: vec![ChannelInfo {
+                        index: 2,
+                        name: "C".to_string(),
+                        display_name: vec!["C".to_string()],
+                    }],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "LFE".to_string(),
+                    channels: vec![ChannelInfo {
+                        index: 3,
+                        name: "LFE".to_string(),
+                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
+                    }],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Surrounds".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 4,
+                            name: "SL".to_string(),
+                            display_name: vec!["S".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 5,
+                            name: "SR".to_string(),
+                            display_name: vec!["S".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "Top".to_string(),
+                    channels: vec![
+                        ChannelInfo {
+                            index: 6,
+                            name: "TFL".to_string(),
+                            display_name: vec!["T".to_string(), "F".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 7,
+                            name: "TFR".to_string(),
+                            display_name: vec!["T".to_string(), "F".to_string(), "R".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 8,
+                            name: "TBL".to_string(),
+                            display_name: vec!["T".to_string(), "B".to_string(), "L".to_string()],
+                        },
+                        ChannelInfo {
+                            index: 9,
+                            name: "TBR".to_string(),
+                            display_name: vec!["T".to_string(), "B".to_string(), "R".to_string()],
+                        },
+                    ],
+                    muted: false,
+                    soloed: false,
+                });
+            }
+            _ => {
+                // Generic fallback - treat all channels as one group
+                let mut channels = Vec::new();
+                for i in 0..num_channels {
+                    channels.push(ChannelInfo {
+                        index: i,
+                        name: format!("CH{}", i + 1),
+                        display_name: vec![format!("CH{}", i + 1)],
+                    });
+                }
+                self.level_meter_groups.push(ChannelGroup {
+                    name: "All Channels".to_string(),
+                    channels,
+                    muted: false,
+                    soloed: false,
+                });
+            }
+        }
+
+        // Update ChannelMuteSolo plugin to have correct number of channels
+        self.update_channel_mute_solo_plugin();
+    }
+
+    /// Clear all mutes and solos in level meter groups
+    pub fn clear_level_meter_mutes_and_solos(&mut self) {
+        for group in &mut self.level_meter_groups {
+            group.muted = false;
+            group.soloed = false;
+        }
+        self.update_channel_mute_solo_plugin_silent();
+    }
+
+    /// Toggle mute for the selected level meter group
+    pub fn toggle_level_meter_mute(&mut self) {
+        if let Some(group) = self.level_meter_groups.get_mut(self.selected_level_meter_group) {
+            group.muted = !group.muted;
+            self.update_channel_mute_solo_plugin_silent();
+        }
+    }
+
+    /// Toggle solo for the selected level meter group
+    pub fn toggle_level_meter_solo(&mut self) {
+        if let Some(group) = self.level_meter_groups.get_mut(self.selected_level_meter_group) {
+            group.soloed = !group.soloed;
+
+            // If soloing, mute all other groups
+            if group.soloed {
+                for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
+                    if idx != self.selected_level_meter_group {
+                        g.muted = true;
+                    }
+                }
+            } else {
+                // If un-soloing, unmute all groups
+                for g in &mut self.level_meter_groups {
+                    g.muted = false;
+                }
+            }
+
+            self.update_channel_mute_solo_plugin();
+        }
+    }
+
+    /// Update the ChannelMuteSolo plugin based on current level meter group states
+    fn update_channel_mute_solo_plugin(&mut self) {
+        use sotf_audio_player::PluginSettings;
+        use sotf_plugins::ChannelState;
+
+        // Calculate total channel count
+        let num_channels = self.level_meter_groups
+            .iter()
+            .map(|g| g.channels.len())
+            .sum();
+
+        if num_channels == 0 {
+            return;
+        }
+
+        // Build per-channel states from groups
+        let mut channel_states = vec![ChannelState { muted: false, soloed: false }; num_channels];
+
+        for group in &self.level_meter_groups {
+            for channel_info in &group.channels {
+                if channel_info.index < num_channels {
+                    channel_states[channel_info.index] = ChannelState {
+                        muted: group.muted,
+                        soloed: group.soloed,
+                    };
+                }
+            }
+        }
+
+        // Determine if any channel is muted or soloed
+        let enabled = channel_states.iter().any(|s| s.muted || s.soloed);
+
+        // Find and update the ChannelMuteSolo plugin
+        for i in 0..self.plugin_chain.len() {
+            if let Some(plugin) = self.plugin_chain.get_plugin_mut(i) {
+                if matches!(&plugin.settings, PluginSettings::ChannelMuteSolo { .. }) {
+                    plugin.settings = PluginSettings::ChannelMuteSolo {
+                        enabled,
+                        channel_states,
+                    };
+                    self.request_plugin_update();
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Navigate to next level meter group
+    pub fn select_next_level_meter_group(&mut self) {
+        if !self.level_meter_groups.is_empty() {
+            self.selected_level_meter_group =
+                (self.selected_level_meter_group + 1) % self.level_meter_groups.len();
+        }
+    }
+
+    /// Navigate to previous level meter group
+    pub fn select_previous_level_meter_group(&mut self) {
+        if !self.level_meter_groups.is_empty() {
+            if self.selected_level_meter_group == 0 {
+                self.selected_level_meter_group = self.level_meter_groups.len() - 1;
+            } else {
+                self.selected_level_meter_group -= 1;
+            }
+        }
+    }
+
+    /// Navigate between mute and solo controls
+    pub fn select_next_level_meter_control(&mut self) {
+        self.level_meter_control_selection = (self.level_meter_control_selection + 1) % 2;
+    }
+
+    /// Navigate between mute and solo controls (previous)
+    pub fn select_previous_level_meter_control(&mut self) {
+        self.level_meter_control_selection = if self.level_meter_control_selection == 0 {
+            1
+        } else {
+            0
+        };
+    }
+
     /// Start tracking a new track for play statistics
     pub fn start_track_tracking(&mut self, track_path: PathBuf) {
         self.current_track_path = Some(track_path);
@@ -2398,6 +2898,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::Convolution { .. } => 3,     // ir_file, mix, gain_db
         PluginSettings::LoudnessMonitor => 0,        // No parameters
         PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
+        PluginSettings::ChannelMuteSolo { .. } => 0, // Automatically managed, no user-editable parameters
     }
 }
 

@@ -38,6 +38,11 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 
 fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
+        // Esc to return to Main pane from Meters (takes priority over quit)
+        KeyCode::Esc if app.focused_pane == crate::app::FocusedPane::Meters => {
+            app.focused_pane = crate::app::FocusedPane::Main;
+            None
+        }
         // Quit
         KeyCode::Esc => {
             app.should_quit = true;
@@ -53,15 +58,31 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
 
-        // TAB to cycle through screens
+        // TAB to cycle through screens and meters pane
         KeyCode::Tab => {
-            app.current_screen = match app.current_screen {
-                Screen::Library => Screen::DirectoryManager,
-                Screen::DirectoryManager => Screen::Queue,
-                Screen::Queue => Screen::Plugins,
-                Screen::Plugins => Screen::Devices,
-                Screen::Devices => Screen::Library,
-            };
+            use crate::app::FocusedPane;
+
+            match app.focused_pane {
+                FocusedPane::Main => {
+                    // Cycle through screens, then switch to Meters pane
+                    app.current_screen = match app.current_screen {
+                        Screen::Library => Screen::DirectoryManager,
+                        Screen::DirectoryManager => Screen::Queue,
+                        Screen::Queue => Screen::Plugins,
+                        Screen::Plugins => Screen::Devices,
+                        Screen::Devices => {
+                            // After last screen, switch to Meters pane
+                            app.focused_pane = FocusedPane::Meters;
+                            Screen::Library // Stay on a screen (doesn't matter which)
+                        }
+                    };
+                }
+                FocusedPane::Meters => {
+                    // From Meters pane, go back to Main pane on Library screen
+                    app.focused_pane = FocusedPane::Main;
+                    app.current_screen = Screen::Library;
+                }
+            }
             None
         }
 
@@ -84,6 +105,39 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         }
         KeyCode::Char('O') => {
             app.current_screen = Screen::Devices;
+            None
+        }
+
+        // Level meter controls (Shift + arrow keys)
+        KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.select_previous_level_meter_group();
+            None
+        }
+        KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.select_next_level_meter_group();
+            None
+        }
+        KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.select_previous_level_meter_control();
+            None
+        }
+        KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            app.select_next_level_meter_control();
+            None
+        }
+        KeyCode::Char('M') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift-M to focus on level meters pane
+            app.focused_pane = crate::app::FocusedPane::Meters;
+            None
+        }
+        KeyCode::Char('S') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift-S to toggle solo on selected group
+            app.toggle_level_meter_solo();
+            None
+        }
+        KeyCode::Char('C') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            // Shift-C to clear all mutes and solos
+            app.clear_level_meter_mutes_and_solos();
             None
         }
 
@@ -115,6 +169,39 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Switch to the newly selected device
             app.get_selected_output_device()
                 .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
+        }
+
+        // Level meter navigation when Meters pane is focused
+        KeyCode::Left if app.focused_pane == crate::app::FocusedPane::Meters => {
+            app.select_previous_level_meter_group();
+            None
+        }
+        KeyCode::Right if app.focused_pane == crate::app::FocusedPane::Meters => {
+            app.select_next_level_meter_group();
+            None
+        }
+        KeyCode::Up if app.focused_pane == crate::app::FocusedPane::Meters => {
+            app.select_previous_level_meter_control();
+            None
+        }
+        KeyCode::Down if app.focused_pane == crate::app::FocusedPane::Meters => {
+            app.select_next_level_meter_control();
+            None
+        }
+        KeyCode::Char('m') if app.focused_pane == crate::app::FocusedPane::Meters => {
+            // 'm' to toggle mute when in Meters pane
+            app.toggle_level_meter_mute();
+            None
+        }
+        KeyCode::Char('s') if app.focused_pane == crate::app::FocusedPane::Meters => {
+            // 's' to toggle solo when in Meters pane
+            app.toggle_level_meter_solo();
+            None
+        }
+        KeyCode::Char('c') if app.focused_pane == crate::app::FocusedPane::Meters => {
+            // 'c' to clear all mutes/solos when in Meters pane
+            app.clear_level_meter_mutes_and_solos();
+            None
         }
 
         // Screen-specific controls
@@ -710,6 +797,7 @@ fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
             app.plugin_file_input.clear();
+            app.clear_autocomplete();
             None
         }
         KeyCode::Enter => {
@@ -720,6 +808,19 @@ fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
                 app.save_plugin_chain();
             }
             app.input_mode = InputMode::Normal;
+            app.clear_autocomplete();
+            None
+        }
+        KeyCode::Tab => {
+            // Autocomplete from available presets (restricted to preset directory)
+            if app.autocomplete_suggestions.is_empty() {
+                app.generate_autocomplete_suggestions_for_save_preset();
+                if !app.autocomplete_suggestions.is_empty() {
+                    app.apply_autocomplete_to_plugin_file();
+                }
+            } else {
+                app.next_autocomplete_for_plugin_file();
+            }
             None
         }
         KeyCode::Up => {
@@ -742,10 +843,12 @@ fn handle_save_plugins_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComman
         }
         KeyCode::Char(c) => {
             app.plugin_file_input.push(c);
+            app.clear_autocomplete();
             None
         }
         KeyCode::Backspace => {
             app.plugin_file_input.pop();
+            app.clear_autocomplete();
             None
         }
         _ => None,

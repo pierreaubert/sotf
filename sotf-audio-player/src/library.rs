@@ -620,8 +620,12 @@ impl MusicLibrary {
         Ok((total_tracks, scanned_tracks))
     }
 
+    /// Search albums with fuzzy matching across artist, album title, and track titles
+    /// Uses FTS5 full-text search if database is available, otherwise falls back to in-memory search
+    /// Works regardless of how albums are sorted - searches all text content
     pub fn search_albums(&self, query: &str) -> Vec<&Album> {
         // Try to use FTS5 search if database is available
+        // FTS5 provides fast fuzzy search across all indexed text fields
         if let Some(db) = &self.db
             && let Ok(album_ids) = db.search_library(query)
             && !album_ids.is_empty()
@@ -639,14 +643,27 @@ impl MusicLibrary {
                 .collect();
         }
 
-        // Fallback to legacy search if DB search fails or returns no results
-        // (or if we just want to support in-memory search as well)
-        let query = query.to_lowercase();
+        // Fallback to in-memory search if DB search fails or returns no results
+        // Also searches artist, album title, and track titles for consistency
+        let query_lower = query.to_lowercase();
         self.albums
             .iter()
             .filter(|album| {
-                album.artist.to_lowercase().contains(&query)
-                    || album.title.to_lowercase().contains(&query)
+                // Search artist and album title
+                if album.artist.to_lowercase().contains(&query_lower)
+                    || album.title.to_lowercase().contains(&query_lower)
+                {
+                    return true;
+                }
+
+                // Also search track titles
+                album.tracks.iter().any(|track| {
+                    track
+                        .title
+                        .as_ref()
+                        .map(|t| t.to_lowercase().contains(&query_lower))
+                        .unwrap_or(false)
+                })
             })
             .collect()
     }

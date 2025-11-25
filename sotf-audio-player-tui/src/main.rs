@@ -89,6 +89,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(theme);
     let mut player = Player::new();
 
+    // Set initial volume
+    player.set_volume(app.volume)?;
+
     // Configure binaural decoder if requested
     if args.binaural {
         // Validate that SOFA file is provided

@@ -17,6 +17,7 @@ sotf-audio-player = { path = "../sotf-audio-player" }
 
 # Audio engine
 sotf-audio-engine = { path = "../sotf-audio-engine" }
+sotf-audio-plugins = { path = "../sotf-audio-plugins" }
 
 # TUI framework
 ratatui = { workspace = true }

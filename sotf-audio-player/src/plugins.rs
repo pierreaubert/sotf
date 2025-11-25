@@ -16,6 +16,7 @@ pub enum PluginType {
     Convolution,
     LoudnessMonitor,
     SpectrumAnalyzer,
+    ChannelMuteSolo,
 }
 
 impl PluginType {
@@ -32,6 +33,7 @@ impl PluginType {
             Self::Convolution => "[8] Convolution",
             Self::LoudnessMonitor => "[9] Loudness Monitor",
             Self::SpectrumAnalyzer => "[0] Spectrum Analyzer",
+            Self::ChannelMuteSolo => "Channel Mute/Solo",
         }
     }
 
@@ -48,6 +50,7 @@ impl PluginType {
             Self::Convolution => "FFT-based Convolution (IR Processing)",
             Self::LoudnessMonitor => "Real-time EBU R128 loudness monitoring",
             Self::SpectrumAnalyzer => "Real-time frequency spectrum analysis",
+            Self::ChannelMuteSolo => "Mute or solo individual channels",
         }
     }
 
@@ -64,6 +67,7 @@ impl PluginType {
             Self::Convolution,
             Self::LoudnessMonitor,
             Self::SpectrumAnalyzer,
+            Self::ChannelMuteSolo,
         ]
     }
 }
@@ -291,6 +295,10 @@ pub enum PluginSettings {
         max_freq: f32,
         smoothing: f32,
     },
+    ChannelMuteSolo {
+        enabled: bool,
+        channel_states: Vec<sotf_plugins::ChannelState>,
+    },
 }
 
 impl PluginSettings {
@@ -307,6 +315,7 @@ impl PluginSettings {
             Self::Convolution { .. } => PluginType::Convolution,
             Self::LoudnessMonitor => PluginType::LoudnessMonitor,
             Self::SpectrumAnalyzer { .. } => PluginType::SpectrumAnalyzer,
+            Self::ChannelMuteSolo { .. } => PluginType::ChannelMuteSolo,
         }
     }
 
@@ -488,6 +497,16 @@ impl PluginSettings {
                     "smoothing": smoothing,
                 }),
             ),
+            Self::ChannelMuteSolo {
+                enabled,
+                channel_states,
+            } => PluginConfig::new(
+                "channel_mute_solo",
+                json!({
+                    "enabled": enabled,
+                    "channel_states": channel_states,
+                }),
+            ),
         }
     }
 
@@ -576,6 +595,10 @@ impl PluginSettings {
                 min_freq: 20.0,
                 max_freq: 20000.0,
                 smoothing: 0.7,
+            },
+            PluginType::ChannelMuteSolo => Self::ChannelMuteSolo {
+                enabled: false,
+                channel_states: vec![],
             },
         }
     }
