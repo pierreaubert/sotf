@@ -106,13 +106,15 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         // Output device selection with Ctrl+Arrow keys
         KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.select_next_output_device();
-            // TODO: Implement device switching
-            None
+            // Switch to the newly selected device
+            app.get_selected_output_device()
+                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
         }
         KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.select_previous_output_device();
-            // TODO: Implement device switching
-            None
+            // Switch to the newly selected device
+            app.get_selected_output_device()
+                .map(|device| PlayerCommand::SetOutputDevice(device.name.clone()))
         }
 
         // Screen-specific controls

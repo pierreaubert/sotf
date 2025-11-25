@@ -7,7 +7,7 @@ pub fn demo_audio_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("src-tauri")
+        .join("sotf-tauri")
         .join("public")
         .join("demo-audio")
 }

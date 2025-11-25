@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  AUTOEQ_DIR: $GITHUB_WORKSPACE
+  JUST_JUSTFILE: $GITHUB_WORKSPACE/Justfile
 
 jobs:
   build:
@@ -35,27 +37,12 @@ jobs:
           sudo AUTOEQ_DIR="$GITHUB_WORKSPACE" just install-ubuntu-common
           sudo AUTOEQ_DIR="$GITHUB_WORKSPACE" just install-ubuntu-x86
           just post-install-npm
-        env:
-          AUTOEQ_DIR: $GITHUB_WORKSPACE
-          JUST_JUSTFILE: $GITHUB_WORKSPACE/Justfile
 
       - name: Build
         run: just build
-        env:
-          AUTOEQ_DIR: $GITHUB_WORKSPACE
-          BROWSER_PATH: /usr/bin/chromium-browser
-          WEBDRIVER_PATH: /usr/bin/chromedriver
 
       - name: Run tests
         run: just test
-        env:
-          AUTOEQ_DIR: $GITHUB_WORKSPACE
-          BROWSER_PATH: /usr/bin/chromium-browser
-          WEBDRIVER_PATH: /usr/bin/chromedriver
 
       - name: QA for AutoEQ
         run: just qa
-        env:
-          AUTOEQ_DIR: $GITHUB_WORKSPACE
-          BROWSER_PATH: /usr/bin/chromium-browser
-          WEBDRIVER_PATH: /usr/bin/chromedriver
