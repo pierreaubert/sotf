@@ -94,6 +94,14 @@ pub struct ChannelInfo {
     pub display_name: Vec<String>, // Multi-line display: ["F", "L"] or ["T", "B", "R"]
 }
 
+/// Pending parameter update for zero-dropout updates
+#[derive(Debug, Clone)]
+pub struct PendingParameterUpdate {
+    pub plugin_index: usize,
+    pub param_id: String,
+    pub value: String,
+}
+
 #[derive(Debug)]
 pub struct QueueItem {
     pub album: Album,
@@ -175,6 +183,7 @@ pub struct App {
     // Plugin system
     pub plugin_chain: PluginChain,
     pub needs_plugin_update: bool,
+    pub pending_param_update: Option<PendingParameterUpdate>,
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize, // Which parameter is selected in edit mode
     pub plugin_update_last_attempt: Option<std::time::Instant>,
@@ -285,6 +294,7 @@ impl App {
                 chain
             },
             needs_plugin_update: false,
+            pending_param_update: None,
             editing_plugin_index: None,
             plugin_param_selection: 0,
             plugin_update_last_attempt: None,
@@ -2729,14 +2739,14 @@ impl App {
             group.muted = false;
             group.soloed = false;
         }
-        self.update_channel_mute_solo_plugin_silent();
+        self.update_channel_mute_solo_plugin();
     }
 
     /// Toggle mute for the selected level meter group
     pub fn toggle_level_meter_mute(&mut self) {
         if let Some(group) = self.level_meter_groups.get_mut(self.selected_level_meter_group) {
             group.muted = !group.muted;
-            self.update_channel_mute_solo_plugin_silent();
+            self.update_channel_mute_solo_plugin();
         }
     }
 
@@ -2799,11 +2809,21 @@ impl App {
         for i in 0..self.plugin_chain.len() {
             if let Some(plugin) = self.plugin_chain.get_plugin_mut(i) {
                 if matches!(&plugin.settings, PluginSettings::ChannelMuteSolo { .. }) {
+                    // Update settings in memory
                     plugin.settings = PluginSettings::ChannelMuteSolo {
                         enabled,
-                        channel_states,
+                        channel_states: channel_states.clone(),
                     };
-                    self.request_plugin_update();
+
+                    // Queue zero-dropout parameter update
+                    // Serialize channel states to JSON
+                    if let Ok(json) = serde_json::to_string(&channel_states) {
+                        self.pending_param_update = Some(PendingParameterUpdate {
+                            plugin_index: i,
+                            param_id: "channel_states".to_string(),
+                            value: json,
+                        });
+                    }
                     return;
                 }
             }

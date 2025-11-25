@@ -1144,7 +1144,7 @@ fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Available Plugins - Press 'a' to add"),
+            .title("Available Plugins"),
     );
 
     f.render_widget(list, area);
@@ -2821,6 +2821,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ),
             ("9/0", "Quick add: LoudnessMonitor/SpectrumAnalyzer"),
             ("g", "Quick add: Gain"),
+            ("m", "Quick add: Channel Mute/Solo"),
             ("e or Enter", "Edit selected plugin"),
             ("t", "Toggle plugin enabled/disabled"),
             ("d/Delete", "Remove plugin"),

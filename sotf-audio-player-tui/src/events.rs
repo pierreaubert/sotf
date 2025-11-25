@@ -705,6 +705,11 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.add_plugin(&PluginType::Gain);
             None
         }
+        KeyCode::Char('m') => {
+            // Quick add Channel Mute/Solo
+            app.add_plugin(&PluginType::ChannelMuteSolo);
+            None
+        }
         _ => None,
     }
 }

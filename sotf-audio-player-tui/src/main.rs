@@ -370,6 +370,29 @@ fn run_app<B: ratatui::backend::Backend>(
                         }
                     }
 
+                    // Apply pending parameter updates (zero-dropout updates)
+                    if let Some(param_update) = app.pending_param_update.take() {
+                        log::debug!(
+                            "[TUI] Applying parameter update: plugin {} param {} = {}",
+                            param_update.plugin_index,
+                            param_update.param_id,
+                            param_update.value
+                        );
+
+                        match player.set_plugin_parameter(
+                            param_update.plugin_index,
+                            param_update.param_id,
+                            param_update.value,
+                        ) {
+                            Ok(()) => {
+                                log::debug!("[TUI] Parameter updated successfully");
+                            }
+                            Err(e) => {
+                                log::warn!("[TUI] Failed to update parameter: {}", e);
+                            }
+                        }
+                    }
+
                     // Perform library scan if needed
                     // Note: This is intentionally synchronous and will block the UI
                     // But progress will be shown in the directory view
