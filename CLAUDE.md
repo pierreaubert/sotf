@@ -4,34 +4,61 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AutoEQ is a sophisticated audio equalization tool that automatically optimizes speaker and headphone frequency response. The project consists of:
+SOTF (Sound of the Future) is a comprehensive audio optimization and playback system. The project consists of:
 
-1. **CLI tools** for speaker/headphone EQ optimization using measurements from spinorama.org or custom data
-2. **Tauri-based desktop application** (SOTF - Sound of the Future) with real-time audio processing
-3. **Native Audio Engine** (`src-audio`) with multi-threaded processing, plugin system, and Symphonia for audio decoding
-4. **Optimization algorithms** including Differential Evolution, NLopt algorithms, and metaheuristic approaches
+1. **AutoEQ CLI tools** for speaker/headphone EQ optimization using measurements from spinorama.org or custom data
+2. **Tauri-based desktop application** with TypeScript frontend for user-friendly audio control
+3. **Native Audio Engine** (`sotf-audio-engine`) with multi-threaded processing, plugin system, and Symphonia for audio decoding
+4. **Audio Players**: TUI player (`sotf-audio-player-tui`), CLI tools, and experimental GPUI player
+5. **Optimization algorithms** including Differential Evolution, NLopt algorithms, and metaheuristic approaches
+6. **macOS-specific features**: CoreAudio HAL driver and menubar configuration app
 
 ## Architecture
 
 ### Workspace Structure
 
-This is a Cargo workspace with distinct crates:
+This is a Cargo workspace with distinct crates organized by functionality:
 
-- **`src-autoeq/`**: Core CLI for EQ optimization, contains the main `autoeq` binary and optimization logic
-- **`src-audio/`**: Native audio processing engine with plugin system, decoding, and analysis tools
-- **`src-tauri/`**: Tauri backend serving as bridge between Rust audio code and TypeScript frontend
-- **`src-ui-frontend/`**: TypeScript/Vite frontend for the desktop application
-- **`src-de/`**: Differential Evolution optimizer forked from SciPy with NLopt/MetaHeuristics interfaces
-- **`src-iir/`**: IIR filter implementations (autoeq-iir) and parametric EQ utilities (Biquad struct)
-- **`src-cea2034/`**: CEA2034 (Spinorama) speaker measurement metrics
-- **`src-testfunctions/`**: Test functions for validating optimization algorithms
-- **`src-env/`**: Shared environment utilities and constants
+**Audio Engine & Players:**
+- **`sotf-audio-engine/`**: Core audio processing engine with multi-threaded architecture, plugin system, and Symphonia decoding
+- **`sotf-audio-player/`**: High-level audio playback API and utilities
+- **`sotf-audio-player-tui/`**: Terminal UI music player with library scanning (production quality)
+- **`sotf-audio-player-gpui/`**: Experimental GPUI-based player (not in default build)
+- **`sotf-audio-player-midi/`**: MIDI integration support
 
-### Audio Architecture (`src-audio`)
+**Audio Plugins:**
+- **`sotf-audio-plugins/`**: Plugin implementations (EQ, compressor, upmixer, analyzers, etc.)
+- **`sotf-audio-plugins-ffi/`**: FFI interface for Audio Unit integration
+- **`sotf-audio-plugins-au/`**: macOS Audio Unit plugin implementation
+
+**AutoEQ & Optimization:**
+- **`autoeq/`**: Core CLI for EQ optimization with multiple binaries (autoeq, roomeq, benchmarks)
+- **`autoeq-cea2034/`**: CEA2034 (Spinorama) speaker measurement metrics
+- **`autoeq-env/`**: Shared environment utilities and constants
+
+**Mathematical Libraries:**
+- **`math-de/`**: Differential Evolution optimizer forked from SciPy with NLopt/MetaHeuristics interfaces
+- **`math-iir/`**: IIR filter implementations (autoeq-iir) and parametric EQ utilities (Biquad struct)
+- **`math-testfunctions/`**: Test functions for validating optimization algorithms
+- **`math-convexhull3d/`**: 3D convex hull computation
+- **`math-bem/`**: Boundary Element Method solver (experimental)
+
+**macOS-specific:**
+- **`sotf-macos-hal/`**: CoreAudio HAL driver for system-wide audio processing
+- **`sotf-macos-configbar/`**: Menubar configuration app for HAL driver
+
+**Frontend & Integration:**
+- **`sotf-tauri/`**: Tauri backend bridging Rust audio code and TypeScript frontend
+- **`sotf-ui-frontend/`**: TypeScript/Vite frontend for the desktop application
+
+**Other:**
+- **`sotf-head-scanner/`**: Experimental head scanning app for HRTF generation (not in default build)
+
+### Audio Architecture (`sotf-audio-engine`)
 
 The audio subsystem uses a **native multi-threaded audio engine** with a flexible plugin system:
 
-#### AudioEngine (`src-audio/src/engine/`)
+#### AudioEngine (`sotf-audio-engine/src/engine/`)
 
 Multi-threaded audio processing engine with 4 threads:
 - **Thread 1**: Decoder - Reads audio files, decodes to PCM, resamples
@@ -49,7 +76,7 @@ Key components:
 - `config_watcher.rs`: File watching and Unix signal handling (SIGHUP, SIGTERM, SIGINT)
 - `types.rs`: PluginConfig, PlaybackState, AudioEngineState
 
-#### Plugin System (`src-audio/src/plugins/`)
+#### Plugin System (`sotf-audio-plugins/src/`)
 
 Flexible plugin architecture supporting:
 
@@ -86,16 +113,16 @@ PluginConfig {
 }
 ```
 
-#### Audio Decoding (`src-audio/src/decoder/`)
+#### Audio Decoding (`sotf-audio-engine/src/decoder/`)
 
 Symphonia-based multi-format decoder supporting:
-- **Formats**: FLAC, MP3, AAC, Vorbis, WAV, OGG
+- **Formats**: FLAC, MP3, AAC, ALAC, Vorbis, WAV, OGG, MP4/M4A
 - **Architecture**:
   - `decoder.rs`: Core decoder with `AudioDecoder` trait
   - `stream.rs`: Streaming state machine with seek support
   - `format_detection.rs`: Automatic format detection
 
-#### AudioStreamingManager (`src-audio/src/manager.rs`)
+#### AudioStreamingManager (`sotf-audio-engine/src/manager.rs`)
 
 High-level API for audio playback:
 - File loading with format detection
@@ -119,27 +146,15 @@ let plugins = vec![
 manager.start_playback(None, plugins, 5).await?;
 ```
 
-#### Analysis Tools
+#### Analysis and Recording Tools
 
 - `signal_analysis.rs`: FFT-based frequency/phase analysis, impulse response
 - `signal_recorder.rs`: Multi-channel audio capture for measurements
 - `signals.rs`: Test signal generation (sine, sweep, pink noise, white noise)
+- `replaygain.rs`: ReplayGain calculation for volume normalization
+- `devices.rs`: Audio device enumeration and management
 
-#### Legacy: CamillaDSP Integration (`src-audio/src.camilla/`)
-
-**Note**: CamillaDSP integration is being phased out in favor of the native AudioEngine. It remains only for:
-- Recording functionality (signal_recorder.rs still uses it)
-- Backward compatibility
-
-The CamillaDSP code is in a separate directory (`src.camilla/`) and includes:
-- Subprocess management
-- YAML config generation
-- WebSocket control (port 1234)
-- stdin audio streaming
-
-**Do not modify files in `src.camilla/` unless specifically working on legacy recording code.**
-
-### Tauri Backend (`src-tauri`)
+### Tauri Backend (`sotf-tauri`)
 
 The Tauri layer exposes Rust audio functionality to TypeScript frontend via commands:
 
@@ -156,7 +171,7 @@ State management uses `tokio::sync::Mutex` wrapping `AudioManager` and `AudioStr
 
 **Important**: Tauri commands should use `PluginConfig` to configure audio processing, not raw parameters.
 
-### Optimization (`src-autoeq`)
+### Optimization (`autoeq`)
 
 The core optimization workflow:
 
@@ -172,7 +187,7 @@ The core optimization workflow:
    - Supports constraints (frequency spacing, Q limits, dB bounds)
 5. **Output** (`x2peq.rs`): Convert solution to parametric EQ filters (uses autoeq-iir::Biquad)
 
-**Optimization Parameters** (see `src-autoeq/src/cli.rs`):
+**Optimization Parameters** (see `autoeq/src/cli.rs`):
 - `-n`: Number of PEQ filters
 - `--min-q`, `--max-q`: Q factor bounds (sharpness)
 - `--min-db`, `--max-db`: Gain bounds
@@ -350,21 +365,34 @@ npm run fmt
 
 ### Running Binaries
 
+**Important**: Binary names follow Rust conventions with underscores:
+
 ```bash
-# AutoEQ CLI
+# AutoEQ CLI - main optimization tool
 cargo run --bin autoeq --release -- --speaker="KEF R3" --version=asr --measurement=CEA2034 --algo=cobyla
 
-# Download spinorama.org database
-cargo run --bin download --release
+# Room EQ optimization
+cargo run --bin roomeq --release
 
-# Audio playback/recording tool with native engine
-cargo run --bin sotf_audio --release -- play audio.flac
-cargo run --bin sotf_audio --release -- play audio.flac --filter 1000:1.5:3.0 --upmixer
-cargo run --bin sotf_audio --release -- play audio.flac --loudness-compensation -18,6,6 --lufs
+# Download spinorama.org database
+cargo run --bin autoeq_download_speakers --release
+
+# Audio playback CLI (native engine)
+cargo run --bin sotf_player_cli --release -- play audio.flac
+cargo run --bin sotf_player_cli --release -- play audio.flac --filter 1000:1.5:3.0 --upmixer
+
+# Audio recording CLI
+cargo run --bin sotf_recorder_cli --release
+
+# TUI music player (production quality)
+cargo run --bin sotf_player_tui --release
 
 # Benchmarking
-cargo run --bin benchmark_autoeq_speaker --release -- --qa --jobs 1
+cargo run --bin autoeq_benchmark_speaker --release -- --qa --jobs 1
 cargo run --bin benchmark_convergence --release
+
+# Test signal generation
+cargo run --bin generate_audio_tests --release
 ```
 
 ### Audio Engine Examples
@@ -389,11 +417,13 @@ Platform-specific BLAS backends (configured in Cargo.toml):
 
 The project uses a **native multi-threaded audio engine** built with:
 - **cpal**: Cross-platform audio I/O
-- **Symphonia**: Audio decoding (FLAC, MP3, AAC, Vorbis, WAV)
-- **rustfft**: FFT processing for spectrum analysis and upmixer
-- **Custom plugin system**: Modular audio processing chain
+- **Symphonia**: Audio decoding (FLAC, MP3, AAC, ALAC, Vorbis, WAV, OGG, MP4/M4A)
+- **rustfft/realfft**: FFT processing for spectrum analysis and upmixer
+- **rubato**: High-quality sample rate conversion
+- **ebur128**: EBU R128 loudness measurement
+- **Custom plugin system**: Modular audio processing chain with hot-reload support
 
-**CamillaDSP is legacy** and only used for recording. The native engine handles all playback.
+The engine is fully native Rust with no external dependencies like CamillaDSP.
 
 ### Plugin System Architecture
 
@@ -414,8 +444,9 @@ Channel count can change between plugins (e.g., upmixer: 2ch → 5ch).
 ### Git Workflow
 
 - Main branch: `master`
-- Workspace version: 0.2.466 (managed in root Cargo.toml)
+- Workspace version: 0.5.3 (managed in root Cargo.toml)
 - Pre-commit hooks configured (`.pre-commit-config.yaml`)
+- Individual crate versions may differ (e.g., autoeq is at 0.2.250)
 
 ## API Integration
 
@@ -496,10 +527,169 @@ pub struct EngineConfig {
 }
 ```
 
+## Key Applications
+
+### TUI Music Player (`sotf-audio-player-tui`)
+
+Production-quality terminal music player with:
+- **Library scanning**: Scans and indexes audio files with metadata
+- **SQLite database**: Stores album/track information for fast browsing
+- **Ratatui UI**: Full-featured terminal interface with navigation
+- **Plugin support**: Full access to audio engine plugins (EQ, upmixer, etc.)
+- **ReplayGain**: Automatic volume normalization
+- **Status**: Production quality, suitable for daily use
+
+Run with: `cargo run --bin sotf_player_tui --release`
+
+### Desktop Application (Tauri)
+
+Cross-platform desktop app with:
+- **TypeScript frontend**: Bulma CSS framework with Plotly visualizations
+- **Real-time visualization**: Spectrum analyzer, loudness meters
+- **EQ optimization UI**: Visual interface for AutoEQ workflows
+- **File management**: Audio file browser and playback controls
+
+Run with: `npm run tauri dev` (development) or `npm run tauri build` (production)
+
+## Common Development Workflows
+
+### Testing Changes
+
+```bash
+# Check compilation without building
+cargo check --all-targets
+
+# Run Rust tests
+just test-rust
+# or
+cargo test --lib
+
+# Run TypeScript tests
+just test-ts
+# or
+npm run test
+
+# Run all tests
+just test
+```
+
+### Working on Audio Engine
+
+```bash
+# Build and run TUI player for testing
+cargo run --bin sotf_player_tui --release
+
+# Run with specific plugins
+cargo run --bin sotf_player_cli --release -- play audio.flac --upmixer --filter 1000:1.5:3.0
+
+# Test signal generation
+cargo run --bin generate_audio_tests --release
+
+# Run examples
+cargo run --release --example audio_engine_demo
+```
+
+### Working on AutoEQ Optimization
+
+```bash
+# Run optimization on a speaker
+cargo run --bin autoeq --release -- \
+  --speaker="KEF R3" \
+  --version=asr \
+  --measurement=CEA2034 \
+  --algo=autoeq:de \
+  -n 7
+
+# Run on custom headphone measurements
+cargo run --bin autoeq --release -- \
+  --curve ./path/to/measurement.csv \
+  --target ./data_tests/targets/harman-over-ear-2018.csv \
+  --loss headphone-score \
+  -n 5
+
+# Benchmark convergence
+cargo run --bin benchmark_convergence --release
+```
+
+### Working on Plugins
+
+Plugin implementations are in `sotf-audio-plugins/src/`:
+- Each plugin implements the `Plugin` trait from `plugin.rs`
+- Plugins are registered in the factory in `mod.rs`
+- Test plugins with the TUI player or CLI player
+- Use `plugin_fuzzer` binary for stress testing
+
+```bash
+# Fuzz test plugins
+cargo run --bin plugin_fuzzer --release
+```
+
+### macOS-specific Development
+
+```bash
+# Build HAL driver
+just prod-hal
+
+# Build menubar config app
+just prod-configbar
+
+# Build both
+just prod-macos
+
+# Build Audio Units
+just build-au-rust    # Build Rust FFI
+just build-au-swift   # Build Swift AU wrapper
+just install-au       # Install to ~/Library/Audio/Plug-Ins/
+just validate-au      # Run auval validation
+```
+
+## Important Development Notes
+
+### Build Configuration
+
+- **Debug builds on macOS**: Use standard `opt-level=0` settings. Aggressive optimization in debug mode causes segfaults in cpal/CoreAudio device enumeration.
+- **Release builds**: Use LTO and single codegen-unit for maximum performance
+- **Panic strategy**: Set to "unwind" to allow tests to run properly
+
+### Dependencies
+
+- **BLAS**: Platform-specific (Accelerate on macOS, OpenBLAS on Linux, Intel MKL on Windows x64)
+- **Audio**: cpal, Symphonia (multi-format), rubato (resampling), ebur128 (loudness)
+- **FFT**: rustfft (complex) and realfft (real-only, faster)
+- **Async**: Uses both tokio and native threads (not fully tokio-native)
+
+### Plugin Architecture Flow
+
+1. Create `PluginConfig` with JSON parameters in CLI/Tauri
+2. Pass to `AudioStreamingManager` → `EngineConfig`
+3. `ManagerThread` forwards to `ProcessingThread`
+4. `ProcessingThread` builds `PluginHost` chain
+5. Audio flows through plugin chain with dynamic channel counts
+
+### File Naming Conventions
+
+- **Binaries**: Use underscores (e.g., `sotf_player_cli`, `autoeq_download_speakers`)
+- **Crates**: Use hyphens (e.g., `sotf-audio-engine`, `math-iir`)
+- **Module files**: Use underscores (e.g., `signal_analysis.rs`, `plugin_eq.rs`)
+
+### Testing Strategy
+
+- **Rust tests**: `cargo test --lib` (library tests only)
+- **TypeScript tests**: `npm run test` or `vitest`
+- **QA tests**: `just qa` runs optimization benchmarks
+- **Binary tests**: Run specific binaries with test data
+
+### Known Platform Differences
+
+- **macOS**: Cannot create fully static binaries (system frameworks required)
+- **Linux**: Can create true static binaries via musl targets
+- **Windows**: Static CRT with minimal DLL dependencies
+
 ## Recent Major Changes
 
 - **Native AudioEngine**: Replaced CamillaDSP for playback (2024)
 - **Plugin System**: Modular audio processing with hot-reload support
-- **File Reorganization**: Plugins renamed with prefixes (`plugin_*`, `analyzer_*`)
-- **Signal Analysis**: `analysis.rs` → `signal_analysis.rs`
-- **Upmixer Fix**: Added `input_channels` to EngineConfig to fix plugin chain initialization
+- **Crate Reorganization**: Renamed from `src-*` to `sotf-*` and `math-*` prefixes
+- **TUI Player**: Production-quality terminal music player with library management
+- **Static Binary Support**: Cross-compilation for musl/static binaries
+- **Workspace version bump**: Now at 0.5.3 (individual crates may vary)
