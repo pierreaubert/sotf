@@ -413,21 +413,43 @@ fn run_playback_thread(
         // Read from message queue (non-blocking since we checked space)
         match message_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(ProcessingMessage::Frame(frame)) => {
+                // Track consecutive channel mismatches to detect stuck state vs transient hot-reload
+                static CHANNEL_MISMATCH_COUNT: std::sync::atomic::AtomicU32 =
+                    std::sync::atomic::AtomicU32::new(0);
+
                 // Validate channel count matches current configuration
                 // This prevents audio corruption during hot-reload when channel count changes
                 if frame.num_channels != channels {
-                    /*
-                                        log::debug!(
-                                            "[Playback Thread] Skipping frame with mismatched channels: \
-                                             frame has {}, expected {} (hot-reload transition)",
-                                            frame.num_channels,
-                                            channels
-                                    );
-                    */
-                    // Note: This is expected during hot-reload when UpdateChannels is pending
-                    // The UpdateChannels command will drain these stale frames
+                    let count =
+                        CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                    // Log every mismatch for first 10, then every 100th to avoid spam
+                    if count < 10 || count % 100 == 0 {
+                        log::warn!(
+                            "[Playback Thread] Channel mismatch #{}: frame has {} channels, \
+                             expected {} - frame discarded (check plugin chain!)",
+                            count + 1,
+                            frame.num_channels,
+                            channels
+                        );
+                    }
+
+                    // After 1000 consecutive mismatches, this is clearly a stuck state
+                    // TODO: Remove this crash after the channel mismatch bug is fully fixed
+                    if count >= 1000 {
+                        panic!(
+                            "[Playback Thread] FATAL: 1000 consecutive channel mismatches. \
+                             Plugin chain likely failed to build. Frame: {}ch, Expected: {}ch. \
+                             TODO: Remove this panic once channel mismatch bugs are fixed.",
+                            frame.num_channels, channels
+                        );
+                    }
+
                     continue; // Discard this frame and wait for UpdateChannels command
                 }
+
+                // Reset mismatch counter on successful frame
+                CHANNEL_MISMATCH_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
 
                 // Write to ring buffer, handling partial writes
                 let mut data_slice = &frame.data[..];
@@ -533,6 +555,17 @@ fn build_output_stream(
                             requested,
                             fill_percent
                         );
+
+                        // TODO: Remove this crash after underrun bugs are fixed
+                        // Hard crash after 50 underruns to aid debugging - the code never recovers anyway
+                        if current_underruns + 1 >= 50 {
+                            panic!(
+                                "[Playback] FATAL: 50 underruns detected - crashing for debugging. \
+                                 Buffer: {}/{} samples ({}% full), requested: {}. \
+                                 TODO: Remove this panic once underrun bugs are fixed.",
+                                available, capacity, fill_percent, requested
+                            );
+                        }
                     }
 
                     ring_buffer.read(data);

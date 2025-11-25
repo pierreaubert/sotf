@@ -441,7 +441,8 @@ fn run_manager_thread(
         // Wait for response to get output channel count (with timeout)
         // Use longer timeout for initial plugin loading since SOFA files can take time
         let start = std::time::Instant::now();
-        let mut output_channels = config.output_channels;
+        let mut output_channels: Option<usize> = None;
+        let mut plugin_error: Option<String> = None;
 
         while start.elapsed() < std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
             if let Some(response) = processing_thread.try_recv_response() {
@@ -454,17 +455,23 @@ fn run_manager_thread(
                             start.elapsed(),
                             ch
                         );
-                        output_channels = ch;
+                        output_channels = Some(ch);
                         break;
                     }
                     super::ProcessingResponse::Error(e) => {
-                        log::debug!("[Manager Thread] Failed to initialize plugin chain: {}", e);
+                        log::error!(
+                            "[Manager Thread] FATAL: Failed to initialize plugin chain: {}",
+                            e
+                        );
+                        plugin_error = Some(e);
                         break;
                     }
                     _ => {
-                        log::info!(
+                        log::error!(
                             "[Manager Thread] Unexpected response during plugin initialization"
                         );
+                        plugin_error =
+                            Some("Unexpected response during plugin initialization".to_string());
                         break;
                     }
                 }
@@ -472,13 +479,30 @@ fn run_manager_thread(
             std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
         }
 
-        // Check if we timed out
-        if start.elapsed() >= std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
-            log::warn!(
-                "[Manager Thread] Plugin initialization timed out after {:?} - proceeding with default channel count",
-                start.elapsed()
-            );
+        // Check for errors - fail hard instead of continuing with mismatched channels
+        if let Some(e) = plugin_error {
+            return Err(format!(
+                "Plugin chain initialization failed: {}. \
+                 Cannot proceed with mismatched channel configuration.",
+                e
+            ));
         }
+
+        // Check if we timed out
+        if output_channels.is_none() {
+            let elapsed = start.elapsed();
+            log::error!(
+                "[Manager Thread] Plugin initialization timed out after {:?}",
+                elapsed
+            );
+            return Err(format!(
+                "Plugin chain initialization timed out after {:?}. \
+                 Cannot proceed without knowing output channel count.",
+                elapsed
+            ));
+        }
+
+        let output_channels = output_channels.unwrap();
 
         // Update state with actual channel count
         if let Ok(mut state_lock) = safe_lock(&state) {
@@ -914,13 +938,20 @@ fn apply_plugin_update(
                         let rollback_start = std::time::Instant::now();
                         let rollback_timeout = std::time::Duration::from_millis(250);
                         let mut rollback_success = false;
+                        let mut rollback_channels: Option<usize> = None;
 
                         while rollback_start.elapsed() < rollback_timeout {
                             if let Some(rollback_response) = processing.try_recv_response() {
                                 match rollback_response {
-                                    super::ProcessingResponse::PluginChainUpdated { .. } => {
-                                        log::info!("[Manager Thread] Rollback successful");
+                                    super::ProcessingResponse::PluginChainUpdated {
+                                        output_channels: ch,
+                                    } => {
+                                        log::info!(
+                                            "[Manager Thread] Rollback successful, output channels: {}",
+                                            ch
+                                        );
                                         rollback_success = true;
+                                        rollback_channels = Some(ch);
                                         break;
                                     }
                                     super::ProcessingResponse::Error(e) => {
@@ -933,6 +964,24 @@ fn apply_plugin_update(
                             std::thread::sleep(std::time::Duration::from_millis(
                                 SPIN_MS_SLEEP_MANAGER,
                             ));
+                        }
+
+                        // If rollback succeeded, update playback thread channel count
+                        if rollback_success {
+                            if let Some(ch) = rollback_channels {
+                                // Update state
+                                if let Ok(mut state_guard) = safe_lock(state) {
+                                    state_guard.num_channels = ch;
+                                }
+
+                                // Clear playback buffer and update channel count
+                                playback.send_command(PlaybackCommand::Stop)?;
+                                playback.send_command(PlaybackCommand::UpdateChannels(ch))?;
+                                log::info!(
+                                    "[Manager Thread] Playback reconfigured to {} channels after rollback",
+                                    ch
+                                );
+                            }
                         }
 
                         // Record rollback metrics
@@ -966,6 +1015,10 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "gate",
             "limiter",
             "loudness_compensation",
+            "loudness_monitor",
+            "spectrum_analyzer",
+            "channel_mute_solo",
+            "binaural_decoder",
             "matrix",
             "convolution",
             "crossover",

@@ -83,11 +83,15 @@ impl AudioEngine {
     }
 
     /// Set a plugin parameter
+    ///
+    /// The value should be a string representation:
+    /// - For primitives: "1.5", "42", "true"
+    /// - For complex types: JSON string
     pub fn set_plugin_parameter(
         &mut self,
         plugin_index: usize,
         param_id: String,
-        value: f32,
+        value: String,
     ) -> Result<(), String> {
         self.manager
             .send_command(ManagerCommand::SetPluginParameter {

@@ -392,6 +392,32 @@ impl AudioEngineManager {
         }
     }
 
+    /// Set a plugin parameter (zero-dropout update)
+    ///
+    /// This updates a single parameter without rebuilding the plugin chain.
+    /// The value should be a string representation (JSON for complex types).
+    pub fn set_plugin_parameter(
+        &self,
+        plugin_index: usize,
+        param_id: String,
+        value: String,
+    ) -> Result<(), String> {
+        log::debug!(
+            "[AudioEngineManager] Setting plugin {} parameter {} = {}",
+            plugin_index,
+            param_id,
+            value
+        );
+
+        if let Some(ref mut engine) = *self.engine.lock() {
+            engine.set_plugin_parameter(plugin_index, param_id, value)?;
+            log::debug!("[AudioEngineManager] Parameter set successfully");
+            Ok(())
+        } else {
+            Err("No engine running".to_string())
+        }
+    }
+
     /// Get plugin data (e.g. analyzer results)
     pub fn get_plugin_data(
         &self,

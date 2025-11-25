@@ -116,7 +116,7 @@ pub enum ProcessingCommand {
     SetParameter {
         plugin_index: usize,
         param_id: String,
-        value: f32,
+        value: String, // Generic string value (JSON for complex types, or stringified primitives)
     },
     /// Bypass all processing (pass-through)
     Bypass(bool),
@@ -175,7 +175,7 @@ pub enum ManagerCommand {
     SetPluginParameter {
         plugin_index: usize,
         param_id: String,
-        value: f32,
+        value: String, // Generic string value (JSON for complex types, or stringified primitives)
     },
     BypassProcessing(bool),
 

@@ -90,6 +90,36 @@ impl Drop for ProcessingThread {
     }
 }
 
+/// Parse a string value into a ParameterValue
+/// Tries to detect the type intelligently:
+/// - "true"/"false" -> Bool
+/// - Integer string -> Int
+/// - Float string -> Float
+/// - JSON object/array -> String (for complex types like Vec<ChannelState>)
+/// - Otherwise -> String
+fn parse_parameter_value(value: &str) -> sotf_plugins::ParameterValue {
+    // Try boolean
+    if value == "true" {
+        return sotf_plugins::ParameterValue::Bool(true);
+    }
+    if value == "false" {
+        return sotf_plugins::ParameterValue::Bool(false);
+    }
+
+    // Try integer
+    if let Ok(i) = value.parse::<i32>() {
+        return sotf_plugins::ParameterValue::Int(i);
+    }
+
+    // Try float
+    if let Ok(f) = value.parse::<f32>() {
+        return sotf_plugins::ParameterValue::Float(f);
+    }
+
+    // Treat as string (for JSON or other complex types)
+    sotf_plugins::ParameterValue::String(value.to_string())
+}
+
 /// Processing state
 struct ProcessingState {
     /// Current plugin host
@@ -194,8 +224,8 @@ fn run_processing_thread(
                         value
                     );
 
-                    // Convert f32 to ParameterValue (as Float)
-                    let param_value = sotf_plugins::ParameterValue::Float(value);
+                    // Parse string value to ParameterValue
+                    let param_value = parse_parameter_value(&value);
 
                     match state.host.set_plugin_parameter(
                         plugin_index,
@@ -586,6 +616,16 @@ fn create_plugin(
                 .map_err(|e| format!("Failed to parse HAL output plugin parameters: {}", e))?;
 
             let plugin = HalOutputPlugin::from_params(channels, params)?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "channel_mute_solo" => {
+            use sotf_plugins::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, InPlacePluginAdapter};
+
+            let params: ChannelMuteSoloParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse channel_mute_solo parameters: {}", e))?;
+
+            let plugin = ChannelMuteSoloPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
