@@ -187,14 +187,42 @@ fn run_processing_thread(
                     param_id,
                     value,
                 } => {
-                    // TODO: Implement parameter setting on Host
                     log::info!(
-                        "[Processing Thread] TODO Set parameter: plugin {} param {} = {}",
+                        "[Processing Thread] Set parameter: plugin {} param {} = {}",
                         plugin_index,
                         param_id,
                         value
                     );
-                    response_tx.send(ProcessingResponse::Ok).ok();
+
+                    // Convert f32 to ParameterValue (as Float)
+                    let param_value = sotf_plugins::ParameterValue::Float(value);
+
+                    match state.host.set_plugin_parameter(
+                        plugin_index,
+                        &param_id,
+                        param_value,
+                    ) {
+                        Ok(_) => {
+                            log::debug!(
+                                "[Processing Thread] Parameter set successfully on plugin {}",
+                                plugin_index
+                            );
+                            response_tx.send(ProcessingResponse::Ok).ok();
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[Processing Thread] Failed to set parameter on plugin {}: {}",
+                                plugin_index,
+                                e
+                            );
+                            response_tx
+                                .send(ProcessingResponse::Error(format!(
+                                    "Failed to set parameter: {}",
+                                    e
+                                )))
+                                .ok();
+                        }
+                    }
                 }
                 ProcessingCommand::Bypass(bypass) => {
                     state.bypassed = bypass;

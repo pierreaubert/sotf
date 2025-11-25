@@ -299,15 +299,61 @@ impl DecoderState {
                 log::debug!("[Decoder Thread] End of stream");
 
                 // Flush remaining resampler buffer
-                if let Some(_resampler) = &mut self.resampler
+                if let Some(resampler) = &mut self.resampler
                     && !self.resampler_buffer.is_empty()
                 {
-                    // Process remaining samples (pad if needed)
+                    let channels = spec.channels as usize;
+                    let source_sample_rate = spec.sample_rate;
+                    let remaining_frames = self.resampler_buffer.len() / channels;
+
                     log::info!(
-                        "[Decoder Thread] Flushing {} remaining samples",
-                        self.resampler_buffer.len()
+                        "[Decoder Thread] Flushing {} remaining samples ({} frames)",
+                        self.resampler_buffer.len(),
+                        remaining_frames
                     );
-                    // TODO: Properly flush resampler
+
+                    // Pad remaining samples to frame_size for resampler
+                    let mut padded_chunk = self.resampler_buffer.clone();
+                    padded_chunk.resize(frame_size * channels, 0.0);
+
+                    let max_output_frames = resampler.output_frames_for_input(frame_size);
+                    let output_len = max_output_frames * channels;
+
+                    if self.resample_output_buffer.len() != output_len {
+                        self.resample_output_buffer.resize(output_len, 0.0);
+                    }
+
+                    let context = ProcessContext {
+                        sample_rate: source_sample_rate,
+                        num_frames: frame_size,
+                    };
+
+                    // Process padded chunk to flush resampler state
+                    if let Ok(_) = resampler.process(&padded_chunk, &mut self.resample_output_buffer, &context) {
+                        // Calculate actual output frames (may be more due to the resampling ratio)
+                        let expected_frames = (frame_size as f64 * resampler.ratio()).ceil() as usize;
+
+                        if expected_frames > 0 {
+                            let frame_data = self.resample_output_buffer[..expected_frames * channels].to_vec();
+                            let frame = AudioFrame::new(
+                                frame_data,
+                                expected_frames,
+                                channels,
+                                target_sample_rate,
+                            );
+                            message_tx
+                                .send(DecoderMessage::Frame(frame))
+                                .ok();
+                            log::debug!(
+                                "[Decoder Thread] Flushed {} frames through resampler",
+                                expected_frames
+                            );
+                        }
+                    } else {
+                        log::warn!("[Decoder Thread] Failed to flush resampler");
+                    }
+
+                    self.resampler_buffer.clear();
                 }
 
                 message_tx

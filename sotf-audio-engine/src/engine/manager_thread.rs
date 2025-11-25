@@ -582,6 +582,7 @@ fn run_manager_thread(
                     &mut processing_thread,
                     &mut playback_thread,
                     &state,
+                    &config,
                     &mut config_update_queue,
                 );
 
@@ -1053,6 +1054,7 @@ fn handle_command(
     processing: &mut ProcessingThread,
     playback: &mut PlaybackThread,
     state: &Arc<Mutex<AudioEngineState>>,
+    config: &EngineConfig,
     config_queue: &mut ConfigUpdateQueue,
 ) -> ManagerResponse {
     match command {
@@ -1276,9 +1278,41 @@ fn handle_command(
             }
         }
         ManagerCommand::ReloadConfig => {
-            log::debug!("[Manager Thread] TODO Reload config (not implemented)");
-            // TODO: Reload config from file
-            ManagerResponse::Ok
+            log::debug!("[Manager Thread] Reload config requested");
+
+            // If we have a config path, reload from file
+            if let Some(config_path) = config.config_path.as_ref() {
+                log::debug!("[Manager Thread] Reloading config from: {:?}", config_path);
+
+                // Load and parse config file
+                match load_config_file(config_path) {
+                    Ok(new_config) => {
+                        // Validate config before queuing
+                        match validate_plugin_configs(&new_config.plugins) {
+                            Ok(_) => {
+                                log::debug!(
+                                    "[Manager Thread] Config validated, enqueuing plugin update"
+                                );
+                                // Use SignalReload priority for explicit reloads
+                                config_queue.enqueue(new_config.plugins, ConfigUpdatePriority::UserDirect);
+                                ManagerResponse::Ok
+                            }
+                            Err(e) => {
+                                log::warn!("[Manager Thread] Config validation failed: {}", e);
+                                config_queue.metrics.record_rejection();
+                                ManagerResponse::Error(format!("Config validation failed: {}", e))
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("[Manager Thread] Config parse failed: {}", e);
+                        ManagerResponse::Error(format!("Config parse failed: {}", e))
+                    }
+                }
+            } else {
+                log::debug!("[Manager Thread] No config path set, cannot reload config");
+                ManagerResponse::Error("No config path configured".to_string())
+            }
         }
         ManagerCommand::Shutdown => {
             log::debug!("[Manager Thread] Shutdown requested");
