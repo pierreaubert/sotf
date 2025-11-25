@@ -26,14 +26,14 @@ impl PluginType {
             Self::Gain => "[g] Gain",
             Self::Upmixer => "[2] Upmixer",
             Self::Compressor => "[3] Compressor",
-            Self::Limiter => "[4] Limiter",
-            Self::Gate => "[5] Gate",
+            Self::Gate => "[4] Gate",
+            Self::Limiter => "[5] Limiter",
             Self::LoudnessCompensation => "[6] Loudness Compensation",
             Self::BinauralDecoder => "[7] Binaural Decoder",
             Self::Convolution => "[8] Convolution",
             Self::LoudnessMonitor => "[9] Loudness Monitor",
             Self::SpectrumAnalyzer => "[0] Spectrum Analyzer",
-            Self::ChannelMuteSolo => "Channel Mute/Solo",
+            Self::ChannelMuteSolo => "[m] Channel Mute/Solo",
         }
     }
 

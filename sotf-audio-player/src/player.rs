@@ -77,6 +77,26 @@ impl Player {
         }
     }
 
+    /// Set a plugin parameter directly (zero-dropout update)
+    ///
+    /// This updates a single parameter without rebuilding the plugin chain.
+    /// The value should be a string representation (JSON for complex types).
+    pub fn set_plugin_parameter(
+        &self,
+        plugin_index: usize,
+        param_id: String,
+        value: String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match self.manager.set_plugin_parameter(plugin_index, param_id, value) {
+            Ok(()) => Ok(()),
+            Err(e) if e == "No engine running" => {
+                // Engine not running yet - parameter will be applied on next playback
+                Ok(())
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+
     pub fn pause(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.pause()?;
         Ok(())
