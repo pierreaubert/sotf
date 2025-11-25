@@ -26,6 +26,7 @@ pub enum ParameterValue {
     Float(f32),
     Int(i32),
     Bool(bool),
+    String(String), // For JSON-serialized complex types
 }
 
 impl ParameterValue {
@@ -52,6 +53,14 @@ impl ParameterValue {
             _ => None,
         }
     }
+
+    /// Get as string, returns None if not a string
+    pub fn as_string(&self) -> Option<&str> {
+        match self {
+            ParameterValue::String(v) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 impl fmt::Display for ParameterValue {
@@ -60,6 +69,7 @@ impl fmt::Display for ParameterValue {
             ParameterValue::Float(v) => write!(f, "{:.2}", v),
             ParameterValue::Int(v) => write!(f, "{}", v),
             ParameterValue::Bool(v) => write!(f, "{}", v),
+            ParameterValue::String(v) => write!(f, "{}", v),
         }
     }
 }

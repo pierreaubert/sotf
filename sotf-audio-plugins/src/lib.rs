@@ -26,6 +26,7 @@ mod host;
 mod parameters;
 mod plugin;
 mod plugin_binaural;
+mod plugin_channel_mute_solo;
 mod plugin_compressor;
 mod plugin_convolution;
 mod plugin_crossover;
@@ -54,6 +55,7 @@ pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
 pub use plugin_binaural::{BinauralDecoderParams, BinauralDecoderPlugin, RoomModel};
+pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
