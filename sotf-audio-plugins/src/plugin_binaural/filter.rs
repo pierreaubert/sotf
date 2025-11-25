@@ -1,22 +1,28 @@
-use rustfft::num_complex::Complex;
-use rustfft::Fft;
-use std::sync::Arc;
 use crate::sofa::SofaFile;
+use realfft::RealToComplex;
+use rustfft::num_complex::Complex;
+use std::sync::Arc;
 
-/// Convert impulse response to frequency domain
+/// Convert impulse response to frequency domain using real FFT
+///
+/// Returns N/2+1 complex frequency bins (half-spectrum representation)
+/// for efficiency since input IR is real-valued.
 pub fn ir_to_freq(
     ir: &[f32],
     fft_size: usize,
-    fft_forward: &Arc<dyn Fft<f32>>,
+    fft_r2c: &Arc<dyn RealToComplex<f32>>,
 ) -> Vec<Complex<f32>> {
-    let mut buffer = vec![Complex::new(0.0, 0.0); fft_size];
+    let freq_size = fft_size / 2 + 1;
+
+    // Prepare time-domain buffer (zero-padded)
+    let mut time_buffer = vec![0.0f32; fft_size];
 
     // Copy IR data (pad with zeros if IR is shorter, truncate if longer)
     // Use full fft_size to preserve spatial information (low-frequency cues are in the tail)
     let copy_len = ir.len().min(fft_size);
     let mut max_val = 0.0f32;
     for i in 0..copy_len {
-        buffer[i] = Complex::new(ir[i], 0.0);
+        time_buffer[i] = ir[i];
         max_val = max_val.max(ir[i].abs());
     }
 
@@ -29,9 +35,11 @@ pub fn ir_to_freq(
         log::debug!("[BinauralDecoder] HRTF IR peak: {:.4}", max_val);
     }
 
-    // FFT
-    let mut freq = buffer.clone();
-    fft_forward.process(&mut freq);
+    // Real FFT: N real -> N/2+1 complex
+    let mut freq = vec![Complex::new(0.0, 0.0); freq_size];
+    fft_r2c
+        .process(&mut time_buffer, &mut freq)
+        .expect("FFT forward failed in ir_to_freq");
 
     freq
 }
@@ -44,28 +52,32 @@ pub fn ir_to_freq(
 /// This improves timbre neutrality by removing the "average" spectral signature
 /// of the HRTF set, while preserving the spatial cues (ITD/ILD variations).
 ///
+/// Returns N/2+1 complex bins per ear (half-spectrum representation for real signals).
+///
 /// Reference: Schörkhuber et al., "Linearly and Quadratically Constrained Least-Squares
 /// Decoder for Signal-Dependent Binaural Rendering" (2018)
 pub fn compute_diffuse_field_eq(
     sofa: &SofaFile,
     fft_size: usize,
     sample_rate: u32,
-    fft_forward: &Arc<dyn Fft<f32>>,
+    fft_r2c: &Arc<dyn RealToComplex<f32>>,
 ) -> Result<[Vec<Complex<f32>>; 2], String> {
     log::info!("[BinauralDecoder] Computing diffuse-field equalization...");
 
+    let freq_size = fft_size / 2 + 1;
+
     // Accumulate magnitude-squared responses for all measurements
-    let mut left_power = vec![0.0f32; fft_size];
-    let mut right_power = vec![0.0f32; fft_size];
+    let mut left_power = vec![0.0f32; freq_size];
+    let mut right_power = vec![0.0f32; freq_size];
 
     for m in 0..sofa.num_measurements {
         if let Some(hrtf) = sofa.get_hrtf(m) {
-            // Convert IRs to frequency domain
-            let left_fft = ir_to_freq(&hrtf.ir_left, fft_size, fft_forward);
-            let right_fft = ir_to_freq(&hrtf.ir_right, fft_size, fft_forward);
+            // Convert IRs to frequency domain (returns freq_size bins)
+            let left_fft = ir_to_freq(&hrtf.ir_left, fft_size, fft_r2c);
+            let right_fft = ir_to_freq(&hrtf.ir_right, fft_size, fft_r2c);
 
             // Accumulate power (magnitude squared)
-            for k in 0..fft_size {
+            for k in 0..freq_size {
                 left_power[k] += left_fft[k].norm_sqr();
                 right_power[k] += right_fft[k].norm_sqr();
             }
@@ -74,7 +86,7 @@ pub fn compute_diffuse_field_eq(
 
     // Average the power spectra
     let num_measurements = sofa.num_measurements as f32;
-    for k in 0..fft_size {
+    for k in 0..freq_size {
         left_power[k] /= num_measurements;
         right_power[k] /= num_measurements;
     }
@@ -82,10 +94,10 @@ pub fn compute_diffuse_field_eq(
     // Compute inverse filter (1 / sqrt(power)) with regularization
     // Regularization prevents excessive boost at frequencies with very low energy
     let regularization = 0.001; // -60 dB
-    let mut left_eq = vec![Complex::new(0.0, 0.0); fft_size];
-    let mut right_eq = vec![Complex::new(0.0, 0.0); fft_size];
+    let mut left_eq = vec![Complex::new(0.0, 0.0); freq_size];
+    let mut right_eq = vec![Complex::new(0.0, 0.0); freq_size];
 
-    for k in 0..fft_size {
+    for k in 0..freq_size {
         // Compute magnitude of inverse filter with regularization
         let left_mag_inv = 1.0 / (left_power[k] + regularization).sqrt();
         let right_mag_inv = 1.0 / (right_power[k] + regularization).sqrt();
@@ -101,11 +113,13 @@ pub fn compute_diffuse_field_eq(
     }
 
     // Normalize to unity gain at 1 kHz for perceptually neutral response
+    // freq_size bins cover 0 to Nyquist, so bin index = freq * fft_size / sample_rate
     let freq_1khz = (1000.0 * fft_size as f32 / sample_rate as f32) as usize;
+    let freq_1khz = freq_1khz.min(freq_size - 1);
     let left_ref = left_eq[freq_1khz].norm().max(0.001);
     let right_ref = right_eq[freq_1khz].norm().max(0.001);
 
-    for k in 0..fft_size {
+    for k in 0..freq_size {
         left_eq[k] /= left_ref;
         right_eq[k] /= right_ref;
     }
@@ -119,6 +133,8 @@ pub fn compute_diffuse_field_eq(
 /// Creates a Butterworth low-pass filter for band-limiting LFE to subwoofer range
 /// and calculates distance-dependent attenuation plus level adjustment.
 ///
+/// Returns N/2+1 complex bins (half-spectrum representation for real signals).
+///
 /// Reference: ITU-R BS.775-3 (multichannel stereophonic sound system with surround channels)
 pub fn compute_lfe_filter(
     fft_size: usize,
@@ -127,6 +143,8 @@ pub fn compute_lfe_filter(
     lfe_distance: f32,
     lfe_level: f32,
 ) -> (Vec<Complex<f32>>, f32) {
+    let freq_size = fft_size / 2 + 1;
+
     // Compute 2nd-order Butterworth low-pass filter (12 dB/octave rolloff)
     // This is typical for LFE/subwoofer crossover
     let fc = lfe_crossover; // Cutoff frequency in Hz
@@ -146,11 +164,11 @@ pub fn compute_lfe_filter(
     let a1 = (2.0 * k_sq - 2.0) / a0;
     let a2 = (1.0 - std::f32::consts::SQRT_2 * k + k_sq) / a0;
 
-    let mut lfe_lowpass_filter = vec![Complex::new(0.0, 0.0); fft_size];
+    let mut lfe_lowpass_filter = vec![Complex::new(0.0, 0.0); freq_size];
 
-    // Convert to frequency domain response
-    for k in 0..fft_size {
-        let freq = k as f32 * fs / fft_size as f32;
+    // Convert to frequency domain response (only positive frequencies for real FFT)
+    for bin in 0..freq_size {
+        let freq = bin as f32 * fs / fft_size as f32;
         let omega = 2.0 * std::f32::consts::PI * freq / fs;
 
         // Z-transform evaluation: H(z) at z = e^(jω)
@@ -172,7 +190,7 @@ pub fn compute_lfe_filter(
         let h_re = (num_re * den_re + num_im * den_im) / denom;
         let h_im = (num_im * den_re - num_re * den_im) / denom;
 
-        lfe_lowpass_filter[k] = Complex::new(h_re, h_im);
+        lfe_lowpass_filter[bin] = Complex::new(h_re, h_im);
     }
 
     // Compute LFE gain: distance attenuation + level adjustment

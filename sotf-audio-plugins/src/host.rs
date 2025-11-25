@@ -56,6 +56,20 @@ pub trait Host {
         None
     }
 
+    /// Set a parameter on a plugin at the given index
+    ///
+    /// Returns an error if the index is out of bounds or the plugin doesn't support
+    /// the parameter ID.
+    fn set_plugin_parameter(
+        &mut self,
+        index: usize,
+        param_id: &str,
+        value: super::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        let _ = (index, param_id, value);
+        Err("set_plugin_parameter not implemented for this host".to_string())
+    }
+
     /// Process audio through the plugin chain/graph
     ///
     /// # Arguments
@@ -547,6 +561,30 @@ impl DawHost {
         }
     }
 
+    /// Set a parameter on a plugin at the given index (PluginHost-compatible API)
+    pub fn set_plugin_parameter(
+        &mut self,
+        index: usize,
+        param_id: &str,
+        value: super::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        let node_id = self
+            .chain_nodes
+            .get(index)
+            .ok_or_else(|| format!("Plugin index {} out of bounds", index))?;
+
+        let node = self
+            .nodes
+            .get_mut(node_id)
+            .ok_or_else(|| format!("Node {} not found", node_id))?;
+
+        let mut plugin = node.plugin.lock().map_err(|e| {
+            format!("Failed to lock plugin at index {}: {}", index, e)
+        })?;
+
+        plugin.set_parameter(super::parameters::ParameterId(param_id.to_string()), value)
+    }
+
     // ========================================================================
     // Processing
     // ========================================================================
@@ -1009,6 +1047,15 @@ impl Host for DawHost {
         let node = self.nodes.get(node_id)?;
         let plugin = node.plugin.lock().unwrap();
         plugin.get_data()
+    }
+
+    fn set_plugin_parameter(
+        &mut self,
+        index: usize,
+        param_id: &str,
+        value: super::parameters::ParameterValue,
+    ) -> Result<(), String> {
+        DawHost::set_plugin_parameter(self, index, param_id, value)
     }
 
     fn input_channels(&self) -> usize {

@@ -57,7 +57,7 @@ pub fn default_hr_sharpen() -> f32 {
 }
 
 pub fn default_safety_cap_db() -> f32 {
-    2.0
+    3.0
 }
 
 /// Configuration parameters for UpmixerPlugin

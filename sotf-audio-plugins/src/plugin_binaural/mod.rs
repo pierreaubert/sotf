@@ -7,12 +7,12 @@ use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, complex_mul_simd};
 use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 
-use crate::sofa::{SofaFile};
+use crate::sofa::SofaFile;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 use rustfft::num_complex::Complex;
-use rustfft::{Fft, FftPlanner};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -49,12 +49,17 @@ pub struct BinauralDecoderPlugin {
     /// Speaker configuration for input channels
     speaker_config: &'static SpeakerConfig,
 
-    /// FFT planners
-    fft_forward: Arc<dyn Fft<f32>>,
-    fft_inverse: Arc<dyn Fft<f32>>,
+    /// Real FFT planners (more efficient for real-valued audio signals)
+    /// R2C: N real samples -> N/2+1 complex frequency bins
+    fft_r2c: Arc<dyn RealToComplex<f32>>,
+    /// C2R: N/2+1 complex frequency bins -> N real samples
+    fft_c2r: Arc<dyn ComplexToReal<f32>>,
+    /// Number of complex frequency bins (fft_size/2 + 1)
+    freq_size: usize,
 
-    /// HRTF filters in frequency domain [channels × 2 × fft_size]
+    /// HRTF filters in frequency domain [channels × 2 × freq_size]
     /// For each input channel: [left_ear_fft, right_ear_fft]
+    /// Uses half-spectrum representation (N/2+1 bins) for real signals
     /// LFE channels have zero HRTFs and are handled separately
     hrtf_filters_freq: Vec<Vec<Complex<f32>>>,
 
@@ -64,6 +69,7 @@ pub struct BinauralDecoderPlugin {
     diffuse_field_eq_filter: Option<[Vec<Complex<f32>>; 2]>,
 
     /// LFE low-pass filter in frequency domain (band-limits LFE to subwoofer range)
+    /// Uses half-spectrum representation (N/2+1 bins)
     lfe_lowpass_filter: Vec<Complex<f32>>,
     /// LFE gain including distance attenuation and level adjustment
     lfe_gain: f32,
@@ -86,8 +92,12 @@ pub struct BinauralDecoderPlugin {
     /// Temporary buffers (reused to avoid allocations)
     temp_input_block: Vec<f32>,
     temp_output_block: Vec<f32>,
+    /// Frequency domain buffer (N/2+1 complex bins for real FFT)
     temp_freq_buffer: Vec<Complex<f32>>,
-    temp_time_buffer: Vec<Complex<f32>>,
+    /// Time domain buffer for real FFT input (N real samples)
+    temp_time_buffer: Vec<f32>,
+    /// Scratch buffer for real FFT operations
+    temp_fft_scratch: Vec<Complex<f32>>,
 
     // Parameters
     param_enable_optimization: ParameterId,
@@ -134,9 +144,11 @@ impl BinauralDecoderPlugin {
         let input_buffer_size = hop_size
             .checked_mul(input_channels)
             .expect("Buffer size overflow: hop_size * input_channels too large");
-        let hrtf_buffer_per_channel = fft_size
+        // For real FFT: freq_size = fft_size/2 + 1, store 2 ears × freq_size bins
+        let freq_size_check = fft_size / 2 + 1;
+        let _hrtf_buffer_per_channel = freq_size_check
             .checked_mul(2)
-            .expect("Buffer size overflow: fft_size * 2 too large");
+            .expect("Buffer size overflow: freq_size * 2 too large");
         let output_acc_size = fft_size
             .checked_mul(2)
             .expect("Buffer size overflow: output accumulator size too large");
@@ -147,9 +159,12 @@ impl BinauralDecoderPlugin {
         );
         assert!(fft_size <= 1 << 16, "FFT size unreasonably large (> 65536)");
 
-        let mut planner = FftPlanner::<f32>::new();
-        let fft_forward = planner.plan_fft_forward(fft_size);
-        let fft_inverse = planner.plan_fft_inverse(fft_size);
+        // Use real FFT for efficiency (audio signals are real-valued)
+        // R2C: N real -> N/2+1 complex, C2R: N/2+1 complex -> N real
+        let mut planner = RealFftPlanner::<f32>::new();
+        let fft_r2c = planner.plan_fft_forward(fft_size);
+        let fft_c2r = planner.plan_fft_inverse(fft_size);
+        let freq_size = fft_size / 2 + 1;
 
         let speaker_config = get_speaker_config_by_channels(input_channels)
             .unwrap_or_else(|| {
@@ -175,6 +190,9 @@ impl BinauralDecoderPlugin {
             lfe_channels
         );
 
+        // Get scratch buffer size from FFT planner
+        let scratch_len = fft_r2c.get_scratch_len().max(fft_c2r.get_scratch_len());
+
         Self {
             input_channels,
             fft_size,
@@ -185,15 +203,17 @@ impl BinauralDecoderPlugin {
             sofa_path,
             speaker_config,
 
-            fft_forward,
-            fft_inverse,
+            fft_r2c,
+            fft_c2r,
+            freq_size,
 
+            // HRTF storage: 2 ears × freq_size bins per channel
             hrtf_filters_freq: vec![
-                vec![Complex::new(0.0, 0.0); hrtf_buffer_per_channel];
+                vec![Complex::new(0.0, 0.0); freq_size * 2];
                 input_channels
             ],
             diffuse_field_eq_filter: None,
-            lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); fft_size],
+            lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); freq_size],
             lfe_gain: 1.0,
             lfe_channels,
 
@@ -207,8 +227,9 @@ impl BinauralDecoderPlugin {
 
             temp_input_block: vec![0.0; input_buffer_size],
             temp_output_block: vec![0.0; output_acc_size],
-            temp_freq_buffer: vec![Complex::new(0.0, 0.0); fft_size],
-            temp_time_buffer: vec![Complex::new(0.0, 0.0); fft_size],
+            temp_freq_buffer: vec![Complex::new(0.0, 0.0); freq_size],
+            temp_time_buffer: vec![0.0; fft_size],
+            temp_fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
 
             param_enable_optimization: ParameterId::from("enable_optimization"),
             enable_optimization,
@@ -367,30 +388,32 @@ impl BinauralDecoderPlugin {
             let nearest = sofa.find_three_nearest(&target_pos);
             let gains = hrtf::calculate_vbap_gains(&target_pos, &nearest, sofa);
 
+            // Returns freq_size (N/2+1) complex bins per ear
             let (left_fft, right_fft) = hrtf::interpolate_hrtf_frequency_domain(
                 &nearest,
                 &gains,
                 sofa,
                 self.fft_size,
                 self.sample_rate,
-                &self.fft_forward,
+                &self.fft_r2c,
                 self.near_field_strength,
                 speaker.azimuth,
-                speaker.elevation
+                speaker.elevation,
             );
 
+            // Store left and right HRTFs contiguously [left_freq_size | right_freq_size]
             let combined: Vec<Complex<f32>> =
                 left_fft.into_iter().chain(right_fft.into_iter()).collect();
 
             self.hrtf_filters_freq[i] = combined;
         }
 
-        // Normalize HRTFs
+        // Normalize HRTFs (now uses freq_size bins)
         hrtf::normalize_hrtf_gains(
             &mut self.hrtf_filters_freq,
             &self.lfe_channels,
-            self.fft_size,
-            self.input_channels
+            self.freq_size,
+            self.input_channels,
         );
 
         // Compute and apply diffuse-field equalization if enabled
@@ -399,7 +422,7 @@ impl BinauralDecoderPlugin {
                 sofa,
                 self.fft_size,
                 self.sample_rate,
-                &self.fft_forward
+                &self.fft_r2c,
             )?);
         }
 
@@ -440,139 +463,206 @@ impl BinauralDecoderPlugin {
 
         let input_block = std::mem::take(&mut self.temp_input_block);
         let mut output_block = std::mem::take(&mut self.temp_output_block);
+        let mut time_buffer = std::mem::take(&mut self.temp_time_buffer);
+        let mut freq_buffer = std::mem::take(&mut self.temp_freq_buffer);
+        let mut scratch = std::mem::take(&mut self.temp_fft_scratch);
 
-        self.temp_freq_buffer.fill(Complex::new(0.0, 0.0));
+        freq_buffer.fill(Complex::new(0.0, 0.0));
 
         if self.enable_optimization {
-            let mut sum_left = vec![Complex::new(0.0, 0.0); self.fft_size];
-            let mut sum_right = vec![Complex::new(0.0, 0.0); self.fft_size];
+            // Sum-Before-IFFT optimization: accumulate all channels in frequency domain
+            // then do a single IFFT per ear
+            let mut sum_left = vec![Complex::new(0.0, 0.0); self.freq_size];
+            let mut sum_right = vec![Complex::new(0.0, 0.0); self.freq_size];
 
             for ch in 0..self.input_channels {
                 if self.lfe_channels.contains(&ch) {
                     continue;
                 }
 
+                // Extract channel data into time buffer (zero-padded)
                 for i in 0..self.hop_size {
-                    self.temp_time_buffer[i] =
-                        Complex::new(input_block[i * self.input_channels + ch], 0.0);
+                    time_buffer[i] = input_block[i * self.input_channels + ch];
                 }
                 for i in self.hop_size..self.fft_size {
-                    self.temp_time_buffer[i] = Complex::new(0.0, 0.0);
+                    time_buffer[i] = 0.0;
                 }
 
-                self.fft_forward.process(&mut self.temp_time_buffer);
+                // Real-to-Complex FFT: N real -> N/2+1 complex
+                self.fft_r2c
+                    .process_with_scratch(&mut time_buffer, &mut freq_buffer, &mut scratch)
+                    .expect("FFT forward failed");
 
+                // Accumulate weighted by HRTF (freq_size bins per ear)
                 let hrtf = &self.hrtf_filters_freq[ch];
                 complex_mul_add_simd(
                     &mut sum_left,
-                    &self.temp_time_buffer,
-                    &hrtf[0..self.fft_size],
+                    &freq_buffer,
+                    &hrtf[0..self.freq_size],
                 );
                 complex_mul_add_simd(
                     &mut sum_right,
-                    &self.temp_time_buffer,
-                    &hrtf[self.fft_size..],
+                    &freq_buffer,
+                    &hrtf[self.freq_size..],
                 );
             }
 
+            // Apply diffuse-field EQ if enabled
             if let Some(ref df_eq) = self.diffuse_field_eq_filter {
-                for k in 0..self.fft_size {
+                for k in 0..self.freq_size {
                     sum_left[k] *= df_eq[0][k];
                     sum_right[k] *= df_eq[1][k];
                 }
             }
 
-            self.fft_inverse.process(&mut sum_left);
-            self.fft_inverse.process(&mut sum_right);
+            // Enforce real FFT constraints: DC and Nyquist bins must be real
+            // (imaginary part must be zero for valid inverse transform)
+            sum_left[0].im = 0.0;
+            sum_right[0].im = 0.0;
+            sum_left[self.freq_size - 1].im = 0.0;
+            sum_right[self.freq_size - 1].im = 0.0;
 
+            // Inverse FFT for left ear: N/2+1 complex -> N real
+            let mut left_output = vec![0.0f32; self.fft_size];
+            self.fft_c2r
+                .process_with_scratch(&mut sum_left, &mut left_output, &mut scratch)
+                .expect("FFT inverse failed");
+
+            // Inverse FFT for right ear
+            let mut right_output = vec![0.0f32; self.fft_size];
+            self.fft_c2r
+                .process_with_scratch(&mut sum_right, &mut right_output, &mut scratch)
+                .expect("FFT inverse failed");
+
+            // Real FFT normalization: output is scaled by fft_size
             let scale = 1.0 / self.fft_size as f32;
             for i in 0..self.fft_size {
-                output_block[i * 2] = sum_left[i].re * scale;
-                output_block[i * 2 + 1] = sum_right[i].re * scale;
+                output_block[i * 2] = left_output[i] * scale;
+                output_block[i * 2 + 1] = right_output[i] * scale;
             }
         } else {
+            // Non-optimized path: process each channel separately
             output_block.fill(0.0);
+
+            let mut channel_output = vec![0.0f32; self.fft_size];
 
             for ch in 0..self.input_channels {
                 if self.lfe_channels.contains(&ch) {
                     continue;
                 }
 
+                // Extract channel data
                 for i in 0..self.hop_size {
-                    self.temp_time_buffer[i] =
-                        Complex::new(input_block[i * self.input_channels + ch], 0.0);
+                    time_buffer[i] = input_block[i * self.input_channels + ch];
                 }
                 for i in self.hop_size..self.fft_size {
-                    self.temp_time_buffer[i] = Complex::new(0.0, 0.0);
+                    time_buffer[i] = 0.0;
                 }
 
-                self.fft_forward.process(&mut self.temp_time_buffer);
+                // Forward FFT
+                self.fft_r2c
+                    .process_with_scratch(&mut time_buffer, &mut freq_buffer, &mut scratch)
+                    .expect("FFT forward failed");
 
+                // Process left ear
+                let mut left_freq = vec![Complex::new(0.0, 0.0); self.freq_size];
                 complex_mul_simd(
-                    &mut self.temp_freq_buffer,
-                    &self.temp_time_buffer,
-                    &self.hrtf_filters_freq[ch][0..self.fft_size],
+                    &mut left_freq,
+                    &freq_buffer,
+                    &self.hrtf_filters_freq[ch][0..self.freq_size],
                 );
 
                 if let Some(ref df_eq) = self.diffuse_field_eq_filter {
-                    for k in 0..self.fft_size {
-                        self.temp_freq_buffer[k] *= df_eq[0][k];
+                    for k in 0..self.freq_size {
+                        left_freq[k] *= df_eq[0][k];
                     }
                 }
 
-                self.fft_inverse.process(&mut self.temp_freq_buffer);
+                // Enforce real FFT constraints
+                left_freq[0].im = 0.0;
+                left_freq[self.freq_size - 1].im = 0.0;
+
+                self.fft_c2r
+                    .process_with_scratch(&mut left_freq, &mut channel_output, &mut scratch)
+                    .expect("FFT inverse failed");
 
                 let scale = 1.0 / self.fft_size as f32;
                 for i in 0..self.fft_size {
-                    output_block[i * 2] += self.temp_freq_buffer[i].re * scale;
+                    output_block[i * 2] += channel_output[i] * scale;
                 }
 
+                // Process right ear
+                let mut right_freq = vec![Complex::new(0.0, 0.0); self.freq_size];
                 complex_mul_simd(
-                    &mut self.temp_freq_buffer,
-                    &self.temp_time_buffer,
-                    &self.hrtf_filters_freq[ch][self.fft_size..],
+                    &mut right_freq,
+                    &freq_buffer,
+                    &self.hrtf_filters_freq[ch][self.freq_size..],
                 );
 
                 if let Some(ref df_eq) = self.diffuse_field_eq_filter {
-                    for k in 0..self.fft_size {
-                        self.temp_freq_buffer[k] *= df_eq[1][k];
+                    for k in 0..self.freq_size {
+                        right_freq[k] *= df_eq[1][k];
                     }
                 }
 
-                self.fft_inverse.process(&mut self.temp_freq_buffer);
+                // Enforce real FFT constraints
+                right_freq[0].im = 0.0;
+                right_freq[self.freq_size - 1].im = 0.0;
+
+                self.fft_c2r
+                    .process_with_scratch(&mut right_freq, &mut channel_output, &mut scratch)
+                    .expect("FFT inverse failed");
 
                 for i in 0..self.fft_size {
-                    output_block[i * 2 + 1] += self.temp_freq_buffer[i].re * scale;
+                    output_block[i * 2 + 1] += channel_output[i] * scale;
                 }
             }
         }
 
         self.temp_input_block = input_block;
         self.temp_output_block = output_block;
+        self.temp_time_buffer = time_buffer;
+        self.temp_freq_buffer = freq_buffer;
+        self.temp_fft_scratch = scratch;
 
+        // Process LFE channels (mixed to both ears with lowpass filter)
         if !self.lfe_channels.is_empty() {
-            let mut lfe_freq_buffer = vec![Complex::new(0.0, 0.0); self.fft_size];
+            let mut lfe_time = vec![0.0f32; self.fft_size];
+            let mut lfe_freq = vec![Complex::new(0.0, 0.0); self.freq_size];
+            let mut lfe_output = vec![0.0f32; self.fft_size];
 
             for &lfe_ch in &self.lfe_channels {
+                // Extract LFE channel data
                 for i in 0..self.hop_size {
-                    lfe_freq_buffer[i] =
-                        Complex::new(self.temp_input_block[i * self.input_channels + lfe_ch], 0.0);
+                    lfe_time[i] = self.temp_input_block[i * self.input_channels + lfe_ch];
                 }
                 for i in self.hop_size..self.fft_size {
-                    lfe_freq_buffer[i] = Complex::new(0.0, 0.0);
+                    lfe_time[i] = 0.0;
                 }
 
-                self.fft_forward.process(&mut lfe_freq_buffer);
+                // Forward FFT
+                self.fft_r2c
+                    .process_with_scratch(&mut lfe_time, &mut lfe_freq, &mut self.temp_fft_scratch)
+                    .expect("LFE FFT forward failed");
 
-                for k in 0..self.fft_size {
-                    lfe_freq_buffer[k] *= self.lfe_lowpass_filter[k];
+                // Apply lowpass filter
+                for k in 0..self.freq_size {
+                    lfe_freq[k] *= self.lfe_lowpass_filter[k];
                 }
 
-                self.fft_inverse.process(&mut lfe_freq_buffer);
+                // Enforce real FFT constraints
+                lfe_freq[0].im = 0.0;
+                lfe_freq[self.freq_size - 1].im = 0.0;
 
+                // Inverse FFT
+                self.fft_c2r
+                    .process_with_scratch(&mut lfe_freq, &mut lfe_output, &mut self.temp_fft_scratch)
+                    .expect("LFE FFT inverse failed");
+
+                // Mix into both channels
                 let scale = self.lfe_gain / self.fft_size as f32;
                 for i in 0..self.hop_size {
-                    let lfe_sample = lfe_freq_buffer[i].re * scale;
+                    let lfe_sample = lfe_output[i] * scale;
                     self.temp_output_block[i * 2] += lfe_sample;
                     self.temp_output_block[i * 2 + 1] += lfe_sample;
                 }
@@ -773,12 +863,15 @@ impl Plugin for BinauralDecoderPlugin {
         {
             self.diffuse_field_eq = v;
             if v && self.sofa.is_some() {
-                self.diffuse_field_eq_filter = Some(filter::compute_diffuse_field_eq(
-                    self.sofa.as_ref().unwrap(),
-                    self.fft_size,
-                    self.sample_rate,
-                    &self.fft_forward
-                ).map_err(|e| format!("Failed to compute diffuse-field EQ: {}", e))?);
+                self.diffuse_field_eq_filter = Some(
+                    filter::compute_diffuse_field_eq(
+                        self.sofa.as_ref().unwrap(),
+                        self.fft_size,
+                        self.sample_rate,
+                        &self.fft_r2c,
+                    )
+                    .map_err(|e| format!("Failed to compute diffuse-field EQ: {}", e))?,
+                );
             } else if !v {
                 self.diffuse_field_eq_filter = None;
             }

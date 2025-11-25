@@ -1,8 +1,8 @@
-use rustfft::num_complex::Complex;
-use rustfft::Fft;
-use std::sync::Arc;
-use crate::sofa::{SofaFile, SourcePosition};
 use super::filter::ir_to_freq;
+use crate::sofa::{SofaFile, SourcePosition};
+use realfft::RealToComplex;
+use rustfft::num_complex::Complex;
+use std::sync::Arc;
 
 /// Calculate VBAP gains using barycentric interpolation
 ///
@@ -121,6 +121,9 @@ pub fn calculate_vbap_gains(
 /// Implements frequency-dependent Interaural Level Difference (ILD) based on
 /// head shadowing models. Uses Woodworth-Schlosberg formula combined with
 /// frequency-dependent diffraction model.
+///
+/// Operates on half-spectrum (N/2+1 bins) - no need to mirror since
+/// real FFT automatically handles conjugate symmetry.
 pub fn apply_near_field_shadowing(
     left_fft: &mut [Complex<f32>],
     right_fft: &mut [Complex<f32>],
@@ -130,6 +133,8 @@ pub fn apply_near_field_shadowing(
     sample_rate: u32,
     near_field_strength: f32,
 ) {
+    let freq_size = fft_size / 2 + 1;
+
     // Head model parameters
     const HEAD_RADIUS: f32 = 0.0875; // 8.75 cm (typical adult head radius)
     const SPEED_OF_SOUND: f32 = 343.0; // m/s at 20°C
@@ -154,8 +159,8 @@ pub fn apply_near_field_shadowing(
         return;
     }
 
-    // Process each frequency bin
-    for k in 0..fft_size / 2 + 1 {
+    // Process each frequency bin (half-spectrum only, no mirroring needed for real FFT)
+    for k in 0..freq_size {
         // Frequency for bin k
         let freq = k as f32 * sample_rate as f32 / fft_size as f32;
 
@@ -213,14 +218,8 @@ pub fn apply_near_field_shadowing(
         // Convert dB to linear gain
         let gain = 10.0_f32.powf(scaled_atten_db / 20.0);
 
-        // Apply to shadowed ear
+        // Apply to shadowed ear (no mirroring needed with real FFT)
         shadowed_ear[k] *= gain;
-
-        // Mirror to negative frequencies (complex conjugate symmetry)
-        if k > 0 && k < fft_size / 2 {
-            let mirror_k = fft_size - k;
-            shadowed_ear[mirror_k] *= gain;
-        }
     }
 }
 
@@ -255,6 +254,8 @@ fn detect_ir_onset(ir: &[f32], sample_rate: u32) -> f32 {
 ///
 /// Interpolates magnitude (in dB) and phase (unwrapped) separately,
 /// then removes the interpolated ITD to avoid double-application.
+///
+/// Operates on half-spectrum (freq_size = N/2+1 bins).
 fn interpolate_hrtf_complex(
     source_hrtfs: &[Vec<Complex<f32>>],
     gains: &[f32; 3],
@@ -263,9 +264,10 @@ fn interpolate_hrtf_complex(
     sample_rate: u32,
     fft_size: usize,
 ) -> Vec<Complex<f32>> {
-    let mut result = vec![Complex::new(0.0, 0.0); fft_size];
+    let freq_size = fft_size / 2 + 1;
+    let mut result = vec![Complex::new(0.0, 0.0); freq_size];
 
-    for k in 0..fft_size {
+    for k in 0..freq_size {
         let mut mag_db = 0.0f32;
         let mut phase_sum = Complex::new(0.0, 0.0);
 
@@ -325,18 +327,22 @@ fn interpolate_hrtf_complex(
 ///
 /// 3. **Robust to Sparse Data**: Works well even with sparse HRTF datasets by
 ///    gracefully handling phase unwrapping and magnitude smoothing
+///
+/// Returns half-spectrum (N/2+1 bins) per ear for use with real FFT.
 pub fn interpolate_hrtf_frequency_domain(
     nearest: &[(usize, f32); 3],
     gains: &[f32; 3],
     sofa: &SofaFile,
     fft_size: usize,
     sample_rate: u32,
-    fft_forward: &Arc<dyn Fft<f32>>,
+    fft_r2c: &Arc<dyn RealToComplex<f32>>,
     near_field_strength: f32,
     target_azimuth: f32,
     target_elevation: f32,
 ) -> (Vec<Complex<f32>>, Vec<Complex<f32>>) {
-    // Convert all source HRTFs to frequency domain
+    let freq_size = fft_size / 2 + 1;
+
+    // Convert all source HRTFs to frequency domain (returns freq_size bins each)
     let mut left_hrtfs_freq = Vec::with_capacity(3);
     let mut right_hrtfs_freq = Vec::with_capacity(3);
     let mut left_itds = Vec::with_capacity(3);
@@ -344,9 +350,9 @@ pub fn interpolate_hrtf_frequency_domain(
 
     for (idx, _) in nearest.iter() {
         if let Some(hrtf) = sofa.get_hrtf(*idx) {
-            // Convert to frequency domain
-            let left_fft = ir_to_freq(&hrtf.ir_left, fft_size, fft_forward);
-            let right_fft = ir_to_freq(&hrtf.ir_right, fft_size, fft_forward);
+            // Convert to frequency domain (returns freq_size bins)
+            let left_fft = ir_to_freq(&hrtf.ir_left, fft_size, fft_r2c);
+            let right_fft = ir_to_freq(&hrtf.ir_right, fft_size, fft_r2c);
 
             // Detect ITD (onset delay) using threshold method
             let left_itd = detect_ir_onset(&hrtf.ir_left, sample_rate);
@@ -358,8 +364,8 @@ pub fn interpolate_hrtf_frequency_domain(
             right_itds.push(right_itd);
         } else {
             // Fallback: use zeros
-            left_hrtfs_freq.push(vec![Complex::new(0.0, 0.0); fft_size]);
-            right_hrtfs_freq.push(vec![Complex::new(0.0, 0.0); fft_size]);
+            left_hrtfs_freq.push(vec![Complex::new(0.0, 0.0); freq_size]);
+            right_hrtfs_freq.push(vec![Complex::new(0.0, 0.0); freq_size]);
             left_itds.push(0.0);
             right_itds.push(0.0);
         }
@@ -371,7 +377,7 @@ pub fn interpolate_hrtf_frequency_domain(
     let target_right_itd =
         gains[0] * right_itds[0] + gains[1] * right_itds[1] + gains[2] * right_itds[2];
 
-    // Interpolate left ear HRTF
+    // Interpolate left ear HRTF (returns freq_size bins)
     let mut left_fft = interpolate_hrtf_complex(
         &left_hrtfs_freq,
         gains,
@@ -381,7 +387,7 @@ pub fn interpolate_hrtf_frequency_domain(
         fft_size,
     );
 
-    // Interpolate right ear HRTF
+    // Interpolate right ear HRTF (returns freq_size bins)
     let mut right_fft = interpolate_hrtf_complex(
         &right_hrtfs_freq,
         gains,
@@ -411,10 +417,13 @@ pub fn interpolate_hrtf_frequency_domain(
 ///
 /// Calculates the worst-case scenario (all input channels at full scale)
 /// and normalizes all HRTFs to ensure the output stays within [-1, 1].
+///
+/// `freq_size` is the number of frequency bins (N/2+1 for half-spectrum).
+/// HRTFs are stored as [left_freq_size | right_freq_size] per channel.
 pub fn normalize_hrtf_gains(
-    hrtf_filters_freq: &mut Vec<Vec<Complex<f32>>>,
+    hrtf_filters_freq: &mut [Vec<Complex<f32>>],
     lfe_channels: &[usize],
-    fft_size: usize,
+    freq_size: usize,
     input_channels: usize,
 ) {
     let mut max_left_magnitude = 0.0f32;
@@ -422,7 +431,7 @@ pub fn normalize_hrtf_gains(
 
     // Find worst-case magnitude for each frequency bin
     // This is the sum of magnitudes when all channels play at full scale
-    for k in 0..fft_size {
+    for k in 0..freq_size {
         let mut left_sum = 0.0f32;
         let mut right_sum = 0.0f32;
 
@@ -434,7 +443,7 @@ pub fn normalize_hrtf_gains(
 
             let hrtf = &hrtf_filters_freq[ch];
             left_sum += hrtf[k].norm(); // Magnitude
-            right_sum += hrtf[k + fft_size].norm();
+            right_sum += hrtf[k + freq_size].norm();
         }
 
         max_left_magnitude = max_left_magnitude.max(left_sum);
