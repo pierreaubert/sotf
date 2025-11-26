@@ -1302,7 +1302,8 @@ above unity, the block is scaled down to stay within the cap.",
         }
 
         // Log warning if clipping occurred (only if valid samples exist)
-        if clipping_samples > 0 && max_clipping_value >= threshold && max_clipping_value.is_finite() {
+        if clipping_samples > 0 && max_clipping_value >= threshold && max_clipping_value.is_finite()
+        {
             let peak_db = 20.0 * max_clipping_value.log10();
             log::warn!(
                 "[UPMIXER] CLIPPING: {} samples exceeded threshold, peak: {:.2} dBFS ({:.2} dB above 0dBFS), safety_cap_db={:.1} dB",

@@ -1,48 +1,21 @@
 //! Stress Tests for Audio Engine
 //!
 //! Tests that stress the audio engine under heavy load and edge cases.
+//! All tests require BlackHole virtual audio device to avoid playing sound on real devices.
 
-use hound::{WavSpec, WavWriter};
-use sotf_audio::engine::{AudioEngine, EngineConfig, PlaybackState, PluginConfig};
-use std::path::PathBuf;
+mod common;
+
+use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use tempfile::NamedTempFile;
-
-/// Helper to create a test WAV file
-fn create_test_wav(duration_secs: f32, sample_rate: u32, channels: u16) -> NamedTempFile {
-    let spec = WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
-    let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
-
-    let num_samples = (duration_secs * sample_rate as f32) as usize;
-    for i in 0..num_samples {
-        let t = i as f32 / sample_rate as f32;
-        let sample = (t * 440.0 * 2.0 * std::f32::consts::PI).sin();
-        let amplitude = (sample * i16::MAX as f32 * 0.3) as i16;
-
-        for _ in 0..channels {
-            writer.write_sample(amplitude).unwrap();
-        }
-    }
-
-    writer.finalize().unwrap();
-    temp_file
-}
 
 #[test]
 fn stress_rapid_play_stop() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(0.5, 48000, 2);
+    let temp_file = common::create_test_wav(0.5, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Rapidly play and stop 100 times
@@ -59,10 +32,10 @@ fn stress_rapid_play_stop() {
 
 #[test]
 fn stress_rapid_pause_resume() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     thread::sleep(Duration::from_millis(50));
@@ -86,10 +59,10 @@ fn stress_rapid_pause_resume() {
 
 #[test]
 fn stress_rapid_seek() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(5.0, 48000, 2);
+    let temp_file = common::create_test_wav(5.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     thread::sleep(Duration::from_millis(100));
@@ -107,10 +80,10 @@ fn stress_rapid_seek() {
 
 #[test]
 fn stress_rapid_volume_changes() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     // Rapidly change volume 500 times
@@ -127,10 +100,10 @@ fn stress_rapid_volume_changes() {
 
 #[test]
 fn stress_rapid_mute_toggle() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     // Toggle mute 200 times
@@ -146,10 +119,10 @@ fn stress_rapid_mute_toggle() {
 
 #[test]
 fn stress_concurrent_state_queries() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let engine = Arc::new(Mutex::new(AudioEngine::new(config).unwrap()));
 
-    let temp_file = create_test_wav(3.0, 48000, 2);
+    let temp_file = common::create_test_wav(3.0, 48000, 2);
     engine
         .lock()
         .unwrap()
@@ -184,10 +157,10 @@ fn stress_concurrent_state_queries() {
 
 #[test]
 fn stress_concurrent_commands() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let engine = Arc::new(Mutex::new(AudioEngine::new(config).unwrap()));
 
-    let temp_file = create_test_wav(5.0, 48000, 2);
+    let temp_file = common::create_test_wav(5.0, 48000, 2);
     let path = Arc::new(temp_file.path().to_path_buf());
 
     // Spawn threads sending different commands
@@ -248,10 +221,10 @@ fn stress_concurrent_commands() {
 
 #[test]
 fn stress_plugin_chain_updates() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(3.0, 48000, 2);
+    let temp_file = common::create_test_wav(3.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     thread::sleep(Duration::from_millis(100));
@@ -280,11 +253,11 @@ fn stress_plugin_chain_updates() {
 
 #[test]
 fn stress_long_playback() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a longer file
-    let temp_file = create_test_wav(10.0, 48000, 2);
+    let temp_file = common::create_test_wav(10.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     // Let it play for several seconds, checking state periodically
@@ -309,12 +282,12 @@ fn stress_long_playback() {
 
 #[test]
 fn stress_many_short_files() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Play many short files in sequence
     for _ in 0..20 {
-        let temp_file = create_test_wav(0.1, 48000, 2);
+        let temp_file = common::create_test_wav(0.1, 48000, 2);
         engine.play(temp_file.path().to_path_buf()).unwrap();
 
         // Wait for file to finish
@@ -331,10 +304,10 @@ fn stress_many_short_files() {
 
 #[test]
 fn stress_seek_to_extremes() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(5.0, 48000, 2);
+    let temp_file = common::create_test_wav(5.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     thread::sleep(Duration::from_millis(100));
@@ -353,7 +326,7 @@ fn stress_seek_to_extremes() {
 
 #[test]
 fn stress_bypass_toggle() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Set up a plugin chain
@@ -363,7 +336,7 @@ fn stress_bypass_toggle() {
     )];
     engine.update_plugin_chain(plugins).ok();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     thread::sleep(Duration::from_millis(100));
@@ -380,10 +353,10 @@ fn stress_bypass_toggle() {
 
 #[test]
 fn stress_interleaved_operations() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(5.0, 48000, 2);
+    let temp_file = common::create_test_wav(5.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Perform a complex sequence of interleaved operations
@@ -425,10 +398,10 @@ fn stress_interleaved_operations() {
 fn stress_rapid_engine_recreation() {
     // Create and destroy engines rapidly
     for _ in 0..10 {
-        let config = EngineConfig::default();
+        let config = common::test_engine_config();
         let mut engine = AudioEngine::new(config).unwrap();
 
-        let temp_file = create_test_wav(0.5, 48000, 2);
+        let temp_file = common::create_test_wav(0.5, 48000, 2);
         engine.play(temp_file.path().to_path_buf()).ok();
 
         thread::sleep(Duration::from_millis(50));
@@ -440,10 +413,10 @@ fn stress_rapid_engine_recreation() {
 
 #[test]
 fn stress_position_polling() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(3.0, 48000, 2);
+    let temp_file = common::create_test_wav(3.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     // Poll position very rapidly
@@ -457,10 +430,10 @@ fn stress_position_polling() {
 
 #[test]
 fn stress_state_polling() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(3.0, 48000, 2);
+    let temp_file = common::create_test_wav(3.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     // Poll state very rapidly
@@ -475,10 +448,10 @@ fn stress_state_polling() {
 
 #[test]
 fn stress_empty_plugin_chain_updates() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     thread::sleep(Duration::from_millis(100));
@@ -504,7 +477,7 @@ fn stress_empty_plugin_chain_updates() {
 
 #[test]
 fn stress_volume_extremes() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Test extreme volume values
@@ -524,14 +497,13 @@ fn stress_different_sample_rates() {
     let sample_rates = [44100, 48000, 88200, 96000];
 
     for &sr in &sample_rates {
-        let config = EngineConfig {
-            output_sample_rate: sr,
-            ..Default::default()
-        };
+        let config = common::test_engine_config_with(|c| {
+            c.output_sample_rate = sr;
+        });
 
         match AudioEngine::new(config) {
             Ok(mut engine) => {
-                let temp_file = create_test_wav(0.5, sr, 2);
+                let temp_file = common::create_test_wav(0.5, sr, 2);
                 engine.play(temp_file.path().to_path_buf()).ok();
 
                 thread::sleep(Duration::from_millis(100));
@@ -540,7 +512,7 @@ fn stress_different_sample_rates() {
                 assert!(state.playback_state != PlaybackState::Paused || true);
             }
             Err(_) => {
-                // Hardware might not support this rate
+                // BlackHole might not support this rate
             }
         }
     }
@@ -548,13 +520,13 @@ fn stress_different_sample_rates() {
 
 #[test]
 fn stress_mixed_sample_rate_files() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     let sample_rates = [44100, 48000, 88200];
 
     for &sr in &sample_rates {
-        let temp_file = create_test_wav(0.2, sr, 2);
+        let temp_file = common::create_test_wav(0.2, sr, 2);
         engine.play(temp_file.path().to_path_buf()).ok();
 
         thread::sleep(Duration::from_millis(150));

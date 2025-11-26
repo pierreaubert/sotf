@@ -1,18 +1,17 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use sotf_plugins::{CompressorPlugin, CompressorPluginParams};
 use sotf_plugins::{InPlacePlugin, ProcessContext};
 
 fn benchmark_compressor(c: &mut Criterion) {
     let mut group = c.benchmark_group("Compressor");
-    
+
     // Setup
     let channels = 2;
     let sample_rate = 48000;
     let buffer_size = 1024;
-    
+
     let mut plugin = CompressorPlugin::new(
-        channels,
-        -20.0, // Threshold
+        channels, -20.0, // Threshold
         4.0,   // Ratio
         5.0,   // Attack
         50.0,  // Release
@@ -20,13 +19,13 @@ fn benchmark_compressor(c: &mut Criterion) {
         0.0,   // Makeup
     );
     plugin.initialize(sample_rate).unwrap();
-    
+
     let mut buffer = vec![0.0; buffer_size * channels];
     // Fill with some data
     for i in 0..buffer.len() {
         buffer[i] = (i as f32 / buffer.len() as f32).sin();
     }
-    
+
     let context = ProcessContext {
         sample_rate: sample_rate,
         num_frames: buffer_size,
@@ -34,10 +33,12 @@ fn benchmark_compressor(c: &mut Criterion) {
 
     group.bench_function("process_stereo_linked", |b| {
         b.iter(|| {
-            plugin.process_in_place(black_box(&mut buffer), black_box(&context)).unwrap();
+            plugin
+                .process_in_place(black_box(&mut buffer), black_box(&context))
+                .unwrap();
         })
     });
-    
+
     // Unlink channels
     let params = CompressorPluginParams {
         link_channels: false,
@@ -56,7 +57,9 @@ fn benchmark_compressor(c: &mut Criterion) {
 
     group.bench_function("process_stereo_unlinked", |b| {
         b.iter(|| {
-            plugin_unlinked.process_in_place(black_box(&mut buffer), black_box(&context)).unwrap();
+            plugin_unlinked
+                .process_in_place(black_box(&mut buffer), black_box(&context))
+                .unwrap();
         })
     });
 

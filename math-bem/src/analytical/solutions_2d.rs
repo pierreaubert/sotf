@@ -74,10 +74,7 @@ pub fn cylinder_scattering_2d(
             positions.push(Point::from_polar(r, theta));
 
             // Incident wave: exp(ikr cos θ)
-            let incident = Complex64::new(
-                (kr * theta.cos()).cos(),
-                (kr * theta.cos()).sin(),
-            );
+            let incident = Complex64::new((kr * theta.cos()).cos(), (kr * theta.cos()).sin());
 
             // Scattered wave: cosine expansion includes ±n symmetry explicitly
             let mut scattered = Complex64::new(0.0, 0.0);
@@ -148,10 +145,7 @@ fn compute_rigid_cylinder_coefficients(ka: f64, num_terms: usize) -> Vec<Complex
         let hankel_prime = Complex64::new(jn_prime, yn_prime);
 
         // i^n = exp(i*n*π/2)
-        let i_power_n = Complex64::new(
-            (n_f64 * PI / 2.0).cos(),
-            (n_f64 * PI / 2.0).sin(),
-        );
+        let i_power_n = Complex64::new((n_f64 * PI / 2.0).cos(), (n_f64 * PI / 2.0).sin());
 
         let a_n = -jn_prime / hankel_prime * i_power_n;
 
@@ -244,15 +238,15 @@ mod tests {
             k,
             a,
             10,
-            vec![2.0],  // Outside cylinder
+            vec![2.0], // Outside cylinder
             vec![0.0, PI / 2.0, PI],
         );
 
         // At low frequency, scattering should be weak
         // Total field ≈ incident field
         for p in &solution.pressure {
-            assert!(p.norm() > 0.5);  // Not completely scattered
-            assert!(p.norm() < 2.0);  // Not strongly scattered
+            assert!(p.norm() > 0.5); // Not completely scattered
+            assert!(p.norm() < 2.0); // Not strongly scattered
         }
     }
 
@@ -266,7 +260,7 @@ mod tests {
             k,
             a,
             30,
-            vec![a],  // On surface
+            vec![a], // On surface
             (0..36).map(|i| i as f64 * 2.0 * PI / 36.0).collect(),
         );
 
@@ -289,7 +283,7 @@ mod tests {
             a,
             20,
             vec![2.0],
-            vec![PI / 4.0, -PI / 4.0],  // Symmetric angles
+            vec![PI / 4.0, -PI / 4.0], // Symmetric angles
         );
 
         // Magnitudes should be equal due to symmetry

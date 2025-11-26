@@ -76,8 +76,12 @@ impl SystemResources {
     /// Print resource summary
     pub fn print_summary(&self) {
         println!("System Resources:");
-        println!("  RAM: {:.1} / {:.1} MB ({:.1}% used)",
-                 self.used_ram_mb, self.total_ram_mb, self.ram_usage_percent());
+        println!(
+            "  RAM: {:.1} / {:.1} MB ({:.1}% used)",
+            self.used_ram_mb,
+            self.total_ram_mb,
+            self.ram_usage_percent()
+        );
         println!("  Available RAM: {:.1} MB", self.available_ram_mb);
         println!("  CPU Usage: {:.1}%", self.cpu_usage_percent);
         println!("  CPU Cores: {}", self.num_cpus);
@@ -221,9 +225,7 @@ mod tests {
 
     #[test]
     fn test_resource_monitor() {
-        let mut monitor = ResourceMonitor::new()
-            .with_max_cpu(95.0)
-            .with_max_ram(90.0);
+        let mut monitor = ResourceMonitor::new().with_max_cpu(95.0).with_max_ram(90.0);
 
         let resources = monitor.sample().unwrap();
         assert_eq!(monitor.num_samples(), 1);

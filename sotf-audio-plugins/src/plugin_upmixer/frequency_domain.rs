@@ -31,8 +31,11 @@ impl UpmixerPlugin {
     pub(super) fn process_frequency_domain_erb_bands(&mut self) {
         // Guard against uninitialized state
         if self.sample_rate == 0 || self.fft_size == 0 {
-            log::error!("[UPMIXER] process_frequency_domain_erb_bands called with sample_rate={} fft_size={}",
-                self.sample_rate, self.fft_size);
+            log::error!(
+                "[UPMIXER] process_frequency_domain_erb_bands called with sample_rate={} fft_size={}",
+                self.sample_rate,
+                self.fft_size
+            );
             return;
         }
 
@@ -306,7 +309,11 @@ mod tests {
         let values = [-10.0_f32, -1.0, 0.0, 0.5, 0.999_999, 1.0, 1.000_001, 10.0];
         for &c in &values {
             let g = base_ambient_gain_from_coherence(c);
-            assert!(g.is_finite(), "base_ambient_gain not finite for coherence={}", c);
+            assert!(
+                g.is_finite(),
+                "base_ambient_gain not finite for coherence={}",
+                c
+            );
             assert!(g >= 0.0);
         }
     }

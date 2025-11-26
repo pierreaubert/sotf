@@ -1,67 +1,33 @@
 //! Channel Mute/Solo Tests
 //!
 //! Integration tests for channel mute/solo functionality at the audio engine level.
+//! All tests require BlackHole virtual audio device to avoid playing sound on real devices.
 
-use hound::{WavSpec, WavWriter};
+mod common;
+
 use serde_json::json;
-use sotf_audio::engine::{AudioEngine, EngineConfig, PlaybackState, PluginConfig};
+use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
 use std::time::Duration;
-use tempfile::NamedTempFile;
-
-/// Helper to create a multi-channel test WAV file with distinct tones per channel
-fn create_multichannel_test_wav(
-    duration_secs: f32,
-    sample_rate: u32,
-    channels: u16,
-) -> NamedTempFile {
-    let spec = WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
-    let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
-
-    let num_frames = (duration_secs * sample_rate as f32) as usize;
-
-    // Generate different frequencies for each channel for easier identification
-    let base_freq = 440.0; // A4
-    for frame in 0..num_frames {
-        let t = frame as f32 / sample_rate as f32;
-
-        for ch in 0..channels {
-            // Each channel gets a different frequency (440Hz, 550Hz, 660Hz, etc.)
-            let freq = base_freq + (ch as f32 * 110.0);
-            let sample = (t * freq * 2.0 * std::f32::consts::PI).sin();
-            let amplitude = (sample * i16::MAX as f32 * 0.3) as i16;
-            writer.write_sample(amplitude).unwrap();
-        }
-    }
-
-    writer.finalize().unwrap();
-    temp_file
-}
 
 #[test]
 fn test_engine_with_mute_solo_plugin() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // Create a config with ChannelMuteSolo plugin
-    let mut config = EngineConfig::default();
-    config.plugins = vec![PluginConfig::new(
-        "channel_mute_solo",
-        json!({
-            "enabled": false,
-            "channel_states": []
-        }),
-    )];
+    // Create a config with ChannelMuteSolo plugin (using BlackHole device)
+    let config = common::test_engine_config_with(|c| {
+        c.plugins = vec![PluginConfig::new(
+            "channel_mute_solo",
+            json!({
+                "enabled": false,
+                "channel_states": []
+            }),
+        )];
+    });
 
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
-    let temp_file = create_multichannel_test_wav(1.0, 48000, 2);
+    let temp_file = common::create_multichannel_test_wav(1.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Start playback
@@ -78,23 +44,24 @@ fn test_engine_with_mute_solo_plugin() {
 fn test_mute_channel_via_parameter_update() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // Create a config with ChannelMuteSolo plugin
-    let mut config = EngineConfig::default();
-    config.plugins = vec![PluginConfig::new(
-        "channel_mute_solo",
-        json!({
-            "enabled": false,
-            "channel_states": [
-                {"muted": false, "soloed": false},
-                {"muted": false, "soloed": false}
-            ]
-        }),
-    )];
+    // Create a config with ChannelMuteSolo plugin (using BlackHole device)
+    let config = common::test_engine_config_with(|c| {
+        c.plugins = vec![PluginConfig::new(
+            "channel_mute_solo",
+            json!({
+                "enabled": false,
+                "channel_states": [
+                    {"muted": false, "soloed": false},
+                    {"muted": false, "soloed": false}
+                ]
+            }),
+        )];
+    });
 
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
-    let temp_file = create_multichannel_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_multichannel_test_wav(2.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Start playback
@@ -127,23 +94,24 @@ fn test_mute_channel_via_parameter_update() {
 fn test_solo_channel_via_parameter_update() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // Create a config with ChannelMuteSolo plugin
-    let mut config = EngineConfig::default();
-    config.plugins = vec![PluginConfig::new(
-        "channel_mute_solo",
-        json!({
-            "enabled": false,
-            "channel_states": [
-                {"muted": false, "soloed": false},
-                {"muted": false, "soloed": false}
-            ]
-        }),
-    )];
+    // Create a config with ChannelMuteSolo plugin (using BlackHole device)
+    let config = common::test_engine_config_with(|c| {
+        c.plugins = vec![PluginConfig::new(
+            "channel_mute_solo",
+            json!({
+                "enabled": false,
+                "channel_states": [
+                    {"muted": false, "soloed": false},
+                    {"muted": false, "soloed": false}
+                ]
+            }),
+        )];
+    });
 
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
-    let temp_file = create_multichannel_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_multichannel_test_wav(2.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Start playback
@@ -176,23 +144,24 @@ fn test_solo_channel_via_parameter_update() {
 fn test_multiple_mute_solo_updates() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // Create a config with ChannelMuteSolo plugin
-    let mut config = EngineConfig::default();
-    config.plugins = vec![PluginConfig::new(
-        "channel_mute_solo",
-        json!({
-            "enabled": false,
-            "channel_states": [
-                {"muted": false, "soloed": false},
-                {"muted": false, "soloed": false}
-            ]
-        }),
-    )];
+    // Create a config with ChannelMuteSolo plugin (using BlackHole device)
+    let config = common::test_engine_config_with(|c| {
+        c.plugins = vec![PluginConfig::new(
+            "channel_mute_solo",
+            json!({
+                "enabled": false,
+                "channel_states": [
+                    {"muted": false, "soloed": false},
+                    {"muted": false, "soloed": false}
+                ]
+            }),
+        )];
+    });
 
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file
-    let temp_file = create_multichannel_test_wav(3.0, 48000, 2);
+    let temp_file = common::create_multichannel_test_wav(3.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Start playback
@@ -266,52 +235,53 @@ fn test_multiple_mute_solo_updates() {
 fn test_multichannel_selective_muting() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // Create a 6-channel (5.1) config with upmixer and ChannelMuteSolo plugin
-    let mut config = EngineConfig::default();
-    config.output_channels = 6;
-    config.plugins = vec![
-        // Upmixer to convert stereo → 5.1
-        PluginConfig::new(
-            "upmixer",
-            json!({
-                "speaker_config": "5.1",
-                "gain_front_direct": 1.0,
-                "gain_front_ambient": 0.5,
-                "gain_rear_ambient": 1.0,
-                "lfe_cutoff_hz": 120.0,
-                "stereo_width": 0.5,
-                "bandpass_hz": 250.0,
-                "height_gain": 1.0,
-                "lfe_gain": 1.0,
-                "enable_subharmonic_synth": false,
-                "subharmonic_gain": 0.5,
-                "enable_hr_direct": false,
-                "hr_sharpen": 1.0,
-                "safety_cap_db": 3.0,
-                "decorrelation_mode": 0
-            }),
-        ),
-        // ChannelMuteSolo plugin after upmixer
-        PluginConfig::new(
-            "channel_mute_solo",
-            json!({
-                "enabled": false,
-                "channel_states": [
-                    {"muted": false, "soloed": false},
-                    {"muted": false, "soloed": false},
-                    {"muted": false, "soloed": false},
-                    {"muted": false, "soloed": false},
-                    {"muted": false, "soloed": false},
-                    {"muted": false, "soloed": false}
-                ]
-            }),
-        ),
-    ];
+    // Create a 6-channel (5.1) config with upmixer and ChannelMuteSolo plugin (using BlackHole device)
+    let config = common::test_engine_config_with(|c| {
+        c.output_channels = 6;
+        c.plugins = vec![
+            // Upmixer to convert stereo → 5.1
+            PluginConfig::new(
+                "upmixer",
+                json!({
+                    "speaker_config": "5.1",
+                    "gain_front_direct": 1.0,
+                    "gain_front_ambient": 0.5,
+                    "gain_rear_ambient": 1.0,
+                    "lfe_cutoff_hz": 120.0,
+                    "stereo_width": 0.5,
+                    "bandpass_hz": 250.0,
+                    "height_gain": 1.0,
+                    "lfe_gain": 1.0,
+                    "enable_subharmonic_synth": false,
+                    "subharmonic_gain": 0.5,
+                    "enable_hr_direct": false,
+                    "hr_sharpen": 1.0,
+                    "safety_cap_db": 3.0,
+                    "decorrelation_mode": 0
+                }),
+            ),
+            // ChannelMuteSolo plugin after upmixer
+            PluginConfig::new(
+                "channel_mute_solo",
+                json!({
+                    "enabled": false,
+                    "channel_states": [
+                        {"muted": false, "soloed": false},
+                        {"muted": false, "soloed": false},
+                        {"muted": false, "soloed": false},
+                        {"muted": false, "soloed": false},
+                        {"muted": false, "soloed": false},
+                        {"muted": false, "soloed": false}
+                    ]
+                }),
+            ),
+        ];
+    });
 
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file (will be upmixed to 5.1)
-    let temp_file = create_multichannel_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_multichannel_test_wav(2.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Start playback
@@ -352,23 +322,24 @@ fn test_multichannel_selective_muting() {
 fn test_zero_dropout_rapid_updates() {
     let _ = env_logger::builder().is_test(true).try_init();
 
-    // Create a config with ChannelMuteSolo plugin
-    let mut config = EngineConfig::default();
-    config.plugins = vec![PluginConfig::new(
-        "channel_mute_solo",
-        json!({
-            "enabled": false,
-            "channel_states": [
-                {"muted": false, "soloed": false},
-                {"muted": false, "soloed": false}
-            ]
-        }),
-    )];
+    // Create a config with ChannelMuteSolo plugin (using BlackHole device)
+    let config = common::test_engine_config_with(|c| {
+        c.plugins = vec![PluginConfig::new(
+            "channel_mute_solo",
+            json!({
+                "enabled": false,
+                "channel_states": [
+                    {"muted": false, "soloed": false},
+                    {"muted": false, "soloed": false}
+                ]
+            }),
+        )];
+    });
 
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a stereo test file (longer duration for rapid updates)
-    let temp_file = create_multichannel_test_wav(5.0, 48000, 2);
+    let temp_file = common::create_multichannel_test_wav(5.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Start playback

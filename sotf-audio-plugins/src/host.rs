@@ -578,9 +578,10 @@ impl DawHost {
             .get_mut(node_id)
             .ok_or_else(|| format!("Node {} not found", node_id))?;
 
-        let mut plugin = node.plugin.lock().map_err(|e| {
-            format!("Failed to lock plugin at index {}: {}", index, e)
-        })?;
+        let mut plugin = node
+            .plugin
+            .lock()
+            .map_err(|e| format!("Failed to lock plugin at index {}: {}", index, e))?;
 
         plugin.set_parameter(super::parameters::ParameterId(param_id.to_string()), value)
     }

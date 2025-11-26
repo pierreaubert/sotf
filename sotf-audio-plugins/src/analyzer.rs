@@ -66,10 +66,20 @@ pub struct LoudnessData {
     pub momentary_lufs: f64,
     /// Short-term loudness (S) - 3 second window, LUFS
     pub shortterm_lufs: f64,
+    /// Integrated loudness (I) - whole program loudness, LUFS
+    pub integrated_lufs: f64,
     /// Current sample peak (0.0 to 1.0+)
     pub peak: f64,
-    /// Per-channel peaks (0.0 to 1.0+)
+    /// Per-channel sample peaks (0.0 to 1.0+)
     pub channel_peaks: Vec<f64>,
+    /// Per-channel true peaks in dBTP (dB True Peak)
+    /// True peaks account for inter-sample peaks via oversampling
+    pub true_peaks_dbtp: Vec<f64>,
+    /// L/R correlation coefficient (ICC - Inter-Channel Correlation)
+    /// Only valid for stereo signals (2 channels)
+    /// Range: -1.0 (anti-correlated) to +1.0 (fully correlated)
+    /// None if not stereo or not enough data
+    pub correlation_lr: Option<f64>,
 }
 
 /// Spectrum analyzer data

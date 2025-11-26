@@ -743,7 +743,11 @@ mod tests {
         complex_mul_inplace_simd(&mut src, &conj);
         // a * conj(a) = |a|^2 = 3^2 + 4^2 = 25
         for i in 0..8 {
-            assert!((src[i].re - 25.0).abs() < 1e-5, "Expected 25.0, got {}", src[i].re);
+            assert!(
+                (src[i].re - 25.0).abs() < 1e-5,
+                "Expected 25.0, got {}",
+                src[i].re
+            );
             assert!(src[i].im.abs() < 1e-5, "Expected ~0, got {}", src[i].im);
         }
 
@@ -753,7 +757,11 @@ mod tests {
         complex_mul_inplace_simd(&mut src, &i_val);
         for idx in 0..4 {
             assert!(src[idx].re.abs() < 1e-6, "Expected 0, got {}", src[idx].re);
-            assert!((src[idx].im - 1.0).abs() < 1e-6, "Expected 1, got {}", src[idx].im);
+            assert!(
+                (src[idx].im - 1.0).abs() < 1e-6,
+                "Expected 1, got {}",
+                src[idx].im
+            );
         }
     }
 
@@ -1054,11 +1062,16 @@ mod tests {
 
         // Test 2: Real-only signals
         let real_left: Vec<Complex<f32>> = (0..8).map(|i| Complex::new(i as f32, 0.0)).collect();
-        let real_right: Vec<Complex<f32>> = (0..8).map(|i| Complex::new((i as f32) * 0.5, 0.0)).collect();
+        let real_right: Vec<Complex<f32>> = (0..8)
+            .map(|i| Complex::new((i as f32) * 0.5, 0.0))
+            .collect();
         let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&real_left, &real_right, 0, 8);
 
         // cov_xy should be real (imaginary part should be ~0)
-        assert!(cov_xy.im.abs() < 1e-5, "Expected real cov_xy for real signals");
+        assert!(
+            cov_xy.im.abs() < 1e-5,
+            "Expected real cov_xy for real signals"
+        );
 
         // Verify values match scalar computation
         let mut expected_xx = 0.0;
@@ -1072,18 +1085,23 @@ mod tests {
 
         // Test 3: Imaginary-only signals
         let imag_left: Vec<Complex<f32>> = (0..8).map(|i| Complex::new(0.0, i as f32)).collect();
-        let imag_right: Vec<Complex<f32>> = (0..8).map(|i| Complex::new(0.0, (i as f32) * 2.0)).collect();
+        let imag_right: Vec<Complex<f32>> = (0..8)
+            .map(|i| Complex::new(0.0, (i as f32) * 2.0))
+            .collect();
         let (_cov_xx, _cov_yy, cov_xy) = compute_covariance_simd(&imag_left, &imag_right, 0, 8);
 
         // cov_xy should be real (because conj flips imaginary sign)
-        assert!(cov_xy.im.abs() < 1e-5, "Expected real cov_xy for imaginary signals");
+        assert!(
+            cov_xy.im.abs() < 1e-5,
+            "Expected real cov_xy for imaginary signals"
+        );
 
         // Test 4: Single element range
         let single_left = vec![Complex::new(3.0, 4.0)];
         let single_right = vec![Complex::new(1.0, 2.0)];
         let (cov_xx, cov_yy, cov_xy) = compute_covariance_simd(&single_left, &single_right, 0, 1);
         assert!((cov_xx - 25.0).abs() < 1e-5); // 3^2 + 4^2 = 25
-        assert!((cov_yy - 5.0).abs() < 1e-5);  // 1^2 + 2^2 = 5
+        assert!((cov_yy - 5.0).abs() < 1e-5); // 1^2 + 2^2 = 5
         // (3 + 4i) * (1 - 2i) = 3 - 6i + 4i - 8i^2 = 3 - 2i + 8 = 11 - 2i
         assert!((cov_xy.re - 11.0).abs() < 1e-5);
         assert!((cov_xy.im - (-2.0)).abs() < 1e-5);
@@ -1174,8 +1192,18 @@ mod tests {
         for i in 0..src.len() {
             let re_rel_err = (result[i].re - expected[i].re).abs() / expected[i].re.abs().max(1.0);
             let im_rel_err = (result[i].im - expected[i].im).abs() / expected[i].im.abs().max(1.0);
-            assert!(re_rel_err < 1e-5, "Index {}: re rel error too large: {}", i, re_rel_err);
-            assert!(im_rel_err < 1e-5, "Index {}: im rel error too large: {}", i, im_rel_err);
+            assert!(
+                re_rel_err < 1e-5,
+                "Index {}: re rel error too large: {}",
+                i,
+                re_rel_err
+            );
+            assert!(
+                im_rel_err < 1e-5,
+                "Index {}: im rel error too large: {}",
+                i,
+                im_rel_err
+            );
         }
     }
 

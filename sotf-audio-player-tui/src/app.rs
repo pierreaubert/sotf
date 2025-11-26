@@ -84,13 +84,14 @@ pub struct ChannelGroup {
     pub channels: Vec<ChannelInfo>,
     pub muted: bool,
     pub soloed: bool,
+    pub dimmed: bool,
 }
 
 /// Individual channel information
 #[derive(Debug, Clone)]
 pub struct ChannelInfo {
-    pub index: usize,      // Index in loudness.channel_peaks
-    pub name: String,      // e.g., "FL", "FR", "C"
+    pub index: usize,              // Index in loudness.channel_peaks
+    pub name: String,              // e.g., "FL", "FR", "C"
     pub display_name: Vec<String>, // Multi-line display: ["F", "L"] or ["T", "B", "R"]
 }
 
@@ -207,7 +208,7 @@ pub struct App {
     // Level meters
     pub level_meter_groups: Vec<ChannelGroup>,
     pub selected_level_meter_group: usize,
-    pub level_meter_control_selection: usize, // 0 = Mute, 1 = Solo
+    pub level_meter_control_selection: usize, // 0 = Mute, 1 = Solo, 2 = Dim
 
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
@@ -1227,32 +1228,93 @@ impl App {
             return;
         }
 
-        // Find which artist node we're on
-        let mut current_row = 0;
-        for artist_node in &mut self.artist_tree {
-            if current_row == self.selected_tree_index {
-                artist_node.expanded = !artist_node.expanded;
-                return;
-            }
-            current_row += 1;
-            if artist_node.expanded {
-                current_row += artist_node.album_indices.len();
+        // Get the filtered tree items to find which artist we're on
+        let tree_items = self.get_tree_items();
+        if let Some(TreeItem::Artist { name, .. }) = tree_items.get(self.selected_tree_index) {
+            // Find this artist in the tree and toggle expansion
+            for artist_node in &mut self.artist_tree {
+                if artist_node.artist == *name {
+                    artist_node.expanded = !artist_node.expanded;
+                    return;
+                }
             }
         }
     }
 
+    /// Get the set of album indices that pass the current search and channel filters
+    fn filtered_album_indices(&self) -> std::collections::HashSet<usize> {
+        use sotf_audio_player::AlbumChannelType;
+        use std::collections::HashSet;
+
+        let mut indices: HashSet<usize> = if self.search_query.is_empty() {
+            (0..self.library.albums.len()).collect()
+        } else {
+            // Get filtered albums and find their indices in the library
+            let filtered = self.library.search_albums(&self.search_query);
+            self.library
+                .albums
+                .iter()
+                .enumerate()
+                .filter(|(_, album)| filtered.iter().any(|a| std::ptr::eq(*a, *album)))
+                .map(|(idx, _)| idx)
+                .collect()
+        };
+
+        // Apply channel filter
+        indices.retain(|&idx| {
+            if let Some(album) = self.library.albums.get(idx) {
+                match self.channel_filter {
+                    ChannelFilter::All => true,
+                    ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
+                    ChannelFilter::Stereo => {
+                        matches!(album.channel_type(), Some(AlbumChannelType::Stereo))
+                    }
+                    ChannelFilter::Multichannel => {
+                        matches!(
+                            album.channel_type(),
+                            Some(AlbumChannelType::Multichannel(_))
+                        )
+                    }
+                    ChannelFilter::Mixed => {
+                        matches!(album.channel_type(), Some(AlbumChannelType::Mixed))
+                    }
+                    ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
+                }
+            } else {
+                false
+            }
+        });
+
+        indices
+    }
+
     /// Get the flattened tree items for rendering (returns artist names or album indices)
+    /// Respects search query and channel filter
     pub fn get_tree_items(&self) -> Vec<TreeItem> {
         let mut items = Vec::new();
+        let filtered_indices = self.filtered_album_indices();
 
         for artist_node in &self.artist_tree {
+            // Filter albums for this artist
+            let visible_albums: Vec<usize> = artist_node
+                .album_indices
+                .iter()
+                .copied()
+                .filter(|idx| filtered_indices.contains(idx))
+                .collect();
+
+            // Skip artists with no visible albums
+            if visible_albums.is_empty() {
+                continue;
+            }
+
             items.push(TreeItem::Artist {
                 name: artist_node.artist.clone(),
                 expanded: artist_node.expanded,
             });
 
             if artist_node.expanded {
-                for &album_idx in &artist_node.album_indices {
+                for album_idx in visible_albums {
                     items.push(TreeItem::Album { index: album_idx });
                 }
             }
@@ -1298,18 +1360,21 @@ impl App {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.is_playing;
         let tree_items = self.get_tree_items();
+        let filtered_indices = self.filtered_album_indices();
 
         if let Some(item) = tree_items.get(self.selected_tree_index) {
             match item {
-                TreeItem::Artist { .. } => {
-                    // Add all albums from this artist
-                    let mut current_row = 0;
+                TreeItem::Artist { name, .. } => {
+                    // Find this artist in the tree and add their filtered albums
                     for artist_node in &self.artist_tree {
-                        if current_row == self.selected_tree_index {
+                        if artist_node.artist == *name {
+                            // Add only albums that pass the current filter
                             for &album_idx in &artist_node.album_indices {
-                                if let Some(album) = self.library.albums.get(album_idx) {
-                                    self.queue.push(QueueItem::new(album.clone()));
-                                    self.expanded_queue_items.push(false);
+                                if filtered_indices.contains(&album_idx) {
+                                    if let Some(album) = self.library.albums.get(album_idx) {
+                                        self.queue.push(QueueItem::new(album.clone()));
+                                        self.expanded_queue_items.push(false);
+                                    }
                                 }
                             }
                             // Auto-play if queue was empty OR if nothing was playing
@@ -1317,10 +1382,6 @@ impl App {
                                 return self.start_queue();
                             }
                             return None;
-                        }
-                        current_row += 1;
-                        if artist_node.expanded {
-                            current_row += artist_node.album_indices.len();
                         }
                     }
                 }
@@ -2443,6 +2504,7 @@ impl App {
                     }],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
             }
             2 => {
@@ -2463,6 +2525,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
             }
             4 => {
@@ -2483,6 +2546,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Surrounds".to_string(),
@@ -2500,6 +2564,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
             }
             6 => {
@@ -2520,6 +2585,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Center".to_string(),
@@ -2530,6 +2596,7 @@ impl App {
                     }],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "LFE".to_string(),
@@ -2540,6 +2607,7 @@ impl App {
                     }],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Surrounds".to_string(),
@@ -2557,6 +2625,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
             }
             8 => {
@@ -2577,6 +2646,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Center".to_string(),
@@ -2587,6 +2657,7 @@ impl App {
                     }],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "LFE".to_string(),
@@ -2597,6 +2668,7 @@ impl App {
                     }],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Surrounds".to_string(),
@@ -2624,6 +2696,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
             }
             10 => {
@@ -2644,6 +2717,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Center".to_string(),
@@ -2654,6 +2728,7 @@ impl App {
                     }],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "LFE".to_string(),
@@ -2664,6 +2739,7 @@ impl App {
                     }],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Surrounds".to_string(),
@@ -2681,6 +2757,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
                 self.level_meter_groups.push(ChannelGroup {
                     name: "Top".to_string(),
@@ -2708,6 +2785,7 @@ impl App {
                     ],
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
             }
             _ => {
@@ -2725,6 +2803,7 @@ impl App {
                     channels,
                     muted: false,
                     soloed: false,
+                    dimmed: false,
                 });
             }
         }
@@ -2733,18 +2812,22 @@ impl App {
         self.update_channel_mute_solo_plugin();
     }
 
-    /// Clear all mutes and solos in level meter groups
+    /// Clear all mutes, solos, and dims in level meter groups
     pub fn clear_level_meter_mutes_and_solos(&mut self) {
         for group in &mut self.level_meter_groups {
             group.muted = false;
             group.soloed = false;
+            group.dimmed = false;
         }
         self.update_channel_mute_solo_plugin();
     }
 
     /// Toggle mute for the selected level meter group
     pub fn toggle_level_meter_mute(&mut self) {
-        if let Some(group) = self.level_meter_groups.get_mut(self.selected_level_meter_group) {
+        if let Some(group) = self
+            .level_meter_groups
+            .get_mut(self.selected_level_meter_group)
+        {
             group.muted = !group.muted;
             self.update_channel_mute_solo_plugin();
         }
@@ -2752,23 +2835,34 @@ impl App {
 
     /// Toggle solo for the selected level meter group
     pub fn toggle_level_meter_solo(&mut self) {
-        if let Some(group) = self.level_meter_groups.get_mut(self.selected_level_meter_group) {
-            group.soloed = !group.soloed;
+        if let Some(group) = self
+            .level_meter_groups
+            .get_mut(self.selected_level_meter_group)
+        {
+            let is_currently_soloed = group.soloed;
 
-            // If soloing, mute all other groups
-            if group.soloed {
-                for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
-                    if idx != self.selected_level_meter_group {
-                        g.muted = true;
-                    }
-                }
-            } else {
-                // If un-soloing, unmute all groups
-                for g in &mut self.level_meter_groups {
-                    g.muted = false;
+            // Solo behavior: only one group can be soloed at a time
+            // When soloing, set soloed=true on selected group, soloed=false on all others
+            // When un-soloing, set soloed=false on selected group
+            for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
+                if idx == self.selected_level_meter_group {
+                    g.soloed = !is_currently_soloed;
+                } else {
+                    g.soloed = false;
                 }
             }
 
+            self.update_channel_mute_solo_plugin();
+        }
+    }
+
+    /// Toggle dim for the selected level meter group
+    pub fn toggle_level_meter_dim(&mut self) {
+        if let Some(group) = self
+            .level_meter_groups
+            .get_mut(self.selected_level_meter_group)
+        {
+            group.dimmed = !group.dimmed;
             self.update_channel_mute_solo_plugin();
         }
     }
@@ -2779,7 +2873,8 @@ impl App {
         use sotf_plugins::ChannelState;
 
         // Calculate total channel count
-        let num_channels = self.level_meter_groups
+        let num_channels = self
+            .level_meter_groups
             .iter()
             .map(|g| g.channels.len())
             .sum();
@@ -2789,7 +2884,14 @@ impl App {
         }
 
         // Build per-channel states from groups
-        let mut channel_states = vec![ChannelState { muted: false, soloed: false }; num_channels];
+        let mut channel_states = vec![
+            ChannelState {
+                muted: false,
+                soloed: false,
+                dimmed: false
+            };
+            num_channels
+        ];
 
         for group in &self.level_meter_groups {
             for channel_info in &group.channels {
@@ -2797,15 +2899,20 @@ impl App {
                     channel_states[channel_info.index] = ChannelState {
                         muted: group.muted,
                         soloed: group.soloed,
+                        dimmed: group.dimmed,
                     };
                 }
             }
         }
 
-        // Determine if any channel is muted or soloed
-        let enabled = channel_states.iter().any(|s| s.muted || s.soloed);
+        // Determine if any channel is muted, soloed, or dimmed
+        let enabled = channel_states
+            .iter()
+            .any(|s| s.muted || s.soloed || s.dimmed);
 
         // Find and update the ChannelMuteSolo plugin
+        // We need to compute the engine index, which only counts enabled plugins
+        let mut engine_index = 0;
         for i in 0..self.plugin_chain.len() {
             if let Some(plugin) = self.plugin_chain.get_plugin_mut(i) {
                 if matches!(&plugin.settings, PluginSettings::ChannelMuteSolo { .. }) {
@@ -2817,14 +2924,19 @@ impl App {
 
                     // Queue zero-dropout parameter update
                     // Serialize channel states to JSON
+                    // Use engine_index (not i) since the engine only has enabled plugins
                     if let Ok(json) = serde_json::to_string(&channel_states) {
                         self.pending_param_update = Some(PendingParameterUpdate {
-                            plugin_index: i,
+                            plugin_index: engine_index,
                             param_id: "channel_states".to_string(),
                             value: json,
                         });
                     }
                     return;
+                }
+                // Only count enabled plugins toward the engine index
+                if plugin.enabled {
+                    engine_index += 1;
                 }
             }
         }
@@ -2849,17 +2961,17 @@ impl App {
         }
     }
 
-    /// Navigate between mute and solo controls
+    /// Navigate between mute, solo, and dim controls
     pub fn select_next_level_meter_control(&mut self) {
-        self.level_meter_control_selection = (self.level_meter_control_selection + 1) % 2;
+        self.level_meter_control_selection = (self.level_meter_control_selection + 1) % 3;
     }
 
-    /// Navigate between mute and solo controls (previous)
+    /// Navigate between mute, solo, and dim controls (previous)
     pub fn select_previous_level_meter_control(&mut self) {
         self.level_meter_control_selection = if self.level_meter_control_selection == 0 {
-            1
+            2
         } else {
-            0
+            self.level_meter_control_selection - 1
         };
     }
 

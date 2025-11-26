@@ -208,10 +208,7 @@ impl BinauralDecoderPlugin {
             freq_size,
 
             // HRTF storage: 2 ears × freq_size bins per channel
-            hrtf_filters_freq: vec![
-                vec![Complex::new(0.0, 0.0); freq_size * 2];
-                input_channels
-            ],
+            hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; input_channels],
             diffuse_field_eq_filter: None,
             lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); freq_size],
             lfe_gain: 1.0,
@@ -329,14 +326,8 @@ impl BinauralDecoderPlugin {
             window: WindowFunction::BlackmanHarris2,
         };
 
-        let mut resampler = SincFixedIn::<f32>::new(
-            ratio,
-            2.0,
-            params,
-            sofa.ir_length,
-            2,
-        )
-        .map_err(|e| format!("Failed to create resampler: {:?}", e))?;
+        let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, sofa.ir_length, 2)
+            .map_err(|e| format!("Failed to create resampler: {:?}", e))?;
 
         let mut resampled_data = Vec::with_capacity(sofa.num_measurements * 2 * new_ir_length);
 
@@ -495,16 +486,8 @@ impl BinauralDecoderPlugin {
 
                 // Accumulate weighted by HRTF (freq_size bins per ear)
                 let hrtf = &self.hrtf_filters_freq[ch];
-                complex_mul_add_simd(
-                    &mut sum_left,
-                    &freq_buffer,
-                    &hrtf[0..self.freq_size],
-                );
-                complex_mul_add_simd(
-                    &mut sum_right,
-                    &freq_buffer,
-                    &hrtf[self.freq_size..],
-                );
+                complex_mul_add_simd(&mut sum_left, &freq_buffer, &hrtf[0..self.freq_size]);
+                complex_mul_add_simd(&mut sum_right, &freq_buffer, &hrtf[self.freq_size..]);
             }
 
             // Apply diffuse-field EQ if enabled
@@ -656,7 +639,11 @@ impl BinauralDecoderPlugin {
 
                 // Inverse FFT
                 self.fft_c2r
-                    .process_with_scratch(&mut lfe_freq, &mut lfe_output, &mut self.temp_fft_scratch)
+                    .process_with_scratch(
+                        &mut lfe_freq,
+                        &mut lfe_output,
+                        &mut self.temp_fft_scratch,
+                    )
                     .expect("LFE FFT inverse failed");
 
                 // Mix into both channels
@@ -902,7 +889,7 @@ impl Plugin for BinauralDecoderPlugin {
             self.sample_rate,
             self.lfe_crossover,
             self.lfe_distance,
-            self.lfe_level
+            self.lfe_level,
         );
         self.lfe_lowpass_filter = filter;
         self.lfe_gain = gain;

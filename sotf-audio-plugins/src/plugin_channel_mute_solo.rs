@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 pub struct ChannelState {
     pub muted: bool,
     pub soloed: bool,
+    #[serde(default)]
+    pub dimmed: bool,
 }
 
 impl Default for ChannelState {
@@ -22,6 +24,7 @@ impl Default for ChannelState {
         Self {
             muted: false,
             soloed: false,
+            dimmed: false,
         }
     }
 }
@@ -106,9 +109,13 @@ impl ChannelMuteSoloPlugin {
     }
 
     /// Set the state for a specific channel
-    pub fn set_channel_state(&mut self, channel: usize, muted: bool, soloed: bool) {
+    pub fn set_channel_state(&mut self, channel: usize, muted: bool, soloed: bool, dimmed: bool) {
         if channel < self.channels {
-            self.channel_states[channel] = ChannelState { muted, soloed };
+            self.channel_states[channel] = ChannelState {
+                muted,
+                soloed,
+                dimmed,
+            };
         }
     }
 
@@ -232,9 +239,12 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
                     state.muted
                 };
 
-                // Zero out muted channels
+                // Apply mute (set to 0.0) or dim (-20dB = multiply by 0.1)
                 if is_muted {
                     buffer[sample_idx] = 0.0;
+                } else if state.dimmed {
+                    // Dim: -20dB = multiply by 0.1
+                    buffer[sample_idx] *= 0.1;
                 }
             }
         }
@@ -265,7 +275,7 @@ mod tests {
     #[test]
     fn test_mute_single_channel() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, true, false); // Mute channel 0
+        plugin.set_channel_state(0, true, false, false); // Mute channel 0
 
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // [L0, R0, L1, R1]
         let context = ProcessContext {
@@ -282,7 +292,7 @@ mod tests {
     #[test]
     fn test_solo_single_channel() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, false, true); // Solo channel 0
+        plugin.set_channel_state(0, false, true, false); // Solo channel 0
 
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // [L0, R0, L1, R1]
         let context = ProcessContext {
@@ -299,8 +309,8 @@ mod tests {
     #[test]
     fn test_solo_takes_priority_over_mute() {
         let mut plugin = ChannelMuteSoloPlugin::new(2, true);
-        plugin.set_channel_state(0, true, true); // Both muted AND soloed
-        plugin.set_channel_state(1, false, false);
+        plugin.set_channel_state(0, true, true, false); // Both muted AND soloed
+        plugin.set_channel_state(1, false, false, false);
 
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0];
         let context = ProcessContext {
@@ -318,8 +328,8 @@ mod tests {
     #[test]
     fn test_multichannel() {
         let mut plugin = ChannelMuteSoloPlugin::new(4, true);
-        plugin.set_channel_state(1, true, false); // Mute channel 1
-        plugin.set_channel_state(2, true, false); // Mute channel 2
+        plugin.set_channel_state(1, true, false, false); // Mute channel 1
+        plugin.set_channel_state(2, true, false, false); // Mute channel 2
 
         let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // 1 frame, 4 channels
         let context = ProcessContext {
@@ -334,12 +344,54 @@ mod tests {
     }
 
     #[test]
+    fn test_dim_single_channel() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin.set_channel_state(0, false, false, true); // Dim channel 0
+
+        let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // [L0, R0, L1, R1]
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2,
+        };
+
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // Channel 0 (left) should be dimmed by -20dB (multiply by 0.1)
+        assert_eq!(buffer, vec![0.1, 2.0, 0.3, 4.0]);
+    }
+
+    #[test]
+    fn test_mute_takes_priority_over_dim() {
+        let mut plugin = ChannelMuteSoloPlugin::new(2, true);
+        plugin.set_channel_state(0, true, false, true); // Both muted AND dimmed
+
+        let mut buffer = vec![1.0, 2.0, 3.0, 4.0]; // [L0, R0, L1, R1]
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames: 2,
+        };
+
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // Channel 0 should be muted (mute takes priority over dim)
+        assert_eq!(buffer, vec![0.0, 2.0, 0.0, 4.0]);
+    }
+
+    #[test]
     fn test_from_params() {
         let params = ChannelMuteSoloParams {
             enabled: true,
             channel_states: vec![
-                ChannelState { muted: true, soloed: false },
-                ChannelState { muted: false, soloed: false },
+                ChannelState {
+                    muted: true,
+                    soloed: false,
+                    dimmed: false,
+                },
+                ChannelState {
+                    muted: false,
+                    soloed: false,
+                    dimmed: false,
+                },
             ],
         };
 

@@ -154,7 +154,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if !app.level_meter_groups.is_empty() {
         for group in &app.level_meter_groups {
             let num_channels_in_group = group.channels.len();
-            let group_width = num_channels_in_group.max(3);
+            // For stereo (2 channels), use 3 chars per meter + 2 chars spacing = 8 total
+            // For other configs, use 1 char per channel with max(3) for controls
+            let group_width = if num_channels_in_group == 2 {
+                8 // 3 + 2 + 3 for stereo L-R layout
+            } else {
+                num_channels_in_group.max(3)
+            };
             meters_width += group_width + 1; // group width + spacing
         }
         // Remove last spacing, add right padding instead
@@ -165,18 +171,34 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // Use fixed width for right column to avoid extra space
-    let right_col_width = meters_width.max(20) as u16; // Minimum 20 for LUFS/Volume boxes
+    let right_col_width = meters_width.max(26) as u16; // Minimum 26 for LUFS/Volume boxes
 
-    let main_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(0),                      // Main content (takes remaining space)
-            Constraint::Length(right_col_width),     // Right column (exact width)
-        ])
-        .split(chunks[1]);
+    // Check window height for responsive layout
+    let window_height = f.area().height;
+    let use_three_columns = window_height < 40;
+
+    let main_chunks = if use_three_columns {
+        // When height < 40, use 3 columns: main, loudness+volume, level meters
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),                  // Main content (takes remaining space)
+                Constraint::Length(26),              // Loudness + Volume column (fixed width)
+                Constraint::Length(right_col_width), // Level meters column (exact width)
+            ])
+            .split(chunks[1])
+    } else {
+        // When height >= 40, use 2 columns: main, meters (with all components stacked)
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Min(0),                  // Main content (takes remaining space)
+                Constraint::Length(right_col_width), // Right column (exact width)
+            ])
+            .split(chunks[1])
+    };
 
     // Check if window is tall enough for dual view (library + queue)
-    let window_height = f.area().height;
     let show_dual_view = window_height >= DUAL_VIEW_HEIGHT_THRESHOLD
         && (app.current_screen == Screen::Library || app.current_screen == Screen::Queue);
 
@@ -204,8 +226,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // Right column with meters
-    draw_meters_column(f, main_chunks[1], app);
+    // Right column(s) with meters - layout depends on height
+    if use_three_columns {
+        // 3-column layout: loudness+volume in middle, level meters in right
+        draw_loudness_and_volume_column(f, main_chunks[1], app);
+        draw_level_meter_box(f, main_chunks[2], app);
+    } else {
+        // 2-column layout: all meters stacked vertically
+        draw_meters_column(f, main_chunks[1], app);
+    }
 
     // Status bar
     draw_status_bar(f, chunks[2], app);
@@ -1227,9 +1256,9 @@ fn draw_meters_column(f: &mut Frame, area: Rect, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5), // LUFS box
-            Constraint::Min(0),    // Level meter box (expandable)
-            Constraint::Length(3), // Volume box
+            Constraint::Length(15), // LUFS box (compact: 12 content lines + 2 borders + 1 padding)
+            Constraint::Min(0),     // Level meter box (expandable)
+            Constraint::Length(3),  // Volume box
         ])
         .split(area);
 
@@ -1243,55 +1272,357 @@ fn draw_meters_column(f: &mut Frame, area: Rect, app: &mut App) {
     draw_volume_box(f, chunks[2], app);
 }
 
+fn draw_loudness_and_volume_column(f: &mut Frame, area: Rect, app: &mut App) {
+    // Split into loudness and volume (no level meters - they're in a separate column)
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(15), // LUFS box (compact)
+            Constraint::Min(0),     // Spacer (expandable)
+            Constraint::Length(3),  // Volume box
+        ])
+        .split(area);
+
+    // Draw LUFS info box
+    draw_lufs_box(f, chunks[0], app);
+
+    // Draw volume box
+    draw_volume_box(f, chunks[2], app);
+}
+
 fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
-    let text = if let Some(ref loudness) = app.loudness_info {
-        let momentary = if loudness.momentary_lufs.is_finite() {
-            format!("{:>6.1}", loudness.momentary_lufs)
-        } else {
-            " -∞".to_string()
-        };
-        let shortterm = if loudness.shortterm_lufs.is_finite() {
-            format!("{:>6.1}", loudness.shortterm_lufs)
-        } else {
-            " -∞".to_string()
-        };
-        let peak_db = 20.0 * loudness.peak.max(0.0001).log10();
+    let block = Block::default().borders(Borders::ALL).title("Loudness");
+    f.render_widget(block, area);
 
-        vec![
-            Line::from(vec![
-                Span::raw("M: "),
-                Span::styled(
-                    format!("{} LUFS", momentary),
-                    Style::default().fg(app.theme.title_color),
-                ),
-            ]),
-            Line::from(vec![
-                Span::raw("S: "),
-                Span::styled(
-                    format!("{} LUFS", shortterm),
-                    Style::default().fg(app.theme.title_color),
-                ),
-            ]),
-            Line::from(vec![
-                Span::raw("Pk: "),
-                Span::styled(
-                    format!("{:>5.1} dBFS", peak_db),
-                    Style::default().fg(app.theme.accent_error),
-                ),
-            ]),
-        ]
+    // Inner area for content (excluding borders)
+    let inner = area.inner(ratatui::layout::Margin {
+        vertical: 1,
+        horizontal: 1,
+    });
+
+    if inner.height < 3 {
+        // Not enough space
+        return;
+    }
+
+    if let Some(ref loudness) = app.loudness_info {
+        let mut y_offset = 0;
+
+        // ============================================================================
+        // True Peak Section
+        // ============================================================================
+
+        if !loudness.true_peaks_dbtp.is_empty() && y_offset < inner.height {
+            // Find max true peak for display
+            let max_true_peak = loudness
+                .true_peaks_dbtp
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
+
+            // Header: "True Peak      [XX.X]"
+            let true_peak_label = if max_true_peak.is_finite() {
+                format!("True Peak      [{:>4.1}]", max_true_peak)
+            } else {
+                "True Peak        [-∞]".to_string()
+            };
+            f.render_widget(
+                Paragraph::new(true_peak_label).style(Style::default().fg(app.theme.title_color)),
+                Rect {
+                    x: inner.x,
+                    y: inner.y + y_offset,
+                    width: inner.width,
+                    height: 1,
+                },
+            );
+            y_offset += 1;
+
+            // Render true peak bars for each channel (max 2 bars to save space)
+            let num_peak_bars = loudness.true_peaks_dbtp.len().min(2);
+            for ch_idx in 0..num_peak_bars {
+                if y_offset >= inner.height {
+                    break;
+                }
+
+                let true_peak_dbtp = loudness
+                    .true_peaks_dbtp
+                    .get(ch_idx)
+                    .copied()
+                    .unwrap_or(f64::NEG_INFINITY);
+
+                // Map -60 dBTP to 0%, +6 dBTP to 100%
+                let ratio = if true_peak_dbtp.is_finite() {
+                    ((true_peak_dbtp + 60.0) / 66.0).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                // Choose color based on level: green → orange → red when >0
+                let gauge_style = if true_peak_dbtp > 0.0 {
+                    Style::default().fg(app.theme.accent_error) // Red - clipping
+                } else if true_peak_dbtp > -1.0 {
+                    Style::default().fg(app.theme.accent_warning) // Orange - near clipping
+                } else {
+                    Style::default().fg(app.theme.accent_success) // Green - safe
+                };
+
+                // Format label showing the dBTP value
+                let label = if true_peak_dbtp.is_finite() {
+                    format!("{:>5.1}", true_peak_dbtp)
+                } else {
+                    "  -∞".to_string()
+                };
+
+                use ratatui::widgets::Gauge;
+                let gauge = Gauge::default()
+                    .ratio(ratio)
+                    .label(label)
+                    .gauge_style(gauge_style)
+                    .use_unicode(true);
+
+                f.render_widget(
+                    gauge,
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
+                y_offset += 1;
+            }
+
+            // Scale labels: "-60" at left, "0" at 60/66 position, "+6" at right
+            if y_offset < inner.height {
+                let width = inner.width as usize;
+                // True peak scale: -60 dBTP to +6 dBTP (total range 66 dB)
+                // Position of 0 dBTP: 60/66 ≈ 0.909
+                let zero_pos = ((60.0 / 66.0) * width as f64) as usize;
+                let max_pos = width.saturating_sub(2); // "+6" is 2 chars
+
+                let mut scale = String::with_capacity(width);
+                scale.push_str("-60");
+
+                // Add spaces until zero position (accounting for "-60" = 3 chars)
+                let spaces_before_zero = zero_pos.saturating_sub(3 + 1); // -1 for the "0" char
+                if spaces_before_zero > 0 {
+                    scale.push_str(&" ".repeat(spaces_before_zero));
+                }
+                scale.push('0');
+
+                // Add spaces until "+6" position
+                let current_len = scale.len();
+                if max_pos > current_len {
+                    scale.push_str(&" ".repeat(max_pos - current_len));
+                }
+                scale.push_str("+6");
+
+                f.render_widget(
+                    Paragraph::new(scale).style(Style::default().fg(app.theme.fg_muted)),
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
+                y_offset += 1;
+            }
+        }
+
+        // ============================================================================
+        // LUFS Section
+        // ============================================================================
+
+        if y_offset < inner.height {
+            f.render_widget(
+                Paragraph::new("LUFS").style(Style::default().fg(app.theme.title_color)),
+                Rect {
+                    x: inner.x,
+                    y: inner.y + y_offset,
+                    width: inner.width,
+                    height: 1,
+                },
+            );
+            y_offset += 1;
+        }
+
+        // Helper function to draw LUFS bar using Gauge widget
+        let draw_lufs_bar = |f: &mut Frame, y: u16, label_char: &str, lufs: f64| {
+            // Map -60 to 0 LUFS as 0% to 100%
+            let ratio = if lufs.is_finite() {
+                ((lufs + 60.0) / 60.0).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            // Choose color: green → orange → red based on level
+            let gauge_style = if lufs > -1.0 {
+                Style::default().fg(app.theme.accent_error) // Red - very loud
+            } else if lufs > -10.0 {
+                Style::default().fg(app.theme.accent_warning) // Orange - loud
+            } else {
+                Style::default().fg(app.theme.accent_success) // Green - normal
+            };
+
+            // Format label: "M -15.0"
+            let value_str = if lufs.is_finite() {
+                format!("{:>5.1}", lufs)
+            } else {
+                "  -∞".to_string()
+            };
+            let label = format!("{} {}", label_char, value_str);
+
+            use ratatui::widgets::Gauge;
+            let gauge = Gauge::default()
+                .ratio(ratio)
+                .label(label)
+                .gauge_style(gauge_style)
+                .use_unicode(true);
+
+            f.render_widget(
+                gauge,
+                Rect {
+                    x: inner.x,
+                    y,
+                    width: inner.width,
+                    height: 1,
+                },
+            );
+        };
+
+        // M (Momentary)
+        if y_offset < inner.height {
+            draw_lufs_bar(f, inner.y + y_offset, "M", loudness.momentary_lufs);
+            y_offset += 1;
+        }
+
+        // S (Short-term)
+        if y_offset < inner.height {
+            draw_lufs_bar(f, inner.y + y_offset, "S", loudness.shortterm_lufs);
+            y_offset += 1;
+        }
+
+        // I (Integrated)
+        if y_offset < inner.height {
+            draw_lufs_bar(f, inner.y + y_offset, "I", loudness.integrated_lufs);
+            y_offset += 1;
+        }
+
+        // Scale labels: "-60" at left, "0" at right
+        if y_offset < inner.height {
+            let width = inner.width as usize;
+            let mut scale = String::with_capacity(width);
+            scale.push_str("-60");
+
+            // Add spaces until "0" at the right edge (0 is 1 char)
+            let spaces = width.saturating_sub(4); // 3 for "-60", 1 for "0"
+            scale.push_str(&" ".repeat(spaces));
+            scale.push('0');
+
+            f.render_widget(
+                Paragraph::new(scale).style(Style::default().fg(app.theme.fg_muted)),
+                Rect {
+                    x: inner.x,
+                    y: inner.y + y_offset,
+                    width: inner.width,
+                    height: 1,
+                },
+            );
+            y_offset += 1;
+        }
+
+        // ============================================================================
+        // Stereo Width Section (only for stereo)
+        // ============================================================================
+
+        if let Some(correlation) = loudness.correlation_lr {
+            if y_offset < inner.height {
+                f.render_widget(
+                    Paragraph::new("Stereo width")
+                        .style(Style::default().fg(app.theme.title_color)),
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
+                y_offset += 1;
+            }
+
+            if y_offset < inner.height {
+                use ratatui::widgets::Gauge;
+
+                // Correlation is typically between 0 and 1 for normal stereo content
+                // 0 = uncorrelated (wide stereo), 1 = fully correlated (mono)
+                // For "Stereo width" display, invert it so higher = wider
+                let stereo_width = (1.0 - correlation).clamp(0.0, 1.0);
+                let ratio = stereo_width;
+
+                // Choose color based on stereo width
+                let gauge_style = if stereo_width < 0.1 {
+                    Style::default().fg(app.theme.accent_warning) // Too narrow (nearly mono)
+                } else {
+                    Style::default().fg(app.theme.accent_success) // Good stereo separation
+                };
+
+                let label = format!("{:>4.2}", stereo_width);
+
+                let gauge = Gauge::default()
+                    .ratio(ratio)
+                    .label(label)
+                    .gauge_style(gauge_style)
+                    .use_unicode(true);
+
+                f.render_widget(
+                    gauge,
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
+                y_offset += 1;
+            }
+
+            // Scale labels: "0" at left, "1" at right
+            if y_offset < inner.height {
+                let width = inner.width as usize;
+                let mut scale = String::with_capacity(width);
+                scale.push('0');
+
+                // Add spaces until "1" at the right edge
+                let spaces = width.saturating_sub(2); // 1 for "0", 1 for "1"
+                scale.push_str(&" ".repeat(spaces));
+                scale.push('1');
+
+                f.render_widget(
+                    Paragraph::new(scale).style(Style::default().fg(app.theme.fg_muted)),
+                    Rect {
+                        x: inner.x,
+                        y: inner.y + y_offset,
+                        width: inner.width,
+                        height: 1,
+                    },
+                );
+            }
+        }
     } else {
-        vec![
-            Line::from("M:   -∞ LUFS"),
-            Line::from("S:   -∞ LUFS"),
-            Line::from("Pk:  -∞ dBFS"),
-        ]
-    };
-
-    let paragraph =
-        Paragraph::new(text).block(Block::default().borders(Borders::ALL).title("Loudness"));
-
-    f.render_widget(paragraph, area);
+        // No loudness data
+        f.render_widget(
+            Paragraph::new("No audio playing")
+                .style(Style::default().fg(app.theme.fg_muted))
+                .alignment(Alignment::Center),
+            Rect {
+                x: inner.x,
+                y: inner.y + inner.height / 2,
+                width: inner.width,
+                height: 1,
+            },
+        );
+    }
 }
 
 fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
@@ -1339,13 +1670,11 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 
     // Highlight border when focused
     let block = if app.focused_pane == FocusedPane::Meters {
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(
-                Style::default()
-                    .fg(app.theme.accent_primary)
-                    .add_modifier(Modifier::BOLD),
-            )
+        Block::default().borders(Borders::ALL).border_style(
+            Style::default()
+                .fg(app.theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         Block::default().borders(Borders::ALL)
     };
@@ -1381,55 +1710,96 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         .max()
         .unwrap_or(1);
 
-    // Reserve space for M/S controls (2 lines)
-    let meter_height = (inner.height as usize).saturating_sub(max_name_lines + 2);
+    // Reserve space for label/names and M/S/D controls (3 lines)
+    // For stereo: 1 line for "L - R" label + 3 lines for controls
+    // For multi-channel: max_name_lines + 3 lines for controls
+    let meter_height = (inner.height as usize).saturating_sub(max_name_lines + 3);
     if meter_height == 0 {
         return;
     }
 
-    let mut x_offset = 1usize; // Start with 1 space padding
+    // Reserve space for vertical scale legend on the left (4 chars: "-60 ")
+    let scale_width = 4usize;
+    let mut x_offset = scale_width; // Start after the scale
     let available_width = inner.width as usize;
+
+    // Draw vertical scale legend on the left
+    // Non-linear scale: -60 dB (0%), -40 dB (20%), -20 dB (50%), 0 dB (100%)
+    let scale_markers = [
+        (1.0, " 0 "), // 100% fill -> top
+        (0.5, "-20"), // 50% fill
+        (0.2, "-40"), // 20% fill
+        (0.0, "-60"), // 0% fill -> bottom
+    ];
+
+    for (ratio, label) in scale_markers.iter() {
+        // Convert fill ratio to row index from bottom
+        let row_idx = (ratio * meter_height as f64).round() as usize;
+        // Convert to y coordinate (inverted: top of screen = higher rows)
+        let y = inner.y + (meter_height - 1).saturating_sub(row_idx.min(meter_height - 1)) as u16;
+
+        f.render_widget(
+            Paragraph::new(*label).style(Style::default().fg(app.theme.fg_muted)),
+            Rect {
+                x: inner.x,
+                y,
+                width: scale_width as u16,
+                height: 1,
+            },
+        );
+    }
 
     // Draw each group
     for (group_idx, group) in app.level_meter_groups.iter().enumerate() {
         let is_selected = group_idx == app.selected_level_meter_group;
 
-        // Calculate width for this group: max(num_channels, 3 for M/S)
+        // Calculate width for this group
         let num_channels = group.channels.len();
-        let group_width = num_channels.max(3);
+        let is_stereo = num_channels == 2;
+        let group_width = if is_stereo {
+            8 // 3 + 2 + 3 for stereo
+        } else {
+            num_channels.max(3)
+        };
 
-        // Draw each channel in the group
-        for (ch_idx, channel) in group.channels.iter().enumerate() {
-            let ch_x_offset = x_offset + ch_idx;
-            if ch_x_offset >= available_width {
-                break;
-            }
+        if is_stereo {
+            // Special stereo rendering: 3-char wide meters with 2-char spacing
+            // Center the group in available space
+            let group_start_x = if available_width > group_width {
+                x_offset + (available_width - x_offset - group_width) / 2
+            } else {
+                x_offset
+            };
 
-            // Get the peak level for this channel
-            let peak = loudness
+            // Draw L meter (3 chars wide)
+            let l_channel = &group.channels[0];
+            let l_peak = loudness
                 .channel_peaks
-                .get(channel.index)
+                .get(l_channel.index)
                 .copied()
                 .unwrap_or(0.0);
-            let peak_db = 20.0 * peak.max(0.0001).log10();
+            let l_peak_db = 20.0 * l_peak.max(0.0001).log10();
 
-            // Non-linear meter scaling
-            let fill_ratio = if peak_db >= -20.0 {
-                0.5 + ((peak_db + 20.0) / 40.0)
-            } else if peak_db >= -40.0 {
-                0.2 + ((peak_db + 40.0) / 20.0) * 0.3
-            } else {
-                ((peak_db + 60.0) / 20.0) * 0.2
-            };
-            let fill_ratio = fill_ratio.clamp(0.0, 1.0);
-            let filled_rows = (fill_ratio * meter_height as f64).round() as usize;
+            // Linear dB scale: -60 dB to 0 dB
+            let l_fill_ratio = ((l_peak_db + 60.0) / 60.0).clamp(0.0, 1.0);
+            let l_filled_rows = (l_fill_ratio * meter_height as f64).round() as usize;
 
-            // Draw vertical meter (1 char wide)
-            let meter_x = inner.x + ch_x_offset as u16;
+            // Draw R meter (3 chars wide)
+            let r_channel = &group.channels[1];
+            let r_peak = loudness
+                .channel_peaks
+                .get(r_channel.index)
+                .copied()
+                .unwrap_or(0.0);
+            let r_peak_db = 20.0 * r_peak.max(0.0001).log10();
+
+            // Linear dB scale: -60 dB to 0 dB
+            let r_fill_ratio = ((r_peak_db + 60.0) / 60.0).clamp(0.0, 1.0);
+            let r_filled_rows = (r_fill_ratio * meter_height as f64).round() as usize;
+
+            // Draw both meters
             for row_idx in (0..meter_height).rev() {
                 let y = inner.y + (meter_height - 1 - row_idx) as u16;
-                let is_filled = row_idx < filled_rows;
-
                 let level_ratio = row_idx as f64 / meter_height as f64;
                 let color = if level_ratio > 0.95 {
                     app.theme.accent_error
@@ -1439,33 +1809,108 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
                     app.theme.accent_success
                 };
 
-                let bar = if is_filled { "█" } else { "░" };
-                let style = if is_filled {
+                // L meter (3 chars)
+                let l_is_filled = row_idx < l_filled_rows;
+                let l_bar = if l_is_filled {
+                    "███"
+                } else {
+                    "░░░"
+                };
+                let l_style = if l_is_filled {
                     Style::default().fg(color)
                 } else {
                     Style::default().fg(app.theme.fg_muted)
                 };
-
                 f.render_widget(
-                    Paragraph::new(bar).style(style),
+                    Paragraph::new(l_bar).style(l_style),
                     Rect {
-                        x: meter_x,
+                        x: inner.x + group_start_x as u16,
                         y,
-                        width: 1,
+                        width: 3,
+                        height: 1,
+                    },
+                );
+
+                // R meter (3 chars) - skip 2 chars for spacing
+                let r_is_filled = row_idx < r_filled_rows;
+                let r_bar = if r_is_filled {
+                    "███"
+                } else {
+                    "░░░"
+                };
+                let r_style = if r_is_filled {
+                    Style::default().fg(color)
+                } else {
+                    Style::default().fg(app.theme.fg_muted)
+                };
+                f.render_widget(
+                    Paragraph::new(r_bar).style(r_style),
+                    Rect {
+                        x: inner.x + group_start_x as u16 + 5, // 3 (L) + 2 (spacing)
+                        y,
+                        width: 3,
                         height: 1,
                     },
                 );
             }
 
-            // Draw vertical channel name below meter
+            // Draw "L - R" label centered below meters
             let name_start_y = inner.y + meter_height as u16;
-            for (line_idx, line) in channel.display_name.iter().enumerate() {
-                let y = name_start_y + line_idx as u16;
-                if y < inner.y + inner.height - 2 {
-                    // -2 for M/S controls
+            let label = "L - R";
+            let label_x = group_start_x + (group_width - label.len()) / 2;
+            f.render_widget(
+                Paragraph::new(label).style(Style::default().fg(app.theme.fg_primary)),
+                Rect {
+                    x: inner.x + label_x as u16,
+                    y: name_start_y,
+                    width: label.len() as u16,
+                    height: 1,
+                },
+            );
+        } else {
+            // Original rendering for non-stereo: 1 char wide meters
+            for (ch_idx, channel) in group.channels.iter().enumerate() {
+                let ch_x_offset = x_offset + ch_idx;
+                if ch_x_offset >= available_width {
+                    break;
+                }
+
+                // Get the peak level for this channel
+                let peak = loudness
+                    .channel_peaks
+                    .get(channel.index)
+                    .copied()
+                    .unwrap_or(0.0);
+                let peak_db = 20.0 * peak.max(0.0001).log10();
+
+                // Linear dB scale: -60 dB to 0 dB
+                let fill_ratio = ((peak_db + 60.0) / 60.0).clamp(0.0, 1.0);
+                let filled_rows = (fill_ratio * meter_height as f64).round() as usize;
+
+                // Draw vertical meter (1 char wide)
+                let meter_x = inner.x + ch_x_offset as u16;
+                for row_idx in (0..meter_height).rev() {
+                    let y = inner.y + (meter_height - 1 - row_idx) as u16;
+                    let is_filled = row_idx < filled_rows;
+
+                    let level_ratio = row_idx as f64 / meter_height as f64;
+                    let color = if level_ratio > 0.95 {
+                        app.theme.accent_error
+                    } else if level_ratio > 0.90 {
+                        app.theme.accent_warning
+                    } else {
+                        app.theme.accent_success
+                    };
+
+                    let bar = if is_filled { "█" } else { "░" };
+                    let style = if is_filled {
+                        Style::default().fg(color)
+                    } else {
+                        Style::default().fg(app.theme.fg_muted)
+                    };
+
                     f.render_widget(
-                        Paragraph::new(line.as_str())
-                            .style(Style::default().fg(app.theme.fg_primary)),
+                        Paragraph::new(bar).style(style),
                         Rect {
                             x: meter_x,
                             y,
@@ -1474,12 +1919,46 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
                         },
                     );
                 }
+
+                // Draw vertical channel name below meter
+                let name_start_y = inner.y + meter_height as u16;
+                for (line_idx, line) in channel.display_name.iter().enumerate() {
+                    let y = name_start_y + line_idx as u16;
+                    if y < inner.y + inner.height - 2 {
+                        // -2 for M/S controls
+                        f.render_widget(
+                            Paragraph::new(line.as_str())
+                                .style(Style::default().fg(app.theme.fg_primary)),
+                            Rect {
+                                x: meter_x,
+                                y,
+                                width: 1,
+                                height: 1,
+                            },
+                        );
+                    }
+                }
             }
         }
 
-        // Draw M/S controls for this group (if multiple groups exist)
-        if app.level_meter_groups.len() > 1 && x_offset + 3 <= available_width {
-            let controls_x = inner.x + x_offset as u16;
+        // Draw M/S/D controls for this group
+        // Show controls if there's space, or always for stereo (centered layout)
+        let show_controls =
+            is_stereo || (app.level_meter_groups.len() > 1 && x_offset + 3 <= available_width);
+        if show_controls {
+            // For stereo, center controls under the meters
+            let controls_x = if is_stereo {
+                let group_start_x = if available_width > group_width {
+                    x_offset + (available_width - x_offset - group_width) / 2
+                } else {
+                    x_offset
+                };
+                inner.x + (group_start_x + (group_width - 3) / 2) as u16
+            } else {
+                inner.x + x_offset as u16
+            };
+
+            // Position controls below the label/channel names
             let controls_y = inner.y + meter_height as u16 + max_name_lines as u16;
 
             // Mute button
@@ -1521,6 +2000,28 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
                 Rect {
                     x: controls_x,
                     y: controls_y + 1,
+                    width: 3,
+                    height: 1,
+                },
+            );
+
+            // Dim button
+            let dim_style = if is_selected && app.level_meter_control_selection == 2 {
+                Style::default()
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
+                    .add_modifier(Modifier::BOLD)
+            } else if group.dimmed {
+                Style::default().fg(app.theme.accent_info)
+            } else {
+                Style::default().fg(app.theme.fg_muted)
+            };
+
+            f.render_widget(
+                Paragraph::new("[D]").style(dim_style),
+                Rect {
+                    x: controls_x,
+                    y: controls_y + 2,
                     width: 3,
                     height: 1,
                 },
@@ -1979,13 +2480,26 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Max Frequency".to_string(), format!("{:.0} Hz", max_freq)),
             ("Smoothing".to_string(), format!("{:.2}", smoothing)),
         ],
-        PluginSettings::ChannelMuteSolo { enabled, channel_states } => {
+        PluginSettings::ChannelMuteSolo {
+            enabled,
+            channel_states,
+        } => {
             // Show basic info about mute/solo state
             let muted_count = channel_states.iter().filter(|s| s.muted).count();
             let soloed_count = channel_states.iter().filter(|s| s.soloed).count();
             vec![
-                ("Status".to_string(), if *enabled { "Active".to_string() } else { "Bypassed".to_string() }),
-                ("Total Channels".to_string(), format!("{}", channel_states.len())),
+                (
+                    "Status".to_string(),
+                    if *enabled {
+                        "Active".to_string()
+                    } else {
+                        "Bypassed".to_string()
+                    },
+                ),
+                (
+                    "Total Channels".to_string(),
+                    format!("{}", channel_states.len()),
+                ),
                 ("Muted Channels".to_string(), format!("{}", muted_count)),
                 ("Soloed Channels".to_string(), format!("{}", soloed_count)),
             ]
@@ -2682,10 +3196,7 @@ fn draw_help_modal(f: &mut Frame, app: &App) {
         Span::raw("  Navigate between channel groups"),
     ]));
     lines.push(Line::from(vec![
-        Span::styled(
-            "  Up/Down",
-            Style::default().fg(app.theme.accent_primary),
-        ),
+        Span::styled("  Up/Down", Style::default().fg(app.theme.accent_primary)),
         Span::raw("  Select mute/solo control"),
     ]));
     lines.push(Line::from(vec![

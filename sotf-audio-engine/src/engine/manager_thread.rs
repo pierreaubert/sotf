@@ -1347,7 +1347,8 @@ fn handle_command(
                                     "[Manager Thread] Config validated, enqueuing plugin update"
                                 );
                                 // Use SignalReload priority for explicit reloads
-                                config_queue.enqueue(new_config.plugins, ConfigUpdatePriority::UserDirect);
+                                config_queue
+                                    .enqueue(new_config.plugins, ConfigUpdatePriority::UserDirect);
                                 ManagerResponse::Ok
                             }
                             Err(e) => {

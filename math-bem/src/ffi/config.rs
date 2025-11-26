@@ -128,7 +128,10 @@ impl NumCalcOutput {
         println!("NumCalc Execution Summary:");
         println!("  Success: {}", self.success);
         println!("  Exit code: {:?}", self.exit_code);
-        println!("  Execution time: {:.2}s", self.execution_time.as_secs_f64());
+        println!(
+            "  Execution time: {:.2}s",
+            self.execution_time.as_secs_f64()
+        );
         println!("  Output files: {}", self.num_output_files());
         if let Some(mem) = self.peak_memory_mb {
             println!("  Peak memory: {:.2} MB", mem);

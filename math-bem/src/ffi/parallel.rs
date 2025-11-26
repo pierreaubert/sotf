@@ -309,9 +309,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let results: Vec<i32> = pool.install(|| {
-            (0..10).into_par_iter().map(|x| x * 2).collect()
-        });
+        let results: Vec<i32> = pool.install(|| (0..10).into_par_iter().map(|x| x * 2).collect());
 
         assert_eq!(results.len(), 10);
         assert_eq!(results[5], 10);

@@ -227,11 +227,10 @@ fn run_processing_thread(
                     // Parse string value to ParameterValue
                     let param_value = parse_parameter_value(&value);
 
-                    match state.host.set_plugin_parameter(
-                        plugin_index,
-                        &param_id,
-                        param_value,
-                    ) {
+                    match state
+                        .host
+                        .set_plugin_parameter(plugin_index, &param_id, param_value)
+                    {
                         Ok(_) => {
                             log::debug!(
                                 "[Processing Thread] Parameter set successfully on plugin {}",
@@ -620,7 +619,9 @@ fn create_plugin(
         }
 
         "channel_mute_solo" => {
-            use sotf_plugins::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, InPlacePluginAdapter};
+            use sotf_plugins::{
+                ChannelMuteSoloParams, ChannelMuteSoloPlugin, InPlacePluginAdapter,
+            };
 
             let params: ChannelMuteSoloParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse channel_mute_solo parameters: {}", e))?;

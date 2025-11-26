@@ -86,10 +86,7 @@ pub fn sphere_scattering_3d(
                 let prefactor = 2.0 * n_f64 + 1.0;
 
                 // iⁿ = exp(i*n*π/2)
-                let i_power_n = Complex64::new(
-                    (n_f64 * PI / 2.0).cos(),
-                    (n_f64 * PI / 2.0).sin(),
-                );
+                let i_power_n = Complex64::new((n_f64 * PI / 2.0).cos(), (n_f64 * PI / 2.0).sin());
 
                 // Spherical Bessel jₙ(kr)
                 let jn = spherical_bessel_j(n, kr);
@@ -352,7 +349,7 @@ mod tests {
 
         // Should be within order of magnitude
         assert!(rcs > 0.0);
-        assert!(rcs < rayleigh_approx * 100.0);  // Very rough check
+        assert!(rcs < rayleigh_approx * 100.0); // Very rough check
     }
 
     #[test]
@@ -366,7 +363,7 @@ mod tests {
         let geometric = 2.0 * PI * a * a;
 
         // Should approach geometric limit
-        assert!((rcs / geometric - 1.0).abs() < 0.2);  // Within 20%
+        assert!((rcs / geometric - 1.0).abs() < 0.2); // Within 20%
     }
 
     #[test]
@@ -375,13 +372,7 @@ mod tests {
         let k = 1.0;
         let a = 1.0;
 
-        let solution = sphere_scattering_3d(
-            k,
-            a,
-            20,
-            vec![2.0],
-            vec![0.0, PI / 2.0, PI],
-        );
+        let solution = sphere_scattering_3d(k, a, 20, vec![2.0], vec![0.0, PI / 2.0, PI]);
 
         assert_eq!(solution.pressure.len(), 3);
 
@@ -401,7 +392,7 @@ mod tests {
 
         // Efficiency should be positive and reasonable
         assert!(q_scat > 0.0);
-        assert!(q_scat < 10.0);  // Shouldn't be huge
+        assert!(q_scat < 10.0); // Shouldn't be huge
     }
 
     #[test]

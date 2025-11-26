@@ -24,11 +24,21 @@ pub struct LoudnessInfo {
     /// Range: -inf to ~0 LUFS (typical: -40 to 0)
     pub shortterm_lufs: f64,
 
+    /// Integrated loudness (I) - whole program loudness
+    /// Range: -inf to ~0 LUFS (typical: -40 to 0)
+    pub integrated_lufs: f64,
+
     /// Current sample peak across all channels (0.0 to 1.0+)
     pub peak: f64,
 
-    /// Per-channel peaks (0.0 to 1.0+)
+    /// Per-channel sample peaks (0.0 to 1.0+)
     pub channel_peaks: Vec<f64>,
+
+    /// Per-channel true peaks in dBTP (dB True Peak)
+    pub true_peaks_dbtp: Vec<f64>,
+
+    /// L/R correlation coefficient (only for stereo)
+    pub correlation_lr: Option<f64>,
 }
 
 impl Default for LoudnessInfo {
@@ -36,8 +46,11 @@ impl Default for LoudnessInfo {
         Self {
             momentary_lufs: f64::NEG_INFINITY,
             shortterm_lufs: f64::NEG_INFINITY,
+            integrated_lufs: f64::NEG_INFINITY,
             peak: 0.0,
             channel_peaks: Vec::new(),
+            true_peaks_dbtp: Vec::new(),
+            correlation_lr: None,
         }
     }
 }
@@ -56,6 +69,12 @@ pub(crate) struct LoudnessMonitor {
     channel_peak_trackers: Arc<Mutex<Vec<f64>>>,
     /// Peak decay rate per sample (for visual meter decay)
     peak_decay_per_sample: f64,
+    /// Correlation computation buffer (for stereo L/R correlation)
+    /// Stores recent samples for correlation calculation
+    correlation_buffer_l: Arc<Mutex<Vec<f32>>>,
+    correlation_buffer_r: Arc<Mutex<Vec<f32>>>,
+    /// Maximum correlation buffer size (e.g., 1 second of audio)
+    correlation_buffer_size: usize,
 }
 
 impl LoudnessMonitor {
@@ -65,8 +84,13 @@ impl LoudnessMonitor {
     /// * `channels` - Number of audio channels
     /// * `sample_rate` - Sample rate in Hz
     pub(crate) fn new(channels: u32, sample_rate: u32) -> Result<Self, String> {
-        let ebur128 = EbuR128::new(channels, sample_rate, Mode::M | Mode::S | Mode::SAMPLE_PEAK)
-            .map_err(|e| format!("Failed to create EBU R128 analyzer: {:?}", e))?;
+        // Enable M (momentary), S (short-term), I (integrated), SAMPLE_PEAK, and TRUE_PEAK
+        let ebur128 = EbuR128::new(
+            channels,
+            sample_rate,
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK,
+        )
+        .map_err(|e| format!("Failed to create EBU R128 analyzer: {:?}", e))?;
 
         // Calculate decay rate: decay to 0.0 over ~300ms (roughly -60 dB in 1.5 seconds)
         // Decay factor per sample = (1 - decay_time_samples)^(-1)
@@ -79,6 +103,9 @@ impl LoudnessMonitor {
         // Use a linear decay for simplicity: subtract this much per sample
         let peak_decay_per_sample = 1.0 / decay_samples;
 
+        // Correlation buffer: use 1 second of audio for correlation computation
+        let correlation_buffer_size = sample_rate as usize;
+
         Ok(Self {
             ebur128: Arc::new(Mutex::new(ebur128)),
             channels,
@@ -86,6 +113,9 @@ impl LoudnessMonitor {
             current_loudness: Arc::new(Mutex::new(LoudnessInfo::default())),
             channel_peak_trackers: Arc::new(Mutex::new(vec![0.0; channels as usize])),
             peak_decay_per_sample,
+            correlation_buffer_l: Arc::new(Mutex::new(Vec::with_capacity(correlation_buffer_size))),
+            correlation_buffer_r: Arc::new(Mutex::new(Vec::with_capacity(correlation_buffer_size))),
+            correlation_buffer_size,
         })
     }
 
@@ -106,6 +136,29 @@ impl LoudnessMonitor {
         // Update measurements
         let momentary_lufs = ebur.loudness_momentary().unwrap_or(f64::NEG_INFINITY);
         let shortterm_lufs = ebur.loudness_shortterm().unwrap_or(f64::NEG_INFINITY);
+        let integrated_lufs = ebur.loudness_global().unwrap_or(f64::NEG_INFINITY);
+
+        // Get true peaks per channel from ebur128
+        let mut true_peaks_dbtp = vec![f64::NEG_INFINITY; self.channels as usize];
+        for ch in 0..self.channels as usize {
+            match ebur.true_peak(ch as u32) {
+                Ok(true_peak_linear) => {
+                    // Convert to dBTP (dB True Peak)
+                    // dBTP = 20 * log10(true_peak_linear)
+                    // Use a small threshold to avoid log10(0) = -inf
+                    if true_peak_linear >= 1e-10 {
+                        true_peaks_dbtp[ch] = 20.0 * true_peak_linear.log10();
+                    } else {
+                        // Very quiet or silent channel
+                        true_peaks_dbtp[ch] = f64::NEG_INFINITY;
+                    }
+                }
+                Err(e) => {
+                    // Log error but continue - channel might not be available yet
+                    log::trace!("Failed to get true peak for channel {}: {:?}", ch, e);
+                }
+            }
+        }
 
         // Calculate per-channel peaks from the current buffer with decay
         let num_frames = samples.len() / self.channels as usize;
@@ -121,6 +174,13 @@ impl LoudnessMonitor {
                 peak = f64::max(peak, sample_abs);
             }
         }
+
+        // Compute correlation for stereo signals
+        let correlation_lr = if self.channels == 2 {
+            self.compute_correlation_stereo(samples)
+        } else {
+            None
+        };
 
         // Apply decay to existing peaks and take max with new peaks
         {
@@ -144,11 +204,86 @@ impl LoudnessMonitor {
             let mut info = self.current_loudness.lock().unwrap();
             info.momentary_lufs = momentary_lufs;
             info.shortterm_lufs = shortterm_lufs;
+            info.integrated_lufs = integrated_lufs;
             info.peak = peak;
             info.channel_peaks = channel_peaks;
+            info.true_peaks_dbtp = true_peaks_dbtp;
+            info.correlation_lr = correlation_lr;
         }
 
         Ok(())
+    }
+
+    /// Compute L/R correlation for stereo signals
+    ///
+    /// # Arguments
+    /// * `samples` - Interleaved stereo samples (L, R, L, R, ...)
+    ///
+    /// # Returns
+    /// Correlation coefficient in range [-1.0, +1.0], or None if not enough data
+    fn compute_correlation_stereo(&self, samples: &[f32]) -> Option<f64> {
+        if self.channels != 2 {
+            return None;
+        }
+
+        let num_frames = samples.len() / 2;
+
+        // Update correlation buffers (rolling window)
+        {
+            let mut buf_l = self.correlation_buffer_l.lock().unwrap();
+            let mut buf_r = self.correlation_buffer_r.lock().unwrap();
+
+            // Extract L and R samples
+            for frame_idx in 0..num_frames {
+                let l = samples[frame_idx * 2];
+                let r = samples[frame_idx * 2 + 1];
+
+                buf_l.push(l);
+                buf_r.push(r);
+            }
+
+            // Keep only last correlation_buffer_size samples
+            if buf_l.len() > self.correlation_buffer_size {
+                let excess = buf_l.len() - self.correlation_buffer_size;
+                buf_l.drain(0..excess);
+            }
+            if buf_r.len() > self.correlation_buffer_size {
+                let excess = buf_r.len() - self.correlation_buffer_size;
+                buf_r.drain(0..excess);
+            }
+
+            // Need at least 100 samples for meaningful correlation
+            if buf_l.len() < 100 {
+                return None;
+            }
+
+            // Compute Pearson correlation coefficient
+            let n = buf_l.len() as f64;
+            let mean_l: f64 = buf_l.iter().map(|&x| x as f64).sum::<f64>() / n;
+            let mean_r: f64 = buf_r.iter().map(|&x| x as f64).sum::<f64>() / n;
+
+            let mut cov_lr = 0.0;
+            let mut var_l = 0.0;
+            let mut var_r = 0.0;
+
+            for i in 0..buf_l.len() {
+                let diff_l = buf_l[i] as f64 - mean_l;
+                let diff_r = buf_r[i] as f64 - mean_r;
+                cov_lr += diff_l * diff_r;
+                var_l += diff_l * diff_l;
+                var_r += diff_r * diff_r;
+            }
+
+            // Avoid division by zero
+            if var_l < 1e-10 || var_r < 1e-10 {
+                return Some(0.0);
+            }
+
+            let correlation = cov_lr / (var_l * var_r).sqrt();
+
+            // Clamp to [-1, +1] to handle numerical errors
+            Some(correlation.clamp(-1.0, 1.0))
+        }
     }
 
     /// Get the current loudness measurements
@@ -165,7 +300,7 @@ impl LoudnessMonitor {
         let new_ebur = EbuR128::new(
             self.channels,
             self.sample_rate,
-            Mode::M | Mode::S | Mode::SAMPLE_PEAK,
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK,
         )
         .map_err(|e| format!("Failed to reset analyzer: {:?}", e))?;
 
@@ -183,6 +318,14 @@ impl LoudnessMonitor {
             peak_trackers.fill(0.0);
         }
 
+        // Reset correlation buffers
+        {
+            let mut buf_l = self.correlation_buffer_l.lock().unwrap();
+            let mut buf_r = self.correlation_buffer_r.lock().unwrap();
+            buf_l.clear();
+            buf_r.clear();
+        }
+
         Ok(())
     }
 }
@@ -196,6 +339,9 @@ impl Clone for LoudnessMonitor {
             current_loudness: Arc::clone(&self.current_loudness),
             channel_peak_trackers: Arc::clone(&self.channel_peak_trackers),
             peak_decay_per_sample: self.peak_decay_per_sample,
+            correlation_buffer_l: Arc::clone(&self.correlation_buffer_l),
+            correlation_buffer_r: Arc::clone(&self.correlation_buffer_r),
+            correlation_buffer_size: self.correlation_buffer_size,
         }
     }
 }
@@ -236,8 +382,11 @@ impl LoudnessMonitorPlugin {
         LoudnessData {
             momentary_lufs: info.momentary_lufs,
             shortterm_lufs: info.shortterm_lufs,
+            integrated_lufs: info.integrated_lufs,
             peak: info.peak,
             channel_peaks: info.channel_peaks.clone(),
+            true_peaks_dbtp: info.true_peaks_dbtp.clone(),
+            correlation_lr: info.correlation_lr,
         }
     }
 }

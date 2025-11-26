@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::sofa::SourcePosition;
 use crate::speaker_config::{SpeakerConfig, SpeakerPosition};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Room Model Configuration
@@ -98,39 +98,39 @@ pub fn calculate_reflections(
 
     // Simple Image Source Method for early reflections
     // We only consider 1st order reflections for now as per default
-    
+
     // Room boundaries relative to origin (0,0,0)
     let bounds = room.dimensions;
     let listener = room.listener_position;
-    
+
     for speaker in speaker_config.speakers {
         let mut channel_reflections = Vec::new();
-        
+
         // Convert speaker position (azimuth/elevation) to Cartesian coordinates relative to listener
         // Assume speaker is at 1.5m distance (typical near-field monitor)
         let dist = 1.5;
         let az_rad = speaker.azimuth.to_radians();
         let el_rad = speaker.elevation.to_radians();
-        
+
         // Speaker position relative to listener
         let spk_rel_x = dist * az_rad.sin() * el_rad.cos();
         let spk_rel_y = dist * az_rad.cos() * el_rad.cos();
         let spk_rel_z = dist * el_rad.sin();
-        
+
         // Absolute speaker position in room
         let spk_pos = [
             listener[0] + spk_rel_x,
             listener[1] + spk_rel_y,
             listener[2] + spk_rel_z,
         ];
-        
+
         // Direct sound distance (for reference)
         let direct_dist = dist;
-        
+
         // 1st order images
         // 6 walls: Front(y+), Back(y-), Left(x-), Right(x+), Floor(z-), Ceiling(z+)
         // Indices in absorption array: [front, back, left, right, floor, ceiling]
-        
+
         let images = [
             // Front wall (y = bounds[1])
             ([spk_pos[0], 2.0 * bounds[1] - spk_pos[1], spk_pos[2]], 0),
@@ -145,40 +145,40 @@ pub fn calculate_reflections(
             // Ceiling (z = bounds[2])
             ([spk_pos[0], spk_pos[1], 2.0 * bounds[2] - spk_pos[2]], 5),
         ];
-        
+
         for (img_pos, wall_idx) in images.iter() {
             // Calculate distance from image to listener
             let dx = img_pos[0] - listener[0];
             let dy = img_pos[1] - listener[1];
             let dz = img_pos[2] - listener[2];
             let img_dist = (dx * dx + dy * dy + dz * dz).sqrt();
-            
+
             // Path difference
             let path_diff = img_dist - direct_dist;
-            
+
             if path_diff > 0.0 {
                 // Delay
                 let delay_sec = path_diff / room.speed_of_sound;
                 let delay_samples = (delay_sec * sample_rate as f32).round() as usize;
-                
+
                 // Attenuation
                 // 1. Distance attenuation (1/r law)
                 let dist_att = direct_dist / img_dist;
-                
+
                 // 2. Wall absorption
                 let wall_att = 1.0 - room.absorption[*wall_idx];
-                
+
                 let gain = dist_att * wall_att;
-                
+
                 // Simple panning for reflections based on direction
                 // Calculate azimuth of reflection
                 let az = dx.atan2(dy); // -pi to pi
-                
+
                 // Pan law (constant power)
                 let p = (az + std::f32::consts::PI / 4.0) * 0.5; // Shifted for simple panning
                 let left = p.cos().abs();
                 let right = p.sin().abs();
-                
+
                 channel_reflections.push(Reflection {
                     delay_samples,
                     gain,
@@ -187,9 +187,9 @@ pub fn calculate_reflections(
                 });
             }
         }
-        
+
         reflections.push(channel_reflections);
     }
-    
+
     reflections
 }

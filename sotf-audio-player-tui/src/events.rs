@@ -198,8 +198,13 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.toggle_level_meter_solo();
             None
         }
+        KeyCode::Char('d') if app.focused_pane == crate::app::FocusedPane::Meters => {
+            // 'd' to toggle dim when in Meters pane
+            app.toggle_level_meter_dim();
+            None
+        }
         KeyCode::Char('c') if app.focused_pane == crate::app::FocusedPane::Meters => {
-            // 'c' to clear all mutes/solos when in Meters pane
+            // 'c' to clear all mutes/solos/dims when in Meters pane
             app.clear_level_meter_mutes_and_solos();
             None
         }

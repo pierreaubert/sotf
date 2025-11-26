@@ -329,21 +329,23 @@ impl DecoderState {
                     };
 
                     // Process padded chunk to flush resampler state
-                    if let Ok(_) = resampler.process(&padded_chunk, &mut self.resample_output_buffer, &context) {
+                    if let Ok(_) =
+                        resampler.process(&padded_chunk, &mut self.resample_output_buffer, &context)
+                    {
                         // Calculate actual output frames (may be more due to the resampling ratio)
-                        let expected_frames = (frame_size as f64 * resampler.ratio()).ceil() as usize;
+                        let expected_frames =
+                            (frame_size as f64 * resampler.ratio()).ceil() as usize;
 
                         if expected_frames > 0 {
-                            let frame_data = self.resample_output_buffer[..expected_frames * channels].to_vec();
+                            let frame_data =
+                                self.resample_output_buffer[..expected_frames * channels].to_vec();
                             let frame = AudioFrame::new(
                                 frame_data,
                                 expected_frames,
                                 channels,
                                 target_sample_rate,
                             );
-                            message_tx
-                                .send(DecoderMessage::Frame(frame))
-                                .ok();
+                            message_tx.send(DecoderMessage::Frame(frame)).ok();
                             log::debug!(
                                 "[Decoder Thread] Flushed {} frames through resampler",
                                 expected_frames

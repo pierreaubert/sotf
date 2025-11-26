@@ -112,8 +112,9 @@ impl NumCalcRunner {
         #[cfg(not(target_os = "windows"))]
         let executable_name = "NumCalc";
 
-        which::which(executable_name)
-            .with_context(|| format!("NumCalc executable not found. Set NUMCALC_PATH or install to PATH"))
+        which::which(executable_name).with_context(|| {
+            format!("NumCalc executable not found. Set NUMCALC_PATH or install to PATH")
+        })
     }
 
     /// Run NumCalc with given configuration
@@ -193,7 +194,7 @@ impl NumCalcRunner {
             stderr,
             output_files,
             execution_time,
-            peak_memory_mb: None,  // TODO: Implement memory tracking
+            peak_memory_mb: None, // TODO: Implement memory tracking
             frequency_index: config.freq_start_idx,
         };
 
@@ -211,8 +212,8 @@ impl NumCalcRunner {
         mut child: std::process::Child,
         timeout: Duration,
     ) -> Result<std::process::Output> {
-        use std::thread;
         use std::sync::mpsc;
+        use std::thread;
 
         let (tx, rx) = mpsc::channel();
 
@@ -227,7 +228,8 @@ impl NumCalcRunner {
         match rx.recv_timeout(timeout) {
             Ok(_) => {
                 // Child finished
-                child.wait_with_output()
+                child
+                    .wait_with_output()
                     .context("Failed to get child output")
             }
             Err(_) => {
@@ -320,13 +322,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore]  // Requires actual project directory
+    #[ignore] // Requires actual project directory
     fn test_runner_creation() {
         // This test is ignored because it requires a real project directory
         // Run with: cargo test test_runner_creation -- --ignored
 
-        let project_dir = std::env::var("TEST_PROJECT_DIR")
-            .unwrap_or_else(|_| "test_project".to_string());
+        let project_dir =
+            std::env::var("TEST_PROJECT_DIR").unwrap_or_else(|_| "test_project".to_string());
 
         match NumCalcRunner::new(&project_dir) {
             Ok(runner) => {

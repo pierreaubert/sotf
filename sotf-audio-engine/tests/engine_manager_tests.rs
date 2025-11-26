@@ -2,42 +2,15 @@
 //!
 //! Unit tests for the manager thread that coordinates all worker threads.
 
-use hound::{WavSpec, WavWriter};
-use sotf_audio::engine::{AudioEngine, EngineConfig, PlaybackState, PluginConfig};
+mod common;
+
+use sotf_audio::engine::{AudioEngine, PlaybackState, PluginConfig};
 use std::path::PathBuf;
 use std::time::Duration;
-use tempfile::NamedTempFile;
-
-/// Helper to create a test WAV file
-fn create_test_wav(duration_secs: f32, sample_rate: u32, channels: u16) -> NamedTempFile {
-    let spec = WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
-    let mut writer = WavWriter::create(temp_file.path(), spec).unwrap();
-
-    let num_samples = (duration_secs * sample_rate as f32) as usize;
-    for i in 0..num_samples {
-        let t = i as f32 / sample_rate as f32;
-        let sample = (t * 440.0 * 2.0 * std::f32::consts::PI).sin();
-        let amplitude = (sample * i16::MAX as f32 * 0.3) as i16;
-
-        for _ in 0..channels {
-            writer.write_sample(amplitude).unwrap();
-        }
-    }
-
-    writer.finalize().unwrap();
-    temp_file
-}
 
 #[test]
 fn test_engine_creation() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let engine = AudioEngine::new(config);
 
     assert!(engine.is_ok(), "Failed to create audio engine");
@@ -45,7 +18,7 @@ fn test_engine_creation() {
 
 #[test]
 fn test_engine_initial_state() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let engine = AudioEngine::new(config).unwrap();
 
     let state = engine.get_state();
@@ -53,17 +26,17 @@ fn test_engine_initial_state() {
     assert_eq!(state.playback_state, PlaybackState::Stopped);
     assert_eq!(state.position, 0.0);
     assert_eq!(state.volume, 1.0);
-    assert_eq!(state.muted, false);
+    assert!(!state.muted);
     assert_eq!(state.current_file, None);
 }
 
 #[test]
 fn test_engine_play_file() {
     let _ = env_logger::builder().is_test(true).try_init();
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(0.5, 48000, 2);
+    let temp_file = common::create_test_wav(0.5, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     let result = engine.play(path.clone());
@@ -78,10 +51,10 @@ fn test_engine_play_file() {
 
 #[test]
 fn test_engine_pause_resume() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(1.0, 48000, 2);
+    let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     std::thread::sleep(Duration::from_millis(100));
@@ -103,10 +76,10 @@ fn test_engine_pause_resume() {
 
 #[test]
 fn test_engine_stop() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(1.0, 48000, 2);
+    let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     std::thread::sleep(Duration::from_millis(100));
@@ -123,10 +96,10 @@ fn test_engine_stop() {
 #[test]
 fn test_engine_seek() {
     let _ = env_logger::builder().is_test(true).try_init();
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     std::thread::sleep(Duration::from_millis(200));
@@ -147,7 +120,7 @@ fn test_engine_seek() {
 
 #[test]
 fn test_engine_volume_control() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Test various volume levels
@@ -165,7 +138,7 @@ fn test_engine_volume_control() {
 #[test]
 fn test_engine_mute() {
     let _ = env_logger::builder().is_test(true).try_init();
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Mute
@@ -173,19 +146,19 @@ fn test_engine_mute() {
     std::thread::sleep(Duration::from_millis(20));
 
     let state = engine.get_state();
-    assert_eq!(state.muted, true);
+    assert!(state.muted);
 
     // Unmute
     engine.set_mute(false).unwrap();
     std::thread::sleep(Duration::from_millis(20));
 
     let state = engine.get_state();
-    assert_eq!(state.muted, false);
+    assert!(!state.muted);
 }
 
 #[test]
 fn test_engine_update_plugin_chain() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Create a simple plugin chain with a gain plugin
@@ -204,7 +177,7 @@ fn test_engine_update_plugin_chain() {
 
 #[test]
 fn test_engine_bypass_processing() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Enable bypass
@@ -212,19 +185,19 @@ fn test_engine_bypass_processing() {
     std::thread::sleep(Duration::from_millis(20));
 
     let state = engine.get_state();
-    assert_eq!(state.processing_bypassed, true);
+    assert!(state.processing_bypassed);
 
     // Disable bypass
     engine.set_bypass(false).unwrap();
     std::thread::sleep(Duration::from_millis(20));
 
     let state = engine.get_state();
-    assert_eq!(state.processing_bypassed, false);
+    assert!(!state.processing_bypassed);
 }
 
 #[test]
 fn test_engine_invalid_file() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     let _result = engine.play(PathBuf::from("/nonexistent/file.wav"));
@@ -243,16 +216,16 @@ fn test_engine_invalid_file() {
 
 #[test]
 fn test_engine_multiple_plays() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
     // Play first file
-    let temp_file1 = create_test_wav(0.3, 48000, 2);
+    let temp_file1 = common::create_test_wav(0.3, 48000, 2);
     engine.play(temp_file1.path().to_path_buf()).unwrap();
     std::thread::sleep(Duration::from_millis(100));
 
     // Play second file (should stop first)
-    let temp_file2 = create_test_wav(0.3, 48000, 2);
+    let temp_file2 = common::create_test_wav(0.3, 48000, 2);
     engine.play(temp_file2.path().to_path_buf()).unwrap();
     std::thread::sleep(Duration::from_millis(100));
 
@@ -263,10 +236,10 @@ fn test_engine_multiple_plays() {
 
 #[test]
 fn test_engine_rapid_commands() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Rapidly send various commands
@@ -293,10 +266,10 @@ fn test_engine_rapid_commands() {
 
 #[test]
 fn test_engine_shutdown() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(1.0, 48000, 2);
+    let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     std::thread::sleep(Duration::from_millis(100));
@@ -313,10 +286,10 @@ fn test_engine_shutdown() {
 
 #[test]
 fn test_engine_position_tracking() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(2.0, 48000, 2);
+    let temp_file = common::create_test_wav(2.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     // Track position over time
@@ -344,10 +317,10 @@ fn test_engine_position_tracking() {
 
 #[test]
 fn test_engine_state_consistency() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(1.0, 48000, 2);
+    let temp_file = common::create_test_wav(1.0, 48000, 2);
     let path = temp_file.path().to_path_buf();
 
     // Play
@@ -381,10 +354,9 @@ fn test_engine_config_with_plugins() {
         PluginConfig::new("gain", serde_json::json!({"gain_db": 6.0})),
     ];
 
-    let config = EngineConfig {
-        plugins,
-        ..Default::default()
-    };
+    let config = common::test_engine_config_with(|c| {
+        c.plugins = plugins;
+    });
 
     let engine = AudioEngine::new(config);
     assert!(engine.is_ok(), "Should create engine with plugin config");
@@ -392,10 +364,9 @@ fn test_engine_config_with_plugins() {
 
 #[test]
 fn test_engine_custom_sample_rate() {
-    let config = EngineConfig {
-        output_sample_rate: 96000,
-        ..Default::default()
-    };
+    let config = common::test_engine_config_with(|c| {
+        c.output_sample_rate = 96000;
+    });
 
     let result = AudioEngine::new(config);
 
@@ -418,10 +389,10 @@ fn test_engine_custom_sample_rate() {
 
 #[test]
 fn test_engine_drop_cleanup() {
-    let config = EngineConfig::default();
+    let config = common::test_engine_config();
     let mut engine = AudioEngine::new(config).unwrap();
 
-    let temp_file = create_test_wav(1.0, 48000, 2);
+    let temp_file = common::create_test_wav(1.0, 48000, 2);
     engine.play(temp_file.path().to_path_buf()).unwrap();
 
     std::thread::sleep(Duration::from_millis(100));

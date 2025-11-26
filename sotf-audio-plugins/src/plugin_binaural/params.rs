@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::room::RoomModel;
+use serde::{Deserialize, Serialize};
 
 fn default_fft_size() -> usize {
     2048

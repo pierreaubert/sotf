@@ -87,7 +87,10 @@ impl Player {
         param_id: String,
         value: String,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        match self.manager.set_plugin_parameter(plugin_index, param_id, value) {
+        match self
+            .manager
+            .set_plugin_parameter(plugin_index, param_id, value)
+        {
             Ok(()) => Ok(()),
             Err(e) if e == "No engine running" => {
                 // Engine not running yet - parameter will be applied on next playback

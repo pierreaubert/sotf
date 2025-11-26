@@ -195,7 +195,7 @@ impl ValidationResult {
             wavelength,
             characteristic_dimension,
             dimensionless_param: analytical.wave_number * characteristic_dimension,
-            num_elements: None,  // Fill from BEM metadata
+            num_elements: None, // Fill from BEM metadata
             elements_per_wavelength: None,
             custom: analytical.metadata.clone(),
         };
@@ -240,21 +240,57 @@ impl ValidationResult {
         println!("╔══════════════════════════════════════════════════════╗");
         println!("║  BEM Validation: {}  ║", self.test_name);
         println!("╠══════════════════════════════════════════════════════╣");
-        println!("║  Dimensions: {}D                                      ║", self.dimensions);
-        println!("║  Wave number k: {:.4}                              ║", self.parameters.wave_number);
-        println!("║  Frequency: {:.2} Hz                               ║", self.parameters.frequency);
-        println!("║  ka: {:.4}                                         ║", self.parameters.dimensionless_param);
+        println!(
+            "║  Dimensions: {}D                                      ║",
+            self.dimensions
+        );
+        println!(
+            "║  Wave number k: {:.4}                              ║",
+            self.parameters.wave_number
+        );
+        println!(
+            "║  Frequency: {:.2} Hz                               ║",
+            self.parameters.frequency
+        );
+        println!(
+            "║  ka: {:.4}                                         ║",
+            self.parameters.dimensionless_param
+        );
         println!("╠══════════════════════════════════════════════════════╣");
         println!("║  Error Metrics:                                      ║");
-        println!("║    L2 (relative): {:.6}                          ║", self.errors.l2_relative);
-        println!("║    L∞:            {:.6}                          ║", self.errors.linf);
-        println!("║    Mean abs:      {:.6}                          ║", self.errors.mean_absolute);
-        println!("║    RMS:           {:.6}                          ║", self.errors.rms);
-        println!("║    Max relative:  {:.6}                          ║", self.errors.max_relative);
-        println!("║    Correlation:   {:.6}                          ║", self.errors.correlation);
+        println!(
+            "║    L2 (relative): {:.6}                          ║",
+            self.errors.l2_relative
+        );
+        println!(
+            "║    L∞:            {:.6}                          ║",
+            self.errors.linf
+        );
+        println!(
+            "║    Mean abs:      {:.6}                          ║",
+            self.errors.mean_absolute
+        );
+        println!(
+            "║    RMS:           {:.6}                          ║",
+            self.errors.rms
+        );
+        println!(
+            "║    Max relative:  {:.6}                          ║",
+            self.errors.max_relative
+        );
+        println!(
+            "║    Correlation:   {:.6}                          ║",
+            self.errors.correlation
+        );
         println!("╠══════════════════════════════════════════════════════╣");
-        println!("║  Execution time: {} ms                            ║", self.metadata.execution_time_ms);
-        println!("║  Memory peak: {:.2} MB                             ║", self.metadata.memory_peak_mb);
+        println!(
+            "║  Execution time: {} ms                            ║",
+            self.metadata.execution_time_ms
+        );
+        println!(
+            "║  Memory peak: {:.2} MB                             ║",
+            self.metadata.memory_peak_mb
+        );
         println!("╚══════════════════════════════════════════════════════╝");
     }
 
@@ -376,19 +412,13 @@ mod tests {
 
     #[test]
     fn test_error_metrics_nonzero() {
-        let analytical = vec![
-            Complex64::new(1.0, 0.0),
-            Complex64::new(0.5, 0.5),
-        ];
+        let analytical = vec![Complex64::new(1.0, 0.0), Complex64::new(0.5, 0.5)];
 
-        let bem = vec![
-            Complex64::new(1.01, 0.01),
-            Complex64::new(0.51, 0.51),
-        ];
+        let bem = vec![Complex64::new(1.01, 0.01), Complex64::new(0.51, 0.51)];
 
         let errors = ErrorMetrics::compute(&analytical, &bem);
 
         assert!(errors.l2_relative > 0.0);
-        assert!(errors.l2_relative < 0.1);  // Should be small
+        assert!(errors.l2_relative < 0.1); // Should be small
     }
 }

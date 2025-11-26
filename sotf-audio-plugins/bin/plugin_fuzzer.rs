@@ -15,11 +15,11 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use sotf_plugins::{
-    CompressorPlugin, CompressorPluginParams, CrossoverPlugin,
-    CrossoverPluginParams, DawHost, DelayPlugin, DelayPluginParams, EqPlugin, EqPluginParams,
-    GainPlugin, GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter,
-    LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
-    LoudnessCompensationPluginParams, Plugin, UpmixerPlugin, UpmixerPluginParams,
+    CompressorPlugin, CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost,
+    DelayPlugin, DelayPluginParams, EqPlugin, EqPluginParams, GainPlugin, GainPluginParams,
+    GatePlugin, GatePluginParams, InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams,
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, Plugin, UpmixerPlugin,
+    UpmixerPluginParams,
 };
 use std::fs::File;
 use std::path::PathBuf;
@@ -124,8 +124,7 @@ impl AbnormalityReport {
             if let Some(error_db) = self.clipping_error_db {
                 println!(
                     "  - Clipping detected (peak: {:.2} dBFS, {:.2} dB above threshold)",
-                    error_db,
-                    error_db
+                    error_db, error_db
                 );
             } else {
                 println!("  - Clipping detected (values >= 1.0 or <= -1.0)");
@@ -436,13 +435,19 @@ impl PluginFuzzer for EqFuzzer {
         }
 
         // Build parameter description
-        let mut desc = format!("filters={} loudness_comp={:.2}dB [", filters.len(), loudness_gain);
+        let mut desc = format!(
+            "filters={} loudness_comp={:.2}dB [",
+            filters.len(),
+            loudness_gain
+        );
         for (i, f) in filters.iter().enumerate() {
             if i > 0 {
                 desc.push_str(", ");
             }
-            desc.push_str(&format!("{}:{:.0}Hz q={:.2} gain={:.2}dB",
-                f.filter_type, f.freq, f.q, f.db_gain));
+            desc.push_str(&format!(
+                "{}:{:.0}Hz q={:.2} gain={:.2}dB",
+                f.filter_type, f.freq, f.q, f.db_gain
+            ));
         }
         desc.push(']');
 
@@ -486,7 +491,16 @@ impl PluginFuzzer for CompressorFuzzer {
 
         let desc = format!(
             "threshold={:.1}dB ratio={:.2}:1 attack={:.1}ms release={:.0}ms knee={:.1}dB makeup={:.1}dB mix={:.2} auto_makeup={} link={} sc_hpf={:.0}Hz",
-            threshold_db, ratio, attack_ms, release_ms, knee_db, makeup_gain_db, mix, auto_makeup, link_channels, sidechain_hpf_hz
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            makeup_gain_db,
+            mix,
+            auto_makeup,
+            link_channels,
+            sidechain_hpf_hz
         );
 
         (Box::new(InPlacePluginAdapter::new(plugin)), desc)
@@ -548,7 +562,14 @@ impl PluginFuzzer for GateFuzzer {
 
         let desc = format!(
             "threshold={:.1}dB ratio={:.1}:1 attack={:.1}ms hold={:.0}ms release={:.0}ms mix={:.2} link={} sc_hpf={:.0}Hz",
-            threshold_db, ratio, attack_ms, hold_ms, release_ms, mix, link_channels, sidechain_hpf_hz
+            threshold_db,
+            ratio,
+            attack_ms,
+            hold_ms,
+            release_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz
         );
 
         (Box::new(InPlacePluginAdapter::new(plugin)), desc)
@@ -614,7 +635,8 @@ struct CrossoverFuzzer;
 impl PluginFuzzer for CrossoverFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let crossover_types = vec!["LR24", "LR48", "Butterworth24", "Butterworth12"];
-        let crossover_type = crossover_types[rng.random_range(0..crossover_types.len())].to_string();
+        let crossover_type =
+            crossover_types[rng.random_range(0..crossover_types.len())].to_string();
         let frequency = rng.random_range(20.0..20000.0);
         let outputs = vec!["low", "high"];
         let output = outputs[rng.random_range(0..outputs.len())].to_string();
@@ -641,7 +663,8 @@ impl PluginFuzzer for UpmixerFuzzer {
     fn create_plugin(&self, _channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         // Upmixer always takes 2 channels input
         let speaker_configs = ["5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4"];
-        let speaker_config = speaker_configs[rng.random_range(0..speaker_configs.len())].to_string();
+        let speaker_config =
+            speaker_configs[rng.random_range(0..speaker_configs.len())].to_string();
 
         // Random FFT size (power of 2)
         let fft_sizes = [1024, 2048, 4096];
@@ -687,10 +710,23 @@ impl PluginFuzzer for UpmixerFuzzer {
 
         let desc = format!(
             "config={} fft={} g_fd={:.2} g_fa={:.2} g_ra={:.2} lfe_co={:.0}Hz sw={:.2} bp={:.0}Hz cs={:.2} hg={:.2} lfeg={:.2} subh={}/{:.2} hr={}/{:.2} cap={:.1}dB decor={}",
-            speaker_config, fft_size, gain_front_direct, gain_front_ambient, gain_rear_ambient,
-            lfe_cutoff_hz, stereo_width, bandpass_hz, center_spread, height_gain, lfe_gain,
-            enable_subharmonic_synth, subharmonic_gain, enable_hr_direct, hr_sharpen,
-            safety_cap_db, decorrelation_mode
+            speaker_config,
+            fft_size,
+            gain_front_direct,
+            gain_front_ambient,
+            gain_rear_ambient,
+            lfe_cutoff_hz,
+            stereo_width,
+            bandpass_hz,
+            center_spread,
+            height_gain,
+            lfe_gain,
+            enable_subharmonic_synth,
+            subharmonic_gain,
+            enable_hr_direct,
+            hr_sharpen,
+            safety_cap_db,
+            decorrelation_mode
         );
 
         (Box::new(UpmixerPlugin::from_params(params)), desc)
@@ -876,7 +912,12 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
                 use std::io::Write;
                 let stdout = std::io::stdout();
                 let mut handle = stdout.lock();
-                write!(handle, "\r[{}/{}] Testing @ {} Hz    ", completed, args.iterations, test_sample_rate).ok();
+                write!(
+                    handle,
+                    "\r[{}/{}] Testing @ {} Hz    ",
+                    completed, args.iterations, test_sample_rate
+                )
+                .ok();
                 handle.flush().ok();
             }
 
@@ -956,7 +997,8 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
                         handle,
                         "  - Extreme values detected (max={:.2}, min={:.2})",
                         report.max_value, report.min_value
-                    ).ok();
+                    )
+                    .ok();
                 }
                 if report.has_dc_offset {
                     writeln!(handle, "  - DC offset detected ({:.4})", report.dc_offset).ok();
@@ -966,15 +1008,20 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
                         writeln!(
                             handle,
                             "  - Clipping detected (peak: {:.2} dBFS, {:.2} dB above threshold)",
-                            error_db,
-                            error_db
-                        ).ok();
+                            error_db, error_db
+                        )
+                        .ok();
                     } else {
                         writeln!(handle, "  - Clipping detected (values >= 1.0 or <= -1.0)").ok();
                     }
                 }
                 if report.has_denormals {
-                    writeln!(handle, "  - Denormals detected ({} samples)", report.denormal_count).ok();
+                    writeln!(
+                        handle,
+                        "  - Denormals detected ({} samples)",
+                        report.denormal_count
+                    )
+                    .ok();
                 }
                 if report.is_silent {
                     writeln!(handle, "  - Output is silent (all zeros)").ok();

@@ -22,7 +22,7 @@
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
-#![allow(clippy::too_many_arguments)]  // Scientific code often has many parameters
+#![allow(clippy::too_many_arguments)] // Scientific code often has many parameters
 
 pub mod analytical;
 pub mod testing;
