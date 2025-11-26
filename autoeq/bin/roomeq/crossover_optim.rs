@@ -33,6 +33,8 @@ pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
 /// * `sample_rate` - Sample rate for filter design
 /// * `min_freq` - Minimum frequency for evaluation
 /// * `max_freq` - Maximum frequency for evaluation
+/// * `min_db` - Minimum gain bound in dB
+/// * `max_db` - Maximum gain bound in dB
 ///
 /// # Returns
 /// * Tuple of (optimal_gains, optimal_crossover_freqs, combined_curve)
@@ -42,6 +44,8 @@ pub fn optimize_crossover(
     sample_rate: f64,
     min_freq: f64,
     max_freq: f64,
+    min_db: f64,
+    max_db: f64,
 ) -> Result<(Vec<f64>, Vec<f64>, Curve), Box<dyn Error>> {
     // Convert Curve to DriverMeasurement
     let driver_measurements: Vec<DriverMeasurement> = drivers
@@ -81,11 +85,11 @@ pub fn optimize_crossover(
         min_freq,
         max_freq,
 
-        // Q and gain constraints (not used for crossover)
+        // Q and gain constraints
         min_q: 0.5,
         max_q: 10.0,
-        min_db: -12.0,
-        max_db: 12.0,
+        min_db,
+        max_db,
 
         // Algorithm - use cobyla for simplicity
         algo: "nlopt:cobyla".to_string(),

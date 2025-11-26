@@ -74,7 +74,10 @@ mod tests {
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
         // Should be satisfied (negative or zero)
-        assert!(result <= 0.0, "Monotonic crossovers should satisfy constraint");
+        assert!(
+            result <= 0.0,
+            "Monotonic crossovers should satisfy constraint"
+        );
     }
 
     #[test]
@@ -91,7 +94,10 @@ mod tests {
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
         // Should be violated (positive)
-        assert!(result > 0.0, "Non-monotonic crossovers should violate constraint");
+        assert!(
+            result > 0.0,
+            "Non-monotonic crossovers should violate constraint"
+        );
     }
 
     #[test]
@@ -108,7 +114,10 @@ mod tests {
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
         // Should be violated (positive)
-        assert!(result > 0.0, "Crossovers too close should violate constraint");
+        assert!(
+            result > 0.0,
+            "Crossovers too close should violate constraint"
+        );
     }
 
     #[test]
@@ -125,6 +134,9 @@ mod tests {
         let result = constraint_crossover_monotonicity(&x, None, &mut data);
 
         // Should be satisfied
-        assert!(result <= 0.0, "Well-separated crossovers should satisfy constraint");
+        assert!(
+            result <= 0.0,
+            "Well-separated crossovers should satisfy constraint"
+        );
     }
 }

@@ -62,17 +62,15 @@ pub fn plot_drivers(
     }
 
     // Plot individual drivers with gains and crossovers applied
-    // We need to compute the response for each driver on THEIR frequency range only
+    // Drivers are shown at their actual levels - if raw measurements have passbands at 0 dB,
+    // and gains are small, the processed passbands should also be near 0 dB
     for (i, driver) in drivers_data.drivers.iter().enumerate() {
         // Use the driver's own frequency range
         let driver_freq_grid = &driver.freq;
 
-        // Normalize the driver's SPL first (subtract mean to center around 0)
-        let driver_spl_mean = driver.spl.mean().unwrap_or(0.0);
-        let driver_spl_normalized = &driver.spl - driver_spl_mean;
-
-        // Start with the normalized driver's SPL + gain
-        let mut response = &driver_spl_normalized + gains[i];
+        // Use raw SPL values + gain (assumes raw measurements are already properly normalized)
+        // This avoids the 1000-2000 Hz normalization which doesn't work well for woofers
+        let mut response = &driver.spl + gains[i];
 
         // Apply crossover filters on the driver's frequency grid
         if i > 0 {
@@ -113,8 +111,9 @@ pub fn plot_drivers(
             response = response + lp_response;
         }
 
-        // No need to normalize again - we already normalized the driver SPL at the start
-        // The response is already centered around the gain value
+        // Don't subtract combined_mean - each driver shows its contribution
+        // The raw measurements are already normalized to 0 dB in their passband
+        // After applying gain and crossover, the passband should stay near 0 dB
 
         let color = match i {
             0 => "rgb(31, 119, 180)",  // Blue (woofer)

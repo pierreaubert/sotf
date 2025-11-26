@@ -1,6 +1,8 @@
 //! Output generation for room EQ DSP chains
 
-use super::types::{ChannelDspChain, DriverDspChain, DspChainOutput, OptimizationMetadata, PluginConfigWrapper};
+use super::types::{
+    ChannelDspChain, DriverDspChain, DspChainOutput, OptimizationMetadata, PluginConfigWrapper,
+};
 use autoeq_iir::Biquad;
 use serde_json::json;
 use std::collections::HashMap;

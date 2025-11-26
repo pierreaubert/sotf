@@ -235,8 +235,42 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
     qa_println!(args, "🎵 Multi-driver crossover optimization mode");
     qa_println!(args, "");
 
-    // Load multi-driver data
-    let drivers_data = load::load_drivers_data(args).await?;
+    // Collect driver file paths
+    let driver_paths: Vec<_> = [&args.driver1, &args.driver2, &args.driver3, &args.driver4]
+        .iter()
+        .filter_map(|p| p.as_ref())
+        .cloned()
+        .collect();
+
+    if driver_paths.len() < 2 {
+        return Err("At least 2 driver files are required for multi-driver optimization".into());
+    }
+
+    // Load driver measurements
+    let measurements = autoeq::workflow::load_driver_measurements_from_files(&driver_paths)?;
+
+    // Parse crossover type
+    let crossover_type = match args.crossover_type.as_str() {
+        "butterworth2" => autoeq::loss::CrossoverType::Butterworth2,
+        "linkwitzriley2" => autoeq::loss::CrossoverType::LinkwitzRiley2,
+        "linkwitzriley4" => autoeq::loss::CrossoverType::LinkwitzRiley4,
+        other => {
+            return Err(format!(
+                "Unknown crossover type '{}'. Valid types: butterworth2, linkwitzriley2, linkwitzriley4",
+                other
+            )
+            .into());
+        }
+    };
+
+    // Create DriversLossData
+    let drivers_data = autoeq::loss::DriversLossData::new(measurements, crossover_type);
+
+    eprintln!(
+        "✓ Initialized {} drivers with {:?} crossover",
+        drivers_data.drivers.len(),
+        drivers_data.crossover_type
+    );
 
     qa_println!(args, "📊 Drivers sorted by frequency (lowest to highest):");
     for (i, driver) in drivers_data.drivers.iter().enumerate() {
@@ -252,20 +286,13 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
     }
     qa_println!(args, "");
 
-    // Set up objective data
-    let objective_data = autoeq::workflow::setup_drivers_objective_data(args, drivers_data);
-
-    // Get bounds
-    let bounds =
-        autoeq::workflow::setup_drivers_bounds(args, objective_data.drivers_data.as_ref().unwrap());
-
     qa_println!(args, "🎯 Optimization parameters:");
     qa_println!(
         args,
         "   {} driver gains + {} crossover frequencies = {} parameters",
-        objective_data.drivers_data.as_ref().unwrap().drivers.len(),
-        objective_data.drivers_data.as_ref().unwrap().drivers.len() - 1,
-        bounds.0.len()
+        drivers_data.drivers.len(),
+        drivers_data.drivers.len() - 1,
+        drivers_data.drivers.len() + (drivers_data.drivers.len() - 1)
     );
     qa_println!(
         args,
@@ -275,18 +302,22 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
     );
     qa_println!(args, "");
 
-    // Optimize
+    // Optimize using shared function
     qa_println!(args, "🚀 Starting optimization...");
-    let opt_result = runopt::perform_optimization_with_bounds(args, &objective_data, Some(bounds))?;
+    let result = autoeq::workflow::optimize_drivers_crossover(
+        drivers_data.clone(),
+        args.min_freq,
+        args.max_freq,
+        args.sample_rate,
+        &args.algo,
+        args.maxeval,
+        args.min_db,
+        args.max_db,
+    )?;
 
     // Extract results
-    let n_drivers = objective_data.drivers_data.as_ref().unwrap().drivers.len();
-    let gains = &opt_result.params[0..n_drivers];
-    let xover_freqs_log10 = &opt_result.params[n_drivers..];
-    let xover_freqs: Vec<f64> = xover_freqs_log10
-        .iter()
-        .map(|f| 10.0_f64.powf(*f))
-        .collect();
+    let gains = &result.gains;
+    let xover_freqs = &result.crossover_freqs;
 
     // Display results
     qa_println!(args, "");
@@ -310,24 +341,26 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
         );
     }
     qa_println!(args, "");
-    qa_println!(
-        args,
-        "Crossover Type: {:?}",
-        objective_data.drivers_data.as_ref().unwrap().crossover_type
-    );
+    qa_println!(args, "Crossover Type: {:?}", drivers_data.crossover_type);
     qa_println!(args, "");
 
-    // Compute pre and post objective values
-    if let (Some(pre_obj), Some(post_obj)) = (opt_result.pre_objective, opt_result.post_objective) {
-        qa_println!(args, "Loss (RMS deviation from flat):");
-        qa_println!(args, "   Before optimization: {:.6} dB", pre_obj);
-        qa_println!(args, "   After optimization:  {:.6} dB", post_obj);
-        qa_println!(
-            args,
-            "   Improvement: {:.2}%",
-            (pre_obj - post_obj) / pre_obj * 100.0
-        );
-    }
+    // Display pre and post objective values
+    qa_println!(args, "Loss (RMS deviation from flat):");
+    qa_println!(
+        args,
+        "   Before optimization: {:.6} dB",
+        result.pre_objective
+    );
+    qa_println!(
+        args,
+        "   After optimization:  {:.6} dB",
+        result.post_objective
+    );
+    qa_println!(
+        args,
+        "   Improvement: {:.2}%",
+        (result.pre_objective - result.post_objective) / result.pre_objective * 100.0
+    );
 
     // Generate plot
     qa_println!(args, "");
@@ -340,9 +373,9 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
 
     qa_println!(args, "📊 Generating plots: {}", output_path.display());
     if let Err(e) = autoeq::plot::plot_drivers_results(
-        objective_data.drivers_data.as_ref().unwrap(),
+        &drivers_data,
         gains,
-        &xover_freqs,
+        xover_freqs,
         args.sample_rate,
         &output_path,
     ) {
@@ -353,17 +386,11 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
 
     // QA mode output
     if let Some(_qa_threshold) = args.qa {
-        let converge_str = if opt_result.converged {
-            "true"
-        } else {
-            "false"
-        };
-        let pre_obj = opt_result.pre_objective.unwrap_or(f64::NAN);
-        let post_obj = opt_result.post_objective.unwrap_or(f64::NAN);
+        let converge_str = if result.converged { "true" } else { "false" };
 
         println!(
             "Converge: {} | Pre: {:.6} | Post: {:.6}",
-            converge_str, pre_obj, post_obj
+            converge_str, result.pre_objective, result.post_objective
         );
     }
 

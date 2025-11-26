@@ -25,8 +25,6 @@ use std::path::PathBuf;
 mod crossover_optim;
 #[path = "roomeq/eq_optim.rs"]
 mod eq_optim;
-#[path = "roomeq/level_norm.rs"]
-mod level_norm;
 #[path = "roomeq/load.rs"]
 mod load;
 #[path = "roomeq/output.rs"]
@@ -194,20 +192,19 @@ fn process_single_speaker(
     let pre_score = autoeq::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
 
     // Optimize EQ (returns filters and post_score)
-    let (eq_filters, post_score) = eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, sample_rate)?;
+    let (eq_filters, post_score) =
+        eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, sample_rate)?;
 
     if verbose {
         println!("  Optimized {} EQ filters", eq_filters.len());
-        println!("  Pre-score: {:.6}, Post-score: {:.6}", pre_score, post_score);
+        println!(
+            "  Pre-score: {:.6}, Post-score: {:.6}",
+            pre_score, post_score
+        );
     }
 
     // Build DSP chain (no gain, no crossover for simple speaker)
-    let chain = output::build_channel_dsp_chain(
-        channel_name,
-        None,
-        Vec::new(),
-        &eq_filters,
-    );
+    let chain = output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
 
     Ok((chain, pre_score, post_score))
 }
@@ -233,6 +230,58 @@ fn process_speaker_group(
         println!("  Loaded {} driver measurements", driver_curves.len());
     }
 
+    // Step 1: Check driver measurements for level alignment issues
+    // Per the algorithm: measurements should have the average over their passband close
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let max_db = room_config.optimizer.max_db;
+
+    // Compute peak SPL for each driver in the optimization range
+    let mut peaks = Vec::with_capacity(driver_curves.len());
+    for driver in &driver_curves {
+        let mut peak_spl = f64::NEG_INFINITY;
+        for j in 0..driver.freq.len() {
+            if driver.freq[j] >= min_freq && driver.freq[j] <= max_freq {
+                if driver.spl[j] > peak_spl {
+                    peak_spl = driver.spl[j];
+                }
+            }
+        }
+        peaks.push(peak_spl);
+    }
+
+    // Check for large level differences
+    let max_peak = peaks.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let min_peak = peaks.iter().cloned().fold(f64::INFINITY, f64::min);
+    let peak_spread = max_peak - min_peak;
+
+    if verbose {
+        for (i, peak) in peaks.iter().enumerate() {
+            println!("    Driver {}: peak {:.1} dB", i, peak);
+        }
+        println!(
+            "    Level spread: {:.1} dB (max gain bounds: ±{:.1} dB)",
+            peak_spread, max_db
+        );
+    }
+
+    // Warn if level spread exceeds the gain bounds (meaning optimizer might hit bounds)
+    if peak_spread > max_db {
+        eprintln!(
+            "  ⚠️  WARNING: Driver levels differ by {:.1} dB, which exceeds the gain bounds of ±{:.1} dB.",
+            peak_spread, max_db
+        );
+        eprintln!(
+            "     This may indicate measurement issues (different distances, gains, or reference levels)."
+        );
+        eprintln!("     Consider:");
+        eprintln!(
+            "     - Increasing max_db in the config to at least ±{:.1} dB",
+            peak_spread / 2.0 + 3.0
+        );
+        eprintln!("     - Re-measuring drivers at consistent levels");
+    }
+
     // Get crossover configuration
     let crossover_config = if let Some(crossover_ref) = &group.crossover {
         room_config
@@ -254,14 +303,17 @@ fn process_speaker_group(
     let mut initial_xover_freqs = Vec::new();
     for i in 0..(n_drivers - 1) {
         // Geometric mean between adjacent driver frequency ranges
-        let lower_mean = driver_curves[i].freq.iter().sum::<f64>() / driver_curves[i].freq.len() as f64;
-        let upper_mean = driver_curves[i + 1].freq.iter().sum::<f64>() / driver_curves[i + 1].freq.len() as f64;
+        let lower_mean =
+            driver_curves[i].freq.iter().sum::<f64>() / driver_curves[i].freq.len() as f64;
+        let upper_mean =
+            driver_curves[i + 1].freq.iter().sum::<f64>() / driver_curves[i + 1].freq.len() as f64;
         let geom_mean = (lower_mean * upper_mean).sqrt();
         initial_xover_freqs.push(geom_mean);
     }
 
     // Convert curves to DriverMeasurement
-    let driver_measurements: Vec<autoeq::loss::DriverMeasurement> = driver_curves.iter()
+    let driver_measurements: Vec<autoeq::loss::DriverMeasurement> = driver_curves
+        .iter()
         .map(|curve| autoeq::loss::DriverMeasurement {
             freq: curve.freq.clone(),
             spl: curve.spl.clone(),
@@ -286,6 +338,8 @@ fn process_speaker_group(
         sample_rate,
         room_config.optimizer.min_freq,
         room_config.optimizer.max_freq,
+        room_config.optimizer.min_db,
+        room_config.optimizer.max_db,
     )?;
 
     if verbose {
@@ -301,7 +355,10 @@ fn process_speaker_group(
 
     if verbose {
         println!("  Optimized {} EQ filters", eq_filters.len());
-        println!("  Pre-score: {:.6}, Post-score: {:.6}", pre_score, post_score);
+        println!(
+            "  Pre-score: {:.6}, Post-score: {:.6}",
+            pre_score, post_score
+        );
     }
 
     // Build multi-driver DSP chain with per-driver crossovers

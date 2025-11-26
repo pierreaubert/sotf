@@ -46,9 +46,55 @@ struct Args {
 #[derive(Debug, Clone, Copy)]
 enum FilterType {
     Flat,
-    Lowpass(f64),  // cutoff frequency
-    Highpass(f64), // cutoff frequency
+    Lowpass(f64),       // cutoff frequency
+    Highpass(f64),      // cutoff frequency
     Bandpass(f64, f64), // low, high cutoff
+}
+
+/// Driver type with realistic frequency ranges
+/// Each driver covers a specific range with some overlap to adjacent drivers
+#[derive(Debug, Clone, Copy)]
+enum DriverType {
+    /// Subwoofer: 10-400 Hz (primarily 20-200 Hz, rolls off above)
+    Subwoofer,
+    /// Woofer: 50-1000 Hz (primarily 80-500 Hz, rolls off at extremes)
+    Woofer,
+    /// Midrange: 400-4000 Hz (primarily 500-2500 Hz)
+    Midrange,
+    /// Tweeter: 1000-20000 Hz (primarily 2000-16000 Hz)
+    Tweeter,
+}
+
+impl DriverType {
+    /// Get the frequency range for this driver type (low_cutoff, high_cutoff)
+    fn freq_range(&self) -> (f64, f64) {
+        match self {
+            DriverType::Subwoofer => (10.0, 400.0),
+            DriverType::Woofer => (50.0, 1000.0),
+            DriverType::Midrange => (400.0, 4000.0),
+            DriverType::Tweeter => (1000.0, 20000.0),
+        }
+    }
+
+    /// Get driver type for a given index in an N-driver system
+    fn for_index(driver_idx: usize, num_drivers: usize) -> Self {
+        match (num_drivers, driver_idx) {
+            // 2-way system: woofer + tweeter
+            (2, 0) => DriverType::Woofer,
+            (2, 1) => DriverType::Tweeter,
+            // 3-way system: woofer + midrange + tweeter
+            (3, 0) => DriverType::Woofer,
+            (3, 1) => DriverType::Midrange,
+            (3, 2) => DriverType::Tweeter,
+            // 4-way system: subwoofer + woofer + midrange + tweeter
+            (4, 0) => DriverType::Subwoofer,
+            (4, 1) => DriverType::Woofer,
+            (4, 2) => DriverType::Midrange,
+            (4, 3) => DriverType::Tweeter,
+            // Default fallback
+            _ => DriverType::Woofer,
+        }
+    }
 }
 
 /// Synthetic speaker configuration
@@ -256,10 +302,7 @@ fn generate_plots_for_multi_drivers(
         };
 
         // Create DriversLossData
-        let drivers_data = autoeq::loss::DriversLossData::new(
-            driver_measurements,
-            crossover_type,
-        );
+        let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
 
         // Generate plot
         let plot_path = output_dir.join(format!(
@@ -435,11 +478,7 @@ fn generate_random_config(
 
     for speaker_idx in 0..num_speakers {
         let channel_name = if num_speakers == 2 {
-            if speaker_idx == 0 {
-                "left"
-            } else {
-                "right"
-            }
+            if speaker_idx == 0 { "left" } else { "right" }
         } else {
             match speaker_idx {
                 0 => "left",
@@ -457,7 +496,10 @@ fn generate_random_config(
             let mut driver_csv_paths = Vec::new();
 
             if verbose {
-                println!("    {}: multi-driver group ({} drivers)", channel_name, num_drivers);
+                println!(
+                    "    {}: multi-driver group ({} drivers)",
+                    channel_name, num_drivers
+                );
             }
 
             for driver_idx in 0..num_drivers {
@@ -471,6 +513,10 @@ fn generate_random_config(
                 driver_csv_paths.push(csv_path.clone());
                 measurement_files.push(csv_path);
             }
+
+            // Normalize driver measurements to have similar mean SPLs
+            // This ensures crossover optimizer can balance drivers with ±12 dB gains
+            normalize_driver_measurements(&driver_csv_paths, 85.0)?;
 
             let crossover_name = format!("{}_crossover", channel_name);
             let crossover_type = "LR24".to_string();
@@ -545,7 +591,13 @@ fn generate_random_speaker(rng: &mut ChaCha8Rng) -> SyntheticSpeaker {
     }
 }
 
-/// Generate synthetic measurement CSV file
+/// Generate synthetic measurement CSV file with realistic driver characteristics
+///
+/// For multi-driver systems, generates bandpass responses appropriate for each driver type:
+/// - Subwoofer: 10-400 Hz
+/// - Woofer: 50-1000 Hz
+/// - Midrange: 400-4000 Hz
+/// - Tweeter: 1000-20000 Hz
 fn generate_measurement_csv(
     path: &Path,
     config: &SyntheticSpeaker,
@@ -563,75 +615,159 @@ fn generate_measurement_csv(
 
     let mut csv_content = String::from("freq,spl\n");
 
+    // Get driver type for multi-driver systems
+    let driver_type = if num_drivers > 1 {
+        Some(DriverType::for_index(driver_idx, num_drivers))
+    } else {
+        None
+    };
+
     for i in 0..num_points {
         let t = i as f64 / (num_points - 1) as f64;
         let log_freq = log_min + t * (log_max - log_min);
         let freq = log_freq.exp();
 
-        // Start with flat response at 85 dB
-        let mut spl = 85.0 + config.spl_offset_db;
+        // Start with flat response at 85 dB with small offset (limited to ±4 dB)
+        let spl_offset = config.spl_offset_db.clamp(-4.0, 4.0);
+        let mut spl = 85.0 + spl_offset;
 
-        // Apply filter rolloff
-        spl += match config.filter_type {
-            FilterType::Flat => 0.0,
-            FilterType::Lowpass(cutoff) => {
-                if freq > cutoff {
-                    // 24 dB/octave rolloff
-                    let octaves = (freq / cutoff).log2();
-                    -24.0 * octaves
-                } else {
-                    0.0
-                }
-            }
-            FilterType::Highpass(cutoff) => {
-                if freq < cutoff {
-                    // 24 dB/octave rolloff
-                    let octaves = (cutoff / freq).log2();
-                    -24.0 * octaves
-                } else {
-                    0.0
-                }
-            }
-            FilterType::Bandpass(low, high) => {
-                let mut rolloff = 0.0;
-                if freq < low {
-                    let octaves = (low / freq).log2();
-                    rolloff -= 24.0 * octaves;
-                }
-                if freq > high {
-                    let octaves = (freq / high).log2();
-                    rolloff -= 24.0 * octaves;
-                }
-                rolloff
-            }
-        };
+        // For multi-driver systems, apply realistic bandpass characteristics
+        if let Some(dt) = driver_type {
+            let (low_cutoff, high_cutoff) = dt.freq_range();
 
-        // For multi-driver, adjust frequency response based on driver position
-        if num_drivers > 1 {
-            let driver_center_freq = match driver_idx {
-                0 => 200.0,                          // woofer
-                1 if num_drivers == 2 => 5000.0,    // tweeter
-                1 if num_drivers == 3 => 1000.0,    // midrange
-                2 if num_drivers == 3 => 8000.0,    // tweeter
-                1 if num_drivers == 4 => 500.0,     // lower mid
-                2 if num_drivers == 4 => 2000.0,    // upper mid
-                3 if num_drivers == 4 => 10000.0,   // tweeter
-                _ => 1000.0,
+            // Apply highpass rolloff (24 dB/octave below low_cutoff)
+            if freq < low_cutoff {
+                let octaves = (low_cutoff / freq).log2();
+                spl -= 24.0 * octaves;
+            }
+
+            // Apply lowpass rolloff (24 dB/octave above high_cutoff)
+            if freq > high_cutoff {
+                let octaves = (freq / high_cutoff).log2();
+                spl -= 24.0 * octaves;
+            }
+
+            // Add gentle passband ripple (±1 dB variation in passband)
+            if freq >= low_cutoff && freq <= high_cutoff {
+                let passband_pos = (freq / low_cutoff).log2() / (high_cutoff / low_cutoff).log2();
+                let ripple = (passband_pos * std::f64::consts::PI * 3.0).sin() * 1.0;
+                spl += ripple;
+            }
+        } else {
+            // Single speaker - apply the configured filter type
+            spl += match config.filter_type {
+                FilterType::Flat => 0.0,
+                FilterType::Lowpass(cutoff) => {
+                    if freq > cutoff {
+                        let octaves = (freq / cutoff).log2();
+                        -24.0 * octaves
+                    } else {
+                        0.0
+                    }
+                }
+                FilterType::Highpass(cutoff) => {
+                    if freq < cutoff {
+                        let octaves = (cutoff / freq).log2();
+                        -24.0 * octaves
+                    } else {
+                        0.0
+                    }
+                }
+                FilterType::Bandpass(low, high) => {
+                    let mut rolloff = 0.0;
+                    if freq < low {
+                        let octaves = (low / freq).log2();
+                        rolloff -= 24.0 * octaves;
+                    }
+                    if freq > high {
+                        let octaves = (freq / high).log2();
+                        rolloff -= 24.0 * octaves;
+                    }
+                    rolloff
+                }
             };
-
-            // Natural rolloff away from driver's optimal range
-            let distance = (freq / driver_center_freq).log2().abs();
-            spl -= distance * 2.0; // Gentle rolloff
         }
 
-        // Add noise
-        let noise = rng.random_range(-config.noise_level_db..config.noise_level_db);
+        // Add measurement noise (reduced for more realistic measurements)
+        let noise_level = config.noise_level_db.min(3.0); // Limit noise to ±3 dB
+        let noise = rng.random_range(-noise_level..noise_level);
         spl += noise;
 
         csv_content.push_str(&format!("{:.2},{:.2}\n", freq, spl));
     }
 
     fs::write(path, csv_content)?;
+    Ok(())
+}
+
+/// Normalize driver measurements so each driver's passband mean is at 0 dB
+/// This ensures all drivers are aligned to a common reference (0 dB) regardless
+/// of their frequency range, making the optimizer's job easier and the results
+/// more interpretable.
+fn normalize_driver_measurements(
+    measurement_paths: &[PathBuf],
+    _target_peak_spl: f64, // kept for API compatibility, not used
+) -> Result<(), Box<dyn Error>> {
+    let num_drivers = measurement_paths.len();
+
+    for (driver_idx, path) in measurement_paths.iter().enumerate() {
+        // Determine passband for this driver
+        let driver_type = DriverType::for_index(driver_idx, num_drivers);
+        let (passband_low, passband_high) = driver_type.freq_range();
+
+        // Read the CSV file
+        let content = fs::read_to_string(path)?;
+        let lines: Vec<&str> = content.lines().collect();
+
+        if lines.len() < 2 {
+            continue; // Skip empty or header-only files
+        }
+
+        // Calculate mean SPL in the driver's passband
+        let mut sum = 0.0;
+        let mut count = 0;
+        for line in &lines[1..] {
+            // Skip header
+            if let Some((freq_str, spl_str)) = line.split_once(',') {
+                if let (Ok(freq), Ok(spl)) = (
+                    freq_str.trim().parse::<f64>(),
+                    spl_str.trim().parse::<f64>(),
+                ) {
+                    // Only consider frequencies in the driver's passband
+                    if freq >= passband_low && freq <= passband_high {
+                        sum += spl;
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        if count == 0 {
+            continue; // No points in passband
+        }
+
+        let passband_mean = sum / count as f64;
+        // Normalize to 0 dB: subtract the passband mean so passband centers at 0
+        let offset = -passband_mean;
+
+        // Apply offset to all SPL values
+        let header = lines[0];
+        let mut new_content = format!("{}\n", header);
+
+        for line in &lines[1..] {
+            if let Some((freq_str, spl_str)) = line.split_once(',') {
+                if let Ok(spl) = spl_str.trim().parse::<f64>() {
+                    let new_spl = spl + offset;
+                    new_content.push_str(&format!("{},{:.2}\n", freq_str.trim(), new_spl));
+                } else {
+                    new_content.push_str(&format!("{}\n", line));
+                }
+            }
+        }
+
+        fs::write(path, new_content)?;
+    }
+
     Ok(())
 }
 

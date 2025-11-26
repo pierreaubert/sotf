@@ -617,6 +617,236 @@ pub fn perform_optimization_with_callback(
     Ok(x)
 }
 
+/// Result of driver crossover optimization
+#[derive(Debug, Clone)]
+pub struct DriverOptimizationResult {
+    /// Optimal per-driver gains in dB
+    pub gains: Vec<f64>,
+    /// Optimal crossover frequencies in Hz (n_drivers - 1 values)
+    pub crossover_freqs: Vec<f64>,
+    /// Loss value before optimization
+    pub pre_objective: f64,
+    /// Loss value after optimization
+    pub post_objective: f64,
+    /// Whether optimization converged successfully
+    pub converged: bool,
+}
+
+/// Create minimal Args struct for driver optimization
+///
+/// This avoids requiring full CLI args when calling from library code.
+fn create_driver_optimization_args(
+    min_freq: f64,
+    max_freq: f64,
+    sample_rate: f64,
+    algorithm: &str,
+    max_iter: usize,
+    min_db: f64,
+    max_db: f64,
+) -> crate::cli::Args {
+    use crate::LossType;
+    use crate::cli::{Args, PeqModel};
+
+    Args {
+        num_filters: 0, // Not used for driver optimization
+        curve: None,
+        target: None,
+        speaker: None,
+        version: None,
+        measurement: None,
+        curve_name: "On Axis".to_string(),
+        sample_rate,
+        min_freq,
+        max_freq,
+        min_q: 0.5,
+        max_q: 10.0,
+        min_db,
+        max_db,
+        algo: algorithm.to_string(),
+        strategy: "currenttobest1bin".to_string(),
+        algo_list: false,
+        strategy_list: false,
+        peq_model: PeqModel::Pk,
+        peq_model_list: false,
+        population: 300,
+        maxeval: max_iter,
+        refine: false,
+        local_algo: "cobyla".to_string(),
+        min_spacing_oct: 0.0,
+        spacing_weight: 0.0,
+        smooth: false,
+        smooth_n: 1,
+        loss: LossType::DriversFlat,
+        tolerance: 1e-3,
+        atolerance: 1e-4,
+        recombination: 0.9,
+        adaptive_weight_f: 0.9,
+        adaptive_weight_cr: 0.9,
+        no_parallel: false,
+        output: None,
+        driver1: None,
+        driver2: None,
+        driver3: None,
+        driver4: None,
+        crossover_type: "linkwitzriley4".to_string(),
+        parallel_threads: num_cpus::get(),
+        seed: None,
+        qa: None,
+    }
+}
+
+/// Optimize multi-driver crossover configuration
+///
+/// This function orchestrates the complete driver optimization workflow:
+/// 1. Sets up optimization objective data
+/// 2. Computes parameter bounds
+/// 3. Generates initial guess
+/// 4. Runs optimization
+/// 5. Extracts gains and crossover frequencies from results
+///
+/// # Arguments
+/// * `drivers_data` - Driver measurements with crossover type
+/// * `min_freq`, `max_freq` - Optimization frequency range (Hz)
+/// * `sample_rate` - Sample rate for filter design (Hz)
+/// * `algorithm` - Optimization algorithm (e.g., "nlopt:cobyla", "autoeq:de")
+/// * `max_iter` - Maximum number of iterations/evaluations
+/// * `min_db`, `max_db` - Per-driver gain bounds (dB)
+///
+/// # Returns
+/// * `DriverOptimizationResult` containing optimal gains, crossover frequencies, and scores
+///
+/// # Example
+/// ```ignore
+/// let drivers_data = DriversLossData::new(measurements, CrossoverType::LinkwitzRiley4);
+/// let result = optimize_drivers_crossover(
+///     drivers_data,
+///     100.0,    // min_freq
+///     10000.0,  // max_freq
+///     48000.0,  // sample_rate
+///     "nlopt:cobyla",
+///     5000,     // max_iter
+///     -12.0,    // min_db
+///     12.0,     // max_db
+/// )?;
+/// println!("Gains: {:?}", result.gains);
+/// println!("Crossover freqs: {:?}", result.crossover_freqs);
+/// ```
+pub fn optimize_drivers_crossover(
+    drivers_data: crate::loss::DriversLossData,
+    min_freq: f64,
+    max_freq: f64,
+    sample_rate: f64,
+    algorithm: &str,
+    max_iter: usize,
+    min_db: f64,
+    max_db: f64,
+) -> Result<DriverOptimizationResult, Box<dyn std::error::Error>> {
+    let n_drivers = drivers_data.drivers.len();
+
+    // Create Args structure needed for optimization
+    let args = create_driver_optimization_args(
+        min_freq,
+        max_freq,
+        sample_rate,
+        algorithm,
+        max_iter,
+        min_db,
+        max_db,
+    );
+
+    // Setup objective data
+    let objective_data = setup_drivers_objective_data(&args, drivers_data.clone());
+
+    // Setup bounds
+    let (lower_bounds, upper_bounds) = setup_drivers_bounds(&args, &drivers_data);
+
+    // Generate initial guess
+    let mut x = drivers_initial_guess(&lower_bounds, &upper_bounds, n_drivers);
+
+    // Compute pre-optimization objective
+    let pre_objective = crate::optim::compute_base_fitness(&x, &objective_data);
+
+    // Run optimization
+    let opt_result = crate::optim::optimize_filters(
+        &mut x,
+        &lower_bounds,
+        &upper_bounds,
+        objective_data.clone(),
+        &args,
+    );
+
+    // Check optimization result
+    let converged = match opt_result {
+        Ok((_status, _val)) => true,
+        Err((_err, _val)) => false,
+    };
+
+    // Compute post-optimization objective
+    let post_objective = crate::optim::compute_base_fitness(&x, &objective_data);
+
+    // Extract results from parameter vector
+    // Parameter layout: [gain1, gain2, ..., gainN, log10(xover1), log10(xover2), ..., log10(xoverN-1)]
+    let gains = x[0..n_drivers].to_vec();
+    let xover_freqs_log10 = &x[n_drivers..];
+    let crossover_freqs: Vec<f64> = xover_freqs_log10.iter().map(|x| 10_f64.powf(*x)).collect();
+
+    Ok(DriverOptimizationResult {
+        gains,
+        crossover_freqs,
+        pre_objective,
+        post_objective,
+        converged,
+    })
+}
+
+/// Load driver measurements from CSV file paths
+///
+/// This function loads multiple driver measurement CSV files and converts them
+/// to DriverMeasurement structs suitable for multi-driver optimization.
+///
+/// # Arguments
+/// * `driver_paths` - Vector of paths to driver CSV files
+///
+/// # Returns
+/// * Vector of DriverMeasurement structs
+///
+/// # Example
+/// ```ignore
+/// let paths = vec![
+///     PathBuf::from("woofer.csv"),
+///     PathBuf::from("tweeter.csv"),
+/// ];
+/// let measurements = load_driver_measurements_from_files(&paths)?;
+/// ```
+pub fn load_driver_measurements_from_files(
+    driver_paths: &[std::path::PathBuf],
+) -> Result<Vec<crate::loss::DriverMeasurement>, Box<dyn std::error::Error>> {
+    use crate::loss::DriverMeasurement;
+    use crate::read::load_driver_measurement;
+
+    let mut measurements = Vec::new();
+
+    for (i, path) in driver_paths.iter().enumerate() {
+        match load_driver_measurement(path) {
+            Ok((freq, spl, phase)) => {
+                measurements.push(DriverMeasurement::new(freq, spl, phase));
+                eprintln!("✓ Loaded driver {} from {}", i + 1, path.display());
+            }
+            Err(e) => {
+                return Err(format!(
+                    "Failed to load driver {} from {}: {}",
+                    i + 1,
+                    path.display(),
+                    e
+                )
+                .into());
+            }
+        }
+    }
+
+    Ok(measurements)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

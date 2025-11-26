@@ -43,3 +43,24 @@ pub fn normalize_and_interpolate_response(
         },
     )
 }
+
+/// Normalize and interpolate response with custom normalization frequency range
+///
+/// This is useful for multi-driver systems where each driver should be normalized
+/// by its own passband rather than a fixed 1000-2000 Hz range.
+pub fn normalize_and_interpolate_response_with_range(
+    standard_freq: &ndarray::Array1<f64>,
+    curve: &Curve,
+    norm_freq_min: f64,
+    norm_freq_max: f64,
+) -> Curve {
+    let spl_norm = normalize_response(curve, norm_freq_min, norm_freq_max);
+
+    interpolate_log_space(
+        standard_freq,
+        &Curve {
+            freq: curve.freq.clone(),
+            spl: spl_norm,
+        },
+    )
+}

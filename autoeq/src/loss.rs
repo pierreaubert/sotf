@@ -432,14 +432,30 @@ pub fn compute_drivers_combined_response(
     );
 
     // Interpolate each driver's response to the common frequency grid
+    // Each driver is normalized by its own passband (defined by crossover frequencies)
+    // This ensures all drivers are aligned to 0 dB in their passbands
     let mut driver_responses = Vec::new();
-    for driver in &data.drivers {
-        let interpolated = crate::read::normalize_and_interpolate_response(
+    for (i, driver) in data.drivers.iter().enumerate() {
+        // Determine passband for this driver based on crossover frequencies
+        let passband_low = if i == 0 {
+            20.0 // First driver starts at 20 Hz
+        } else {
+            crossover_freqs[i - 1]
+        };
+        let passband_high = if i == n_drivers - 1 {
+            20000.0 // Last driver extends to 20 kHz
+        } else {
+            crossover_freqs[i]
+        };
+
+        let interpolated = crate::read::normalize_and_interpolate_response_with_range(
             &data.freq_grid,
             &Curve {
                 freq: driver.freq.clone(),
                 spl: driver.spl.clone(),
             },
+            passband_low,
+            passband_high,
         );
         driver_responses.push(interpolated.spl);
     }

@@ -1,5 +1,4 @@
 use autoeq::Curve;
-use autoeq::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use autoeq::read;
 use std::collections::HashMap;
 
@@ -84,70 +83,4 @@ pub(super) async fn load_and_prepare(
         deviation_curve,
         spin_data,
     ))
-}
-
-/// Load multi-driver measurement data for crossover optimization
-///
-/// # Arguments
-/// * `args` - CLI arguments containing driver file paths and crossover type
-///
-/// # Returns
-/// * DriversLossData containing all driver measurements and configuration
-pub(super) async fn load_drivers_data(
-    args: &autoeq::cli::Args,
-) -> Result<DriversLossData, Box<dyn std::error::Error>> {
-    // Collect driver file paths
-    let driver_paths: Vec<_> = [&args.driver1, &args.driver2, &args.driver3, &args.driver4]
-        .iter()
-        .filter_map(|p| p.as_ref())
-        .collect();
-
-    if driver_paths.len() < 2 {
-        return Err("At least 2 driver files are required for multi-driver optimization".into());
-    }
-
-    // Load driver measurements
-    let mut drivers = Vec::new();
-    for (i, path) in driver_paths.iter().enumerate() {
-        match read::load_driver_measurement(path) {
-            Ok((freq, spl, phase)) => {
-                drivers.push(DriverMeasurement::new(freq, spl, phase));
-                eprintln!("✓ Loaded driver {} from {}", i + 1, path.display());
-            }
-            Err(e) => {
-                return Err(format!(
-                    "Failed to load driver {} from {}: {}",
-                    i + 1,
-                    path.display(),
-                    e
-                )
-                .into());
-            }
-        }
-    }
-
-    // Parse crossover type
-    let crossover_type = match args.crossover_type.as_str() {
-        "butterworth2" => CrossoverType::Butterworth2,
-        "linkwitzriley2" => CrossoverType::LinkwitzRiley2,
-        "linkwitzriley4" => CrossoverType::LinkwitzRiley4,
-        other => {
-            return Err(format!(
-                "Unknown crossover type '{}'. Valid types: butterworth2, linkwitzriley2, linkwitzriley4",
-                other
-            )
-            .into());
-        }
-    };
-
-    // Create DriversLossData (this will sort drivers and create freq grid)
-    let drivers_data = DriversLossData::new(drivers, crossover_type);
-
-    eprintln!(
-        "✓ Initialized {} drivers with {:?} crossover",
-        drivers_data.drivers.len(),
-        drivers_data.crossover_type
-    );
-
-    Ok(drivers_data)
 }
