@@ -237,6 +237,14 @@ pub struct App {
     pub replay_gain_succeeded: usize,
     pub replay_gain_failed: usize,
 
+    // Waveform scanner progress
+    pub waveform_scanner: Option<Arc<sotf_audio_player::WaveformScanner>>,
+    pub waveform_in_progress: bool,
+    pub waveform_total: usize,
+    pub waveform_processed: usize,
+    pub waveform_succeeded: usize,
+    pub waveform_failed: usize,
+
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
 
@@ -329,6 +337,12 @@ impl App {
             replay_gain_processed: 0,
             replay_gain_succeeded: 0,
             replay_gain_failed: 0,
+            waveform_scanner: None,
+            waveform_in_progress: false,
+            waveform_total: 0,
+            waveform_processed: 0,
+            waveform_succeeded: 0,
+            waveform_failed: 0,
             last_loaded_preset: None,
             album_images: Vec::new(),
             selected_image_index: 0,
@@ -827,6 +841,13 @@ impl App {
 
         self.rebuild_artist_tree();
 
+        // Start background waveform scan for new tracks
+        if result.is_ok() {
+            if let Err(e) = self.start_waveform_scan() {
+                log::warn!("Failed to start waveform scan: {}", e);
+            }
+        }
+
         result
     }
 
@@ -999,6 +1020,113 @@ impl App {
                 self.replay_gain_succeeded,
                 self.replay_gain_total,
                 self.replay_gain_failed
+            );
+        }
+    }
+
+    /// Start background waveform scanning for tracks without waveform data
+    pub fn start_waveform_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Skip if already in progress
+        if self.waveform_in_progress {
+            return Ok(());
+        }
+
+        // Get database path
+        let db_path = sotf_audio_player::MusicDatabase::default_path()
+            .ok_or("Could not determine database path")?;
+
+        // Get tracks that need waveform analysis
+        let db = sotf_audio_player::MusicDatabase::open(&db_path)?;
+        let tracks = db.get_tracks_without_waveform()?;
+
+        if tracks.is_empty() {
+            log::debug!("All tracks already have waveform data");
+            return Ok(());
+        }
+
+        let total = tracks.len();
+        log::info!("Starting waveform scan for {} tracks", total);
+
+        // Determine number of threads (use CPU count or max 4)
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get().min(4))
+            .unwrap_or(2);
+
+        // Create scanner
+        let scanner = Arc::new(sotf_audio_player::WaveformScanner::new(
+            num_threads,
+            db_path,
+        ));
+
+        // Queue all tracks
+        scanner.scan_tracks(tracks);
+
+        // Store scanner and initialize progress
+        self.waveform_scanner = Some(scanner);
+        self.waveform_in_progress = true;
+        self.waveform_total = total;
+        self.waveform_processed = 0;
+        self.waveform_succeeded = 0;
+        self.waveform_failed = 0;
+
+        Ok(())
+    }
+
+    /// Check for waveform scanner progress updates
+    pub fn check_waveform_progress(&mut self) {
+        if !self.waveform_in_progress {
+            return;
+        }
+
+        // Clone the Arc to avoid borrowing self
+        let scanner = match &self.waveform_scanner {
+            Some(s) => Arc::clone(s),
+            None => return,
+        };
+
+        // Process all pending messages
+        while let Some(msg) = scanner.try_recv() {
+            use sotf_audio_player::WaveformScanMessage;
+
+            match msg {
+                WaveformScanMessage::Started { .. } => {
+                    // Track started, no action needed
+                }
+                WaveformScanMessage::Success { .. } => {
+                    self.waveform_processed += 1;
+                    self.waveform_succeeded += 1;
+                }
+                WaveformScanMessage::Error { path, error } => {
+                    self.waveform_processed += 1;
+                    self.waveform_failed += 1;
+                    log::error!("Waveform scan failed for {}: {}", path.display(), error);
+                }
+                WaveformScanMessage::Complete {
+                    total,
+                    succeeded,
+                    failed,
+                } => {
+                    self.waveform_in_progress = false;
+                    self.waveform_scanner = None;
+                    log::info!(
+                        "Waveform scan complete: {}/{} succeeded, {} failed",
+                        succeeded,
+                        total,
+                        failed
+                    );
+                }
+            }
+        }
+
+        // Check if all tracks have been processed
+        if self.waveform_in_progress && self.waveform_processed >= self.waveform_total {
+            self.waveform_in_progress = false;
+            self.waveform_scanner = None;
+            log::info!(
+                "Waveform scan complete: {}/{} succeeded, {} failed",
+                self.waveform_succeeded,
+                self.waveform_total,
+                self.waveform_failed
             );
         }
     }

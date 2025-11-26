@@ -1,15 +1,12 @@
-mod app;
-mod events;
-mod theme;
-mod ui;
-
-use app::{App, InputMode};
+use sotf_audio_player_tui::app::{App, InputMode, Screen};
+use sotf_audio_player_tui::events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
+use sotf_audio_player_tui::theme;
+use sotf_audio_player_tui::ui;
 use clap::Parser;
 use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use sotf_audio::run_preflight_checks;
 use sotf_audio_player::{Player, PluginSettings, PluginType};
@@ -140,6 +137,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             let album_count = app.library.albums.len();
             log::info!("Loaded library from database: {} albums", album_count);
+
+            // Start background waveform scan for tracks without waveform data
+            if let Err(e) = app.start_waveform_scan() {
+                log::warn!("Failed to start waveform scan: {}", e);
+            }
+
             album_count == 0
         }
     } else {
@@ -170,13 +173,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set initial screen based on queue state (if not scanning)
     if !will_scan {
         if !app.queue.is_empty() {
-            app.current_screen = app::Screen::Queue;
+            app.current_screen = Screen::Queue;
             log::info!(
                 "Starting with Queue view (queue has {} items)",
                 app.queue.len()
             );
         } else {
-            app.current_screen = app::Screen::Library;
+            app.current_screen = Screen::Library;
             log::info!("Starting with Library view (queue is empty)");
         }
     }
@@ -398,7 +401,7 @@ fn run_app<B: ratatui::backend::Backend>(
                     // But progress will be shown in the directory view
                     if app.needs_rescan {
                         // Switch to directory view so user can see scan progress
-                        app.current_screen = app::Screen::DirectoryManager;
+                        app.current_screen = Screen::DirectoryManager;
 
                         if let Err(e) = app.scan_library() {
                             log::error!("Failed to scan library: {}", e);
@@ -407,6 +410,9 @@ fn run_app<B: ratatui::backend::Backend>(
 
                     // Check ReplayGain scan progress
                     app.check_replay_gain_progress();
+
+                    // Check waveform scan progress
+                    app.check_waveform_progress();
                 }
                 AppEvent::Resize => {
                     // Terminal resized, will redraw on next iteration

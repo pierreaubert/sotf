@@ -31,6 +31,16 @@ pub struct Track {
     pub replay_peak: Option<f64>, // Track peak (0.0 - 1.0)
     pub album_gain: Option<f64>,  // Album gain in dB
     pub album_peak: Option<f64>,  // Album peak (0.0 - 1.0)
+    pub waveform: Option<Vec<u8>>, // 128 amplitude samples (0-255) for waveform visualization
+    // Extended metadata fields (from audio file tags)
+    pub genre: Option<String>,
+    pub composer: Option<String>,
+    pub disc_number: Option<u32>,
+    pub conductor: Option<String>,
+    pub performer: Option<String>,
+    pub isrc: Option<String>,
+    pub album_artist: Option<String>,
+    pub ensemble: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +111,67 @@ impl Album {
 
     pub fn sort_tracks(&mut self) {
         self.tracks.sort_by_key(|t| t.track_number);
+    }
+}
+
+/// A playlist entry containing a track path and its position
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlaylistEntry {
+    pub track_path: PathBuf,
+    pub position: u32,
+}
+
+/// A user-created playlist
+#[derive(Debug, Clone)]
+pub struct Playlist {
+    pub id: Option<i64>,
+    pub name: String,
+    pub description: Option<String>,
+    pub entries: Vec<PlaylistEntry>,
+    pub created_at: Option<u64>,
+    pub updated_at: Option<u64>,
+}
+
+impl Playlist {
+    /// Create a new empty playlist
+    pub fn new(name: String) -> Self {
+        Self {
+            id: None,
+            name,
+            description: None,
+            entries: Vec::new(),
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    /// Create a new playlist with a description
+    pub fn with_description(name: String, description: String) -> Self {
+        Self {
+            id: None,
+            name,
+            description: Some(description),
+            entries: Vec::new(),
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    /// Get the number of tracks in the playlist
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Check if the playlist is empty
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Get track paths in order
+    pub fn track_paths(&self) -> Vec<&PathBuf> {
+        let mut entries: Vec<_> = self.entries.iter().collect();
+        entries.sort_by_key(|e| e.position);
+        entries.iter().map(|e| &e.track_path).collect()
     }
 }
 
@@ -601,6 +672,15 @@ impl MusicLibrary {
                             replay_peak: None,
                             album_gain: None,
                             album_peak: None,
+                            waveform: None, // Will be computed separately
+                            genre: metadata.genre,
+                            composer: metadata.composer,
+                            disc_number: metadata.disc_number,
+                            conductor: metadata.conductor,
+                            performer: metadata.performer,
+                            isrc: metadata.isrc,
+                            album_artist: metadata.album_artist,
+                            ensemble: metadata.ensemble,
                         };
 
                         album.tracks.push(track);
@@ -690,6 +770,15 @@ struct TrackMetadata {
     pub year: Option<u32>,
     pub duration_secs: Option<u64>,
     pub channels: Option<u32>,
+    // Extended metadata fields
+    pub genre: Option<String>,
+    pub composer: Option<String>,
+    pub disc_number: Option<u32>,
+    pub conductor: Option<String>,
+    pub performer: Option<String>,
+    pub isrc: Option<String>,
+    pub album_artist: Option<String>,
+    pub ensemble: Option<String>,
 }
 
 /// Create a custom probe with all supported format readers registered
@@ -746,25 +835,29 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     }
 
     // Extract metadata tags
+    use symphonia::core::meta::StandardTagKey;
+
     if let Some(metadata_rev) = probed.format.metadata().current() {
         for tag in metadata_rev.tags() {
             match tag.std_key {
-                Some(symphonia::core::meta::StandardTagKey::TrackTitle) => {
+                Some(StandardTagKey::TrackTitle) => {
                     metadata.title = Some(tag.value.to_string());
                 }
-                Some(symphonia::core::meta::StandardTagKey::Artist) => {
+                Some(StandardTagKey::Artist) => {
                     metadata.artist = Some(tag.value.to_string());
                 }
-                Some(symphonia::core::meta::StandardTagKey::Album) => {
+                Some(StandardTagKey::Album) => {
                     metadata.album = Some(tag.value.to_string());
                 }
-                Some(symphonia::core::meta::StandardTagKey::TrackNumber) => {
-                    if let Ok(num) = tag.value.to_string().parse() {
+                Some(StandardTagKey::TrackNumber) => {
+                    // Handle "1/12" format (track/total)
+                    let value = tag.value.to_string();
+                    let track_num = value.split('/').next().unwrap_or(&value);
+                    if let Ok(num) = track_num.trim().parse() {
                         metadata.track_number = Some(num);
                     }
                 }
-                Some(symphonia::core::meta::StandardTagKey::Date)
-                | Some(symphonia::core::meta::StandardTagKey::ReleaseDate) => {
+                Some(StandardTagKey::Date) | Some(StandardTagKey::ReleaseDate) => {
                     // Try to extract year from date string
                     let date_str = tag.value.to_string();
                     if let Some(year_str) = date_str.split('-').next()
@@ -772,6 +865,35 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                     {
                         metadata.year = Some(year);
                     }
+                }
+                Some(StandardTagKey::Genre) => {
+                    metadata.genre = Some(tag.value.to_string());
+                }
+                Some(StandardTagKey::Composer) => {
+                    metadata.composer = Some(tag.value.to_string());
+                }
+                Some(StandardTagKey::DiscNumber) => {
+                    // Handle "1/2" format (disc/total)
+                    let value = tag.value.to_string();
+                    let disc_num = value.split('/').next().unwrap_or(&value);
+                    if let Ok(num) = disc_num.trim().parse() {
+                        metadata.disc_number = Some(num);
+                    }
+                }
+                Some(StandardTagKey::Conductor) => {
+                    metadata.conductor = Some(tag.value.to_string());
+                }
+                Some(StandardTagKey::Performer) => {
+                    metadata.performer = Some(tag.value.to_string());
+                }
+                Some(StandardTagKey::IdentIsrc) => {
+                    metadata.isrc = Some(tag.value.to_string());
+                }
+                Some(StandardTagKey::AlbumArtist) => {
+                    metadata.album_artist = Some(tag.value.to_string());
+                }
+                Some(StandardTagKey::Ensemble) => {
+                    metadata.ensemble = Some(tag.value.to_string());
                 }
                 _ => {}
             }

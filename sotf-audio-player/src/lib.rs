@@ -7,21 +7,24 @@
 /// - Plugin chain management (`plugins`)
 /// - Player wrapper (`player`)
 /// - ReplayGain scanning (`replay_gain_scanner`)
+/// - Waveform scanning (`waveform_scanner`)
 pub mod config;
 pub mod database;
 pub mod library;
 pub mod player;
 pub mod plugins;
 pub mod replay_gain_scanner;
+pub mod waveform_scanner;
 
 // Re-export commonly used types
 pub use config::AppConfig;
 pub use database::MusicDatabase;
-pub use library::{Album, AlbumChannelType, DirectoryInfo, MusicLibrary, Track};
+pub use library::{Album, AlbumChannelType, DirectoryInfo, MusicLibrary, Playlist, PlaylistEntry, Track};
 pub use player::{PlaybackState, Player};
 pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
 pub use replay_gain_scanner::{ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;
+pub use waveform_scanner::{WaveformScanMessage, WaveformScanner};
 
 // Re-export autoeq_iir types needed by TUI
 pub use autoeq_iir::BiquadFilterType;

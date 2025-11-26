@@ -7,6 +7,10 @@ description = "TUI music player for SOTF"
 license.workspace = true
 repository.workspace = true
 
+[lib]
+name = "sotf_audio_player_tui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "sotf_player_tui"
 path = "src/main.rs"
