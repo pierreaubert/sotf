@@ -57,3 +57,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "sotf_player_gpui"
 path = "src/main.rs"
+
+[dev-dependencies]
+# TUI player for state equivalence testing
+sotf-audio-player-tui = { path = "../sotf-audio-player-tui" }
+
+# Testing utilities
+tempfile = "3"

@@ -149,6 +149,7 @@ fn scenario_build_and_edit_plugin_chain() {
             enable_hr_direct: true,
             hr_sharpen: 1.0,
             safety_cap_db: -3.0,
+            decorrelation_mode: 0,
         };
     }
     assert_eq!(app.plugin_chain.len(), 2);

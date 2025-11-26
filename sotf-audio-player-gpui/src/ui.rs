@@ -1,6 +1,10 @@
+mod components;
+mod screens;
+
 use crate::app::{AppState, Screen};
 use gpui::prelude::*;
 use gpui::*;
+use std::time::Duration;
 
 // Actions for keyboard shortcuts
 actions!(
@@ -56,6 +60,13 @@ actions!(
         QuickAddLoudness,
         QuickAddBinaural,
         EditPlugin,
+        // Level meter actions
+        SelectNextMeterGroup,
+        SelectPrevMeterGroup,
+        ToggleMeterMute,
+        ToggleMeterSolo,
+        ToggleMeterDim,
+        ClearMeterMutesSolos,
     ]
 );
 
@@ -68,22 +79,22 @@ impl PlayerView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
 
-        // TODO: Set up periodic update timer for playback position and loudness
-        // This requires fixing the async spawn pattern with GPUI
-        // cx.spawn(|(this, mut cx)| async move {
-        //     loop {
-        //         smol::Timer::after(std::time::Duration::from_millis(100)).await;
-        //         let _ = cx.update(|cx| {
-        //             if let Some(view) = this.upgrade() {
-        //                 view.update(cx, |view, cx| {
-        //                     view.update_playback_state(cx);
-        //                     cx.notify();
-        //                 });
-        //             }
-        //         }).ok();
-        //     }
-        // })
-        // .detach();
+        // Set up periodic update timer for playback position and loudness
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+                let result = this.update(cx, |view, cx| {
+                    view.update_playback_state(cx);
+                });
+                // Exit the loop if the view is no longer valid
+                if result.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
 
         Self {
             state,
@@ -540,16 +551,20 @@ impl PlayerView {
     }
 
     fn update_playback_state(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, cx| {
-            let playback_state = state
-                .player
-                .lock()
-                .get_playback_state(state.app.spectrum_visible);
+        self.state.update(cx, |state, _cx| {
+            // Get playback state (include spectrum data when on spectrum screen)
+            let include_spectrum =
+                state.app.spectrum_visible || state.app.current_screen == Screen::Spectrum;
+            let playback_state = state.player.lock().get_playback_state(include_spectrum);
 
             state.app.position_secs = playback_state.position_secs;
             state.app.loudness_info = playback_state.loudness;
+            state.app.duration_secs = state.app.get_current_track_duration();
 
-            if state.app.spectrum_visible {
+            // Update level meter groups based on channel count
+            state.app.update_level_meter_groups();
+
+            if include_spectrum {
                 state.app.spectrum_info = playback_state.spectrum;
             }
 
@@ -577,6 +592,7 @@ impl PlayerView {
                 }
             }
         });
+        cx.notify();
     }
 
     fn play_album_at_index(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -752,6 +768,79 @@ impl PlayerView {
         cx.notify();
     }
 
+    // Level meter actions
+    fn select_next_meter_group(
+        &mut self,
+        _: &SelectNextMeterGroup,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.select_next_level_meter_group();
+        });
+        cx.notify();
+    }
+
+    fn select_prev_meter_group(
+        &mut self,
+        _: &SelectPrevMeterGroup,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.select_previous_level_meter_group();
+        });
+        cx.notify();
+    }
+
+    fn toggle_meter_mute(
+        &mut self,
+        _: &ToggleMeterMute,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.toggle_level_meter_mute();
+        });
+        cx.notify();
+    }
+
+    fn toggle_meter_solo(
+        &mut self,
+        _: &ToggleMeterSolo,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.toggle_level_meter_solo();
+        });
+        cx.notify();
+    }
+
+    fn toggle_meter_dim(
+        &mut self,
+        _: &ToggleMeterDim,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.toggle_level_meter_dim();
+        });
+        cx.notify();
+    }
+
+    fn clear_meter_mutes_solos(
+        &mut self,
+        _: &ClearMeterMutesSolos,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.clear_level_meter_mutes_and_solos();
+        });
+        cx.notify();
+    }
+
     fn handle_plugin_edit_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle key input for plugin edit mode
         match event.keystroke.key.as_str() {
@@ -918,6 +1007,168 @@ impl PlayerView {
         }
     }
 
+    fn handle_save_plugins_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle text input for save plugins mode
+        match event.keystroke.key.as_str() {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.plugin_file_input.pop();
+                    state.app.clear_autocomplete();
+                });
+                cx.notify();
+            }
+            "tab" => {
+                // Autocomplete from available presets
+                self.state.update(cx, |state, _cx| {
+                    if state.app.autocomplete_suggestions.is_empty() {
+                        state.app.generate_autocomplete_suggestions_for_save_preset();
+                        if !state.app.autocomplete_suggestions.is_empty() {
+                            state.app.apply_autocomplete_to_plugin_file();
+                        }
+                    } else {
+                        state.app.next_autocomplete_for_plugin_file();
+                    }
+                });
+                cx.notify();
+            }
+            "escape" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.plugin_file_input.clear();
+                    state.app.clear_autocomplete();
+                });
+                cx.notify();
+            }
+            "enter" => {
+                self.state.update(cx, |state, _cx| {
+                    // If there are presets shown and input is empty, use selected preset (overwrite)
+                    if state.app.plugin_file_input.is_empty()
+                        && !state.app.available_plugin_presets.is_empty()
+                    {
+                        state.app.save_selected_preset();
+                    } else if !state.app.plugin_file_input.is_empty() {
+                        state.app.save_plugin_chain();
+                    }
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.clear_autocomplete();
+                });
+                cx.notify();
+            }
+            "up" => {
+                // Navigate preset list when input is empty
+                self.state.update(cx, |state, _cx| {
+                    if state.app.plugin_file_input.is_empty()
+                        && !state.app.available_plugin_presets.is_empty()
+                    {
+                        state.app.select_previous_preset();
+                    }
+                });
+                cx.notify();
+            }
+            "down" => {
+                // Navigate preset list when input is empty
+                self.state.update(cx, |state, _cx| {
+                    if state.app.plugin_file_input.is_empty()
+                        && !state.app.available_plugin_presets.is_empty()
+                    {
+                        state.app.select_next_preset();
+                    }
+                });
+                cx.notify();
+            }
+            _ => {
+                // Add character to input
+                if let Some(text) = event.keystroke.key_char.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.plugin_file_input.push_str(text);
+                        state.app.clear_autocomplete();
+                    });
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    fn handle_load_plugins_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle text input for load plugins mode
+        match event.keystroke.key.as_str() {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.plugin_file_input.pop();
+                    state.app.clear_autocomplete();
+                });
+                cx.notify();
+            }
+            "tab" => {
+                // Autocomplete file path
+                self.state.update(cx, |state, _cx| {
+                    if !state.app.plugin_file_input.is_empty() {
+                        if state.app.autocomplete_suggestions.is_empty() {
+                            state.app.generate_autocomplete_suggestions_for_plugin_file();
+                            if !state.app.autocomplete_suggestions.is_empty() {
+                                state.app.apply_autocomplete_to_plugin_file();
+                            }
+                        } else {
+                            state.app.next_autocomplete_for_plugin_file();
+                        }
+                    }
+                });
+                cx.notify();
+            }
+            "escape" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.plugin_file_input.clear();
+                    state.app.clear_autocomplete();
+                });
+                cx.notify();
+            }
+            "enter" => {
+                self.state.update(cx, |state, _cx| {
+                    // If there are presets shown and input is empty, load selected preset
+                    if state.app.plugin_file_input.is_empty()
+                        && !state.app.available_plugin_presets.is_empty()
+                    {
+                        state.app.load_selected_preset();
+                    } else if !state.app.plugin_file_input.is_empty() {
+                        state.app.load_plugin_chain();
+                    }
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.clear_autocomplete();
+                });
+                cx.notify();
+            }
+            "up" | "k" => {
+                // Navigate through presets
+                self.state.update(cx, |state, _cx| {
+                    if state.app.plugin_file_input.is_empty() {
+                        state.app.select_previous_preset();
+                    }
+                });
+                cx.notify();
+            }
+            "down" | "j" => {
+                // Navigate through presets
+                self.state.update(cx, |state, _cx| {
+                    if state.app.plugin_file_input.is_empty() {
+                        state.app.select_next_preset();
+                    }
+                });
+                cx.notify();
+            }
+            _ => {
+                // Add character to input
+                if let Some(text) = event.keystroke.key_char.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.plugin_file_input.push_str(text);
+                        state.app.clear_autocomplete();
+                    });
+                    cx.notify();
+                }
+            }
+        }
+    }
+
     fn handle_enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             use crate::app::InputMode;
@@ -1038,9 +1289,17 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_loudness))
             .on_action(cx.listener(Self::quick_add_binaural))
             .on_action(cx.listener(Self::edit_plugin))
+            // Level meter actions
+            .on_action(cx.listener(Self::select_next_meter_group))
+            .on_action(cx.listener(Self::select_prev_meter_group))
+            .on_action(cx.listener(Self::toggle_meter_mute))
+            .on_action(cx.listener(Self::toggle_meter_solo))
+            .on_action(cx.listener(Self::toggle_meter_dim))
+            .on_action(cx.listener(Self::clear_meter_mutes_solos))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 // Handle text input for search mode and add directory mode
                 let input_mode = view.state.read(cx).app.input_mode;
+                let current_screen = view.state.read(cx).app.current_screen;
 
                 match input_mode {
                     crate::app::InputMode::Search => {
@@ -1057,6 +1316,38 @@ impl Render for PlayerView {
                     }
                     crate::app::InputMode::LoadSofaFile => {
                         view.handle_sofa_file_input(event, cx);
+                    }
+                    crate::app::InputMode::SavePlugins => {
+                        view.handle_save_plugins_input(event, cx);
+                    }
+                    crate::app::InputMode::LoadPlugins => {
+                        view.handle_load_plugins_input(event, cx);
+                    }
+                    crate::app::InputMode::Normal => {
+                        // Handle screen-specific shortcuts in Normal mode
+                        if current_screen == crate::app::Screen::Plugins {
+                            match event.keystroke.key.as_str() {
+                                "S" => {
+                                    // Enter save plugins mode (Shift-S)
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.refresh_plugin_presets();
+                                        state.app.plugin_file_input.clear();
+                                        state.app.input_mode = crate::app::InputMode::SavePlugins;
+                                    });
+                                    cx.notify();
+                                }
+                                "l" => {
+                                    // Enter load plugins mode
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.refresh_plugin_presets();
+                                        state.app.plugin_file_input.clear();
+                                        state.app.input_mode = crate::app::InputMode::LoadPlugins;
+                                    });
+                                    cx.notify();
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -1088,2143 +1379,15 @@ impl Render for PlayerView {
             .when(input_mode == crate::app::InputMode::LoadSofaFile, |div| {
                 div.child(self.render_sofa_file_dialog(cx))
             })
+            .when(input_mode == crate::app::InputMode::SavePlugins, |div| {
+                div.child(self.render_save_plugins_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::LoadPlugins, |div| {
+                div.child(self.render_load_plugins_dialog(cx))
+            })
             .child(self.render_toast(cx))
             .when(self.state.read(cx).app.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))
             })
-    }
-}
-
-impl PlayerView {
-    fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .p_4()
-            .bg(rgb(0x2d2d2d))
-            .border_b_1()
-            .border_color(rgb(0x3e3e3e))
-            .child(
-                div()
-                    .text_xl()
-                    .font_weight(FontWeight::BOLD)
-                    .child("SOTF Audio Player"),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(self.render_tab_button("Library", Screen::Library, cx))
-                    .child(self.render_tab_button("Queue", Screen::Queue, cx))
-                    .child(self.render_tab_button("Plugins", Screen::Plugins, cx))
-                    .child(self.render_tab_button("Devices", Screen::Devices, cx)),
-            )
-    }
-
-    fn render_tab_button(
-        &self,
-        label: &str,
-        screen: Screen,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let is_active = state.app.current_screen == screen;
-
-        let button = div()
-            .px_4()
-            .py_2()
-            .rounded_md()
-            .cursor_pointer()
-            .child(label.to_string());
-
-        if is_active {
-            button.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
-        } else {
-            button
-                .bg(rgb(0x3e3e3e))
-                .hover(|style| style.bg(rgb(0x505050)))
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                        view.switch_screen(screen, cx);
-                    }),
-                )
-        }
-    }
-
-    fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (
-            library_view_mode,
-            albums_count,
-            search_query,
-            scan_in_progress,
-            input_mode,
-            sort_order,
-            channel_filter,
-            filtered_count,
-        ) = {
-            let state = self.state.read(cx);
-            let filtered_count = state.app.filtered_albums().len();
-            (
-                state.app.library_view_mode,
-                state.app.library.albums.len(),
-                state.app.search_query.clone(),
-                state.app.scan_in_progress,
-                state.app.input_mode,
-                state.app.library_sort_order,
-                state.app.channel_filter,
-                filtered_count,
-            )
-        };
-
-        let is_search_mode = input_mode == crate::app::InputMode::Search;
-
-        let content = if library_view_mode == crate::app::LibraryViewMode::TreeView {
-            self.render_library_tree(cx).into_any_element()
-        } else {
-            self.render_library_flat(cx).into_any_element()
-        };
-
-        let sort_label = match sort_order {
-            crate::app::LibrarySortOrder::Artist => "Artist",
-            crate::app::LibrarySortOrder::Album => "Album",
-            crate::app::LibrarySortOrder::Title => "Title",
-            crate::app::LibrarySortOrder::Year => "Year",
-        };
-
-        let filter_label = match channel_filter {
-            crate::app::ChannelFilter::All => "All".to_string(),
-            crate::app::ChannelFilter::Mono => "Mono".to_string(),
-            crate::app::ChannelFilter::Stereo => "Stereo".to_string(),
-            crate::app::ChannelFilter::Multichannel => "Multi".to_string(),
-            crate::app::ChannelFilter::Mixed => "Mixed".to_string(),
-            crate::app::ChannelFilter::Specific(n) => format!("{}ch", n),
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p_4()
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .mb_4()
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(if filtered_count == albums_count {
-                                format!("Library ({} albums)", albums_count)
-                            } else {
-                                format!("Library ({}/{} albums)", filtered_count, albums_count)
-                            }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .gap_4()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .bg(rgb(0x2d2d2d))
-                                    .rounded_md()
-                                    .border_1()
-                                    .when(is_search_mode, |div| div.border_color(rgb(0x007acc)))
-                                    .when(!is_search_mode, |div| div.border_color(rgb(0x3e3e3e)))
-                                    .px_2()
-                                    .py_1()
-                                    .w_64()
-                                    .child(
-                                        div()
-                                            .mr_2()
-                                            .text_color(if is_search_mode { rgb(0x007acc) } else { rgb(0x999999) })
-                                            .child("🔍")
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(if search_query.is_empty() {
-                                                if is_search_mode { rgb(0x999999) } else { rgb(0x666666) }
-                                            } else {
-                                                rgb(0xcccccc)
-                                            })
-                                            .child(if search_query.is_empty() {
-                                                if is_search_mode {
-                                                    "Type to search...".to_string()
-                                                } else {
-                                                    "Press / to search".to_string()
-                                                }
-                                            } else {
-                                                format!("{}{}",search_query, if is_search_mode { "|" } else { "" })
-                                            })
-                                    )
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(rgb(0x999999))
-                                    .child(format!("Sort: {}", sort_label))
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(rgb(0x999999))
-                                    .child(format!("Filter: {}", filter_label))
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded_md()
-                                            .bg(if library_view_mode == crate::app::LibraryViewMode::Flat { rgb(0x4e4e4e) } else { rgb(0x2d2d2d) })
-                                            .cursor_pointer()
-                                            .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, cx| state.app.library_view_mode = crate::app::LibraryViewMode::Flat);
-                                                cx.notify();
-                                            }))
-                                            .child("Flat"),
-                                    )
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded_md()
-                                            .bg(if library_view_mode == crate::app::LibraryViewMode::TreeView { rgb(0x4e4e4e) } else { rgb(0x2d2d2d) })
-                                            .cursor_pointer()
-                                            .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, cx| {
-                                                    state.app.library_view_mode = crate::app::LibraryViewMode::TreeView;
-                                                    state.app.rebuild_artist_tree();
-                                                });
-                                                cx.notify();
-                                            }))
-                                            .child("Tree"),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .ml_2()
-                                    .rounded_md()
-                                    .bg(rgb(0x2d2d2d))
-                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
-                                    .cursor_pointer()
-                                    .id("scan_btn")
-                                    .on_mouse_up(MouseButton::Left, cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                        view.state.update(cx, |state, cx| {
-                                            if let Err(e) = state.app.scan_library() {
-                                                log::error!("Scan failed: {}", e);
-                                            }
-                                        });
-                                        cx.notify();
-                                    }))
-                                    .child(if scan_in_progress { "Scanning..." } else { "Scan" }),
-                            ),
-                    ),
-            )
-            .child(content)
-            .child(self.render_pagination_controls(cx))
-    }
-
-    fn render_pagination_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let current_page = state.app.library_page + 1; // Display as 1-indexed
-        let total_pages = match state.app.library_view_mode {
-            crate::app::LibraryViewMode::Flat => state.app.get_flat_total_pages(),
-            crate::app::LibraryViewMode::TreeView => state.app.get_tree_total_pages(),
-        };
-        let items_per_page = state.app.library_items_per_page;
-
-        div()
-            .flex()
-            .justify_between()
-            .items_center()
-            .p_3()
-            .bg(rgb(0x1e1e1e))
-            .border_t_1()
-            .border_color(rgb(0x3e3e3e))
-            .child(div().text_sm().text_color(rgb(0x999999)).child(format!(
-                "Page {} of {} ({} items/page)",
-                current_page, total_pages, items_per_page
-            )))
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .when(current_page > 1, |div| {
-                                div.bg(rgb(0x2d2d2d))
-                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
-                                    .cursor_pointer()
-                            })
-                            .when(current_page == 1, |div| {
-                                div.bg(rgb(0x1a1a1a)).text_color(rgb(0x666666))
-                            })
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.prev_page();
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child("← Prev"),
-                    )
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .when(current_page < total_pages, |div| {
-                                div.bg(rgb(0x2d2d2d))
-                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
-                                    .cursor_pointer()
-                            })
-                            .when(current_page == total_pages, |div| {
-                                div.bg(rgb(0x1a1a1a)).text_color(rgb(0x666666))
-                            })
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.next_page();
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child("Next →"),
-                    ),
-            )
-    }
-
-    fn render_library_flat(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let albums = state.app.get_paginated_albums();
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .flex_1()
-            .children(albums.iter().enumerate().map(|(idx, album)| {
-                let is_selected = state.app.selected_album_index == idx;
-                div()
-                    .p_3()
-                    .rounded_md()
-                    .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                    .hover(|style| style.bg(rgb(0x3e3e3e)))
-                    .cursor_pointer()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                            view.state
-                                .update(cx, |state, _cx| state.app.selected_album_index = idx);
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_up(
-                        MouseButton::Right,
-                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.selected_album_index = idx;
-                                state.app.context_menu = Some(crate::app::ContextMenuState {
-                                    menu_type: crate::app::ContextMenuType::Album,
-                                    position_x: event.position.x.into(),
-                                    position_y: event.position.y.into(),
-                                    item_index: idx,
-                                });
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(album.title.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x999999))
-                                    .child(album.artist.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(rgb(0x666666))
-                                    .child(format!("{} tracks", album.tracks.len())),
-                            ),
-                    )
-            }))
-    }
-
-    fn render_library_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let tree_items = state.app.get_paginated_tree_items();
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .flex_1()
-            .children(tree_items.iter().enumerate().map(|(idx, item)| {
-                let is_selected = state.app.selected_tree_index == idx;
-
-                match item {
-                    crate::app::TreeItem::Artist { name, expanded } => div()
-                        .p_2()
-                        .rounded_md()
-                        .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                        .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                        .cursor_pointer()
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, cx| {
-                                    state.app.selected_tree_index = idx;
-                                    state.app.toggle_artist_expansion();
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .child(if *expanded { "▼" } else { "▶" })
-                                .child(name.clone()),
-                        ),
-                    crate::app::TreeItem::Album { index } => {
-                        let album = &state.app.library.albums[*index];
-                        div()
-                            .pl_8()
-                            .p_2()
-                            .rounded_md()
-                            .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                            .when(!is_selected, |div| div.bg(rgb(0x252525))) // Slightly darker for albums
-                            .cursor_pointer()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, cx| {
-                                        state.app.selected_tree_index = idx
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child(album.title.clone())
-                    }
-                }
-            }))
-    }
-
-    fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p_4()
-            .child(
-                div()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .mb_4()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .child(format!("Queue ({} albums)", state.app.queue.len()))
-                    .child(
-                        div()
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(rgb(0x2d2d2d))
-                            .hover(|style| style.bg(rgb(0x8e2e2e)))
-                            .cursor_pointer()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, cx| {
-                                        state.app.clear_queue();
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child("Clear"),
-                    ),
-            )
-            .child(div().flex().flex_col().gap_2().flex_1().children(
-                state.app.queue.iter().enumerate().map(|(idx, item)| {
-                    let is_current = state.app.current_queue_index == Some(idx);
-                    div()
-                        .p_3()
-                        .rounded_md()
-                        .when(is_current, |div| div.bg(rgb(0x007acc)))
-                        .when(!is_current, |div| div.bg(rgb(0x2d2d2d)))
-                        .hover(|style| style.bg(rgb(0x3e3e3e)))
-                        .cursor_pointer()
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.current_queue_index = Some(idx);
-                                    if let Some(path) =
-                                        state.app.queue[idx].current_track().map(|t| t.path.clone())
-                                    {
-                                        Self::play_track(state, path);
-                                    }
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .on_mouse_up(
-                            MouseButton::Right,
-                            cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.current_queue_index = Some(idx);
-                                    state.app.context_menu = Some(crate::app::ContextMenuState {
-                                        menu_type: crate::app::ContextMenuType::QueueItem,
-                                        position_x: event.position.x.into(),
-                                        position_y: event.position.y.into(),
-                                        item_index: idx,
-                                    });
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .child(
-                                    div()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(item.album.title.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .text_color(rgb(0x999999))
-                                        .child(item.album.artist.clone()),
-                                )
-                                .child(div().text_xs().text_color(rgb(0x666666)).child(format!(
-                                    "Track {}/{}",
-                                    item.current_track_index + 1,
-                                    item.album.tracks.len()
-                                ))),
-                        )
-                }),
-            ))
-    }
-
-    fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .flex()
-            .size_full()
-            .child(
-                // Left panel: Plugin List
-                div()
-                    .w_1_3()
-                    .border_r_1()
-                    .border_color(rgb(0x3e3e3e))
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .p_4()
-                            .border_b_1()
-                            .border_color(rgb(0x3e3e3e))
-                            .font_weight(FontWeight::BOLD)
-                            .child("Plugin Chain"),
-                    )
-                    .child(self.render_plugin_list(cx))
-                    .child(self.render_plugin_actions(cx)),
-            )
-            .child(
-                // Right panel: Plugin Settings
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .p_4()
-                            .border_b_1()
-                            .border_color(rgb(0x3e3e3e))
-                            .font_weight(FontWeight::BOLD)
-                            .child("Settings"),
-                    )
-                    .child(self.render_plugin_settings(cx)),
-            )
-    }
-
-    fn render_plugin_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let plugins = state.app.plugin_chain.plugins();
-
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .children(plugins.iter().enumerate().map(|(idx, plugin)| {
-                let is_selected = state.app.selected_plugin_index == idx;
-                let name = plugin.plugin_type().name().to_string();
-                let enabled = plugin.enabled;
-
-                div()
-                    .p_2()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                    .hover(|style| style.bg(rgb(0x3e3e3e)))
-                    .cursor_pointer()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                            view.state
-                                .update(cx, |state, _cx| state.app.selected_plugin_index = idx);
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_up(
-                        MouseButton::Right,
-                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.selected_plugin_index = idx;
-                                state.app.context_menu = Some(crate::app::ContextMenuState {
-                                    menu_type: crate::app::ContextMenuType::Plugin,
-                                    position_x: event.position.x.into(),
-                                    position_y: event.position.y.into(),
-                                    item_index: idx,
-                                });
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .w_4()
-                                    .h_4()
-                                    .rounded_sm()
-                                    .border_1()
-                                    .border_color(rgb(0x999999))
-                                    .bg(if enabled {
-                                        rgb(0x00ff00)
-                                    } else {
-                                        rgb(0x000000)
-                                    })
-                                    .cursor_pointer()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, cx| {
-                                                state.app.plugin_chain.toggle_plugin(idx);
-                                                state.app.needs_plugin_update = true;
-                                            });
-                                            cx.notify();
-                                        }),
-                                    ),
-                            )
-                            .child(name),
-                    )
-            }))
-    }
-
-    fn render_plugin_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .p_2()
-            .border_t_1()
-            .border_color(rgb(0x3e3e3e))
-            .flex()
-            .flex_wrap()
-            .gap_2()
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .bg(rgb(0x4e4e4e))
-                    .rounded_md()
-                    .cursor_pointer()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, cx| {
-                                // Add Upmixer by default for now, or show menu
-                                // For simplicity, let's cycle or add a specific one
-                                state
-                                    .app
-                                    .plugin_chain
-                                    .add_plugin(&sotf_audio_player::PluginType::Upmixer);
-                                state.app.needs_plugin_update = true;
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child("+ Upmixer"),
-            )
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .bg(rgb(0x4e4e4e))
-                    .rounded_md()
-                    .cursor_pointer()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, cx| {
-                                state
-                                    .app
-                                    .plugin_chain
-                                    .add_plugin(&sotf_audio_player::PluginType::EQ);
-                                state.app.needs_plugin_update = true;
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child("+ EQ"),
-            )
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .bg(rgb(0x8e2e2e))
-                    .rounded_md()
-                    .cursor_pointer()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, cx| {
-                                let idx = state.app.selected_plugin_index;
-                                state.app.plugin_chain.remove_plugin(idx);
-                                if state.app.selected_plugin_index >= state.app.plugin_chain.len()
-                                    && state.app.plugin_chain.len() > 0
-                                {
-                                    state.app.selected_plugin_index =
-                                        state.app.plugin_chain.len() - 1;
-                                }
-                                state.app.needs_plugin_update = true;
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child("Remove"),
-            )
-    }
-
-    fn render_plugin_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        if let Some(plugin) = state
-            .app
-            .plugin_chain
-            .get_plugin(state.app.selected_plugin_index)
-        {
-            let plugin_name = plugin.plugin_type().name().to_string();
-
-            div()
-                .p_4()
-                .flex()
-                .flex_col()
-                .gap_4()
-                .child(
-                    div()
-                        .text_lg()
-                        .font_weight(FontWeight::BOLD)
-                        .mb_2()
-                        .child(plugin_name),
-                )
-                .child(match &plugin.settings {
-                    sotf_audio_player::PluginSettings::Upmixer {
-                        speaker_config,
-                        lfe_gain,
-                        gain_front_direct,
-                        gain_front_ambient,
-                        gain_rear_ambient,
-                        lfe_cutoff_hz,
-                        stereo_width,
-                        bandpass_hz: _,
-                        height_gain,
-                        enable_subharmonic_synth,
-                        subharmonic_gain,
-                        enable_hr_direct: _,
-                        hr_sharpen: _,
-                        safety_cap_db,
-                    } => div()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(self.render_param_group(
-                            "Speaker Configuration",
-                            vec![("Layout", speaker_config.to_string())],
-                        ))
-                        .child(self.render_param_group(
-                            "Gain Settings",
-                            vec![
-                                ("LFE Gain", format!("{:.1} dB", lfe_gain)),
-                                ("Front Direct", format!("{:.1} dB", gain_front_direct)),
-                                ("Front Ambient", format!("{:.1} dB", gain_front_ambient)),
-                                ("Rear Ambient", format!("{:.1} dB", gain_rear_ambient)),
-                                ("Height Gain", format!("{:.1} dB", height_gain)),
-                                ("Safety Cap", format!("{:.1} dB", safety_cap_db)),
-                            ],
-                        ))
-                        .child(self.render_param_group(
-                            "Processing",
-                            vec![
-                                    ("Stereo Width", format!("{:.2}", stereo_width)),
-                                    ("LFE Cutoff", format!("{:.0} Hz", lfe_cutoff_hz)),
-                                    (
-                                        "Subharmonic Synth",
-                                        if *enable_subharmonic_synth {
-                                            "Enabled"
-                                        } else {
-                                            "Disabled"
-                                        }
-                                        .to_string(),
-                                    ),
-                                    ("Subharmonic Gain", format!("{:.1} dB", subharmonic_gain)),
-                                ],
-                        ))
-                        .child(
-                            div()
-                                .mt_2()
-                                .p_2()
-                                .rounded_md()
-                                .bg(rgb(0x2d2d2d))
-                                .text_xs()
-                                .text_color(rgb(0x999999))
-                                .child("Press 'e' to edit parameters"),
-                        ),
-                    sotf_audio_player::PluginSettings::EQ { filters } => div()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(0x999999))
-                                .child(format!("{} bands", filters.len())),
-                        )
-                        .children(filters.iter().enumerate().map(|(i, f)| {
-                            div()
-                                .p_3()
-                                .mb_2()
-                                .rounded_md()
-                                .bg(rgb(0x2d2d2d))
-                                .border_l_2()
-                                .border_color(if f.gain_db > 0.0 {
-                                    rgb(0x4ec9b0)
-                                } else if f.gain_db < 0.0 {
-                                    rgb(0xf48771)
-                                } else {
-                                    rgb(0x666666)
-                                })
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_between()
-                                        .items_center()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .child(format!("Band {}", i + 1)),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .gap_4()
-                                                .text_xs()
-                                                .text_color(rgb(0x999999))
-                                                .child(format!("{:.0} Hz", f.frequency))
-                                                .child(format!("Q: {:.2}", f.q))
-                                                .child(
-                                                    div()
-                                                        .font_weight(FontWeight::BOLD)
-                                                        .text_color(if f.gain_db > 0.0 {
-                                                            rgb(0x4ec9b0)
-                                                        } else if f.gain_db < 0.0 {
-                                                            rgb(0xf48771)
-                                                        } else {
-                                                            rgb(0xcccccc)
-                                                        })
-                                                        .child(format!("{:+.1} dB", f.gain_db)),
-                                                ),
-                                        ),
-                                )
-                        }))
-                        .child(
-                            div()
-                                .mt_2()
-                                .p_2()
-                                .rounded_md()
-                                .bg(rgb(0x2d2d2d))
-                                .text_xs()
-                                .text_color(rgb(0x999999))
-                                .child("Press 'e' to edit EQ bands"),
-                        ),
-                    sotf_audio_player::PluginSettings::Compressor {
-                        threshold_db,
-                        ratio,
-                        attack_ms,
-                        release_ms,
-                        makeup_gain_db,
-                        ..
-                    } => div()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(self.render_param_group(
-                            "Compressor",
-                            vec![
-                                ("Threshold", format!("{:.1} dB", threshold_db)),
-                                ("Ratio", format!("1:{:.1}", ratio)),
-                                ("Attack", format!("{:.1} ms", attack_ms)),
-                                ("Release", format!("{:.1} ms", release_ms)),
-                                ("Makeup Gain", format!("{:+.1} dB", makeup_gain_db)),
-                            ],
-                        )),
-                    sotf_audio_player::PluginSettings::Limiter {
-                        threshold_db,
-                        release_ms,
-                        ..
-                    } => div()
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(self.render_param_group(
-                            "Limiter",
-                            vec![
-                                ("Threshold", format!("{:.1} dB", threshold_db)),
-                                ("Release", format!("{:.1} ms", release_ms)),
-                            ],
-                        )),
-                    _ => div()
-                        .text_sm()
-                        .text_color(rgb(0x999999))
-                        .child("No configurable parameters for this plugin"),
-                })
-        } else {
-            div()
-                .p_4()
-                .text_color(rgb(0x666666))
-                .child("No plugin selected")
-        }
-    }
-
-    fn render_param_group(&self, title: &str, params: Vec<(&str, String)>) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(0x569cd6))
-                    .mb_1()
-                    .child(title.to_string()),
-            )
-            .children(params.iter().map(|(name, value)| {
-                div()
-                    .flex()
-                    .justify_between()
-                    .p_2()
-                    .rounded_md()
-                    .bg(rgb(0x2d2d2d))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child(name.to_string()),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgb(0xcccccc))
-                            .child(value.clone()),
-                    )
-            }))
-    }
-
-    fn render_devices_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p_4()
-            .child(
-                div()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .mb_4()
-                    .child("Audio Output Devices"),
-            )
-            .child(
-                // Grid layout with 2 columns
-                div().grid().grid_cols(2).gap_3().flex_1().children(
-                    state
-                        .app
-                        .output_devices
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, device)| {
-                            let is_selected = state.app.selected_output_device_index == idx;
-                            let sample_rate = device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.sample_rate)
-                                .unwrap_or(0);
-                            let channels = device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.channels)
-                                .unwrap_or(0);
-
-                            div()
-                                .p_2()
-                                .rounded_md()
-                                .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                                .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                                .hover(|style| style.bg(rgb(0x3e3e3e)))
-                                .cursor_pointer()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                        view.state.update(cx, |state, _cx| {
-                                            state.app.selected_output_device_index = idx;
-                                            if let Some(device) = state.app.output_devices.get(idx)
-                                            {
-                                                state.app.current_output_device_name =
-                                                    Some(device.name.clone());
-
-                                                // If playing, restart track with new device
-                                                if state.app.is_playing {
-                                                    if let Some(queue_idx) =
-                                                        state.app.current_queue_index
-                                                    {
-                                                        if let Some(item) =
-                                                            state.app.queue.get(queue_idx)
-                                                        {
-                                                            if let Some(track) =
-                                                                item.current_track()
-                                                            {
-                                                                let path = track.path.clone();
-                                                                Self::play_track(state, path);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        });
-                                        cx.notify();
-                                    }),
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .child(device.name.clone()),
-                                        )
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .gap_3()
-                                                .text_xs()
-                                                .text_color(rgb(0x999999))
-                                                .child(
-                                                    div()
-                                                        .flex()
-                                                        .gap_1()
-                                                        .child("📊")
-                                                        .child(format!("{} ch", channels)),
-                                                )
-                                                .child(div().flex().gap_1().child("🎵").child(
-                                                    if sample_rate >= 1000 {
-                                                        format!("{} kHz", sample_rate / 1000)
-                                                    } else {
-                                                        format!("{} Hz", sample_rate)
-                                                    },
-                                                )),
-                                        )
-                                        .when(device.is_default, |this| {
-                                            this.child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(rgb(0x4ec9b0))
-                                                    .child("✓ Default"),
-                                            )
-                                        }),
-                                )
-                        }),
-                ),
-            )
-    }
-
-    fn render_spectrum_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        let content = if let Some(info) = &state.app.spectrum_info {
-            div()
-                .flex()
-                .flex_col()
-                .size_full()
-                .child(
-                    div()
-                        .flex()
-                        .items_end()
-                        .gap_1()
-                        .h_64()
-                        .w_full()
-                        .bg(rgb(0x000000))
-                        .p_2()
-                        .children(info.magnitudes.iter().enumerate().map(|(i, &mag)| {
-                            let normalized = ((mag + 100.0) / 100.0).clamp(0.0, 1.0);
-                            let color = if normalized > 0.9 {
-                                rgb(0xff0000)
-                            } else if normalized > 0.7 {
-                                rgb(0xffff00)
-                            } else {
-                                rgb(0x00ff00)
-                            };
-
-                            div()
-                                .w_full()
-                                .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                                    normalized,
-                                )))
-                                .bg(color)
-                                .rounded_t_sm()
-                        })),
-                )
-                .child(
-                    div()
-                        .mt_2()
-                        .flex()
-                        .justify_between()
-                        .text_xs()
-                        .text_color(rgb(0x999999))
-                        .child("20 Hz")
-                        .child("1 kHz")
-                        .child("20 kHz"),
-                )
-        } else {
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .size_full()
-                .text_color(rgb(0x666666))
-                .child("No spectrum data available. Play audio to see visualization.")
-        };
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p_4()
-            .child(
-                div()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .mb_4()
-                    .child("Spectrum Analyzer"),
-            )
-            .child(content)
-    }
-
-    fn render_directory_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let is_add_mode = state.app.input_mode == crate::app::InputMode::AddDirectory;
-        let tree_items = state.app.get_directory_tree_items();
-
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p_4()
-            .child(
-                div()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .mb_4()
-                    .child("Directory Manager"),
-            )
-            .when(is_add_mode, |parent| {
-                parent.child(
-                    div()
-                        .p_3()
-                        .mb_4()
-                        .rounded_md()
-                        .bg(rgb(0x2d2d2d))
-                        .border_1()
-                        .border_color(rgb(0x007acc))
-                        .child(div().text_sm().child("Add Directory"))
-                        .child(
-                            div()
-                                .text_sm()
-                                .mt_2()
-                                .child(format!(
-                                    "Path: {}{}",
-                                    state.app.directory_input,
-                                    if is_add_mode { "█" } else { "" }
-                                ))
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .mt_2()
-                                .text_color(rgb(0x999999))
-                                .child("Tab: autocomplete, Enter: add, Esc: cancel")
-                        )
-                )
-            })
-            .child(
-                div()
-                    .id("directory-list")
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .flex_1()
-                                        .children(tree_items.iter().enumerate().map(|(i, (path, level, expanded))| {
-                        let is_selected = i == state.app.selected_directory_index;
-                        let indent = "  ".repeat(*level);
-                        let prefix = if *level == 0 {
-                            if *expanded { "▼ " } else { "▶ " }
-                        } else {
-                            "  "
-                        };
-
-                        div()
-                            .p_2()
-                            .rounded_md()
-                            .when(is_selected, |div| div.bg(rgb(0x264f78)))
-                            .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("{}{}{}", indent, prefix, path.display()))
-                            )
-                    }))
-            )
-            .when(state.app.scan_in_progress, |parent| {
-                parent.child(
-                    div()
-                        .p_3()
-                        .mt_4()
-                        .rounded_md()
-                        .bg(rgb(0x2d2d2d))
-                        .border_1()
-                        .border_color(rgb(0x4ec9b0))
-                        .child(div().text_sm().child("Scanning library..."))
-                        .child(
-                            div()
-                                .text_xs()
-                                .mt_2()
-                                .child(format!(
-                                    "{} tracks, {} albums found",
-                                    state.app.scan_progress_tracks,
-                                    state.app.scan_progress_albums
-                                ))
-                        )
-                )
-            })
-            .child(
-                div()
-                    .p_3()
-                    .mt_4()
-                    .rounded_md()
-                    .bg(rgb(0x1e1e1e))
-                    .text_xs()
-                    .text_color(rgb(0x999999))
-                    .child("Shift-A: Add Directory | Shift-S: Scan Library | D: Remove | Enter/L: Expand | Esc: Cancel")
-            )
-    }
-
-    fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .p_4()
-            .bg(rgb(0x2d2d2d))
-            .border_t_1()
-            .border_color(rgb(0x3e3e3e))
-            .child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .child(div().text_sm().child(if state.app.is_playing {
-                        "Playing"
-                    } else {
-                        "Stopped"
-                    }))
-                    .child(
-                        div()
-                            .text_sm()
-                            .child(format!("Volume: {:.0}%", state.app.volume * 100.0)),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child("Space: Play/Pause"),
-                    )
-                    .child(div().text_xs().text_color(rgb(0x999999)).child("N: Next"))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child("+/-: Volume"),
-                    ),
-            )
-    }
-
-    fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let screen_name = match state.app.current_screen {
-            Screen::Library => "Library",
-            Screen::DirectoryManager => "Directories",
-            Screen::Queue => "Queue",
-            Screen::Plugins => "Plugins",
-            Screen::Devices => "Devices",
-            Screen::Spectrum => "Spectrum",
-        };
-
-        // Get keybindings for current screen
-        let keybindings = get_keybindings_for_screen(state.app.current_screen);
-
-        // Create modal overlay (centered, 80% width, 90% height)
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
-            .child(
-                div()
-                    .id("help-modal")
-                    .w(Rems(60.0)) // 80% approx
-                    .h(Rems(40.0)) // 90% approx
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x007acc))
-                    .rounded_md()
-                    .p_4()
-                    .child(
-                        div()
-                            .text_xl()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child(format!(
-                                "Help - {} Screen (Press ESC or ? to close)",
-                                screen_name
-                            )),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            // Global keybindings section
-                            .child(
-                                div()
-                                    .text_lg()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0x4ec9b0))
-                                    .mb_2()
-                                    .child("GLOBAL KEYBINDINGS"),
-                            )
-                            .child(self.render_keybinding(
-                                "Shift-L/Q/P/O/D",
-                                "Jump to Library/Queue/Plugins/Devices/Directories",
-                            ))
-                            .child(self.render_keybinding("+/=", "Increase volume"))
-                            .child(self.render_keybinding("-/_", "Decrease volume"))
-                            .child(self.render_keybinding("?", "Show this help"))
-                            .child(div().h_4()) // Spacer
-                            // Screen-specific keybindings section
-                            .child(
-                                div()
-                                    .text_lg()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0x4ec9b0))
-                                    .mb_2()
-                                    .child(format!("{} KEYBINDINGS", screen_name.to_uppercase())),
-                            )
-                            .children(
-                                keybindings
-                                    .iter()
-                                    .map(|(key, desc)| self.render_keybinding(key, desc)),
-                            ),
-                    ),
-            )
-    }
-
-    fn render_keybinding(&self, key: &str, description: &str) -> impl IntoElement {
-        div()
-            .flex()
-            .gap_4()
-            .mb_1()
-            .child(
-                div()
-                    .w(Rems(12.0))
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(0x569cd6))
-                    .child(format!("  {}", key)),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(0xcccccc))
-                    .child(description.to_string()),
-            )
-    }
-
-    fn render_toast(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        if let Some(toast) = &state.app.toast_message {
-            let (bg_color, border_color, icon) = match toast.toast_type {
-                crate::app::ToastType::Success => (rgb(0x1e3a1e), rgb(0x4ec9b0), "✓"),
-                crate::app::ToastType::Error => (rgb(0x3a1e1e), rgb(0xf48771), "✗"),
-                crate::app::ToastType::Info => (rgb(0x1e2a3a), rgb(0x569cd6), "ℹ"),
-                crate::app::ToastType::Warning => (rgb(0x3a2e1e), rgb(0xdcdcaa), "⚠"),
-            };
-
-            div()
-                .absolute()
-                .top(px(20.0))
-                .left_1_2()
-                .min_w(Rems(25.0))
-                .max_w(Rems(50.0))
-                .bg(bg_color)
-                .border_2()
-                .border_color(border_color)
-                .rounded_md()
-                .shadow_lg()
-                .p_3()
-                .child(
-                    div()
-                        .flex()
-                        .gap_3()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(border_color)
-                                .child(icon),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_sm()
-                                .text_color(rgb(0xffffff))
-                                .child(toast.message.clone()),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(rgb(0x999999))
-                                .child("ESC to dismiss"),
-                        ),
-                )
-        } else {
-            div() // Return empty div if no toast
-        }
-    }
-
-    fn render_context_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        if let Some(menu) = &state.app.context_menu {
-            let menu_items: Vec<(&'static str, &'static str)> = match menu.menu_type {
-                crate::app::ContextMenuType::Album => {
-                    vec![("Add to Queue", "a"), ("Play Now", "enter")]
-                }
-                crate::app::ContextMenuType::QueueItem => {
-                    vec![("Remove from Queue", "d"), ("Play from Here", "enter")]
-                }
-                crate::app::ContextMenuType::Plugin => vec![
-                    ("Edit Plugin", "e"),
-                    ("Toggle Enabled", "shift-t"),
-                    ("Move Up", "u"),
-                    ("Move Down", "shift-n"),
-                    ("Remove Plugin", "d"),
-                ],
-                crate::app::ContextMenuType::Directory => {
-                    vec![("Remove Directory", "d"), ("Rescan Library", "shift-s")]
-                }
-            };
-
-            div()
-                .absolute()
-                .top(px(menu.position_y))
-                .left(px(menu.position_x))
-                .w(Rems(15.0))
-                .bg(rgb(0x2d2d2d))
-                .border_1()
-                .border_color(rgb(0x007acc))
-                .rounded_md()
-                .shadow_lg()
-                .overflow_hidden()
-                .children(menu_items.into_iter().map(|(label, shortcut)| {
-                    div()
-                        .px_3()
-                        .py_2()
-                        .hover(|style| style.bg(rgb(0x3e3e3e)))
-                        .cursor_pointer()
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                // Close menu and execute action based on menu type
-                                view.state.update(cx, |state, cx| {
-                                    let menu_type = state
-                                        .app
-                                        .context_menu
-                                        .as_ref()
-                                        .map(|m| m.menu_type.clone());
-                                    let item_idx = state
-                                        .app
-                                        .context_menu
-                                        .as_ref()
-                                        .map(|m| m.item_index)
-                                        .unwrap_or(0);
-                                    state.app.context_menu = None;
-
-                                    if let Some(mt) = menu_type {
-                                        match (mt, label) {
-                                            (
-                                                crate::app::ContextMenuType::Album,
-                                                "Add to Queue",
-                                            )
-                                            | (crate::app::ContextMenuType::Album, "Play Now") => {
-                                                if let Some(path) = state.app.add_album_to_queue() {
-                                                    Self::play_track(state, path);
-                                                }
-                                            }
-                                            (
-                                                crate::app::ContextMenuType::QueueItem,
-                                                "Remove from Queue",
-                                            ) => {
-                                                state.app.remove_from_queue(item_idx);
-                                            }
-                                            (
-                                                crate::app::ContextMenuType::QueueItem,
-                                                "Play from Here",
-                                            ) => {
-                                                state.app.current_queue_index = Some(item_idx);
-                                                // Play the first track of the queue item
-                                                if let Some(queue_item) =
-                                                    state.app.queue.get(item_idx)
-                                                {
-                                                    if let Some(first_track) =
-                                                        queue_item.album.tracks.first()
-                                                    {
-                                                        Self::play_track(
-                                                            state,
-                                                            first_track.path.clone(),
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            (
-                                                crate::app::ContextMenuType::Plugin,
-                                                "Edit Plugin",
-                                            ) => {
-                                                state.app.enter_plugin_edit_mode();
-                                            }
-                                            (
-                                                crate::app::ContextMenuType::Plugin,
-                                                "Toggle Enabled",
-                                            ) => {
-                                                state.app.plugin_chain.toggle_plugin(item_idx);
-                                            }
-                                            (crate::app::ContextMenuType::Plugin, "Move Up") => {
-                                                state.app.move_plugin_up(item_idx);
-                                            }
-                                            (crate::app::ContextMenuType::Plugin, "Move Down") => {
-                                                state.app.move_plugin_down(item_idx);
-                                            }
-                                            (
-                                                crate::app::ContextMenuType::Plugin,
-                                                "Remove Plugin",
-                                            ) => {
-                                                state.app.plugin_chain.remove_plugin(item_idx);
-                                            }
-                                            (
-                                                crate::app::ContextMenuType::Directory,
-                                                "Remove Directory",
-                                            ) => {
-                                                state.app.selected_directory_index = item_idx;
-                                                state.app.remove_selected_directory();
-                                            }
-                                            (
-                                                crate::app::ContextMenuType::Directory,
-                                                "Rescan Library",
-                                            ) => {
-                                                if let Err(e) = state.app.scan_library() {
-                                                    log::error!("Scan failed: {}", e);
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .justify_between()
-                                .items_center()
-                                .child(div().text_sm().child(label))
-                                .child(div().text_xs().text_color(rgb(0x666666)).child(shortcut)),
-                        )
-                }))
-        } else {
-            div() // Return empty div if no menu
-        }
-    }
-
-    fn render_apo_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
-            .child(
-                div()
-                    .w(Rems(40.0))
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x007acc))
-                    .rounded_md()
-                    .p_4()
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child("Load APO File for EQ Plugin"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .mb_2()
-                            .text_color(rgb(0x999999))
-                            .child("Enter path to APO file:"),
-                    )
-                    .child(
-                        div()
-                            .p_2()
-                            .mb_4()
-                            .rounded_md()
-                            .bg(rgb(0x2d2d2d))
-                            .border_1()
-                            .border_color(rgb(0x007acc))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("{}█", state.app.apo_file_input)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child("Enter: Load file | ESC: Cancel"),
-                    ),
-            )
-    }
-
-    fn render_sofa_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
-            .child(
-                div()
-                    .w(Rems(40.0))
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x007acc))
-                    .rounded_md()
-                    .p_4()
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child("Load SOFA File for Binaural Decoder"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .mb_2()
-                            .text_color(rgb(0x999999))
-                            .child("Enter path to SOFA file:"),
-                    )
-                    .child(
-                        div()
-                            .p_2()
-                            .mb_4()
-                            .rounded_md()
-                            .bg(rgb(0x2d2d2d))
-                            .border_1()
-                            .border_color(rgb(0x007acc))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("{}█", state.app.sofa_file_input)),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child("Enter: Load file | ESC: Cancel"),
-                    ),
-            )
-    }
-
-    fn render_plugin_edit_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-
-        if let Some(plugin) = state.app.get_editing_plugin() {
-            let plugin_name = plugin.plugin_type().name().to_string();
-            let params = render_plugin_param_list(plugin, state.app.plugin_param_selection);
-
-            // Create modal overlay
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(rgba(0x000000aa)) // Semi-transparent background
-                .child(
-                    div()
-                        .id("plugin-edit-modal")
-                        .w(Rems(50.0))
-                        .h(Rems(35.0))
-                        .bg(rgb(0x1e1e1e))
-                        .border_2()
-                        .border_color(rgb(0x4ec9b0))
-                        .rounded_md()
-                        .p_4()
-                        .child(
-                            div()
-                                .text_xl()
-                                .font_weight(FontWeight::BOLD)
-                                .mb_4()
-                                .child(format!(
-                                    "Edit Plugin: {} (Press ESC to close)",
-                                    plugin_name
-                                )),
-                        )
-                        .child(div().flex().flex_col().gap_2().children(
-                            params.iter().enumerate().map(|(idx, (name, value))| {
-                                let is_selected = idx == state.app.plugin_param_selection;
-                                div()
-                                    .p_2()
-                                    .rounded_md()
-                                    .when(is_selected, |div| div.bg(rgb(0x264f78)))
-                                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .justify_between()
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_color(if is_selected {
-                                                        rgb(0xffffff)
-                                                    } else {
-                                                        rgb(0x569cd6)
-                                                    })
-                                                    .child(name.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_sm()
-                                                    .text_color(if is_selected {
-                                                        rgb(0xffffff)
-                                                    } else {
-                                                        rgb(0xcccccc)
-                                                    })
-                                                    .child(value.clone()),
-                                            ),
-                                    )
-                            }),
-                        ))
-                        .child(
-                            div()
-                                .p_3()
-                                .mt_4()
-                                .rounded_md()
-                                .bg(rgb(0x1e1e1e))
-                                .text_xs()
-                                .text_color(rgb(0x999999))
-                                .child("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit"),
-                        ),
-                )
-        } else {
-            div() // Return empty div if no plugin is being edited
-        }
-    }
-}
-
-fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {
-    match screen {
-        Screen::Library => vec![
-            ("↑/↓ or K/J", "Navigate albums/artists"),
-            ("PageUp/PageDown", "Jump by page"),
-            ("/", "Search albums"),
-            ("T", "Toggle tree view / flat view"),
-            ("H/L or ←/→", "Collapse/expand artists in tree view"),
-            ("S or 1/2/3/4", "Sort by Artist/Album/Title/Year"),
-            ("C or 5/6/7/8/9", "Filter: All/Mono/Stereo/Multi/Mixed"),
-            ("A or Enter", "Add album to queue"),
-            ("Shift-Q", "Go to queue screen"),
-        ],
-        Screen::DirectoryManager => vec![
-            ("↑/↓ or K/J", "Navigate directories"),
-            ("PageUp/PageDown", "Jump by page"),
-            ("Enter/→/L", "Expand/collapse directory"),
-            ("Shift-A", "Add directory"),
-            ("D/Delete", "Remove selected directory"),
-            ("Shift-S", "Scan library"),
-        ],
-        Screen::Queue => vec![
-            ("↑/↓ or K/J", "Navigate queue items"),
-            ("Enter", "Play selected album from start"),
-            ("H/L or ←/→", "Expand/collapse album tracks"),
-            ("Space", "Play/Pause"),
-            ("N or >", "Next track"),
-            ("B or <", "Previous track"),
-            ("D/Delete", "Remove from queue"),
-            ("C", "Clear entire queue"),
-        ],
-        Screen::Plugins => vec![
-            ("↑/↓ or K/J", "Navigate plugin chain"),
-            ("A", "Add plugin (default)"),
-            (
-                "Shift-1/2/3/4/5/6/7",
-                "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural",
-            ),
-            ("E or Enter", "Edit selected plugin"),
-            ("Shift-T", "Toggle plugin enabled/disabled"),
-            ("D/Delete", "Remove plugin"),
-            ("U", "Move plugin up in chain"),
-            ("Shift-N", "Move plugin down in chain"),
-        ],
-        Screen::Devices => vec![
-            ("↑/↓ or K/J", "Navigate output devices"),
-            ("Enter/Space", "Select output device"),
-        ],
-        Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
-    }
-}
-
-// Helper function to render plugin parameters for editing
-fn render_plugin_param_list(
-    plugin: &sotf_audio_player::Plugin,
-    selected_idx: usize,
-) -> Vec<(String, String)> {
-    use sotf_audio_player::PluginSettings;
-
-    match &plugin.settings {
-        PluginSettings::Upmixer {
-            speaker_config,
-            gain_front_direct,
-            gain_front_ambient,
-            gain_rear_ambient,
-            lfe_cutoff_hz,
-            stereo_width,
-            bandpass_hz,
-            height_gain,
-            lfe_gain,
-            enable_subharmonic_synth,
-            subharmonic_gain,
-            enable_hr_direct,
-            hr_sharpen,
-            safety_cap_db,
-        } => vec![
-            ("Speaker Config".to_string(), speaker_config.clone()),
-            (
-                "Gain Front Direct".to_string(),
-                format!("{:.1} dB", gain_front_direct),
-            ),
-            (
-                "Gain Front Ambient".to_string(),
-                format!("{:.1} dB", gain_front_ambient),
-            ),
-            (
-                "Gain Rear Ambient".to_string(),
-                format!("{:.1} dB", gain_rear_ambient),
-            ),
-            ("LFE Cutoff".to_string(), format!("{:.0} Hz", lfe_cutoff_hz)),
-            ("Stereo Width".to_string(), format!("{:.2}", stereo_width)),
-            ("Bandpass".to_string(), format!("{:.0} Hz", bandpass_hz)),
-            ("Height Gain".to_string(), format!("{:.1} dB", height_gain)),
-            ("LFE Gain".to_string(), format!("{:.1} dB", lfe_gain)),
-            (
-                "Subharmonic Synth".to_string(),
-                if *enable_subharmonic_synth {
-                    "On".to_string()
-                } else {
-                    "Off".to_string()
-                },
-            ),
-            (
-                "Subharmonic Gain".to_string(),
-                format!("{:.1} dB", subharmonic_gain),
-            ),
-            (
-                "HR Direct".to_string(),
-                if *enable_hr_direct {
-                    "On".to_string()
-                } else {
-                    "Off".to_string()
-                },
-            ),
-            ("HR Sharpen".to_string(), format!("{:.2}", hr_sharpen)),
-            ("Safety Cap".to_string(), format!("{:.1} dB", safety_cap_db)),
-        ],
-        PluginSettings::Compressor {
-            threshold_db,
-            ratio,
-            attack_ms,
-            release_ms,
-            knee_db,
-            makeup_gain_db,
-            mix,
-            auto_makeup,
-            link_channels,
-            sidechain_hpf_hz,
-        } => vec![
-            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
-            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
-            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
-            ("Release".to_string(), format!("{:.0} ms", release_ms)),
-            ("Knee".to_string(), format!("{:.1} dB", knee_db)),
-            (
-                "Makeup Gain".to_string(),
-                format!("{:.1} dB", makeup_gain_db),
-            ),
-            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            (
-                "Auto Makeup".to_string(),
-                if *auto_makeup {
-                    "On".to_string()
-                } else {
-                    "Off".to_string()
-                },
-            ),
-            (
-                "Link Channels".to_string(),
-                if *link_channels {
-                    "On".to_string()
-                } else {
-                    "Off".to_string()
-                },
-            ),
-            (
-                "Sidechain HPF".to_string(),
-                format!("{:.0} Hz", sidechain_hpf_hz),
-            ),
-        ],
-        PluginSettings::Limiter {
-            threshold_db,
-            release_ms,
-            mix,
-        } => vec![
-            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
-            ("Release".to_string(), format!("{:.0} ms", release_ms)),
-            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-        ],
-        PluginSettings::Gate {
-            threshold_db,
-            ratio,
-            attack_ms,
-            release_ms,
-            mix,
-            link_channels,
-            sidechain_hpf_hz,
-        } => vec![
-            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
-            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
-            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
-            ("Release".to_string(), format!("{:.0} ms", release_ms)),
-            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            (
-                "Link Channels".to_string(),
-                if *link_channels {
-                    "On".to_string()
-                } else {
-                    "Off".to_string()
-                },
-            ),
-            (
-                "Sidechain HPF".to_string(),
-                format!("{:.0} Hz", sidechain_hpf_hz),
-            ),
-        ],
-        PluginSettings::LoudnessCompensation {
-            target_lufs,
-            min_gain_db,
-            max_gain_db,
-        } => vec![
-            (
-                "Target LUFS".to_string(),
-                format!("{:.1} LUFS", target_lufs),
-            ),
-            ("Min Gain".to_string(), format!("{:.1} dB", min_gain_db)),
-            ("Max Gain".to_string(), format!("{:.1} dB", max_gain_db)),
-        ],
-        PluginSettings::EQ { filters } => {
-            let mut params = vec![];
-            for (i, filter) in filters.iter().enumerate() {
-                params.push((
-                    format!("Filter {} Freq", i + 1),
-                    format!("{:.0} Hz", filter.frequency),
-                ));
-                params.push((format!("Filter {} Q", i + 1), format!("{:.2}", filter.q)));
-                params.push((
-                    format!("Filter {} Gain", i + 1),
-                    format!("{:.1} dB", filter.gain_db),
-                ));
-                params.push((
-                    format!("Filter {} Type", i + 1),
-                    format!("{:?}", filter.filter_type),
-                ));
-            }
-            params
-        }
-        PluginSettings::BinauralDecoder {
-            sofa_file,
-            input_channels,
-            enable_optimization,
-            externalization,
-            near_field_strength,
-        } => vec![
-            (
-                "SOFA File".to_string(),
-                if sofa_file.is_empty() {
-                    "None".to_string()
-                } else {
-                    sofa_file.clone()
-                },
-            ),
-            ("Input Channels".to_string(), format!("{}", input_channels)),
-            (
-                "Optimization".to_string(),
-                if *enable_optimization {
-                    "On".to_string()
-                } else {
-                    "Off".to_string()
-                },
-            ),
-            (
-                "Externalization".to_string(),
-                format!("{:.2}", externalization),
-            ),
-            (
-                "Near Field".to_string(),
-                format!("{:.2}", near_field_strength),
-            ),
-        ],
-        PluginSettings::Convolution {
-            ir_file,
-            mix,
-            gain_db,
-        } => vec![
-            (
-                "IR File".to_string(),
-                if ir_file.is_empty() {
-                    "None".to_string()
-                } else {
-                    ir_file.clone()
-                },
-            ),
-            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            ("Gain".to_string(), format!("{:.1} dB", gain_db)),
-        ],
-        PluginSettings::LoudnessMonitor => vec![(
-            "Info".to_string(),
-            "Real-time LUFS and peak meters".to_string(),
-        )],
-        PluginSettings::SpectrumAnalyzer {
-            num_bins,
-            min_freq,
-            max_freq,
-            smoothing,
-        } => vec![
-            ("Frequency Bins".to_string(), format!("{}", num_bins)),
-            ("Min Frequency".to_string(), format!("{:.0} Hz", min_freq)),
-            ("Max Frequency".to_string(), format!("{:.0} Hz", max_freq)),
-            ("Smoothing".to_string(), format!("{:.2}", smoothing)),
-        ],
     }
 }

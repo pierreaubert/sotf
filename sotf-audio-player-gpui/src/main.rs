@@ -98,12 +98,19 @@ fn main() {
             KeyBinding::new("%", ui::QuickAddLimiter, None),
             KeyBinding::new("^", ui::QuickAddLoudness, None),
             KeyBinding::new("&", ui::QuickAddBinaural, None),
+            // Level meter controls (Queue screen)
+            KeyBinding::new("tab", ui::SelectNextMeterGroup, None),
+            KeyBinding::new("shift-tab", ui::SelectPrevMeterGroup, None),
+            KeyBinding::new("m", ui::ToggleMeterMute, None),
+            KeyBinding::new("shift-m", ui::ToggleMeterSolo, None),
+            KeyBinding::new("ctrl-m", ui::ToggleMeterDim, None),
+            KeyBinding::new("x", ui::ClearMeterMutesSolos, None),
         ]);
 
         // Create window with app state
         cx.open_window(
             WindowOptions {
-                app_id: Some("com.spinorama.sotf-player".into()),
+                app_id: Some("org.spinorama.sotf".into()),
                 window_bounds: Some(WindowBounds::Windowed(Bounds {
                     origin: Point::new(px(100.0), px(100.0)),
                     size: Size {
@@ -112,7 +119,7 @@ fn main() {
                     },
                 })),
                 titlebar: Some(TitlebarOptions {
-                    title: Some("SOTF Audio Player".into()),
+                    title: Some("SotF".into()),
                     appears_transparent: false,
                     traffic_light_position: None,
                 }),
