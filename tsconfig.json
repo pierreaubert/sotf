@@ -22,17 +22,17 @@
 
     /* Path mappings */
     "paths": {
-      "@audio-player/*":  ["./src-ui-frontend/modules/audio-player/*"],
-      "@audio-capture/*": ["./src-ui-frontend/modules/audio-capture/*"],
-      "@ui/*": ["./src-ui-frontend*"]
+      "@audio-player/*":  ["./sotf-ui-frontend/modules/audio-player/*"],
+      "@audio-capture/*": ["./sotf-ui-frontend/modules/audio-capture/*"],
+      "@ui/*": ["./sotf-ui-frontend*"]
     }
   },
   "include": [
-    "./src-ui-frontend/**/*",
+    "./sotf-ui-frontend/**/*",
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "./src-ui-frontend/tests/**/*",
+    "./sotf-ui-frontend/tests/**/*",
   ]
 }

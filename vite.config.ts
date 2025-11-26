@@ -30,7 +30,7 @@ export default defineConfig(async () => ({
 
   // The 'root' tells Vite to use the 'frontend' directory
   // as the base for all its operations, including finding index.html
-  root: path.resolve(__dirname, "./src-ui-frontend"),
+  root: path.resolve(__dirname, "./sotf-ui-frontend"),
 
   // Point publicDir to Tauri's public directory so static assets are served correctly
   publicDir: path.resolve(__dirname, "./src-tauri/public"),
@@ -44,21 +44,21 @@ export default defineConfig(async () => ({
     // Multi-page build configuration
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, "./src-ui-frontend/index.html"),
-        'audio-player-demo': path.resolve(__dirname, "./src-ui-frontend/examples/audio-player-demo.html"),
-        'basic-eq-demo': path.resolve(__dirname, "./src-ui-frontend/examples/basic-eq-demo.html"),
-        'channel-strip-demo': path.resolve(__dirname, "./src-ui-frontend/examples/channel-strip-demo.html"),
-        'step-navigator-demo': path.resolve(__dirname, "./src-ui-frontend/examples/step-navigator-demo.html"),
-        'step-workflow-demo': path.resolve(__dirname, "./src-ui-frontend/examples/step-workflow-demo.html"),
+        main: path.resolve(__dirname, "./sotf-ui-frontend/index.html"),
+        'audio-player-demo': path.resolve(__dirname, "./sotf-ui-frontend/examples/audio-player-demo.html"),
+        'basic-eq-demo': path.resolve(__dirname, "./sotf-ui-frontend/examples/basic-eq-demo.html"),
+        'channel-strip-demo': path.resolve(__dirname, "./sotf-ui-frontend/examples/channel-strip-demo.html"),
+        'step-navigator-demo': path.resolve(__dirname, "./sotf-ui-frontend/examples/step-navigator-demo.html"),
+        'step-workflow-demo': path.resolve(__dirname, "./sotf-ui-frontend/examples/step-workflow-demo.html"),
       },
     },
   },
 
   resolve: {
     alias: {
-      "@audio-player": path.resolve(__dirname, "./src-ui-frontend/modules/audio-player"),
-      "@audio-capture": path.resolve(__dirname, "./src-ui-frontend/modules/audio-capture"),
-      "@ui": path.resolve(__dirname, "./src-ui-frontend"),
+      "@audio-player": path.resolve(__dirname, "./sotf-ui-frontend/modules/audio-player"),
+      "@audio-capture": path.resolve(__dirname, "./sotf-ui-frontend/modules/audio-capture"),
+      "@ui": path.resolve(__dirname, "./sotf-ui-frontend"),
     },
   },
 }));

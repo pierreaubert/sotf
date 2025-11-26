@@ -21,6 +21,7 @@ pub use preflight::{PreflightError, run_preflight_checks};
 pub mod replaygain;
 pub mod signal_recorder;
 pub mod signals;
+pub mod waveform;
 
 pub mod signal_analysis;
 

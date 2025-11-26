@@ -9685,6 +9685,7 @@ dependencies = [
  "smol",
  "sotf-audio-engine",
  "sotf-audio-player",
+ "sotf-audio-player-tui",
  "sotf-audio-plugins",
  "symphonia",
  "symphonia-bundle-flac",
@@ -9695,6 +9696,7 @@ dependencies = [
  "symphonia-format-ogg",
  "symphonia-format-riff",
  "symphonia-metadata",
+ "tempfile",
  "walkdir",
 ]
 

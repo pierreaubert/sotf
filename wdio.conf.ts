@@ -14,7 +14,7 @@ const APPLICATION_PATH = join(
 let tauriDriver: ChildProcess;
 
 export const config: Options.Testrunner = {
-  specs: ["./src-ui-frontend/tests/e2e-ui/**/*.spec.ts"],
+  specs: ["./sotf-ui-frontend/tests/e2e-ui/**/*.spec.ts"],
   exclude: [],
 
   maxInstances: 1,
