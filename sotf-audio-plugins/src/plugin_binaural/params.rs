@@ -9,7 +9,7 @@ fn default_sofa_path() -> String {
     "".to_string()
 }
 
-fn default_enable_optimization() -> bool {
+pub fn default_enable_optimization() -> bool {
     true
 }
 

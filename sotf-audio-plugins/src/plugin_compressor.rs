@@ -53,15 +53,15 @@ fn default_mix() -> f32 {
     1.0
 }
 
-fn default_auto_makeup() -> bool {
+pub fn default_auto_makeup() -> bool {
     false
 }
 
-fn default_link_channels() -> bool {
+pub fn default_link_channels() -> bool {
     true
 }
 
-fn default_sidechain_hpf_hz() -> f32 {
+pub fn default_sidechain_hpf_hz() -> f32 {
     80.0
 }
 

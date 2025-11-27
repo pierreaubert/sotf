@@ -54,7 +54,10 @@ pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
-pub use plugin_binaural::{BinauralDecoderParams, BinauralDecoderPlugin, RoomModel};
+pub use plugin_binaural::{
+    BinauralDecoderParams, BinauralDecoderPlugin, RoomModel,
+    binaural_default_enable_optimization,
+};
 pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
@@ -69,7 +72,19 @@ pub use plugin_loudness_compensation::{
 };
 pub use plugin_matrix::MatrixPlugin;
 pub use plugin_resampler::ResamplerPlugin;
-pub use plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams};
+pub use plugin_upmixer::{
+    UpmixerPlugin, UpmixerPluginParams,
+    // Re-export upmixer defaults for preset migration
+    default_subharmonic_gain as upmixer_default_subharmonic_gain,
+    default_hr_sharpen as upmixer_default_hr_sharpen,
+    default_safety_cap_db as upmixer_default_safety_cap_db,
+};
+// Re-export compressor defaults for preset migration
+pub use plugin_compressor::{
+    default_auto_makeup as compressor_default_auto_makeup,
+    default_link_channels as compressor_default_link_channels,
+    default_sidechain_hpf_hz as compressor_default_sidechain_hpf_hz,
+};
 pub use speaker_config::{
     SpeakerConfig, SpeakerPosition, calculate_panning_gain, get_available_configs,
     get_speaker_config, get_speaker_config_by_channels,
