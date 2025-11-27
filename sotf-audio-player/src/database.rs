@@ -7,6 +7,49 @@ use chrono::{Datelike, Local, NaiveDateTime};
 use crate::config;
 use crate::library::{Album, Playlist, PlaylistEntry, Track};
 
+/// Normalize a genre value:
+/// - Replace dots and underscores with spaces
+/// - Title case each word (first letter uppercase, rest lowercase)
+/// This is specifically for genres where formats like "world.music" or "trip_hop" are common
+fn normalize_genre_name(value: &str) -> String {
+    value
+        .replace('.', " ")
+        .replace('_', " ")
+        .split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let rest: String = chars.collect::<String>().to_lowercase();
+                    format!("{}{}", first.to_uppercase(), rest)
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Split a metadata value by common delimiters (`,`, `/`, `;`)
+/// Returns a vector of trimmed, non-empty values (preserves original capitalization)
+fn split_metadata_value(value: &str) -> Vec<String> {
+    value
+        .split(|c| c == ',' || c == '/' || c == ';')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Split a genre value by common delimiters and normalize each
+/// (dots/underscores to spaces, title case)
+fn split_and_normalize_genres(value: &str) -> Vec<String> {
+    value
+        .split(|c| c == ',' || c == '/' || c == ';')
+        .map(|s| normalize_genre_name(s.trim()))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 /// A database migration with description and apply function
 struct Migration {
     description: &'static str,
@@ -29,7 +72,29 @@ impl MusicDatabase {
     }
 
     /// Open or create database at the given path
+    ///
+    /// # Security
+    /// The database path must be within the application's config directory.
     pub fn open<P: AsRef<Path>>(path: P) -> SqlResult<Self> {
+        let path = path.as_ref();
+
+        // Security validation: ensure we're opening the database within config directory
+        crate::security::validate_write_path(path).map_err(|e| {
+            rusqlite::Error::InvalidPath(std::path::PathBuf::from(format!("{}", e)))
+        })?;
+
+        Self::open_internal(path)
+    }
+
+    /// Open or create database at the given path without security validation.
+    /// This is only available in test builds for unit testing.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn open_for_testing<P: AsRef<Path>>(path: P) -> SqlResult<Self> {
+        Self::open_internal(path.as_ref())
+    }
+
+    /// Internal database open that skips security validation.
+    fn open_internal(path: &Path) -> SqlResult<Self> {
         let conn = Connection::open(path)?;
         let db = Self { conn };
         db.initialize_schema()?;
@@ -53,7 +118,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 9;
+        const LATEST_VERSION: i64 = 11;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -577,6 +642,235 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 10: Add album art thumbnail column to albums table
+        migrations.insert(
+            10,
+            Migration {
+                description: "Add album_art_thumbnail BLOB column to albums table",
+                apply: |db| {
+                    // Check if column already exists
+                    let has_column = db
+                        .conn
+                        .prepare("SELECT album_art_thumbnail FROM albums LIMIT 1")
+                        .is_ok();
+
+                    if !has_column {
+                        db.conn.execute(
+                            "ALTER TABLE albums ADD COLUMN album_art_thumbnail BLOB",
+                            [],
+                        )?;
+                        log::info!("Added album_art_thumbnail column to albums table");
+                    }
+
+                    Ok(())
+                },
+            },
+        );
+
+        // Migration 11: Normalize metadata tables (genres, composers, conductors, performers, ensembles)
+        migrations.insert(
+            11,
+            Migration {
+                description: "Add normalized lookup tables for genres, composers, conductors, performers, ensembles",
+                apply: |db| {
+                    // Create lookup tables
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS genres (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS composers (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS conductors (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS performers (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS ensembles (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+                        )",
+                        [],
+                    )?;
+
+                    // Create junction tables for many-to-many relationships
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS track_genres (
+                            track_id INTEGER NOT NULL,
+                            genre_id INTEGER NOT NULL,
+                            PRIMARY KEY (track_id, genre_id),
+                            FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                            FOREIGN KEY(genre_id) REFERENCES genres(id) ON DELETE CASCADE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS track_composers (
+                            track_id INTEGER NOT NULL,
+                            composer_id INTEGER NOT NULL,
+                            PRIMARY KEY (track_id, composer_id),
+                            FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                            FOREIGN KEY(composer_id) REFERENCES composers(id) ON DELETE CASCADE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS track_conductors (
+                            track_id INTEGER NOT NULL,
+                            conductor_id INTEGER NOT NULL,
+                            PRIMARY KEY (track_id, conductor_id),
+                            FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                            FOREIGN KEY(conductor_id) REFERENCES conductors(id) ON DELETE CASCADE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS track_performers (
+                            track_id INTEGER NOT NULL,
+                            performer_id INTEGER NOT NULL,
+                            PRIMARY KEY (track_id, performer_id),
+                            FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                            FOREIGN KEY(performer_id) REFERENCES performers(id) ON DELETE CASCADE
+                        )",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TABLE IF NOT EXISTS track_ensembles (
+                            track_id INTEGER NOT NULL,
+                            ensemble_id INTEGER NOT NULL,
+                            PRIMARY KEY (track_id, ensemble_id),
+                            FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+                            FOREIGN KEY(ensemble_id) REFERENCES ensembles(id) ON DELETE CASCADE
+                        )",
+                        [],
+                    )?;
+
+                    // Create indexes for efficient lookups
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_genres_track ON track_genres(track_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_genres_genre ON track_genres(genre_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_composers_track ON track_composers(track_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_composers_composer ON track_composers(composer_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_conductors_track ON track_conductors(track_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_performers_track ON track_performers(track_id)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_track_ensembles_track ON track_ensembles(track_id)",
+                        [],
+                    )?;
+
+                    // Migrate existing data from tracks table to normalized tables
+                    // First, populate lookup tables from existing data
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO genres (name)
+                         SELECT DISTINCT genre FROM tracks WHERE genre IS NOT NULL AND genre != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO composers (name)
+                         SELECT DISTINCT composer FROM tracks WHERE composer IS NOT NULL AND composer != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO conductors (name)
+                         SELECT DISTINCT conductor FROM tracks WHERE conductor IS NOT NULL AND conductor != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO performers (name)
+                         SELECT DISTINCT performer FROM tracks WHERE performer IS NOT NULL AND performer != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO ensembles (name)
+                         SELECT DISTINCT ensemble FROM tracks WHERE ensemble IS NOT NULL AND ensemble != ''",
+                        [],
+                    )?;
+
+                    // Populate junction tables
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO track_genres (track_id, genre_id)
+                         SELECT t.id, g.id FROM tracks t
+                         JOIN genres g ON t.genre = g.name
+                         WHERE t.genre IS NOT NULL AND t.genre != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO track_composers (track_id, composer_id)
+                         SELECT t.id, c.id FROM tracks t
+                         JOIN composers c ON t.composer = c.name
+                         WHERE t.composer IS NOT NULL AND t.composer != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO track_conductors (track_id, conductor_id)
+                         SELECT t.id, c.id FROM tracks t
+                         JOIN conductors c ON t.conductor = c.name
+                         WHERE t.conductor IS NOT NULL AND t.conductor != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO track_performers (track_id, performer_id)
+                         SELECT t.id, p.id FROM tracks t
+                         JOIN performers p ON t.performer = p.name
+                         WHERE t.performer IS NOT NULL AND t.performer != ''",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "INSERT OR IGNORE INTO track_ensembles (track_id, ensemble_id)
+                         SELECT t.id, e.id FROM tracks t
+                         JOIN ensembles e ON t.ensemble = e.name
+                         WHERE t.ensemble IS NOT NULL AND t.ensemble != ''",
+                        [],
+                    )?;
+
+                    log::info!("Created normalized metadata tables and migrated existing data");
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -643,17 +937,18 @@ impl MusicDatabase {
     /// Load all albums and tracks from database
     pub fn load_library(&self) -> SqlResult<Vec<Album>> {
         let mut albums_stmt = self.conn.prepare(
-            "SELECT id, artist, title, year, album_art_path FROM albums ORDER BY artist, title",
+            "SELECT id, artist, title, year, album_art_path, album_art_thumbnail FROM albums ORDER BY artist, title",
         )?;
 
         let mut albums = Vec::new();
         let album_rows = albums_stmt.query_map([], |row| {
             Ok((
-                row.get::<_, i64>(0)?,            // id
-                row.get::<_, String>(1)?,         // artist
-                row.get::<_, String>(2)?,         // title
-                row.get::<_, Option<i64>>(3)?,    // year
-                row.get::<_, Option<String>>(4)?, // album_art_path
+                row.get::<_, i64>(0)?,               // id
+                row.get::<_, String>(1)?,            // artist
+                row.get::<_, String>(2)?,            // title
+                row.get::<_, Option<i64>>(3)?,       // year
+                row.get::<_, Option<String>>(4)?,    // album_art_path
+                row.get::<_, Option<Vec<u8>>>(5)?,   // album_art_thumbnail
             ))
         })?;
 
@@ -661,7 +956,7 @@ impl MusicDatabase {
         let play_counts = self.get_all_album_play_counts()?;
 
         for album_row in album_rows {
-            let (album_id, artist, title, year, album_art_path) = album_row?;
+            let (album_id, artist, title, year, album_art_path, album_art_thumbnail) = album_row?;
 
             // Load tracks for this album
             let mut tracks_stmt = self.conn.prepare(
@@ -708,6 +1003,7 @@ impl MusicDatabase {
                 year: year.map(|y| y as u32),
                 tracks,
                 album_art_path: album_art_path.map(PathBuf::from),
+                album_art_thumbnail,
                 play_count,
             });
         }
@@ -723,11 +1019,12 @@ impl MusicDatabase {
         for album in albums {
             // Insert or update album
             tx.execute(
-                "INSERT INTO albums (artist, title, year, album_art_path, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO albums (artist, title, year, album_art_path, album_art_thumbnail, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(artist, title) DO UPDATE SET
                  year = excluded.year,
                  album_art_path = excluded.album_art_path,
+                 album_art_thumbnail = COALESCE(excluded.album_art_thumbnail, album_art_thumbnail),
                  updated_at = excluded.updated_at",
                 params![
                     &album.artist,
@@ -737,6 +1034,7 @@ impl MusicDatabase {
                         .album_art_path
                         .as_ref()
                         .map(|p| p.to_string_lossy().to_string()),
+                    album.album_art_thumbnail.as_ref(),
                     now,
                     now,
                 ],
@@ -752,6 +1050,7 @@ impl MusicDatabase {
             // Insert or update tracks
             for track in &album.tracks {
                 let file_mtime = get_file_mtime(&track.path).unwrap_or(0);
+                let path_str = track.path.to_string_lossy().to_string();
 
                 tx.execute(
                     "INSERT INTO tracks (album_id, path, title, track_number, duration_secs, channels,
@@ -779,7 +1078,7 @@ impl MusicDatabase {
                      ensemble = excluded.ensemble",
                     params![
                         album_id,
-                        track.path.to_string_lossy().to_string(),
+                        &path_str,
                         track.title,
                         track.track_number.map(|n| n as i64),
                         track.duration_secs.map(|n| n as i64),
@@ -799,6 +1098,95 @@ impl MusicDatabase {
                         track.ensemble,
                     ],
                 )?;
+
+                // Get track ID for junction table updates
+                let track_id: i64 = tx.query_row(
+                    "SELECT id FROM tracks WHERE path = ?1",
+                    params![&path_str],
+                    |row| row.get(0),
+                )?;
+
+                // Clear existing junction table entries for this track
+                tx.execute("DELETE FROM track_genres WHERE track_id = ?1", params![track_id])?;
+                tx.execute("DELETE FROM track_composers WHERE track_id = ?1", params![track_id])?;
+                tx.execute("DELETE FROM track_conductors WHERE track_id = ?1", params![track_id])?;
+                tx.execute("DELETE FROM track_performers WHERE track_id = ?1", params![track_id])?;
+                tx.execute("DELETE FROM track_ensembles WHERE track_id = ?1", params![track_id])?;
+
+                // Insert into normalized tables and junction tables
+                // Genre, composer, and performer can contain multiple values separated by , / ;
+                // Genre uses special normalization (dots/underscores to spaces, title case)
+                if let Some(ref genre) = track.genre {
+                    for g in split_and_normalize_genres(genre) {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO genres (name) VALUES (?1)",
+                            params![&g],
+                        )?;
+                        tx.execute(
+                            "INSERT OR IGNORE INTO track_genres (track_id, genre_id)
+                             SELECT ?1, id FROM genres WHERE name = ?2",
+                            params![track_id, &g],
+                        )?;
+                    }
+                }
+
+                if let Some(ref composer) = track.composer {
+                    for c in split_metadata_value(composer) {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO composers (name) VALUES (?1)",
+                            params![&c],
+                        )?;
+                        tx.execute(
+                            "INSERT OR IGNORE INTO track_composers (track_id, composer_id)
+                             SELECT ?1, id FROM composers WHERE name = ?2",
+                            params![track_id, &c],
+                        )?;
+                    }
+                }
+
+                // Conductor is typically a single value
+                if let Some(ref conductor) = track.conductor {
+                    if !conductor.is_empty() {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO conductors (name) VALUES (?1)",
+                            params![conductor],
+                        )?;
+                        tx.execute(
+                            "INSERT OR IGNORE INTO track_conductors (track_id, conductor_id)
+                             SELECT ?1, id FROM conductors WHERE name = ?2",
+                            params![track_id, conductor],
+                        )?;
+                    }
+                }
+
+                if let Some(ref performer) = track.performer {
+                    for p in split_metadata_value(performer) {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO performers (name) VALUES (?1)",
+                            params![&p],
+                        )?;
+                        tx.execute(
+                            "INSERT OR IGNORE INTO track_performers (track_id, performer_id)
+                             SELECT ?1, id FROM performers WHERE name = ?2",
+                            params![track_id, &p],
+                        )?;
+                    }
+                }
+
+                // Ensemble is typically a single value
+                if let Some(ref ensemble) = track.ensemble {
+                    if !ensemble.is_empty() {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO ensembles (name) VALUES (?1)",
+                            params![ensemble],
+                        )?;
+                        tx.execute(
+                            "INSERT OR IGNORE INTO track_ensembles (track_id, ensemble_id)
+                             SELECT ?1, id FROM ensembles WHERE name = ?2",
+                            params![track_id, ensemble],
+                        )?;
+                    }
+                }
             }
         }
 
@@ -1414,10 +1802,250 @@ impl MusicDatabase {
         )?;
         Ok(count as usize)
     }
+
+    // ==================== Normalized Metadata Methods ====================
+
+    /// Get all genres in the library
+    pub fn get_all_genres(&self) -> SqlResult<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name FROM genres ORDER BY name COLLATE NOCASE",
+        )?;
+
+        let genres = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(genres)
+    }
+
+    /// Get all composers in the library
+    pub fn get_all_composers(&self) -> SqlResult<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name FROM composers ORDER BY name COLLATE NOCASE",
+        )?;
+
+        let composers = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(composers)
+    }
+
+    /// Get all conductors in the library
+    pub fn get_all_conductors(&self) -> SqlResult<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name FROM conductors ORDER BY name COLLATE NOCASE",
+        )?;
+
+        let conductors = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(conductors)
+    }
+
+    /// Get all performers in the library
+    pub fn get_all_performers(&self) -> SqlResult<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name FROM performers ORDER BY name COLLATE NOCASE",
+        )?;
+
+        let performers = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(performers)
+    }
+
+    /// Get all ensembles in the library
+    pub fn get_all_ensembles(&self) -> SqlResult<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name FROM ensembles ORDER BY name COLLATE NOCASE",
+        )?;
+
+        let ensembles = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(ensembles)
+    }
+
+    /// Get tracks by genre
+    pub fn get_tracks_by_genre(&self, genre_id: i64) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.path FROM tracks t
+             JOIN track_genres tg ON t.id = tg.track_id
+             WHERE tg.genre_id = ?1
+             ORDER BY t.path",
+        )?;
+
+        let paths = stmt
+            .query_map(params![genre_id], |row| {
+                Ok(PathBuf::from(row.get::<_, String>(0)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
+    /// Get tracks by composer
+    pub fn get_tracks_by_composer(&self, composer_id: i64) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.path FROM tracks t
+             JOIN track_composers tc ON t.id = tc.track_id
+             WHERE tc.composer_id = ?1
+             ORDER BY t.path",
+        )?;
+
+        let paths = stmt
+            .query_map(params![composer_id], |row| {
+                Ok(PathBuf::from(row.get::<_, String>(0)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
+    /// Get tracks by conductor
+    pub fn get_tracks_by_conductor(&self, conductor_id: i64) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.path FROM tracks t
+             JOIN track_conductors tc ON t.id = tc.track_id
+             WHERE tc.conductor_id = ?1
+             ORDER BY t.path",
+        )?;
+
+        let paths = stmt
+            .query_map(params![conductor_id], |row| {
+                Ok(PathBuf::from(row.get::<_, String>(0)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
+    /// Get tracks by performer
+    pub fn get_tracks_by_performer(&self, performer_id: i64) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.path FROM tracks t
+             JOIN track_performers tp ON t.id = tp.track_id
+             WHERE tp.performer_id = ?1
+             ORDER BY t.path",
+        )?;
+
+        let paths = stmt
+            .query_map(params![performer_id], |row| {
+                Ok(PathBuf::from(row.get::<_, String>(0)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
+    /// Get tracks by ensemble
+    pub fn get_tracks_by_ensemble(&self, ensemble_id: i64) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT t.path FROM tracks t
+             JOIN track_ensembles te ON t.id = te.track_id
+             WHERE te.ensemble_id = ?1
+             ORDER BY t.path",
+        )?;
+
+        let paths = stmt
+            .query_map(params![ensemble_id], |row| {
+                Ok(PathBuf::from(row.get::<_, String>(0)?))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
+    /// Get genre for a track (returns first if multiple)
+    pub fn get_track_genre(&self, track_path: &Path) -> SqlResult<Option<String>> {
+        let path_str = track_path.to_string_lossy();
+        let result = self.conn.query_row(
+            "SELECT g.name FROM genres g
+             JOIN track_genres tg ON g.id = tg.genre_id
+             JOIN tracks t ON t.id = tg.track_id
+             WHERE t.path = ?1
+             LIMIT 1",
+            params![path_str.as_ref()],
+            |row| row.get::<_, String>(0),
+        );
+
+        match result {
+            Ok(name) => Ok(Some(name)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Get all genres for a track
+    pub fn get_track_genres(&self, track_path: &Path) -> SqlResult<Vec<String>> {
+        let path_str = track_path.to_string_lossy();
+        let mut stmt = self.conn.prepare(
+            "SELECT g.name FROM genres g
+             JOIN track_genres tg ON g.id = tg.genre_id
+             JOIN tracks t ON t.id = tg.track_id
+             WHERE t.path = ?1
+             ORDER BY g.name COLLATE NOCASE",
+        )?;
+
+        let genres = stmt
+            .query_map(params![path_str.as_ref()], |row| row.get::<_, String>(0))?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(genres)
+    }
+
+    /// Get albums by genre (returns album IDs)
+    pub fn get_albums_by_genre(&self, genre_id: i64) -> SqlResult<Vec<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT t.album_id FROM tracks t
+             JOIN track_genres tg ON t.id = tg.track_id
+             WHERE tg.genre_id = ?1
+             ORDER BY t.album_id",
+        )?;
+
+        let album_ids = stmt
+            .query_map(params![genre_id], |row| row.get::<_, i64>(0))?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(album_ids)
+    }
+
+    /// Get albums by composer (returns album IDs)
+    pub fn get_albums_by_composer(&self, composer_id: i64) -> SqlResult<Vec<i64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT t.album_id FROM tracks t
+             JOIN track_composers tc ON t.id = tc.track_id
+             WHERE tc.composer_id = ?1
+             ORDER BY t.album_id",
+        )?;
+
+        let album_ids = stmt
+            .query_map(params![composer_id], |row| row.get::<_, i64>(0))?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(album_ids)
+    }
 }
 
 /// Create a timestamped backup of an existing database file and prune old backups
 /// Backup files are named music-YYYYMMDD-HHMMSS.sqlite in the same directory
+///
+/// # Security
+/// Both the source database and backup destination must be within the config directory.
 pub fn backup_existing_database<P: AsRef<Path>>(
     db_path: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1428,6 +2056,9 @@ pub fn backup_existing_database<P: AsRef<Path>>(
         return Ok(());
     }
 
+    // Security validation: ensure we're operating within config directory
+    crate::security::validate_config_read_path(db_path)?;
+
     let dir = match db_path.parent() {
         Some(d) => d.to_path_buf(),
         None => return Ok(()),
@@ -1436,6 +2067,9 @@ pub fn backup_existing_database<P: AsRef<Path>>(
     let now = Local::now().naive_local();
     let filename = format!("music-{}.sqlite", now.format("%Y%m%d-%H%M%S"));
     let backup_path = dir.join(filename);
+
+    // Security validation: ensure we're writing within config directory
+    crate::security::validate_write_path(&backup_path)?;
 
     std::fs::copy(db_path, &backup_path)?;
 
@@ -1461,8 +2095,19 @@ fn parse_backup_timestamp(path: &Path) -> Option<NaiveDateTime> {
 /// - Keep up to 3 backups per day
 /// - Then keep up to 1 per ISO week
 /// - Then keep up to 1 per month
+///
+/// # Security
+/// Only deletes backup files within the config directory.
 fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
     use std::collections::HashMap;
+
+    // Security validation: ensure we're operating within config directory
+    if crate::security::validate_write_path(dir).is_err() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Cannot prune backups outside config directory",
+        ));
+    }
 
     let mut backups: Vec<(PathBuf, NaiveDateTime)> = Vec::new();
 
@@ -1519,7 +2164,10 @@ fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
     }
 
     for path in to_delete {
-        let _ = std::fs::remove_file(path);
+        // Security validation for each file before deletion
+        if crate::security::validate_write_path(&path).is_ok() {
+            let _ = std::fs::remove_file(path);
+        }
     }
 
     Ok(())
@@ -1545,18 +2193,28 @@ fn get_file_mtime(path: &Path) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_backup_existing_database_creates_backup_file() {
-        let temp = TempDir::new().unwrap();
-        let db_path = temp.path().join("music.db");
+        // Use the real config directory for testing to satisfy security validation
+        let config_dir = match crate::config::get_app_config_dir() {
+            Some(dir) => dir,
+            None => {
+                eprintln!("Skipping test: could not get config directory");
+                return;
+            }
+        };
+
+        let test_dir = config_dir.join("test_backup");
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        let db_path = test_dir.join("music.db");
         std::fs::write(&db_path, b"test").unwrap();
 
         backup_existing_database(&db_path).unwrap();
 
         let mut backups = Vec::new();
-        for entry in std::fs::read_dir(temp.path()).unwrap() {
+        for entry in std::fs::read_dir(&test_dir).unwrap() {
             let entry = entry.unwrap();
             let name = entry.file_name().into_string().unwrap();
             if name.starts_with("music-") && name.ends_with(".sqlite") {
@@ -1565,11 +2223,24 @@ mod tests {
         }
 
         assert_eq!(backups.len(), 1);
+
+        // Cleanup
+        std::fs::remove_dir_all(&test_dir).ok();
     }
 
     #[test]
     fn test_prune_old_backups_limits_to_three_per_day() {
-        let temp = TempDir::new().unwrap();
+        // Use the real config directory for testing to satisfy security validation
+        let config_dir = match crate::config::get_app_config_dir() {
+            Some(dir) => dir,
+            None => {
+                eprintln!("Skipping test: could not get config directory");
+                return;
+            }
+        };
+
+        let test_dir = config_dir.join("test_prune");
+        std::fs::create_dir_all(&test_dir).unwrap();
 
         // Create 5 backups for the same day
         let ts = [
@@ -1581,14 +2252,14 @@ mod tests {
         ];
 
         for t in &ts {
-            let path = temp.path().join(format!("music-{}.sqlite", t));
+            let path = test_dir.join(format!("music-{}.sqlite", t));
             std::fs::write(path, b"test").unwrap();
         }
 
-        prune_old_backups(temp.path()).unwrap();
+        prune_old_backups(&test_dir).unwrap();
 
         let mut remaining = Vec::new();
-        for entry in std::fs::read_dir(temp.path()).unwrap() {
+        for entry in std::fs::read_dir(&test_dir).unwrap() {
             let entry = entry.unwrap();
             let name = entry.file_name().into_string().unwrap();
             if name.starts_with("music-") && name.ends_with(".sqlite") {
@@ -1598,5 +2269,8 @@ mod tests {
 
         // Only 3 backups for that day should remain
         assert_eq!(remaining.len(), 3);
+
+        // Cleanup
+        std::fs::remove_dir_all(&test_dir).ok();
     }
 }

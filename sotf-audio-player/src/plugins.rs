@@ -200,12 +200,48 @@ impl EQFilter {
     }
 }
 
+// Import plugin defaults from sotf-audio-plugins for consistent preset migration
+use sotf_plugins::{
+    upmixer_default_subharmonic_gain,
+    upmixer_default_hr_sharpen,
+    upmixer_default_safety_cap_db,
+    compressor_default_link_channels,
+    compressor_default_sidechain_hpf_hz,
+    binaural_default_enable_optimization,
+};
+
+// Wrapper functions to convert f32 -> f64 for PluginSettings (which uses f64)
+fn default_upmixer_subharmonic_gain() -> f64 {
+    upmixer_default_subharmonic_gain() as f64
+}
+
+fn default_upmixer_hr_sharpen() -> f64 {
+    upmixer_default_hr_sharpen() as f64
+}
+
+fn default_upmixer_safety_cap_db() -> f64 {
+    upmixer_default_safety_cap_db() as f64
+}
+
+fn default_compressor_link_channels() -> bool {
+    compressor_default_link_channels()
+}
+
+fn default_compressor_sidechain_hpf_hz() -> f64 {
+    compressor_default_sidechain_hpf_hz() as f64
+}
+
+fn default_binaural_enable_optimization() -> bool {
+    binaural_default_enable_optimization()
+}
+
+// Gate/Limiter defaults (defined locally as they use f64 and match engine defaults)
 fn default_limiter_mix() -> f64 {
-    0.95
+    1.0 // Match plugin_limiter default
 }
 
 fn default_gate_mix() -> f64 {
-    0.95
+    1.0 // Match plugin_gate default
 }
 
 fn default_gate_link_channels() -> bool {
@@ -214,6 +250,23 @@ fn default_gate_link_channels() -> bool {
 
 fn default_gate_sidechain_hpf_hz() -> f64 {
     0.0
+}
+
+// SpectrumAnalyzer defaults
+fn default_spectrum_num_bins() -> usize {
+    512
+}
+
+fn default_spectrum_min_freq() -> f32 {
+    20.0
+}
+
+fn default_spectrum_max_freq() -> f32 {
+    20000.0
+}
+
+fn default_spectrum_smoothing() -> f32 {
+    0.8
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,11 +287,17 @@ pub enum PluginSettings {
         bandpass_hz: f64,
         height_gain: f64,
         lfe_gain: f64,
+        #[serde(default)] // false
         enable_subharmonic_synth: bool,
+        #[serde(default = "default_upmixer_subharmonic_gain")]
         subharmonic_gain: f64,
+        #[serde(default)] // false
         enable_hr_direct: bool,
+        #[serde(default = "default_upmixer_hr_sharpen")]
         hr_sharpen: f64,
+        #[serde(default = "default_upmixer_safety_cap_db")]
         safety_cap_db: f64,
+        #[serde(default)] // 0
         decorrelation_mode: usize,
     },
     Compressor {
@@ -249,8 +308,11 @@ pub enum PluginSettings {
         knee_db: f64,
         makeup_gain_db: f64,
         mix: f64,
+        #[serde(default)] // false (matches plugin default)
         auto_makeup: bool,
+        #[serde(default = "default_compressor_link_channels")]
         link_channels: bool,
+        #[serde(default = "default_compressor_sidechain_hpf_hz")]
         sidechain_hpf_hz: f64,
     },
     Limiter {
@@ -268,7 +330,7 @@ pub enum PluginSettings {
         mix: f64,
         #[serde(default = "default_gate_link_channels")]
         link_channels: bool,
-        #[serde(default = "default_gate_sidechain_hpf_hz")]
+        #[serde(default)] // 0.0
         sidechain_hpf_hz: f64,
     },
     LoudnessCompensation {
@@ -279,8 +341,11 @@ pub enum PluginSettings {
     BinauralDecoder {
         sofa_file: String,
         input_channels: usize,
+        #[serde(default = "default_binaural_enable_optimization")]
         enable_optimization: bool,
+        #[serde(default)] // 0.0
         externalization: f64,
+        #[serde(default)] // 0.0
         near_field_strength: f64,
     },
     Convolution {
@@ -290,9 +355,13 @@ pub enum PluginSettings {
     },
     LoudnessMonitor,
     SpectrumAnalyzer {
+        #[serde(default = "default_spectrum_num_bins")]
         num_bins: usize,
+        #[serde(default = "default_spectrum_min_freq")]
         min_freq: f32,
+        #[serde(default = "default_spectrum_max_freq")]
         max_freq: f32,
+        #[serde(default = "default_spectrum_smoothing")]
         smoothing: f32,
     },
     ChannelMuteSolo {
@@ -790,6 +859,9 @@ impl PluginChain {
 
         let full_path = presets_dir.join(&filename);
 
+        // Security validation: ensure we're writing within config directory
+        crate::security::validate_write_path(&full_path)?;
+
         // Wrap plugins in versioned preset
         let preset = PluginPreset {
             version: default_plugin_preset_version(),
@@ -833,6 +905,9 @@ impl PluginChain {
 
         let full_path = presets_dir.join(&final_filename);
         log::debug!("Full path: {}", full_path.display());
+
+        // Security validation: ensure we're reading from within config directory
+        crate::security::validate_config_read_path(&full_path)?;
 
         // Load from file
         let json = std::fs::read_to_string(&full_path)?;

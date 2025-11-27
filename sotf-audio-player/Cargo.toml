@@ -7,6 +7,11 @@ description = "Shared business logic for SOTF audio players"
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+# Enable this feature to bypass security validation in tests (for integration tests)
+testing = []
+
 [lib]
 name = "sotf_audio_player"
 path = "src/lib.rs"
@@ -23,6 +28,9 @@ serde_json = { workspace = true }
 
 # File system and utilities
 walkdir = "2"
+
+# Image processing for album art thumbnails
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-metadata = { workspace = true }

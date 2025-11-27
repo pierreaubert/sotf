@@ -124,6 +124,12 @@ impl Player {
         self.manager.get_position()
     }
 
+    /// Seek to a specific position in seconds
+    pub fn seek(&self, position_secs: f64) -> Result<(), Box<dyn std::error::Error>> {
+        self.manager.seek(position_secs)?;
+        Ok(())
+    }
+
     pub fn is_playing(&self) -> bool {
         let state = self.manager.get_state();
         matches!(state, StreamingState::Playing)

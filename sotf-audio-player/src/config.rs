@@ -109,14 +109,47 @@ pub fn get_plugin_presets_dir() -> Option<PathBuf> {
     })
 }
 
-/// Get the path to the app state config file
+/// Get the path to the EQ directory (for headphone/speaker EQ curves)
+pub fn get_eq_dir() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| {
+        let eq_dir = dir.join("EQ");
+        std::fs::create_dir_all(&eq_dir).ok();
+        eq_dir
+    })
+}
+
+/// Get the path to the app state config file (deprecated - use app-specific paths)
+#[deprecated(note = "Use get_tui_state_path() or get_gpui_state_path() instead")]
 pub fn get_app_state_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("app_state.json"))
 }
 
-/// Save app configuration to disk
+/// Get the path to the TUI app state config file
+pub fn get_tui_state_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("app_state_tui.json"))
+}
+
+/// Get the path to the GPUI app state config file
+pub fn get_gpui_state_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("app_state_gpui.json"))
+}
+
+/// Get the path to the TUI log file
+pub fn get_tui_log_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("sotf_tui_player.log"))
+}
+
+/// Get the path to the GPUI log file
+pub fn get_gpui_log_path() -> Option<PathBuf> {
+    get_app_config_dir().map(|dir| dir.join("sotf_gpui_player.log"))
+}
+
+/// Save TUI app configuration to disk
 pub fn save_app_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(path) = get_app_state_path() {
+    if let Some(path) = get_tui_state_path() {
+        // Validate that we're writing within the config directory
+        crate::security::validate_write_path(&path)?;
+
         let json = serde_json::to_string_pretty(config)?;
         std::fs::write(path, json)?;
         Ok(())
@@ -125,10 +158,13 @@ pub fn save_app_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Err
     }
 }
 
-/// Load app configuration from disk, applying migrations if needed
+/// Load TUI app configuration from disk, applying migrations if needed
 pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
-    if let Some(path) = get_app_state_path() {
+    if let Some(path) = get_tui_state_path() {
         if path.exists() {
+            // Validate that we're reading from within the config directory
+            crate::security::validate_config_read_path(&path)?;
+
             let json = std::fs::read_to_string(&path)?;
             let mut config: AppConfig = serde_json::from_str(&json)?;
 

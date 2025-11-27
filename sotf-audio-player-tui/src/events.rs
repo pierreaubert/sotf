@@ -403,6 +403,11 @@ fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
             let _ = app.start_replay_gain_scan();
             None
         }
+        KeyCode::Char('R') => {
+            // Force rescan all files (ignores modification time, preserves ReplayGain)
+            app.start_force_library_scan();
+            None
+        }
         _ => None,
     }
 }
@@ -478,6 +483,23 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             // Next album image
             app.next_album_image();
             None
+        }
+        // Seek controls
+        KeyCode::Char('.') => {
+            // Seek forward 10 seconds
+            Some(PlayerCommand::SeekRelative(10.0))
+        }
+        KeyCode::Char(',') => {
+            // Seek backward 10 seconds
+            Some(PlayerCommand::SeekRelative(-10.0))
+        }
+        KeyCode::Char(':') => {
+            // Seek forward 30 seconds (Shift + ;)
+            Some(PlayerCommand::SeekRelative(30.0))
+        }
+        KeyCode::Char(';') => {
+            // Seek backward 30 seconds
+            Some(PlayerCommand::SeekRelative(-30.0))
         }
         // Note: Volume controls (+/-) are now global (see handle_normal_mode)
         _ => None,
@@ -1072,4 +1094,8 @@ pub enum PlayerCommand {
     Stop,
     SetVolume(f32),
     SetOutputDevice(String),
+    /// Seek to absolute position in seconds
+    Seek(f64),
+    /// Seek relative to current position (positive = forward, negative = backward)
+    SeekRelative(f64),
 }

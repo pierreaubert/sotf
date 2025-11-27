@@ -223,6 +223,7 @@ pub struct App {
     pub scan_in_progress: bool,
     pub scan_progress_tracks: usize,
     pub scan_progress_albums: usize,
+    pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
 
     // Maintenance progress
     pub maintenance_in_progress: bool,
@@ -328,6 +329,7 @@ impl App {
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
+            library_scanner: None,
             maintenance_in_progress: false,
             maintenance_progress_checked: 0,
             maintenance_progress_total: 0,
@@ -761,12 +763,130 @@ impl App {
         items
     }
 
-    /// Start library scan (non-blocking, sets up progress tracking)
+    /// Start library scan (non-blocking background scan)
     pub fn start_library_scan(&mut self) {
+        if self.scan_in_progress {
+            return; // Already scanning
+        }
+
+        // Collect directories to scan
+        let directories: Vec<std::path::PathBuf> = self
+            .library
+            .directories
+            .iter()
+            .map(|d| d.path.clone())
+            .collect();
+
+        if directories.is_empty() {
+            self.status_message = Some("No directories to scan".to_string());
+            return;
+        }
+
+        // Start background scanner
+        let scanner = sotf_audio_player::LibraryScanner::start(directories);
+        self.library_scanner = Some(scanner);
+
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
         self.status_message = Some("Starting library scan...".to_string());
+        log::info!("Started background library scan");
+    }
+
+    /// Start force library scan (non-blocking background scan, rescans ALL files)
+    ///
+    /// Unlike `start_library_scan()`, this rescans all files regardless of modification time.
+    /// ReplayGain values are preserved (not overwritten).
+    pub fn start_force_library_scan(&mut self) {
+        if self.scan_in_progress {
+            return; // Already scanning
+        }
+
+        // Collect directories to scan
+        let directories: Vec<std::path::PathBuf> = self
+            .library
+            .directories
+            .iter()
+            .map(|d| d.path.clone())
+            .collect();
+
+        if directories.is_empty() {
+            self.status_message = Some("No directories to scan".to_string());
+            return;
+        }
+
+        // Start background scanner with force=true
+        let scanner = sotf_audio_player::LibraryScanner::start_force(directories);
+        self.library_scanner = Some(scanner);
+
+        self.scan_in_progress = true;
+        self.scan_progress_tracks = 0;
+        self.scan_progress_albums = 0;
+        self.status_message = Some("Starting FORCE library scan (all files)...".to_string());
+        log::info!("Started FORCE background library scan");
+    }
+
+    /// Check progress of background library scan
+    pub fn check_library_scan_progress(&mut self) {
+        if !self.scan_in_progress {
+            return;
+        }
+
+        // Collect messages first to avoid borrow issues
+        let messages: Vec<_> = {
+            let scanner = match &self.library_scanner {
+                Some(s) => s,
+                None => return,
+            };
+            let mut msgs = Vec::new();
+            while let Some(msg) = scanner.try_recv() {
+                msgs.push(msg);
+            }
+            msgs
+        };
+
+        // Process collected messages
+        for msg in messages {
+            use sotf_audio_player::LibraryScanMessage;
+
+            match msg {
+                LibraryScanMessage::Progress { tracks, albums } => {
+                    self.scan_progress_tracks = tracks;
+                    self.scan_progress_albums = albums;
+                    self.status_message = Some(format!(
+                        "Scanning: {} tracks, {} albums found...",
+                        tracks, albums
+                    ));
+                }
+                LibraryScanMessage::Complete { tracks, albums } => {
+                    self.scan_in_progress = false;
+                    self.library_scanner = None;
+                    self.needs_rescan = false;
+                    self.status_message = Some(format!(
+                        "Scan complete: {} tracks in {} albums",
+                        tracks, albums
+                    ));
+                    log::info!("Library scan complete: {} tracks in {} albums", tracks, albums);
+
+                    // Reload library from database to get the new data
+                    if let Err(e) = self.library.load_from_database() {
+                        log::error!("Failed to reload library after scan: {}", e);
+                    }
+                    self.rebuild_artist_tree();
+
+                    // Start background waveform scan for new tracks
+                    if let Err(e) = self.start_waveform_scan() {
+                        log::warn!("Failed to start waveform scan: {}", e);
+                    }
+                }
+                LibraryScanMessage::Error { message } => {
+                    self.scan_in_progress = false;
+                    self.library_scanner = None;
+                    self.status_message = Some(format!("Scan failed: {}", message));
+                    log::error!("Library scan failed: {}", message);
+                }
+            }
+        }
     }
 
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -3370,6 +3490,15 @@ mod tests {
                 replay_peak: None,
                 album_gain: None,
                 album_peak: None,
+                waveform: None,
+                genre: None,
+                composer: None,
+                disc_number: None,
+                conductor: None,
+                performer: None,
+                isrc: None,
+                album_artist: None,
+                ensemble: None,
             });
         }
         Album {
@@ -3379,6 +3508,7 @@ mod tests {
             year: None,
             tracks,
             album_art_path: None,
+            album_art_thumbnail: None,
             play_count: 0,
         }
     }
@@ -3640,7 +3770,7 @@ mod tests {
             assert_ne!(*sidechain_hpf_hz, orig_sidechain_hpf);
         }
 
-        // Limiter
+        // Limiter (use -1.0 since mix starts at 1.0 which is max)
         let mut app = App::new(Theme::default());
         let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Limiter);
         app.editing_plugin_index = Some(plugin_idx);
@@ -3655,7 +3785,7 @@ mod tests {
         };
         for idx in 0..3 {
             app.plugin_param_selection = idx;
-            assert!(app.adjust_selected_param(1.0));
+            assert!(app.adjust_selected_param(-1.0));
         }
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::Limiter {
@@ -3669,7 +3799,7 @@ mod tests {
             assert_ne!(*mix, orig_mix);
         }
 
-        // Gate
+        // Gate - test parameters individually since mix starts at max (1.0) and hpf at min (0.0)
         let mut app = App::new(Theme::default());
         let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Gate);
         app.editing_plugin_index = Some(plugin_idx);
@@ -3695,9 +3825,11 @@ mod tests {
                 ),
                 _ => panic!("Expected Gate plugin"),
             };
+        // Adjust each parameter - mix (idx 4) decreases, hpf (idx 6) increases, others can go either way
         for idx in 0..7 {
             app.plugin_param_selection = idx;
-            assert!(app.adjust_selected_param(1.0));
+            let delta = if idx == 4 { -1.0 } else { 1.0 }; // mix starts at max, decrease it
+            assert!(app.adjust_selected_param(delta));
         }
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::Gate {

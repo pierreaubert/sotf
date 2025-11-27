@@ -10,6 +10,31 @@ use walkdir::WalkDir;
 
 use crate::database::MusicDatabase;
 
+/// Normalize an artist or album name for consistent grouping
+/// Converts to lowercase and trims whitespace to ensure that
+/// "2Cellos", "2CELLOS", and "2 Cellos " are treated as the same album
+fn normalize_album_key(name: &str) -> String {
+    name.trim().to_lowercase()
+}
+
+/// Capitalize the first letter of each word for display
+/// Examples: "2cellos" -> "2cellos", "the beatles" -> "The Beatles"
+fn capitalize_words(s: &str) -> String {
+    s.split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => {
+                    let rest: String = chars.collect();
+                    format!("{}{}", first.to_uppercase(), rest)
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryInfo {
     pub path: PathBuf,
@@ -51,6 +76,8 @@ pub struct Album {
     pub year: Option<u32>,
     pub tracks: Vec<Track>,
     pub album_art_path: Option<PathBuf>,
+    /// 120x120 JPEG thumbnail of album art
+    pub album_art_thumbnail: Option<Vec<u8>>,
     pub play_count: usize,
 }
 
@@ -231,6 +258,9 @@ impl MusicLibrary {
             // Load albums
             self.albums = db.load_library()?;
 
+            // Clear existing directories before rebuilding from database
+            self.directories.clear();
+
             // Compute directory stats from the loaded albums
             // This gives us stats for every directory that contains tracks
             let stats_map = compute_directory_stats(&self.albums);
@@ -388,7 +418,11 @@ impl MusicLibrary {
     }
 
     /// Scan directories with optional incremental mode and progress reporting
-    fn scan_incremental_with_progress<F>(
+    ///
+    /// If `incremental` is true, only scan new or modified files (based on mtime).
+    /// If `incremental` is false, scan all files regardless of modification time.
+    /// ReplayGain values are preserved in the database (not overwritten during scan).
+    pub fn scan_incremental_with_progress<F>(
         &mut self,
         incremental: bool,
         mut progress_callback: F,
@@ -520,16 +554,22 @@ impl MusicLibrary {
 
             // Merge existing albums that weren't updated
             for existing_album in existing_albums {
-                let key = (existing_album.artist.clone(), existing_album.title.clone());
+                // Use normalized keys for matching (same as when scanning files)
+                let key = (
+                    normalize_album_key(&existing_album.artist),
+                    normalize_album_key(&existing_album.title),
+                );
                 album_map.entry(key).or_insert(existing_album);
             }
         }
 
         self.albums = album_map.into_values().collect();
 
-        // Sort tracks within each album
+        // Sort tracks within each album and generate album art thumbnails
         for album in &mut self.albums {
             album.sort_tracks();
+            // Find album art and generate thumbnail if not already present
+            find_and_generate_album_thumbnail(album);
         }
 
         // Sort albums by artist and title
@@ -637,13 +677,25 @@ impl MusicLibrary {
                     scanned_tracks += 1;
 
                     if let Ok(metadata) = extract_metadata(path) {
+                        // Prefer AlbumArtist over Artist for compilation albums
+                        // This ensures soundtracks/compilations group correctly even if
+                        // individual tracks have different artists
                         let artist = metadata
-                            .artist
+                            .album_artist
+                            .as_ref()
+                            .or(metadata.artist.as_ref())
+                            .map(|s| s.clone())
                             .unwrap_or_else(|| "Unknown Artist".to_string());
                         let album_title = metadata
                             .album
+                            .clone()
                             .unwrap_or_else(|| "Unknown Album".to_string());
-                        let key = (artist.clone(), album_title.clone());
+
+                        // Normalize artist and album names for grouping
+                        // This ensures variations in case/whitespace don't create duplicate albums
+                        let normalized_artist = normalize_album_key(&artist);
+                        let normalized_title = normalize_album_key(&album_title);
+                        let key = (normalized_artist, normalized_title);
 
                         // Track that this album is present in this directory
                         if let Some(_parent) = path.parent() {
@@ -652,14 +704,22 @@ impl MusicLibrary {
                             // But we can do it.
                         }
 
-                        let album = album_map.entry(key).or_insert_with(|| Album {
-                            id: None,
-                            artist,
-                            title: album_title,
-                            year: metadata.year,
-                            tracks: Vec::new(),
-                            album_art_path: None,
-                            play_count: 0,
+                        let album = album_map.entry(key).or_insert_with(|| {
+                            // Capitalize first letter of each word for nice display
+                            // while keeping consistent grouping via normalized keys
+                            let display_artist = capitalize_words(&artist);
+                            let display_title = capitalize_words(&album_title);
+
+                            Album {
+                                id: None,
+                                artist: display_artist,
+                                title: display_title,
+                                year: metadata.year,
+                                tracks: Vec::new(),
+                                album_art_path: None,
+                                album_art_thumbnail: None,
+                                play_count: 0,
+                            }
                         });
 
                         let track = Track {
@@ -972,6 +1032,7 @@ fn build_directory_tree_from_disk(
 
 /// Compute directory stats from albums in the library
 /// Returns a map of directory path -> (track count, album count)
+/// Uses both original and canonicalized paths as keys for robust matching
 fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)> {
     let mut dir_track_counts: HashMap<PathBuf, usize> = HashMap::new();
     let mut dir_album_sets: HashMap<PathBuf, std::collections::HashSet<(String, String)>> =
@@ -983,14 +1044,28 @@ fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)>
         for track in &album.tracks {
             // Get the parent directory of this track
             if let Some(parent) = track.path.parent() {
-                // Count tracks for this directory
-                *dir_track_counts.entry(parent.to_path_buf()).or_insert(0) += 1;
+                let parent_buf = parent.to_path_buf();
+
+                // Count tracks for this directory (using original path)
+                *dir_track_counts.entry(parent_buf.clone()).or_insert(0) += 1;
 
                 // Add album to set for this directory (to count unique albums)
                 dir_album_sets
-                    .entry(parent.to_path_buf())
+                    .entry(parent_buf.clone())
                     .or_default()
                     .insert(album_key.clone());
+
+                // Also add entry for canonicalized path if different
+                // This ensures matching works regardless of symlinks or case sensitivity
+                if let Ok(canonical) = parent_buf.canonicalize() {
+                    if canonical != parent_buf {
+                        *dir_track_counts.entry(canonical.clone()).or_insert(0) += 1;
+                        dir_album_sets
+                            .entry(canonical)
+                            .or_default()
+                            .insert(album_key.clone());
+                    }
+                }
             }
         }
     }
@@ -1029,6 +1104,127 @@ fn update_directory_stats_from_map(
     // Update this directory's stats
     dir_info.file_count = my_tracks;
     dir_info.album_count = my_albums;
+}
+
+/// Common album art file names to look for (case-insensitive)
+const ALBUM_ART_FILENAMES: &[&str] = &[
+    "cover.jpg",
+    "cover.jpeg",
+    "cover.png",
+    "folder.jpg",
+    "folder.jpeg",
+    "folder.png",
+    "front.jpg",
+    "front.jpeg",
+    "front.png",
+    "album.jpg",
+    "album.jpeg",
+    "album.png",
+    "artwork.jpg",
+    "artwork.jpeg",
+    "artwork.png",
+];
+
+/// Find album art in the given directory
+fn find_album_art(dir: &Path) -> Option<PathBuf> {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(filename) = path.file_name() {
+                    let filename_lower = filename.to_string_lossy().to_lowercase();
+                    if ALBUM_ART_FILENAMES.contains(&filename_lower.as_str()) {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Generate a 120x120 JPEG thumbnail from an image file
+fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
+    use image::ImageReader;
+    use std::io::Cursor;
+
+    // Load the image
+    let img = match ImageReader::open(image_path) {
+        Ok(reader) => match reader.decode() {
+            Ok(img) => img,
+            Err(e) => {
+                log::warn!(
+                    "Failed to decode image {}: {}",
+                    image_path.display(),
+                    e
+                );
+                return None;
+            }
+        },
+        Err(e) => {
+            log::warn!(
+                "Failed to open image {}: {}",
+                image_path.display(),
+                e
+            );
+            return None;
+        }
+    };
+
+    // Resize to 120x120 using Lanczos3 for quality
+    let thumbnail = img.thumbnail(120, 120);
+
+    // Convert to RGB8 (JPEG doesn't support alpha)
+    let rgb_thumbnail = thumbnail.to_rgb8();
+
+    // Encode as JPEG
+    let mut buffer = Cursor::new(Vec::new());
+    if let Err(e) = rgb_thumbnail.write_to(&mut buffer, image::ImageFormat::Jpeg) {
+        log::warn!(
+            "Failed to encode thumbnail for {}: {}",
+            image_path.display(),
+            e
+        );
+        return None;
+    }
+
+    Some(buffer.into_inner())
+}
+
+/// Find album art and generate thumbnail for an album based on its tracks
+pub fn find_and_generate_album_thumbnail(album: &mut Album) {
+    // Skip if we already have a thumbnail
+    if album.album_art_thumbnail.is_some() {
+        return;
+    }
+
+    // Get the directory from the first track
+    let track_dir = match album.tracks.first() {
+        Some(track) => track.path.parent(),
+        None => return,
+    };
+
+    let track_dir = match track_dir {
+        Some(dir) => dir,
+        None => return,
+    };
+
+    // Find album art in the directory
+    if let Some(art_path) = find_album_art(track_dir) {
+        // Update album art path
+        album.album_art_path = Some(art_path.clone());
+
+        // Generate thumbnail
+        if let Some(thumbnail) = generate_thumbnail(&art_path) {
+            log::debug!(
+                "Generated thumbnail for {} - {} ({} bytes)",
+                album.artist,
+                album.title,
+                thumbnail.len()
+            );
+            album.album_art_thumbnail = Some(thumbnail);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1095,6 +1291,7 @@ mod tests {
             year: Some(1973),
             tracks: vec![],
             album_art_path: None,
+            album_art_thumbnail: None,
             play_count: 0,
         });
 
@@ -1105,6 +1302,7 @@ mod tests {
             year: Some(1969),
             tracks: vec![],
             album_art_path: None,
+            album_art_thumbnail: None,
             play_count: 0,
         });
 
@@ -1115,6 +1313,7 @@ mod tests {
             year: Some(1971),
             tracks: vec![],
             album_art_path: None,
+            album_art_thumbnail: None,
             play_count: 0,
         });
 
@@ -1153,6 +1352,7 @@ mod tests {
             year: Some(1986),
             tracks: vec![],
             album_art_path: None,
+            album_art_thumbnail: None,
             play_count: 0,
         });
 
@@ -1173,9 +1373,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("test_music.db");
 
-        // Create and populate database
+        // Create and populate database (using test-only method)
         {
-            let db = MusicDatabase::open(&db_path).unwrap();
+            let db = MusicDatabase::open_for_testing(&db_path).unwrap();
 
             // Simulate a scan by recording scan history
             db.record_scan(&PathBuf::from("/music/rock"), 50, 5)
@@ -1188,7 +1388,7 @@ mod tests {
         let mut lib = MusicLibrary {
             directories: Vec::new(),
             albums: Vec::new(),
-            db: Some(MusicDatabase::open(&db_path).unwrap()),
+            db: Some(MusicDatabase::open_for_testing(&db_path).unwrap()),
         };
 
         // Load from database
@@ -1213,10 +1413,10 @@ mod tests {
         std::fs::create_dir_all(&parent_dir).unwrap();
         std::fs::create_dir_all(&child_dir).unwrap();
 
-        // Create database
+        // Create database (using test-only method)
         let db_path = temp_root.path().join("test_music.db");
         {
-            let db = MusicDatabase::open(&db_path).unwrap();
+            let db = MusicDatabase::open_for_testing(&db_path).unwrap();
 
             // Record scans for both parent and child
             db.record_scan(&parent_dir, 100, 10).unwrap();
@@ -1227,7 +1427,7 @@ mod tests {
         let mut lib = MusicLibrary {
             directories: Vec::new(),
             albums: Vec::new(),
-            db: Some(MusicDatabase::open(&db_path).unwrap()),
+            db: Some(MusicDatabase::open_for_testing(&db_path).unwrap()),
         };
 
         lib.load_from_database().unwrap();

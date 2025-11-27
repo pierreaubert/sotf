@@ -802,10 +802,10 @@ fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
         if msg.contains("Scan complete") {
             format!("Directories - {}", msg)
         } else {
-            "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
+            "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'R'=force scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
         }
     } else {
-        "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
+        "Directories - Enter/Right=expand, 'd'=remove, 's'=scan, 'R'=force scan, 'm'=maintain, 'r'=replaygain, 'a'=add".to_string()
     };
 
     let list = List::new(items)
@@ -1765,11 +1765,16 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         if is_stereo {
             // Special stereo rendering: 3-char wide meters with 2-char spacing
             // Center the group in available space
-            let group_start_x = if available_width > group_width {
+            let group_start_x = if available_width > group_width + x_offset {
                 x_offset + (available_width - x_offset - group_width) / 2
             } else {
                 x_offset
             };
+
+            // Skip rendering if there's not enough space
+            if group_start_x + group_width > available_width {
+                continue;
+            }
 
             // Draw L meter (3 chars wide)
             let l_channel = &group.channels[0];
@@ -1948,13 +1953,23 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         if show_controls {
             // For stereo, center controls under the meters
             let controls_x = if is_stereo {
-                let group_start_x = if available_width > group_width {
+                let group_start_x = if available_width > group_width + x_offset {
                     x_offset + (available_width - x_offset - group_width) / 2
                 } else {
                     x_offset
                 };
-                inner.x + (group_start_x + (group_width - 3) / 2) as u16
+                // Bounds check - ensure controls fit
+                let ctrl_offset = group_start_x + (group_width - 3) / 2;
+                if ctrl_offset + 3 > available_width {
+                    x_offset += group_width + 1;
+                    continue;
+                }
+                inner.x + ctrl_offset as u16
             } else {
+                if x_offset + 3 > available_width {
+                    x_offset += group_width + 1;
+                    continue;
+                }
                 inner.x + x_offset as u16
             };
 
@@ -3308,7 +3323,8 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("Enter/→/l", "Expand/collapse directory"),
             ("a", "Add directory"),
             ("d/Delete", "Remove selected directory"),
-            ("s", "Scan library"),
+            ("s", "Scan library (incremental)"),
+            ("R", "Force rescan ALL files (preserves ReplayGain)"),
             ("m", "Database maintenance (clean missing files)"),
             ("r", "Analyze ReplayGain for all tracks"),
         ],

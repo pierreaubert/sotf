@@ -42,10 +42,12 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging to file to avoid corrupting the TUI
+    let log_path = sotf_audio_player::config::get_tui_log_path()
+        .ok_or("Could not determine log file path")?;
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("sotf_ui_player.log")?;
+        .open(&log_path)?;
 
     env_logger::Builder::from_default_env()
         .target(env_logger::Target::Pipe(Box::new(log_file)))
@@ -165,9 +167,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             db_is_empty,
             app.library.directories.len()
         );
-        if let Err(e) = app.scan_library() {
-            log::error!("Failed to scan library: {}", e);
-        }
+        // Use non-blocking scan - progress will be checked in the main loop
+        app.start_library_scan();
     }
 
     // Set initial screen based on queue state (if not scanning)
@@ -396,17 +397,15 @@ fn run_app<B: ratatui::backend::Backend>(
                         }
                     }
 
-                    // Perform library scan if needed
-                    // Note: This is intentionally synchronous and will block the UI
-                    // But progress will be shown in the directory view
-                    if app.needs_rescan {
+                    // Start library scan if needed (non-blocking)
+                    if app.needs_rescan && !app.scan_in_progress {
                         // Switch to directory view so user can see scan progress
                         app.current_screen = Screen::DirectoryManager;
-
-                        if let Err(e) = app.scan_library() {
-                            log::error!("Failed to scan library: {}", e);
-                        }
+                        app.start_library_scan();
                     }
+
+                    // Check library scan progress
+                    app.check_library_scan_progress();
 
                     // Check ReplayGain scan progress
                     app.check_replay_gain_progress();
@@ -492,6 +491,21 @@ fn handle_player_command(
                 device_name
             ));
             log::info!("Output device changed");
+        }
+        PlayerCommand::Seek(position) => {
+            player.seek(position)?;
+            log::info!("Seeked to {} seconds", position);
+        }
+        PlayerCommand::SeekRelative(offset) => {
+            let current_pos = player.get_position();
+            let new_pos = (current_pos + offset).max(0.0);
+            player.seek(new_pos)?;
+            log::info!(
+                "Seeked {} seconds (from {} to {})",
+                offset,
+                current_pos,
+                new_pos
+            );
         }
     }
     Ok(())
