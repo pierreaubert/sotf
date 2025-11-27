@@ -11,7 +11,7 @@ pub mod tui_adapter;
 // Re-export main types
 pub use comparable_state::{
     ChannelFilterId, ComparableState, InputModeId, PluginSnapshot, PluginTypeId, ScreenId,
-    SortOrderId, StateDiff, ViewModeId, compare_states,
+    SortOrderId, ViewModeId, compare_states,
 };
 pub use gpui_adapter::GpuiAdapter;
 pub use operations::{Operation, OperationSequence};
@@ -113,6 +113,14 @@ impl TestAlbum {
                 album_gain: None,
                 album_peak: None,
                 waveform: None,
+                genre: None,
+                composer: None,
+                disc_number: None,
+                conductor: None,
+                performer: None,
+                isrc: None,
+                album_artist: None,
+                ensemble: None,
             })
             .collect();
 
@@ -123,6 +131,7 @@ impl TestAlbum {
             year: Some(self.year),
             tracks,
             album_art_path: None,
+            album_art_thumbnail: None,
             play_count: 0,
         }
     }

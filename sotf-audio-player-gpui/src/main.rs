@@ -1,121 +1,64 @@
-mod app;
-mod config;
-mod ui;
-
-use app::{App, AppState};
+use sotf_audio_player_gpui::app::{App, AppState};
+use sotf_audio_player_gpui::keybindings::{get_keybindings, KeymapPreset};
+use sotf_audio_player_gpui::ui;
 use gpui::*;
 use sotf_audio_player::Player;
+use std::fs::OpenOptions;
 use std::sync::Arc;
 
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 
 fn main() {
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Debug)
-        .filter_module("symphonia_core", log::LevelFilter::Debug)
-        .init();
+    // Initialize logging to file
+    if let Some(log_path) = sotf_audio_player::config::get_gpui_log_path() {
+        if let Ok(log_file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            env_logger::Builder::from_default_env()
+                .target(env_logger::Target::Pipe(Box::new(log_file)))
+                .filter_level(log::LevelFilter::Debug)
+                .filter_module("symphonia_core", log::LevelFilter::Debug)
+                .init();
+        } else {
+            // Fallback to stderr if file cannot be opened
+            env_logger::Builder::from_default_env()
+                .filter_level(log::LevelFilter::Debug)
+                .filter_module("symphonia_core", log::LevelFilter::Debug)
+                .init();
+        }
+    } else {
+        // Fallback to stderr if path cannot be determined
+        env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Debug)
+            .filter_module("symphonia_core", log::LevelFilter::Debug)
+            .init();
+    }
 
     log::info!("SOTF GPUI Player starting...");
 
     gpui::Application::new().run(move |cx| {
-        // Register keyboard shortcuts
-        cx.bind_keys([
-            // Playback controls
-            KeyBinding::new("space", ui::PlayPause, None),
-            KeyBinding::new("n", ui::NextTrack, None),
-            KeyBinding::new(">", ui::NextTrack, None),
-            KeyBinding::new("b", ui::PrevTrack, None),
-            KeyBinding::new("<", ui::PrevTrack, None),
-            KeyBinding::new("+", ui::VolumeUp, None),
-            KeyBinding::new("=", ui::VolumeUp, None),
-            KeyBinding::new("-", ui::VolumeDown, None),
-            KeyBinding::new("_", ui::VolumeDown, None),
-            // Screen navigation
-            KeyBinding::new("shift-l", ui::SwitchToLibrary, None),
-            KeyBinding::new("shift-q", ui::SwitchToQueue, None),
-            KeyBinding::new("shift-p", ui::SwitchToPlugins, None),
-            KeyBinding::new("shift-o", ui::SwitchToDevices, None),
-            KeyBinding::new("shift-d", ui::SwitchToDirectoryManager, None),
-            KeyBinding::new("L", ui::SwitchToLibrary, None),
-            KeyBinding::new("Q", ui::SwitchToQueue, None),
-            KeyBinding::new("P", ui::SwitchToPlugins, None),
-            KeyBinding::new("O", ui::SwitchToDevices, None),
-            KeyBinding::new("D", ui::SwitchToDirectoryManager, None),
-            // General actions
-            KeyBinding::new("/", ui::ToggleSearch, None),
-            KeyBinding::new("escape", ui::Cancel, None),
-            KeyBinding::new("t", ui::ToggleLibraryView, None),
-            KeyBinding::new("?", ui::ToggleHelp, None),
-            // Sort controls
-            KeyBinding::new("s", ui::CycleSortOrder, None),
-            KeyBinding::new("1", ui::SetSortArtist, None),
-            KeyBinding::new("2", ui::SetSortAlbum, None),
-            KeyBinding::new("3", ui::SetSortTitle, None),
-            KeyBinding::new("4", ui::SetSortYear, None),
-            // Filter controls
-            KeyBinding::new("c", ui::CycleChannelFilter, None),
-            KeyBinding::new("5", ui::SetFilterAll, None),
-            KeyBinding::new("6", ui::SetFilterMono, None),
-            KeyBinding::new("7", ui::SetFilterStereo, None),
-            KeyBinding::new("8", ui::SetFilterMultichannel, None),
-            KeyBinding::new("9", ui::SetFilterMixed, None),
-            // Navigation
-            KeyBinding::new("up", ui::SelectPrev, None),
-            KeyBinding::new("k", ui::SelectPrev, None),
-            KeyBinding::new("down", ui::SelectNext, None),
-            KeyBinding::new("j", ui::SelectNext, None),
-            KeyBinding::new("pageup", ui::SelectPrevPage, None),
-            KeyBinding::new("pagedown", ui::SelectNextPage, None),
-            // Library pagination (Ctrl/Cmd + arrows)
-            KeyBinding::new("ctrl-left", ui::PrevPage, None),
-            KeyBinding::new("ctrl-right", ui::NextPage, None),
-            KeyBinding::new("cmd-left", ui::PrevPage, None),
-            KeyBinding::new("cmd-right", ui::NextPage, None),
-            // Expand/collapse
-            KeyBinding::new("left", ui::ToggleExpand, None),
-            KeyBinding::new("h", ui::ToggleExpand, None),
-            KeyBinding::new("right", ui::ToggleExpand, None),
-            KeyBinding::new("l", ui::ToggleExpand, None),
-            // Enter action - add album to queue
-            KeyBinding::new("enter", ui::Enter, None),
-            KeyBinding::new("a", ui::Enter, None),
-            // Remove/delete
-            KeyBinding::new("d", ui::RemoveItem, None),
-            KeyBinding::new("delete", ui::RemoveItem, None),
-            // Plugin controls
-            KeyBinding::new("u", ui::MovePluginUp, None),
-            KeyBinding::new("shift-n", ui::MovePluginDown, None),
-            KeyBinding::new("shift-t", ui::TogglePlugin, None),
-            KeyBinding::new("e", ui::EditPlugin, None),
-            // Directory management
-            KeyBinding::new("shift-a", ui::AddDirectory, None),
-            KeyBinding::new("shift-s", ui::ScanLibrary, None),
-            // Quick add plugins (Shift + number keys)
-            KeyBinding::new("!", ui::QuickAddEQ, None),
-            KeyBinding::new("@", ui::QuickAddUpmixer, None),
-            KeyBinding::new("#", ui::QuickAddCompressor, None),
-            KeyBinding::new("$", ui::QuickAddGate, None),
-            KeyBinding::new("%", ui::QuickAddLimiter, None),
-            KeyBinding::new("^", ui::QuickAddLoudness, None),
-            KeyBinding::new("&", ui::QuickAddBinaural, None),
-            // Level meter controls (Queue screen)
-            KeyBinding::new("tab", ui::SelectNextMeterGroup, None),
-            KeyBinding::new("shift-tab", ui::SelectPrevMeterGroup, None),
-            KeyBinding::new("m", ui::ToggleMeterMute, None),
-            KeyBinding::new("shift-m", ui::ToggleMeterSolo, None),
-            KeyBinding::new("ctrl-m", ui::ToggleMeterDim, None),
-            KeyBinding::new("x", ui::ClearMeterMutesSolos, None),
-        ]);
+        // Register keyboard shortcuts from the keybindings module
+        // Default preset is used at startup; can be changed via settings
+        let keymap_preset = KeymapPreset::Default;
+        cx.bind_keys(get_keybindings(keymap_preset));
+
+        // Load window geometry from config
+        let window_geometry = sotf_audio_player_gpui::config::Config::load()
+            .ok()
+            .map(|c| c.window_geometry)
+            .unwrap_or_default();
 
         // Create window with app state
         cx.open_window(
             WindowOptions {
                 app_id: Some("org.spinorama.sotf".into()),
                 window_bounds: Some(WindowBounds::Windowed(Bounds {
-                    origin: Point::new(px(100.0), px(100.0)),
+                    origin: Point::new(px(window_geometry.x), px(window_geometry.y)),
                     size: Size {
-                        width: px(1200.0),
-                        height: px(800.0),
+                        width: px(window_geometry.width),
+                        height: px(window_geometry.height),
                     },
                 })),
                 titlebar: Some(TitlebarOptions {
@@ -155,16 +98,19 @@ fn main() {
 
                     let mut player = Player::new();
 
+                    // Apply loaded volume to player
+                    if let Err(e) = player.set_volume(app.volume) {
+                        log::warn!("Failed to set initial volume: {}", e);
+                    }
+
                     AppState {
                         app,
                         player: Arc::new(parking_lot::Mutex::new(player)),
                     }
                 });
 
-                // Set up keyboard actions
-                cx.on_action(|_: &Quit, cx| {
-                    cx.quit();
-                });
+                // Note: Window close and quit handling is done in PlayerView::quit_app
+                // which saves window geometry before quitting
 
                 // Build the root view
                 cx.new(|cx| ui::PlayerView::new(app_state.clone(), cx))

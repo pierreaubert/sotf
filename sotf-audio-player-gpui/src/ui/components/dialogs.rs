@@ -12,9 +12,8 @@ impl PlayerView {
             Screen::Library => "Library",
             Screen::DirectoryManager => "Directories",
             Screen::Queue => "Queue",
-            Screen::Plugins => "Plugins",
-            Screen::Devices => "Devices",
             Screen::Spectrum => "Spectrum",
+            Screen::Settings => "Settings",
         };
 
         // Get keybindings for current screen
@@ -736,26 +735,11 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("D/Delete", "Remove from queue"),
             ("C", "Clear entire queue"),
         ],
-        Screen::Plugins => vec![
-            ("↑/↓ or K/J", "Navigate plugin chain"),
-            ("A", "Add plugin (default)"),
-            (
-                "Shift-1/2/3/4/5/6/7",
-                "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural",
-            ),
-            ("E or Enter", "Edit selected plugin"),
-            ("Shift-T", "Toggle plugin enabled/disabled"),
-            ("D/Delete", "Remove plugin"),
-            ("U", "Move plugin up in chain"),
-            ("Shift-N", "Move plugin down in chain"),
-            ("Shift-S", "Save plugin preset"),
-            ("L", "Load plugin preset"),
-        ],
-        Screen::Devices => vec![
-            ("↑/↓ or K/J", "Navigate output devices"),
-            ("Enter/Space", "Select output device"),
-        ],
         Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
+        Screen::Settings => vec![
+            ("T", "Cycle theme"),
+            ("Alt-L", "Cycle language"),
+        ],
     }
 }
 
@@ -1007,5 +991,250 @@ fn render_plugin_param_list(
         PluginSettings::ChannelMuteSolo { .. } => {
             vec![("Mute/Solo".to_string(), "Use meters panel".to_string())]
         }
+    }
+}
+
+impl PlayerView {
+    /// Render a comprehensive keyboard shortcuts dialog
+    pub(crate) fn render_keyboard_shortcuts_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.state.read(cx).app.theme.clone();
+
+        let global_shortcuts = vec![
+            ("Space", "Play / Pause"),
+            ("N", "Next track"),
+            ("P", "Previous track"),
+            ("+/-", "Volume up/down"),
+            ("M", "Toggle mute"),
+            ("1-5", "Switch screens (Library/Queue/Plugins/Devices/Settings)"),
+            ("?", "Toggle help"),
+            ("Esc", "Close dialog / Cancel"),
+            ("T", "Cycle theme"),
+            ("Alt-L", "Cycle language"),
+            ("Cmd-Q", "Quit"),
+        ];
+
+        let library_shortcuts = vec![
+            ("↑/↓ or K/J", "Navigate albums"),
+            ("Enter", "Add album to queue and play"),
+            ("Q", "Add album to queue"),
+            ("/", "Search"),
+            ("V", "Toggle grid/list view"),
+            ("S", "Cycle sort order"),
+            ("C", "Cycle channel filter"),
+        ];
+
+        let queue_shortcuts = vec![
+            ("↑/↓ or K/J", "Navigate queue"),
+            ("X", "Remove from queue"),
+            ("Shift-X", "Clear queue"),
+            ("Tab", "Select meter group"),
+            ("Shift-M", "Mute selected group"),
+            ("Shift-S", "Solo selected group"),
+        ];
+
+        let plugin_shortcuts = vec![
+            ("E/U/G/L/O/B", "Add EQ/Upmixer/Gate/Limiter/Loudness/Binaural"),
+            ("Enter/e", "Edit plugin parameters"),
+            ("D/Delete", "Delete plugin"),
+            ("Space", "Toggle plugin on/off"),
+            ("Shift-U/N", "Move plugin up/down"),
+            ("Shift-S/l", "Save/Load plugin preset"),
+        ];
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(0x00000099))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.input_mode = crate::app::InputMode::Normal;
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(
+                div()
+                    .id("shortcuts-dialog")
+                    .w(px(700.0))
+                    .max_h(px(600.0))
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .rounded_lg()
+                    .shadow_lg()
+                    .p_6()
+                    .overflow_y_scroll()
+                    // Header
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .items_center()
+                            .mb_4()
+                            .child(
+                                div()
+                                    .text_xl()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.text_primary)
+                                    .child("Keyboard Shortcuts"),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.text_muted)
+                                    .child("Press ESC to close"),
+                            ),
+                    )
+                    // Shortcut sections
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_6()
+                            // Global
+                            .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
+                            // Library
+                            .child(self.render_shortcut_section("Library", &library_shortcuts, &theme))
+                            // Queue
+                            .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
+                            // Plugins
+                            .child(self.render_shortcut_section("Plugins", &plugin_shortcuts, &theme)),
+                    ),
+            )
+    }
+
+    fn render_shortcut_section(
+        &self,
+        title: &str,
+        shortcuts: &[(&str, &str)],
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .min_w(px(280.0))
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.accent)
+                    .mb_2()
+                    .child(title.to_string()),
+            )
+            .children(shortcuts.iter().map(|(key, desc)| {
+                let theme = theme.clone();
+                div()
+                    .flex()
+                    .justify_between()
+                    .py_1()
+                    .child(
+                        div()
+                            .px_2()
+                            .py(px(2.0))
+                            .bg(theme.surface_hover)
+                            .rounded(px(3.0))
+                            .text_xs()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(theme.text_primary)
+                            .child(key.to_string()),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_secondary)
+                            .child(desc.to_string()),
+                    )
+            }))
+    }
+
+    /// Render a small About dialog
+    pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.state.read(cx).app.theme.clone();
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgba(0x00000099))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.input_mode = crate::app::InputMode::Normal;
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(
+                div()
+                    .id("about-dialog")
+                    .w(px(320.0))
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .rounded_lg()
+                    .shadow_lg()
+                    .p_6()
+                    // Logo/Title
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .text_3xl()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.accent)
+                                    .child("SotF"),
+                            )
+                            .child(
+                                div()
+                                    .text_lg()
+                                    .text_color(theme.text_primary)
+                                    .child("Sound of the Future"),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.text_secondary)
+                                    .child("Audio Player & Processing Engine"),
+                            ),
+                    )
+                    // Version info
+                    .child(
+                        div()
+                            .mt_4()
+                            .pt_4()
+                            .border_t_1()
+                            .border_color(theme.border)
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_1()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .child("Version 0.5.3")
+                            .child("Built with Rust & GPUI")
+                            .child("spinorama.org")
+                    )
+                    // Close hint
+                    .child(
+                        div()
+                            .mt_4()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .text_center()
+                            .child("Click anywhere to close"),
+                    ),
+            )
     }
 }

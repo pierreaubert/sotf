@@ -12,8 +12,7 @@ pub enum Screen {
     DirectoryManager,
     Queue,
     Spectrum,
-    Plugins,
-    Devices,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +26,35 @@ pub enum InputMode {
     LoadApoFile,
     LoadSofaFile,
     Help,
+    KeyboardShortcuts,
+    About,
+}
+
+/// Active menu dropdown (if any)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActiveMenu {
+    None,
+    File,
+    View,
+    Help,
+}
+
+/// Layout mode based on window height
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutMode {
+    Compact,  // Below 800px - tabs bar visible
+    Expanded, // Above 800px - split Library/Queue view
+}
+
+/// Settings screen tabs
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    Library,
+    Appearance,
+    AudioDevice,
+    Plugins,
+    RoomEQ,
+    Headphone,
 }
 
 /// Toast message type for color coding
@@ -91,11 +119,12 @@ impl ToastMessage {
     }
 }
 
-/// Tree view mode for library
+/// View mode for library display
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibraryViewMode {
     Flat,     // Original list view
     TreeView, // Hierarchical artist → albums
+    Grid,     // Album grid with thumbnails
 }
 
 /// Library sort order options
@@ -118,18 +147,20 @@ pub enum ChannelFilter {
     Specific(u32), // Only albums with specific channel count
 }
 
-/// Artist node in tree view
+/// Letter node in tree view (groups albums by first letter of artist)
 #[derive(Debug, Clone)]
-pub struct ArtistNode {
-    pub artist: String,
+pub struct LetterNode {
+    pub letter: char,
     pub album_indices: Vec<usize>, // Indices into library.albums
     pub expanded: bool,
 }
 
-/// Tree item type for rendering
+/// Tree item type for rendering - groups by first letter of artist
 #[derive(Debug, Clone)]
 pub enum TreeItem {
-    Artist { name: String, expanded: bool },
+    /// First letter group header (A, B, C, etc.)
+    Letter { letter: char, expanded: bool },
+    /// Album within a letter group (index into library.albums)
     Album { index: usize },
 }
 

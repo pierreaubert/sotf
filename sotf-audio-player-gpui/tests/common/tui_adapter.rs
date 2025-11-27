@@ -50,6 +50,7 @@ fn id_to_screen(id: ScreenId) -> Screen {
         ScreenId::Plugins => Screen::Plugins,
         ScreenId::Devices => Screen::Devices,
         ScreenId::Spectrum => Screen::Library, // GPUI-only, map to Library
+        ScreenId::Settings => Screen::Library, // GPUI-only, map to Library
     }
 }
 
@@ -288,6 +289,7 @@ impl AppAdapter for TuiAdapter {
                 self.app.library_view_mode = match mode {
                     ViewModeId::Flat => LibraryViewMode::Flat,
                     ViewModeId::TreeView => LibraryViewMode::TreeView,
+                    ViewModeId::Grid => LibraryViewMode::Flat, // TUI doesn't have Grid, map to Flat
                 };
             }
 

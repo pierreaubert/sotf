@@ -1,0 +1,237 @@
+//! Gain Plugin UI Component
+//!
+//! Simple gain control with:
+//! - Large visual gain display
+//! - Vertical slider
+//! - Color-coded boost/cut indication
+
+use super::common::{render_edit_hints, render_section_header, render_vertical_slider};
+use crate::theme::Theme;
+use gpui::prelude::*;
+use gpui::*;
+
+/// Render the Gain plugin
+pub fn render_gain_plugin(
+    gain_db: f64,
+    is_editing: bool,
+    selected_param: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    let is_boost = gain_db > 0.5;
+    let is_cut = gain_db < -0.5;
+
+    // Color based on gain direction
+    let gain_color = if is_boost {
+        rgb(0x22c55e) // Green for boost
+    } else if is_cut {
+        rgb(0xef4444) // Red for cut
+    } else {
+        theme.text_primary // Neutral
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .gap_4()
+        // Main section - Large gain display and slider
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .items_center()
+                .justify_center()
+                // Slider section
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .rounded_xl()
+                        .bg(theme.background_secondary)
+                        .border_1()
+                        .border_color(theme.border)
+                        .p_4()
+                        .items_center()
+                        .child(render_section_header("GAIN CONTROL", theme))
+                        .child(render_vertical_slider(
+                            "Gain",
+                            gain_db,
+                            -24.0,
+                            24.0,
+                            "dB",
+                            0,
+                            selected_param,
+                            is_editing,
+                            Some('g'),
+                            theme,
+                        )),
+                )
+                // Large gain display
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_4()
+                        .rounded_xl()
+                        .bg(theme.background_secondary)
+                        .border_1()
+                        .border_color(theme.border)
+                        .p_6()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("OUTPUT GAIN"),
+                        )
+                        // Large circular gain display
+                        .child(
+                            div()
+                                .w(px(120.0))
+                                .h(px(120.0))
+                                .rounded_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .bg(theme.surface)
+                                .border_4()
+                                .border_color(gain_color)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .child(
+                                            div()
+                                                .text_3xl()
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(gain_color)
+                                                .child(format!("{:+.1}", gain_db)),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_sm()
+                                                .text_color(theme.text_muted)
+                                                .child("dB"),
+                                        ),
+                                ),
+                        )
+                        // Status indicator
+                        .child(
+                            div()
+                                .px_4()
+                                .py_2()
+                                .rounded_full()
+                                .bg(if is_boost {
+                                    rgba(0x22c55e33)
+                                } else if is_cut {
+                                    rgba(0xef444433)
+                                } else {
+                                    rgba(0x6366f133)
+                                })
+                                .text_sm()
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(gain_color)
+                                .child(if is_boost {
+                                    "BOOST"
+                                } else if is_cut {
+                                    "CUT"
+                                } else {
+                                    "UNITY"
+                                }),
+                        ),
+                ),
+        )
+        // Horizontal gain bar visualization
+        .child(
+            div()
+                .rounded_xl()
+                .bg(theme.background_secondary)
+                .border_1()
+                .border_color(theme.border)
+                .p_4()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_secondary)
+                                .child("Gain Range"),
+                        )
+                        .child(
+                            div()
+                                .h(px(24.0))
+                                .w_full()
+                                .bg(theme.background)
+                                .rounded_md()
+                                .border_1()
+                                .border_color(theme.border)
+                                .relative()
+                                .overflow_hidden()
+                                // Center line (0 dB)
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left(relative(0.5))
+                                        .top_0()
+                                        .bottom_0()
+                                        .w(px(2.0))
+                                        .bg(theme.text_muted),
+                                )
+                                // Gain bar (from center)
+                                .child(if gain_db >= 0.0 {
+                                    // Boost - bar goes right from center
+                                    let width = (gain_db / 24.0).clamp(0.0, 1.0) as f32 * 0.5;
+                                    div()
+                                        .absolute()
+                                        .left(relative(0.5))
+                                        .top_0()
+                                        .bottom_0()
+                                        .w(relative(width))
+                                        .bg(rgb(0x22c55e))
+                                } else {
+                                    // Cut - bar goes left from center
+                                    let width = (-gain_db / 24.0).clamp(0.0, 1.0) as f32 * 0.5;
+                                    div()
+                                        .absolute()
+                                        .right(relative(0.5))
+                                        .top_0()
+                                        .bottom_0()
+                                        .w(relative(width))
+                                        .bg(rgb(0xef4444))
+                                }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .justify_between()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("-24 dB")
+                                .child("0 dB")
+                                .child("+24 dB"),
+                        ),
+                ),
+        )
+        // Keyboard hints
+        .child(
+            div()
+                .p_3()
+                .rounded_lg()
+                .bg(theme.accent_muted)
+                .border_1()
+                .border_color(theme.accent)
+                .flex()
+                .gap_4()
+                .text_xs()
+                .text_color(theme.text_secondary)
+                .child("[G]ain")
+                .child("←/→: Adjust")
+                .child("[/]: Large step"),
+        )
+        .when(is_editing, |d| d.child(render_edit_hints(theme)))
+}

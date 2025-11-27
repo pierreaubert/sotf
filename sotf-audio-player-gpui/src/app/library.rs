@@ -8,7 +8,7 @@ use sotf_audio_player::Album;
 
 use super::state::App;
 use super::types::{
-    ArtistNode, ChannelFilter, LibrarySortOrder, LibraryViewMode, ToastMessage, ToastType, TreeItem,
+    ChannelFilter, LetterNode, LibrarySortOrder, LibraryViewMode, ToastMessage, ToastType, TreeItem,
 };
 
 impl App {
@@ -75,7 +75,7 @@ impl App {
         self.selected_tree_index = 0;
         // Rebuild tree view if active (as sort order affects tree structure)
         if self.library_view_mode == LibraryViewMode::TreeView {
-            self.rebuild_artist_tree();
+            self.rebuild_letter_tree();
         }
     }
 
@@ -87,7 +87,7 @@ impl App {
         self.selected_tree_index = 0;
         // Rebuild tree view if active
         if self.library_view_mode == LibraryViewMode::TreeView {
-            self.rebuild_artist_tree();
+            self.rebuild_letter_tree();
         }
     }
 
@@ -105,32 +105,48 @@ impl App {
         self.selected_album_index = 0;
         self.selected_tree_index = 0;
         if self.library_view_mode == LibraryViewMode::TreeView {
-            self.rebuild_artist_tree();
+            self.rebuild_letter_tree();
         }
     }
 
-    /// Build the artist tree from the current album list
-    pub fn rebuild_artist_tree(&mut self) {
+    /// Build the letter tree from the current album list (groups by first letter of artist)
+    pub fn rebuild_letter_tree(&mut self) {
         use std::collections::HashMap;
 
-        let mut artist_map: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut letter_map: HashMap<char, Vec<usize>> = HashMap::new();
 
-        // Group albums by artist
+        // Group albums by first letter of artist name
         for (idx, album) in self.library.albums.iter().enumerate() {
-            artist_map
-                .entry(album.artist.clone())
-                .or_default()
-                .push(idx);
+            let first_letter = album
+                .artist
+                .chars()
+                .next()
+                .unwrap_or('#')
+                .to_ascii_uppercase();
+            // Group non-alphabetic characters under '#'
+            let letter = if first_letter.is_ascii_alphabetic() {
+                first_letter
+            } else {
+                '#'
+            };
+            letter_map.entry(letter).or_default().push(idx);
         }
 
-        // Create artist nodes
-        let mut artists: Vec<_> = artist_map.into_iter().collect();
-        artists.sort_by(|a, b| a.0.cmp(&b.0));
+        // Create letter nodes, sorted alphabetically
+        let mut letters: Vec<_> = letter_map.into_iter().collect();
+        letters.sort_by(|a, b| {
+            // Put '#' at the end
+            match (a.0, b.0) {
+                ('#', _) => std::cmp::Ordering::Greater,
+                (_, '#') => std::cmp::Ordering::Less,
+                _ => a.0.cmp(&b.0),
+            }
+        });
 
-        self.artist_tree = artists
+        self.letter_tree = letters
             .into_iter()
-            .map(|(artist, album_indices)| ArtistNode {
-                artist,
+            .map(|(letter, album_indices)| LetterNode {
+                letter,
                 album_indices,
                 expanded: false,
             })
@@ -139,47 +155,49 @@ impl App {
         self.selected_tree_index = 0;
     }
 
-    /// Toggle tree view mode
+    /// Toggle library view mode (cycles through Flat → Tree → Grid)
     pub fn toggle_library_view_mode(&mut self) {
         self.library_view_mode = match self.library_view_mode {
             LibraryViewMode::Flat => LibraryViewMode::TreeView,
-            LibraryViewMode::TreeView => LibraryViewMode::Flat,
+            LibraryViewMode::TreeView => LibraryViewMode::Grid,
+            LibraryViewMode::Grid => LibraryViewMode::Flat,
         };
         self.selected_tree_index = 0;
+        self.selected_album_index = 0;
     }
 
-    /// Toggle expansion of the currently selected artist node
-    pub fn toggle_artist_expansion(&mut self) {
+    /// Toggle expansion of the currently selected letter node
+    pub fn toggle_letter_expansion(&mut self) {
         if self.library_view_mode != LibraryViewMode::TreeView {
             return;
         }
 
-        // Find which artist node we're on
+        // Find which letter node we're on
         let mut current_row = 0;
-        for artist_node in &mut self.artist_tree {
+        for letter_node in &mut self.letter_tree {
             if current_row == self.selected_tree_index {
-                artist_node.expanded = !artist_node.expanded;
+                letter_node.expanded = !letter_node.expanded;
                 return;
             }
             current_row += 1;
-            if artist_node.expanded {
-                current_row += artist_node.album_indices.len();
+            if letter_node.expanded {
+                current_row += letter_node.album_indices.len();
             }
         }
     }
 
-    /// Get the flattened tree items for rendering (returns artist names or album indices)
+    /// Get the flattened tree items for rendering (returns letter headers and album indices)
     pub fn get_tree_items(&self) -> Vec<TreeItem> {
         let mut items = Vec::new();
 
-        for artist_node in &self.artist_tree {
-            items.push(TreeItem::Artist {
-                name: artist_node.artist.clone(),
-                expanded: artist_node.expanded,
+        for letter_node in &self.letter_tree {
+            items.push(TreeItem::Letter {
+                letter: letter_node.letter,
+                expanded: letter_node.expanded,
             });
 
-            if artist_node.expanded {
-                for &album_idx in &artist_node.album_indices {
+            if letter_node.expanded {
+                for &album_idx in &letter_node.album_indices {
                     items.push(TreeItem::Album { index: album_idx });
                 }
             }
@@ -229,7 +247,7 @@ impl App {
     /// Go to next page
     pub fn next_page(&mut self) {
         let total_pages = match self.library_view_mode {
-            LibraryViewMode::Flat => self.get_flat_total_pages(),
+            LibraryViewMode::Flat | LibraryViewMode::Grid => self.get_flat_total_pages(),
             LibraryViewMode::TreeView => self.get_tree_total_pages(),
         };
 
@@ -237,7 +255,7 @@ impl App {
             self.library_page += 1;
             // Reset selection when changing pages
             match self.library_view_mode {
-                LibraryViewMode::Flat => self.selected_album_index = 0,
+                LibraryViewMode::Flat | LibraryViewMode::Grid => self.selected_album_index = 0,
                 LibraryViewMode::TreeView => self.selected_tree_index = 0,
             }
         }
@@ -249,7 +267,7 @@ impl App {
             self.library_page -= 1;
             // Reset selection when changing pages
             match self.library_view_mode {
-                LibraryViewMode::Flat => self.selected_album_index = 0,
+                LibraryViewMode::Flat | LibraryViewMode::Grid => self.selected_album_index = 0,
                 LibraryViewMode::TreeView => self.selected_tree_index = 0,
             }
         }
@@ -387,7 +405,7 @@ impl App {
             }
         }
 
-        self.rebuild_artist_tree();
+        self.rebuild_letter_tree();
 
         result
     }

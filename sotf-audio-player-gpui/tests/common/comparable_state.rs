@@ -12,6 +12,7 @@ pub enum ScreenId {
     Plugins,
     Devices,
     Spectrum, // GPUI-only, maps to Library for TUI
+    Settings, // GPUI-only, maps to Library for TUI
 }
 
 /// Normalized input mode identifier
@@ -54,6 +55,7 @@ pub enum ChannelFilterId {
 pub enum ViewModeId {
     Flat,
     TreeView,
+    Grid,
 }
 
 /// Normalized plugin type identifier

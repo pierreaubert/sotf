@@ -4,8 +4,7 @@
 
 use sotf_audio_player::PluginSettings;
 
-use super::state::App;
-use super::types::{InputMode, ToastMessage};
+use crate::app::{App, InputMode, ToastMessage};
 
 impl App {
     // Plugin management methods
@@ -785,7 +784,7 @@ impl App {
 // Helper function to get parameter count for a plugin
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
-        PluginSettings::Upmixer { .. } => 14,
+        PluginSettings::Upmixer { .. } => 15,
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz

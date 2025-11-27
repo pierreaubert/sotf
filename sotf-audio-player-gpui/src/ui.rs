@@ -1,78 +1,20 @@
-mod components;
+pub mod components;
+mod headphone_eq;
 mod screens;
 
+use crate::actions::*;
 use crate::app::{AppState, Screen};
 use gpui::prelude::*;
 use gpui::*;
 use std::time::Duration;
 
-// Actions for keyboard shortcuts
-actions!(
-    player_ui,
-    [
-        PlayPause,
-        Stop,
-        NextTrack,
-        PrevTrack,
-        VolumeUp,
-        VolumeDown,
-        SwitchToLibrary,
-        SwitchToQueue,
-        SwitchToPlugins,
-        SwitchToDevices,
-        SwitchToSpectrum,
-        SwitchToDirectoryManager,
-        ToggleSearch,
-        ToggleLibraryView,
-        ToggleHelp,
-        CycleSortOrder,
-        SetSortArtist,
-        SetSortAlbum,
-        SetSortTitle,
-        SetSortYear,
-        CycleChannelFilter,
-        SetFilterAll,
-        SetFilterMono,
-        SetFilterStereo,
-        SetFilterMultichannel,
-        SetFilterMixed,
-        SelectNext,
-        SelectPrev,
-        SelectNextPage,
-        SelectPrevPage,
-        NextPage, // For library pagination
-        PrevPage, // For library pagination
-        ToggleExpand,
-        Enter,
-        Cancel,
-        RemoveItem,
-        ClearQueue,
-        MovePluginUp,
-        MovePluginDown,
-        TogglePlugin,
-        AddDirectory,
-        ScanLibrary,
-        QuickAddEQ,
-        QuickAddUpmixer,
-        QuickAddCompressor,
-        QuickAddGate,
-        QuickAddLimiter,
-        QuickAddLoudness,
-        QuickAddBinaural,
-        EditPlugin,
-        // Level meter actions
-        SelectNextMeterGroup,
-        SelectPrevMeterGroup,
-        ToggleMeterMute,
-        ToggleMeterSolo,
-        ToggleMeterDim,
-        ClearMeterMutesSolos,
-    ]
-);
+// Re-export all actions for backward compatibility
+pub use crate::actions::*;
 
 pub struct PlayerView {
     state: Entity<AppState>,
     focus_handle: FocusHandle,
+    last_saved_window_bounds: Option<Bounds<Pixels>>,
 }
 
 impl PlayerView {
@@ -99,6 +41,7 @@ impl PlayerView {
         Self {
             state,
             focus_handle,
+            last_saved_window_bounds: None,
         }
     }
 
@@ -202,11 +145,19 @@ impl PlayerView {
     }
 
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
-        self.switch_screen(Screen::Plugins, cx);
+        self.state.update(cx, |state, _cx| {
+            state.app.current_screen = Screen::Settings;
+            state.app.selected_settings_tab = crate::app::types::SettingsTab::Plugins;
+        });
+        cx.notify();
     }
 
     fn switch_to_devices(&mut self, _: &SwitchToDevices, _: &mut Window, cx: &mut Context<Self>) {
-        self.switch_screen(Screen::Devices, cx);
+        self.state.update(cx, |state, _cx| {
+            state.app.current_screen = Screen::Settings;
+            state.app.selected_settings_tab = crate::app::types::SettingsTab::AudioDevice;
+        });
+        cx.notify();
     }
 
     fn switch_to_directory_manager(
@@ -216,6 +167,53 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.switch_screen(Screen::DirectoryManager, cx);
+    }
+
+    fn switch_to_settings(&mut self, _: &SwitchToSettings, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen(Screen::Settings, cx);
+    }
+
+    fn open_config(&mut self, _: &OpenConfig, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen(Screen::Settings, cx);
+    }
+
+    fn quit_app(&mut self, _: &QuitApp, window: &mut Window, cx: &mut Context<Self>) {
+        // Save window geometry before quitting
+        let window_bounds = window.bounds();
+        let geometry = crate::config::WindowGeometry {
+            x: window_bounds.origin.x.into(),
+            y: window_bounds.origin.y.into(),
+            width: window_bounds.size.width.into(),
+            height: window_bounds.size.height.into(),
+        };
+
+        self.state.update(cx, |state, _cx| {
+            if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
+                log::error!("Failed to save config on quit: {}", e);
+            }
+        });
+
+        cx.quit();
+    }
+
+    fn cycle_theme(&mut self, _: &CycleTheme, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.next_theme();
+            if let Err(e) = state.app.save_config() {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
+    fn cycle_language(&mut self, _: &CycleLanguage, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.next_language();
+            if let Err(e) = state.app.save_config() {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
     }
 
     fn toggle_search(&mut self, _: &ToggleSearch, _: &mut Window, cx: &mut Context<Self>) {
@@ -240,8 +238,87 @@ impl PlayerView {
             state.app.clear_autocomplete();
             state.app.dismiss_toast();
             state.app.context_menu = None; // Close context menu
+            state.app.active_menu = crate::app::ActiveMenu::None; // Close dropdown menus
         });
         cx.notify();
+    }
+
+    /// Render split view with Library on top and Queue on bottom (expanded mode)
+    fn render_split_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (theme, queue_ratio) = {
+            let state = self.state.read(cx);
+            (state.app.theme.clone(), state.app.queue_panel_ratio)
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            // Top section: Library (takes remaining space)
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(self.render_library_screen(cx)),
+            )
+            // Resize handle
+            .child(self.render_horizontal_divider(theme.clone(), cx))
+            // Bottom section: Queue (configurable height ratio)
+            .child(
+                div()
+                    .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(queue_ratio)))
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .overflow_hidden()
+                    .child(self.render_queue_screen(cx)),
+            )
+    }
+
+    /// Render a horizontal divider that can be dragged to resize panels
+    fn render_horizontal_divider(&self, theme: crate::theme::Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .id("queue-divider")
+            .w_full()
+            .h(px(6.0))
+            .bg(theme.border)
+            .cursor(gpui::CursorStyle::ResizeUpDown)
+            .hover(|style| style.bg(theme.accent))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.is_dragging_queue_divider = true;
+                    });
+                }),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        if state.app.is_dragging_queue_divider {
+                            state.app.is_dragging_queue_divider = false;
+                            // Save the new layout
+                            if let Err(e) = state.app.save_config() {
+                                log::warn!("Failed to save panel layout: {}", e);
+                            }
+                        }
+                    });
+                }),
+            )
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+                let is_dragging = view.state.read(cx).app.is_dragging_queue_divider;
+                if is_dragging {
+                    let window_height = window.bounds().size.height;
+                    let mouse_y: f32 = event.position.y.into();
+                    let window_h: f32 = window_height.into();
+                    // Calculate new ratio (inverted because queue is at bottom)
+                    let new_ratio = (1.0 - (mouse_y / window_h)).clamp(0.15, 0.6);
+                    view.state.update(cx, |state, _cx| {
+                        state.app.queue_panel_ratio = new_ratio;
+                    });
+                    cx.notify();
+                }
+            }))
     }
 
     fn toggle_library_view(
@@ -537,10 +614,46 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if state.app.current_screen == Screen::Library {
+                state.app.select_grid_left();
+            }
+        });
+        cx.notify();
+    }
+
+    fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if state.app.current_screen == Screen::Library {
+                state.app.select_grid_right();
+            }
+        });
+        cx.notify();
+    }
+
+    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if state.app.current_screen == Screen::Library {
+                state.app.select_grid_up();
+            }
+        });
+        cx.notify();
+    }
+
+    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if state.app.current_screen == Screen::Library {
+                state.app.select_grid_down();
+            }
+        });
+        cx.notify();
+    }
+
     fn toggle_expand(&mut self, _: &ToggleExpand, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             if state.app.current_screen == Screen::Library {
-                state.app.toggle_artist_expansion();
+                state.app.toggle_letter_expansion();
             } else if state.app.current_screen == Screen::Queue {
                 state.app.toggle_queue_item_expansion();
             } else if state.app.current_screen == Screen::DirectoryManager {
@@ -681,6 +794,24 @@ impl PlayerView {
     fn scan_library(&mut self, _: &ScanLibrary, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Start scan (this will be async in reality, but for now we do it synchronously)
+            if let Err(e) = state.app.scan_library() {
+                log::error!("Library scan failed: {}", e);
+                state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                    "Scan failed: {}",
+                    e
+                )));
+            }
+            // Save directories to config after successful scan
+            if let Err(e) = state.app.save_config() {
+                log::warn!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
+    /// Helper method to start library scan from settings screen
+    pub(crate) fn start_library_scan(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
             if let Err(e) = state.app.scan_library() {
                 log::error!("Library scan failed: {}", e);
                 state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
@@ -1205,9 +1336,11 @@ impl PlayerView {
                     // Play selected track in queue
                     // TODO: Implement playing specific track from queue
                 }
-                Screen::Plugins => {
-                    // Enter plugin edit mode
-                    state.app.enter_plugin_edit_mode();
+                Screen::Settings => {
+                    // If on Plugins tab, enter plugin edit mode
+                    if state.app.selected_settings_tab == crate::app::types::SettingsTab::Plugins {
+                        state.app.enter_plugin_edit_mode();
+                    }
                 }
                 _ => {}
             }
@@ -1233,9 +1366,58 @@ impl PlayerView {
 }
 
 impl Render for PlayerView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let current_screen = self.state.read(cx).app.current_screen;
-        let input_mode = self.state.read(cx).app.input_mode;
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Update layout mode based on window height
+        let window_bounds = window.bounds();
+        let window_height: f32 = window_bounds.size.height.into();
+        self.state.update(cx, |state, _cx| {
+            state.app.window_height = window_height;
+            state.app.layout_mode = if window_height >= 800.0 {
+                crate::app::LayoutMode::Expanded
+            } else {
+                crate::app::LayoutMode::Compact
+            };
+        });
+
+        // Save window geometry if it has changed (debounced by checking if different)
+        let should_save = match self.last_saved_window_bounds {
+            None => true,
+            Some(last_bounds) => {
+                let pos_changed = (last_bounds.origin.x - window_bounds.origin.x).abs() > px(1.0)
+                    || (last_bounds.origin.y - window_bounds.origin.y).abs() > px(1.0);
+                let size_changed = (last_bounds.size.width - window_bounds.size.width).abs() > px(1.0)
+                    || (last_bounds.size.height - window_bounds.size.height).abs() > px(1.0);
+                pos_changed || size_changed
+            }
+        };
+
+        if should_save {
+            let geometry = crate::config::WindowGeometry {
+                x: window_bounds.origin.x.into(),
+                y: window_bounds.origin.y.into(),
+                width: window_bounds.size.width.into(),
+                height: window_bounds.size.height.into(),
+            };
+
+            self.state.update(cx, |state, _cx| {
+                if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
+                    log::warn!("Failed to save window geometry: {}", e);
+                }
+            });
+
+            self.last_saved_window_bounds = Some(window_bounds);
+        }
+
+        let (current_screen, input_mode, theme, layout_mode, active_menu) = {
+            let state = self.state.read(cx);
+            (
+                state.app.current_screen,
+                state.app.input_mode,
+                state.app.theme.clone(),
+                state.app.layout_mode,
+                state.app.active_menu,
+            )
+        };
 
         div()
             .key_context("PlayerView")
@@ -1251,6 +1433,11 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_plugins))
             .on_action(cx.listener(Self::switch_to_devices))
             .on_action(cx.listener(Self::switch_to_directory_manager))
+            .on_action(cx.listener(Self::switch_to_settings))
+            .on_action(cx.listener(Self::open_config))
+            .on_action(cx.listener(Self::quit_app))
+            .on_action(cx.listener(Self::cycle_theme))
+            .on_action(cx.listener(Self::cycle_language))
             .on_action(cx.listener(Self::toggle_search))
             .on_action(cx.listener(Self::toggle_library_view))
             .on_action(cx.listener(Self::toggle_help))
@@ -1271,6 +1458,10 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::select_prev_page))
             .on_action(cx.listener(Self::next_page))
             .on_action(cx.listener(Self::prev_page))
+            .on_action(cx.listener(Self::select_left))
+            .on_action(cx.listener(Self::select_right))
+            .on_action(cx.listener(Self::select_up))
+            .on_action(cx.listener(Self::select_down))
             .on_action(cx.listener(Self::toggle_expand))
             .on_action(cx.listener(Self::handle_enter))
             .on_action(cx.listener(Self::cancel))
@@ -1325,7 +1516,10 @@ impl Render for PlayerView {
                     }
                     crate::app::InputMode::Normal => {
                         // Handle screen-specific shortcuts in Normal mode
-                        if current_screen == crate::app::Screen::Plugins {
+                        if current_screen == crate::app::Screen::Settings
+                            && view.state.read(cx).app.selected_settings_tab
+                                == crate::app::types::SettingsTab::Plugins
+                        {
                             match event.keystroke.key.as_str() {
                                 "S" => {
                                     // Enter save plugins mode (Shift-S)
@@ -1355,17 +1549,52 @@ impl Render for PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            .bg(rgb(0x1e1e1e))
-            .text_color(rgb(0xcccccc))
+            .bg(theme.background)
+            .text_color(theme.text_primary)
+            .child(self.render_menu_bar(cx))
             .child(self.render_header(cx))
-            .child(div().flex().flex_1().child(match current_screen {
-                Screen::Library => self.render_library_screen(cx).into_any_element(),
-                Screen::Queue => self.render_queue_screen(cx).into_any_element(),
-                Screen::Plugins => self.render_plugins_screen(cx).into_any_element(),
-                Screen::Devices => self.render_devices_screen(cx).into_any_element(),
-                Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
-                Screen::DirectoryManager => self.render_directory_screen(cx).into_any_element(),
-            }))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(match layout_mode {
+                        crate::app::LayoutMode::Expanded => {
+                            // Split view: Library on bottom, Queue on top
+                            match current_screen {
+                                Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
+                                Screen::DirectoryManager => {
+                                    self.render_directory_screen(cx).into_any_element()
+                                }
+                                Screen::Settings => {
+                                    self.render_settings_screen(cx).into_any_element()
+                                }
+                                // Default: split Library/Queue view
+                                Screen::Library | Screen::Queue => {
+                                    self.render_split_view(cx).into_any_element()
+                                }
+                            }
+                        }
+                        crate::app::LayoutMode::Compact => {
+                            // Single view based on current screen
+                            match current_screen {
+                                Screen::Library => {
+                                    self.render_library_screen(cx).into_any_element()
+                                }
+                                Screen::Queue => self.render_queue_screen(cx).into_any_element(),
+                                Screen::Spectrum => {
+                                    self.render_spectrum_screen(cx).into_any_element()
+                                }
+                                Screen::DirectoryManager => {
+                                    self.render_directory_screen(cx).into_any_element()
+                                }
+                                Screen::Settings => {
+                                    self.render_settings_screen(cx).into_any_element()
+                                }
+                            }
+                        }
+                    }),
+            )
             .child(self.render_footer(cx))
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
@@ -1385,9 +1614,23 @@ impl Render for PlayerView {
             .when(input_mode == crate::app::InputMode::LoadPlugins, |div| {
                 div.child(self.render_load_plugins_dialog(cx))
             })
+            .when(input_mode == crate::app::InputMode::KeyboardShortcuts, |div| {
+                div.child(self.render_keyboard_shortcuts_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::About, |div| {
+                div.child(self.render_about_dialog(cx))
+            })
             .child(self.render_toast(cx))
             .when(self.state.read(cx).app.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))
+            })
+            // Device popup overlay (click outside to close)
+            .when(self.state.read(cx).app.show_device_popup, |div| {
+                div.child(self.render_device_popup_overlay(cx))
+            })
+            // Menu dropdowns rendered last for z-ordering
+            .when(active_menu != crate::app::ActiveMenu::None, |div| {
+                div.child(self.render_menu_dropdowns(cx))
             })
     }
 }

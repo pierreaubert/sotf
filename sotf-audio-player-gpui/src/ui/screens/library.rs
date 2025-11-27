@@ -1,9 +1,8 @@
 //! Library screen rendering functions
 
-use crate::app::AppState;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{img, *};
 
 impl PlayerView {
     pub(crate) fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -16,6 +15,7 @@ impl PlayerView {
             sort_order,
             channel_filter,
             filtered_count,
+            theme,
         ) = {
             let state = self.state.read(cx);
             let filtered_count = state.app.filtered_albums().len();
@@ -28,31 +28,16 @@ impl PlayerView {
                 state.app.library_sort_order,
                 state.app.channel_filter,
                 filtered_count,
+                state.app.theme.clone(),
             )
         };
 
         let is_search_mode = input_mode == crate::app::InputMode::Search;
 
-        let content = if library_view_mode == crate::app::LibraryViewMode::TreeView {
-            self.render_library_tree(cx).into_any_element()
-        } else {
-            self.render_library_flat(cx).into_any_element()
-        };
-
-        let sort_label = match sort_order {
-            crate::app::LibrarySortOrder::Artist => "Artist",
-            crate::app::LibrarySortOrder::Album => "Album",
-            crate::app::LibrarySortOrder::Title => "Title",
-            crate::app::LibrarySortOrder::Year => "Year",
-        };
-
-        let filter_label = match channel_filter {
-            crate::app::ChannelFilter::All => "All".to_string(),
-            crate::app::ChannelFilter::Mono => "Mono".to_string(),
-            crate::app::ChannelFilter::Stereo => "Stereo".to_string(),
-            crate::app::ChannelFilter::Multichannel => "Multi".to_string(),
-            crate::app::ChannelFilter::Mixed => "Mixed".to_string(),
-            crate::app::ChannelFilter::Specific(n) => format!("{}ch", n),
+        let content = match library_view_mode {
+            crate::app::LibraryViewMode::TreeView => self.render_library_tree(cx).into_any_element(),
+            crate::app::LibraryViewMode::Grid => self.render_library_grid(cx).into_any_element(),
+            crate::app::LibraryViewMode::Flat => self.render_library_flat(cx).into_any_element(),
         };
 
         div()
@@ -84,21 +69,33 @@ impl PlayerView {
                                 div()
                                     .flex()
                                     .items_center()
-                                    .bg(rgb(0x2d2d2d))
+                                    .bg(theme.surface)
                                     .rounded_md()
                                     .border_1()
-                                    .when(is_search_mode, |div| div.border_color(rgb(0x007acc)))
-                                    .when(!is_search_mode, |div| div.border_color(rgb(0x3e3e3e)))
+                                    .when(is_search_mode, |div| div.border_color(theme.accent))
+                                    .when(!is_search_mode, |div| div.border_color(theme.border))
                                     .px_2()
                                     .py_1()
                                     .w_64()
+                                    .cursor_pointer()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                if state.app.input_mode != crate::app::InputMode::Search {
+                                                    state.app.input_mode = crate::app::InputMode::Search;
+                                                }
+                                            });
+                                            cx.notify();
+                                        }),
+                                    )
                                     .child(
                                         div()
                                             .mr_2()
                                             .text_color(if is_search_mode {
-                                                rgb(0x007acc)
+                                                theme.accent
                                             } else {
-                                                rgb(0x999999)
+                                                theme.text_secondary
                                             })
                                             .child("🔍"),
                                     )
@@ -107,18 +104,18 @@ impl PlayerView {
                                             .text_sm()
                                             .text_color(if search_query.is_empty() {
                                                 if is_search_mode {
-                                                    rgb(0x999999)
+                                                    theme.text_secondary
                                                 } else {
-                                                    rgb(0x666666)
+                                                    theme.text_muted
                                                 }
                                             } else {
-                                                rgb(0xcccccc)
+                                                theme.text_primary
                                             })
                                             .child(if search_query.is_empty() {
                                                 if is_search_mode {
                                                     "Type to search...".to_string()
                                                 } else {
-                                                    "Press / to search".to_string()
+                                                    "Click to search".to_string()
                                                 }
                                             } else {
                                                 format!(
@@ -129,17 +126,87 @@ impl PlayerView {
                                             }),
                                     ),
                             )
+                            // Sort buttons
                             .child(
                                 div()
-                                    .text_xs()
-                                    .text_color(rgb(0x999999))
-                                    .child(format!("Sort: {}", sort_label)),
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.text_secondary)
+                                            .child("Sort:"),
+                                    )
+                                    .child(self.render_sort_button(
+                                        "Artist",
+                                        crate::app::LibrarySortOrder::Artist,
+                                        sort_order,
+                                        theme.clone(),
+                                        cx,
+                                    ))
+                                    .child(self.render_sort_button(
+                                        "Album",
+                                        crate::app::LibrarySortOrder::Album,
+                                        sort_order,
+                                        theme.clone(),
+                                        cx,
+                                    ))
+                                    .child(self.render_sort_button(
+                                        "Title",
+                                        crate::app::LibrarySortOrder::Title,
+                                        sort_order,
+                                        theme.clone(),
+                                        cx,
+                                    ))
+                                    .child(self.render_sort_button(
+                                        "Year",
+                                        crate::app::LibrarySortOrder::Year,
+                                        sort_order,
+                                        theme.clone(),
+                                        cx,
+                                    )),
                             )
+                            // Filter buttons
                             .child(
                                 div()
-                                    .text_xs()
-                                    .text_color(rgb(0x999999))
-                                    .child(format!("Filter: {}", filter_label)),
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.text_secondary)
+                                            .child("Filter:"),
+                                    )
+                                    .child(self.render_filter_button(
+                                        "All",
+                                        crate::app::ChannelFilter::All,
+                                        channel_filter,
+                                        theme.clone(),
+                                        cx,
+                                    ))
+                                    .child(self.render_filter_button(
+                                        "2.0",
+                                        crate::app::ChannelFilter::Stereo,
+                                        channel_filter,
+                                        theme.clone(),
+                                        cx,
+                                    ))
+                                    .child(self.render_filter_button(
+                                        "5.1",
+                                        crate::app::ChannelFilter::Multichannel,
+                                        channel_filter,
+                                        theme.clone(),
+                                        cx,
+                                    ))
+                                    .child(self.render_filter_button(
+                                        "7.1",
+                                        crate::app::ChannelFilter::Mixed,
+                                        channel_filter,
+                                        theme.clone(),
+                                        cx,
+                                    )),
                             )
                             .child(
                                 div()
@@ -150,12 +217,13 @@ impl PlayerView {
                                             .px_2()
                                             .py_1()
                                             .rounded_md()
+                                            .text_sm()
                                             .bg(if library_view_mode
                                                 == crate::app::LibraryViewMode::Flat
                                             {
-                                                rgb(0x4e4e4e)
+                                                theme.surface_selected
                                             } else {
-                                                rgb(0x2d2d2d)
+                                                theme.surface
                                             })
                                             .cursor_pointer()
                                             .on_mouse_up(
@@ -170,19 +238,20 @@ impl PlayerView {
                                                     },
                                                 ),
                                             )
-                                            .child("Flat"),
+                                            .child("List"),
                                     )
                                     .child(
                                         div()
                                             .px_2()
                                             .py_1()
                                             .rounded_md()
+                                            .text_sm()
                                             .bg(if library_view_mode
                                                 == crate::app::LibraryViewMode::TreeView
                                             {
-                                                rgb(0x4e4e4e)
+                                                theme.surface_selected
                                             } else {
-                                                rgb(0x2d2d2d)
+                                                theme.surface
                                             })
                                             .cursor_pointer()
                                             .on_mouse_up(
@@ -192,62 +261,81 @@ impl PlayerView {
                                                         view.state.update(cx, |state, _cx| {
                                                             state.app.library_view_mode =
                                                                 crate::app::LibraryViewMode::TreeView;
-                                                            state.app.rebuild_artist_tree();
+                                                            state.app.rebuild_letter_tree();
                                                         });
                                                         cx.notify();
                                                     },
                                                 ),
                                             )
                                             .child("Tree"),
+                                    )
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .py_1()
+                                            .rounded_md()
+                                            .text_sm()
+                                            .bg(if library_view_mode
+                                                == crate::app::LibraryViewMode::Grid
+                                            {
+                                                theme.surface_selected
+                                            } else {
+                                                theme.surface
+                                            })
+                                            .cursor_pointer()
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(
+                                                    |view, _: &MouseUpEvent, _window, cx| {
+                                                        view.state.update(cx, |state, _cx| {
+                                                            state.app.library_view_mode =
+                                                                crate::app::LibraryViewMode::Grid
+                                                        });
+                                                        cx.notify();
+                                                    },
+                                                ),
+                                            )
+                                            .child("Grid"),
                                     ),
                             )
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .ml_2()
-                                    .rounded_md()
-                                    .bg(rgb(0x2d2d2d))
-                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
-                                    .cursor_pointer()
-                                    .id("scan_btn")
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                if let Err(e) = state.app.scan_library() {
-                                                    log::error!("Scan failed: {}", e);
-                                                }
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .child(if scan_in_progress { "Scanning..." } else { "Scan" }),
-                            ),
                     ),
             )
-            .child(content)
+            .child(
+                div()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(content),
+            )
             .child(self.render_pagination_controls(cx))
     }
 
     pub(crate) fn render_pagination_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let current_page = state.app.library_page + 1; // Display as 1-indexed
-        let total_pages = match state.app.library_view_mode {
-            crate::app::LibraryViewMode::Flat => state.app.get_flat_total_pages(),
-            crate::app::LibraryViewMode::TreeView => state.app.get_tree_total_pages(),
+        let (current_page, total_pages, items_per_page, theme) = {
+            let state = self.state.read(cx);
+            let current_page = state.app.library_page + 1;
+            let total_pages = match state.app.library_view_mode {
+                crate::app::LibraryViewMode::Flat | crate::app::LibraryViewMode::Grid => {
+                    state.app.get_flat_total_pages()
+                }
+                crate::app::LibraryViewMode::TreeView => state.app.get_tree_total_pages(),
+            };
+            (
+                current_page,
+                total_pages,
+                state.app.library_items_per_page,
+                state.app.theme.clone(),
+            )
         };
-        let items_per_page = state.app.library_items_per_page;
 
         div()
             .flex()
             .justify_between()
             .items_center()
             .p_3()
-            .bg(rgb(0x1e1e1e))
+            .bg(theme.background)
             .border_t_1()
-            .border_color(rgb(0x3e3e3e))
-            .child(div().text_sm().text_color(rgb(0x999999)).child(format!(
+            .border_color(theme.border)
+            .child(div().text_sm().text_color(theme.text_secondary).child(format!(
                 "Page {} of {} ({} items/page)",
                 current_page, total_pages, items_per_page
             )))
@@ -261,12 +349,12 @@ impl PlayerView {
                             .py_1()
                             .rounded_md()
                             .when(current_page > 1, |div| {
-                                div.bg(rgb(0x2d2d2d))
-                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
+                                div.bg(theme.surface)
+                                    .hover(|style| style.bg(theme.surface_hover))
                                     .cursor_pointer()
                             })
                             .when(current_page == 1, |div| {
-                                div.bg(rgb(0x1a1a1a)).text_color(rgb(0x666666))
+                                div.bg(theme.background).text_color(theme.text_muted)
                             })
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -285,12 +373,12 @@ impl PlayerView {
                             .py_1()
                             .rounded_md()
                             .when(current_page < total_pages, |div| {
-                                div.bg(rgb(0x2d2d2d))
-                                    .hover(|style| style.bg(rgb(0x3e3e3e)))
+                                div.bg(theme.surface)
+                                    .hover(|style| style.bg(theme.surface_hover))
                                     .cursor_pointer()
                             })
                             .when(current_page == total_pages, |div| {
-                                div.bg(rgb(0x1a1a1a)).text_color(rgb(0x666666))
+                                div.bg(theme.background).text_color(theme.text_muted)
                             })
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -307,22 +395,32 @@ impl PlayerView {
     }
 
     pub(crate) fn render_library_flat(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let albums = state.app.get_paginated_albums();
+        let (albums, selected_album_index, theme) = {
+            let state = self.state.read(cx);
+            (
+                state.app.get_paginated_albums(),
+                state.app.selected_album_index,
+                state.app.theme.clone(),
+            )
+        };
 
         div()
+            .id("library-flat-view")
             .flex()
             .flex_col()
             .gap_2()
             .flex_1()
+            .overflow_y_scroll()
+            .p_2()
             .children(albums.iter().enumerate().map(|(idx, album)| {
-                let is_selected = state.app.selected_album_index == idx;
+                let is_selected = selected_album_index == idx;
+                let theme = theme.clone();
                 div()
                     .p_3()
                     .rounded_md()
-                    .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                    .hover(|style| style.bg(rgb(0x3e3e3e)))
+                    .when(is_selected, |div| div.bg(theme.accent))
+                    .when(!is_selected, |div| div.bg(theme.surface))
+                    .hover(|style| style.bg(theme.surface_hover))
                     .cursor_pointer()
                     .on_mouse_up(
                         MouseButton::Left,
@@ -359,13 +457,13 @@ impl PlayerView {
                             .child(
                                 div()
                                     .text_sm()
-                                    .text_color(rgb(0x999999))
+                                    .text_color(theme.text_secondary)
                                     .child(album.artist.clone()),
                             )
                             .child(
                                 div()
                                     .text_xs()
-                                    .text_color(rgb(0x666666))
+                                    .text_color(theme.text_muted)
                                     .child(format!("{} tracks", album.tracks.len())),
                             ),
                     )
@@ -373,30 +471,41 @@ impl PlayerView {
     }
 
     pub(crate) fn render_library_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let tree_items = state.app.get_paginated_tree_items();
+        let (tree_items, albums, selected_tree_index, theme) = {
+            let state = self.state.read(cx);
+            (
+                state.app.get_paginated_tree_items(),
+                state.app.library.albums.clone(),
+                state.app.selected_tree_index,
+                state.app.theme.clone(),
+            )
+        };
 
         div()
+            .id("library-tree-view")
             .flex()
             .flex_col()
             .gap_1()
             .flex_1()
+            .overflow_y_scroll()
+            .p_2()
             .children(tree_items.iter().enumerate().map(|(idx, item)| {
-                let is_selected = state.app.selected_tree_index == idx;
+                let is_selected = selected_tree_index == idx;
+                let theme = theme.clone();
 
                 match item {
-                    crate::app::TreeItem::Artist { name, expanded } => div()
+                    crate::app::TreeItem::Letter { letter, expanded } => div()
                         .p_2()
                         .rounded_md()
-                        .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                        .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                        .when(is_selected, |d| d.bg(theme.accent))
+                        .when(!is_selected, |d| d.bg(theme.surface))
                         .cursor_pointer()
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.selected_tree_index = idx;
-                                    state.app.toggle_artist_expansion();
+                                    state.app.toggle_letter_expansion();
                                 });
                                 cx.notify();
                             }),
@@ -406,16 +515,23 @@ impl PlayerView {
                                 .flex()
                                 .gap_2()
                                 .child(if *expanded { "▼" } else { "▶" })
-                                .child(name.clone()),
+                                .child(letter.to_string())
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .child("-"),
+                                ),
                         ),
                     crate::app::TreeItem::Album { index } => {
-                        let album = &state.app.library.albums[*index];
+                        let album = &albums[*index];
+                        let track_count = album.tracks.len();
                         div()
                             .pl_8()
                             .p_2()
                             .rounded_md()
-                            .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                            .when(!is_selected, |div| div.bg(rgb(0x252525)))
+                            .when(is_selected, |d| d.bg(theme.accent))
+                            .when(!is_selected, |d| d.bg(theme.background_secondary))
                             .cursor_pointer()
                             .on_mouse_up(
                                 MouseButton::Left,
@@ -425,9 +541,244 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child(album.title.clone())
+                            .child(
+                                div()
+                                    .flex()
+                                    .justify_between()
+                                    .w_full()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .child(album.title.clone())
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(theme.text_muted)
+                                                    .child(album.artist.clone()),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.text_secondary)
+                                            .child(format!("#{}", track_count)),
+                                    ),
+                            )
                     }
                 }
             }))
+    }
+
+    /// Render album grid view with thumbnails
+    pub(crate) fn render_library_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (albums, selected_album_index, theme) = {
+            let state = self.state.read(cx);
+            (
+                state.app.get_paginated_albums(),
+                state.app.selected_album_index,
+                state.app.theme.clone(),
+            )
+        };
+
+        let thumbnail_size = 120.0;
+        let card_width = 150.0;
+
+        let grid = div()
+            .id("album-grid")
+            .flex()
+            .flex_wrap()
+            .gap_4()
+            .p_2()
+            .flex_1()
+            .overflow_y_scroll()
+            .children(albums.iter().enumerate().map(|(idx, album)| {
+            let is_selected = selected_album_index == idx;
+            let theme = theme.clone();
+            let has_thumbnail = album.album_art_thumbnail.is_some();
+
+            div()
+                .id(SharedString::from(format!("album-card-{}", idx)))
+                .w(px(card_width))
+                .flex()
+                .flex_col()
+                .items_center()
+                .p_2()
+                .rounded_lg()
+                .when(is_selected, |d| d.bg(theme.accent))
+                .when(!is_selected, |d| d.bg(theme.surface))
+                .hover(|style| style.bg(theme.surface_hover))
+                .cursor_pointer()
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.selected_album_index = idx;
+                        });
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Right,
+                    cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.selected_album_index = idx;
+                            state.app.context_menu = Some(crate::app::ContextMenuState {
+                                menu_type: crate::app::ContextMenuType::Album,
+                                position_x: event.position.x.into(),
+                                position_y: event.position.y.into(),
+                                item_index: idx,
+                            });
+                        });
+                        cx.notify();
+                    }),
+                )
+                // Album art thumbnail or placeholder
+                .child(
+                    div()
+                        .w(px(thumbnail_size))
+                        .h(px(thumbnail_size))
+                        .rounded_md()
+                        .overflow_hidden()
+                        .bg(theme.background_secondary)
+                        .border_1()
+                        .border_color(theme.border)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .when(has_thumbnail, |d| {
+                            // Use album art path if available
+                            if let Some(ref path) = album.album_art_path {
+                                d.child(
+                                    img(path.clone())
+                                        .w(px(thumbnail_size))
+                                        .h(px(thumbnail_size))
+                                        .object_fit(gpui::ObjectFit::Cover)
+                                )
+                            } else {
+                                // Fallback to placeholder even if has_thumbnail is true
+                                d.child(
+                                    div()
+                                        .text_3xl()
+                                        .text_color(theme.text_muted)
+                                        .child("♪")
+                                )
+                            }
+                        })
+                        .when(!has_thumbnail, |d| {
+                            d.child(
+                                div()
+                                    .text_3xl()
+                                    .text_color(theme.text_muted)
+                                    .child("♪")
+                            )
+                        })
+                )
+                // Album title
+                .child(
+                    div()
+                        .w_full()
+                        .mt_2()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .child(album.title.clone())
+                )
+                // Artist name
+                .child(
+                    div()
+                        .w_full()
+                        .text_xs()
+                        .text_color(theme.text_secondary)
+                        .overflow_hidden()
+                        .text_ellipsis()
+                        .whitespace_nowrap()
+                        .child(album.artist.clone())
+                )
+                // Track count
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child(format!("{} tracks", album.tracks.len()))
+                )
+        }));
+
+        grid
+    }
+
+    /// Render a sort button with active state styling
+    fn render_sort_button(
+        &self,
+        label: &'static str,
+        sort_order: crate::app::LibrarySortOrder,
+        current_sort: crate::app::LibrarySortOrder,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let is_active = current_sort == sort_order;
+
+        div()
+            .id(SharedString::from(format!("sort-btn-{}", label)))
+            .px_2()
+            .py(px(2.0))
+            .rounded(px(4.0))
+            .text_xs()
+            .cursor_pointer()
+            .when(is_active, |d| d.bg(theme.accent).text_color(theme.text_primary))
+            .when(!is_active, |d| {
+                d.bg(theme.surface)
+                    .text_color(theme.text_secondary)
+                    .hover(|style| style.bg(theme.surface_hover))
+            })
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.set_library_sort_order(sort_order);
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(label)
+    }
+
+    /// Render a filter button with active state styling
+    fn render_filter_button(
+        &self,
+        label: &'static str,
+        filter: crate::app::ChannelFilter,
+        current_filter: crate::app::ChannelFilter,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let is_active = current_filter == filter;
+
+        div()
+            .id(SharedString::from(format!("filter-btn-{}", label)))
+            .px_2()
+            .py(px(2.0))
+            .rounded(px(4.0))
+            .text_xs()
+            .cursor_pointer()
+            .when(is_active, |d| d.bg(theme.accent).text_color(theme.text_primary))
+            .when(!is_active, |d| {
+                d.bg(theme.surface)
+                    .text_color(theme.text_secondary)
+                    .hover(|style| style.bg(theme.surface_hover))
+            })
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.set_channel_filter(filter);
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(label)
     }
 }

@@ -29,6 +29,27 @@ Actions:
 +-------------------------------------------------------------------------------+
 
 
++-------------------------------------------------------------------------------+
+| Sort: [artist] [album] [title] [popularity]  Filter: [2.0] [5.0] [5.1] [7.1]  |
+| Search: [...]                                                                 |
++-------------------------------------------------------------------------------+
+| [      ] [      ]  [      ]  [      ]  [      ]
+| [ pict ] [ pict ]  [ pict ]  [ pict ]  [ pict ]
+| [      ] [      ]  [      ]  [      ]  [      ]
+| Title    Title     Title     Title     Title
+| Album
+| Flac - ReplayGain
+|
+| [      ] [      ]  [      ]  [      ]  [      ]
+| [ pict ] [ pict ]  [ pict ]  [ pict ]  [ pict ]
+| [      ] [      ]  [      ]  [      ]  [      ]
+| Title    Title     Title     Title     Title
+| Album
+| Flac - ReplayGain
+|
++-------------------------------------------------------------------------------+
+
+
 ## The Queue view
 
 +---------------------------------+-----------------------------+---------------+
@@ -47,11 +68,21 @@ Art and song information are also in the TUI app.
 ## The menubar
 
 - Config (command-, on macos)
+- About (generate a pop with some info: open source code, link to repo on GH)
+- Help (popup with all the key shortcuts)
 - Quit
 
 ## The configuration window
 
-The configuration as a set of tabs.
+The configuration has a set of tabs.
+
++-------------------------------------------------------------------------------+
+|                     Devices | Plugins | RoomEQ | Others                       |
++-------------------------------------------------------------------------------+
+|                                                                               |
+|                              content                                          |
+|                                                                               |
++-------------------------------------------------------------------------------+
 
 ### Device configuration
 
@@ -111,4 +142,3 @@ move the o and change freq/gain. you can change the Q by shift dragin it.
 |
 |
 +------------------------------------------------------------------------------+
-

@@ -18,6 +18,8 @@ sotf-audio-player = { path = "../sotf-audio-player" }
 sotf-audio-plugins = { path = "../sotf-audio-plugins" }
 sotf-audio-engine = { path = "../sotf-audio-engine" }
 autoeq-iir = { path = "../math-iir" }
+autoeq = { path = "../autoeq" }
+autoeq-de = { path = "../math-de" }
 
 # Synchronous mutex (faster than std::sync::Mutex)
 parking_lot = "0.12"
@@ -30,6 +32,7 @@ serde_json = { workspace = true }
 walkdir = "2"
 id3 = "1.16"
 metaflac = "0.2"
+rfd = "0.15"
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-metadata = { workspace = true }

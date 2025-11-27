@@ -39,6 +39,7 @@ fn screen_to_id(screen: Screen) -> ScreenId {
         Screen::Plugins => ScreenId::Plugins,
         Screen::Devices => ScreenId::Devices,
         Screen::Spectrum => ScreenId::Spectrum,
+        Screen::Settings => ScreenId::Settings,
     }
 }
 
@@ -50,6 +51,7 @@ fn id_to_screen(id: ScreenId) -> Screen {
         ScreenId::Plugins => Screen::Plugins,
         ScreenId::Devices => Screen::Devices,
         ScreenId::Spectrum => Screen::Spectrum,
+        ScreenId::Settings => Screen::Settings,
     }
 }
 
@@ -126,6 +128,7 @@ fn view_mode_to_id(mode: LibraryViewMode) -> ViewModeId {
     match mode {
         LibraryViewMode::Flat => ViewModeId::Flat,
         LibraryViewMode::TreeView => ViewModeId::TreeView,
+        LibraryViewMode::Grid => ViewModeId::Grid,
     }
 }
 
@@ -278,13 +281,15 @@ impl AppAdapter for GpuiAdapter {
             Operation::ToggleViewMode => {
                 self.app.library_view_mode = match self.app.library_view_mode {
                     LibraryViewMode::Flat => LibraryViewMode::TreeView,
-                    LibraryViewMode::TreeView => LibraryViewMode::Flat,
+                    LibraryViewMode::TreeView => LibraryViewMode::Grid,
+                    LibraryViewMode::Grid => LibraryViewMode::Flat,
                 };
             }
             Operation::SetViewMode(mode) => {
                 self.app.library_view_mode = match mode {
                     ViewModeId::Flat => LibraryViewMode::Flat,
                     ViewModeId::TreeView => LibraryViewMode::TreeView,
+                    ViewModeId::Grid => LibraryViewMode::Grid,
                 };
             }
 
@@ -498,7 +503,7 @@ impl AppAdapter for GpuiAdapter {
             self.app.library.albums.push(test_album.to_album());
         }
         self.app.selected_album_index = 0;
-        self.app.rebuild_artist_tree();
+        self.app.rebuild_letter_tree();
     }
 
     fn reset(&mut self) {

@@ -7658,6 +7658,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5da3b0203fd7ee5720aa0b5e790b591aa5d3f41c3ed2c34a3a393382198af2f7"
 
 [[package]]
+name = "pollster"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
 name = "portable-atomic"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7684,7 +7690,7 @@ dependencies = [
  "log",
  "parking_lot",
  "pin-project",
- "pollster",
+ "pollster 0.2.5",
  "static_assertions",
  "thiserror 1.0.69",
 ]
@@ -8544,7 +8550,9 @@ dependencies = [
  "objc2-app-kit",
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
+ "pollster 0.4.0",
  "raw-window-handle",
+ "urlencoding",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -9646,6 +9654,7 @@ dependencies = [
  "chrono",
  "directories",
  "ebur128",
+ "image",
  "log",
  "parking_lot",
  "rusqlite",
@@ -9672,6 +9681,8 @@ dependencies = [
 name = "sotf-audio-player-gpui"
 version = "0.5.3"
 dependencies = [
+ "autoeq",
+ "autoeq-de",
  "autoeq-iir",
  "clap",
  "env_logger 0.11.8",
@@ -9680,6 +9691,7 @@ dependencies = [
  "log",
  "metaflac",
  "parking_lot",
+ "rfd",
  "serde",
  "serde_json",
  "smol",
@@ -9828,6 +9840,7 @@ dependencies = [
  "special",
  "sysinfo 0.37.2",
  "thiserror 2.0.17",
+ "toml 0.8.23",
  "which 8.0.0",
 ]
 
