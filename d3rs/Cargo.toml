@@ -10,6 +10,7 @@ categories = ["visualization", "gui"]
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed.git" }
+regex = "1"
 
 [dev-dependencies]
 approx = "0.5"

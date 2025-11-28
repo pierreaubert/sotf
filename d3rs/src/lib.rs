@@ -9,14 +9,19 @@
 //! - **Scales**: Linear and logarithmic scales with tick generation
 //! - **Axes**: Four orientations (Top, Right, Bottom, Left) with customizable formatting
 //! - **Colors**: RGB/HSL with interpolation and categorical schemes
-//! - **Shapes**: Bars, lines, areas, scatter plots
+//! - **Shapes**: Bars, lines, areas, scatter plots, arcs, pies, symbols, stacks
+//! - **Curves**: Linear, step, basis, cardinal, catmull-rom, monotone, natural
 //! - **Grids**: Dots and lines at tick intersections
 //! - **Legends**: Configurable position and formatting
+//! - **Arrays**: Statistics, search, binning, transformations (d3-array)
+//! - **Interpolation**: Numeric, color (HSL/LAB/HCL/Cubehelix), transform, string, zoom (d3-interpolate)
+//! - **Contours**: Marching squares, density estimation (d3-contour)
+//! - **Fetch**: CSV/TSV/JSON parsing utilities (d3-fetch)
 //!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use d3rs::scale::LinearScale;
+//! use d3rs::scale::{LinearScale, Scale};
 //!
 //! let scale = LinearScale::new()
 //!     .domain(0.0, 100.0)
@@ -25,12 +30,16 @@
 //! let output = scale.scale(50.0); // 250.0
 //! ```
 
+pub mod array;
+pub mod interpolate;
 pub mod scale;
 pub mod color;
 pub mod axis;
 pub mod shape;
 pub mod grid;
 pub mod legend;
+pub mod contour;
+pub mod fetch;
 
 /// Prelude module for convenient imports
 pub mod prelude {

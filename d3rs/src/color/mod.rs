@@ -5,5 +5,5 @@ mod interpolate;
 mod scheme;
 
 pub use rgb::D3Color;
-pub use interpolate::interpolate_colors;
+pub use interpolate::{interpolate_colors, sequential_color};
 pub use scheme::ColorScheme;
