@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Room Acoustics BEM Simulator (WASM)</title>
+    <title>Room Acoustics Simulator</title>
     <script src="https://cdn.plot.ly/plotly-3.3.0.min.js"></script>
     <style>
         * {
@@ -338,22 +338,16 @@
         }
 
         .plot-container {
-            background: white;
-            padding: 10px;
             min-height: 400px;
             height: max(400px, 50vh);
         }
 
         .plot-container-large {
-            background: white;
-            padding: 10px;
-            min-height: 500px;
-            height: max(500px, 60vh);
+            min-height: 300px;
+            aspect-ratio: 2 / 1;
         }
 
         .plot-container-3d {
-            background: white;
-            padding: 10px;
             min-height: 500px;
             height: max(500px, 60vh);
         }
@@ -403,8 +397,6 @@
         }
 
         .slice-plot-container {
-            background: white;
-            padding: 10px;
             width: 100%;
         }
 
@@ -564,8 +556,29 @@
                 grid-template-columns: 1fr;
             }
 
-            .slices-grid {
+            .sidebar-wrapper {
                 flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+            }
+
+            .sidebar.collapsed {
+                width: 100%;
+                height: 0;
+            }
+
+            .sidebar-toggle {
+                width: 100%;
+                height: 30px;
+                border-left: none;
+                border-top: 1px solid rgba(255, 255, 255, 0.2);
+            }
+
+            .sidebar-toggle span {
+                writing-mode: horizontal-tb;
+                transform: none;
             }
 
             .slices-grid > div {
@@ -579,8 +592,8 @@
         <div class="header">
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h1>Room Acoustics BEM Simulator</h1>
-                    <p class="subtitle">WebAssembly-powered acoustic simulation with Plotly visualization</p>
+                    <h1>Room Acoustics Simulator</h1>
+                    <p class="subtitle">Proudly open source</p>
                 </div>
                 <div id="wasmStatus" class="wasm-loading">
                     <span class="status-dot"></span>
@@ -795,7 +808,7 @@
                 </div>
             </div>
             <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
-                <span>CONFIGURATION</span>
+                <span>HIDE CONFIG</span>
             </button>
             </div>
 
@@ -807,6 +820,12 @@
                     <div class="info-grid" id="infoGrid">
                         <!-- Will be populated after simulation -->
                     </div>
+                </div>
+
+                <!-- 3D Room Layout (at top) -->
+                <div class="plot-panel" id="room3DPanel" style="display: none;">
+                    <h2>3D Room Layout</h2>
+                    <div class="plot-container-3d" id="plot3DRoom"></div>
                 </div>
 
                 <!-- Frequency Response Plot -->
@@ -832,9 +851,9 @@
                             <h3>Vertical Slice (XZ at listening depth)</h3>
                             <div class="slice-plot-container" id="plotVerticalSlice"></div>
                         </div>
-                        <div id="room3DPanel" style="display: none;">
-                            <h3>3D Room Layout</h3>
-                            <div class="slice-plot-container" id="plot3DRoom" style="min-height: 500px;"></div>
+                        <div>
+                            <h3>3D Combined View (Orthogonal Slices)</h3>
+                            <div class="slice-plot-container" id="plot3DSlices" style="min-height: 600px;"></div>
                         </div>
                     </div>
                 </div>
@@ -852,6 +871,18 @@
         let RoomSimulatorWasm = null;
         let currentSimulator = null;
         let currentResults = null;
+
+        // Toggle sidebar visibility
+        window.toggleSidebar = function() {
+            const sidebar = document.getElementById('sidebar');
+            const toggle = document.getElementById('sidebarToggle');
+            sidebar.classList.toggle('collapsed');
+            if (sidebar.classList.contains('collapsed')) {
+                toggle.querySelector('span').textContent = 'SHOW CONFIG';
+            } else {
+                toggle.querySelector('span').textContent = 'HIDE CONFIG';
+            }
+        };
 
         // Toggle collapsible panels
         window.togglePanel = function(header) {
@@ -1173,16 +1204,18 @@
         function plotFrequencyResponse(data) {
             const traces = [];
 
-            // Per-source traces
-            const sourceColors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7', '#fd79a8'];
+            // Per-source traces - use distinct colors
+            const sourceColors = ['#ff0000', '#00aa00', '#0066ff', '#ff9900', '#9900ff', '#00cccc'];
+            console.log('Source responses:', data.source_responses);
             if (data.source_responses) {
                 data.source_responses.forEach((srcResp, idx) => {
+                    console.log(`Source ${idx}: ${srcResp.source_name}, SPL range: ${Math.min(...srcResp.spl).toFixed(1)} - ${Math.max(...srcResp.spl).toFixed(1)} dB`);
                     traces.push({
                         x: data.frequencies,
                         y: srcResp.spl,
                         type: 'scatter',
                         mode: 'lines',
-                        line: { color: sourceColors[idx % sourceColors.length], width: 2, dash: 'dot' },
+                        line: { color: sourceColors[idx % sourceColors.length], width: 2 },
                         name: srcResp.source_name,
                         hovertemplate: 'Frequency: %{x:.1f} Hz<br>SPL: %{y:.1f} dB<extra></extra>'
                     });
@@ -1467,7 +1500,99 @@
                 margin: { t: 30, r: 80, l: 60, b: 50 },
                 autosize: true
             }, { responsive: true });
+
+            // 3D Combined view with both slices at 90 degrees
+            plot3DCombinedSlices(hSlice, vSlice, hSPL2D, vSPL2D, data, splRange);
         };
+
+        function plot3DCombinedSlices(hSlice, vSlice, hSPL2D, vSPL2D, data, splRange) {
+            const hShape = hSlice.shape;
+            const vShape = vSlice.shape;
+
+            const traces = [];
+
+            // Horizontal slice as surface at LP height
+            const hSurface = {
+                x: hSlice.x,
+                y: hSlice.y,
+                z: Array(hShape[0]).fill(null).map(() => Array(hShape[1]).fill(data.listening_position[2])),
+                surfacecolor: hSPL2D,
+                type: 'surface',
+                colorscale: 'Jet',
+                cmin: splRange.min,
+                cmax: splRange.max,
+                showscale: true,
+                colorbar: { title: 'SPL (dB)', x: 1.1 },
+                name: 'Horizontal Slice',
+                hovertemplate: 'x: %{x:.2f} m<br>y: %{y:.2f} m<br>SPL: %{surfacecolor:.1f} dB<extra></extra>'
+            };
+            traces.push(hSurface);
+
+            // Vertical slice as surface at LP depth
+            const vZ = vSlice.z || vSlice.y;
+            const vSurface = {
+                x: vSlice.x,
+                y: Array(vShape[0]).fill(null).map(() => Array(vShape[1]).fill(data.listening_position[1])),
+                z: vZ.map(z_val => Array(vShape[1]).fill(z_val)),
+                surfacecolor: vSPL2D,
+                type: 'surface',
+                colorscale: 'Jet',
+                cmin: splRange.min,
+                cmax: splRange.max,
+                showscale: false,
+                name: 'Vertical Slice',
+                hovertemplate: 'x: %{x:.2f} m<br>z: %{z:.2f} m<br>SPL: %{surfacecolor:.1f} dB<extra></extra>'
+            };
+            traces.push(vSurface);
+
+            // Add sources as 3D scatter
+            traces.push({
+                x: data.sources.map(s => s.position[0]),
+                y: data.sources.map(s => s.position[1]),
+                z: data.sources.map(s => s.position[2]),
+                mode: 'markers+text',
+                type: 'scatter3d',
+                marker: { size: 8, color: 'white', symbol: 'diamond', line: { color: 'black', width: 2 } },
+                text: data.sources.map(s => s.name.split(' ').map(w => w[0]).join('')),
+                textposition: 'top center',
+                textfont: { color: 'white', size: 10 },
+                name: 'Sources',
+                hovertemplate: '<b>%{text}</b><br>x: %{x:.2f} m<br>y: %{y:.2f} m<br>z: %{z:.2f} m<extra></extra>'
+            });
+
+            // Add listening position
+            traces.push({
+                x: [data.listening_position[0]],
+                y: [data.listening_position[1]],
+                z: [data.listening_position[2]],
+                mode: 'markers+text',
+                type: 'scatter3d',
+                marker: { size: 6, color: 'lime', symbol: 'circle', line: { color: 'black', width: 2 } },
+                text: ['LP'],
+                textposition: 'top center',
+                textfont: { color: 'white', size: 10 },
+                name: 'Listening Position',
+                hovertemplate: '<b>Listening Position</b><br>x: %{x:.2f} m<br>y: %{y:.2f} m<br>z: %{z:.2f} m<extra></extra>'
+            });
+
+            const roomWidth = data.room.width || 1;
+            const roomDepth = data.room.depth || 1;
+            const roomHeight = data.room.height || 1;
+
+            Plotly.newPlot('plot3DSlices', traces, {
+                scene: {
+                    xaxis: { title: 'x (m)', range: [0, roomWidth] },
+                    yaxis: { title: 'y (m)', range: [0, roomDepth] },
+                    zaxis: { title: 'z (m)', range: [0, roomHeight] },
+                    camera: { eye: { x: 1.5, y: -1.5, z: 1.2 }, center: { x: 0, y: 0, z: 0 } },
+                    aspectmode: 'manual',
+                    aspectratio: { x: 1, y: roomDepth / roomWidth, z: roomHeight / roomWidth }
+                },
+                autosize: true,
+                showlegend: true,
+                margin: { l: 0, r: 0, t: 30, b: 0 }
+            }, { responsive: true });
+        }
 
         // Show status message
         function showStatus(message, type) {
