@@ -9,6 +9,7 @@
 //! - [`fmm_interface`] - Interface to use FMM operators with iterative solvers
 //! - [`preconditioner`] - Basic preconditioners
 //! - [`ilu_preconditioner`] - ILU preconditioner (recommended for BEM)
+//! - [`batched_blas`] - Batched BLAS operations for optimized matrix computations
 //!
 //! ## Solver Selection Guide
 //!
@@ -45,6 +46,7 @@
 //! );
 //! ```
 
+pub mod batched_blas;
 pub mod bicgstab;
 pub mod cgs;
 pub mod direct;
@@ -71,6 +73,9 @@ pub use fmm_interface::{gmres_solve_with_ilu, gmres_solve_with_ilu_operator, sol
 // Hierarchical FMM preconditioner solvers
 pub use fmm_interface::{gmres_solve_fmm_hierarchical, gmres_solve_with_hierarchical_precond};
 
+// Batched BLAS FMM solvers (optimized for large problems)
+pub use fmm_interface::{gmres_solve_fmm_batched, gmres_solve_fmm_batched_with_ilu};
+
 // Frequency-adaptive mesh utilities
 pub use fmm_interface::{
     recommended_mesh_resolution, mesh_resolution_for_frequency_range,
@@ -89,3 +94,10 @@ pub use ilu_preconditioner::{IluMethod, IluPreconditioner, IluScanningDegree, Il
 
 // GMRES configuration and solution types
 pub use gmres::{gmres_solve, gmres_solve_preconditioned, GmresConfig, GmresSolution};
+
+// Batched BLAS operations for optimized FMM matvec
+pub use batched_blas::{
+    SlfmmMatvecWorkspace, slfmm_matvec_batched, create_batched_matvec,
+    batched_t_matrix_apply, batched_s_matrix_apply, batched_d_matrix_apply,
+    batched_near_field_apply,
+};

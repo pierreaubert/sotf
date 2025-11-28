@@ -1,31 +1,52 @@
-# src-bem: Boundary Element Method Library
+# math-bem: Boundary Element Method Library
 
-A high-performance, memory-efficient Boundary Element Method (BEM) library in Rust for solving acoustic scattering problems.
+A high-performance, memory-efficient Boundary Element Method (BEM) library in Rust for solving acoustic scattering and room acoustics problems.
 
 ## Overview
 
-This crate provides Rust bindings to the NumCalc BEM solver and, in the future, a pure Rust BEM implementation. The library is designed to be:
+This crate provides a pure Rust BEM implementation with Fast Multipole Method (FMM) acceleration and multiple solver options. The library is designed to be:
 
 - **Reusable**: General-purpose BEM solver for acoustic problems
 - **Memory-efficient**: Careful memory management for large-scale problems
-- **Parallel**: Uses Rayon for data parallelism without async overhead
-- **Well-tested**: Comprehensive validation against analytical solutions in 1D, 2D, and 3D
+- **Parallel**: Uses Rayon for data parallelism
+- **Well-tested**: Comprehensive validation against analytical solutions
 - **Scientifically rigorous**: All algorithms validated against published research
 
 ## Features
 
-### Current (v0.1.0)
-- ✅ FFI wrapper around NumCalc C++ BEM solver
-- ✅ Memory-efficient parallel execution with Rayon
-- ✅ Comprehensive test suite with analytical solutions
-- ✅ JSON output for validation and visualization
-- ✅ Interactive plotting (plotly.js for 1D/2D, three.js for 3D)
+### Current (v0.1.2)
 
-### Planned (v0.2.0+)
-- 🔄 Pure Rust BEM implementation (basic collocation method)
-- 🔄 Fast Multipole Method (FMM) acceleration
-- 🔄 GPU acceleration via wgpu
-- 🔄 Adaptive mesh refinement
+#### Core BEM
+- Pure Rust BEM implementation with Burton-Miller formulation
+- Collocation method with adaptive Gaussian quadrature
+- Support for triangular and quadrilateral elements
+- Near-singular and singular integration handling
+
+#### Solvers
+- **Direct solver**: LU factorization for small problems (N < 1000)
+- **GMRES + ILU**: Iterative solver with ILU preconditioning
+- **FMM + GMRES**: Fast Multipole Method with O(N log N) complexity
+- **FMM + GMRES + ILU**: FMM with ILU preconditioner (recommended for medium problems)
+- **FMM + Batched BLAS**: Optimized FMM using batched matrix operations (recommended for large problems)
+- **Hierarchical FMM Preconditioner**: Near-field ILU for FMM systems
+
+#### Room Acoustics Application
+- Room geometry parsing (rectangular and L-shaped rooms)
+- Multi-source acoustic simulations
+- Frequency sweep with parallel processing
+- SPL computation at listening positions
+- Spatial field visualization (pressure slices)
+
+#### Optimizations
+- Batched BLAS operations for efficient matvec
+- Pre-allocated workspaces to minimize allocations
+- Rayon-based parallel assembly and solving
+- Frequency-adaptive mesh refinement
+
+### Planned
+- GPU acceleration via wgpu
+- Multi-level FMM (ML-FMM)
+- Coupled BEM-FEM
 
 ## Mathematical Background
 
@@ -34,444 +55,288 @@ This crate provides Rust bindings to the NumCalc BEM solver and, in the future, 
 The Boundary Element Method solves boundary value problems by reformulating them as boundary integral equations. For acoustic scattering problems, we solve the Helmholtz equation:
 
 ```
-∇²p + k²p = 0
+nabla^2 p + k^2 p = 0
 ```
 
 where:
 - `p` is the acoustic pressure
-- `k = 2πf/c` is the wave number
+- `k = 2*pi*f/c` is the wave number
 - `f` is frequency, `c` is speed of sound
 
 ### Burton-Miller Formulation
 
-NumCalc uses the **Burton-Miller formulation** to avoid spurious resonances at interior eigenfrequencies:
+We use the **Burton-Miller formulation** to avoid spurious resonances at interior eigenfrequencies:
 
 ```
-∫∂Ω [G(x,y) ∂p/∂n(y) - ∂G(x,y)/∂n(y) p(y)] dS(y) +
-iα ∫∂Ω [∂G(x,y)/∂n(x) ∂p/∂n(y) - ∂²G(x,y)/(∂n(x)∂n(y)) p(y)] dS(y) = p_inc(x)
+integral_dOmega [G(x,y) dp/dn(y) - dG(x,y)/dn(y) p(y)] dS(y) +
+i*alpha integral_dOmega [dG(x,y)/dn(x) dp/dn(y) - d^2G(x,y)/(dn(x)dn(y)) p(y)] dS(y) = p_inc(x)
 ```
 
 where:
-- `G(x,y) = exp(ik|x-y|) / (4π|x-y|)` is the Helmholtz Green's function
-- `α` is a coupling parameter (typically `1/k`)
-- `∂Ω` is the boundary surface
+- `G(x,y) = exp(ik|x-y|) / (4*pi*|x-y|)` is the Helmholtz Green's function
+- `alpha` is a coupling parameter (typically `1/k`)
+- `dOmega` is the boundary surface
 - `p_inc` is the incident field
 
 ### Fast Multipole Method
 
-For large problems (N > 10,000 elements), direct BEM has O(N²) complexity. The **Multi-Level Fast Multipole Method (ML-FMM)** reduces this to O(N log N) by:
+For large problems (N > 1000 elements), the **Single-Level Fast Multipole Method (SLFMM)** reduces complexity from O(N^2) to approximately O(N log N) by:
 
 1. **Hierarchical decomposition**: Octree spatial subdivision
 2. **Far-field approximation**: Multipole expansions for distant interactions
 3. **Translation operators**: Efficient propagation of expansions
 
-## References
+The FMM implementation includes:
+- Adaptive octree construction
+- T-matrices (element DOFs to multipole expansion)
+- D-matrices (translation between clusters)
+- S-matrices (local expansion to field DOFs)
+- Batched BLAS operations for efficient matvec
 
-### Primary Research
+## Solver Selection Guide
 
-1. **Brinkmann, F., et al. (2024)**
-   "NumCalc: An open-source BEM code for solving acoustic scattering problems"
-   *Engineering Analysis with Boundary Elements*, vol. 161, pp. 157-178
-   [DOI: 10.1016/j.enganabound.2024.01.001](https://doi.org/10.1016/j.enganabound.2024.01.001)
+| System Size | Solver Method | Configuration |
+|-------------|---------------|---------------|
+| N < 1000 | Direct LU | `"direct"` |
+| N < 5000 | GMRES + ILU | `"gmres+ilu"` |
+| N < 20000 | FMM + GMRES + ILU | `"fmm+gmres+ilu"` |
+| N > 20000 | FMM + Batched BLAS | `"fmm+batched"` or `"fmm+gmres+batched"` |
 
-2. **Ziegelwanger, H., Kreuzer, W., & Majdak, P. (2015)**
-   "Mesh2HRTF: An open-source software package for the numerical calculation of head-related transfer functions"
-   *22nd International Congress on Sound and Vibration (ICSV22)*
-   [ResearchGate](https://www.researchgate.net/publication/280007918)
+**Recommended for room acoustics**: `"fmm+gmres+ilu"` with hierarchical preconditioner for medium rooms, `"fmm+batched"` for large simulations.
 
-3. **Burton, A.J., & Miller, G.F. (1971)**
-   "The application of integral equation methods to the numerical solution of some exterior boundary-value problems"
-   *Proceedings of the Royal Society of London A*, vol. 323, pp. 201-210
-   [DOI: 10.1098/rspa.1971.0097](https://doi.org/10.1098/rspa.1971.0097)
+## Usage
 
-### Fast Multipole Method
+### Room Simulator Binary
 
-4. **Gumerov, N.A., & Duraiswami, R. (2009)**
-   "Fast multipole methods for the Helmholtz equation in three dimensions"
-   *Elsevier Series in Electromagnetism*
-   ISBN: 978-0080531595
+```bash
+# Build
+cargo build --release --bin room-simulator-bem
 
-5. **Cheng, H., et al. (2006)**
-   "A wideband fast multipole method for the Helmholtz equation in three dimensions"
-   *Journal of Computational Physics*, vol. 216, pp. 300-325
-   [DOI: 10.1016/j.jcp.2005.12.001](https://doi.org/10.1016/j.jcp.2005.12.001)
+# Run simulation
+./target/release/room-simulator-bem --config configs/test_room.json --output output.json
 
-### Numerical Integration
-
-6. **Sauter, S.A., & Schwab, C. (2011)**
-   "Boundary Element Methods"
-   *Springer Series in Computational Mathematics*, vol. 39
-   ISBN: 978-3-540-68092-5
-
-7. **Lachat, J.C., & Watson, J.O. (1976)**
-   "Effective numerical treatment of boundary integral equations: A formulation for three-dimensional elastostatics"
-   *International Journal for Numerical Methods in Engineering*, vol. 10, pp. 991-1005
-
-### Acoustic Scattering
-
-8. **Marburg, S., & Nolte, B. (2008)**
-   "Computational Acoustics of Noise Propagation in Fluids - Finite and Boundary Element Methods"
-   *Springer*
-   ISBN: 978-3-540-77447-1
-
-## Software References
-
-### Mesh2HRTF Project
-
-- **GitHub Repository**: [Any2HRTF/Mesh2HRTF](https://github.com/Any2HRTF/Mesh2HRTF)
-- **Official Website**: [mesh2hrtf.org](https://www.mesh2hrtf.org)
-- **Documentation**: [ReadTheDocs](https://mesh2hrtf.readthedocs.io)
-- **License**: EUPL-1.2 (European Union Public License)
-
-### Related Projects
-
-- **Bempp**: Python/Rust BEM library - [bempp.com](https://bempp.com) | [GitHub](https://github.com/bempp/bempp-rs)
-- **BEM++**: C++ BEM library - [bempp.com](https://bempp.com)
-- **OpenBEM**: Open-source BEM framework
-
-## Architecture
-
-```
-src-bem/
-├── src/
-│   ├── lib.rs              # Public API
-│   ├── ffi/                # FFI bindings to NumCalc
-│   │   ├── mod.rs          # FFI module
-│   │   ├── wrapper.rs      # High-level wrapper
-│   │   ├── runner.rs       # Subprocess execution
-│   │   └── parallel.rs     # Rayon-based parallelism
-│   ├── core/               # Pure Rust BEM (future)
-│   │   ├── mod.rs
-│   │   ├── mesh.rs         # Mesh data structures
-│   │   ├── quadrature.rs   # Numerical integration
-│   │   ├── greens.rs       # Green's functions
-│   │   └── solver.rs       # Linear system solver
-│   ├── analytical/         # Analytical solutions for testing
-│   │   ├── mod.rs
-│   │   ├── solutions_1d.rs # 1D wave equation
-│   │   ├── solutions_2d.rs # 2D cylinder scattering
-│   │   └── solutions_3d.rs # 3D sphere scattering (Mie theory)
-│   └── testing/            # Test infrastructure
-│       ├── mod.rs
-│       ├── validation.rs   # Comparison with analytical
-│       ├── json_output.rs  # JSON serialization
-│       └── plotting.rs     # Plot generation helpers
-├── tests/
-│   ├── test_1d_wave.rs     # 1D analytical validation
-│   ├── test_2d_cylinder.rs # 2D analytical validation
-│   └── test_3d_sphere.rs   # 3D analytical validation (Mie)
-├── benches/
-│   └── bem_benchmarks.rs   # Performance benchmarks
-├── examples/
-│   ├── simple_sphere.rs    # Basic sphere scattering
-│   └── parallel_frequencies.rs  # Parallel frequency sweep
-├── plotting/               # Web-based visualization
-│   ├── index.html          # Main plotting interface
-│   ├── plot_1d.html        # 1D plots (plotly.js)
-│   ├── plot_2d.html        # 2D plots (plotly.js)
-│   └── plot_3d.html        # 3D plots (three.js + plotly.js)
-└── NumCalc/                # C++ source (git submodule)
-    └── src/                # NumCalc C++ code
+# Verbose output
+./target/release/room-simulator-bem --config configs/test_room.json --output output.json --verbose
 ```
 
-## Testing Strategy
-
-### Analytical Validation
-
-All BEM implementations are validated against known analytical solutions:
-
-#### 1D: Plane Wave Propagation
-
-**Problem**: Plane wave in 1D: `p(x) = exp(ikx)`
-
-**Analytical solution**:
-```rust
-p(x, k) = exp(ikx)
-```
-
-**Test cases**:
-- Various wave numbers: `k = [1, 5, 10, 20]`
-- Domain: `x ∈ [0, 10]`
-- Boundary conditions: Dirichlet at x=0, Sommerfeld at x=10
-
-**Metrics**:
-- L2 error: `||p_bem - p_analytical||₂ / ||p_analytical||₂`
-- L∞ error: `max|p_bem - p_analytical|`
-
-#### 2D: Cylinder Scattering
-
-**Problem**: Plane wave scattering by a rigid circular cylinder
-
-**Analytical solution**: Sum of Bessel functions
-```rust
-p(r, θ, k) = exp(ikr cos θ) + ∑ aₙ Hₙ⁽¹⁾(kr) exp(inθ)
-```
-
-where `Hₙ⁽¹⁾` are Hankel functions of the first kind.
-
-**Test cases**:
-- Cylinder radius: `a = 1.0`
-- Frequencies: `ka = [0.5, 1, 2, 5, 10]` (low to high frequency)
-- Incident angles: `[0°, 45°, 90°]`
-
-**Metrics**:
-- Surface pressure error
-- Far-field scattering pattern error
-- Total scattering cross-section
-
-#### 3D: Sphere Scattering (Mie Theory)
-
-**Problem**: Plane wave scattering by a rigid sphere
-
-**Analytical solution**: Mie series
-```rust
-p(r, θ, k) = ∑ₙ (2n+1) iⁿ [jₙ(kr) - aₙhₙ⁽¹⁾(kr)] Pₙ(cos θ)
-```
-
-where:
-- `jₙ` = spherical Bessel functions
-- `hₙ⁽¹⁾` = spherical Hankel functions (first kind)
-- `Pₙ` = Legendre polynomials
-
-**Test cases**:
-- Sphere radius: `a = 1.0`
-- Frequencies: `ka = [0.1, 0.5, 1, 2, 5, 10]` (Rayleigh to geometric)
-- Mesh resolutions: `λ/10`, `λ/6`, `λ/4` elements per wavelength
-
-**Metrics**:
-- Surface pressure distribution
-- Far-field directivity pattern
-- Radar cross-section (RCS)
-- Convergence rate with mesh refinement
-
-### Test Output Format
-
-All tests generate JSON files with this structure:
+### Configuration File
 
 ```json
 {
-  "test_name": "sphere_scattering_ka_1.0",
-  "dimensions": 3,
-  "parameters": {
-    "wave_number": 1.0,
-    "radius": 1.0,
-    "num_elements": 512,
-    "frequency_hz": 54.6
+  "room": {
+    "type": "rectangular",
+    "width": 5.0,
+    "depth": 4.0,
+    "height": 3.0
   },
-  "analytical": {
-    "positions": [[x1, y1, z1], [x2, y2, z2], ...],
-    "pressure_real": [p1_re, p2_re, ...],
-    "pressure_imag": [p1_im, p2_im, ...]
+  "sources": [
+    {
+      "name": "Speaker",
+      "position": { "x": 1.0, "y": 0.5, "z": 1.2 },
+      "amplitude": 1.0,
+      "directivity": { "type": "omnidirectional" }
+    }
+  ],
+  "listening_positions": [
+    { "x": 2.5, "y": 3.0, "z": 1.2 }
+  ],
+  "frequencies": {
+    "min_freq": 100.0,
+    "max_freq": 500.0,
+    "num_points": 20,
+    "spacing": "logarithmic"
   },
-  "bem": {
-    "positions": [[x1, y1, z1], ...],
-    "pressure_real": [p1_re, p2_re, ...],
-    "pressure_imag": [p1_im, p2_im, ...]
-  },
-  "errors": {
-    "l2_relative": 0.0023,
-    "l2_absolute": 0.015,
-    "linf": 0.012,
-    "mean_absolute": 0.0045
-  },
-  "metadata": {
-    "timestamp": "2025-11-22T10:30:00Z",
-    "git_commit": "a205215",
-    "execution_time_ms": 1250,
-    "memory_peak_mb": 45.2
+  "solver": {
+    "method": "fmm+gmres+ilu",
+    "mesh_resolution": 8,
+    "gmres": {
+      "max_iter": 1000,
+      "restart": 50,
+      "tolerance": 1e-6
+    },
+    "ilu": {
+      "method": "tbem",
+      "scanning_degree": "fine",
+      "use_hierarchical": true
+    },
+    "adaptive_meshing": false
   }
 }
 ```
 
-### Visualization
+### Solver Methods
 
-Run tests and visualize:
+- `"direct"`: Direct LU solver
+- `"gmres+ilu"`: GMRES with ILU preconditioner (no FMM)
+- `"fmm+gmres"`: FMM with GMRES (no preconditioning)
+- `"fmm+gmres+ilu"`: FMM with GMRES and ILU preconditioner
+- `"fmm+batched"` or `"fmm+gmres+batched"`: FMM with batched BLAS operations
 
-```bash
-# Run all analytical tests
-cargo test --release -- --nocapture
-
-# Generate JSON output
-cargo test --release test_3d_sphere -- --nocapture > results.json
-
-# Open web interface
-cd plotting
-python -m http.server 8080
-# Navigate to http://localhost:8080
-```
-
-**Plotting features**:
-- **1D plots**: Pressure magnitude/phase vs. position, error vs. position
-- **2D plots**: Pressure field contours, directivity patterns, error heatmaps
-- **3D plots**: Surface pressure on sphere, 3D directivity, mesh visualization
-
-## Usage
-
-### FFI Wrapper (Current)
+### Library API
 
 ```rust
-use bem::{NumCalcRunner, NumCalcConfig};
+use bem::room_acoustics::{RoomSimulation, RoomConfig, solve_bem_fmm_gmres_ilu};
+use bem::core::solver::{GmresConfig, IluMethod, IluScanningDegree};
 
-// Run BEM simulation
-let runner = NumCalcRunner::new("project_dir")?;
-let config = NumCalcConfig {
-    freq_start_idx: Some(0),
-    freq_end_idx: Some(10),
-    max_iterations: Some(1000),
-    ..Default::default()
+// Load configuration
+let config = RoomConfig::load("config.json")?;
+let simulation = RoomSimulation::from_config(&config)?;
+
+// Solve at a specific frequency
+let frequency = 200.0;
+let k = simulation.wavenumber(frequency);
+let mesh = simulation.room.generate_mesh(config.solver.mesh_resolution);
+
+let solution = solve_bem_fmm_gmres_ilu(
+    &mesh,
+    &simulation.sources,
+    k,
+    frequency,
+    &FmmSolverConfig::default(),
+    1000,  // max iterations
+    50,    // restart
+    1e-6,  // tolerance
+    IluMethod::Tbem,
+    IluScanningDegree::Fine,
+)?;
+```
+
+### Batched BLAS Operations
+
+For large-scale problems, use the batched BLAS solver:
+
+```rust
+use bem::core::solver::{
+    gmres_solve_fmm_batched_with_ilu, GmresConfig, IluMethod, IluScanningDegree
+};
+use bem::room_acoustics::build_fmm_system;
+
+// Build FMM system
+let (fmm_system, elements, nodes) = build_fmm_system(
+    &mesh, &sources, k, frequency, &fmm_config
+)?;
+
+// Solve with batched operations
+let gmres_config = GmresConfig {
+    max_iterations: 1000,
+    restart: 100,
+    tolerance: 1e-6,
+    print_interval: 1,
 };
 
-let output = runner.run(&config)?;
-println!("Simulation complete: {:?}", output);
+let result = gmres_solve_fmm_batched_with_ilu(
+    &fmm_system,
+    &fmm_system.rhs,
+    IluMethod::Tbem,
+    IluScanningDegree::Fine,
+    &gmres_config,
+);
+
+println!("Converged: {}, Iterations: {}", result.converged, result.iterations);
 ```
 
-### Parallel Frequency Sweep
+## Architecture
 
-```rust
-use bem::ParallelBemRunner;
-use rayon::prelude::*;
-
-let runner = ParallelBemRunner::new("project_dir")?;
-
-// Parallel execution with Rayon (NOT tokio)
-let frequencies = vec![100.0, 200.0, 500.0, 1000.0];
-
-let results: Vec<_> = frequencies
-    .par_iter()
-    .map(|&freq| runner.solve_at_frequency(freq))
-    .collect();
+```
+math-bem/
+├── src/
+│   ├── lib.rs                  # Public API
+│   ├── room_acoustics/         # Room acoustics application
+│   │   ├── mod.rs              # Room geometry, mesh generation
+│   │   ├── config.rs           # JSON configuration parsing
+│   │   └── solver.rs           # High-level solve functions
+│   ├── core/
+│   │   ├── assembly/
+│   │   │   ├── tbem.rs         # Traditional BEM assembly
+│   │   │   └── slfmm.rs        # Single-Level FMM assembly
+│   │   ├── solver/
+│   │   │   ├── gmres.rs        # GMRES iterative solver
+│   │   │   ├── ilu_preconditioner.rs  # ILU preconditioner
+│   │   │   ├── preconditioner.rs      # Preconditioner traits
+│   │   │   ├── fmm_interface.rs       # FMM solver interfaces
+│   │   │   └── batched_blas.rs        # Batched BLAS operations
+│   │   ├── quadrature/         # Gaussian quadrature
+│   │   └── types.rs            # Core data structures
+│   └── analytical/             # Analytical solutions for validation
+├── bin/
+│   └── room_simulator_bem.rs   # Room simulator binary
+├── configs/                    # Example configurations
+├── tests/                      # Integration tests
+└── plotting/                   # Visualization tools
 ```
 
-### Analytical Validation
+## References
 
-```rust
-use bem::analytical::sphere_scattering_3d;
-use bem::testing::validate_against_analytical;
+### Primary Research
 
-// Run BEM
-let bem_result = run_bem_sphere(ka: 1.0, num_elements: 512)?;
+1. **Burton, A.J., & Miller, G.F. (1971)**
+   "The application of integral equation methods to the numerical solution of some exterior boundary-value problems"
+   *Proceedings of the Royal Society of London A*, vol. 323, pp. 201-210
+   [DOI: 10.1098/rspa.1971.0097](https://doi.org/10.1098/rspa.1971.0097)
 
-// Compare with Mie theory
-let analytical = sphere_scattering_3d(ka: 1.0, n_terms: 50)?;
+2. **Gumerov, N.A., & Duraiswami, R. (2009)**
+   "Fast multipole methods for the Helmholtz equation in three dimensions"
+   *Elsevier Series in Electromagnetism*
+   ISBN: 978-0080531595
 
-let validation = validate_against_analytical(&bem_result, &analytical)?;
+3. **Sauter, S.A., & Schwab, C. (2011)**
+   "Boundary Element Methods"
+   *Springer Series in Computational Mathematics*, vol. 39
+   ISBN: 978-3-540-68092-5
 
-// Export to JSON
-validation.save_json("sphere_ka1_validation.json")?;
-
-println!("L2 error: {:.6}", validation.l2_error);
-println!("L∞ error: {:.6}", validation.linf_error);
-```
-
-## Performance Considerations
-
-### Memory Efficiency
-
-- **Sparse storage**: Only store non-zero matrix elements
-- **Out-of-core**: Stream data from disk for very large problems
-- **Memory pooling**: Reuse allocations across frequency steps
-- **Compression**: Store far-field interactions in compressed form
-
-### Parallelism with Rayon
-
-**Why Rayon, not Tokio?**
-
-- ✅ **Data parallelism**: Perfect for matrix operations
-- ✅ **No async overhead**: Direct thread pool management
-- ✅ **Work stealing**: Automatic load balancing
-- ✅ **Zero-cost abstraction**: Compiles to tight loops
-- ❌ **Tokio**: Designed for I/O, not CPU-bound computation
-
-**Parallel strategies**:
-
-```rust
-// 1. Parallel frequency sweep (embarrassingly parallel)
-frequencies.par_iter().map(|f| solve_bem(f))
-
-// 2. Parallel matrix assembly (shared-memory)
-elements.par_iter().map(|elem| compute_matrix_row(elem))
-
-// 3. Parallel equation solve (via BLAS/LAPACK threaded)
-// Already handled by OpenBLAS/MKL
-```
+4. **Marburg, S., & Nolte, B. (2008)**
+   "Computational Acoustics of Noise Propagation in Fluids - Finite and Boundary Element Methods"
+   *Springer*
+   ISBN: 978-3-540-77447-1
 
 ## Build Instructions
 
 ### Prerequisites
 
 ```bash
-# Install Rust toolchain
+# Rust toolchain
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Install C++ compiler (for NumCalc)
-# Linux:
-sudo apt install build-essential
-
-# macOS:
-xcode-select --install
-
-# Windows:
-# Install Visual Studio 2022 with C++ tools
+# BLAS library (platform-specific)
+# macOS: Accelerate framework (included)
+# Linux: OpenBLAS
+sudo apt install libopenblas-dev
+# Windows: Intel MKL or OpenBLAS
 ```
 
 ### Build
 
 ```bash
-# Clone repository
-git clone https://github.com/pierreaubert/sotf
-cd sotf/src-bem
-
-# Build library
+# Build library and binary
 cargo build --release
 
-# Run tests with validation
+# Run tests
 cargo test --release
-
-# Run benchmarks
-cargo bench
 
 # Build documentation
 cargo doc --open
 ```
 
-## Roadmap
+## Performance Notes
 
-### Phase 1: FFI Wrapper (Current - v0.1.0)
-- [x] Build system integration
-- [x] Subprocess wrapper
-- [x] Rayon-based parallelism
-- [x] 1D analytical tests
-- [ ] 2D analytical tests (cylinder)
-- [ ] 3D analytical tests (sphere - Mie theory)
-- [ ] JSON output infrastructure
-- [ ] Web-based plotting
+### Memory Efficiency
 
-### Phase 2: Pure Rust BEM (v0.2.0 - 6 months)
-- [ ] Basic collocation method
-- [ ] Gauss quadrature integration
-- [ ] Direct solver (dense matrices)
-- [ ] Validate against NumCalc
-- [ ] Performance comparison
+- **Batched workspaces**: Pre-allocated buffers for FMM matvec
+- **Sparse near-field**: Only store near-field blocks
+- **Parallel assembly**: Rayon-based parallel matrix construction
 
-### Phase 3: FMM Acceleration (v0.3.0 - 12 months)
-- [ ] Octree spatial decomposition
-- [ ] Multipole expansions
-- [ ] Translation operators
-- [ ] Adaptive refinement
-- [ ] O(N log N) complexity
+### Solver Selection
 
-### Phase 4: Advanced Features (v0.4.0+)
-- [ ] GPU acceleration (wgpu)
-- [ ] Adaptive mesh refinement
-- [ ] Error estimation
-- [ ] Multi-domain problems
-- [ ] Coupled BEM-FEM
+- For N < 1000: Direct solver is fastest
+- For 1000 < N < 20000: FMM+GMRES+ILU with hierarchical preconditioner
+- For N > 20000: FMM+Batched BLAS for reduced memory pressure
 
-## Contributing
+### Parallel Execution
 
-This is part of the SOTF (Sound of the Future) project. Contributions welcome!
-
-See [CONTRIBUTING.md](../CONTRIBUTING.rst) for guidelines.
+```bash
+# Control thread count with Rayon
+RAYON_NUM_THREADS=8 ./target/release/room-simulator-bem --config config.json
+```
 
 ## License
 
@@ -479,31 +344,11 @@ Same license as parent project (SOTF): check root directory.
 
 ## Citation
 
-If you use this library in academic work, please cite:
-
 ```bibtex
-@software{sotf_bem,
-  title = {src-bem: Rust Boundary Element Method Library},
+@software{math_bem,
+  title = {math-bem: Rust Boundary Element Method Library},
   author = {SOTF Contributors},
   year = {2025},
-  url = {https://github.com/pierreaubert/sotf/tree/master/src-bem}
-}
-
-@article{brinkmann2024numcalc,
-  title = {NumCalc: An open-source BEM code for solving acoustic scattering problems},
-  author = {Brinkmann, Fabian and others},
-  journal = {Engineering Analysis with Boundary Elements},
-  volume = {161},
-  pages = {157--178},
-  year = {2024},
-  doi = {10.1016/j.enganabound.2024.01.001}
+  url = {https://github.com/pierreaubert/sotf/tree/master/math-bem}
 }
 ```
-
-## Contact
-
-For questions about BEM theory or implementation, please open an issue on GitHub.
-
----
-
-**Note**: This is research-grade software under active development. APIs may change. Always validate results against analytical solutions for your specific problem.

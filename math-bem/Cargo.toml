@@ -1,6 +1,6 @@
 [package]
 name = "math-bem"
-version = "0.1.2"
+version = "0.1.3"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "High-performance Boundary Element Method library for acoustic scattering"
@@ -32,7 +32,7 @@ special = { workspace = true }
 spec_math = { workspace = true }
 
 # Environment utilities
-autoeq-env = { path = "../autoeq-env" }
+autoeq-env = { version="0.2" }
 
 # Parallel processing - RAYON ONLY (NO TOKIO)
 rayon = { workspace = true }

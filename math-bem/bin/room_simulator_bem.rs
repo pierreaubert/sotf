@@ -13,7 +13,7 @@
 
 use bem::room_acoustics::*;
 use bem::core::solver::{
-    gmres_solve_with_ilu, GmresConfig, IluMethod, IluScanningDegree,
+    gmres_solve_with_ilu, gmres_solve_fmm_batched_with_ilu, GmresConfig, IluMethod, IluScanningDegree,
 };
 // Re-import FMM solver types from room_acoustics (they're re-exported from solver.rs)
 // FmmSolverConfig, solve_bem_fmm_gmres_ilu are available via bem::room_acoustics
@@ -56,8 +56,10 @@ enum SolverMethod {
     GmresIlu,
     /// FMM + GMRES (not yet implemented)
     Fmm,
-    /// FMM + GMRES + ILU (not yet implemented)
+    /// FMM + GMRES + ILU
     FmmIlu,
+    /// FMM + GMRES + ILU with batched BLAS operations (optimized for large problems)
+    FmmBatched,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -92,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "gmres+ilu" => SolverMethod::GmresIlu,
         "fmm+gmres" => SolverMethod::Fmm,
         "fmm+gmres+ilu" => SolverMethod::FmmIlu,
+        "fmm+batched" | "fmm+gmres+batched" => SolverMethod::FmmBatched,
         _ => SolverMethod::Direct,
     });
 
@@ -108,6 +111,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         SolverMethod::Fmm | SolverMethod::FmmIlu => {
             run_fmm_gmres_ilu(&simulation, &config, args.verbose)?
+        }
+        SolverMethod::FmmBatched => {
+            run_fmm_batched(&simulation, &config, args.verbose)?
         }
     };
 
@@ -506,6 +512,147 @@ fn run_fmm_gmres_ilu(
     }
 
     Ok(create_output_json_with_slices(simulation, config, &mesh, lp_spl_values, &source_spl_values, &bem_solutions, "fmm_gmres_ilu"))
+}
+
+fn run_fmm_batched(
+    simulation: &RoomSimulation,
+    config: &RoomConfig,
+    verbose: bool,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    println!("\n=== FMM + GMRES + Batched BLAS Solver ===");
+
+    // Use first frequency for adaptive mesh sizing
+    let first_freq = simulation.frequencies[0];
+    let mesh = if config.solver.adaptive_meshing.unwrap_or(false) {
+        simulation.room.generate_adaptive_mesh(
+            config.solver.mesh_resolution,
+            first_freq,
+            &simulation.sources,
+            simulation.speed_of_sound,
+        )
+    } else {
+        simulation.room.generate_mesh(config.solver.mesh_resolution)
+    };
+    println!("Mesh: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
+
+    // Parse ILU configuration
+    let ilu_method = match config.solver.ilu.method.to_lowercase().as_str() {
+        "slfmm" => IluMethod::Slfmm,
+        "mlfmm" => IluMethod::Mlfmm,
+        _ => IluMethod::Tbem,
+    };
+
+    let ilu_degree = match config.solver.ilu.scanning_degree.to_lowercase().as_str() {
+        "coarse" => IluScanningDegree::Coarse,
+        "medium" => IluScanningDegree::Medium,
+        "finest" => IluScanningDegree::Finest,
+        _ => IluScanningDegree::Fine,
+    };
+
+    println!("Preconditioner: ILU ({:?}, {:?}) with batched BLAS", ilu_method, ilu_degree);
+
+    // FMM configuration
+    let fmm_config = FmmSolverConfig::default();
+    println!("FMM configuration:");
+    println!("  Max elements per leaf: {}", fmm_config.max_elements_per_leaf);
+    println!("  Max tree depth: {}", fmm_config.max_tree_depth);
+    println!("  Separation ratio: {}", fmm_config.separation_ratio);
+    println!("  Batched BLAS: enabled");
+
+    // GMRES configuration
+    let gmres_config = GmresConfig {
+        max_iterations: config.solver.gmres.max_iter,
+        restart: config.solver.gmres.restart,
+        tolerance: config.solver.gmres.tolerance,
+        print_interval: if verbose { 1 } else { 0 },
+    };
+
+    let lp = simulation.listening_positions[0];
+    let mut lp_spl_values = Vec::new();
+
+    // Store per-source SPL values
+    let num_sources = simulation.sources.len();
+    let mut source_spl_values: Vec<Vec<f64>> = vec![Vec::new(); num_sources];
+
+    // Store BEM solutions for spatial visualization
+    let mut bem_solutions: Vec<(f64, Array1<Complex64>)> = Vec::new();
+
+    for (idx, &freq) in simulation.frequencies.iter().enumerate() {
+        if verbose || idx % 5 == 0 {
+            println!("\nFrequency {}/{}: {:.1} Hz", idx + 1, simulation.frequencies.len(), freq);
+        }
+
+        let k = simulation.wavenumber(freq);
+
+        // Build FMM system using batched operations
+        if verbose {
+            println!("  Building FMM system with batched BLAS...");
+        }
+
+        // Use the room_acoustics helper to build the FMM system
+        // Returns (SlfmmSystem, elements, nodes_array)
+        let (fmm_system, _elements, _nodes) = build_fmm_system(&mesh, &simulation.sources, k, freq, &fmm_config)
+            .map_err(|e| format!("FMM system build failed: {}", e))?;
+
+        // Solve using batched GMRES with ILU
+        if verbose {
+            println!("  Solving with batched GMRES+ILU...");
+        }
+
+        let solution_result = gmres_solve_fmm_batched_with_ilu(
+            &fmm_system,
+            &fmm_system.rhs,
+            ilu_method,
+            ilu_degree,
+            &gmres_config,
+        );
+
+        if verbose {
+            println!("  Iterations: {}, Residual: {:.2e}, Converged: {}",
+                solution_result.iterations, solution_result.residual, solution_result.converged);
+        }
+
+        // Compute SPL at listening position
+        let lp_pressure = calculate_field_pressure_bem_parallel(
+            &mesh,
+            &solution_result.x,
+            &simulation.sources,
+            &[lp],
+            k,
+            freq,
+        );
+
+        let lp_spl = pressure_to_spl(lp_pressure[0]);
+        lp_spl_values.push(lp_spl);
+
+        // Compute per-source SPL contributions
+        for (src_idx, source) in simulation.sources.iter().enumerate() {
+            let src_pressure = calculate_field_pressure_bem_parallel(
+                &mesh,
+                &solution_result.x,
+                std::slice::from_ref(source),
+                &[lp],
+                k,
+                freq,
+            );
+            let src_spl = pressure_to_spl(src_pressure[0]);
+            source_spl_values[src_idx].push(src_spl);
+        }
+
+        if verbose {
+            println!("  SPL at LP: {:.1} dB", lp_spl);
+        }
+
+        // Store solution for spatial field computation if needed
+        if config.visualization.generate_slices {
+            let slice_indices = &config.visualization.slice_frequency_indices;
+            if slice_indices.is_empty() || slice_indices.contains(&idx) {
+                bem_solutions.push((freq, solution_result.x.clone()));
+            }
+        }
+    }
+
+    Ok(create_output_json_with_slices(simulation, config, &mesh, lp_spl_values, &source_spl_values, &bem_solutions, "fmm_batched"))
 }
 
 fn create_output_json_with_slices(

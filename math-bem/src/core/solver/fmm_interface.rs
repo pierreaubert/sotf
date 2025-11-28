@@ -768,6 +768,97 @@ pub fn gmres_solve_fmm_hierarchical(
 }
 
 // ============================================================================
+// Batched BLAS GMRES Solver
+// ============================================================================
+
+/// Solve using GMRES with batched BLAS operations
+///
+/// This version uses pre-allocated workspace and batched matrix operations
+/// for improved performance on large FMM systems.
+///
+/// # Advantages over standard matvec
+/// - Pre-allocated workspace avoids allocations in hot path
+/// - Batched operations for better cache locality
+/// - Reuses workspace across GMRES iterations
+///
+/// # Arguments
+/// * `fmm_system` - The SLFMM system
+/// * `b` - Right-hand side vector
+/// * `config` - GMRES configuration
+pub fn gmres_solve_fmm_batched(
+    fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
+    b: &Array1<Complex64>,
+    config: &super::gmres::GmresConfig,
+) -> super::gmres::GmresSolution {
+    use super::batched_blas::SlfmmMatvecWorkspace;
+    use std::cell::RefCell;
+
+    // Pre-allocate workspace in RefCell for interior mutability
+    let workspace = RefCell::new(SlfmmMatvecWorkspace::new(
+        fmm_system.num_clusters,
+        fmm_system.num_sphere_points,
+        fmm_system.num_dofs,
+    ));
+
+    // Create matvec closure using batched operations
+    // The RefCell allows mutation from within an Fn closure
+    let matvec = |x: &Array1<Complex64>| {
+        super::batched_blas::slfmm_matvec_batched(fmm_system, x, &mut workspace.borrow_mut())
+    };
+
+    super::gmres::gmres_solve(matvec, b, None, config)
+}
+
+/// Solve using GMRES with batched BLAS and ILU preconditioning
+///
+/// Combines batched matvec with ILU preconditioning for optimal performance.
+pub fn gmres_solve_fmm_batched_with_ilu(
+    fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
+    b: &Array1<Complex64>,
+    method: IluMethod,
+    degree: IluScanningDegree,
+    config: &super::gmres::GmresConfig,
+) -> super::gmres::GmresSolution {
+    use super::batched_blas::SlfmmMatvecWorkspace;
+    use std::cell::RefCell;
+
+    // Extract near-field matrix for ILU
+    let nearfield_matrix = fmm_system.extract_near_field_matrix();
+
+    // Build ILU from near-field matrix
+    let setup = IluPreconditioner::setup_system(&nearfield_matrix, method, degree);
+
+    // Scale the RHS
+    let scaled_b: Array1<Complex64> = b
+        .iter()
+        .zip(setup.row_scale.iter())
+        .map(|(&bi, &si)| bi * si)
+        .collect();
+
+    // Pre-allocate workspace for batched matvec with RefCell for interior mutability
+    let workspace = RefCell::new(SlfmmMatvecWorkspace::new(
+        fmm_system.num_clusters,
+        fmm_system.num_sphere_points,
+        fmm_system.num_dofs,
+    ));
+
+    // Create scaled matvec closure using batched operations
+    let matvec = |x: &Array1<Complex64>| {
+        let y = super::batched_blas::slfmm_matvec_batched(fmm_system, x, &mut workspace.borrow_mut());
+        // Apply row scaling to output
+        y.iter()
+            .zip(setup.row_scale.iter())
+            .map(|(&yi, &si)| yi * si)
+            .collect()
+    };
+
+    // Create preconditioner application closure
+    let precond_solve = |r: &Array1<Complex64>| setup.preconditioner.apply(r);
+
+    super::gmres::gmres_solve_preconditioned(matvec, precond_solve, &scaled_b, None, config)
+}
+
+// ============================================================================
 // Frequency-Adaptive Mesh Utilities
 // ============================================================================
 
