@@ -141,8 +141,15 @@
 
         .plot-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 40px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1400px) {
+            .plot-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         #threejs-container {
@@ -244,13 +251,13 @@
     </div>
 
     <div class="plot-grid">
-        <div id="plotDirectivity" class="plot-container"></div>
-        <div id="plotDirectivityDB" class="plot-container"></div>
+        <div id="plotDirectivity" class="plot-container" style="display: none;"></div>
+        <div id="plotDirectivityDB" class="plot-container" style="display: none;"></div>
     </div>
 
-    <div id="plotSurface" class="plot-container"></div>
-    <div id="plotFieldSlice" class="plot-container"></div>
-    <div id="plotRCS" class="plot-container"></div>
+    <div id="plotSurface" class="plot-container" style="display: none;"></div>
+    <div id="plotFieldSlice" class="plot-container" style="display: none;"></div>
+    <div id="plotRCS" class="plot-container" style="display: none;"></div>
 
     <div class="plot-container">
         <h3>3D Sphere Visualization (Three.js)</h3>
@@ -435,13 +442,18 @@
                 }
             };
 
+            document.getElementById('plotDirectivity').style.display = 'block';
             Plotly.newPlot('plotDirectivity', [trace3d], {
                 title: `3D Directivity Pattern (ka=${data.ka.toFixed(2)})`,
                 scene: {
                     xaxis: { title: 'X' },
                     yaxis: { title: 'Y' },
                     zaxis: { title: 'Z' }
-                }
+                },
+                width: 650,
+                height: 550,
+                autosize: false,
+                margin: { l: 0, r: 0, t: 50, b: 0 }
             });
 
             // 2D polar plot (magnitude vs theta)
@@ -454,11 +466,22 @@
                 line: { color: '#667eea', width: 3 }
             };
 
+            document.getElementById('plotDirectivityDB').style.display = 'block';
             Plotly.newPlot('plotDirectivityDB', [trace2d], {
                 title: `Directivity vs Polar Angle (ka=${data.ka.toFixed(2)})`,
                 xaxis: { title: 'Theta (degrees)' },
-                yaxis: { title: 'Magnitude' }
+                yaxis: { title: 'Magnitude' },
+                width: 650,
+                height: 500,
+                autosize: false,
+                margin: { l: 80, r: 80, t: 80, b: 80 }
             });
+
+            // Hide other plots
+            document.getElementById('plotSurface').style.display = 'none';
+            document.getElementById('plotFieldSlice').style.display = 'none';
+            document.getElementById('plotRCS').style.display = 'none';
+            document.getElementById('metricsDiv').style.display = 'none';
 
             // Update Three.js sphere with surface coloring
             if (data.magnitude) {
@@ -485,14 +508,26 @@
                 }
             };
 
+            document.getElementById('plotFieldSlice').style.display = 'block';
             Plotly.newPlot('plotFieldSlice', [trace], {
                 title: `3D Field Slice (ka=${data.ka.toFixed(2)})`,
                 scene: {
                     xaxis: { title: 'X (m)' },
                     yaxis: { title: 'Y (m)' },
                     zaxis: { title: 'Z (m)' }
-                }
+                },
+                width: 900,
+                height: 600,
+                autosize: false,
+                margin: { l: 0, r: 0, t: 50, b: 0 }
             });
+
+            // Hide other plots
+            document.getElementById('plotDirectivity').style.display = 'none';
+            document.getElementById('plotDirectivityDB').style.display = 'none';
+            document.getElementById('plotSurface').style.display = 'none';
+            document.getElementById('plotRCS').style.display = 'none';
+            document.getElementById('metricsDiv').style.display = 'none';
         }
 
         function plotValidationData(data) {
@@ -521,14 +556,125 @@
                 }
             };
 
+            document.getElementById('plotSurface').style.display = 'block';
             Plotly.newPlot('plotSurface', [traceAnalytical], {
                 title: data.test_name,
                 scene: {
                     xaxis: { title: 'X' },
                     yaxis: { title: 'Y' },
                     zaxis: { title: 'Z' }
-                }
+                },
+                width: 900,
+                height: 600,
+                autosize: false,
+                margin: { l: 0, r: 0, t: 50, b: 0 }
             });
+
+            // Hide other plots
+            document.getElementById('plotDirectivity').style.display = 'none';
+            document.getElementById('plotDirectivityDB').style.display = 'none';
+            document.getElementById('plotFieldSlice').style.display = 'none';
+            document.getElementById('plotRCS').style.display = 'none';
+
+            // Create colored sphere with surface pressure
+            createColoredSphereFromSurfaceData(data);
+        }
+
+        function createColoredSphereFromSurfaceData(data) {
+            // Remove old sphere if exists
+            if (sphere) {
+                scene.remove(sphere);
+            }
+
+            const segments = 64;
+            const rings = 32;
+            const geometry = new THREE.SphereGeometry(1, segments, rings);
+            const colors = new Float32Array(geometry.attributes.position.count * 3);
+            const positions_geom = geometry.attributes.position;
+
+            // Get magnitude data from analytical solution
+            const magnitude = data.analytical.magnitude;
+            const positions_data = data.analytical.positions;
+
+            // Normalize magnitude for color mapping
+            const minMag = Math.min(...magnitude);
+            const maxMag = Math.max(...magnitude);
+            const range = maxMag - minMag;
+
+            // Color each vertex based on nearest data point
+            for (let i = 0; i < positions_geom.count; i++) {
+                const x = positions_geom.getX(i);
+                const y = positions_geom.getY(i);
+                const z = positions_geom.getZ(i);
+
+                // Find nearest data point
+                let minDist = Infinity;
+                let nearestIdx = 0;
+                for (let j = 0; j < positions_data.length; j++) {
+                    const dx = positions_data[j][0] - x;
+                    const dy = positions_data[j][1] - y;
+                    const dz = positions_data[j][2] - z;
+                    const dist = dx*dx + dy*dy + dz*dz;
+                    if (dist < minDist) {
+                        minDist = dist;
+                        nearestIdx = j;
+                    }
+                }
+
+                // Map magnitude to color using Viridis colormap
+                const mag = magnitude[nearestIdx];
+                const normalized = range > 0 ? (mag - minMag) / range : 0.5;
+
+                let r, g, b;
+                if (normalized < 0.25) {
+                    const t = normalized / 0.25;
+                    r = 0.267 * (1 - t) + 0.127 * t;
+                    g = 0.005 * (1 - t) + 0.566 * t;
+                    b = 0.329 * (1 - t) + 0.551 * t;
+                } else if (normalized < 0.5) {
+                    const t = (normalized - 0.25) / 0.25;
+                    r = 0.127 * (1 - t) + 0.208 * t;
+                    g = 0.566 * (1 - t) + 0.718 * t;
+                    b = 0.551 * (1 - t) + 0.472 * t;
+                } else if (normalized < 0.75) {
+                    const t = (normalized - 0.5) / 0.25;
+                    r = 0.208 * (1 - t) + 0.659 * t;
+                    g = 0.718 * (1 - t) + 0.773 * t;
+                    b = 0.472 * (1 - t) + 0.224 * t;
+                } else {
+                    const t = (normalized - 0.75) / 0.25;
+                    r = 0.659 * (1 - t) + 0.993 * t;
+                    g = 0.773 * (1 - t) + 0.906 * t;
+                    b = 0.224 * (1 - t) + 0.144 * t;
+                }
+
+                colors[i * 3] = r;
+                colors[i * 3 + 1] = g;
+                colors[i * 3 + 2] = b;
+            }
+
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.MeshPhongMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide,
+                flatShading: false,
+                shininess: 30
+            });
+
+            sphere = new THREE.Mesh(geometry, material);
+            scene.add(sphere);
+
+            // Add subtle wireframe
+            const wireframe = new THREE.WireframeGeometry(geometry);
+            const line = new THREE.LineSegments(wireframe);
+            line.material.color.setHex(0x000000);
+            line.material.opacity = 0.05;
+            line.material.transparent = true;
+            sphere.add(line);
+
+            document.getElementById('sphereInfo').textContent =
+                `Surface Pressure: Mag range [${minMag.toFixed(3)}, ${maxMag.toFixed(3)}]`;
         }
 
         function plotRCSData(data) {
@@ -552,6 +698,7 @@
                 line: { color: 'red', dash: 'dash', width: 2 }
             };
 
+            document.getElementById('plotRCS').style.display = 'block';
             Plotly.newPlot('plotRCS', [trace, geometricLine], {
                 title: '3D Sphere Radar Cross-Section vs Frequency',
                 xaxis: {
@@ -562,8 +709,18 @@
                     title: 'Normalized RCS / (πa²)',
                     type: 'log'
                 },
-                hovermode: 'closest'
+                hovermode: 'closest',
+                width: 900,
+                height: 500,
+                autosize: false,
+                margin: { l: 80, r: 80, t: 80, b: 80 }
             });
+
+            // Hide other plots
+            document.getElementById('plotDirectivity').style.display = 'none';
+            document.getElementById('plotDirectivityDB').style.display = 'none';
+            document.getElementById('plotSurface').style.display = 'none';
+            document.getElementById('plotFieldSlice').style.display = 'none';
         }
 
         function createColoredSphere(data) {
@@ -572,28 +729,119 @@
                 scene.remove(sphere);
             }
 
-            const geometry = new THREE.SphereGeometry(1, 64, 32);
-            const material = new THREE.MeshPhongMaterial({
-                color: 0x667eea,
-                emissive: 0x072534,
-                side: THREE.DoubleSide,
-                flatShading: false,
-                wireframe: false
-            });
+            const segments = 64;
+            const rings = 32;
+            const geometry = new THREE.SphereGeometry(1, segments, rings);
 
-            sphere = new THREE.Mesh(geometry, material);
-            scene.add(sphere);
+            // If we have directivity data, map it to sphere surface colors
+            if (data.magnitude && data.theta_degrees) {
+                const colors = new Float32Array(geometry.attributes.position.count * 3);
+                const positions = geometry.attributes.position;
 
-            // Add wireframe
-            const wireframe = new THREE.WireframeGeometry(geometry);
-            const line = new THREE.LineSegments(wireframe);
-            line.material.color.setHex(0x000000);
-            line.material.opacity = 0.1;
-            line.material.transparent = true;
-            sphere.add(line);
+                // Normalize magnitude for color mapping
+                const minMag = Math.min(...data.magnitude);
+                const maxMag = Math.max(...data.magnitude);
+                const range = maxMag - minMag;
 
-            document.getElementById('sphereInfo').textContent =
-                `Sphere: ka=${data.ka.toFixed(2)}, Regime: ${data.regime || 'Unknown'}`;
+                // Color each vertex based on its theta angle
+                for (let i = 0; i < positions.count; i++) {
+                    const x = positions.getX(i);
+                    const y = positions.getY(i);
+                    const z = positions.getZ(i);
+
+                    // Calculate theta angle for this vertex (0-180 degrees)
+                    const theta_rad = Math.acos(z / Math.sqrt(x*x + y*y + z*z));
+                    const theta_deg = theta_rad * 180 / Math.PI;
+
+                    // Find closest theta in data
+                    let closestIdx = 0;
+                    let minDiff = Math.abs(data.theta_degrees[0] - theta_deg);
+                    for (let j = 1; j < data.theta_degrees.length; j++) {
+                        const diff = Math.abs(data.theta_degrees[j] - theta_deg);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            closestIdx = j;
+                        }
+                    }
+
+                    // Map magnitude to color (blue -> cyan -> green -> yellow -> red)
+                    const mag = data.magnitude[closestIdx];
+                    const normalized = (mag - minMag) / range;
+
+                    // Viridis-like colormap
+                    let r, g, b;
+                    if (normalized < 0.25) {
+                        const t = normalized / 0.25;
+                        r = 0.267 * (1 - t) + 0.127 * t;
+                        g = 0.005 * (1 - t) + 0.566 * t;
+                        b = 0.329 * (1 - t) + 0.551 * t;
+                    } else if (normalized < 0.5) {
+                        const t = (normalized - 0.25) / 0.25;
+                        r = 0.127 * (1 - t) + 0.208 * t;
+                        g = 0.566 * (1 - t) + 0.718 * t;
+                        b = 0.551 * (1 - t) + 0.472 * t;
+                    } else if (normalized < 0.75) {
+                        const t = (normalized - 0.5) / 0.25;
+                        r = 0.208 * (1 - t) + 0.659 * t;
+                        g = 0.718 * (1 - t) + 0.773 * t;
+                        b = 0.472 * (1 - t) + 0.224 * t;
+                    } else {
+                        const t = (normalized - 0.75) / 0.25;
+                        r = 0.659 * (1 - t) + 0.993 * t;
+                        g = 0.773 * (1 - t) + 0.906 * t;
+                        b = 0.224 * (1 - t) + 0.144 * t;
+                    }
+
+                    colors[i * 3] = r;
+                    colors[i * 3 + 1] = g;
+                    colors[i * 3 + 2] = b;
+                }
+
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+                const material = new THREE.MeshPhongMaterial({
+                    vertexColors: true,
+                    side: THREE.DoubleSide,
+                    flatShading: false,
+                    shininess: 30
+                });
+
+                sphere = new THREE.Mesh(geometry, material);
+                scene.add(sphere);
+
+                // Add subtle wireframe
+                const wireframe = new THREE.WireframeGeometry(geometry);
+                const line = new THREE.LineSegments(wireframe);
+                line.material.color.setHex(0x000000);
+                line.material.opacity = 0.05;
+                line.material.transparent = true;
+                sphere.add(line);
+
+                document.getElementById('sphereInfo').textContent =
+                    `Sphere: ka=${data.ka.toFixed(2)}, Regime: ${data.regime || 'Unknown'}, Mag range: [${minMag.toFixed(3)}, ${maxMag.toFixed(3)}]`;
+            } else {
+                // Fallback: uniform color
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x667eea,
+                    emissive: 0x072534,
+                    side: THREE.DoubleSide,
+                    flatShading: false,
+                    wireframe: false
+                });
+
+                sphere = new THREE.Mesh(geometry, material);
+                scene.add(sphere);
+
+                const wireframe = new THREE.WireframeGeometry(geometry);
+                const line = new THREE.LineSegments(wireframe);
+                line.material.color.setHex(0x000000);
+                line.material.opacity = 0.1;
+                line.material.transparent = true;
+                sphere.add(line);
+
+                document.getElementById('sphereInfo').textContent =
+                    `Sphere: ka=${data.ka ? data.ka.toFixed(2) : '?'}, Regime: ${data.regime || 'Unknown'}`;
+            }
         }
     </script>
 </body>
