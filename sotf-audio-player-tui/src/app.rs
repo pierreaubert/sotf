@@ -439,8 +439,8 @@ impl App {
         match self.library_sort_order {
             LibrarySortOrder::Artist => {
                 albums.sort_by(|a, b| {
-                    a.artist
-                        .cmp(&b.artist)
+                    a.artist()
+                        .cmp(&b.artist())
                         .then(a.title.cmp(&b.title))
                         .then(a.year.cmp(&b.year))
                 });
@@ -449,7 +449,7 @@ impl App {
                 albums.sort_by(|a, b| {
                     a.title
                         .cmp(&b.title)
-                        .then(a.artist.cmp(&b.artist))
+                        .then(a.artist().cmp(&b.artist()))
                         .then(a.year.cmp(&b.year))
                 });
             }
@@ -458,7 +458,7 @@ impl App {
                 albums.sort_by(|a, b| {
                     a.title
                         .cmp(&b.title)
-                        .then(a.artist.cmp(&b.artist))
+                        .then(a.artist().cmp(&b.artist()))
                         .then(a.year.cmp(&b.year))
                 });
             }
@@ -467,7 +467,7 @@ impl App {
                     // Sort by year descending (newest first), then artist, then title
                     b.year
                         .cmp(&a.year)
-                        .then(a.artist.cmp(&b.artist))
+                        .then(a.artist().cmp(&b.artist()))
                         .then(a.title.cmp(&b.title))
                 });
             }
@@ -476,7 +476,7 @@ impl App {
                     // Sort by play count descending (most played first), then artist, then title
                     b.play_count
                         .cmp(&a.play_count)
-                        .then(a.artist.cmp(&b.artist))
+                        .then(a.artist().cmp(&b.artist()))
                         .then(a.title.cmp(&b.title))
                 });
             }
@@ -1259,7 +1259,7 @@ impl App {
             queue: self
                 .queue
                 .iter()
-                .map(|item| (item.album.artist.clone(), item.album.title.clone()))
+                .map(|item| (item.album.artist(), item.album.title.clone()))
                 .collect(),
             queue_index: self.current_queue_index,
             track_index: self
@@ -1298,7 +1298,7 @@ impl App {
                 .library
                 .albums
                 .iter()
-                .find(|a| a.artist == artist && a.title == title)
+                .find(|a| a.artist() == artist && a.title == title)
                 .cloned()
             {
                 self.queue.push(QueueItem::new(album));
@@ -1355,7 +1355,7 @@ impl App {
         // Group albums by artist
         for (idx, album) in self.library.albums.iter().enumerate() {
             artist_map
-                .entry(album.artist.clone())
+                .entry(album.artist())
                 .or_default()
                 .push(idx);
         }

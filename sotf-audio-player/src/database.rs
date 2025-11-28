@@ -118,7 +118,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 11;
+        const LATEST_VERSION: i64 = 12;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -871,6 +871,123 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 12: Remove artist from albums table, add artist to tracks table
+        // Albums are now uniquely identified by title only; artist is derived from tracks
+        migrations.insert(
+            12,
+            Migration {
+                description: "Remove artist from albums, add artist to tracks - albums identified by title only",
+                apply: |db| {
+                    // Add artist column to tracks table
+                    let has_artist = db
+                        .conn
+                        .prepare("SELECT artist FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_artist {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN artist TEXT", [])?;
+                        log::info!("Added artist column to tracks table");
+                    }
+
+                    // Migrate artist data from albums to tracks
+                    // Each track inherits the artist from its album
+                    db.conn.execute(
+                        "UPDATE tracks SET artist = (
+                            SELECT a.artist FROM albums a WHERE a.id = tracks.album_id
+                        ) WHERE artist IS NULL",
+                        [],
+                    )?;
+                    log::info!("Migrated artist data from albums to tracks");
+
+                    // SQLite doesn't support DROP COLUMN directly in older versions,
+                    // and we need to keep the column for now to avoid breaking existing code
+                    // that might still reference it. The column will be ignored in new code.
+                    // In a future migration, we could recreate the table without the artist column.
+
+                    // Update the UNIQUE constraint: albums should now be unique by title only
+                    // SQLite doesn't allow modifying constraints directly, so we need to recreate the table
+                    // For now, we'll leave the constraint as-is since removing it requires table recreation
+                    // The application logic will handle uniqueness by title only
+
+                    // Update FTS5 table to include track artist
+                    // First, rebuild the FTS index with the new data
+                    db.conn.execute("DELETE FROM library_fts", [])?;
+                    db.conn.execute(
+                        "INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                         SELECT
+                            COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
+                            a.title,
+                            t.title,
+                            t.album_id
+                         FROM tracks t
+                         JOIN albums a ON t.album_id = a.id",
+                        [],
+                    )?;
+                    log::info!("Rebuilt FTS index with track artist data");
+
+                    // Update triggers to use track artist instead of album artist
+                    // Drop old triggers
+                    db.conn.execute("DROP TRIGGER IF EXISTS tracks_ai", [])?;
+                    db.conn.execute("DROP TRIGGER IF EXISTS tracks_ad", [])?;
+                    db.conn.execute("DROP TRIGGER IF EXISTS tracks_au", [])?;
+                    db.conn.execute("DROP TRIGGER IF EXISTS albums_au", [])?;
+
+                    // Create new triggers using track artist
+                    db.conn.execute(
+                        "CREATE TRIGGER tracks_ai AFTER INSERT ON tracks BEGIN
+                            INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                            SELECT
+                                COALESCE(new.album_artist, new.artist, 'Unknown Artist'),
+                                a.title,
+                                new.title,
+                                new.album_id
+                            FROM albums a WHERE a.id = new.album_id;
+                        END;",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TRIGGER tracks_ad AFTER DELETE ON tracks BEGIN
+                            DELETE FROM library_fts WHERE album_id = old.album_id AND track_title = old.title;
+                        END;",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TRIGGER tracks_au AFTER UPDATE ON tracks BEGIN
+                            DELETE FROM library_fts WHERE album_id = old.album_id AND track_title = old.title;
+                            INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                            SELECT
+                                COALESCE(new.album_artist, new.artist, 'Unknown Artist'),
+                                a.title,
+                                new.title,
+                                new.album_id
+                            FROM albums a WHERE a.id = new.album_id;
+                        END;",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TRIGGER albums_au AFTER UPDATE ON albums BEGIN
+                            DELETE FROM library_fts WHERE album_id = old.id;
+                            INSERT INTO library_fts(artist, album_title, track_title, album_id)
+                            SELECT
+                                COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
+                                new.title,
+                                t.title,
+                                t.album_id
+                            FROM tracks t WHERE t.album_id = new.id;
+                        END;",
+                        [],
+                    )?;
+
+                    log::info!("Updated FTS triggers to use track artist");
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -936,19 +1053,20 @@ impl MusicDatabase {
 
     /// Load all albums and tracks from database
     pub fn load_library(&self) -> SqlResult<Vec<Album>> {
+        // Note: We still select artist from albums for backwards compatibility with old databases,
+        // but we don't use it - artist is now derived from tracks
         let mut albums_stmt = self.conn.prepare(
-            "SELECT id, artist, title, year, album_art_path, album_art_thumbnail FROM albums ORDER BY artist, title",
+            "SELECT id, title, year, album_art_path, album_art_thumbnail FROM albums ORDER BY title",
         )?;
 
         let mut albums = Vec::new();
         let album_rows = albums_stmt.query_map([], |row| {
             Ok((
                 row.get::<_, i64>(0)?,               // id
-                row.get::<_, String>(1)?,            // artist
-                row.get::<_, String>(2)?,            // title
-                row.get::<_, Option<i64>>(3)?,       // year
-                row.get::<_, Option<String>>(4)?,    // album_art_path
-                row.get::<_, Option<Vec<u8>>>(5)?,   // album_art_thumbnail
+                row.get::<_, String>(1)?,            // title
+                row.get::<_, Option<i64>>(2)?,       // year
+                row.get::<_, Option<String>>(3)?,    // album_art_path
+                row.get::<_, Option<Vec<u8>>>(4)?,   // album_art_thumbnail
             ))
         })?;
 
@@ -956,11 +1074,11 @@ impl MusicDatabase {
         let play_counts = self.get_all_album_play_counts()?;
 
         for album_row in album_rows {
-            let (album_id, artist, title, year, album_art_path, album_art_thumbnail) = album_row?;
+            let (album_id, title, year, album_art_path, album_art_thumbnail) = album_row?;
 
-            // Load tracks for this album
+            // Load tracks for this album (now including artist)
             let mut tracks_stmt = self.conn.prepare(
-                "SELECT path, title, track_number, duration_secs, channels,
+                "SELECT path, title, artist, track_number, duration_secs, channels,
                         replay_gain, replay_peak, album_gain, album_peak, waveform,
                         genre, composer, disc_number, conductor, performer,
                         isrc, album_artist, ensemble
@@ -974,22 +1092,23 @@ impl MusicDatabase {
                     Ok(Track {
                         path: PathBuf::from(row.get::<_, String>(0)?),
                         title: row.get::<_, Option<String>>(1)?,
-                        track_number: row.get::<_, Option<i64>>(2)?.map(|n| n as u32),
-                        duration_secs: row.get::<_, Option<i64>>(3)?.map(|n| n as u64),
-                        channels: row.get::<_, Option<i64>>(4)?.map(|n| n as u32),
-                        replay_gain: row.get::<_, Option<f64>>(5)?,
-                        replay_peak: row.get::<_, Option<f64>>(6)?,
-                        album_gain: row.get::<_, Option<f64>>(7)?,
-                        album_peak: row.get::<_, Option<f64>>(8)?,
-                        waveform: row.get::<_, Option<Vec<u8>>>(9)?,
-                        genre: row.get::<_, Option<String>>(10)?,
-                        composer: row.get::<_, Option<String>>(11)?,
-                        disc_number: row.get::<_, Option<i64>>(12)?.map(|n| n as u32),
-                        conductor: row.get::<_, Option<String>>(13)?,
-                        performer: row.get::<_, Option<String>>(14)?,
-                        isrc: row.get::<_, Option<String>>(15)?,
-                        album_artist: row.get::<_, Option<String>>(16)?,
-                        ensemble: row.get::<_, Option<String>>(17)?,
+                        artist: row.get::<_, Option<String>>(2)?,
+                        track_number: row.get::<_, Option<i64>>(3)?.map(|n| n as u32),
+                        duration_secs: row.get::<_, Option<i64>>(4)?.map(|n| n as u64),
+                        channels: row.get::<_, Option<i64>>(5)?.map(|n| n as u32),
+                        replay_gain: row.get::<_, Option<f64>>(6)?,
+                        replay_peak: row.get::<_, Option<f64>>(7)?,
+                        album_gain: row.get::<_, Option<f64>>(8)?,
+                        album_peak: row.get::<_, Option<f64>>(9)?,
+                        waveform: row.get::<_, Option<Vec<u8>>>(10)?,
+                        genre: row.get::<_, Option<String>>(11)?,
+                        composer: row.get::<_, Option<String>>(12)?,
+                        disc_number: row.get::<_, Option<i64>>(13)?.map(|n| n as u32),
+                        conductor: row.get::<_, Option<String>>(14)?,
+                        performer: row.get::<_, Option<String>>(15)?,
+                        isrc: row.get::<_, Option<String>>(16)?,
+                        album_artist: row.get::<_, Option<String>>(17)?,
+                        ensemble: row.get::<_, Option<String>>(18)?,
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -998,7 +1117,6 @@ impl MusicDatabase {
 
             albums.push(Album {
                 id: Some(album_id),
-                artist,
                 title,
                 year: year.map(|y| y as u32),
                 tracks,
@@ -1017,7 +1135,12 @@ impl MusicDatabase {
         let now = current_timestamp();
 
         for album in albums {
+            // Compute artist from tracks for backwards compatibility with old schema
+            // (old schema has artist column with UNIQUE(artist, title) constraint)
+            let album_artist = album.artist();
+
             // Insert or update album
+            // Note: We still insert artist for backwards compatibility, but it's derived from tracks
             tx.execute(
                 "INSERT INTO albums (artist, title, year, album_art_path, album_art_thumbnail, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -1027,7 +1150,7 @@ impl MusicDatabase {
                  album_art_thumbnail = COALESCE(excluded.album_art_thumbnail, album_art_thumbnail),
                  updated_at = excluded.updated_at",
                 params![
-                    &album.artist,
+                    &album_artist,
                     &album.title,
                     album.year.map(|y| y as i64),
                     album
@@ -1040,27 +1163,29 @@ impl MusicDatabase {
                 ],
             )?;
 
-            // Get album ID
+            // Get album ID by title (artist may vary for compilations)
+            // We use the computed artist for lookup to match the UNIQUE constraint
             let album_id: i64 = tx.query_row(
                 "SELECT id FROM albums WHERE artist = ?1 AND title = ?2",
-                params![&album.artist, &album.title],
+                params![&album_artist, &album.title],
                 |row| row.get(0),
             )?;
 
-            // Insert or update tracks
+            // Insert or update tracks (now including artist)
             for track in &album.tracks {
                 let file_mtime = get_file_mtime(&track.path).unwrap_or(0);
                 let path_str = track.path.to_string_lossy().to_string();
 
                 tx.execute(
-                    "INSERT INTO tracks (album_id, path, title, track_number, duration_secs, channels,
+                    "INSERT INTO tracks (album_id, path, title, artist, track_number, duration_secs, channels,
                                         file_mtime, scanned_at, created_at, updated_at, waveform,
                                         genre, composer, disc_number, conductor, performer,
                                         isrc, album_artist, ensemble)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
                      ON CONFLICT(path) DO UPDATE SET
                      album_id = excluded.album_id,
                      title = excluded.title,
+                     artist = excluded.artist,
                      track_number = excluded.track_number,
                      duration_secs = excluded.duration_secs,
                      channels = excluded.channels,
@@ -1080,6 +1205,7 @@ impl MusicDatabase {
                         album_id,
                         &path_str,
                         track.title,
+                        track.artist,
                         track.track_number.map(|n| n as i64),
                         track.duration_secs.map(|n| n as i64),
                         track.channels.map(|n| n as i64),

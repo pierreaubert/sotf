@@ -198,15 +198,15 @@ fn test_search_library_integration() {
 
     // Create a controlled test dataset
     let db = MusicDatabase::open(&db_path).unwrap();
-    let mut albums = vec![
+    let albums = vec![
         sotf_audio_player::Album {
             id: None,
-            artist: "Pink Floyd".to_string(),
             title: "Dark Side of the Moon".to_string(),
             year: Some(1973),
             tracks: vec![sotf_audio_player::Track {
                 path: fixtures::get_demo_file("rock.wav"),
                 title: Some("Time".to_string()),
+                artist: Some("Pink Floyd".to_string()),
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
@@ -230,12 +230,12 @@ fn test_search_library_integration() {
         },
         sotf_audio_player::Album {
             id: None,
-            artist: "Miles Davis".to_string(),
             title: "Kind of Blue".to_string(),
             year: Some(1959),
             tracks: vec![sotf_audio_player::Track {
                 path: fixtures::get_demo_file("jazz.wav"),
                 title: Some("So What".to_string()),
+                artist: Some("Miles Davis".to_string()),
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
@@ -271,7 +271,7 @@ fn test_search_library_integration() {
     // Search for "Pink"
     let results = library.search_albums("Pink");
     assert_eq!(results.len(), 1, "Should find 1 album matching 'Pink'");
-    assert_eq!(results[0].artist, "Pink Floyd");
+    assert_eq!(results[0].artist(), "Pink Floyd");
 
     // Search for "Blue"
     let results = library.search_albums("Blue");
@@ -321,18 +321,18 @@ fn test_scan_specific_file_formats() {
 #[test]
 fn test_album_channel_type_detection() {
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let library = MusicLibrary::with_custom_database(&db_path).unwrap();
+    let _library = MusicLibrary::with_custom_database(&db_path).unwrap();
 
     // Test stereo album
     let stereo_album = sotf_audio_player::Album {
         id: None,
-        artist: "Test".to_string(),
         title: "Stereo Album".to_string(),
         year: None,
         tracks: vec![
             sotf_audio_player::Track {
                 path: PathBuf::from("track1.wav"),
                 title: None,
+                artist: Some("Test".to_string()),
                 track_number: None,
                 duration_secs: None,
                 channels: Some(2),
@@ -353,6 +353,7 @@ fn test_album_channel_type_detection() {
             sotf_audio_player::Track {
                 path: PathBuf::from("track2.wav"),
                 title: None,
+                artist: Some("Test".to_string()),
                 track_number: None,
                 duration_secs: None,
                 channels: Some(2),
@@ -385,13 +386,13 @@ fn test_album_channel_type_detection() {
     // Test multichannel album
     let multichannel_album = sotf_audio_player::Album {
         id: None,
-        artist: "Test".to_string(),
         title: "5.1 Album".to_string(),
         year: None,
         tracks: vec![
             sotf_audio_player::Track {
                 path: PathBuf::from("track1.wav"),
                 title: None,
+                artist: Some("Test".to_string()),
                 track_number: None,
                 duration_secs: None,
                 channels: Some(6),
@@ -412,6 +413,7 @@ fn test_album_channel_type_detection() {
             sotf_audio_player::Track {
                 path: PathBuf::from("track2.wav"),
                 title: None,
+                artist: Some("Test".to_string()),
                 track_number: None,
                 duration_secs: None,
                 channels: Some(6),
@@ -444,13 +446,13 @@ fn test_album_channel_type_detection() {
     // Test mixed album
     let mixed_album = sotf_audio_player::Album {
         id: None,
-        artist: "Test".to_string(),
         title: "Mixed Album".to_string(),
         year: None,
         tracks: vec![
             sotf_audio_player::Track {
                 path: PathBuf::from("track1.wav"),
                 title: None,
+                artist: Some("Test".to_string()),
                 track_number: None,
                 duration_secs: None,
                 channels: Some(2),
@@ -471,6 +473,7 @@ fn test_album_channel_type_detection() {
             sotf_audio_player::Track {
                 path: PathBuf::from("track2.wav"),
                 title: None,
+                artist: Some("Test".to_string()),
                 track_number: None,
                 duration_secs: None,
                 channels: Some(6),

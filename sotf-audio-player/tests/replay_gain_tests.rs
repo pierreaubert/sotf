@@ -70,12 +70,12 @@ fn test_update_replay_gain() {
     let classical_file = fixtures::get_demo_file("classical.wav");
     let album = sotf_audio_player::Album {
         id: None,
-        artist: "Test Artist".to_string(),
         title: "Test Album".to_string(),
         year: Some(2024),
         tracks: vec![sotf_audio_player::Track {
             path: classical_file.clone(),
             title: Some("Test Track".to_string()),
+            artist: Some("Test Artist".to_string()),
             track_number: Some(1),
             duration_secs: Some(5),
             channels: Some(2),
@@ -131,12 +131,12 @@ fn test_replay_gain_values_persistence() {
     {
         let album = sotf_audio_player::Album {
             id: None,
-            artist: "Test Artist".to_string(),
             title: "Test Album".to_string(),
             year: Some(2024),
             tracks: vec![sotf_audio_player::Track {
                 path: classical_file.clone(),
                 title: Some("Test Track".to_string()),
+                artist: Some("Test Artist".to_string()),
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
@@ -195,12 +195,12 @@ fn test_partial_replay_gain_scanning() {
     let albums = vec![
         sotf_audio_player::Album {
             id: None,
-            artist: "Artist 1".to_string(),
             title: "Album 1".to_string(),
             year: Some(2024),
             tracks: vec![sotf_audio_player::Track {
                 path: file1.clone(),
                 title: Some("Track 1".to_string()),
+                artist: Some("Artist 1".to_string()),
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
@@ -224,12 +224,12 @@ fn test_partial_replay_gain_scanning() {
         },
         sotf_audio_player::Album {
             id: None,
-            artist: "Artist 2".to_string(),
             title: "Album 2".to_string(),
             year: Some(2024),
             tracks: vec![sotf_audio_player::Track {
                 path: file2.clone(),
                 title: Some("Track 2".to_string()),
+                artist: Some("Artist 2".to_string()),
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
@@ -253,12 +253,12 @@ fn test_partial_replay_gain_scanning() {
         },
         sotf_audio_player::Album {
             id: None,
-            artist: "Artist 3".to_string(),
             title: "Album 3".to_string(),
             year: Some(2024),
             tracks: vec![sotf_audio_player::Track {
                 path: file3.clone(),
                 title: Some("Track 3".to_string()),
+                artist: Some("Artist 3".to_string()),
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
@@ -316,12 +316,12 @@ fn test_replay_gain_range_values() {
 
     let album = sotf_audio_player::Album {
         id: None,
-        artist: "Test".to_string(),
         title: "Test".to_string(),
         year: None,
         tracks: vec![sotf_audio_player::Track {
             path: test_file.clone(),
             title: None,
+            artist: Some("Test".to_string()),
             track_number: None,
             duration_secs: None,
             channels: Some(2),

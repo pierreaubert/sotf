@@ -67,3 +67,6 @@ ebur128 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+# Enable testing feature for integration tests to access open_for_testing
+sotf-audio-player = { path = ".", features = ["testing"] }

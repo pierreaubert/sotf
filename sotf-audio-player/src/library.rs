@@ -49,6 +49,7 @@ pub struct DirectoryInfo {
 pub struct Track {
     pub path: PathBuf,
     pub title: Option<String>,
+    pub artist: Option<String>,   // Track artist (may differ from album artist for compilations)
     pub track_number: Option<u32>,
     pub duration_secs: Option<u64>,
     pub channels: Option<u32>,
@@ -71,7 +72,6 @@ pub struct Track {
 #[derive(Debug, Clone)]
 pub struct Album {
     pub id: Option<i64>,
-    pub artist: String,
     pub title: String,
     pub year: Option<u32>,
     pub tracks: Vec<Track>,
@@ -128,11 +128,48 @@ impl Album {
 }
 
 impl Album {
-    pub fn display_name(&self) -> String {
-        if let Some(year) = self.year {
-            format!("{} - {} ({})", self.artist, self.title, year)
+    /// Get the artist(s) for this album by scanning all tracks.
+    /// Returns the album_artist if consistent across tracks, otherwise
+    /// returns "Various Artists" for compilations.
+    /// Prefers album_artist, falls back to track artist.
+    pub fn artist(&self) -> String {
+        use std::collections::BTreeSet;
+
+        // First try to collect album_artists
+        let album_artists: BTreeSet<String> = self
+            .tracks
+            .iter()
+            .filter_map(|t| t.album_artist.clone())
+            .collect();
+
+        // If we have a consistent album_artist, use it
+        if album_artists.len() == 1 {
+            return album_artists.into_iter().next().unwrap();
+        }
+
+        // Otherwise fall back to track artists
+        let track_artists: BTreeSet<String> = self
+            .tracks
+            .iter()
+            .filter_map(|t| t.artist.clone())
+            .collect();
+
+        if track_artists.is_empty() {
+            "Unknown Artist".to_string()
+        } else if track_artists.len() == 1 {
+            track_artists.into_iter().next().unwrap()
         } else {
-            format!("{} - {}", self.artist, self.title)
+            // Multiple artists - this is a compilation
+            "Various Artists".to_string()
+        }
+    }
+
+    pub fn display_name(&self) -> String {
+        let artist = self.artist();
+        if let Some(year) = self.year {
+            format!("{} - {} ({})", artist, self.title, year)
+        } else {
+            format!("{} - {}", artist, self.title)
         }
     }
 
@@ -430,7 +467,7 @@ impl MusicLibrary {
     where
         F: FnMut(usize, usize),
     {
-        let mut album_map: HashMap<(String, String), Album> = HashMap::new();
+        let mut album_map: HashMap<String, Album> = HashMap::new();
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
         let scan_time = SystemTime::now();
@@ -477,17 +514,15 @@ impl MusicLibrary {
 
         // Calculate album counts per directory
         // We use a temporary map to store sets of album keys per directory to ensure uniqueness
-        let mut dir_albums: HashMap<PathBuf, std::collections::HashSet<(String, String)>> =
-            HashMap::new();
+        let mut dir_albums: HashMap<PathBuf, std::collections::HashSet<String>> = HashMap::new();
 
-        for ((artist, title), album) in &album_map {
-            let key = (artist.clone(), title.clone());
+        for (title, album) in &album_map {
             for track in &album.tracks {
                 if let Some(parent) = track.path.parent() {
                     dir_albums
                         .entry(parent.to_path_buf())
                         .or_default()
-                        .insert(key.clone());
+                        .insert(title.clone());
                 }
             }
         }
@@ -554,11 +589,8 @@ impl MusicLibrary {
 
             // Merge existing albums that weren't updated
             for existing_album in existing_albums {
-                // Use normalized keys for matching (same as when scanning files)
-                let key = (
-                    normalize_album_key(&existing_album.artist),
-                    normalize_album_key(&existing_album.title),
-                );
+                // Use normalized key for matching (same as when scanning files)
+                let key = normalize_album_key(&existing_album.title);
                 album_map.entry(key).or_insert(existing_album);
             }
         }
@@ -572,9 +604,9 @@ impl MusicLibrary {
             find_and_generate_album_thumbnail(album);
         }
 
-        // Sort albums by artist and title
+        // Sort albums by artist (computed from tracks) and title
         self.albums
-            .sort_by(|a, b| a.artist.cmp(&b.artist).then(a.title.cmp(&b.title)));
+            .sort_by(|a, b| a.artist().cmp(&b.artist()).then(a.title.cmp(&b.title)));
 
         // Save to database if available
         if let Some(db) = &mut self.db {
@@ -623,7 +655,7 @@ impl MusicLibrary {
     fn scan_directory(
         &self,
         dir: &Path,
-        album_map: &mut HashMap<(String, String), Album>,
+        album_map: &mut HashMap<String, Album>,
         incremental: bool,
         dir_stats: &mut HashMap<PathBuf, (usize, usize)>,
     ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
@@ -677,42 +709,21 @@ impl MusicLibrary {
                     scanned_tracks += 1;
 
                     if let Ok(metadata) = extract_metadata(path) {
-                        // Prefer AlbumArtist over Artist for compilation albums
-                        // This ensures soundtracks/compilations group correctly even if
-                        // individual tracks have different artists
-                        let artist = metadata
-                            .album_artist
-                            .as_ref()
-                            .or(metadata.artist.as_ref())
-                            .map(|s| s.clone())
-                            .unwrap_or_else(|| "Unknown Artist".to_string());
                         let album_title = metadata
                             .album
                             .clone()
                             .unwrap_or_else(|| "Unknown Album".to_string());
 
-                        // Normalize artist and album names for grouping
-                        // This ensures variations in case/whitespace don't create duplicate albums
-                        let normalized_artist = normalize_album_key(&artist);
+                        // Albums are now keyed by title only - artist comes from tracks
                         let normalized_title = normalize_album_key(&album_title);
-                        let key = (normalized_artist, normalized_title);
-
-                        // Track that this album is present in this directory
-                        if let Some(_parent) = path.parent() {
-                            // This is getting complicated to track unique albums per directory efficiently
-                            // without storing a set for each directory.
-                            // But we can do it.
-                        }
+                        let key = normalized_title;
 
                         let album = album_map.entry(key).or_insert_with(|| {
                             // Capitalize first letter of each word for nice display
-                            // while keeping consistent grouping via normalized keys
-                            let display_artist = capitalize_words(&artist);
                             let display_title = capitalize_words(&album_title);
 
                             Album {
                                 id: None,
-                                artist: display_artist,
                                 title: display_title,
                                 year: metadata.year,
                                 tracks: Vec::new(),
@@ -725,6 +736,7 @@ impl MusicLibrary {
                         let track = Track {
                             path: path.to_path_buf(),
                             title: metadata.title,
+                            artist: metadata.artist,
                             track_number: metadata.track_number,
                             duration_secs: metadata.duration_secs,
                             channels: metadata.channels,
@@ -789,20 +801,25 @@ impl MusicLibrary {
         self.albums
             .iter()
             .filter(|album| {
-                // Search artist and album title
-                if album.artist.to_lowercase().contains(&query_lower)
+                // Search artist (computed from tracks) and album title
+                if album.artist().to_lowercase().contains(&query_lower)
                     || album.title.to_lowercase().contains(&query_lower)
                 {
                     return true;
                 }
 
-                // Also search track titles
+                // Also search track titles and track artists
                 album.tracks.iter().any(|track| {
                     track
                         .title
                         .as_ref()
                         .map(|t| t.to_lowercase().contains(&query_lower))
                         .unwrap_or(false)
+                        || track
+                            .artist
+                            .as_ref()
+                            .map(|a| a.to_lowercase().contains(&query_lower))
+                            .unwrap_or(false)
                 })
             })
             .collect()
@@ -1035,11 +1052,11 @@ fn build_directory_tree_from_disk(
 /// Uses both original and canonicalized paths as keys for robust matching
 fn compute_directory_stats(albums: &[Album]) -> HashMap<PathBuf, (usize, usize)> {
     let mut dir_track_counts: HashMap<PathBuf, usize> = HashMap::new();
-    let mut dir_album_sets: HashMap<PathBuf, std::collections::HashSet<(String, String)>> =
-        HashMap::new();
+    let mut dir_album_sets: HashMap<PathBuf, std::collections::HashSet<String>> = HashMap::new();
 
     for album in albums {
-        let album_key = (album.artist.clone(), album.title.clone());
+        // Album is now uniquely identified by title alone
+        let album_key = album.title.clone();
 
         for track in &album.tracks {
             // Get the parent directory of this track
@@ -1218,7 +1235,7 @@ pub fn find_and_generate_album_thumbnail(album: &mut Album) {
         if let Some(thumbnail) = generate_thumbnail(&art_path) {
             log::debug!(
                 "Generated thumbnail for {} - {} ({} bytes)",
-                album.artist,
+                album.artist(),
                 album.title,
                 thumbnail.len()
             );
@@ -1279,17 +1296,41 @@ mod tests {
         assert_eq!(results.len(), 0);
     }
 
+    /// Helper function to create a test track with just an artist
+    fn test_track_with_artist(artist: &str) -> Track {
+        Track {
+            path: PathBuf::from("/test/track.flac"),
+            title: Some("Test Track".to_string()),
+            artist: Some(artist.to_string()),
+            track_number: Some(1),
+            duration_secs: None,
+            channels: None,
+            replay_gain: None,
+            replay_peak: None,
+            album_gain: None,
+            album_peak: None,
+            waveform: None,
+            genre: None,
+            composer: None,
+            disc_number: None,
+            conductor: None,
+            performer: None,
+            isrc: None,
+            album_artist: None,
+            ensemble: None,
+        }
+    }
+
     #[test]
     fn test_search_albums_in_memory() {
         let mut lib = MusicLibrary::new();
 
-        // Add some test albums
+        // Add some test albums with tracks containing artist info
         lib.albums.push(Album {
             id: None,
-            artist: "Pink Floyd".to_string(),
             title: "The Dark Side of the Moon".to_string(),
             year: Some(1973),
-            tracks: vec![],
+            tracks: vec![test_track_with_artist("Pink Floyd")],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
@@ -1297,10 +1338,9 @@ mod tests {
 
         lib.albums.push(Album {
             id: None,
-            artist: "The Beatles".to_string(),
             title: "Abbey Road".to_string(),
             year: Some(1969),
-            tracks: vec![],
+            tracks: vec![test_track_with_artist("The Beatles")],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
@@ -1308,10 +1348,9 @@ mod tests {
 
         lib.albums.push(Album {
             id: None,
-            artist: "Led Zeppelin".to_string(),
             title: "IV".to_string(),
             year: Some(1971),
-            tracks: vec![],
+            tracks: vec![test_track_with_artist("Led Zeppelin")],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
@@ -1320,7 +1359,7 @@ mod tests {
         // Search by artist (case insensitive)
         let results = lib.search_albums("pink");
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].artist, "Pink Floyd");
+        assert_eq!(results[0].artist(), "Pink Floyd");
 
         // Search by album title
         let results = lib.search_albums("abbey");
@@ -1330,7 +1369,7 @@ mod tests {
         // Search by partial match
         let results = lib.search_albums("ze");
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].artist, "Led Zeppelin");
+        assert_eq!(results[0].artist(), "Led Zeppelin");
 
         // Search with no results
         let results = lib.search_albums("nonexistent");
@@ -1347,10 +1386,9 @@ mod tests {
 
         lib.albums.push(Album {
             id: None,
-            artist: "Metallica".to_string(),
             title: "Master of Puppets".to_string(),
             year: Some(1986),
-            tracks: vec![],
+            tracks: vec![test_track_with_artist("Metallica")],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
