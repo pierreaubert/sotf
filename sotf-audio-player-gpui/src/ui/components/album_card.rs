@@ -135,7 +135,7 @@ impl AlbumCard {
                     .overflow_hidden()
                     .text_ellipsis()
                     .whitespace_nowrap()
-                    .child(album.artist.clone()),
+                    .child(album.artist()),
             )
             // Track count
             .child(
@@ -173,7 +173,7 @@ impl AlbumCard {
                         div()
                             .text_sm()
                             .text_color(theme.text_secondary)
-                            .child(album.artist.clone()),
+                            .child(album.artist()),
                     )
                     .child(
                         div()
@@ -212,7 +212,7 @@ impl AlbumCard {
                                 div()
                                     .text_xs()
                                     .text_color(theme.text_muted)
-                                    .child(album.artist.clone()),
+                                    .child(album.artist()),
                             ),
                     )
                     .child(

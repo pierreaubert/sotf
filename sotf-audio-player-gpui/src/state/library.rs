@@ -176,8 +176,8 @@ impl LibraryState {
         match self.sort_order {
             LibrarySortOrder::Artist => {
                 albums.sort_by(|a, b| {
-                    a.artist
-                        .cmp(&b.artist)
+                    a.artist()
+                        .cmp(&b.artist())
                         .then_with(|| a.year.cmp(&b.year).reverse())
                         .then_with(|| a.title.cmp(&b.title))
                 });
@@ -189,7 +189,7 @@ impl LibraryState {
                 albums.sort_by(|a, b| {
                     b.year
                         .cmp(&a.year)
-                        .then_with(|| a.artist.cmp(&b.artist))
+                        .then_with(|| a.artist().cmp(&b.artist()))
                         .then_with(|| a.title.cmp(&b.title))
                 });
             }

@@ -332,7 +332,7 @@ impl PlayerView {
                                                 div()
                                                     .text_xs()
                                                     .text_color(theme.text_muted)
-                                                    .child(item.album.artist.clone()),
+                                                    .child(item.album.artist()),
                                             )
                                             .child(
                                                 div()
@@ -396,7 +396,7 @@ impl PlayerView {
                     .unwrap_or(2);
 
                 let album_title = album.title.clone();
-                let artist = album.artist.clone();
+                let artist = album.artist();
                 let art_path = album.album_art_path.clone();
                 let tracks: Vec<_> = album.tracks.iter().enumerate().map(|(idx, track)| {
                     let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());

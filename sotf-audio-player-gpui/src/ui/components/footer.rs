@@ -48,7 +48,7 @@ impl PlayerView {
                     .current_track()
                     .and_then(|t| t.title.clone())
                     .unwrap_or_else(|| "Unknown Track".to_string());
-                (track_title, item.album.title.clone(), item.album.artist.clone(), item.album.album_art_path.clone())
+                (track_title, item.album.title.clone(), item.album.artist(), item.album.album_art_path.clone())
             } else {
                 (String::new(), String::new(), String::new(), None)
             }

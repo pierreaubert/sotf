@@ -42,8 +42,8 @@ impl App {
         match self.library_sort_order {
             LibrarySortOrder::Artist => {
                 albums.sort_by(|a, b| {
-                    a.artist
-                        .cmp(&b.artist)
+                    a.artist()
+                        .cmp(&b.artist())
                         .then_with(|| a.year.cmp(&b.year).reverse())
                         .then_with(|| a.title.cmp(&b.title))
                 });
@@ -58,7 +58,7 @@ impl App {
                 albums.sort_by(|a, b| {
                     b.year
                         .cmp(&a.year)
-                        .then_with(|| a.artist.cmp(&b.artist))
+                        .then_with(|| a.artist().cmp(&b.artist()))
                         .then_with(|| a.title.cmp(&b.title))
                 });
             }
@@ -120,8 +120,8 @@ impl App {
         // When sorting by Artist/Year, group by artist name
         for (idx, album) in self.library.albums.iter().enumerate() {
             let group_by_text = match self.library_sort_order {
-                LibrarySortOrder::Album | LibrarySortOrder::Title => &album.title,
-                LibrarySortOrder::Artist | LibrarySortOrder::Year => &album.artist,
+                LibrarySortOrder::Album | LibrarySortOrder::Title => album.title.clone(),
+                LibrarySortOrder::Artist | LibrarySortOrder::Year => album.artist(),
             };
 
             let first_letter = group_by_text
