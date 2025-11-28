@@ -77,11 +77,17 @@ which = { workspace = true }
 [features]
 default = ["ffi"]
 ffi = []  # FFI wrapper to NumCalc
-pure-rust = []  # Pure Rust BEM implementation (future)
+pure-rust = []  # Pure Rust BEM implementation
+parallel = []  # Parallel TBEM assembly using Rayon
 cli = []
 benchmarks = ["criterion"]
 
 # Memory optimization features
 memory-optimized = []
 out-of-core = []  # Stream data from disk for very large problems
+
+# Examples that require specific features
+[[example]]
+name = "simple_sphere_test"
+required-features = ["pure-rust"]
 

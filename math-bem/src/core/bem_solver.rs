@@ -32,7 +32,7 @@ use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
-use crate::core::assembly::tbem::build_tbem_system;
+use crate::core::assembly::tbem::{build_tbem_system, build_tbem_system_with_beta};
 use crate::core::incident::IncidentField;
 use crate::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
 use crate::core::postprocess::pressure::{compute_total_field, FieldPoint};
@@ -213,6 +213,8 @@ pub struct BemSolver {
     pub tolerance: f64,
     /// Verbose output
     pub verbose: bool,
+    /// Burton-Miller β scale factor (default: 4.0 for best accuracy at ka ~ 1)
+    pub beta_scale: f64,
 }
 
 impl Default for BemSolver {
@@ -223,6 +225,7 @@ impl Default for BemSolver {
             max_iterations: 1000,
             tolerance: 1e-8,
             verbose: false,
+            beta_scale: 4.0, // Empirically optimal for ka ~ 1
         }
     }
 }
@@ -353,7 +356,9 @@ impl BemSolver {
     ) -> Result<(Array2<Complex64>, Array1<Complex64>), BemError> {
         match self.assembly_method {
             AssemblyMethod::Tbem => {
-                let system = build_tbem_system(elements, nodes, physics);
+                // Use scaled Burton-Miller β for better accuracy
+                let beta = physics.burton_miller_beta_scaled(self.beta_scale);
+                let system = build_tbem_system_with_beta(elements, nodes, physics, beta);
                 Ok((system.matrix, system.rhs))
             }
             AssemblyMethod::Slfmm | AssemblyMethod::Mlfmm => {
@@ -386,8 +391,13 @@ impl BemSolver {
             }
         }
 
-        // Compute incident field RHS contribution
-        let incident_rhs = incident_field.compute_rhs(&centers, &normals, physics, use_burton_miller);
+        // Compute incident field RHS contribution with scaled β
+        let incident_rhs = if use_burton_miller {
+            let beta = physics.burton_miller_beta_scaled(self.beta_scale);
+            incident_field.compute_rhs_with_beta(&centers, &normals, physics, beta)
+        } else {
+            incident_field.compute_rhs(&centers, &normals, physics, false)
+        };
 
         // Add to system RHS
         rhs = rhs + incident_rhs;

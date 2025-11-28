@@ -166,13 +166,71 @@ impl MemoryEstimate {
     }
 
     /// Parse Memory.txt content
+    ///
+    /// NumCalc Memory.txt format (example):
+    /// ```text
+    /// NumCalc Memory Estimation
+    /// ========================
+    /// Number of frequencies: 10
+    /// Frequency index   Memory (MB)
+    /// 0                 125.5
+    /// 1                 130.2
+    /// ...
+    /// Total peak memory: 150.0 MB
+    /// ```
     pub fn parse(content: &str) -> anyhow::Result<Self> {
-        // TODO: Implement actual parsing based on Memory.txt format
-        // For now, return placeholder
+        let mut num_frequencies = 0;
+        let mut per_frequency_mb = Vec::new();
+        let mut total_mb = 0.0;
+
+        for line in content.lines() {
+            let line = line.trim();
+
+            // Parse "Number of frequencies: N"
+            if line.starts_with("Number of frequencies:") {
+                if let Some(num_str) = line.split(':').nth(1) {
+                    num_frequencies = num_str.trim().parse().unwrap_or(0);
+                }
+            }
+            // Parse "Total peak memory: X MB"
+            else if line.starts_with("Total peak memory:") || line.starts_with("Total memory:") {
+                if let Some(mem_str) = line.split(':').nth(1) {
+                    let mem_str = mem_str.trim().replace("MB", "").trim().to_string();
+                    total_mb = mem_str.parse().unwrap_or(0.0);
+                }
+            }
+            // Parse frequency lines "N    X.XX" (frequency index followed by memory)
+            else if let Some(first_char) = line.chars().next() {
+                if first_char.is_ascii_digit() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Ok(mem) = parts[1].parse::<f64>() {
+                            per_frequency_mb.push(mem);
+                        }
+                    }
+                }
+            }
+        }
+
+        // If we couldn't parse per-frequency, use total
+        if per_frequency_mb.is_empty() && total_mb > 0.0 {
+            per_frequency_mb = vec![total_mb];
+        }
+
+        // If we parsed per-frequency but not total, compute it
+        if total_mb == 0.0 && !per_frequency_mb.is_empty() {
+            total_mb = per_frequency_mb.iter().fold(0.0_f64, |a, &b| a.max(b));
+        }
+
+        // Update num_frequencies if not parsed
+        if num_frequencies == 0 {
+            num_frequencies = per_frequency_mb.len();
+        }
+
         Ok(Self {
-            total_mb: 0.0,
-            per_frequency_mb: vec![],
-            num_frequencies: 0,
+            total_mb,
+            per_frequency_mb,
+            num_frequencies,
             safety_factor: 1.2,
         })
     }
@@ -247,5 +305,39 @@ mod tests {
         assert_eq!(estimate.max_memory_mb(), 120.0);
         assert!(estimate.fits_in_ram(200.0));
         assert!(!estimate.fits_in_ram(100.0));
+    }
+
+    #[test]
+    fn test_memory_estimate_parse() {
+        let content = r#"
+NumCalc Memory Estimation
+========================
+Number of frequencies: 3
+Frequency index   Memory (MB)
+0                 125.5
+1                 130.2
+2                 128.0
+Total peak memory: 130.2 MB
+"#;
+
+        let estimate = MemoryEstimate::parse(content).unwrap();
+
+        assert_eq!(estimate.num_frequencies, 3);
+        assert_eq!(estimate.per_frequency_mb.len(), 3);
+        assert!((estimate.per_frequency_mb[0] - 125.5).abs() < 0.01);
+        assert!((estimate.per_frequency_mb[1] - 130.2).abs() < 0.01);
+        assert!((estimate.per_frequency_mb[2] - 128.0).abs() < 0.01);
+        assert!((estimate.total_mb - 130.2).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_memory_estimate_parse_minimal() {
+        // Test with just total memory
+        let content = "Total memory: 500.0 MB";
+
+        let estimate = MemoryEstimate::parse(content).unwrap();
+
+        assert!((estimate.total_mb - 500.0).abs() < 0.01);
+        assert_eq!(estimate.per_frequency_mb.len(), 1);
     }
 }

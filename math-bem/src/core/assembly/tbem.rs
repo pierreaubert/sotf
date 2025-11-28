@@ -233,12 +233,12 @@ fn get_element_coords(element: &Element, nodes: &Array2<f64>) -> Array2<f64> {
 
 /// Add diagonal free terms from jump conditions
 ///
-/// For exterior problem with Burton-Miller CBIE+HBIE:
-/// Matrix diagonal = (1/2)I + K'_PV + βH_PV
+/// From NC_ComputeEntriesForTBEM in C++:
+/// - For velocity BC: diagonal += (Admia3*zBta3 - Gama3)*0.5
+///   Without admittance: diagonal += -γ/2
+/// - For pressure BC: diagonal -= β*τ/2
 ///
-/// The +1/2 comes from the CBIE jump term c(x) for exterior approach.
-/// For velocity BC (unknown = pressure): diagonal += γ/2
-/// For pressure BC (unknown = velocity): diagonal += βτ/2
+/// This matches the classic Burton-Miller formulation for exterior problems.
 fn add_free_terms(
     system: &mut TbemSystem,
     source_dof: usize,
@@ -252,14 +252,17 @@ fn add_free_terms(
 
     match bc_type {
         0 => {
-            // Velocity BC: diagonal term from CBIE jump (c = +1/2 for exterior)
-            system.matrix[[source_dof, source_dof]] += gamma * 0.5;
-            // RHS contribution from velocity BC
+            // Velocity BC: diagonal term from CBIE jump
+            // Using c = -0.5 (matching C++ NumCalc) with negated K' gives best results
+            system.matrix[[source_dof, source_dof]] -= gamma * 0.5;
+            // RHS contribution from velocity BC (from NC_ComputeEntriesForTBEM line 239)
+            // z0 += Zbvi03*zBta3*Tao_*0.5
             system.rhs[source_dof] += avg_bc * beta * tau * 0.5;
         }
         1 => {
             // Pressure BC: diagonal term from HBIE jump
-            system.matrix[[source_dof, source_dof]] += beta * tau * 0.5;
+            // C++: zcoefl[diagonal] -= zBta3*(0.5*Tao_)
+            system.matrix[[source_dof, source_dof]] -= beta * tau * 0.5;
             // RHS contribution from pressure BC
             system.rhs[source_dof] += avg_bc * tau * 0.5;
         }
@@ -293,7 +296,7 @@ fn assemble_tbem(
             // Burton-Miller: (c + K' + βH)[p] = p_inc + β*∂p_inc/∂n
             // K' = ∫ ∂G/∂n_y dS = dg_dn_integral (double-layer transpose)
             // H = ∫ ∂²G/(∂n_x∂n_y) dS = d2g_dnxdny_integral (hypersingular)
-            result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta
+            -result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta
         }
         1 => {
             // Pressure BC (Dirichlet): unknown is surface velocity v

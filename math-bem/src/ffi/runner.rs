@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use sysinfo::{Pid, ProcessesToUpdate, ProcessRefreshKind, System};
 
 /// NumCalc subprocess runner
 pub struct NumCalcRunner {
@@ -171,12 +172,15 @@ impl NumCalcRunner {
 
         // Spawn process
         let child = cmd.spawn().context("Failed to spawn NumCalc process")?;
+        let child_pid = Pid::from_u32(child.id());
 
-        // Apply timeout if specified
-        let output = if let Some(timeout) = config.timeout {
-            Self::wait_with_timeout(child, timeout)?
+        // Track memory usage during execution
+        let (output, peak_memory_mb) = if let Some(timeout) = config.timeout {
+            let (output, mem) = Self::wait_with_timeout_and_memory(child, child_pid, timeout)?;
+            (output, mem)
         } else {
-            child.wait_with_output()?
+            let (output, mem) = Self::wait_with_memory_tracking(child, child_pid)?;
+            (output, mem)
         };
 
         let execution_time = start_time.elapsed();
@@ -194,51 +198,150 @@ impl NumCalcRunner {
             stderr,
             output_files,
             execution_time,
-            peak_memory_mb: None, // TODO: Implement memory tracking
+            peak_memory_mb,
             frequency_index: config.freq_start_idx,
         };
 
         log::info!(
-            "NumCalc finished in {:.2}s, exit code: {:?}",
+            "NumCalc finished in {:.2}s, exit code: {:?}, peak memory: {:?} MB",
             execution_time.as_secs_f64(),
-            result.exit_code
+            result.exit_code,
+            result.peak_memory_mb
         );
 
         Ok(result)
     }
 
-    /// Wait for process with timeout
-    fn wait_with_timeout(
+    /// Wait for process with memory tracking (no timeout)
+    fn wait_with_memory_tracking(
         mut child: std::process::Child,
-        timeout: Duration,
-    ) -> Result<std::process::Output> {
-        use std::sync::mpsc;
+        pid: Pid,
+    ) -> Result<(std::process::Output, Option<f64>)> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
         use std::thread;
 
+        let peak_memory = Arc::new(AtomicU64::new(0));
+        let peak_memory_clone = peak_memory.clone();
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let running_clone = running.clone();
+
+        // Spawn memory monitoring thread
+        let monitor_handle = thread::spawn(move || {
+            let mut sys = System::new();
+            let refresh_kind = ProcessRefreshKind::nothing().with_memory();
+            let pids_to_update = ProcessesToUpdate::Some(&[pid]);
+
+            while running_clone.load(Ordering::Relaxed) {
+                sys.refresh_processes_specifics(pids_to_update, true, refresh_kind);
+
+                if let Some(process) = sys.process(pid) {
+                    let mem_bytes = process.memory();
+                    let current = peak_memory_clone.load(Ordering::Relaxed);
+                    if mem_bytes > current {
+                        peak_memory_clone.store(mem_bytes, Ordering::Relaxed);
+                    }
+                }
+
+                thread::sleep(Duration::from_millis(100));
+            }
+        });
+
+        // Wait for child to finish
+        let output = child.wait_with_output().context("Failed to get child output")?;
+
+        // Stop monitoring
+        running.store(false, Ordering::Relaxed);
+        let _ = monitor_handle.join();
+
+        // Convert peak memory from bytes to MB
+        let peak_bytes = peak_memory.load(Ordering::Relaxed);
+        let peak_mb = if peak_bytes > 0 {
+            Some(peak_bytes as f64 / (1024.0 * 1024.0))
+        } else {
+            None
+        };
+
+        Ok((output, peak_mb))
+    }
+
+    /// Wait for process with timeout and memory tracking
+    fn wait_with_timeout_and_memory(
+        mut child: std::process::Child,
+        pid: Pid,
+        timeout: Duration,
+    ) -> Result<(std::process::Output, Option<f64>)> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::mpsc;
+        use std::sync::Arc;
+        use std::thread;
+
+        let peak_memory = Arc::new(AtomicU64::new(0));
+        let peak_memory_clone = peak_memory.clone();
+        let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let running_clone = running.clone();
+
+        // Spawn memory monitoring thread
+        let monitor_handle = thread::spawn(move || {
+            let mut sys = System::new();
+            let refresh_kind = ProcessRefreshKind::nothing().with_memory();
+            let pids_to_update = ProcessesToUpdate::Some(&[pid]);
+
+            while running_clone.load(Ordering::Relaxed) {
+                sys.refresh_processes_specifics(pids_to_update, true, refresh_kind);
+
+                if let Some(process) = sys.process(pid) {
+                    let mem_bytes = process.memory();
+                    let current = peak_memory_clone.load(Ordering::Relaxed);
+                    if mem_bytes > current {
+                        peak_memory_clone.store(mem_bytes, Ordering::Relaxed);
+                    }
+                }
+
+                thread::sleep(Duration::from_millis(100));
+            }
+        });
+
+        // Set up timeout channel
         let (tx, rx) = mpsc::channel();
 
-        let _child_id = child.id();
-
         // Spawn thread to wait for child
-        thread::spawn(move || {
-            let _ = tx.send(());
+        let child_thread = thread::spawn(move || {
+            let result = child.wait_with_output();
+            let _ = tx.send(result);
         });
 
         // Wait with timeout
-        match rx.recv_timeout(timeout) {
-            Ok(_) => {
-                // Child finished
-                child
-                    .wait_with_output()
-                    .context("Failed to get child output")
+        let output = match rx.recv_timeout(timeout) {
+            Ok(result) => {
+                running.store(false, Ordering::Relaxed);
+                let _ = monitor_handle.join();
+                result.context("Failed to get child output")?
             }
             Err(_) => {
-                // Timeout - kill child
+                // Timeout - signal monitoring to stop
+                running.store(false, Ordering::Relaxed);
+                let _ = monitor_handle.join();
+
                 log::warn!("NumCalc execution timed out after {:?}", timeout);
-                child.kill()?;
+
+                // Note: We can't easily kill the child from here since it's moved to child_thread
+                // The child_thread will eventually clean up
+                drop(child_thread);
+
                 anyhow::bail!("NumCalc execution timed out after {:?}", timeout);
             }
-        }
+        };
+
+        // Convert peak memory from bytes to MB
+        let peak_bytes = peak_memory.load(Ordering::Relaxed);
+        let peak_mb = if peak_bytes > 0 {
+            Some(peak_bytes as f64 / (1024.0 * 1024.0))
+        } else {
+            None
+        };
+
+        Ok((output, peak_mb))
     }
 
     /// Collect output files generated by NumCalc

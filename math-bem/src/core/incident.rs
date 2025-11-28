@@ -267,11 +267,12 @@ impl IncidentField {
     /// For exterior Neumann problem (rigid scatterer) using DIRECT formulation
     /// where the unknown is the total surface pressure p:
     ///
-    /// CBIE: (c + K')[p] = p_inc
-    /// Burton-Miller: (c + K' + βH)[p] = p_inc + β*∂p_inc/∂n
+    /// The RHS comes from the incident field contribution to the integral equation.
+    /// From NumCalc NC_IncidentWaveRHS:
+    ///   RHS = -(γ*p_inc + β*τ*∂p_inc/∂n)
     ///
-    /// RHS = p_inc (for CBIE)
-    /// RHS = p_inc + β*∂p_inc/∂n (for Burton-Miller)
+    /// For exterior problems: τ = +1, γ = 1
+    /// For interior problems: τ = -1
     pub fn compute_rhs(
         &self,
         element_centers: &Array2<f64>,
@@ -283,18 +284,19 @@ impl IncidentField {
             let beta = physics.burton_miller_beta();
             self.compute_rhs_with_beta(element_centers, element_normals, physics, beta)
         } else {
-            // CBIE only: RHS = p_inc
-            self.evaluate_pressure(element_centers, physics)
+            // CBIE only: RHS = -γ*p_inc
+            let gamma = Complex64::new(physics.gamma(), 0.0);
+            let p_inc = self.evaluate_pressure(element_centers, physics);
+            -gamma * p_inc
         }
     }
 
     /// Compute RHS with custom Burton-Miller coupling parameter
     ///
-    /// For DIRECT Burton-Miller formulation:
-    /// RHS = p_inc + β*∂p_inc/∂n
+    /// From NumCalc NC_IncidentWaveRHS:
+    ///   RHS = -(γ*p_inc + β*τ*∂p_inc/∂n)
     ///
-    /// This allows using a different beta than the default i/k, which is useful
-    /// for the bounded formulation β = i/(k + k_ref).
+    /// This formula matches the C++ implementation for proper BEM assembly.
     pub fn compute_rhs_with_beta(
         &self,
         element_centers: &Array2<f64>,
@@ -308,10 +310,15 @@ impl IncidentField {
         // Get incident velocity (normal derivative) at collocation points
         let dpdn = self.evaluate_normal_derivative(element_centers, element_normals, physics);
 
-        // Burton-Miller RHS: p_inc + β*∂p_inc/∂n
+        // Parameters from physics
+        let gamma = Complex64::new(physics.gamma(), 0.0);
+        let tau = Complex64::new(physics.tau, 0.0);
+
+        // Burton-Miller RHS: -(γ*p_inc + β*τ*∂p_inc/∂n)
+        // This matches NC_IncidentWaveRHS: zrc -= zg*Gama3 + zv*(zBta3*Tao_)
         let mut rhs = Array1::zeros(element_centers.nrows());
         for i in 0..rhs.len() {
-            rhs[i] = p_inc[i] + beta * dpdn[i];
+            rhs[i] = -(gamma * p_inc[i] + beta * tau * dpdn[i]);
         }
 
         rhs
