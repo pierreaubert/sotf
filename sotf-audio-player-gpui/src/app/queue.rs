@@ -11,10 +11,19 @@ impl App {
     pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.is_playing;
-        let albums = self.filtered_albums();
 
-        if let Some(album) = albums.get(self.selected_album_index) {
-            self.queue.push(QueueItem::new((*album).clone()));
+        // Get the selected album based on current view mode
+        let selected_album = if self.library_view_mode == crate::app::types::LibraryViewMode::TreeView {
+            // In tree view, find the album from the tree selection
+            self.get_selected_tree_album()
+        } else {
+            // In flat/grid view, use the selected_album_index
+            let albums = self.filtered_albums();
+            albums.get(self.selected_album_index).map(|a| *a)
+        };
+
+        if let Some(album) = selected_album {
+            self.queue.push(QueueItem::new(album.clone()));
             self.expanded_queue_items.push(false);
 
             // Auto-play if queue was empty OR if nothing was playing
@@ -23,6 +32,22 @@ impl App {
             }
         }
         None
+    }
+
+    /// Get the currently selected album in tree view
+    fn get_selected_tree_album(&self) -> Option<&sotf_audio_player::Album> {
+        let tree_items = self.get_tree_items();
+        let selected_item = tree_items.get(self.selected_tree_index)?;
+
+        match selected_item {
+            crate::app::types::TreeItem::Album { index } => {
+                self.library.albums.get(*index)
+            }
+            crate::app::types::TreeItem::Letter { .. } => {
+                // If a letter header is selected, don't add anything
+                None
+            }
+        }
     }
 
     pub fn start_queue(&mut self) -> Option<PathBuf> {

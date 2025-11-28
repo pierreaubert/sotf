@@ -1,8 +1,10 @@
 //! Library screen rendering functions
 
+use crate::ui::components::album_card::{AlbumCard, AlbumCardMode};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::{img, *};
+use gpui::{img, uniform_list, *};
+use std::sync::Arc;
 
 impl PlayerView {
     pub(crate) fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -395,79 +397,82 @@ impl PlayerView {
     }
 
     pub(crate) fn render_library_flat(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        // Get all filtered albums (not paginated - uniform_list handles virtualization)
         let (albums, selected_album_index, theme) = {
             let state = self.state.read(cx);
-            (
-                state.app.get_paginated_albums(),
-                state.app.selected_album_index,
-                state.app.theme.clone(),
-            )
+            let filtered = state.app.filtered_albums();
+            // Convert to Arc for efficient cloning in render callback
+            let albums: Vec<Arc<sotf_audio_player::Album>> =
+                filtered.into_iter().cloned().map(Arc::new).collect();
+            (albums, state.app.selected_album_index, state.app.theme.clone())
         };
+
+        let album_count = albums.len();
+
+        // Capture state entity for click handlers
+        let state_entity = self.state.clone();
 
         div()
             .id("library-flat-view")
             .flex()
             .flex_col()
-            .gap_2()
             .flex_1()
-            .overflow_y_scroll()
             .p_2()
-            .children(albums.iter().enumerate().map(|(idx, album)| {
-                let is_selected = selected_album_index == idx;
-                let theme = theme.clone();
-                div()
-                    .p_3()
-                    .rounded_md()
-                    .when(is_selected, |div| div.bg(theme.accent))
-                    .when(!is_selected, |div| div.bg(theme.surface))
-                    .hover(|style| style.bg(theme.surface_hover))
-                    .cursor_pointer()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                            view.state
-                                .update(cx, |state, _cx| state.app.selected_album_index = idx);
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_up(
-                        MouseButton::Right,
-                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.selected_album_index = idx;
-                                state.app.context_menu = Some(crate::app::ContextMenuState {
-                                    menu_type: crate::app::ContextMenuType::Album,
-                                    position_x: event.position.x.into(),
-                                    position_y: event.position.y.into(),
-                                    item_index: idx,
-                                });
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(album.title.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.text_secondary)
-                                    .child(album.artist.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .child(format!("{} tracks", album.tracks.len())),
-                            ),
-                    )
-            }))
+            .child(
+                uniform_list(
+                    "album-list-flat",
+                    album_count,
+                    {
+                        let albums = albums.clone();
+                        let theme = theme.clone();
+                        let state_entity = state_entity.clone();
+                        move |range, _window, cx| {
+                            range
+                                .map(|idx| {
+                                    let album = albums[idx].clone();
+                                    let is_selected = selected_album_index == idx;
+                                    let theme = theme.clone();
+                                    let state_entity = state_entity.clone();
+
+                                    // Wrap AlbumCard in a container with click handlers
+                                    div()
+                                        .id(SharedString::from(format!("album-flat-{}", idx)))
+                                        .mb_2()
+                                        .on_mouse_up(MouseButton::Left, {
+                                            let state_entity = state_entity.clone();
+                                            move |_event, _window, cx| {
+                                                state_entity.update(cx, |state, cx| {
+                                                    state.app.selected_album_index = idx;
+                                                    cx.notify();
+                                                });
+                                            }
+                                        })
+                                        .on_mouse_up(MouseButton::Right, {
+                                            let state_entity = state_entity.clone();
+                                            move |event: &MouseUpEvent, _window, cx| {
+                                                state_entity.update(cx, |state, cx| {
+                                                    state.app.selected_album_index = idx;
+                                                    state.app.context_menu =
+                                                        Some(crate::app::ContextMenuState {
+                                                            menu_type: crate::app::ContextMenuType::Album,
+                                                            position_x: event.position.x.into(),
+                                                            position_y: event.position.y.into(),
+                                                            item_index: idx,
+                                                        });
+                                                    cx.notify();
+                                                });
+                                            }
+                                        })
+                                        .child(AlbumCard::new(album, idx, is_selected, theme).mode(AlbumCardMode::List))
+                                })
+                                .collect()
+                        }
+                    },
+                )
+                .track_scroll(self.library_scroll_handle.clone())
+                .size_full()
+                .with_sizing_behavior(ListSizingBehavior::Infer),
+            )
     }
 
     pub(crate) fn render_library_tree(&self, cx: &mut Context<Self>) -> impl IntoElement {

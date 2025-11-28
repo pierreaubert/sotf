@@ -185,7 +185,7 @@ impl App {
             selected_plugin_index: 0,
             library_view_mode: LibraryViewMode::Grid, // Default to Grid view
             letter_tree: Vec::new(),
-            library_sort_order: LibrarySortOrder::Artist,
+            library_sort_order: LibrarySortOrder::Album,
             channel_filter: ChannelFilter::All,
             library_page: 0,
             library_items_per_page: 50, // Show 50 items per page

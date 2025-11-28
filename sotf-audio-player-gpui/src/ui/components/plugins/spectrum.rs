@@ -4,9 +4,11 @@
 
 use super::common::{render_edit_hints, render_param_row, render_section_header};
 use crate::theme::Theme;
+use crate::ui::elements::SpectrumElement;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use std::sync::Arc;
 
 /// Render the Spectrum Analyzer plugin
 pub fn render_spectrum_analyzer_plugin(
@@ -179,42 +181,26 @@ pub fn render_spectrum_analyzer_plugin(
 
 impl PlayerView {
     /// Render the full-screen spectrum analyzer display
+    /// Uses GPU-accelerated SpectrumElement for high-performance rendering
     pub(crate) fn render_spectrum_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
 
         let content = if let Some(info) = &state.app.spectrum_info {
+            // Convert magnitudes to Arc for the GPU element
+            let magnitudes: Arc<[f32]> = info.magnitudes.clone().into();
+
             div()
                 .flex()
                 .flex_col()
                 .size_full()
+                // GPU-accelerated spectrum visualization
                 .child(
-                    div()
-                        .flex()
-                        .items_end()
-                        .gap_1()
-                        .h_64()
-                        .w_full()
-                        .bg(rgb(0x000000))
-                        .p_2()
-                        .children(info.magnitudes.iter().enumerate().map(|(i, &mag)| {
-                            let normalized = ((mag + 100.0) / 100.0).clamp(0.0, 1.0);
-                            let color = if normalized > 0.9 {
-                                rgb(0xff0000)
-                            } else if normalized > 0.7 {
-                                rgb(0xffff00)
-                            } else {
-                                rgb(0x00ff00)
-                            };
-
-                            div()
-                                .w_full()
-                                .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                                    normalized,
-                                )))
-                                .bg(color)
-                                .rounded_t_sm()
-                        })),
+                    SpectrumElement::new(magnitudes)
+                        .height(px(256.0))
+                        .frequency_range(20.0, 20000.0)
+                        .smoothing(0.3),
                 )
+                // Frequency labels
                 .child(
                     div()
                         .mt_2()

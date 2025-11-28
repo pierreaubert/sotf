@@ -115,10 +115,16 @@ impl App {
 
         let mut letter_map: HashMap<char, Vec<usize>> = HashMap::new();
 
-        // Group albums by first letter of artist name
+        // Group albums by first letter based on sort order
+        // When sorting by Album/Title, group by album title
+        // When sorting by Artist/Year, group by artist name
         for (idx, album) in self.library.albums.iter().enumerate() {
-            let first_letter = album
-                .artist
+            let group_by_text = match self.library_sort_order {
+                LibrarySortOrder::Album | LibrarySortOrder::Title => &album.title,
+                LibrarySortOrder::Artist | LibrarySortOrder::Year => &album.artist,
+            };
+
+            let first_letter = group_by_text
                 .chars()
                 .next()
                 .unwrap_or('#')

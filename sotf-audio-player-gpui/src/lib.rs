@@ -5,11 +5,14 @@
 // This library module exposes internal types and functions for testing.
 // The main application binary is in main.rs.
 
+#![recursion_limit = "512"]
+
 pub mod actions;
 pub mod config;
 pub mod i18n;
 pub mod keybindings;
 pub mod optimization_params;
+pub mod state;
 pub mod theme;
 // Note: ui must be loaded before app because app re-exports from ui::components::host
 pub mod ui;

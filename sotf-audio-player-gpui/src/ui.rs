@@ -1,4 +1,5 @@
 pub mod components;
+pub mod elements;
 mod headphone_eq;
 mod screens;
 
@@ -15,6 +16,8 @@ pub struct PlayerView {
     state: Entity<AppState>,
     focus_handle: FocusHandle,
     last_saved_window_bounds: Option<Bounds<Pixels>>,
+    /// Scroll handle for library flat list (uniform_list)
+    library_scroll_handle: UniformListScrollHandle,
 }
 
 impl PlayerView {
@@ -42,6 +45,7 @@ impl PlayerView {
             state,
             focus_handle,
             last_saved_window_bounds: None,
+            library_scroll_handle: UniformListScrollHandle::new(),
         }
     }
 
@@ -254,6 +258,21 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
+            // Global mouse move handler for divider dragging
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
+                let is_dragging = view.state.read(cx).app.is_dragging_queue_divider;
+                if is_dragging {
+                    let window_height = window.bounds().size.height;
+                    let mouse_y: f32 = event.position.y.into();
+                    let window_h: f32 = window_height.into();
+                    // Calculate new ratio (inverted because queue is at bottom)
+                    let new_ratio = (1.0 - (mouse_y / window_h)).clamp(0.15, 0.6);
+                    view.state.update(cx, |state, _cx| {
+                        state.app.queue_panel_ratio = new_ratio;
+                    });
+                    cx.notify();
+                }
+            }))
             // Top section: Library (takes remaining space)
             .child(
                 div()
@@ -305,20 +324,6 @@ impl PlayerView {
                     });
                 }),
             )
-            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
-                let is_dragging = view.state.read(cx).app.is_dragging_queue_divider;
-                if is_dragging {
-                    let window_height = window.bounds().size.height;
-                    let mouse_y: f32 = event.position.y.into();
-                    let window_h: f32 = window_height.into();
-                    // Calculate new ratio (inverted because queue is at bottom)
-                    let new_ratio = (1.0 - (mouse_y / window_h)).clamp(0.15, 0.6);
-                    view.state.update(cx, |state, _cx| {
-                        state.app.queue_panel_ratio = new_ratio;
-                    });
-                    cx.notify();
-                }
-            }))
     }
 
     fn toggle_library_view(
@@ -525,74 +530,130 @@ impl PlayerView {
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
+        let new_index = self.state.update(cx, |state, _cx| {
+            match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.select_next_tree_item();
+                        None
                     } else {
                         state.app.select_next_album();
+                        Some(state.app.selected_album_index)
                     }
                 }
-                Screen::Queue => state.app.select_next_queue_item(),
-                Screen::DirectoryManager => state.app.select_next_directory(),
-                _ => {}
-            });
+                Screen::Queue => {
+                    state.app.select_next_queue_item();
+                    None
+                }
+                Screen::DirectoryManager => {
+                    state.app.select_next_directory();
+                    None
+                }
+                _ => None,
+            }
+        });
+        // Scroll to the selected item in flat list view
+        if let Some(idx) = new_index {
+            self.library_scroll_handle
+                .scroll_to_item(idx, ScrollStrategy::Nearest);
+        }
         cx.notify();
     }
 
     fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
-        self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
+        let new_index = self.state.update(cx, |state, _cx| {
+            match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.select_previous_tree_item();
+                        None
                     } else {
                         state.app.select_previous_album();
+                        Some(state.app.selected_album_index)
                     }
                 }
-                Screen::Queue => state.app.select_previous_queue_item(),
-                Screen::DirectoryManager => state.app.select_previous_directory(),
-                _ => {}
-            });
+                Screen::Queue => {
+                    state.app.select_previous_queue_item();
+                    None
+                }
+                Screen::DirectoryManager => {
+                    state.app.select_previous_directory();
+                    None
+                }
+                _ => None,
+            }
+        });
+        // Scroll to the selected item in flat list view
+        if let Some(idx) = new_index {
+            self.library_scroll_handle
+                .scroll_to_item(idx, ScrollStrategy::Nearest);
+        }
         cx.notify();
     }
 
     fn select_next_page(&mut self, _: &SelectNextPage, _: &mut Window, cx: &mut Context<Self>) {
         const PAGE_SIZE: usize = 20;
 
-        self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
+        let new_index = self.state.update(cx, |state, _cx| {
+            match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.page_down_tree(PAGE_SIZE);
+                        None
                     } else {
                         state.app.page_down_albums(PAGE_SIZE);
+                        Some(state.app.selected_album_index)
                     }
                 }
-                Screen::Queue => state.app.page_down_queue(PAGE_SIZE),
-                Screen::DirectoryManager => state.app.page_down_directories(PAGE_SIZE),
-                _ => {}
-            });
+                Screen::Queue => {
+                    state.app.page_down_queue(PAGE_SIZE);
+                    None
+                }
+                Screen::DirectoryManager => {
+                    state.app.page_down_directories(PAGE_SIZE);
+                    None
+                }
+                _ => None,
+            }
+        });
+        // Scroll to the selected item in flat list view
+        if let Some(idx) = new_index {
+            self.library_scroll_handle
+                .scroll_to_item(idx, ScrollStrategy::Nearest);
+        }
         cx.notify();
     }
 
     fn select_prev_page(&mut self, _: &SelectPrevPage, _: &mut Window, cx: &mut Context<Self>) {
         const PAGE_SIZE: usize = 20;
 
-        self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
+        let new_index = self.state.update(cx, |state, _cx| {
+            match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.page_up_tree(PAGE_SIZE);
+                        None
                     } else {
                         state.app.page_up_albums(PAGE_SIZE);
+                        Some(state.app.selected_album_index)
                     }
                 }
-                Screen::Queue => state.app.page_up_queue(PAGE_SIZE),
-                Screen::DirectoryManager => state.app.page_up_directories(PAGE_SIZE),
-                _ => {}
-            });
+                Screen::Queue => {
+                    state.app.page_up_queue(PAGE_SIZE);
+                    None
+                }
+                Screen::DirectoryManager => {
+                    state.app.page_up_directories(PAGE_SIZE);
+                    None
+                }
+                _ => None,
+            }
+        });
+        // Scroll to the selected item in flat list view
+        if let Some(idx) = new_index {
+            self.library_scroll_handle
+                .scroll_to_item(idx, ScrollStrategy::Nearest);
+        }
         cx.notify();
     }
 

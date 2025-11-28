@@ -53,6 +53,9 @@ env_logger = "0.11"
 # Smol runtime (used by GPUI)
 smol = "2.0"
 
+# Array processing
+ndarray = { workspace = true }
+
 [lib]
 name = "sotf_audio_player_gpui"
 path = "src/lib.rs"
