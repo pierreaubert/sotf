@@ -14,8 +14,8 @@
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
+use rayon::prelude::*;
 
-use crate::core::greens::legendre::legendre_polynomials;
 use crate::core::greens::spherical::spherical_hankel_first_kind;
 use crate::core::integration::{regular_integration, singular_integration, unit_sphere_quadrature};
 use crate::core::types::{BoundaryCondition, Cluster, Element, PhysicsParams};
@@ -91,6 +91,37 @@ impl SlfmmSystem {
         }
     }
 
+    /// Extract the near-field matrix as a dense matrix for preconditioning
+    ///
+    /// This assembles only the near-field blocks into a dense matrix,
+    /// which is much smaller than the full matrix (O(N) vs O(N²) entries).
+    pub fn extract_near_field_matrix(&self) -> Array2<Complex64> {
+        let mut matrix = Array2::zeros((self.num_dofs, self.num_dofs));
+
+        for block in &self.near_matrix {
+            let src_dofs = &self.cluster_dof_indices[block.source_cluster];
+            let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
+
+            // Copy block to global matrix
+            for (local_i, &global_i) in src_dofs.iter().enumerate() {
+                for (local_j, &global_j) in fld_dofs.iter().enumerate() {
+                    matrix[[global_i, global_j]] += block.coefficients[[local_i, local_j]];
+                }
+            }
+
+            // Handle symmetric storage: also fill the (fld, src) part
+            if block.source_cluster != block.field_cluster {
+                for (local_i, &global_i) in src_dofs.iter().enumerate() {
+                    for (local_j, &global_j) in fld_dofs.iter().enumerate() {
+                        matrix[[global_j, global_i]] += block.coefficients[[local_i, local_j]];
+                    }
+                }
+            }
+        }
+
+        matrix
+    }
+
     /// Apply the SLFMM operator: y = ([N] + [S][D][T]) * x
     ///
     /// This is used in iterative solvers (CGS, BiCGSTAB).
@@ -105,160 +136,232 @@ impl SlfmmSystem {
     /// # Returns
     /// * `y` - Output vector (length = num_dofs), y = A*x
     pub fn matvec(&self, x: &Array1<Complex64>) -> Array1<Complex64> {
-        let mut y = Array1::zeros(self.num_dofs);
+        // === Near-field contribution: y += [N] * x (parallelized) ===
+        // Compute all near-field block contributions in parallel, then sum them
+        let near_contributions: Vec<Vec<(usize, Complex64)>> = self
+            .near_matrix
+            .par_iter()
+            .flat_map(|block| {
+                let src_dofs = &self.cluster_dof_indices[block.source_cluster];
+                let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
 
-        // === Near-field contribution: y += [N] * x ===
-        // Note: block.coefficients is (n_source, n_field) where:
-        // - source = collocation points (rows, where we evaluate)
-        // - field = integration elements (columns, source of influence)
-        // For y = A*x: gather x from field DOFs, scatter y to source DOFs
-        for block in &self.near_matrix {
-            let src_dofs = &self.cluster_dof_indices[block.source_cluster];
-            let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
+                let mut contributions = Vec::new();
 
-            // Gather x values from field cluster (columns of the matrix)
-            let x_local: Array1<Complex64> =
-                Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
+                // Gather x values from field cluster
+                let x_local: Array1<Complex64> =
+                    Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
 
-            // Apply block matrix: y_local[i] = sum_j A[i,j] * x[j]
-            let y_local = block.coefficients.dot(&x_local);
+                // Apply block matrix
+                let y_local = block.coefficients.dot(&x_local);
 
-            // Scatter to source DOFs (rows of the matrix)
-            for (local_i, &global_i) in src_dofs.iter().enumerate() {
-                y[global_i] += y_local[local_i];
-            }
-
-            // Handle symmetric storage: if src != fld, also apply the (fld, src) block
-            // which is the transpose of this block
-            if block.source_cluster != block.field_cluster {
-                // Gather x from source cluster DOFs
-                let x_src: Array1<Complex64> =
-                    Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
-                // Apply transpose: the (fld, src) block
-                let y_fld = block.coefficients.t().dot(&x_src);
-                // Scatter to field cluster DOFs
-                for (local_j, &global_j) in fld_dofs.iter().enumerate() {
-                    y[global_j] += y_fld[local_j];
+                // Collect contributions for source DOFs
+                for (local_i, &global_i) in src_dofs.iter().enumerate() {
+                    contributions.push((global_i, y_local[local_i]));
                 }
+
+                // Handle symmetric storage
+                if block.source_cluster != block.field_cluster {
+                    let x_src: Array1<Complex64> =
+                        Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
+                    let y_fld = block.coefficients.t().dot(&x_src);
+                    for (local_j, &global_j) in fld_dofs.iter().enumerate() {
+                        contributions.push((global_j, y_fld[local_j]));
+                    }
+                }
+
+                vec![contributions]
+            })
+            .collect();
+
+        // Accumulate near-field contributions
+        let mut y = Array1::zeros(self.num_dofs);
+        for contributions in near_contributions {
+            for (idx, val) in contributions {
+                y[idx] += val;
             }
         }
 
-        // === Far-field contribution: y += [S][D][T] * x ===
+        // === Far-field contribution: y += [S][D][T] * x (parallelized) ===
 
-        // Step 1: Compute multipole expansions for each cluster: t[c] = T[c] * x[c]
-        let mut multipoles: Vec<Array1<Complex64>> = Vec::with_capacity(self.num_clusters);
-        for (cluster_idx, t_mat) in self.t_matrices.iter().enumerate() {
-            let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
-            if cluster_dofs.is_empty() || t_mat.is_empty() {
-                multipoles.push(Array1::zeros(self.num_sphere_points));
-                continue;
-            }
-            let x_local: Array1<Complex64> =
-                Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
-            multipoles.push(t_mat.dot(&x_local));
-        }
+        // Step 1: Compute multipole expansions for each cluster in parallel: t[c] = T[c] * x[c]
+        let multipoles: Vec<Array1<Complex64>> = self
+            .t_matrices
+            .par_iter()
+            .enumerate()
+            .map(|(cluster_idx, t_mat)| {
+                let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
+                if cluster_dofs.is_empty() || t_mat.is_empty() {
+                    Array1::zeros(self.num_sphere_points)
+                } else {
+                    let x_local: Array1<Complex64> =
+                        Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
+                    t_mat.dot(&x_local)
+                }
+            })
+            .collect();
 
-        // Step 2: Translate multipoles between far clusters: locals[fld] += D[src,fld] * multipoles[src]
-        let mut locals: Vec<Array1<Complex64>> =
-            (0..self.num_clusters)
-                .map(|_| Array1::zeros(self.num_sphere_points))
-                .collect();
+        // Step 2: Translate multipoles between far clusters (parallelized)
+        // Compute all D*multipole products in parallel
+        let d_contributions: Vec<(usize, Array1<Complex64>)> = self
+            .d_matrices
+            .par_iter()
+            .map(|d_entry| {
+                let src_mult = &multipoles[d_entry.source_cluster];
+                let translated = d_entry.coefficients.dot(src_mult);
+                (d_entry.field_cluster, translated)
+            })
+            .collect();
 
-        for d_entry in &self.d_matrices {
-            let src_mult = &multipoles[d_entry.source_cluster];
-            let translated = d_entry.coefficients.dot(src_mult);
+        // Accumulate D-matrix contributions into locals (sequential to avoid race)
+        let mut locals: Vec<Array1<Complex64>> = (0..self.num_clusters)
+            .map(|_| Array1::zeros(self.num_sphere_points))
+            .collect();
+
+        for (field_cluster, translated) in d_contributions {
             for i in 0..self.num_sphere_points {
-                locals[d_entry.field_cluster][i] += translated[i];
+                locals[field_cluster][i] += translated[i];
             }
         }
 
-        // Step 3: Evaluate locals at field points: y[c] += S[c] * locals[c]
-        for (cluster_idx, s_mat) in self.s_matrices.iter().enumerate() {
-            let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
-            if cluster_dofs.is_empty() || s_mat.is_empty() {
-                continue;
-            }
-            let y_local = s_mat.dot(&locals[cluster_idx]);
-            for (local_j, &global_j) in cluster_dofs.iter().enumerate() {
-                y[global_j] += y_local[local_j];
+        // Step 3: Evaluate locals at field points in parallel: y[c] += S[c] * locals[c]
+        let far_contributions: Vec<Vec<(usize, Complex64)>> = self
+            .s_matrices
+            .par_iter()
+            .enumerate()
+            .filter_map(|(cluster_idx, s_mat)| {
+                let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
+                if cluster_dofs.is_empty() || s_mat.is_empty() {
+                    return None;
+                }
+                let y_local = s_mat.dot(&locals[cluster_idx]);
+                let contributions: Vec<(usize, Complex64)> = cluster_dofs
+                    .iter()
+                    .enumerate()
+                    .map(|(local_j, &global_j)| (global_j, y_local[local_j]))
+                    .collect();
+                Some(contributions)
+            })
+            .collect();
+
+        // Accumulate far-field contributions
+        for contributions in far_contributions {
+            for (idx, val) in contributions {
+                y[idx] += val;
             }
         }
 
         y
     }
 
-    /// Apply the SLFMM operator transpose: y = A^T * x
+    /// Apply the SLFMM operator transpose: y = A^T * x (parallelized)
     ///
     /// Used by some iterative solvers (e.g., BiCGSTAB).
     pub fn matvec_transpose(&self, x: &Array1<Complex64>) -> Array1<Complex64> {
-        let mut y = Array1::zeros(self.num_dofs);
+        // === Near-field contribution (transposed, parallelized) ===
+        let near_contributions: Vec<Vec<(usize, Complex64)>> = self
+            .near_matrix
+            .par_iter()
+            .flat_map(|block| {
+                let src_dofs = &self.cluster_dof_indices[block.source_cluster];
+                let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
 
-        // Near-field contribution (transposed)
-        // For A^T: if A maps (field -> source), then A^T maps (source -> field)
-        for block in &self.near_matrix {
-            let src_dofs = &self.cluster_dof_indices[block.source_cluster];
-            let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
+                let mut contributions = Vec::new();
 
-            // For transpose: gather from source DOFs, scatter to field DOFs
-            let x_local: Array1<Complex64> =
-                Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
-            let y_local = block.coefficients.t().dot(&x_local);
-            for (local_j, &global_j) in fld_dofs.iter().enumerate() {
-                y[global_j] += y_local[local_j];
-            }
-
-            // Symmetric storage: also apply the (src, fld) -> (fld, src) transpose
-            if block.source_cluster != block.field_cluster {
-                let x_fld: Array1<Complex64> =
-                    Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
-                let y_src = block.coefficients.dot(&x_fld);
-                for (local_i, &global_i) in src_dofs.iter().enumerate() {
-                    y[global_i] += y_src[local_i];
+                // For transpose: gather from source DOFs, scatter to field DOFs
+                let x_local: Array1<Complex64> =
+                    Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
+                let y_local = block.coefficients.t().dot(&x_local);
+                for (local_j, &global_j) in fld_dofs.iter().enumerate() {
+                    contributions.push((global_j, y_local[local_j]));
                 }
+
+                // Symmetric storage
+                if block.source_cluster != block.field_cluster {
+                    let x_fld: Array1<Complex64> =
+                        Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
+                    let y_src = block.coefficients.dot(&x_fld);
+                    for (local_i, &global_i) in src_dofs.iter().enumerate() {
+                        contributions.push((global_i, y_src[local_i]));
+                    }
+                }
+
+                vec![contributions]
+            })
+            .collect();
+
+        // Accumulate near-field contributions
+        let mut y = Array1::zeros(self.num_dofs);
+        for contributions in near_contributions {
+            for (idx, val) in contributions {
+                y[idx] += val;
             }
         }
 
-        // Far-field contribution (transposed): y += T^T * D^T * S^T * x
-        // Step 1: S^T * x
-        let mut locals: Vec<Array1<Complex64>> =
-            (0..self.num_clusters)
-                .map(|_| Array1::zeros(self.num_sphere_points))
-                .collect();
+        // === Far-field contribution (transposed, parallelized): y += T^T * D^T * S^T * x ===
 
-        for (cluster_idx, s_mat) in self.s_matrices.iter().enumerate() {
-            let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
-            if cluster_dofs.is_empty() || s_mat.is_empty() {
-                continue;
-            }
-            let x_local: Array1<Complex64> =
-                Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
-            locals[cluster_idx] = s_mat.t().dot(&x_local);
-        }
+        // Step 1: S^T * x (parallelized)
+        let locals: Vec<Array1<Complex64>> = self
+            .s_matrices
+            .par_iter()
+            .enumerate()
+            .map(|(cluster_idx, s_mat)| {
+                let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
+                if cluster_dofs.is_empty() || s_mat.is_empty() {
+                    Array1::zeros(self.num_sphere_points)
+                } else {
+                    let x_local: Array1<Complex64> =
+                        Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
+                    s_mat.t().dot(&x_local)
+                }
+            })
+            .collect();
 
-        // Step 2: D^T translation (reversed direction)
-        let mut multipoles: Vec<Array1<Complex64>> =
-            (0..self.num_clusters)
-                .map(|_| Array1::zeros(self.num_sphere_points))
-                .collect();
+        // Step 2: D^T translation (parallelized)
+        let d_contributions: Vec<(usize, Array1<Complex64>)> = self
+            .d_matrices
+            .par_iter()
+            .map(|d_entry| {
+                let fld_local = &locals[d_entry.field_cluster];
+                let translated = d_entry.coefficients.t().dot(fld_local);
+                (d_entry.source_cluster, translated)
+            })
+            .collect();
 
-        for d_entry in &self.d_matrices {
-            // Transpose: fld -> src direction
-            let fld_local = &locals[d_entry.field_cluster];
-            let translated = d_entry.coefficients.t().dot(fld_local);
+        // Accumulate D-matrix contributions
+        let mut multipoles: Vec<Array1<Complex64>> = (0..self.num_clusters)
+            .map(|_| Array1::zeros(self.num_sphere_points))
+            .collect();
+
+        for (source_cluster, translated) in d_contributions {
             for i in 0..self.num_sphere_points {
-                multipoles[d_entry.source_cluster][i] += translated[i];
+                multipoles[source_cluster][i] += translated[i];
             }
         }
 
-        // Step 3: T^T * multipoles
-        for (cluster_idx, t_mat) in self.t_matrices.iter().enumerate() {
-            let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
-            if cluster_dofs.is_empty() || t_mat.is_empty() {
-                continue;
-            }
-            let y_local = t_mat.t().dot(&multipoles[cluster_idx]);
-            for (local_i, &global_i) in cluster_dofs.iter().enumerate() {
-                y[global_i] += y_local[local_i];
+        // Step 3: T^T * multipoles (parallelized)
+        let far_contributions: Vec<Vec<(usize, Complex64)>> = self
+            .t_matrices
+            .par_iter()
+            .enumerate()
+            .filter_map(|(cluster_idx, t_mat)| {
+                let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
+                if cluster_dofs.is_empty() || t_mat.is_empty() {
+                    return None;
+                }
+                let y_local = t_mat.t().dot(&multipoles[cluster_idx]);
+                let contributions: Vec<(usize, Complex64)> = cluster_dofs
+                    .iter()
+                    .enumerate()
+                    .map(|(local_i, &global_i)| (global_i, y_local[local_i]))
+                    .collect();
+                Some(contributions)
+            })
+            .collect();
+
+        // Accumulate far-field contributions
+        for contributions in far_contributions {
+            for (idx, val) in contributions {
+                y[idx] += val;
             }
         }
 
@@ -356,7 +459,7 @@ fn count_dofs(elements: &[Element]) -> usize {
         .sum()
 }
 
-/// Build near-field matrix blocks
+/// Build near-field matrix blocks (parallelized)
 fn build_near_field(
     system: &mut SlfmmSystem,
     elements: &[Element],
@@ -368,74 +471,70 @@ fn build_near_field(
     let tau = Complex64::new(physics.tau, 0.0);
     let beta = physics.burton_miller_beta();
 
-    // For each cluster pair in near-field
+    // Collect all cluster pairs that need processing
+    let mut cluster_pairs: Vec<(usize, usize, bool)> = Vec::new();
+
     for (i, cluster_i) in clusters.iter().enumerate() {
         // Self-interaction
-        let mut block = compute_near_block(
-            elements,
-            nodes,
-            &cluster_i.element_indices,
-            &cluster_i.element_indices,
-            physics,
-            gamma,
-            tau,
-            beta,
-            true, // is_self
-        );
+        cluster_pairs.push((i, i, true));
 
-        // Add free terms to diagonal (jump conditions for Burton-Miller formulation)
-        // For velocity BC: c = +1/2 for exterior problem, so diagonal += gamma * 0.5
-        // This matches TBEM's add_free_terms() at tbem.rs:254-256
-        for local_idx in 0..cluster_i.element_indices.len() {
-            let elem_idx = cluster_i.element_indices[local_idx];
-            let elem = &elements[elem_idx];
-            if elem.property.is_evaluation() {
-                continue;
-            }
-            // Check BC type to determine which free term to add
-            match &elem.boundary_condition {
-                BoundaryCondition::Velocity(_) | BoundaryCondition::VelocityWithAdmittance { .. } => {
-                    // Velocity BC: diagonal term from CBIE jump
-                    block[[local_idx, local_idx]] += gamma * 0.5;
-                }
-                BoundaryCondition::Pressure(_) => {
-                    // Pressure BC: diagonal term from HBIE jump
-                    block[[local_idx, local_idx]] += beta * tau * 0.5;
-                }
-                _ => {}
-            }
-        }
-
-        system.near_matrix.push(NearFieldBlock {
-            source_cluster: i,
-            field_cluster: i,
-            coefficients: block,
-        });
-
-        // Interaction with near clusters
+        // Interaction with near clusters (only upper triangle)
         for &j in &cluster_i.near_clusters {
             if j > i {
-                // Only compute upper triangle, lower is symmetric
-                let cluster_j = &clusters[j];
-                let block = compute_near_block(
-                    elements,
-                    nodes,
-                    &cluster_i.element_indices,
-                    &cluster_j.element_indices,
-                    physics,
-                    gamma,
-                    tau,
-                    beta,
-                    false,
-                );
-                system.near_matrix.push(NearFieldBlock {
-                    source_cluster: i,
-                    field_cluster: j,
-                    coefficients: block,
-                });
+                cluster_pairs.push((i, j, false));
             }
         }
     }
+
+    // Compute all near-field blocks in parallel
+    let near_blocks: Vec<NearFieldBlock> = cluster_pairs
+        .par_iter()
+        .map(|&(i, j, is_self)| {
+            let cluster_i = &clusters[i];
+            let cluster_j = &clusters[j];
+
+            let mut block = compute_near_block(
+                elements,
+                nodes,
+                &cluster_i.element_indices,
+                &cluster_j.element_indices,
+                physics,
+                gamma,
+                tau,
+                beta,
+                is_self,
+            );
+
+            // Add free terms to diagonal for self-interaction blocks
+            if is_self {
+                for local_idx in 0..cluster_i.element_indices.len() {
+                    let elem_idx = cluster_i.element_indices[local_idx];
+                    let elem = &elements[elem_idx];
+                    if elem.property.is_evaluation() {
+                        continue;
+                    }
+                    match &elem.boundary_condition {
+                        BoundaryCondition::Velocity(_)
+                        | BoundaryCondition::VelocityWithAdmittance { .. } => {
+                            block[[local_idx, local_idx]] += gamma * 0.5;
+                        }
+                        BoundaryCondition::Pressure(_) => {
+                            block[[local_idx, local_idx]] += beta * tau * 0.5;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            NearFieldBlock {
+                source_cluster: i,
+                field_cluster: j,
+                coefficients: block,
+            }
+        })
+        .collect();
+
+    system.near_matrix = near_blocks;
 }
 
 /// Compute a near-field block between two sets of elements
@@ -505,7 +604,7 @@ fn compute_near_block(
     block
 }
 
-/// Build T-matrices (element to cluster multipole expansion)
+/// Build T-matrices (element to cluster multipole expansion) - parallelized
 fn build_t_matrices(
     system: &mut SlfmmSystem,
     elements: &[Element],
@@ -517,39 +616,43 @@ fn build_t_matrices(
     let k = physics.wave_number;
     let num_sphere_points = sphere_coords.len();
 
-    for cluster in clusters {
-        let num_elem = cluster.element_indices.len();
-        let mut t_matrix = Array2::zeros((num_sphere_points, num_elem));
+    // Build all T-matrices in parallel
+    let t_matrices: Vec<Array2<Complex64>> = clusters
+        .par_iter()
+        .map(|cluster| {
+            let num_elem = cluster.element_indices.len();
+            let mut t_matrix = Array2::zeros((num_sphere_points, num_elem));
 
-        for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
-            let elem = &elements[elem_idx];
-            if elem.property.is_evaluation() {
-                continue;
+            for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
+                let elem = &elements[elem_idx];
+                if elem.property.is_evaluation() {
+                    continue;
+                }
+
+                // Precompute difference vector
+                let diff: [f64; 3] = [
+                    elem.center[0] - cluster.center[0],
+                    elem.center[1] - cluster.center[1],
+                    elem.center[2] - cluster.center[2],
+                ];
+
+                // For each integration direction on the unit sphere
+                for (p, coord) in sphere_coords.iter().enumerate() {
+                    let s_dot_diff = coord[0] * diff[0] + coord[1] * diff[1] + coord[2] * diff[2];
+                    let exp_factor =
+                        Complex64::new((k * s_dot_diff).cos(), -(k * s_dot_diff).sin());
+                    t_matrix[[p, j]] = exp_factor * sphere_weights[p];
+                }
             }
 
-            // For each integration direction on the unit sphere
-            for (p, coord) in sphere_coords.iter().enumerate() {
-                // Compute exp(-ik * s · (y - cluster_center)) integrated over element
-                // where s is the unit sphere direction
+            t_matrix
+        })
+        .collect();
 
-                // Simplified: use element center
-                let diff: Vec<f64> = (0..3)
-                    .map(|d| elem.center[d] - cluster.center[d])
-                    .collect();
-                let s_dot_diff: f64 = (0..3).map(|d| coord[d] * diff[d]).sum();
-
-                let exp_factor =
-                    Complex64::new((k * s_dot_diff).cos(), -(k * s_dot_diff).sin());
-
-                t_matrix[[p, j]] = exp_factor * sphere_weights[p];
-            }
-        }
-
-        system.t_matrices.push(t_matrix);
-    }
+    system.t_matrices = t_matrices;
 }
 
-/// Build D-matrices (cluster to cluster translation)
+/// Build D-matrices (cluster to cluster translation) - parallelized
 fn build_d_matrices(
     system: &mut SlfmmSystem,
     clusters: &[Cluster],
@@ -560,40 +663,51 @@ fn build_d_matrices(
     let k = physics.wave_number;
     let num_sphere_points = sphere_coords.len();
 
+    // Collect all far cluster pairs
+    let mut far_pairs: Vec<(usize, usize)> = Vec::new();
     for (i, cluster_i) in clusters.iter().enumerate() {
         for &j in &cluster_i.far_clusters {
+            far_pairs.push((i, j));
+        }
+    }
+
+    // Compute all D-matrices in parallel
+    let d_matrices: Vec<DMatrixEntry> = far_pairs
+        .par_iter()
+        .map(|&(i, j)| {
+            let cluster_i = &clusters[i];
             let cluster_j = &clusters[j];
 
             // Distance vector between cluster centers
-            let diff: Vec<f64> = (0..3)
-                .map(|d| cluster_i.center[d] - cluster_j.center[d])
-                .collect();
+            let diff = [
+                cluster_i.center[0] - cluster_j.center[0],
+                cluster_i.center[1] - cluster_j.center[1],
+                cluster_i.center[2] - cluster_j.center[2],
+            ];
             let r = (diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]).sqrt();
             let kr = k * r;
 
-            // Compute translation using spherical Hankel functions and Legendre polynomials
+            // Compute translation using spherical Hankel functions
             let mut d_matrix = Array2::zeros((num_sphere_points, num_sphere_points));
 
-            // Simplified: diagonal approximation using plane wave expansion
-            // Full implementation would use multipole translation theorem
             let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
-            let _p_funcs = legendre_polynomials(n_terms.max(2), 0.0);
 
             for p in 0..num_sphere_points {
-                // Simplified diagonal entry using monopole term
                 d_matrix[[p, p]] = h_funcs[0] * Complex64::new(0.0, k);
             }
 
-            system.d_matrices.push(DMatrixEntry {
+            DMatrixEntry {
                 source_cluster: i,
                 field_cluster: j,
                 coefficients: d_matrix,
-            });
-        }
-    }
+            }
+        })
+        .collect();
+
+    system.d_matrices = d_matrices;
 }
 
-/// Build S-matrices (cluster multipole to element evaluation)
+/// Build S-matrices (cluster multipole to element evaluation) - parallelized
 fn build_s_matrices(
     system: &mut SlfmmSystem,
     elements: &[Element],
@@ -605,35 +719,40 @@ fn build_s_matrices(
     let k = physics.wave_number;
     let num_sphere_points = sphere_coords.len();
 
-    for cluster in clusters {
-        let num_elem = cluster.element_indices.len();
-        let mut s_matrix = Array2::zeros((num_elem, num_sphere_points));
+    // Build all S-matrices in parallel
+    let s_matrices: Vec<Array2<Complex64>> = clusters
+        .par_iter()
+        .map(|cluster| {
+            let num_elem = cluster.element_indices.len();
+            let mut s_matrix = Array2::zeros((num_elem, num_sphere_points));
 
-        for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
-            let elem = &elements[elem_idx];
-            if elem.property.is_evaluation() {
-                continue;
+            for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
+                let elem = &elements[elem_idx];
+                if elem.property.is_evaluation() {
+                    continue;
+                }
+
+                // Precompute difference vector
+                let diff: [f64; 3] = [
+                    elem.center[0] - cluster.center[0],
+                    elem.center[1] - cluster.center[1],
+                    elem.center[2] - cluster.center[2],
+                ];
+
+                // For each integration direction on the unit sphere
+                for (p, coord) in sphere_coords.iter().enumerate() {
+                    let s_dot_diff = coord[0] * diff[0] + coord[1] * diff[1] + coord[2] * diff[2];
+                    let exp_factor =
+                        Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
+                    s_matrix[[j, p]] = exp_factor * sphere_weights[p];
+                }
             }
 
-            // For each integration direction on the unit sphere
-            for (p, coord) in sphere_coords.iter().enumerate() {
-                // Compute exp(ik * s · (x - cluster_center))
-                // where x is the field point and s is the unit sphere direction
+            s_matrix
+        })
+        .collect();
 
-                let diff: Vec<f64> = (0..3)
-                    .map(|d| elem.center[d] - cluster.center[d])
-                    .collect();
-                let s_dot_diff: f64 = (0..3).map(|d| coord[d] * diff[d]).sum();
-
-                let exp_factor =
-                    Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
-
-                s_matrix[[j, p]] = exp_factor * sphere_weights[p];
-            }
-        }
-
-        system.s_matrices.push(s_matrix);
-    }
+    system.s_matrices = s_matrices;
 }
 
 /// Get element node coordinates as Array2

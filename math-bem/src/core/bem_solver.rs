@@ -32,7 +32,7 @@ use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
-use crate::core::assembly::tbem::{build_tbem_system, build_tbem_system_with_beta};
+use crate::core::assembly::tbem::build_tbem_system_with_beta;
 use crate::core::incident::IncidentField;
 use crate::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
 use crate::core::postprocess::pressure::{compute_total_field, FieldPoint};

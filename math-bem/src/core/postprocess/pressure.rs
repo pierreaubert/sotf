@@ -14,7 +14,7 @@ use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
-use crate::core::greens::helmholtz::{greens_function, greens_function_normal_derivative};
+// Note: Using inline Green's function computation for performance
 use crate::core::incident::IncidentField;
 use crate::core::integration::gauss::triangle_quadrature;
 use crate::core::types::{Element, ElementType, PhysicsParams};
@@ -157,7 +157,7 @@ fn integrate_element_field(
     elem_type: ElementType,
     p_surf: Complex64,
     v_surf: Complex64,
-    k: f64,
+    _k: f64,
     wavruim: f64,
 ) -> Complex64 {
     let mut result = Complex64::new(0.0, 0.0);

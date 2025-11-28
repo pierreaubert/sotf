@@ -693,3 +693,4 @@ just validate-au      # Run auval validation
 - **TUI Player**: Production-quality terminal music player with library management
 - **Static Binary Support**: Cross-compilation for musl/static binaries
 - **Workspace version bump**: Now at 0.5.3 (individual crates may vary)
+- Read @GPUI.md before working on GPUI code.

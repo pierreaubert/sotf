@@ -707,6 +707,156 @@ pub fn gmres_solve_with_ilu_operator<O: LinearOperator>(
     super::gmres::gmres_solve_preconditioned(matvec, precond_solve, &scaled_b, None, config)
 }
 
+// ============================================================================
+// Hierarchical FMM Preconditioner Integration
+// ============================================================================
+
+/// Solve using GMRES with hierarchical FMM preconditioner
+///
+/// This method avoids the O(N²) dense matrix assembly for preconditioning.
+/// Instead, it uses block-wise LU factorization of the FMM near-field blocks.
+///
+/// # Advantages over ILU
+/// - O(N) setup cost (only diagonal blocks)
+/// - Parallel LU factorization of each block
+/// - No dense matrix extraction needed
+///
+/// # Arguments
+/// * `fmm_system` - The SLFMM system with near-field blocks
+/// * `b` - Right-hand side vector
+/// * `config` - GMRES configuration
+pub fn gmres_solve_with_hierarchical_precond(
+    fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
+    b: &Array1<Complex64>,
+    config: &super::gmres::GmresConfig,
+) -> super::gmres::GmresSolution {
+    use super::preconditioner::HierarchicalFmmPreconditioner;
+
+    // Build hierarchical preconditioner from near-field blocks
+    let precond = HierarchicalFmmPreconditioner::from_slfmm(fmm_system);
+
+    // Create matvec closure
+    let matvec = |x: &Array1<Complex64>| fmm_system.matvec(x);
+
+    // Create preconditioner application closure
+    let precond_solve = |r: &Array1<Complex64>| precond.apply(r);
+
+    // Solve with preconditioned GMRES
+    super::gmres::gmres_solve_preconditioned(matvec, precond_solve, b, None, config)
+}
+
+/// Solve using GMRES with hierarchical preconditioner (operator interface)
+///
+/// This version takes ownership of the FMM system and provides a cleaner interface.
+pub fn gmres_solve_fmm_hierarchical(
+    fmm_operator: &SlfmmOperator,
+    config: &super::gmres::GmresConfig,
+) -> super::gmres::GmresSolution {
+    use super::preconditioner::HierarchicalFmmPreconditioner;
+
+    // Build preconditioner
+    let precond = HierarchicalFmmPreconditioner::from_slfmm(fmm_operator.system());
+
+    // Get RHS
+    let b = fmm_operator.rhs();
+
+    // Create closures
+    let matvec = |x: &Array1<Complex64>| fmm_operator.apply(x);
+    let precond_solve = |r: &Array1<Complex64>| precond.apply(r);
+
+    super::gmres::gmres_solve_preconditioned(matvec, precond_solve, b, None, config)
+}
+
+// ============================================================================
+// Frequency-Adaptive Mesh Utilities
+// ============================================================================
+
+/// Calculate recommended mesh resolution for a given frequency
+///
+/// Based on the Nyquist criterion for BEM: mesh element size should be
+/// at most λ/6 to λ/10 for accurate results.
+///
+/// # Arguments
+/// * `frequency` - Simulation frequency in Hz
+/// * `speed_of_sound` - Speed of sound in m/s (default 343)
+/// * `elements_per_wavelength` - Number of elements per wavelength (default 6)
+///
+/// # Returns
+/// Recommended elements per meter
+pub fn recommended_mesh_resolution(
+    frequency: f64,
+    speed_of_sound: f64,
+    elements_per_wavelength: usize,
+) -> f64 {
+    let wavelength = speed_of_sound / frequency;
+    elements_per_wavelength as f64 / wavelength
+}
+
+/// Calculate mesh resolution for a frequency range
+///
+/// Uses the highest frequency to determine minimum element size.
+pub fn mesh_resolution_for_frequency_range(
+    min_freq: f64,
+    max_freq: f64,
+    speed_of_sound: f64,
+    elements_per_wavelength: usize,
+) -> f64 {
+    // Use max frequency (shortest wavelength) to determine resolution
+    recommended_mesh_resolution(max_freq, speed_of_sound, elements_per_wavelength)
+}
+
+/// Estimate element count for a room at given mesh resolution
+///
+/// Rough estimate based on room surface area.
+pub fn estimate_element_count(
+    room_dimensions: (f64, f64, f64), // (width, depth, height)
+    mesh_resolution: f64,
+) -> usize {
+    let (w, d, h) = room_dimensions;
+
+    // Total surface area of rectangular room
+    let surface_area = 2.0 * (w * d + w * h + d * h);
+
+    // Element size based on resolution (element per meter)
+    let element_size = 1.0 / mesh_resolution;
+    let element_area = element_size * element_size;
+
+    (surface_area / element_area).ceil() as usize
+}
+
+/// Adaptive mesh configuration based on frequency and room size
+pub struct AdaptiveMeshConfig {
+    /// Base mesh resolution (elements per meter)
+    pub base_resolution: f64,
+    /// Refinement factor near sources (1.0 = no refinement)
+    pub source_refinement: f64,
+    /// Refinement radius around sources (meters)
+    pub source_refinement_radius: f64,
+}
+
+impl AdaptiveMeshConfig {
+    /// Create configuration for a frequency range
+    pub fn for_frequency_range(min_freq: f64, max_freq: f64) -> Self {
+        let speed_of_sound = 343.0;
+        let base = mesh_resolution_for_frequency_range(min_freq, max_freq, speed_of_sound, 6);
+
+        Self {
+            base_resolution: base,
+            source_refinement: 1.5,
+            source_refinement_radius: 0.5,
+        }
+    }
+
+    /// Create from explicit resolution
+    pub fn from_resolution(resolution: f64) -> Self {
+        Self {
+            base_resolution: resolution,
+            source_refinement: 1.0,
+            source_refinement_radius: 0.0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,9 +9,7 @@
 //! - Sections: NODES, ELEMENTS, BOUNDARY, PLANE WAVES, POINT SOURCES, etc.
 //! - END marker signals end of file
 
-use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use ndarray::{Array1, Array2};

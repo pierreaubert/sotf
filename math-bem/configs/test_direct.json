@@ -1,0 +1,70 @@
+{
+  "room": {
+    "type": "rectangular",
+    "width": 3.5,
+    "depth": 3.0,
+    "height": 2.4
+  },
+  "sources": [
+    {
+      "name": "Left Speaker",
+      "position": {
+        "x": 0.9,
+        "y": 0.5,
+        "z": 1.0
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "fullrange"
+      }
+    },
+    {
+      "name": "Right Speaker",
+      "position": {
+        "x": 2.6,
+        "y": 0.5,
+        "z": 1.0
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "fullrange"
+      }
+    }
+  ],
+  "listening_positions": [
+    {
+      "x": 1.75,
+      "y": 2.0,
+      "z": 1.0
+    }
+  ],
+  "frequencies": {
+    "min_freq": 100.0,
+    "max_freq": 200.0,
+    "num_points": 5,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "direct",
+    "mesh_resolution": 4,
+    "adaptive_integration": true,
+    "adaptive_meshing": false
+  },
+  "visualization": {
+    "generate_slices": false,
+    "slice_resolution": 30,
+    "slice_frequency_indices": []
+  },
+  "metadata": {
+    "description": "Direct solver test configuration for comparison",
+    "author": "Room Simulator",
+    "date": "2025-11-28",
+    "notes": "Compare with FMM solver"
+  }
+}

@@ -10,6 +10,7 @@ members = [
     "autoeq",
     "autoeq-cea2034",
     "math-bem",
+    "math-bem-wasm",
     "math-iir",
     "math-testfunctions",
     "math-convexhull3d",
@@ -18,6 +19,7 @@ members = [
     "sotf-macos-hal",
     "sotf-head-scanner",
     "sotf-tauri",
+    "d3rs",
 ]
 # Default members excludes
 #   - macOS-only sotf-hal, sotf-configbar
@@ -42,6 +44,8 @@ default-members = [
     "autoeq-env",
     "autoeq-cea2034",
     "math-convexhull3d",
+    "math-bem",
+    "math-bem-wasm",
     "math-de",
     "math-iir",
     "math-testfunctions",

@@ -2758,17 +2758,17 @@ impl App {
             2 => {
                 // Stereo
                 self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
+                    name: "L/R".to_string(),
                     channels: vec![
                         ChannelInfo {
                             index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
+                            name: "L".to_string(),
+                            display_name: vec!["L".to_string()],
                         },
                         ChannelInfo {
                             index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
+                            name: "R".to_string(),
+                            display_name: vec!["R".to_string()],
                         },
                     ],
                     muted: false,
@@ -2779,17 +2779,17 @@ impl App {
             4 => {
                 // Quad (FL, FR, SL, SR)
                 self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
+                    name: "L/R".to_string(),
                     channels: vec![
                         ChannelInfo {
                             index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
+                            name: "L".to_string(),
+                            display_name: vec!["L".to_string()],
                         },
                         ChannelInfo {
                             index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
+                            name: "R".to_string(),
+                            display_name: vec!["R".to_string()],
                         },
                     ],
                     muted: false,
@@ -2818,17 +2818,17 @@ impl App {
             6 => {
                 // 5.1 (FL, FR, FC, LFE, SL, SR)
                 self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
+                    name: "L/R".to_string(),
                     channels: vec![
                         ChannelInfo {
                             index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
+                            name: "L".to_string(),
+                            display_name: vec!["L".to_string()],
                         },
                         ChannelInfo {
                             index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
+                            name: "R".to_string(),
+                            display_name: vec!["R".to_string()],
                         },
                     ],
                     muted: false,
@@ -2879,17 +2879,17 @@ impl App {
             8 => {
                 // 7.1 (FL, FR, FC, LFE, SL, SR, BL, BR)
                 self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
+                    name: "L/R".to_string(),
                     channels: vec![
                         ChannelInfo {
                             index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
+                            name: "L".to_string(),
+                            display_name: vec!["L".to_string()],
                         },
                         ChannelInfo {
                             index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
+                            name: "R".to_string(),
+                            display_name: vec!["R".to_string()],
                         },
                     ],
                     muted: false,
@@ -2950,17 +2950,17 @@ impl App {
             10 => {
                 // 5.1.4 (FL, FR, FC, LFE, SL, SR, TFL, TFR, TBL, TBR)
                 self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
+                    name: "L/R".to_string(),
                     channels: vec![
                         ChannelInfo {
                             index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
+                            name: "L".to_string(),
+                            display_name: vec!["L".to_string()],
                         },
                         ChannelInfo {
                             index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
+                            name: "R".to_string(),
+                            display_name: vec!["R".to_string()],
                         },
                     ],
                     muted: false,

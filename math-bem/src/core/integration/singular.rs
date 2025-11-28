@@ -7,8 +7,7 @@ use ndarray::{array, Array1, Array2};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
-use crate::core::greens::helmholtz::greens_function;
-use crate::core::integration::gauss::{gauss_legendre, triangle_quadrature};
+use crate::core::integration::gauss::gauss_legendre;
 use crate::core::mesh::element::{cross_product, normalize};
 use crate::core::types::{ElementType, IntegrationResult, PhysicsParams};
 
@@ -319,7 +318,7 @@ pub fn singular_integration_with_params(
                     + 0.25 * (1.0 + sga) * ((1.0 - tga) * tsub[1] + (1.0 + tga) * tsub[2]);
 
                 // Compute shape functions and Jacobian
-                let (shape_fn, shape_ds, shape_dt, jacobian, el_norm, crd_poi) =
+                let (shape_fn, _shape_ds, _shape_dt, jacobian, el_norm, crd_poi) =
                     compute_shape_and_jacobian(element_coords, element_type, sgg, tgg);
 
                 let wga = wei_gau * (1.0 + sga) * aresub * jacobian;

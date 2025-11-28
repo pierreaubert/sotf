@@ -243,12 +243,10 @@ fn find_cpp_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let path = entry.path();
 
-        if path.is_file() {
-            if let Some(ext) = path.extension() {
-                if ext == "cpp" || ext == "cc" || ext == "cxx" {
-                    files.push(path);
-                }
-            }
+        if path.is_file()
+            && path.extension().is_some_and(|ext| ext == "cpp" || ext == "cc" || ext == "cxx")
+        {
+            files.push(path);
         }
     }
 

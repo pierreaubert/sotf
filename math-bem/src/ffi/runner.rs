@@ -214,7 +214,7 @@ impl NumCalcRunner {
 
     /// Wait for process with memory tracking (no timeout)
     fn wait_with_memory_tracking(
-        mut child: std::process::Child,
+        child: std::process::Child,
         pid: Pid,
     ) -> Result<(std::process::Output, Option<f64>)> {
         use std::sync::atomic::{AtomicU64, Ordering};
@@ -267,7 +267,7 @@ impl NumCalcRunner {
 
     /// Wait for process with timeout and memory tracking
     fn wait_with_timeout_and_memory(
-        mut child: std::process::Child,
+        child: std::process::Child,
         pid: Pid,
         timeout: Duration,
     ) -> Result<(std::process::Output, Option<f64>)> {

@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Acoustics BEM Simulator (WASM)</title>
+    <script src="https://cdn.plot.ly/plotly-3.3.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        h1 {
+            color: #fff;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            color: #fff;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        h3 {
+            color: #ddd;
+            font-size: 1.1em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #aaa;
+            font-size: 0.9em;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0;
+        }
+
+        .sidebar-wrapper {
+            display: flex;
+            flex-direction: row;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 380px;
+            padding: 20px;
+            transition: width 0.3s, padding 0.3s, opacity 0.3s;
+            overflow: hidden;
+        }
+
+        .sidebar.collapsed {
+            width: 0;
+            padding: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .sidebar-toggle {
+            width: 24px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-left: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #aaa;
+            font-size: 14px;
+            transition: background 0.3s;
+            flex-shrink: 0;
+        }
+
+        .sidebar-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+
+        .sidebar-toggle span {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            transform: rotate(180deg);
+            white-space: nowrap;
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .panel-collapsible {
+            overflow: hidden;
+        }
+
+        .panel-header {
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header:hover {
+            opacity: 0.8;
+        }
+
+        .collapse-icon {
+            transition: transform 0.3s;
+        }
+
+        .panel-content {
+            max-height: 1000px;
+            transition: max-height 0.3s ease-out, padding 0.3s;
+            padding-top: 15px;
+        }
+
+        .panel-content.collapsed {
+            max-height: 0;
+            padding-top: 0;
+            overflow: hidden;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85em;
+            color: #bbb;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #fff;
+            font-size: 14px;
+            transition: border-color 0.3s, background 0.3s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .input-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+
+        .input-row-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-danger {
+            background: rgba(255, 100, 100, 0.2);
+            color: #ff6b6b;
+            border: 1px solid rgba(255, 100, 100, 0.3);
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        .btn-danger:hover {
+            background: rgba(255, 100, 100, 0.3);
+        }
+
+        .btn-success {
+            background: rgba(100, 255, 100, 0.2);
+            color: #51cf66;
+            border: 1px solid rgba(100, 255, 100, 0.3);
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
+        .btn-success:hover {
+            background: rgba(100, 255, 100, 0.3);
+        }
+
+        .source-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .source-item {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .source-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .source-name {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .source-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 0.85em;
+            color: #aaa;
+        }
+
+        .progress-container {
+            margin-top: 15px;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .progress-text {
+            font-size: 0.85em;
+            color: #aaa;
+            margin-top: 8px;
+            text-align: center;
+        }
+
+        .results-area {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .plot-panel {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .plot-container {
+            background: white;
+            padding: 10px;
+            min-height: 400px;
+            height: max(400px, 50vh);
+        }
+
+        .plot-container-large {
+            background: white;
+            padding: 10px;
+            min-height: 500px;
+            height: max(500px, 60vh);
+        }
+
+        .plot-container-3d {
+            background: white;
+            padding: 10px;
+            min-height: 500px;
+            height: max(500px, 60vh);
+        }
+
+        .slice-controls {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .frequency-slider {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+            margin-top: 10px;
+        }
+
+        .frequency-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.5);
+        }
+
+        .frequency-display {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #667eea;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        .slices-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .slices-grid > div {
+            width: 100%;
+        }
+
+        .slice-plot-container {
+            background: white;
+            padding: 10px;
+            width: 100%;
+        }
+
+        .status-message {
+            padding: 10px 15px;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+
+        .status-success {
+            background: rgba(81, 207, 102, 0.2);
+            color: #51cf66;
+            border: 1px solid rgba(81, 207, 102, 0.3);
+        }
+
+        .status-error {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+            border: 1px solid rgba(255, 107, 107, 0.3);
+        }
+
+        .status-info {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+
+        .badge-primary {
+            background: rgba(102, 126, 234, 0.3);
+            color: #667eea;
+        }
+
+        .badge-success {
+            background: rgba(81, 207, 102, 0.3);
+            color: #51cf66;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 15px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .info-card {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 12px;
+            text-align: center;
+        }
+
+        .info-value {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .info-label {
+            font-size: 0.75em;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        #wasmStatus {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px;
+            font-size: 0.8em;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .wasm-loading {
+            background: rgba(255, 200, 100, 0.2);
+            color: #ffc864;
+        }
+
+        .wasm-loading .status-dot {
+            background: #ffc864;
+            animation: pulse 1s infinite;
+        }
+
+        .wasm-ready {
+            background: rgba(81, 207, 102, 0.2);
+            color: #51cf66;
+        }
+
+        .wasm-ready .status-dot {
+            background: #51cf66;
+        }
+
+        .wasm-error {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+
+        .wasm-error .status-dot {
+            background: #ff6b6b;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        @media (max-width: 1200px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .slices-grid {
+                flex-direction: column;
+            }
+
+            .slices-grid > div {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>Room Acoustics BEM Simulator</h1>
+                    <p class="subtitle">WebAssembly-powered acoustic simulation with Plotly visualization</p>
+                </div>
+                <div id="wasmStatus" class="wasm-loading">
+                    <span class="status-dot"></span>
+                    <span>Loading WASM...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <!-- Sidebar - Configuration -->
+            <div class="sidebar-wrapper">
+            <div class="sidebar" id="sidebar">
+                <!-- Room Configuration -->
+                <div class="panel panel-collapsible">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <h2 style="margin: 0; border: none; padding: 0;">Room Configuration</h2>
+                        <span class="collapse-icon">-</span>
+                    </div>
+                    <div class="panel-content">
+                        <div class="form-group">
+                            <label>Room Type</label>
+                            <select id="roomType" onchange="updateRoomUI()">
+                                <option value="rectangular">Rectangular</option>
+                                <option value="lshaped">L-Shaped</option>
+                            </select>
+                        </div>
+
+                        <div id="rectangularConfig">
+                            <div class="form-group">
+                                <label>Dimensions (m)</label>
+                                <div class="input-row">
+                                    <div>
+                                        <input type="number" id="roomWidth" value="5.0" step="0.1" min="0.5" placeholder="Width">
+                                        <small style="color: #666;">Width (X)</small>
+                                    </div>
+                                    <div>
+                                        <input type="number" id="roomDepth" value="4.0" step="0.1" min="0.5" placeholder="Depth">
+                                        <small style="color: #666;">Depth (Y)</small>
+                                    </div>
+                                    <div>
+                                        <input type="number" id="roomHeight" value="2.5" step="0.1" min="0.5" placeholder="Height">
+                                        <small style="color: #666;">Height (Z)</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="lshapedConfig" class="hidden">
+                            <div class="form-group">
+                                <label>Main Section (m)</label>
+                                <div class="input-row-2">
+                                    <div>
+                                        <input type="number" id="width1" value="5.0" step="0.1" min="0.5" placeholder="Width 1">
+                                        <small style="color: #666;">Width</small>
+                                    </div>
+                                    <div>
+                                        <input type="number" id="depth1" value="3.0" step="0.1" min="0.5" placeholder="Depth 1">
+                                        <small style="color: #666;">Depth</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Extension Section (m)</label>
+                                <div class="input-row-2">
+                                    <div>
+                                        <input type="number" id="width2" value="3.0" step="0.1" min="0.5" placeholder="Width 2">
+                                        <small style="color: #666;">Width</small>
+                                    </div>
+                                    <div>
+                                        <input type="number" id="depth2" value="2.0" step="0.1" min="0.5" placeholder="Depth 2">
+                                        <small style="color: #666;">Depth</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Height (m)</label>
+                                <input type="number" id="lshapedHeight" value="2.5" step="0.1" min="0.5" placeholder="Height">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sources Configuration -->
+                <div class="panel panel-collapsible">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <h2 style="margin: 0; border: none; padding: 0;">Sound Sources</h2>
+                        <span class="collapse-icon">-</span>
+                    </div>
+                    <div class="panel-content">
+                        <div class="source-list" id="sourceList">
+                            <!-- Sources will be added dynamically -->
+                        </div>
+                        <button class="btn-secondary" style="width: 100%; margin-top: 10px;" onclick="addSource()">
+                            + Add Source
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Listening Position -->
+                <div class="panel panel-collapsible">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <h2 style="margin: 0; border: none; padding: 0;">Listening Position</h2>
+                        <span class="collapse-icon">-</span>
+                    </div>
+                    <div class="panel-content">
+                        <div class="form-group">
+                            <label>Position (m)</label>
+                            <div class="input-row">
+                                <div>
+                                    <input type="number" id="lpX" value="2.5" step="0.1" placeholder="X">
+                                    <small style="color: #666;">X</small>
+                                </div>
+                                <div>
+                                    <input type="number" id="lpY" value="2.5" step="0.1" placeholder="Y">
+                                    <small style="color: #666;">Y</small>
+                                </div>
+                                <div>
+                                    <input type="number" id="lpZ" value="1.2" step="0.1" placeholder="Z">
+                                    <small style="color: #666;">Z</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Frequency & Solver Configuration -->
+                <div class="panel panel-collapsible">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <h2 style="margin: 0; border: none; padding: 0;">Simulation Settings</h2>
+                        <span class="collapse-icon">-</span>
+                    </div>
+                    <div class="panel-content">
+                        <div class="form-group">
+                            <label>Frequency Range (Hz)</label>
+                            <div class="input-row-2">
+                                <div>
+                                    <input type="number" id="minFreq" value="20" min="1" step="1">
+                                    <small style="color: #666;">Min</small>
+                                </div>
+                                <div>
+                                    <input type="number" id="maxFreq" value="500" min="1" step="1">
+                                    <small style="color: #666;">Max</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Number of Frequency Points</label>
+                            <input type="number" id="numFreqPoints" value="100" min="10" max="500">
+                        </div>
+                        <div class="form-group">
+                            <label>Frequency Spacing</label>
+                            <select id="freqSpacing">
+                                <option value="logarithmic">Logarithmic</option>
+                                <option value="linear">Linear</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Solver Method</label>
+                            <select id="solverMethod">
+                                <option value="direct">Direct (Free-field only)</option>
+                                <option value="image-source-1" selected>Image Source (1st order)</option>
+                                <option value="image-source-2">Image Source (2nd order)</option>
+                                <option value="image-source-3">Image Source (3rd order)</option>
+                            </select>
+                            <small style="color: #666;">Higher order = more accurate but slower</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Slice Resolution</label>
+                            <input type="number" id="sliceResolution" value="40" min="10" max="100">
+                            <small style="color: #666;">Higher = more detailed spatial plots</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Run Simulation -->
+                <div class="panel">
+                    <button class="btn-primary" id="runBtn" onclick="runSimulation()" disabled>
+                        <span id="runBtnText">Run Simulation</span>
+                    </button>
+                    <div class="progress-container" id="progressContainer">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                        <div class="progress-text" id="progressText">Initializing...</div>
+                    </div>
+                    <div id="statusMessage"></div>
+                </div>
+
+                <!-- Load/Save Config -->
+                <div class="panel panel-collapsible">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <h2 style="margin: 0; border: none; padding: 0;">Configuration</h2>
+                        <span class="collapse-icon">+</span>
+                    </div>
+                    <div class="panel-content collapsed">
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <button class="btn-secondary" style="flex: 1;" onclick="exportConfig()">Export JSON</button>
+                            <button class="btn-secondary" style="flex: 1;" onclick="document.getElementById('configFileInput').click()">Import JSON</button>
+                            <input type="file" id="configFileInput" accept=".json" style="display: none;" onchange="importConfig(event)">
+                        </div>
+                        <div class="form-group">
+                            <label>Presets</label>
+                            <select id="presetSelect" onchange="loadPreset()">
+                                <option value="">-- Select Preset --</option>
+                                <option value="nearfield">Near-field Stereo</option>
+                                <option value="home_theater">Home Theater 2.1</option>
+                                <option value="surround">5.0 Surround</option>
+                                <option value="lshaped">L-Shaped Studio</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+                <span>CONFIGURATION</span>
+            </button>
+            </div>
+
+            <!-- Results Area -->
+            <div class="results-area">
+                <!-- Info Cards -->
+                <div class="panel" id="infoPanel" style="display: none;">
+                    <h2>Simulation Results</h2>
+                    <div class="info-grid" id="infoGrid">
+                        <!-- Will be populated after simulation -->
+                    </div>
+                </div>
+
+                <!-- Frequency Response Plot -->
+                <div class="plot-panel" id="freqResponsePanel" style="display: none;">
+                    <h2>Frequency Response at Listening Position</h2>
+                    <div class="plot-container-large" id="plotFrequencyResponse"></div>
+                </div>
+
+                <!-- Spatial Visualization -->
+                <div class="plot-panel" id="slicesPanel" style="display: none;">
+                    <h2>Spatial Pressure Field</h2>
+                    <div class="slice-controls">
+                        <label>Select Frequency for Spatial View</label>
+                        <input type="range" class="frequency-slider" id="freqSlider" min="0" max="0" value="0" oninput="updateSlicePlots()">
+                        <div class="frequency-display" id="freqDisplay">- Hz</div>
+                    </div>
+                    <div class="slices-grid">
+                        <div>
+                            <h3>Horizontal Slice (XY at listening height)</h3>
+                            <div class="slice-plot-container" id="plotHorizontalSlice"></div>
+                        </div>
+                        <div>
+                            <h3>Vertical Slice (XZ at listening depth)</h3>
+                            <div class="slice-plot-container" id="plotVerticalSlice"></div>
+                        </div>
+                        <div id="room3DPanel" style="display: none;">
+                            <h3>3D Room Layout</h3>
+                            <div class="slice-plot-container" id="plot3DRoom" style="min-height: 500px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Import WASM module
+        // Note: You need to build the WASM module using wasm-pack first:
+        // cd math-bem-wasm && wasm-pack build --target web --release
+        // Then copy the pkg folder to this directory or adjust the path
+
+        let wasmModule = null;
+        let RoomSimulatorWasm = null;
+        let currentSimulator = null;
+        let currentResults = null;
+
+        // Toggle collapsible panels
+        window.togglePanel = function(header) {
+            const content = header.nextElementSibling;
+            const icon = header.querySelector('.collapse-icon');
+            if (content.classList.contains('collapsed')) {
+                content.classList.remove('collapsed');
+                icon.textContent = '-';
+            } else {
+                content.classList.add('collapsed');
+                icon.textContent = '+';
+            }
+        };
+
+        // Source management
+        let sources = [];
+        let sourceIdCounter = 0;
+
+        // Initialize with default sources
+        function initDefaultSources() {
+            sources = [];
+            sourceIdCounter = 0;
+            addSource('Left Speaker', 1.5, 0.5, 1.2, 'fullrange', 'omnidirectional');
+            addSource('Right Speaker', 3.5, 0.5, 1.2, 'fullrange', 'omnidirectional');
+        }
+
+        window.addSource = function(name, x, y, z, crossover, directivity) {
+            const id = sourceIdCounter++;
+            sources.push({
+                id,
+                name: name || `Source ${id + 1}`,
+                x: x ?? 2.5,
+                y: y ?? 0.5,
+                z: z ?? 1.2,
+                amplitude: 1.0,
+                crossover: crossover || 'fullrange',
+                crossoverFreq: 80,
+                crossoverOrder: 2,
+                directivity: directivity || 'omnidirectional'
+            });
+            renderSourceList();
+        };
+
+        window.removeSource = function(id) {
+            sources = sources.filter(s => s.id !== id);
+            renderSourceList();
+        };
+
+        function renderSourceList() {
+            const container = document.getElementById('sourceList');
+            container.innerHTML = sources.map(s => `
+                <div class="source-item">
+                    <div class="source-header">
+                        <input type="text" class="source-name" value="${s.name}"
+                            onchange="updateSourceField(${s.id}, 'name', this.value)"
+                            style="background: transparent; border: none; color: #fff; font-weight: 600; width: 150px;">
+                        <button class="btn-danger" onclick="removeSource(${s.id})">Remove</button>
+                    </div>
+                    <div class="source-details">
+                        <div>
+                            <label>X (m)</label>
+                            <input type="number" value="${s.x}" step="0.1"
+                                onchange="updateSourceField(${s.id}, 'x', parseFloat(this.value))">
+                        </div>
+                        <div>
+                            <label>Y (m)</label>
+                            <input type="number" value="${s.y}" step="0.1"
+                                onchange="updateSourceField(${s.id}, 'y', parseFloat(this.value))">
+                        </div>
+                        <div>
+                            <label>Z (m)</label>
+                            <input type="number" value="${s.z}" step="0.1"
+                                onchange="updateSourceField(${s.id}, 'z', parseFloat(this.value))">
+                        </div>
+                        <div>
+                            <label>Crossover</label>
+                            <select onchange="updateSourceField(${s.id}, 'crossover', this.value)">
+                                <option value="fullrange" ${s.crossover === 'fullrange' ? 'selected' : ''}>Full Range</option>
+                                <option value="lowpass" ${s.crossover === 'lowpass' ? 'selected' : ''}>Low Pass</option>
+                                <option value="highpass" ${s.crossover === 'highpass' ? 'selected' : ''}>High Pass</option>
+                            </select>
+                        </div>
+                        ${s.crossover !== 'fullrange' ? `
+                            <div>
+                                <label>Freq (Hz)</label>
+                                <input type="number" value="${s.crossoverFreq}" step="10" min="20" max="1000"
+                                    onchange="updateSourceField(${s.id}, 'crossoverFreq', parseFloat(this.value))">
+                            </div>
+                            <div>
+                                <label>Order</label>
+                                <select onchange="updateSourceField(${s.id}, 'crossoverOrder', parseInt(this.value))">
+                                    <option value="2" ${s.crossoverOrder === 2 ? 'selected' : ''}>2nd</option>
+                                    <option value="4" ${s.crossoverOrder === 4 ? 'selected' : ''}>4th</option>
+                                    <option value="6" ${s.crossoverOrder === 6 ? 'selected' : ''}>6th</option>
+                                </select>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        window.updateSourceField = function(id, field, value) {
+            const source = sources.find(s => s.id === id);
+            if (source) {
+                source[field] = value;
+                if (field === 'crossover') {
+                    renderSourceList();
+                }
+            }
+        };
+
+        // Room UI updates
+        window.updateRoomUI = function() {
+            const roomType = document.getElementById('roomType').value;
+            document.getElementById('rectangularConfig').classList.toggle('hidden', roomType !== 'rectangular');
+            document.getElementById('lshapedConfig').classList.toggle('hidden', roomType !== 'lshaped');
+        };
+
+        // Panel toggle
+        window.togglePanel = function(header) {
+            const content = header.nextElementSibling;
+            const icon = header.querySelector('.collapse-icon');
+            content.classList.toggle('collapsed');
+            icon.textContent = content.classList.contains('collapsed') ? '+' : '-';
+        };
+
+        // Build configuration object
+        function buildConfig() {
+            const roomType = document.getElementById('roomType').value;
+            let room;
+
+            if (roomType === 'rectangular') {
+                room = {
+                    type: 'rectangular',
+                    width: parseFloat(document.getElementById('roomWidth').value),
+                    depth: parseFloat(document.getElementById('roomDepth').value),
+                    height: parseFloat(document.getElementById('roomHeight').value)
+                };
+            } else {
+                room = {
+                    type: 'lshaped',
+                    width1: parseFloat(document.getElementById('width1').value),
+                    depth1: parseFloat(document.getElementById('depth1').value),
+                    width2: parseFloat(document.getElementById('width2').value),
+                    depth2: parseFloat(document.getElementById('depth2').value),
+                    height: parseFloat(document.getElementById('lshapedHeight').value)
+                };
+            }
+
+            const configSources = sources.map(s => {
+                let crossover = { type: 'fullrange' };
+                if (s.crossover === 'lowpass') {
+                    crossover = { type: 'lowpass', cutoff_freq: s.crossoverFreq, order: s.crossoverOrder };
+                } else if (s.crossover === 'highpass') {
+                    crossover = { type: 'highpass', cutoff_freq: s.crossoverFreq, order: s.crossoverOrder };
+                }
+
+                return {
+                    name: s.name,
+                    position: { x: s.x, y: s.y, z: s.z },
+                    amplitude: s.amplitude,
+                    directivity: { type: s.directivity },
+                    crossover
+                };
+            });
+
+            return {
+                room,
+                sources: configSources,
+                listening_positions: [{
+                    x: parseFloat(document.getElementById('lpX').value),
+                    y: parseFloat(document.getElementById('lpY').value),
+                    z: parseFloat(document.getElementById('lpZ').value)
+                }],
+                frequencies: {
+                    min_freq: parseFloat(document.getElementById('minFreq').value),
+                    max_freq: parseFloat(document.getElementById('maxFreq').value),
+                    num_points: parseInt(document.getElementById('numFreqPoints').value),
+                    spacing: document.getElementById('freqSpacing').value
+                },
+                solver: {
+                    method: document.getElementById('solverMethod').value,
+                    speed_of_sound: 343.0
+                },
+                visualization: {
+                    generate_slices: true,
+                    slice_resolution: parseInt(document.getElementById('sliceResolution').value),
+                    slice_frequency_indices: []
+                },
+                metadata: {
+                    description: 'WASM Room Simulation',
+                    author: 'Room Simulator WASM',
+                    date: new Date().toISOString().split('T')[0]
+                }
+            };
+        }
+
+        // Run simulation
+        window.runSimulation = async function() {
+            if (!wasmModule) {
+                showStatus('WASM module not loaded', 'error');
+                return;
+            }
+
+            const runBtn = document.getElementById('runBtn');
+            const runBtnText = document.getElementById('runBtnText');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+
+            runBtn.disabled = true;
+            runBtnText.textContent = 'Running...';
+            progressContainer.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Building configuration...';
+
+            try {
+                const config = buildConfig();
+                const configJson = JSON.stringify(config);
+
+                // Validate config
+                progressText.textContent = 'Validating configuration...';
+                progressFill.style.width = '10%';
+
+                const validationResult = JSON.parse(wasmModule.validate_config(configJson));
+                if (!validationResult.valid) {
+                    const errors = validationResult.error || validationResult.warnings.join(', ');
+                    showStatus(`Configuration error: ${errors}`, 'error');
+                    return;
+                }
+
+                progressText.textContent = 'Creating simulator...';
+                progressFill.style.width = '20%';
+
+                // Create simulator
+                currentSimulator = new wasmModule.RoomSimulatorWasm(configJson);
+
+                progressText.textContent = 'Running simulation...';
+                progressFill.style.width = '30%';
+
+                // Run simulation (this may take a while)
+                const resultsJson = currentSimulator.run_simulation();
+                currentResults = JSON.parse(resultsJson);
+
+                progressFill.style.width = '90%';
+                progressText.textContent = 'Rendering results...';
+
+                // Display results
+                displayResults(currentResults);
+
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Complete!';
+                showStatus('Simulation completed successfully', 'success');
+
+            } catch (error) {
+                console.error('Simulation error:', error);
+                showStatus(`Simulation failed: ${error.message || error}`, 'error');
+            } finally {
+                runBtn.disabled = false;
+                runBtnText.textContent = 'Run Simulation';
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                }, 2000);
+            }
+        };
+
+        // Display simulation results
+        function displayResults(results) {
+            console.log('Results:', results);
+
+            // Show info panel
+            document.getElementById('infoPanel').style.display = 'block';
+            const infoGrid = document.getElementById('infoGrid');
+            infoGrid.innerHTML = `
+                <div class="info-card">
+                    <div class="info-value">${results.room.width.toFixed(1)} x ${results.room.depth.toFixed(1)} x ${results.room.height.toFixed(1)}</div>
+                    <div class="info-label">Room (m)</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-value">${results.sources.length}</div>
+                    <div class="info-label">Sources</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-value">${results.frequencies.length}</div>
+                    <div class="info-label">Frequencies</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-value">${results.solver}</div>
+                    <div class="info-label">Solver</div>
+                </div>
+            `;
+
+            // Plot frequency response
+            try {
+                plotFrequencyResponse(results);
+            } catch (e) {
+                console.error('Error plotting frequency response:', e);
+            }
+
+            // Plot 3D room
+            try {
+                plot3DRoom(results);
+            } catch (e) {
+                console.error('Error plotting 3D room:', e);
+            }
+
+            // Plot spatial slices
+            try {
+                if (results.horizontal_slices && results.horizontal_slices.length > 0 &&
+                    results.vertical_slices && results.vertical_slices.length > 0) {
+                    plotSpatialSlices(results);
+                }
+            } catch (e) {
+                console.error('Error plotting spatial slices:', e);
+            }
+        }
+
+        function plotFrequencyResponse(data) {
+            const traces = [];
+
+            // Per-source traces
+            const sourceColors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7', '#fd79a8'];
+            if (data.source_responses) {
+                data.source_responses.forEach((srcResp, idx) => {
+                    traces.push({
+                        x: data.frequencies,
+                        y: srcResp.spl,
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: sourceColors[idx % sourceColors.length], width: 2, dash: 'dot' },
+                        name: srcResp.source_name,
+                        hovertemplate: 'Frequency: %{x:.1f} Hz<br>SPL: %{y:.1f} dB<extra></extra>'
+                    });
+                });
+            }
+
+            // Combined response
+            traces.push({
+                x: data.frequencies,
+                y: data.frequency_response,
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: '#667eea', width: 3 },
+                name: 'Combined',
+                hovertemplate: 'Frequency: %{x:.1f} Hz<br>SPL: %{y:.1f} dB<extra></extra>'
+            });
+
+            document.getElementById('freqResponsePanel').style.display = 'block';
+
+            // Calculate SPL range centered on mean with 50dB span
+            const allSPL = data.frequency_response;
+            const meanSPL = allSPL.reduce((a, b) => a + b, 0) / allSPL.length;
+            const splMin = meanSPL - 25;
+            const splMax = meanSPL + 25;
+
+            // Store for use by slice plots
+            window.sharedSPLRange = { min: splMin, max: splMax };
+
+            Plotly.newPlot('plotFrequencyResponse', traces, {
+                title: 'Frequency Response at Listening Position',
+                xaxis: { title: 'Frequency (Hz)', type: 'log', gridcolor: '#e0e0e0' },
+                yaxis: { title: 'SPL (dB)', gridcolor: '#e0e0e0', range: [splMin, splMax] },
+                hovermode: 'closest',
+                showlegend: true,
+                legend: { x: 1.02, y: 1, xanchor: 'left' },
+                margin: { t: 50, r: 150 },
+                autosize: true
+            }, { responsive: true });
+        }
+
+        function plot3DRoom(data) {
+            if (!data.room || !data.sources || !data.listening_position) {
+                console.error('Missing required data for 3D room plot:', data);
+                return;
+            }
+
+            console.log('Plotting 3D room:', data.room, 'sources:', data.sources.length, 'edges:', data.room.edges?.length);
+
+            const traces = [];
+
+            // Room edges - draw a box if no edges provided
+            const w = data.room.width || 1;
+            const d = data.room.depth || 1;
+            const h = data.room.height || 1;
+
+            if (data.room.edges && data.room.edges.length > 0) {
+                data.room.edges.forEach(edge => {
+                    traces.push({
+                        x: [edge[0][0], edge[1][0]],
+                        y: [edge[0][1], edge[1][1]],
+                        z: [edge[0][2], edge[1][2]],
+                        mode: 'lines',
+                        type: 'scatter3d',
+                        showlegend: false,
+                        line: { color: 'rgba(100, 100, 100, 0.5)', width: 3 }
+                    });
+                });
+            } else {
+                // Fallback: draw a rectangular box
+                const boxEdges = [
+                    // Floor
+                    [[0, 0, 0], [w, 0, 0]], [[w, 0, 0], [w, d, 0]], [[w, d, 0], [0, d, 0]], [[0, d, 0], [0, 0, 0]],
+                    // Ceiling
+                    [[0, 0, h], [w, 0, h]], [[w, 0, h], [w, d, h]], [[w, d, h], [0, d, h]], [[0, d, h], [0, 0, h]],
+                    // Verticals
+                    [[0, 0, 0], [0, 0, h]], [[w, 0, 0], [w, 0, h]], [[w, d, 0], [w, d, h]], [[0, d, 0], [0, d, h]]
+                ];
+                boxEdges.forEach(edge => {
+                    traces.push({
+                        x: [edge[0][0], edge[1][0]],
+                        y: [edge[0][1], edge[1][1]],
+                        z: [edge[0][2], edge[1][2]],
+                        mode: 'lines',
+                        type: 'scatter3d',
+                        showlegend: false,
+                        line: { color: 'rgba(100, 100, 100, 0.5)', width: 3 }
+                    });
+                });
+            }
+
+            // Sources
+            const sourceColors = ['#ff6b6b', '#ee5a6f', '#f06595', '#cc5de8', '#845ef7'];
+            data.sources.forEach((source, idx) => {
+                traces.push({
+                    x: [source.position[0]],
+                    y: [source.position[1]],
+                    z: [source.position[2]],
+                    mode: 'markers+text',
+                    type: 'scatter3d',
+                    name: source.name,
+                    text: [source.name.split(' ').map(w => w[0]).join('')],
+                    textposition: 'top center',
+                    marker: { size: 10, color: sourceColors[idx % sourceColors.length], symbol: 'diamond' }
+                });
+            });
+
+            // Listening position
+            traces.push({
+                x: [data.listening_position[0]],
+                y: [data.listening_position[1]],
+                z: [data.listening_position[2]],
+                mode: 'markers+text',
+                type: 'scatter3d',
+                name: 'Listening Position',
+                text: ['LP'],
+                textposition: 'top center',
+                marker: { size: 8, color: '#51cf66', symbol: 'circle' }
+            });
+
+            const panel3D = document.getElementById('room3DPanel');
+            const plot3DDiv = document.getElementById('plot3DRoom');
+
+            console.log('3D panel element:', panel3D);
+            console.log('3D plot div:', plot3DDiv);
+            console.log('Number of traces:', traces.length);
+
+            panel3D.style.display = 'block';
+
+            const roomWidth = data.room.width || 1;
+            const roomDepth = data.room.depth || 1;
+            const roomHeight = data.room.height || 1;
+
+            try {
+                Plotly.newPlot('plot3DRoom', traces, {
+                    scene: {
+                        xaxis: { title: 'x (m)', range: [0, roomWidth] },
+                        yaxis: { title: 'y (m)', range: [0, roomDepth] },
+                        zaxis: { title: 'z (m)', range: [0, roomHeight] },
+                        camera: { eye: { x: 1.8, y: -1.8, z: 1.2 } },
+                        aspectmode: 'data'
+                    },
+                    showlegend: true,
+                    legend: { x: 0, y: 1 },
+                    margin: { t: 30 },
+                    autosize: true
+                }, { responsive: true });
+                console.log('3D plot created successfully');
+            } catch (plotError) {
+                console.error('Plotly 3D error:', plotError);
+            }
+        }
+
+        function plotSpatialSlices(data) {
+            document.getElementById('slicesPanel').style.display = 'block';
+
+            const slider = document.getElementById('freqSlider');
+            slider.max = data.horizontal_slices.length - 1;
+            slider.value = Math.floor(data.horizontal_slices.length / 2);
+
+            window.currentSliceData = data;
+            updateSlicePlots();
+        }
+
+        window.updateSlicePlots = function() {
+            if (!window.currentSliceData) return;
+
+            const data = window.currentSliceData;
+            if (!data.horizontal_slices || !data.vertical_slices) return;
+
+            const idx = parseInt(document.getElementById('freqSlider').value);
+            if (idx >= data.horizontal_slices.length || idx >= data.vertical_slices.length) return;
+
+            const hSlice = data.horizontal_slices[idx];
+            const vSlice = data.vertical_slices[idx];
+
+            if (!hSlice || !vSlice || !hSlice.x || !hSlice.y || !hSlice.spl) return;
+
+            console.log('Horizontal slice:', { x: hSlice.x.length, y: hSlice.y.length, spl: hSlice.spl.length, shape: hSlice.shape });
+            console.log('Vertical slice:', { x: vSlice.x.length, y: vSlice.y?.length, z: vSlice.z?.length, spl: vSlice.spl.length, shape: vSlice.shape });
+
+            document.getElementById('freqDisplay').textContent = `${hSlice.frequency.toFixed(1)} Hz`;
+
+            // Reshape SPL data
+            const hShape = hSlice.shape;
+            const vShape = vSlice.shape;
+
+            if (!hShape || hShape.length < 2 || !vShape || vShape.length < 2) return;
+
+            const hSPL2D = [];
+            for (let i = 0; i < hShape[0]; i++) {
+                hSPL2D.push(hSlice.spl.slice(i * hShape[1], (i + 1) * hShape[1]));
+            }
+
+            const vSPL2D = [];
+            for (let i = 0; i < vShape[0]; i++) {
+                vSPL2D.push(vSlice.spl.slice(i * vShape[1], (i + 1) * vShape[1]));
+            }
+
+            // Calculate aspect ratios based on room dimensions
+            const roomWidth = data.room.width || 1;
+            const roomDepth = data.room.depth || 1;
+            const roomHeight = data.room.height || 1;
+
+            // Horizontal slice aspect ratio (width / depth)
+            const hAspect = roomDepth / roomWidth;
+            // Vertical slice aspect ratio (height / width)
+            const vAspect = roomHeight / roomWidth;
+
+            // Calculate appropriate height for plots maintaining aspect ratio
+            const baseWidth = 500;
+            const hPlotHeight = Math.max(300, Math.min(600, baseWidth * hAspect));
+            const vPlotHeight = Math.max(300, Math.min(600, baseWidth * vAspect));
+
+            // Set container heights dynamically
+            document.getElementById('plotHorizontalSlice').style.height = hPlotHeight + 'px';
+            document.getElementById('plotVerticalSlice').style.height = vPlotHeight + 'px';
+
+            // Use shared SPL range (50dB span)
+            const splRange = window.sharedSPLRange || { min: 60, max: 110 };
+
+            // Horizontal slice
+            Plotly.newPlot('plotHorizontalSlice', [{
+                x: hSlice.x,
+                y: hSlice.y,
+                z: hSPL2D,
+                type: 'heatmap',
+                colorscale: 'Jet',
+                zmin: splRange.min,
+                zmax: splRange.max,
+                colorbar: { title: 'SPL (dB)' }
+            }, {
+                x: data.sources.map(s => s.position[0]),
+                y: data.sources.map(s => s.position[1]),
+                mode: 'markers',
+                type: 'scatter',
+                marker: { size: 12, color: 'white', symbol: 'diamond', line: { color: 'black', width: 2 } },
+                name: 'Sources'
+            }, {
+                x: [data.listening_position[0]],
+                y: [data.listening_position[1]],
+                mode: 'markers',
+                type: 'scatter',
+                marker: { size: 10, color: 'lime', symbol: 'circle', line: { color: 'black', width: 2 } },
+                name: 'LP'
+            }], {
+                xaxis: { title: 'x (m)', constrain: 'domain' },
+                yaxis: { title: 'y (m)', scaleanchor: 'x', scaleratio: 1, constrain: 'domain' },
+                showlegend: false,
+                margin: { t: 30, r: 80, l: 60, b: 50 },
+                autosize: true
+            }, { responsive: true });
+
+            // Vertical slice (uses z as the y-axis)
+            const vSliceY = vSlice.z || vSlice.y;
+            Plotly.newPlot('plotVerticalSlice', [{
+                x: vSlice.x,
+                y: vSliceY,
+                z: vSPL2D,
+                type: 'heatmap',
+                colorscale: 'Jet',
+                zmin: splRange.min,
+                zmax: splRange.max,
+                colorbar: { title: 'SPL (dB)' }
+            }, {
+                x: data.sources.map(s => s.position[0]),
+                y: data.sources.map(s => s.position[2]),
+                mode: 'markers',
+                type: 'scatter',
+                marker: { size: 12, color: 'white', symbol: 'diamond', line: { color: 'black', width: 2 } },
+                name: 'Sources'
+            }, {
+                x: [data.listening_position[0]],
+                y: [data.listening_position[2]],
+                mode: 'markers',
+                type: 'scatter',
+                marker: { size: 10, color: 'lime', symbol: 'circle', line: { color: 'black', width: 2 } },
+                name: 'LP'
+            }], {
+                xaxis: { title: 'x (m)', constrain: 'domain' },
+                yaxis: { title: 'z (m)', scaleanchor: 'x', scaleratio: 1, constrain: 'domain' },
+                showlegend: false,
+                margin: { t: 30, r: 80, l: 60, b: 50 },
+                autosize: true
+            }, { responsive: true });
+        };
+
+        // Show status message
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.className = `status-message status-${type}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+        }
+
+        // Export/Import configuration
+        window.exportConfig = function() {
+            const config = buildConfig();
+            const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'room_config.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        };
+
+        window.importConfig = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const config = JSON.parse(e.target.result);
+                    applyConfig(config);
+                    showStatus('Configuration loaded successfully', 'success');
+                } catch (error) {
+                    showStatus(`Failed to load configuration: ${error.message}`, 'error');
+                }
+            };
+            reader.readAsText(file);
+        };
+
+        function applyConfig(config) {
+            // Room
+            if (config.room.type === 'rectangular') {
+                document.getElementById('roomType').value = 'rectangular';
+                document.getElementById('roomWidth').value = config.room.width;
+                document.getElementById('roomDepth').value = config.room.depth;
+                document.getElementById('roomHeight').value = config.room.height;
+            } else if (config.room.type === 'lshaped') {
+                document.getElementById('roomType').value = 'lshaped';
+                document.getElementById('width1').value = config.room.width1;
+                document.getElementById('depth1').value = config.room.depth1;
+                document.getElementById('width2').value = config.room.width2;
+                document.getElementById('depth2').value = config.room.depth2;
+                document.getElementById('lshapedHeight').value = config.room.height;
+            }
+            updateRoomUI();
+
+            // Sources
+            sources = [];
+            sourceIdCounter = 0;
+            config.sources.forEach(s => {
+                const crossover = s.crossover.type;
+                addSource(s.name, s.position.x, s.position.y, s.position.z, crossover, s.directivity?.type || 'omnidirectional');
+                const lastSource = sources[sources.length - 1];
+                if (s.crossover.cutoff_freq) {
+                    lastSource.crossoverFreq = s.crossover.cutoff_freq;
+                    lastSource.crossoverOrder = s.crossover.order || 2;
+                }
+            });
+            renderSourceList();
+
+            // Listening position
+            const lp = config.listening_positions[0];
+            document.getElementById('lpX').value = lp.x;
+            document.getElementById('lpY').value = lp.y;
+            document.getElementById('lpZ').value = lp.z;
+
+            // Frequencies
+            document.getElementById('minFreq').value = config.frequencies.min_freq;
+            document.getElementById('maxFreq').value = config.frequencies.max_freq;
+            document.getElementById('numFreqPoints').value = config.frequencies.num_points;
+            document.getElementById('freqSpacing').value = config.frequencies.spacing || 'logarithmic';
+
+            // Solver
+            document.getElementById('solverMethod').value = config.solver?.method || 'direct';
+            document.getElementById('sliceResolution').value = config.visualization?.slice_resolution || 40;
+        }
+
+        // Presets
+        window.loadPreset = function() {
+            const preset = document.getElementById('presetSelect').value;
+            if (!preset) return;
+
+            const presets = {
+                nearfield: {
+                    room: { type: 'rectangular', width: 3.5, depth: 3.0, height: 2.4 },
+                    sources: [
+                        { name: 'Left Speaker', position: { x: 0.9, y: 0.5, z: 1.0 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } },
+                        { name: 'Right Speaker', position: { x: 2.6, y: 0.5, z: 1.0 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } }
+                    ],
+                    listening_positions: [{ x: 1.75, y: 2.0, z: 1.0 }],
+                    frequencies: { min_freq: 30, max_freq: 500, num_points: 100, spacing: 'logarithmic' },
+                    solver: { method: 'direct' },
+                    visualization: { generate_slices: true, slice_resolution: 40 }
+                },
+                home_theater: {
+                    room: { type: 'rectangular', width: 6.0, depth: 5.0, height: 2.5 },
+                    sources: [
+                        { name: 'Left Main', position: { x: 1.0, y: 0.5, z: 1.0 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'highpass', cutoff_freq: 80, order: 4 } },
+                        { name: 'Right Main', position: { x: 5.0, y: 0.5, z: 1.0 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'highpass', cutoff_freq: 80, order: 4 } },
+                        { name: 'Subwoofer', position: { x: 0.3, y: 0.3, z: 0.2 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'lowpass', cutoff_freq: 80, order: 4 } }
+                    ],
+                    listening_positions: [{ x: 3.0, y: 3.5, z: 1.1 }],
+                    frequencies: { min_freq: 20, max_freq: 300, num_points: 100, spacing: 'logarithmic' },
+                    solver: { method: 'direct' },
+                    visualization: { generate_slices: true, slice_resolution: 40 }
+                },
+                surround: {
+                    room: { type: 'rectangular', width: 7.0, depth: 6.0, height: 2.7 },
+                    sources: [
+                        { name: 'Front Left', position: { x: 1.0, y: 0.5, z: 1.2 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } },
+                        { name: 'Center', position: { x: 3.5, y: 0.3, z: 1.0 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } },
+                        { name: 'Front Right', position: { x: 6.0, y: 0.5, z: 1.2 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } },
+                        { name: 'Surround Left', position: { x: 0.5, y: 4.5, z: 1.5 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } },
+                        { name: 'Surround Right', position: { x: 6.5, y: 4.5, z: 1.5 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } }
+                    ],
+                    listening_positions: [{ x: 3.5, y: 4.0, z: 1.1 }],
+                    frequencies: { min_freq: 30, max_freq: 400, num_points: 100, spacing: 'logarithmic' },
+                    solver: { method: 'direct' },
+                    visualization: { generate_slices: true, slice_resolution: 40 }
+                },
+                lshaped: {
+                    room: { type: 'lshaped', width1: 6.0, depth1: 4.0, width2: 3.0, depth2: 3.0, height: 2.5 },
+                    sources: [
+                        { name: 'Left Speaker', position: { x: 1.0, y: 0.5, z: 1.0 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } },
+                        { name: 'Right Speaker', position: { x: 5.0, y: 0.5, z: 1.0 }, amplitude: 1.0, directivity: { type: 'omnidirectional' }, crossover: { type: 'fullrange' } }
+                    ],
+                    listening_positions: [{ x: 3.0, y: 2.5, z: 1.1 }],
+                    frequencies: { min_freq: 30, max_freq: 500, num_points: 100, spacing: 'logarithmic' },
+                    solver: { method: 'direct' },
+                    visualization: { generate_slices: true, slice_resolution: 40 }
+                }
+            };
+
+            if (presets[preset]) {
+                applyConfig(presets[preset]);
+                document.getElementById('presetSelect').value = '';
+                showStatus(`Loaded "${preset}" preset`, 'info');
+            }
+        };
+
+        // Initialize WASM module
+        async function initWasm() {
+            const statusEl = document.getElementById('wasmStatus');
+
+            try {
+                // Try to load WASM module
+                // The path should point to the wasm-pack generated pkg directory
+                const wasmPath = './pkg/math_bem_wasm.js';
+
+                // Dynamic import for ES modules
+                const module = await import(wasmPath);
+                await module.default(); // Initialize WASM
+
+                wasmModule = module;
+                RoomSimulatorWasm = module.RoomSimulatorWasm;
+
+                statusEl.className = 'wasm-ready';
+                statusEl.innerHTML = '<span class="status-dot"></span><span>WASM Ready</span>';
+
+                document.getElementById('runBtn').disabled = false;
+                console.log('WASM module loaded successfully');
+
+            } catch (error) {
+                console.error('Failed to load WASM module:', error);
+                statusEl.className = 'wasm-error';
+                statusEl.innerHTML = '<span class="status-dot"></span><span>WASM Error</span>';
+
+                showStatus(`Failed to load WASM module. Make sure to build with: cd math-bem-wasm && wasm-pack build --target web --release`, 'error');
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initDefaultSources();
+            initWasm();
+        });
+    </script>
+</body>
+</html>

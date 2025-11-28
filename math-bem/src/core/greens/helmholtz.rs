@@ -171,7 +171,6 @@ pub fn greens_function_hypersingular(
     let nx_dot_ny = n_x.dot(n_y);
 
     let r2 = r * r;
-    let r3 = r2 * r;
 
     // Term 1: ((ik)² - 3ik/r + 3/r²) (r·n_x)(r·n_y)/r² * G
     let coef1 = ik * ik - 3.0 * ik / r + Complex64::new(3.0 / r2, 0.0);

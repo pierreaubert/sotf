@@ -1,0 +1,93 @@
+{
+  "room": {
+    "type": "rectangular",
+    "width": 5.0,
+    "depth": 4.0,
+    "height": 2.5
+  },
+  "sources": [
+    {
+      "name": "Left Main",
+      "position": {
+        "x": 1.5,
+        "y": 0.5,
+        "z": 1.0
+      },
+      "amplitude": 0.7,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Right Main",
+      "position": {
+        "x": 3.5,
+        "y": 0.5,
+        "z": 1.0
+      },
+      "amplitude": 0.7,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Subwoofer",
+      "position": {
+        "x": 2.5,
+        "y": 0.3,
+        "z": 0.3
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "lowpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    }
+  ],
+  "listening_positions": [
+    {
+      "x": 2.5,
+      "y": 2.0,
+      "z": 1.2
+    }
+  ],
+  "frequencies": {
+    "min_freq": 20.0,
+    "max_freq": 500.0,
+    "num_points": 30,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "gmres+ilu",
+    "mesh_resolution": 2,
+    "gmres": {
+      "max_iter": 100,
+      "restart": 50,
+      "tolerance": 1e-6
+    },
+    "ilu": {
+      "method": "tbem",
+      "scanning_degree": "fine"
+    },
+    "adaptive_integration": true
+  },
+  "metadata": {
+    "description": "2.1 stereo system with 80Hz Linkwitz-Riley crossover",
+    "author": "Room Simulator",
+    "date": "2025-01-28"
+  }
+}

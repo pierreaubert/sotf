@@ -1,0 +1,56 @@
+{
+  "room": {
+    "type": "rectangular",
+    "width": 3.5,
+    "depth": 3.0,
+    "height": 2.4
+  },
+  "sources": [
+    {
+      "name": "Left Speaker",
+      "position": { "x": 0.9, "y": 0.5, "z": 1.0 },
+      "amplitude": 1.0,
+      "directivity": { "type": "omnidirectional" },
+      "crossover": { "type": "fullrange" }
+    },
+    {
+      "name": "Right Speaker",
+      "position": { "x": 2.6, "y": 0.5, "z": 1.0 },
+      "amplitude": 1.0,
+      "directivity": { "type": "omnidirectional" },
+      "crossover": { "type": "fullrange" }
+    }
+  ],
+  "listening_positions": [{ "x": 1.75, "y": 2.0, "z": 1.0 }],
+  "frequencies": {
+    "min_freq": 80.0,
+    "max_freq": 200.0,
+    "num_points": 5,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "gmres+ilu",
+    "mesh_resolution": 2,
+    "gmres": {
+      "max_iter": 2000,
+      "restart": 100,
+      "tolerance": 1e-6
+    },
+    "ilu": {
+      "method": "tbem",
+      "scanning_degree": "fine"
+    },
+    "adaptive_integration": true,
+    "adaptive_meshing": true
+  },
+  "visualization": {
+    "generate_slices": true,
+    "slice_resolution": 30,
+    "slice_frequency_indices": []
+  },
+  "metadata": {
+    "description": "Near-field stereo setup with spatial visualization - 1.75m wide speakers, 1.5m listening distance",
+    "author": "Room Simulator",
+    "date": "2025-01-28"
+  }
+}

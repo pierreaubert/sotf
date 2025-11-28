@@ -66,7 +66,23 @@ pub use fmm_interface::{
 };
 
 // GMRES solver and ILU integration
-pub use fmm_interface::{gmres_solve_with_ilu, solve_gmres};
+pub use fmm_interface::{gmres_solve_with_ilu, gmres_solve_with_ilu_operator, solve_gmres};
+
+// Hierarchical FMM preconditioner solvers
+pub use fmm_interface::{gmres_solve_fmm_hierarchical, gmres_solve_with_hierarchical_precond};
+
+// Frequency-adaptive mesh utilities
+pub use fmm_interface::{
+    recommended_mesh_resolution, mesh_resolution_for_frequency_range,
+    estimate_element_count, AdaptiveMeshConfig,
+};
+
+// Preconditioner types
+pub use preconditioner::{
+    BlockDiagonalPreconditioner, DiagonalPreconditioner as BasicDiagonalPreconditioner,
+    HierarchicalFmmPreconditioner, IdentityPreconditioner, Preconditioner,
+    RowScalingPreconditioner, SparseNearfieldIlu,
+};
 
 // ILU configuration types
 pub use ilu_preconditioner::{IluMethod, IluPreconditioner, IluScanningDegree, IluSetup};

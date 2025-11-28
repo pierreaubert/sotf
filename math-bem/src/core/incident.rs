@@ -205,7 +205,7 @@ impl IncidentField {
 
                     if r > 1e-10 {
                         let kr = k * r;
-                        let r2 = r * r;
+                        let _r2 = r * r;
 
                         // ∂G/∂r = (ik - 1/r) * G
                         let exp_ikr = Complex64::new(kr.cos(), kr.sin());

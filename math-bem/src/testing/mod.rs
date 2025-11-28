@@ -11,7 +11,11 @@ use std::path::Path;
 pub mod json_output;
 pub mod validation;
 
+// Re-export these modules only when their contents are used elsewhere
+// For now, they're only used when the testing feature is active
+#[allow(unused_imports)]
 pub use json_output::*;
+#[allow(unused_imports)]
 pub use validation::*;
 
 /// Comparison between BEM and analytical solution

@@ -106,7 +106,7 @@ pub fn generate_sphere_mesh(radius: f64, n_theta: usize, n_phi: usize) -> Mesh {
 pub fn generate_icosphere_mesh(radius: f64, subdivisions: usize) -> Mesh {
     // Golden ratio
     let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
-    let scale = radius / (1.0 + phi * phi).sqrt();
+    let _scale = radius / (1.0 + phi * phi).sqrt();
 
     // Initial icosahedron vertices
     let mut vertices: Vec<[f64; 3]> = vec![
@@ -303,7 +303,7 @@ pub fn generate_closed_cylinder_mesh(
         }
     }
 
-    let lateral_node_count = nodes.len();
+    let _lateral_node_count = nodes.len();
 
     // Bottom cap center
     let bottom_center_idx = nodes.len();

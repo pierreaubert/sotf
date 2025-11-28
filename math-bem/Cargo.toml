@@ -1,6 +1,6 @@
 [package]
-name = "sotf_bem"
-version = "0.1.1"
+name = "math-bem"
+version = "0.1.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "High-performance Boundary Element Method library for acoustic scattering"
@@ -16,7 +16,11 @@ path = "src/lib.rs"
 [[bin]]
 name = "bem-runner"
 path = "bin/runner.rs"
-required-features = ["cli"]
+required-features = ["cli", "ffi"]
+
+[[bin]]
+name = "room-simulator-bem"
+path = "bin/room_simulator_bem.rs"
 
 [dependencies]
 # Core numerical computing
@@ -75,7 +79,7 @@ cc = "1.2"  # For compiling NumCalc C++ code
 which = { workspace = true }
 
 [features]
-default = ["ffi"]
+default = ["parallel", "pure-rust", "cli", "benchmarks"]
 ffi = []  # FFI wrapper to NumCalc
 pure-rust = []  # Pure Rust BEM implementation
 parallel = []  # Parallel TBEM assembly using Rayon
