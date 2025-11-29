@@ -17,6 +17,7 @@ pub mod input;
 pub mod checkbox;
 pub mod toggle;
 pub mod select;
+pub mod slider;
 
 // Data display
 pub mod badge;
@@ -61,6 +62,7 @@ pub use input::{Input, InputSize, InputVariant};
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use toggle::{Toggle, ToggleSize};
 pub use select::{Select, SelectOption, SelectSize};
+pub use slider::{Slider, SliderSize};
 
 // Data display
 pub use badge::{Badge, BadgeDot, BadgeVariant, BadgeSize};
