@@ -31,24 +31,63 @@ fn main() {
         let k = 2.0 * PI * frequency / speed_of_sound;
 
         println!("\n{}", "=".repeat(60));
-        println!("=== ka = {:.2} (f = {:.1} Hz, k = {:.2}) ===", ka_target, frequency, k);
+        println!(
+            "=== ka = {:.2} (f = {:.1} Hz, k = {:.2}) ===",
+            ka_target, frequency, k
+        );
         println!("{}", "=".repeat(60));
 
         // Test UV-sphere with both beta values
         println!("\n--- UV-sphere mesh (n_theta=8, n_phi=16) ---");
         let mesh_uv = generate_sphere_mesh(radius, 8, 16);
         println!("\n  Standard β = i/k:");
-        test_mesh(&mesh_uv, frequency, speed_of_sound, density, k, radius, "UV-sphere", None);
+        test_mesh(
+            &mesh_uv,
+            frequency,
+            speed_of_sound,
+            density,
+            k,
+            radius,
+            "UV-sphere",
+            None,
+        );
         println!("\n  Scaled β = 2i/k:");
-        test_mesh(&mesh_uv, frequency, speed_of_sound, density, k, radius, "UV-sphere", Some(2.0));
+        test_mesh(
+            &mesh_uv,
+            frequency,
+            speed_of_sound,
+            density,
+            k,
+            radius,
+            "UV-sphere",
+            Some(2.0),
+        );
 
         // Test Icosphere with both beta values
         println!("\n--- Icosphere mesh (subdivisions=2, ~320 elements) ---");
         let mesh_ico = generate_icosphere_mesh(radius, 2);
         println!("\n  Standard β = i/k:");
-        test_mesh(&mesh_ico, frequency, speed_of_sound, density, k, radius, "Icosphere", None);
+        test_mesh(
+            &mesh_ico,
+            frequency,
+            speed_of_sound,
+            density,
+            k,
+            radius,
+            "Icosphere",
+            None,
+        );
         println!("\n  Scaled β = 2i/k:");
-        test_mesh(&mesh_ico, frequency, speed_of_sound, density, k, radius, "Icosphere", Some(2.0));
+        test_mesh(
+            &mesh_ico,
+            frequency,
+            speed_of_sound,
+            density,
+            k,
+            radius,
+            "Icosphere",
+            Some(2.0),
+        );
     }
 }
 
@@ -123,10 +162,13 @@ fn test_mesh(
     // Get analytical reference
     let theta_refs: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0 * PI / 180.0).collect();
     let mie = sphere_scattering_3d(k, radius, 50, vec![radius], theta_refs.clone());
-    let mie_avg: f64 = mie.pressure.iter().map(|p| p.norm()).sum::<f64>() / mie.pressure.len() as f64;
+    let mie_avg: f64 =
+        mie.pressure.iter().map(|p| p.norm()).sum::<f64>() / mie.pressure.len() as f64;
 
-    println!("  {} elements, avg |p| = {:.4}, Mie avg = {:.4}",
-             n, p_avg, mie_avg);
+    println!(
+        "  {} elements, avg |p| = {:.4}, Mie avg = {:.4}",
+        n, p_avg, mie_avg
+    );
 
     // Angular comparison at key angles
     let test_angles = [0.0, 30.0, 60.0, 90.0, 120.0, 150.0, 180.0];
@@ -153,9 +195,11 @@ fn test_mesh(
             continue;
         }
 
-        let bem_avg: f64 = matching_elements.iter()
+        let bem_avg: f64 = matching_elements
+            .iter()
             .map(|&i| solution.x[i].norm())
-            .sum::<f64>() / matching_elements.len() as f64;
+            .sum::<f64>()
+            / matching_elements.len() as f64;
 
         // Mie at this angle
         let mie_idx = (theta_deg / 10.0).round() as usize;
@@ -172,8 +216,10 @@ fn test_mesh(
         };
 
         let marker = if error > 20.0 { " <--" } else { "" };
-        println!("  {:>7.1}° |  {:>7.4}  |  {:>7.4}  | {:>6.1}%{}",
-                 theta_deg, bem_avg, mie_val, error, marker);
+        println!(
+            "  {:>7.1}° |  {:>7.4}  |  {:>7.4}  | {:>6.1}%{}",
+            theta_deg, bem_avg, mie_val, error, marker
+        );
     }
 }
 

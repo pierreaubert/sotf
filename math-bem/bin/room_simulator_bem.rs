@@ -11,10 +11,11 @@
 //!   cargo run --release --bin room_simulator_bem -- --config configs/example_multi_source.json
 //!   cargo run --release --bin room_simulator_bem -- --help
 
-use bem::room_acoustics::*;
 use bem::core::solver::{
-    gmres_solve_with_ilu, gmres_solve_fmm_batched_with_ilu, GmresConfig, IluMethod, IluScanningDegree,
+    GmresConfig, IluMethod, IluScanningDegree, gmres_solve_fmm_batched_with_ilu,
+    gmres_solve_with_ilu,
 };
+use bem::room_acoustics::*;
 // Re-import FMM solver types from room_acoustics (they're re-exported from solver.rs)
 // FmmSolverConfig, solve_bem_fmm_gmres_ilu are available via bem::room_acoustics
 use clap::{Parser, ValueEnum};
@@ -103,18 +104,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run simulation based on solver method
     let output_data = match solver_method {
-        SolverMethod::Direct => {
-            run_direct_gmres(&simulation, &config, args.verbose)?
-        }
-        SolverMethod::GmresIlu => {
-            run_gmres_with_ilu(&simulation, &config, args.verbose)?
-        }
+        SolverMethod::Direct => run_direct_gmres(&simulation, &config, args.verbose)?,
+        SolverMethod::GmresIlu => run_gmres_with_ilu(&simulation, &config, args.verbose)?,
         SolverMethod::Fmm | SolverMethod::FmmIlu => {
             run_fmm_gmres_ilu(&simulation, &config, args.verbose)?
         }
-        SolverMethod::FmmBatched => {
-            run_fmm_batched(&simulation, &config, args.verbose)?
-        }
+        SolverMethod::FmmBatched => run_fmm_batched(&simulation, &config, args.verbose)?,
     };
 
     // Save results
@@ -134,12 +129,20 @@ fn create_default_config() -> RoomConfig {
         },
         sources: vec![SourceConfig {
             name: "Main Speaker".to_string(),
-            position: Point3DConfig { x: 2.5, y: 0.5, z: 1.2 },
+            position: Point3DConfig {
+                x: 2.5,
+                y: 0.5,
+                z: 1.2,
+            },
             amplitude: 1.0,
             directivity: DirectivityConfig::Omnidirectional,
             crossover: CrossoverConfig::FullRange,
         }],
-        listening_positions: vec![Point3DConfig { x: 2.5, y: 2.0, z: 1.2 }],
+        listening_positions: vec![Point3DConfig {
+            x: 2.5,
+            y: 2.0,
+            z: 1.2,
+        }],
         frequencies: FrequencyConfig {
             min_freq: 50.0,
             max_freq: 500.0,
@@ -155,10 +158,23 @@ fn create_default_config() -> RoomConfig {
 fn print_config_summary(config: &RoomConfig) {
     println!("\n=== Configuration Summary ===");
     match &config.room {
-        RoomGeometryConfig::Rectangular { width, depth, height } => {
-            println!("Room: Rectangular {:.1}m × {:.1}m × {:.1}m", width, depth, height);
+        RoomGeometryConfig::Rectangular {
+            width,
+            depth,
+            height,
+        } => {
+            println!(
+                "Room: Rectangular {:.1}m × {:.1}m × {:.1}m",
+                width, depth, height
+            );
         }
-        RoomGeometryConfig::LShaped { width1, depth1, width2, depth2, height } => {
+        RoomGeometryConfig::LShaped {
+            width1,
+            depth1,
+            width2,
+            depth2,
+            height,
+        } => {
             println!("Room: L-shaped");
             println!("  Main: {:.1}m × {:.1}m", width1, depth1);
             println!("  Extension: {:.1}m × {:.1}m", width2, depth2);
@@ -168,28 +184,44 @@ fn print_config_summary(config: &RoomConfig) {
 
     println!("\nSources: {}", config.sources.len());
     for source in &config.sources {
-        println!("  - {}: ({:.2}, {:.2}, {:.2})",
-            source.name, source.position.x, source.position.y, source.position.z);
+        println!(
+            "  - {}: ({:.2}, {:.2}, {:.2})",
+            source.name, source.position.x, source.position.y, source.position.z
+        );
         match &source.crossover {
-            CrossoverConfig::Lowpass { cutoff_freq, order } =>
-                println!("    Lowpass: {:.0}Hz, order {}", cutoff_freq, order),
-            CrossoverConfig::Highpass { cutoff_freq, order } =>
-                println!("    Highpass: {:.0}Hz, order {}", cutoff_freq, order),
-            CrossoverConfig::Bandpass { low_cutoff, high_cutoff, order } =>
-                println!("    Bandpass: {:.0}-{:.0}Hz, order {}", low_cutoff, high_cutoff, order),
+            CrossoverConfig::Lowpass { cutoff_freq, order } => {
+                println!("    Lowpass: {:.0}Hz, order {}", cutoff_freq, order)
+            }
+            CrossoverConfig::Highpass { cutoff_freq, order } => {
+                println!("    Highpass: {:.0}Hz, order {}", cutoff_freq, order)
+            }
+            CrossoverConfig::Bandpass {
+                low_cutoff,
+                high_cutoff,
+                order,
+            } => println!(
+                "    Bandpass: {:.0}-{:.0}Hz, order {}",
+                low_cutoff, high_cutoff, order
+            ),
             _ => {}
         }
     }
 
-    println!("\nFrequencies: {:.0} Hz to {:.0} Hz ({} points)",
-        config.frequencies.min_freq,
-        config.frequencies.max_freq,
-        config.frequencies.num_points);
+    println!(
+        "\nFrequencies: {:.0} Hz to {:.0} Hz ({} points)",
+        config.frequencies.min_freq, config.frequencies.max_freq, config.frequencies.num_points
+    );
 
     println!("\nSolver Configuration:");
     println!("  Method: {}", config.solver.method);
-    println!("  Mesh resolution: {} elements/meter", config.solver.mesh_resolution);
-    println!("  Adaptive integration: {}", config.solver.adaptive_integration);
+    println!(
+        "  Mesh resolution: {} elements/meter",
+        config.solver.mesh_resolution
+    );
+    println!(
+        "  Adaptive integration: {}",
+        config.solver.adaptive_integration
+    );
 }
 
 fn run_direct_gmres(
@@ -200,14 +232,23 @@ fn run_direct_gmres(
     println!("\n=== Direct GMRES Solver ===");
 
     let mesh = simulation.room.generate_mesh(config.solver.mesh_resolution);
-    println!("Mesh: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
+    println!(
+        "Mesh: {} nodes, {} elements",
+        mesh.nodes.len(),
+        mesh.elements.len()
+    );
 
     let lp = simulation.listening_positions[0];
     let mut lp_spl_values = Vec::new();
 
     for (idx, &freq) in simulation.frequencies.iter().enumerate() {
         if verbose || idx % 5 == 0 {
-            println!("\nFrequency {}/{}: {:.1} Hz", idx + 1, simulation.frequencies.len(), freq);
+            println!(
+                "\nFrequency {}/{}: {:.1} Hz",
+                idx + 1,
+                simulation.frequencies.len(),
+                freq
+            );
         }
 
         let k = simulation.wavenumber(freq);
@@ -235,7 +276,12 @@ fn run_direct_gmres(
     }
 
     // Build output JSON
-    Ok(create_output_json(simulation, config, lp_spl_values, "direct_gmres"))
+    Ok(create_output_json(
+        simulation,
+        config,
+        lp_spl_values,
+        "direct_gmres",
+    ))
 }
 
 fn run_gmres_with_ilu(
@@ -257,7 +303,11 @@ fn run_gmres_with_ilu(
     } else {
         simulation.room.generate_mesh(config.solver.mesh_resolution)
     };
-    println!("Mesh: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
+    println!(
+        "Mesh: {} nodes, {} elements",
+        mesh.nodes.len(),
+        mesh.elements.len()
+    );
 
     // Parse ILU configuration
     let ilu_method = match config.solver.ilu.method.to_lowercase().as_str() {
@@ -295,7 +345,12 @@ fn run_gmres_with_ilu(
 
     for (idx, &freq) in simulation.frequencies.iter().enumerate() {
         if verbose || idx % 5 == 0 {
-            println!("\nFrequency {}/{}: {:.1} Hz", idx + 1, simulation.frequencies.len(), freq);
+            println!(
+                "\nFrequency {}/{}: {:.1} Hz",
+                idx + 1,
+                simulation.frequencies.len(),
+                freq
+            );
         }
 
         let k = simulation.wavenumber(freq);
@@ -321,13 +376,7 @@ fn run_gmres_with_ilu(
             println!("  Solving with GMRES+ILU...");
         }
 
-        let solution = gmres_solve_with_ilu(
-            &matrix,
-            &rhs,
-            ilu_method,
-            ilu_degree,
-            &gmres_config,
-        );
+        let solution = gmres_solve_with_ilu(&matrix, &rhs, ilu_method, ilu_degree, &gmres_config);
 
         // Compute SPL at listening position
         let lp_pressure = calculate_field_pressure_bem_parallel(
@@ -347,7 +396,7 @@ fn run_gmres_with_ilu(
             let src_pressure = calculate_field_pressure_bem_parallel(
                 &mesh,
                 &solution.x,
-                std::slice::from_ref(source),  // Single source
+                std::slice::from_ref(source), // Single source
                 &[lp],
                 k,
                 freq,
@@ -357,8 +406,10 @@ fn run_gmres_with_ilu(
         }
 
         if verbose {
-            println!("  Iterations: {}, Residual: {:.2e}, SPL: {:.1} dB",
-                solution.iterations, solution.residual, lp_spl);
+            println!(
+                "  Iterations: {}, Residual: {:.2e}, SPL: {:.1} dB",
+                solution.iterations, solution.residual, lp_spl
+            );
         }
 
         // Store solution for spatial field computation if needed
@@ -370,7 +421,15 @@ fn run_gmres_with_ilu(
         }
     }
 
-    Ok(create_output_json_with_slices(simulation, config, &mesh, lp_spl_values, &source_spl_values, &bem_solutions, "gmres_ilu"))
+    Ok(create_output_json_with_slices(
+        simulation,
+        config,
+        &mesh,
+        lp_spl_values,
+        &source_spl_values,
+        &bem_solutions,
+        "gmres_ilu",
+    ))
 }
 
 fn run_fmm_gmres_ilu(
@@ -392,7 +451,11 @@ fn run_fmm_gmres_ilu(
     } else {
         simulation.room.generate_mesh(config.solver.mesh_resolution)
     };
-    println!("Mesh: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
+    println!(
+        "Mesh: {} nodes, {} elements",
+        mesh.nodes.len(),
+        mesh.elements.len()
+    );
 
     // Parse ILU configuration
     let ilu_method = match config.solver.ilu.method.to_lowercase().as_str() {
@@ -417,7 +480,10 @@ fn run_fmm_gmres_ilu(
     // FMM configuration
     let fmm_config = FmmSolverConfig::default();
     println!("FMM configuration:");
-    println!("  Max elements per leaf: {}", fmm_config.max_elements_per_leaf);
+    println!(
+        "  Max elements per leaf: {}",
+        fmm_config.max_elements_per_leaf
+    );
     println!("  Max tree depth: {}", fmm_config.max_tree_depth);
     println!("  Separation ratio: {}", fmm_config.separation_ratio);
 
@@ -433,7 +499,12 @@ fn run_fmm_gmres_ilu(
 
     for (idx, &freq) in simulation.frequencies.iter().enumerate() {
         if verbose || idx % 5 == 0 {
-            println!("\nFrequency {}/{}: {:.1} Hz", idx + 1, simulation.frequencies.len(), freq);
+            println!(
+                "\nFrequency {}/{}: {:.1} Hz",
+                idx + 1,
+                simulation.frequencies.len(),
+                freq
+            );
         }
 
         let k = simulation.wavenumber(freq);
@@ -454,7 +525,8 @@ fn run_fmm_gmres_ilu(
                 config.solver.gmres.max_iter,
                 config.solver.gmres.restart,
                 config.solver.gmres.tolerance,
-            ).map_err(|e| format!("FMM solve (hierarchical) failed: {}", e))?
+            )
+            .map_err(|e| format!("FMM solve (hierarchical) failed: {}", e))?
         } else {
             // Use ILU preconditioner (O(N²) setup via dense matrix extraction)
             solve_bem_fmm_gmres_ilu(
@@ -468,7 +540,8 @@ fn run_fmm_gmres_ilu(
                 config.solver.gmres.tolerance,
                 ilu_method,
                 ilu_degree,
-            ).map_err(|e| format!("FMM solve (ILU) failed: {}", e))?
+            )
+            .map_err(|e| format!("FMM solve (ILU) failed: {}", e))?
         };
 
         // Compute SPL at listening position
@@ -511,7 +584,15 @@ fn run_fmm_gmres_ilu(
         }
     }
 
-    Ok(create_output_json_with_slices(simulation, config, &mesh, lp_spl_values, &source_spl_values, &bem_solutions, "fmm_gmres_ilu"))
+    Ok(create_output_json_with_slices(
+        simulation,
+        config,
+        &mesh,
+        lp_spl_values,
+        &source_spl_values,
+        &bem_solutions,
+        "fmm_gmres_ilu",
+    ))
 }
 
 fn run_fmm_batched(
@@ -533,7 +614,11 @@ fn run_fmm_batched(
     } else {
         simulation.room.generate_mesh(config.solver.mesh_resolution)
     };
-    println!("Mesh: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
+    println!(
+        "Mesh: {} nodes, {} elements",
+        mesh.nodes.len(),
+        mesh.elements.len()
+    );
 
     // Parse ILU configuration
     let ilu_method = match config.solver.ilu.method.to_lowercase().as_str() {
@@ -549,12 +634,18 @@ fn run_fmm_batched(
         _ => IluScanningDegree::Fine,
     };
 
-    println!("Preconditioner: ILU ({:?}, {:?}) with batched BLAS", ilu_method, ilu_degree);
+    println!(
+        "Preconditioner: ILU ({:?}, {:?}) with batched BLAS",
+        ilu_method, ilu_degree
+    );
 
     // FMM configuration
     let fmm_config = FmmSolverConfig::default();
     println!("FMM configuration:");
-    println!("  Max elements per leaf: {}", fmm_config.max_elements_per_leaf);
+    println!(
+        "  Max elements per leaf: {}",
+        fmm_config.max_elements_per_leaf
+    );
     println!("  Max tree depth: {}", fmm_config.max_tree_depth);
     println!("  Separation ratio: {}", fmm_config.separation_ratio);
     println!("  Batched BLAS: enabled");
@@ -579,7 +670,12 @@ fn run_fmm_batched(
 
     for (idx, &freq) in simulation.frequencies.iter().enumerate() {
         if verbose || idx % 5 == 0 {
-            println!("\nFrequency {}/{}: {:.1} Hz", idx + 1, simulation.frequencies.len(), freq);
+            println!(
+                "\nFrequency {}/{}: {:.1} Hz",
+                idx + 1,
+                simulation.frequencies.len(),
+                freq
+            );
         }
 
         let k = simulation.wavenumber(freq);
@@ -591,8 +687,9 @@ fn run_fmm_batched(
 
         // Use the room_acoustics helper to build the FMM system
         // Returns (SlfmmSystem, elements, nodes_array)
-        let (fmm_system, _elements, _nodes) = build_fmm_system(&mesh, &simulation.sources, k, freq, &fmm_config)
-            .map_err(|e| format!("FMM system build failed: {}", e))?;
+        let (fmm_system, _elements, _nodes) =
+            build_fmm_system(&mesh, &simulation.sources, k, freq, &fmm_config)
+                .map_err(|e| format!("FMM system build failed: {}", e))?;
 
         // Solve using batched GMRES with ILU
         if verbose {
@@ -608,8 +705,10 @@ fn run_fmm_batched(
         );
 
         if verbose {
-            println!("  Iterations: {}, Residual: {:.2e}, Converged: {}",
-                solution_result.iterations, solution_result.residual, solution_result.converged);
+            println!(
+                "  Iterations: {}, Residual: {:.2e}, Converged: {}",
+                solution_result.iterations, solution_result.residual, solution_result.converged
+            );
         }
 
         // Compute SPL at listening position
@@ -652,7 +751,15 @@ fn run_fmm_batched(
         }
     }
 
-    Ok(create_output_json_with_slices(simulation, config, &mesh, lp_spl_values, &source_spl_values, &bem_solutions, "fmm_batched"))
+    Ok(create_output_json_with_slices(
+        simulation,
+        config,
+        &mesh,
+        lp_spl_values,
+        &source_spl_values,
+        &bem_solutions,
+        "fmm_batched",
+    ))
 }
 
 fn create_output_json_with_slices(
@@ -718,7 +825,10 @@ fn create_output_json_with_slices(
         use ndarray::Array2;
 
         println!("\n=== Generating Spatial Slices ===");
-        println!("Resolution: {}x{} points", config.visualization.slice_resolution, config.visualization.slice_resolution);
+        println!(
+            "Resolution: {}x{} points",
+            config.visualization.slice_resolution, config.visualization.slice_resolution
+        );
         println!("Computing slices at {} frequencies...", bem_solutions.len());
 
         let res = config.visualization.slice_resolution;
@@ -736,7 +846,12 @@ fn create_output_json_with_slices(
         let mut vertical_slices = Vec::new();
 
         for (slice_idx, (freq, surface_pressure)) in bem_solutions.iter().enumerate() {
-            println!("  Slice {}/{}: {:.1} Hz", slice_idx + 1, bem_solutions.len(), freq);
+            println!(
+                "  Slice {}/{}: {:.1} Hz",
+                slice_idx + 1,
+                bem_solutions.len(),
+                freq
+            );
 
             let k = simulation.wavenumber(*freq);
 
@@ -808,7 +923,11 @@ fn create_output_json_with_slices(
         output["horizontal_slices"] = serde_json::json!(horizontal_slices);
         output["vertical_slices"] = serde_json::json!(vertical_slices);
 
-        println!("Generated {} horizontal and {} vertical slices", horizontal_slices.len(), vertical_slices.len());
+        println!(
+            "Generated {} horizontal and {} vertical slices",
+            horizontal_slices.len(),
+            vertical_slices.len()
+        );
     }
 
     output

@@ -47,7 +47,8 @@ pub fn regular_integration(
     let mut result = IntegrationResult::default();
 
     // Generate adaptive subelements
-    let subelements = generate_subelements(source_point, element_coords, element_type, element_area);
+    let subelements =
+        generate_subelements(source_point, element_coords, element_type, element_area);
 
     // Local coordinates of element vertices (standard vertex mapping)
     // Triangle: N0 at (0,0), N1 at (1,0), N2 at (0,1)
@@ -446,8 +447,7 @@ pub fn integrate_g_only(
     let quad_points = get_quadrature_points(element_type, gauss_order);
 
     for (xi, eta, weight) in quad_points {
-        let (_, jacobian, _, crd_poi) =
-            compute_parameters(element_coords, element_type, xi, eta);
+        let (_, jacobian, _, crd_poi) = compute_parameters(element_coords, element_type, xi, eta);
 
         let wga = weight * jacobian;
 
@@ -505,7 +505,12 @@ pub fn integrate_h_only(
         let zg = Complex64::new(kr.cos() * g_scaled, kr.sin() * g_scaled);
 
         let z1 = Complex64::new(-1.0 / r, wavruim);
-        let r_dot_n: f64 = diff.iter().zip(el_norm.iter()).map(|(d, n)| d * n).sum::<f64>() / r;
+        let r_dot_n: f64 = diff
+            .iter()
+            .zip(el_norm.iter())
+            .map(|(d, n)| d * n)
+            .sum::<f64>()
+            / r;
 
         result += zg * z1 * r_dot_n;
     }
@@ -516,7 +521,7 @@ pub fn integrate_h_only(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::{array, Array2};
+    use ndarray::{Array2, array};
 
     fn make_test_triangle() -> Array2<f64> {
         Array2::from_shape_vec((3, 3), vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]).unwrap()

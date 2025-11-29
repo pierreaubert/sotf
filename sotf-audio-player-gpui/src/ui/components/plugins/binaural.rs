@@ -47,7 +47,11 @@ pub fn render_binaural_plugin(
                                 .w(px(48.0))
                                 .h(px(48.0))
                                 .rounded_full()
-                                .bg(if has_sofa { rgb(0x22c55e) } else { theme.surface })
+                                .bg(if has_sofa {
+                                    rgb(0x22c55e)
+                                } else {
+                                    theme.surface
+                                })
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -64,7 +68,11 @@ pub fn render_binaural_plugin(
                                         .text_sm()
                                         .font_weight(FontWeight::MEDIUM)
                                         .text_color(theme.text_primary)
-                                        .child(if has_sofa { "SOFA File Loaded" } else { "No SOFA File" }),
+                                        .child(if has_sofa {
+                                            "SOFA File Loaded"
+                                        } else {
+                                            "No SOFA File"
+                                        }),
                                 )
                                 .child(
                                     div()
@@ -74,9 +82,14 @@ pub fn render_binaural_plugin(
                                         .text_ellipsis()
                                         .max_w(px(200.0))
                                         .child(if has_sofa {
-                                            sofa_file.rsplit('/').next().unwrap_or(sofa_file).to_string()
+                                            sofa_file
+                                                .rsplit('/')
+                                                .next()
+                                                .unwrap_or(sofa_file)
+                                                .to_string()
                                         } else {
-                                            "Load a SOFA file to enable binaural decoding".to_string()
+                                            "Load a SOFA file to enable binaural decoding"
+                                                .to_string()
                                         }),
                                 ),
                         ),
@@ -109,7 +122,13 @@ pub fn render_binaural_plugin(
                                         .font_weight(FontWeight::BOLD)
                                         .child("L"),
                                 )
-                                .child(div().text_xs().text_color(theme.text_muted).mt_1().child("Left")),
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .mt_1()
+                                        .child("Left"),
+                                ),
                         )
                         // Head icon
                         .child(
@@ -146,7 +165,13 @@ pub fn render_binaural_plugin(
                                         .font_weight(FontWeight::BOLD)
                                         .child("R"),
                                 )
-                                .child(div().text_xs().text_color(theme.text_muted).mt_1().child("Right")),
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .mt_1()
+                                        .child("Right"),
+                                ),
                         ),
                 ),
         )
@@ -164,16 +189,48 @@ pub fn render_binaural_plugin(
                 .child(render_section_header("PARAMETERS", theme))
                 .child(render_param_row(
                     "SOFA File",
-                    if sofa_file.is_empty() { "None" } else { sofa_file.rsplit('/').next().unwrap_or(sofa_file) },
+                    if sofa_file.is_empty() {
+                        "None"
+                    } else {
+                        sofa_file.rsplit('/').next().unwrap_or(sofa_file)
+                    },
                     0,
                     selected_param,
                     is_editing,
                     theme,
                 ))
-                .child(render_param_row("Input Channels", &format!("{}", input_channels), 1, selected_param, is_editing, theme))
-                .child(render_toggle("Optimization", enable_optimization, 2, selected_param, is_editing, theme))
-                .child(render_param_row("Externalization", &format!("{:.2}", externalization), 3, selected_param, is_editing, theme))
-                .child(render_param_row("Near Field", &format!("{:.2}", near_field_strength), 4, selected_param, is_editing, theme)),
+                .child(render_param_row(
+                    "Input Channels",
+                    &format!("{}", input_channels),
+                    1,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_toggle(
+                    "Optimization",
+                    enable_optimization,
+                    2,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Externalization",
+                    &format!("{:.2}", externalization),
+                    3,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Near Field",
+                    &format!("{:.2}", near_field_strength),
+                    4,
+                    selected_param,
+                    is_editing,
+                    theme,
+                )),
         )
         // Hint for loading SOFA file
         .when(!has_sofa, |d| {

@@ -204,16 +204,12 @@ impl AlbumCard {
                     .justify_between()
                     .w_full()
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(album.title.clone())
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .child(album.artist()),
-                            ),
+                        div().flex().flex_col().child(album.title.clone()).child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child(album.artist()),
+                        ),
                     )
                     .child(
                         div()

@@ -571,7 +571,11 @@ fn extract_directivity_curves(plot_data: &Value) -> Result<Vec<DirectivityCurve>
     }
 
     // Sort by angle
-    curves.sort_by(|a, b| a.angle.partial_cmp(&b.angle).unwrap_or(std::cmp::Ordering::Equal));
+    curves.sort_by(|a, b| {
+        a.angle
+            .partial_cmp(&b.angle)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     Ok(curves)
 }
@@ -645,7 +649,10 @@ pub fn get_directivity_at_angle<'a>(
 ///
 /// # Returns
 /// * Option containing the on-axis DirectivityCurve
-pub fn get_on_axis<'a>(directivity: &'a DirectivityData, plane: &str) -> Option<&'a DirectivityCurve> {
+pub fn get_on_axis<'a>(
+    directivity: &'a DirectivityData,
+    plane: &str,
+) -> Option<&'a DirectivityCurve> {
     get_directivity_at_angle(directivity, 0.0, plane)
 }
 
@@ -665,4 +672,145 @@ pub fn get_available_angles(directivity: &DirectivityData, plane: &str) -> Vec<f
     };
 
     curves.iter().map(|c| c.angle).collect()
+}
+
+/// Contour plot data with 2D heatmap structure
+///
+/// Used for "SPL Horizontal Contour" and "SPL Vertical Contour" measurements
+/// which provide full angle range data (-180° to +180°).
+#[derive(Debug, Clone)]
+pub struct ContourPlotData {
+    /// Frequency values (X axis)
+    pub freq: Vec<f64>,
+    /// Angle values in degrees (Y axis)
+    pub angles: Vec<f64>,
+    /// SPL values as a 2D grid (row-major: angles × freq)
+    pub spl: Vec<f64>,
+    /// Number of frequency points
+    pub freq_count: usize,
+    /// Number of angle points
+    pub angle_count: usize,
+}
+
+/// Fetch contour plot data (SPL Horizontal Contour or SPL Vertical Contour) from the spinorama API
+///
+/// # Arguments
+/// * `speaker` - Speaker name
+/// * `version` - Measurement version
+/// * `plane` - Either "horizontal" or "vertical"
+///
+/// # Returns
+/// * Result containing ContourPlotData or an error
+///
+/// # Details
+/// Fetches "SPL Horizontal Contour" or "SPL Vertical Contour" measurements, which are
+/// pre-computed heatmaps with full angle range (typically -180° to +180°).
+pub async fn fetch_contour_data(
+    speaker: &str,
+    version: &str,
+    plane: &str,
+) -> Result<ContourPlotData, Box<dyn Error>> {
+    let measurement = match plane.to_lowercase().as_str() {
+        "horizontal" | "h" => "SPL Horizontal Contour",
+        "vertical" | "v" => "SPL Vertical Contour",
+        _ => return Err(format!("Invalid plane: {}. Use 'horizontal' or 'vertical'", plane).into()),
+    };
+
+    let plot_data = fetch_measurement_plot_data(speaker, version, measurement).await?;
+    extract_contour_data(&plot_data)
+}
+
+/// Extract contour data from Plotly JSON (heatmap format)
+fn extract_contour_data(plot_data: &Value) -> Result<ContourPlotData, Box<dyn Error>> {
+    // Look for the first trace with a 'z' array (heatmap data)
+    if let Some(data) = plot_data.get("data").and_then(|d| d.as_array()) {
+        for trace in data {
+            // Look for z data (2D grid), x (frequencies), and y (angles)
+            if let (Some(x_data), Some(y_data), Some(z_data)) = (
+                trace.get("x"),
+                trace.get("y"),
+                trace.get("z"),
+            ) {
+                let mut freq = Vec::new();
+                let mut angles = Vec::new();
+                let mut spl = Vec::new();
+
+                // Decode x values (frequency) - could be typed array or regular array
+                if let Some(x_obj) = x_data.as_object() {
+                    if let (Some(dtype), Some(bdata)) = (
+                        x_obj.get("dtype").and_then(|d| d.as_str()),
+                        x_obj.get("bdata").and_then(|b| b.as_str()),
+                    ) {
+                        freq = decode_typed_array(bdata, dtype)?;
+                    }
+                } else if let Some(x_arr) = x_data.as_array() {
+                    freq = x_arr.iter().filter_map(|v| v.as_f64()).collect();
+                }
+
+                // Decode y values (angles) - could be typed array or regular array
+                if let Some(y_obj) = y_data.as_object() {
+                    if let (Some(dtype), Some(bdata)) = (
+                        y_obj.get("dtype").and_then(|d| d.as_str()),
+                        y_obj.get("bdata").and_then(|b| b.as_str()),
+                    ) {
+                        angles = decode_typed_array(bdata, dtype)?;
+                    }
+                } else if let Some(y_arr) = y_data.as_array() {
+                    angles = y_arr.iter().filter_map(|v| v.as_f64()).collect();
+                }
+
+                // Decode z values (SPL grid) - could be typed 2D array or nested regular arrays
+                if let Some(z_obj) = z_data.as_object() {
+                    // Typed array format with bdata
+                    if let (Some(dtype), Some(bdata)) = (
+                        z_obj.get("dtype").and_then(|d| d.as_str()),
+                        z_obj.get("bdata").and_then(|b| b.as_str()),
+                    ) {
+                        spl = decode_typed_array(bdata, dtype)?;
+                    }
+                } else if let Some(z_arr) = z_data.as_array() {
+                    // Nested array format [[row0], [row1], ...]
+                    for row in z_arr {
+                        if let Some(row_obj) = row.as_object() {
+                            // Typed array row
+                            if let (Some(dtype), Some(bdata)) = (
+                                row_obj.get("dtype").and_then(|d| d.as_str()),
+                                row_obj.get("bdata").and_then(|b| b.as_str()),
+                            ) {
+                                let row_data = decode_typed_array(bdata, dtype)?;
+                                spl.extend(row_data);
+                            }
+                        } else if let Some(row_arr) = row.as_array() {
+                            let row_data: Vec<f64> = row_arr.iter().filter_map(|v| v.as_f64()).collect();
+                            spl.extend(row_data);
+                        }
+                    }
+                }
+
+                if !freq.is_empty() && !angles.is_empty() && !spl.is_empty() {
+                    let freq_count = freq.len();
+                    let angle_count = angles.len();
+
+                    // Verify data dimensions
+                    let expected_size = freq_count * angle_count;
+                    if spl.len() != expected_size {
+                        eprintln!(
+                            "Warning: SPL grid size {} doesn't match expected {} ({}×{})",
+                            spl.len(), expected_size, angle_count, freq_count
+                        );
+                    }
+
+                    return Ok(ContourPlotData {
+                        freq,
+                        angles,
+                        spl,
+                        freq_count,
+                        angle_count,
+                    });
+                }
+            }
+        }
+    }
+
+    Err("Failed to extract contour data from plot data".into())
 }

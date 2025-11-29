@@ -102,7 +102,10 @@ pub fn validate_write_path(path: &Path) -> Result<PathBuf, SecurityError> {
 /// Allowed directories include:
 /// - The configuration directory (for config files, database, presets)
 /// - Any registered music directories
-pub fn validate_read_path(path: &Path, music_directories: &[PathBuf]) -> Result<PathBuf, SecurityError> {
+pub fn validate_read_path(
+    path: &Path,
+    music_directories: &[PathBuf],
+) -> Result<PathBuf, SecurityError> {
     let config_dir = crate::config::get_app_config_dir();
 
     // Build list of allowed directories
@@ -151,7 +154,10 @@ pub fn validate_config_read_path(path: &Path) -> Result<PathBuf, SecurityError> 
 }
 
 /// Validate that a path is within a music directory for reading audio files.
-pub fn validate_music_read_path(path: &Path, music_directories: &[PathBuf]) -> Result<PathBuf, SecurityError> {
+pub fn validate_music_read_path(
+    path: &Path,
+    music_directories: &[PathBuf],
+) -> Result<PathBuf, SecurityError> {
     if music_directories.is_empty() {
         return Err(SecurityError {
             message: "No music directories configured".to_string(),

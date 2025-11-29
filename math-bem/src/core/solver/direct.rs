@@ -149,7 +149,11 @@ mod tests {
         assert!(solution.success);
 
         // x should equal b for identity matrix
-        let error: f64 = (&solution.x - &b).iter().map(|e| e.norm_sqr()).sum::<f64>().sqrt();
+        let error: f64 = (&solution.x - &b)
+            .iter()
+            .map(|e| e.norm_sqr())
+            .sum::<f64>()
+            .sqrt();
         assert!(error < 1e-10);
     }
 }

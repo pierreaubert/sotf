@@ -117,7 +117,10 @@ impl Tabs {
     }
 
     /// Set the tab close handler
-    pub fn on_close(mut self, handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_close(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_close = Some(Box::new(handler));
         self
     }
@@ -211,11 +214,10 @@ impl Tabs {
                 // Handle click
                 if let Some(handler_ptr) = on_change {
                     let idx = index;
-                    tab_el = tab_el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                        unsafe {
+                    tab_el =
+                        tab_el.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
                             (*handler_ptr)(idx, window, cx);
-                        }
-                    });
+                        });
                 }
             }
 
@@ -250,11 +252,12 @@ impl Tabs {
                     .hover(|s| s.text_color(rgb(0xffffff)));
 
                 if let Some(handler_ptr) = on_close {
-                    close_btn = close_btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                        unsafe {
+                    close_btn = close_btn.on_mouse_up(
+                        MouseButton::Left,
+                        move |_event, window, cx| unsafe {
                             (*handler_ptr)(&id, window, cx);
-                        }
-                    });
+                        },
+                    );
                 }
 
                 tab_el = tab_el.child(close_btn.child("×"));

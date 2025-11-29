@@ -28,18 +28,25 @@ fn main() {
     let beta = physics.burton_miller_beta_scaled(scale);
 
     // Mie reference
-    let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI/2.0, PI]);
+    let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI / 2.0, PI]);
     let mie_front = mie.pressure[0].norm();
     let mie_side = mie.pressure[1].norm();
     let mie_back = mie.pressure[2].norm();
     let mie_avg = (mie_front + mie_side + mie_back) / 3.0;
 
-    println!("ka = {:.2}, β = {:.4}i (scale = {})", ka_target, beta.im, scale);
-    println!("Mie: front = {:.4}, side = {:.4}, back = {:.4}, avg = {:.4}\n",
-             mie_front, mie_side, mie_back, mie_avg);
+    println!(
+        "ka = {:.2}, β = {:.4}i (scale = {})",
+        ka_target, beta.im, scale
+    );
+    println!(
+        "Mie: front = {:.4}, side = {:.4}, back = {:.4}, avg = {:.4}\n",
+        mie_front, mie_side, mie_back, mie_avg
+    );
 
-    println!("{:>8} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10}",
-             "Elems", "BEM avg", "Avg err%", "Front err%", "Side err%", "Back err%");
+    println!(
+        "{:>8} | {:>10} | {:>10} | {:>10} | {:>10} | {:>10}",
+        "Elems", "BEM avg", "Avg err%", "Front err%", "Side err%", "Back err%"
+    );
     println!("{}", "-".repeat(75));
 
     for subdivisions in [1, 2, 3, 4] {
@@ -92,17 +99,31 @@ fn main() {
             }
         }
 
-        let bem_front = if !front_p.is_empty() { front_p.iter().sum::<f64>() / front_p.len() as f64 } else { 0.0 };
-        let bem_side = if !side_p.is_empty() { side_p.iter().sum::<f64>() / side_p.len() as f64 } else { 0.0 };
-        let bem_back = if !back_p.is_empty() { back_p.iter().sum::<f64>() / back_p.len() as f64 } else { 0.0 };
+        let bem_front = if !front_p.is_empty() {
+            front_p.iter().sum::<f64>() / front_p.len() as f64
+        } else {
+            0.0
+        };
+        let bem_side = if !side_p.is_empty() {
+            side_p.iter().sum::<f64>() / side_p.len() as f64
+        } else {
+            0.0
+        };
+        let bem_back = if !back_p.is_empty() {
+            back_p.iter().sum::<f64>() / back_p.len() as f64
+        } else {
+            0.0
+        };
 
         let error_avg = 100.0 * (avg_p - mie_avg).abs() / mie_avg;
         let error_front = 100.0 * (bem_front - mie_front).abs() / mie_front;
         let error_side = 100.0 * (bem_side - mie_side).abs() / mie_side;
         let error_back = 100.0 * (bem_back - mie_back).abs() / mie_back;
 
-        println!("{:>8} | {:>10.4} | {:>10.1} | {:>10.1} | {:>10.1} | {:>10.1}",
-                 n, avg_p, error_avg, error_front, error_side, error_back);
+        println!(
+            "{:>8} | {:>10.4} | {:>10.1} | {:>10.1} | {:>10.1} | {:>10.1}",
+            n, avg_p, error_avg, error_front, error_side, error_back
+        );
     }
 
     println!("\n=== Summary ===");

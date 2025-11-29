@@ -47,7 +47,10 @@ fn test_bem_vs_analytical_rayleigh() {
     let solution = solver.solve(&problem).expect("BEM solve failed");
 
     println!("BEM DOFs: {}", solution.num_dofs());
-    println!("Max surface pressure: {:.6}", solution.max_surface_pressure());
+    println!(
+        "Max surface pressure: {:.6}",
+        solution.max_surface_pressure()
+    );
 
     // Evaluate at points outside sphere
     let eval_radius = 2.0 * radius;
@@ -142,7 +145,10 @@ fn test_bem_vs_analytical_mie() {
     let solution = solver.solve(&problem).expect("BEM solve failed");
 
     println!("BEM DOFs: {}", solution.num_dofs());
-    println!("Max surface pressure: {:.6}", solution.max_surface_pressure());
+    println!(
+        "Max surface pressure: {:.6}",
+        solution.max_surface_pressure()
+    );
 
     // Evaluate at points outside sphere
     let eval_radius = 2.0 * radius;
@@ -213,7 +219,12 @@ fn test_bem_surface_pressure_distribution() {
     println!("ka = {:.4}", ka);
 
     let problem = BemProblem::rigid_sphere_scattering_custom(
-        radius, frequency, speed_of_sound, density, 8, 16,
+        radius,
+        frequency,
+        speed_of_sound,
+        density,
+        8,
+        16,
     );
 
     let solver = BemSolver::new();
@@ -269,11 +280,7 @@ fn test_bem_mesh_convergence() {
 
     let eval_point = Array2::from_shape_vec(
         (1, 3),
-        vec![
-            eval_radius * theta.sin(),
-            0.0,
-            eval_radius * theta.cos(),
-        ],
+        vec![eval_radius * theta.sin(), 0.0, eval_radius * theta.cos()],
     )
     .unwrap();
 
@@ -286,7 +293,12 @@ fn test_bem_mesh_convergence() {
 
     for (n_theta, n_phi) in mesh_sizes {
         let problem = BemProblem::rigid_sphere_scattering_custom(
-            radius, frequency, speed_of_sound, density, n_theta, n_phi,
+            radius,
+            frequency,
+            speed_of_sound,
+            density,
+            n_theta,
+            n_phi,
         );
 
         let solver = BemSolver::new();

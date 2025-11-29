@@ -1,10 +1,10 @@
 //! Footer component rendering with transport controls, track info, and volume
 
-use crate::ui::components::potentiometer::render_potentiometer;
 use crate::ui::PlayerView;
-use gpui_ui_kit::{HStack, VStack, StackSpacing, StackAlign, StackJustify};
+use crate::ui::components::potentiometer::render_potentiometer;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{HStack, StackAlign, StackJustify, StackSpacing, VStack};
 
 impl PlayerView {
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -30,7 +30,7 @@ impl PlayerView {
                     .child(self.render_footer_right(cx))
                     .build()
                     .h(px(80.0))
-                    .px_4()
+                    .px_4(),
             )
             .build()
             .bg(bg_surface)
@@ -44,19 +44,25 @@ impl PlayerView {
         let theme = &state.app.theme;
 
         // Get current track info and album art from queue
-        let (title, album_name, artist, album_art_path) = if let Some(queue_idx) = state.app.current_queue_index {
-            if let Some(item) = state.app.queue.get(queue_idx) {
-                let track_title = item
-                    .current_track()
-                    .and_then(|t| t.title.clone())
-                    .unwrap_or_else(|| "Unknown Track".to_string());
-                (track_title, item.album.title.clone(), item.album.artist(), item.album.album_art_path.clone())
+        let (title, album_name, artist, album_art_path) =
+            if let Some(queue_idx) = state.app.current_queue_index {
+                if let Some(item) = state.app.queue.get(queue_idx) {
+                    let track_title = item
+                        .current_track()
+                        .and_then(|t| t.title.clone())
+                        .unwrap_or_else(|| "Unknown Track".to_string());
+                    (
+                        track_title,
+                        item.album.title.clone(),
+                        item.album.artist(),
+                        item.album.album_art_path.clone(),
+                    )
+                } else {
+                    (String::new(), String::new(), String::new(), None)
+                }
             } else {
                 (String::new(), String::new(), String::new(), None)
-            }
-        } else {
-            (String::new(), String::new(), String::new(), None)
-        };
+            };
 
         let text_primary = theme.text_primary;
         let text_secondary = theme.text_secondary;
@@ -80,7 +86,7 @@ impl PlayerView {
                         img(art_path)
                             .w_full()
                             .h_full()
-                            .object_fit(gpui::ObjectFit::Cover)
+                            .object_fit(gpui::ObjectFit::Cover),
                     )
                 } else {
                     art_div
@@ -131,7 +137,7 @@ impl PlayerView {
                             .text_ellipsis()
                             .whitespace_nowrap()
                             .child(artist),
-                    )
+                    ),
             )
             .build()
             .min_w(px(250.0))
@@ -186,7 +192,12 @@ impl PlayerView {
                     // Previous track
                     .child(self.render_transport_button("⏮", "prev", surface_hover.clone(), cx))
                     // Seek backward
-                    .child(self.render_transport_button("⏪", "seek-back", surface_hover.clone(), cx))
+                    .child(self.render_transport_button(
+                        "⏪",
+                        "seek-back",
+                        surface_hover.clone(),
+                        cx,
+                    ))
                     // Play/Stop (large)
                     .child(
                         div()
@@ -209,7 +220,12 @@ impl PlayerView {
                             .child(if is_playing { "⏹" } else { "▶" }),
                     )
                     // Seek forward
-                    .child(self.render_transport_button("⏩", "seek-fwd", surface_hover.clone(), cx))
+                    .child(self.render_transport_button(
+                        "⏩",
+                        "seek-fwd",
+                        surface_hover.clone(),
+                        cx,
+                    ))
                     // Next track
                     .child(self.render_transport_button("⏭", "next", surface_hover, cx)),
             )
@@ -262,14 +278,26 @@ impl PlayerView {
 
     /// Right section: Device selection + Volume
     fn render_footer_right(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (volume, muted, show_device_popup, current_device, text_secondary, surface_hover, theme_clone) = {
+        let (
+            volume,
+            muted,
+            show_device_popup,
+            current_device,
+            text_secondary,
+            surface_hover,
+            theme_clone,
+        ) = {
             let state = self.state.read(cx);
             let theme = &state.app.theme;
             (
                 state.app.volume,
                 state.app.muted,
                 state.app.show_device_popup,
-                state.app.current_output_device_name.clone().unwrap_or_else(|| "Default".to_string()),
+                state
+                    .app
+                    .current_output_device_name
+                    .clone()
+                    .unwrap_or_else(|| "Default".to_string()),
                 theme.text_secondary,
                 theme.surface_hover,
                 theme.clone(),
@@ -304,19 +332,14 @@ impl PlayerView {
                         }),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .child("🔊")
-                            .child(
-                                div()
-                                    .max_w(px(80.0))
-                                    .overflow_hidden()
-                                    .text_ellipsis()
-                                    .whitespace_nowrap()
-                                    .child(current_device),
-                            ),
+                        div().flex().items_center().gap_1().child("🔊").child(
+                            div()
+                                .max_w(px(80.0))
+                                .overflow_hidden()
+                                .text_ellipsis()
+                                .whitespace_nowrap()
+                                .child(current_device),
+                        ),
                     ),
             )
             // Device popup (renders above the button)
@@ -331,7 +354,10 @@ impl PlayerView {
     fn render_device_popup(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (devices, selected_index) = {
             let state = self.state.read(cx);
-            (state.app.output_devices.clone(), state.app.selected_output_device_index)
+            (
+                state.app.output_devices.clone(),
+                state.app.selected_output_device_index,
+            )
         };
 
         div()
@@ -414,20 +440,17 @@ impl PlayerView {
     pub(crate) fn render_device_popup_overlay(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let show_popup = self.state.read(cx).app.show_device_popup;
 
-        div()
-            .absolute()
-            .inset_0()
-            .when(show_popup, |el| {
-                el.on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|view, _: &MouseDownEvent, _window, cx| {
-                        view.state.update(cx, |state, _cx| {
-                            state.app.show_device_popup = false;
-                        });
-                        cx.notify();
-                    }),
-                )
-            })
+        div().absolute().inset_0().when(show_popup, |el| {
+            el.on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.show_device_popup = false;
+                    });
+                    cx.notify();
+                }),
+            )
+        })
     }
 
     /// Render a transport button

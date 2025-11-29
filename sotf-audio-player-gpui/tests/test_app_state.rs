@@ -347,14 +347,28 @@ fn test_tree_view_groups_by_sort_order() {
 
     // Bug fix: Should group by first letter of album TITLE: 'A' (Album One) and 'Z' (Zebra Album)
     assert_eq!(app.letter_tree.len(), 2);
-    let letter_a = app.letter_tree.iter().find(|node| node.letter == 'A').unwrap();
-    let letter_z = app.letter_tree.iter().find(|node| node.letter == 'Z').unwrap();
+    let letter_a = app
+        .letter_tree
+        .iter()
+        .find(|node| node.letter == 'A')
+        .unwrap();
+    let letter_z = app
+        .letter_tree
+        .iter()
+        .find(|node| node.letter == 'Z')
+        .unwrap();
 
     // Verify correct grouping: "Album One" under 'A', "Zebra Album" under 'Z'
     assert_eq!(letter_a.album_indices.len(), 1);
     assert_eq!(letter_z.album_indices.len(), 1);
-    assert_eq!(app.library.albums[letter_a.album_indices[0]].title, "Album One");
-    assert_eq!(app.library.albums[letter_z.album_indices[0]].title, "Zebra Album");
+    assert_eq!(
+        app.library.albums[letter_a.album_indices[0]].title,
+        "Album One"
+    );
+    assert_eq!(
+        app.library.albums[letter_z.album_indices[0]].title,
+        "Zebra Album"
+    );
 }
 
 #[test]

@@ -446,10 +446,7 @@ where
 /// Compute inner product (x, y) = Σ conj(x_i) * y_i
 #[inline]
 fn inner_product(x: &Array1<Complex64>, y: &Array1<Complex64>) -> Complex64 {
-    x.iter()
-        .zip(y.iter())
-        .map(|(xi, yi)| xi.conj() * yi)
-        .sum()
+    x.iter().zip(y.iter()).map(|(xi, yi)| xi.conj() * yi).sum()
 }
 
 /// Compute vector 2-norm
@@ -482,7 +479,11 @@ fn givens_rotation(a: Complex64, b: Complex64) -> (Complex64, Complex64) {
 /// Solve upper triangular system Hy = g
 ///
 /// Only uses the upper k×k portion of H
-fn solve_upper_triangular(h: &Array2<Complex64>, g: &Array1<Complex64>, k: usize) -> Vec<Complex64> {
+fn solve_upper_triangular(
+    h: &Array2<Complex64>,
+    g: &Array1<Complex64>,
+    k: usize,
+) -> Vec<Complex64> {
     let mut y = vec![Complex64::new(0.0, 0.0); k];
 
     for i in (0..k).rev() {
@@ -564,7 +565,10 @@ mod tests {
 
         let solution = gmres_solve(&matvec, &b, None, &config);
 
-        assert!(solution.converged, "GMRES should converge for complex system");
+        assert!(
+            solution.converged,
+            "GMRES should converge for complex system"
+        );
 
         let ax = a.dot(&solution.x);
         let error: f64 = (&ax - &b).iter().map(|e| e.norm_sqr()).sum::<f64>().sqrt();
@@ -595,7 +599,11 @@ mod tests {
         assert!(solution.converged);
         assert!(solution.iterations <= 2);
 
-        let error: f64 = (&solution.x - &b).iter().map(|e| e.norm_sqr()).sum::<f64>().sqrt();
+        let error: f64 = (&solution.x - &b)
+            .iter()
+            .map(|e| e.norm_sqr())
+            .sum::<f64>()
+            .sqrt();
         assert!(error < 1e-10);
     }
 
@@ -682,7 +690,10 @@ mod tests {
             solution.iterations, solution.restarts, solution.residual
         );
 
-        assert!(solution.converged, "GMRES should converge even with restarts");
+        assert!(
+            solution.converged,
+            "GMRES should converge even with restarts"
+        );
 
         let ax = a.dot(&solution.x);
         let error: f64 = (&ax - &b).iter().map(|e| e.norm_sqr()).sum::<f64>().sqrt();

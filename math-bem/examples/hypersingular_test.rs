@@ -81,18 +81,33 @@ fn test_e_constant(
     // Compute row sum statistics
     let avg_row_sum: Complex64 = a_times_one.iter().sum::<Complex64>() / n as f64;
     let max_row_sum_mag = a_times_one.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
-    let min_row_sum_mag = a_times_one.iter().map(|x| x.norm()).fold(f64::MAX, f64::min);
+    let min_row_sum_mag = a_times_one
+        .iter()
+        .map(|x| x.norm())
+        .fold(f64::MAX, f64::min);
 
     println!("  {} DOFs", n);
-    println!("  Average row sum: {:.4}+{:.4}i (|.|={:.4})", avg_row_sum.re, avg_row_sum.im, avg_row_sum.norm());
-    println!("  Row sum magnitude range: {:.4} to {:.4}", min_row_sum_mag, max_row_sum_mag);
+    println!(
+        "  Average row sum: {:.4}+{:.4}i (|.|={:.4})",
+        avg_row_sum.re,
+        avg_row_sum.im,
+        avg_row_sum.norm()
+    );
+    println!(
+        "  Row sum magnitude range: {:.4} to {:.4}",
+        min_row_sum_mag, max_row_sum_mag
+    );
 
     // If β*E[1] ≠ 0, compute what E[1] would be
     // row_sum ≈ β*E[1], so E[1] ≈ row_sum / β
     let e_one_approx = avg_row_sum / beta;
     println!("\n  Implied E[1] from row sums:");
-    println!("  E[1] ≈ row_sum / β = {:.4}+{:.4}i (|.|={:.4})",
-             e_one_approx.re, e_one_approx.im, e_one_approx.norm());
+    println!(
+        "  E[1] ≈ row_sum / β = {:.4}+{:.4}i (|.|={:.4})",
+        e_one_approx.re,
+        e_one_approx.im,
+        e_one_approx.norm()
+    );
     println!("  Expected E[1] = 0 for constant function");
 
     // Decompose row sum into real and imaginary parts to isolate K and E
@@ -107,23 +122,42 @@ fn test_e_constant(
     // Im(row_sum) = Im(β*E[1]) = η*Re(E[1]) for real E[1]
 
     println!("\n  Decomposition:");
-    println!("  Re(row_sum) = 0.5 + K[1] ≈ {:.4} => K[1] ≈ {:.4} (expected -0.5)",
-             avg_row_sum.re, avg_row_sum.re - 0.5);
-    println!("  Im(row_sum) = β*E[1] ≈ {:.4}i => E[1] ≈ {:.4}",
-             avg_row_sum.im, avg_row_sum.im / beta.im);
+    println!(
+        "  Re(row_sum) = 0.5 + K[1] ≈ {:.4} => K[1] ≈ {:.4} (expected -0.5)",
+        avg_row_sum.re,
+        avg_row_sum.re - 0.5
+    );
+    println!(
+        "  Im(row_sum) = β*E[1] ≈ {:.4}i => E[1] ≈ {:.4}",
+        avg_row_sum.im,
+        avg_row_sum.im / beta.im
+    );
 
     // Check individual row sum decomposition
     println!("\n  First 5 row sums:");
     for i in 0..5.min(n) {
         let row_sum = a_times_one[i];
-        println!("    Row {}: {:.4}+{:.4}i (|.|={:.4})", i, row_sum.re, row_sum.im, row_sum.norm());
+        println!(
+            "    Row {}: {:.4}+{:.4}i (|.|={:.4})",
+            i,
+            row_sum.re,
+            row_sum.im,
+            row_sum.norm()
+        );
     }
 
     // The diagonal should be c + (self-integrals of K and β*E)
     println!("\n  Diagonal entries (first 5):");
     for i in 0..5.min(n) {
         let diag = system.matrix[[i, i]];
-        println!("    A[{},{}] = {:.4}+{:.4}i (|.|={:.4})", i, i, diag.re, diag.im, diag.norm());
+        println!(
+            "    A[{},{}] = {:.4}+{:.4}i (|.|={:.4})",
+            i,
+            i,
+            diag.re,
+            diag.im,
+            diag.norm()
+        );
     }
 }
 

@@ -36,8 +36,7 @@ fn main() {
         let analytical = sphere_scattering_3d(k, radius, 50, vec![eval_radius], vec![theta]);
         let analytical_p = analytical.pressure[0].norm();
 
-        let eval_point =
-            Array2::from_shape_vec((1, 3), vec![0.0, 0.0, eval_radius]).unwrap();
+        let eval_point = Array2::from_shape_vec((1, 3), vec![0.0, 0.0, eval_radius]).unwrap();
 
         println!("Mesh       DOFs     BEM |p|      Analytical   Error");
         println!("----------------------------------------------------");
@@ -45,7 +44,12 @@ fn main() {
         // Test mesh refinement
         for (n_theta, n_phi) in [(4, 8), (6, 12), (8, 16), (10, 20), (12, 24), (16, 32)] {
             let problem = BemProblem::rigid_sphere_scattering_custom(
-                radius, frequency, speed_of_sound, density, n_theta, n_phi,
+                radius,
+                frequency,
+                speed_of_sound,
+                density,
+                n_theta,
+                n_phi,
             );
 
             let solver = BemSolver::new();

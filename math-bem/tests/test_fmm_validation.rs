@@ -11,13 +11,13 @@
 #![cfg(feature = "pure-rust")]
 
 use bem::core::assembly::{
-    build_cluster_tree, build_mlfmm_system, build_slfmm_system, build_tbem_system, CsrMatrix,
+    CsrMatrix, build_cluster_tree, build_mlfmm_system, build_slfmm_system, build_tbem_system,
 };
 use bem::core::mesh::generators::generate_icosphere_mesh;
-use bem::core::solver::cgs::{cgs_solve, CgsConfig};
+use bem::core::solver::cgs::{CgsConfig, cgs_solve};
 use bem::core::solver::{DenseOperator, LinearOperator, SlfmmOperator};
 use bem::core::types::{BoundaryCondition, Cluster, PhysicsParams};
-use ndarray::{array, Array1};
+use ndarray::{Array1, array};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
@@ -63,7 +63,12 @@ fn test_tbem_system_valid() {
     println!("TBEM system: {} DOFs", system.num_dofs);
 
     // Check matrix is not all zeros
-    let matrix_norm: f64 = system.matrix.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
+    let matrix_norm: f64 = system
+        .matrix
+        .iter()
+        .map(|x| x.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
     assert!(matrix_norm > 0.0, "TBEM matrix should not be all zeros");
 }
 
@@ -85,7 +90,10 @@ fn test_slfmm_system_valid() {
     assert_eq!(system.t_matrices.len(), 1); // One cluster
     assert_eq!(system.s_matrices.len(), 1);
 
-    println!("SLFMM system: {} DOFs, {} clusters", system.num_dofs, system.num_clusters);
+    println!(
+        "SLFMM system: {} DOFs, {} clusters",
+        system.num_dofs, system.num_clusters
+    );
 }
 
 /// Test SLFMM matvec matches TBEM matvec for single-cluster case
@@ -107,16 +115,20 @@ fn test_slfmm_matvec_vs_tbem() {
     let slfmm = build_slfmm_system(&elements, &nodes, &clusters, &physics, 4, 8, 5);
 
     // Create random test vector
-    let x: Array1<Complex64> = Array1::from_iter((0..n).map(|i| {
-        Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos())
-    }));
+    let x: Array1<Complex64> = Array1::from_iter(
+        (0..n).map(|i| Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos())),
+    );
 
     // Compute matvec with both methods
     let y_tbem = tbem.matrix.dot(&x);
     let y_slfmm = slfmm.matvec(&x);
 
     // Compare results
-    let diff: f64 = (&y_tbem - &y_slfmm).iter().map(|d| d.norm_sqr()).sum::<f64>().sqrt();
+    let diff: f64 = (&y_tbem - &y_slfmm)
+        .iter()
+        .map(|d| d.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
     let tbem_norm: f64 = y_tbem.iter().map(|y| y.norm_sqr()).sum::<f64>().sqrt();
     let rel_error = diff / tbem_norm.max(1e-15);
 
@@ -142,10 +154,7 @@ fn test_mlfmm_cluster_tree() {
     println!("MLFMM tree: {} levels", tree.len());
 
     // Root should contain all elements
-    assert_eq!(
-        tree[0].clusters[0].element_indices.len(),
-        elements.len()
-    );
+    assert_eq!(tree[0].clusters[0].element_indices.len(), elements.len());
 
     // Each level should have clusters
     for (level, cluster_level) in tree.iter().enumerate() {
@@ -184,9 +193,9 @@ fn test_mlfmm_matvec_nonzero() {
     let system = build_mlfmm_system(&elements, &nodes, tree, &physics);
 
     // Create test vector
-    let x: Array1<Complex64> = Array1::from_iter((0..n).map(|i| {
-        Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos())
-    }));
+    let x: Array1<Complex64> = Array1::from_iter(
+        (0..n).map(|i| Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos())),
+    );
 
     let y = system.matvec(&x);
 
@@ -213,14 +222,17 @@ fn test_csr_from_tbem() {
 
     // Test matvec equivalence
     let n = tbem.num_dofs;
-    let x: Array1<Complex64> = Array1::from_iter((0..n).map(|i| {
-        Complex64::new((i as f64).sin(), (i as f64).cos())
-    }));
+    let x: Array1<Complex64> =
+        Array1::from_iter((0..n).map(|i| Complex64::new((i as f64).sin(), (i as f64).cos())));
 
     let y_dense = tbem.matrix.dot(&x);
     let y_csr = csr.matvec(&x);
 
-    let diff: f64 = (&y_dense - &y_csr).iter().map(|d| d.norm_sqr()).sum::<f64>().sqrt();
+    let diff: f64 = (&y_dense - &y_csr)
+        .iter()
+        .map(|d| d.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
 
     assert!(
         diff < 1e-12,
@@ -251,9 +263,8 @@ fn test_iterative_solver_with_operator() {
     }
 
     // Create known RHS
-    let b: Array1<Complex64> = Array1::from_iter((0..n).map(|i| {
-        Complex64::new((i as f64 * 0.3).sin(), 0.0)
-    }));
+    let b: Array1<Complex64> =
+        Array1::from_iter((0..n).map(|i| Complex64::new((i as f64 * 0.3).sin(), 0.0)));
 
     // Solve using DenseOperator with CGS
     let op = DenseOperator::new(matrix.clone());
@@ -278,7 +289,10 @@ fn test_iterative_solver_with_operator() {
 
     println!("Actual relative residual: {:.6e}", rel_residual);
 
-    assert!(solution.converged, "CGS should converge for well-conditioned matrix");
+    assert!(
+        solution.converged,
+        "CGS should converge for well-conditioned matrix"
+    );
     assert!(
         rel_residual < 1e-6,
         "Iterative solver should achieve good accuracy: rel_residual = {:.6e}",
@@ -311,16 +325,18 @@ fn test_slfmm_operator_matvec() {
     assert!(op.is_square());
 
     // Test that matvec produces non-zero output
-    let x: Array1<Complex64> = Array1::from_iter((0..n).map(|i| {
-        Complex64::new((i as f64 * 0.3).sin(), 0.0)
-    }));
+    let x: Array1<Complex64> =
+        Array1::from_iter((0..n).map(|i| Complex64::new((i as f64 * 0.3).sin(), 0.0)));
 
     let y = op.apply(&x);
 
     let y_norm: f64 = y.iter().map(|yi| yi.norm_sqr()).sum::<f64>().sqrt();
     println!("SLFMM operator output norm: {:.6e}", y_norm);
 
-    assert!(y_norm > 0.0, "SLFMM operator should produce non-zero output");
+    assert!(
+        y_norm > 0.0,
+        "SLFMM operator should produce non-zero output"
+    );
 
     // Test linearity: A*(ax) = a*(Ax)
     let alpha = Complex64::new(2.0, -1.0);
@@ -328,7 +344,11 @@ fn test_slfmm_operator_matvec() {
     let a_ax = op.apply(&ax);
     let alpha_ax = &y * alpha;
 
-    let diff: f64 = (&a_ax - &alpha_ax).iter().map(|d| d.norm_sqr()).sum::<f64>().sqrt();
+    let diff: f64 = (&a_ax - &alpha_ax)
+        .iter()
+        .map(|d| d.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
     assert!(diff < 1e-10, "SLFMM operator should be linear");
 }
 
@@ -337,8 +357,8 @@ fn test_slfmm_operator_matvec() {
 // ============================================================================
 
 use bem::core::solver::{
-    gmres_solve_with_ilu, ilu_diagnostics, solve_gmres, solve_tbem_with_ilu, solve_with_ilu,
-    GmresConfig, IluMethod, IluOperator, IluScanningDegree,
+    GmresConfig, IluMethod, IluOperator, IluScanningDegree, gmres_solve_with_ilu, ilu_diagnostics,
+    solve_gmres, solve_tbem_with_ilu, solve_with_ilu,
 };
 
 /// Test ILU setup and diagnostics
@@ -411,8 +431,13 @@ fn test_ilu_improves_tbem_convergence() {
         print_interval: 0,
     };
 
-    let solution =
-        solve_with_ilu(&tbem.matrix, &b, IluMethod::Tbem, IluScanningDegree::Fine, &config);
+    let solution = solve_with_ilu(
+        &tbem.matrix,
+        &b,
+        IluMethod::Tbem,
+        IluScanningDegree::Fine,
+        &config,
+    );
 
     println!(
         "ILU-preconditioned CGS: {} iterations, residual = {:.6e}, converged = {}",
@@ -425,7 +450,11 @@ fn test_ilu_improves_tbem_convergence() {
         // Verify solution quality
         let ax = tbem.matrix.dot(&solution.x);
         let residual_vec = &b - &ax;
-        let rel_residual: f64 = residual_vec.iter().map(|r| r.norm_sqr()).sum::<f64>().sqrt()
+        let rel_residual: f64 = residual_vec
+            .iter()
+            .map(|r| r.norm_sqr())
+            .sum::<f64>()
+            .sqrt()
             / b_norm;
 
         println!("Actual relative residual: {:.6e}", rel_residual);
@@ -790,12 +819,7 @@ fn test_gmres_vs_cgs_convergence() {
         .map(|d| d.norm_sqr())
         .sum::<f64>()
         .sqrt();
-    let sol_norm: f64 = gmres_sol
-        .x
-        .iter()
-        .map(|x| x.norm_sqr())
-        .sum::<f64>()
-        .sqrt();
+    let sol_norm: f64 = gmres_sol.x.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
 
     assert!(
         diff / sol_norm < 1e-6,

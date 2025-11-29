@@ -95,7 +95,10 @@ impl Breadcrumbs {
     }
 
     /// Set click handler
-    pub fn on_click(mut self, handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_click(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
@@ -112,11 +115,8 @@ impl Breadcrumbs {
 
             // Separator (except for first item)
             if idx > 0 {
-                container = container.child(
-                    div()
-                        .text_color(rgb(0x666666))
-                        .child(self.separator.char()),
-                );
+                container =
+                    container.child(div().text_color(rgb(0x666666)).child(self.separator.char()));
             }
 
             // Breadcrumb item
@@ -128,7 +128,9 @@ impl Breadcrumbs {
 
             if is_last {
                 // Current page - not clickable
-                crumb = crumb.text_color(rgb(0xffffff)).font_weight(FontWeight::MEDIUM);
+                crumb = crumb
+                    .text_color(rgb(0xffffff))
+                    .font_weight(FontWeight::MEDIUM);
             } else {
                 // Previous pages - clickable
                 crumb = crumb
@@ -141,11 +143,10 @@ impl Breadcrumbs {
                     let handler_ptr: *const dyn Fn(&SharedString, &mut Window, &mut App) =
                         handler.as_ref();
                     let id = item_id.clone();
-                    crumb = crumb.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                        unsafe {
+                    crumb =
+                        crumb.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
                             (*handler_ptr)(&id, window, cx);
-                        }
-                    });
+                        });
                 }
             }
 

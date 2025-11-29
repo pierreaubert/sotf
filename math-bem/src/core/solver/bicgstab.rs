@@ -193,7 +193,10 @@ where
 
         // Print progress
         if config.print_interval > 0 && j % config.print_interval == 0 {
-            eprintln!("BiCGSTAB iteration {}: relative residual = {:.6e}", j, err_rel);
+            eprintln!(
+                "BiCGSTAB iteration {}: relative residual = {:.6e}",
+                j, err_rel
+            );
         }
 
         // Check convergence
@@ -229,10 +232,7 @@ where
 
 /// Compute inner product (x, y) = Σ conj(x_i) * y_i
 fn inner_product(x: &Array1<Complex64>, y: &Array1<Complex64>) -> Complex64 {
-    x.iter()
-        .zip(y.iter())
-        .map(|(xi, yi)| xi.conj() * yi)
-        .sum()
+    x.iter().zip(y.iter()).map(|(xi, yi)| xi.conj() * yi).sum()
 }
 
 /// Compute residual norm ||r||₂
@@ -457,7 +457,10 @@ mod tests {
 
         let solution = bicgstab_solve(&matvec, &b, None, &config);
 
-        assert!(solution.converged, "BiCGSTAB should converge for complex system");
+        assert!(
+            solution.converged,
+            "BiCGSTAB should converge for complex system"
+        );
 
         // Verify solution
         let ax = a.dot(&solution.x);
@@ -489,7 +492,11 @@ mod tests {
         assert!(solution.iterations <= 2); // Should converge very quickly
 
         // x should equal b for identity matrix
-        let error: f64 = (&solution.x - &b).iter().map(|e| e.norm_sqr()).sum::<f64>().sqrt();
+        let error: f64 = (&solution.x - &b)
+            .iter()
+            .map(|e| e.norm_sqr())
+            .sum::<f64>()
+            .sqrt();
         assert!(error < 1e-10);
     }
 
@@ -528,7 +535,10 @@ mod tests {
 
         let solution = bicgstab_solve(&matvec, &b, None, &config);
 
-        assert!(solution.converged, "BiCGSTAB should converge for non-symmetric system");
+        assert!(
+            solution.converged,
+            "BiCGSTAB should converge for non-symmetric system"
+        );
 
         // Verify solution
         let ax = a.dot(&solution.x);

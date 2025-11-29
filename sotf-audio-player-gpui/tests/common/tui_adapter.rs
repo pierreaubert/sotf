@@ -459,8 +459,7 @@ impl AppAdapter for TuiAdapter {
                     if self.app.selected_directory_index >= self.app.library.directories.len()
                         && !self.app.library.directories.is_empty()
                     {
-                        self.app.selected_directory_index =
-                            self.app.library.directories.len() - 1;
+                        self.app.selected_directory_index = self.app.library.directories.len() - 1;
                     }
                 }
             }

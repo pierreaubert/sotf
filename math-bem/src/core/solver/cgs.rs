@@ -197,10 +197,7 @@ where
 
 /// Compute inner product (x, y) = Σ conj(x_i) * y_i
 fn inner_product(x: &Array1<Complex64>, y: &Array1<Complex64>) -> Complex64 {
-    x.iter()
-        .zip(y.iter())
-        .map(|(xi, yi)| xi.conj() * yi)
-        .sum()
+    x.iter().zip(y.iter()).map(|(xi, yi)| xi.conj() * yi).sum()
 }
 
 /// Compute residual norm ||r||₂
@@ -438,20 +435,18 @@ mod tests {
         assert!(solution.iterations <= 2); // Should converge very quickly
 
         // x should equal b for identity matrix
-        let error: f64 = (&solution.x - &b).iter().map(|e| e.norm_sqr()).sum::<f64>().sqrt();
+        let error: f64 = (&solution.x - &b)
+            .iter()
+            .map(|e| e.norm_sqr())
+            .sum::<f64>()
+            .sqrt();
         assert!(error < 1e-10);
     }
 
     #[test]
     fn test_inner_product() {
-        let x = Array1::from_vec(vec![
-            Complex64::new(1.0, 2.0),
-            Complex64::new(3.0, -1.0),
-        ]);
-        let y = Array1::from_vec(vec![
-            Complex64::new(2.0, 0.0),
-            Complex64::new(0.0, 1.0),
-        ]);
+        let x = Array1::from_vec(vec![Complex64::new(1.0, 2.0), Complex64::new(3.0, -1.0)]);
+        let y = Array1::from_vec(vec![Complex64::new(2.0, 0.0), Complex64::new(0.0, 1.0)]);
 
         let result = inner_product(&x, &y);
 

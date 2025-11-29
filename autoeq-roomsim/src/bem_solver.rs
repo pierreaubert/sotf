@@ -10,9 +10,7 @@
 //! so it's best suited for detailed analysis at specific frequencies.
 
 use bem::core::PhysicsParams;
-use bem::room_acoustics::{
-    Point3D as BemPoint3D, RectangularRoom as BemRectangularRoom, RoomMesh,
-};
+use bem::room_acoustics::{Point3D as BemPoint3D, RectangularRoom as BemRectangularRoom, RoomMesh};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
@@ -68,8 +66,7 @@ pub fn generate_room_mesh(room: &RoomGeometry, elements_per_meter: usize) -> Roo
             // For L-shaped rooms, we need to construct the mesh manually
             // For now, use a simplified approach with the bounding box
             // TODO: Implement proper L-shaped mesh generation
-            let bem_room =
-                BemRectangularRoom::new(l.width1, l.depth1 + l.depth2, l.height);
+            let bem_room = BemRectangularRoom::new(l.width1, l.depth1 + l.depth2, l.height);
             bem_room.generate_mesh(elements_per_meter)
         }
     }
@@ -235,7 +232,8 @@ mod tests {
 
         let config = BemSolverConfig::default();
         let frequencies = vec![50.0, 100.0, 200.0, 500.0, 1000.0];
-        let results = solve_bem_frequency_sweep(&room, &sources, &eval_point, &frequencies, &config);
+        let results =
+            solve_bem_frequency_sweep(&room, &sources, &eval_point, &frequencies, &config);
 
         assert_eq!(results.len(), 5);
         for result in results {

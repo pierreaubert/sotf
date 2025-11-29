@@ -431,9 +431,7 @@ impl SparseNearfieldIlu {
         for i in 0..n {
             let row_start = row_ptr[i];
             let row_end = row_ptr[i + 1];
-            let has_diag = col_indices[row_start..row_end]
-                .iter()
-                .any(|&col| col == i);
+            let has_diag = col_indices[row_start..row_end].iter().any(|&col| col == i);
             if !has_diag {
                 // This is a simplified version - a proper implementation would
                 // insert the diagonal entry

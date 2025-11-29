@@ -18,39 +18,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Define a typical listening room (5m x 4m x 2.5m)
     let room = RectangularRoom::new(5.0, 4.0, 2.5);
     let room_geom = RoomGeometry::Rectangular(room.clone());
-    println!("Room dimensions: {:.1}m x {:.1}m x {:.1}m", room.width, room.depth, room.height);
+    println!(
+        "Room dimensions: {:.1}m x {:.1}m x {:.1}m",
+        room.width, room.depth, room.height
+    );
 
     // Create an omnidirectional source at front center
     let source_position = Point3D::new(2.5, 0.5, 1.2); // Center front, ear height
     let directivity = DirectivityPattern::omnidirectional();
     let source = Source::new(source_position, directivity, 1.0);
-    println!("Source position: ({:.1}, {:.1}, {:.1})",
-        source.position.x, source.position.y, source.position.z);
+    println!(
+        "Source position: ({:.1}, {:.1}, {:.1})",
+        source.position.x, source.position.y, source.position.z
+    );
 
     // Define listening position at center of room
     let lp = Point3D::new(2.5, 2.0, 1.2); // Center, ear height
-    println!("Listening position: ({:.1}, {:.1}, {:.1})", lp.x, lp.y, lp.z);
-
-    // Create simulation
-    let simulation = RoomSimulation::new(
-        room_geom,
-        vec![source],
-        vec![lp],
+    println!(
+        "Listening position: ({:.1}, {:.1}, {:.1})",
+        lp.x, lp.y, lp.z
     );
 
-    println!("\nFrequency range: {:.0} Hz to {:.0} kHz ({} points)",
+    // Create simulation
+    let simulation = RoomSimulation::new(room_geom, vec![source], vec![lp]);
+
+    println!(
+        "\nFrequency range: {:.0} Hz to {:.0} kHz ({} points)",
         simulation.frequencies[0],
         simulation.frequencies.last().unwrap() / 1000.0,
-        simulation.frequencies.len());
+        simulation.frequencies.len()
+    );
 
     // Generate room mesh
     println!("\nGenerating room mesh...");
     let mesh = room.generate_mesh(2); // 2 elements per meter
-    println!("Mesh: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
+    println!(
+        "Mesh: {} nodes, {} elements",
+        mesh.nodes.len(),
+        mesh.elements.len()
+    );
 
     // Simulate at a few frequencies for demonstration
     let demo_frequencies = vec![100.0, 500.0, 1000.0, 5000.0];
-    println!("\nSimulating at demo frequencies: {:?} Hz", demo_frequencies);
+    println!(
+        "\nSimulating at demo frequencies: {:?} Hz",
+        demo_frequencies
+    );
 
     for freq in &demo_frequencies {
         let k = simulation.wavenumber(*freq);
@@ -83,31 +96,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Compute frequency response at all 200 frequencies
-    println!("\nComputing frequency response at {} frequencies...", simulation.frequencies.len());
+    println!(
+        "\nComputing frequency response at {} frequencies...",
+        simulation.frequencies.len()
+    );
     let mut lp_spl_values = Vec::new();
 
     for (idx, &freq) in simulation.frequencies.iter().enumerate() {
         if idx % 20 == 0 {
-            println!("  Progress: {}/{} ({:.0} Hz)", idx + 1, simulation.frequencies.len(), freq);
+            println!(
+                "  Progress: {}/{} ({:.0} Hz)",
+                idx + 1,
+                simulation.frequencies.len(),
+                freq
+            );
         }
         let k = simulation.wavenumber(freq);
         let incident = calculate_incident_field(&mesh, &simulation.sources, k, freq);
 
         // Calculate SPL at listening position
-        let lp_pressure = calculate_field_pressure(
-            &mesh,
-            &incident,
-            &simulation.sources,
-            &[lp],
-            k,
-            freq,
-        );
+        let lp_pressure =
+            calculate_field_pressure(&mesh, &incident, &simulation.sources, &[lp], k, freq);
         let lp_spl = pressure_to_spl(lp_pressure[0]);
         lp_spl_values.push(lp_spl);
     }
 
     // Generate spatial slices at all frequencies for visualization
-    println!("\nGenerating spatial slices at all {} frequencies...", simulation.frequencies.len());
+    println!(
+        "\nGenerating spatial slices at all {} frequencies...",
+        simulation.frequencies.len()
+    );
     let slice_frequencies = simulation.frequencies.clone();
     let slice_resolution = 50;
 
@@ -126,7 +144,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (idx, &freq) in slice_frequencies.iter().enumerate() {
         if idx % 20 == 0 {
-            println!("  Slice progress: {}/{} ({:.0} Hz)", idx + 1, slice_frequencies.len(), freq);
+            println!(
+                "  Slice progress: {}/{} ({:.0} Hz)",
+                idx + 1,
+                slice_frequencies.len(),
+                freq
+            );
         }
         let k = simulation.wavenumber(freq);
         let incident = calculate_incident_field(&mesh, &simulation.sources, k, freq);
@@ -196,7 +219,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }));
     }
 
-    println!("Generated {} slices for {} frequencies", slice_resolution * slice_resolution, slice_frequencies.len());
+    println!(
+        "Generated {} slices for {} frequencies",
+        slice_resolution * slice_resolution,
+        slice_frequencies.len()
+    );
 
     // Save results to JSON
     let output = serde_json::json!({
@@ -218,7 +245,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "vertical_slices": vertical_slices,
     });
 
-    fs::write("room_sim_results.json", serde_json::to_string_pretty(&output)?)?;
+    fs::write(
+        "room_sim_results.json",
+        serde_json::to_string_pretty(&output)?,
+    )?;
     println!("\nResults saved to: room_sim_results.json");
 
     println!("\n=== Simulation Complete ===");

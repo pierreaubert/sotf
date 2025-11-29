@@ -31,7 +31,7 @@ pub enum LibrarySortOrder {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChannelFilter {
     #[default]
-    All,           // Show all albums
+    All, // Show all albums
     Mono,          // Only 1-channel albums
     Stereo,        // Only 2-channel albums
     Multichannel,  // Only albums with > 2 channels
@@ -163,9 +163,10 @@ impl LibraryState {
             ChannelFilter::All => true,
             ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
             ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),
-            ChannelFilter::Multichannel => {
-                album.uniform_channel_count().map(|c| c > 2).unwrap_or(false)
-            }
+            ChannelFilter::Multichannel => album
+                .uniform_channel_count()
+                .map(|c| c > 2)
+                .unwrap_or(false),
             ChannelFilter::Mixed => album.uniform_channel_count().is_none(),
             ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
         }
@@ -480,7 +481,8 @@ impl LibraryState {
             LibraryViewMode::TreeView => {
                 let count = self.tree_item_count();
                 if count > 0 {
-                    self.selected_tree_index = (self.selected_tree_index + page_size).min(count - 1);
+                    self.selected_tree_index =
+                        (self.selected_tree_index + page_size).min(count - 1);
                 }
             }
         }
@@ -644,4 +646,3 @@ impl LibraryState {
         Ok(())
     }
 }
-

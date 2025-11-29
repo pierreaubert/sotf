@@ -21,21 +21,21 @@
 //! - `parallel`: Portable parallel iteration (works with native, WASM, or sequential)
 
 pub mod algebra;
-pub mod parallel;
-pub mod types;
+pub mod assembly;
+pub mod bem_solver;
 pub mod constants;
 pub mod greens;
-pub mod mesh;
-pub mod integration;
-pub mod assembly;
-pub mod solver;
 pub mod incident;
-pub mod postprocess;
+pub mod integration;
 pub mod io;
-pub mod bem_solver;
+pub mod mesh;
+pub mod parallel;
+pub mod postprocess;
+pub mod solver;
+pub mod types;
 
 // Re-exports for convenience
-pub use types::*;
+pub use bem_solver::{AssemblyMethod, BemError, BemProblem, BemSolution, BemSolver, SolverMethod};
 pub use constants::PhysicsParams;
 pub use incident::IncidentField;
-pub use bem_solver::{BemSolver, BemProblem, BemSolution, BemError, SolverMethod, AssemblyMethod};
+pub use types::*;

@@ -862,7 +862,8 @@ pub fn gmres_solve_fmm_batched_with_ilu(
 
     // Create scaled matvec closure using batched operations
     let matvec = |x: &Array1<Complex64>| {
-        let y = super::batched_blas::slfmm_matvec_batched(fmm_system, x, &mut workspace.borrow_mut());
+        let y =
+            super::batched_blas::slfmm_matvec_batched(fmm_system, x, &mut workspace.borrow_mut());
         // Apply row scaling to output
         y.iter()
             .zip(setup.row_scale.iter())
@@ -1039,10 +1040,7 @@ mod tests {
 
     #[test]
     fn test_diagonal_preconditioner() {
-        let diag = array![
-            Complex64::new(2.0, 0.0),
-            Complex64::new(4.0, 0.0),
-        ];
+        let diag = array![Complex64::new(2.0, 0.0), Complex64::new(4.0, 0.0),];
 
         let precond = DiagonalPreconditioner::from_diagonal(diag);
         let x = array![Complex64::new(1.0, 0.0), Complex64::new(2.0, 0.0)];

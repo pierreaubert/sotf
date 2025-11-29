@@ -509,7 +509,8 @@ mod tests {
 
         // Check all points are at radius 2.0
         for i in 0..points.nrows() {
-            let r = (points[[i, 0]].powi(2) + points[[i, 1]].powi(2) + points[[i, 2]].powi(2)).sqrt();
+            let r =
+                (points[[i, 0]].powi(2) + points[[i, 1]].powi(2) + points[[i, 2]].powi(2)).sqrt();
             assert!((r - 2.0).abs() < 1e-10);
         }
     }
@@ -552,11 +553,9 @@ mod tests {
         let physics = make_physics(1.0);
 
         // Single triangular element
-        let nodes = Array2::from_shape_vec(
-            (3, 3),
-            vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 1.0, 0.0],
-        )
-        .unwrap();
+        let nodes =
+            Array2::from_shape_vec((3, 3), vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.5, 1.0, 0.0])
+                .unwrap();
 
         let elem = Element {
             connectivity: vec![0, 1, 2],

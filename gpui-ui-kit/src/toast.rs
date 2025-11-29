@@ -162,10 +162,8 @@ impl Toast {
                         .text_color(rgb(0x888888))
                         .cursor_pointer()
                         .hover(|s| s.text_color(rgb(0xffffff)))
-                        .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                            unsafe {
-                                (*handler_ptr)(window, cx);
-                            }
+                        .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
+                            (*handler_ptr)(window, cx);
                         })
                         .child("×"),
                 );

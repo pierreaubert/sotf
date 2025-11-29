@@ -55,8 +55,7 @@ pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 
 pub use plugin_binaural::{
-    BinauralDecoderParams, BinauralDecoderPlugin, RoomModel,
-    binaural_default_enable_optimization,
+    BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
 };
 pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
@@ -73,11 +72,12 @@ pub use plugin_loudness_compensation::{
 pub use plugin_matrix::MatrixPlugin;
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_upmixer::{
-    UpmixerPlugin, UpmixerPluginParams,
-    // Re-export upmixer defaults for preset migration
-    default_subharmonic_gain as upmixer_default_subharmonic_gain,
+    UpmixerPlugin,
+    UpmixerPluginParams,
     default_hr_sharpen as upmixer_default_hr_sharpen,
     default_safety_cap_db as upmixer_default_safety_cap_db,
+    // Re-export upmixer defaults for preset migration
+    default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
 // Re-export compressor defaults for preset migration
 pub use plugin_compressor::{

@@ -61,13 +61,7 @@ fn main() {
 
         // Mie reference
         let num_terms = (ka as usize + 30).max(50);
-        let mie = sphere_scattering_3d(
-            k,
-            radius,
-            num_terms,
-            vec![radius],
-            vec![0.0, PI / 2.0, PI],
-        );
+        let mie = sphere_scattering_3d(k, radius, num_terms, vec![radius], vec![0.0, PI / 2.0, PI]);
 
         if mie.pressure.iter().any(|p| !p.is_finite()) {
             println!("{:>6.1} | {:>8.0} | Mie error", ka, freq);
@@ -133,8 +127,16 @@ fn main() {
             .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
             .unwrap();
 
-        let sub2_err = errors.iter().find(|e| e.0 == 2).map(|e| e.1).unwrap_or(f64::NAN);
-        let sub3_err = errors.iter().find(|e| e.0 == 3).map(|e| e.1).unwrap_or(f64::NAN);
+        let sub2_err = errors
+            .iter()
+            .find(|e| e.0 == 2)
+            .map(|e| e.1)
+            .unwrap_or(f64::NAN);
+        let sub3_err = errors
+            .iter()
+            .find(|e| e.0 == 3)
+            .map(|e| e.1)
+            .unwrap_or(f64::NAN);
 
         let sub2_str = format!("{:>5.1}%", sub2_err);
         let sub3_str = format!("{:>5.1}%", sub3_err);
@@ -158,7 +160,11 @@ fn main() {
     println!();
     println!("Elements per wavelength (EPW) at each subdivision:");
     for (subdivision, mesh, avg_element_size) in &meshes {
-        println!("  Subdivision {}: {} elements", subdivision, mesh.elements.len());
+        println!(
+            "  Subdivision {}: {} elements",
+            subdivision,
+            mesh.elements.len()
+        );
         for &ka in &[0.5, 1.0, 2.0, 3.0] {
             let k = ka / radius;
             let wavelength = 2.0 * PI / k;

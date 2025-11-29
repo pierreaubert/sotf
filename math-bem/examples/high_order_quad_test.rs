@@ -67,10 +67,19 @@ fn main() {
         let avg_offdiag = avg_row_sum - avg_diag;
 
         // Expected: row_sum = 0, diag ≈ 0.5 + β*E_self, offdiag ≈ -0.5 + β*E_offdiag
-        println!("Subdivisions: {}, elements: {}, kr_elem: {:.3}", subdivisions, n, kr_element);
-        println!("  Avg row sum = {:.6} + {:.6}i (should be ~0)", avg_row_sum.re, avg_row_sum.im);
+        println!(
+            "Subdivisions: {}, elements: {}, kr_elem: {:.3}",
+            subdivisions, n, kr_element
+        );
+        println!(
+            "  Avg row sum = {:.6} + {:.6}i (should be ~0)",
+            avg_row_sum.re, avg_row_sum.im
+        );
         println!("  Avg diagonal = {:.6} + {:.6}i", avg_diag.re, avg_diag.im);
-        println!("  Avg off-diag = {:.6} + {:.6}i (real should be ~-0.5)", avg_offdiag.re, avg_offdiag.im);
+        println!(
+            "  Avg off-diag = {:.6} + {:.6}i (real should be ~-0.5)",
+            avg_offdiag.re, avg_offdiag.im
+        );
 
         // The key metric: how far is the off-diagonal real sum from -0.5?
         let k_error = (avg_offdiag.re + 0.5).abs();
@@ -120,8 +129,14 @@ fn main() {
         let avg_diag = diag_sum / n as f64;
         let avg_offdiag = avg_row_sum - avg_diag;
 
-        println!("Subdivisions: {}, elements: {}, kr_elem: {:.3}", subdivisions, n, kr_element);
-        println!("  Avg row sum = {:.6} + {:.6}i (should be ~0)", avg_row_sum.re, avg_row_sum.im);
+        println!(
+            "Subdivisions: {}, elements: {}, kr_elem: {:.3}",
+            subdivisions, n, kr_element
+        );
+        println!(
+            "  Avg row sum = {:.6} + {:.6}i (should be ~0)",
+            avg_row_sum.re, avg_row_sum.im
+        );
         let k_error = (avg_offdiag.re + 0.5).abs();
         println!("  K'[1] error: |K'_offdiag + 0.5| = {:.6}", k_error);
         println!();

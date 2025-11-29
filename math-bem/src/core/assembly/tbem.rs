@@ -7,7 +7,9 @@ use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
 use crate::core::integration::{regular_integration, singular_integration};
-use crate::core::types::{BoundaryCondition, Element, ElementType, IntegrationResult, PhysicsParams};
+use crate::core::types::{
+    BoundaryCondition, Element, ElementType, IntegrationResult, PhysicsParams,
+};
 
 /// Result of TBEM assembly
 pub struct TbemSystem {
@@ -142,7 +144,8 @@ pub fn build_tbem_system_with_beta(
             let field_dof = field_elem.dof_addresses[0];
 
             // Get field BC for RHS contribution
-            let (field_bc_type, field_bc_values) = get_bc_type_and_value(&field_elem.boundary_condition);
+            let (field_bc_type, field_bc_values) =
+                get_bc_type_and_value(&field_elem.boundary_condition);
             let compute_rhs = has_nonzero_bc(&field_bc_values);
 
             // Compute integrals
@@ -154,7 +157,11 @@ pub fn build_tbem_system_with_beta(
                     &element_coords,
                     field_elem.element_type,
                     physics,
-                    if compute_rhs { Some(&field_bc_values) } else { None },
+                    if compute_rhs {
+                        Some(&field_bc_values)
+                    } else {
+                        None
+                    },
                     field_bc_type,
                     compute_rhs,
                 )
@@ -167,7 +174,11 @@ pub fn build_tbem_system_with_beta(
                     field_elem.element_type,
                     field_elem.area,
                     physics,
-                    if compute_rhs { Some(&field_bc_values) } else { None },
+                    if compute_rhs {
+                        Some(&field_bc_values)
+                    } else {
+                        None
+                    },
                     field_bc_type,
                     compute_rhs,
                 )
@@ -208,7 +219,9 @@ fn get_bc_type_and_value(bc: &BoundaryCondition) -> (i32, Vec<Complex64>) {
         BoundaryCondition::Pressure(p) => (1, p.clone()),
         BoundaryCondition::VelocityWithAdmittance { velocity, .. } => (0, velocity.clone()),
         BoundaryCondition::TransferAdmittance { .. } => (2, vec![Complex64::new(0.0, 0.0)]),
-        BoundaryCondition::TransferWithSurfaceAdmittance { .. } => (2, vec![Complex64::new(0.0, 0.0)]),
+        BoundaryCondition::TransferWithSurfaceAdmittance { .. } => {
+            (2, vec![Complex64::new(0.0, 0.0)])
+        }
     }
 }
 
@@ -331,92 +344,104 @@ pub fn build_tbem_system_parallel(
     let beta = physics.burton_miller_beta();
 
     // Process source elements in parallel
-    elements.par_iter().enumerate().for_each(|(iel, source_elem)| {
-        if source_elem.property.is_evaluation() {
-            return;
-        }
-
-        let source_point = &source_elem.center;
-        let source_normal = &source_elem.normal;
-        let source_dof = source_elem.dof_addresses[0];
-        let (bc_type, bc_value) = get_bc_type_and_value(&source_elem.boundary_condition);
-
-        // Compute row locally
-        let mut local_row = Array1::<Complex64>::zeros(num_dofs);
-        let mut local_rhs = Complex64::new(0.0, 0.0);
-
-        // Add free terms (c = +1/2 for exterior problem)
-        let avg_bc = bc_value.iter().sum::<Complex64>() / bc_value.len() as f64;
-        match bc_type {
-            0 => {
-                local_row[source_dof] += gamma * 0.5;
-                local_rhs += avg_bc * beta * tau * 0.5;
-            }
-            1 => {
-                local_row[source_dof] += beta * tau * 0.5;
-                local_rhs += avg_bc * tau * 0.5;
-            }
-            _ => {}
-        }
-
-        // Loop over field elements
-        for (jel, field_elem) in elements.iter().enumerate() {
-            if field_elem.property.is_evaluation() {
-                continue;
+    elements
+        .par_iter()
+        .enumerate()
+        .for_each(|(iel, source_elem)| {
+            if source_elem.property.is_evaluation() {
+                return;
             }
 
-            let element_coords = get_element_coords(field_elem, nodes);
-            let field_dof = field_elem.dof_addresses[0];
-            let (field_bc_type, field_bc_values) = get_bc_type_and_value(&field_elem.boundary_condition);
-            let compute_rhs = has_nonzero_bc(&field_bc_values);
+            let source_point = &source_elem.center;
+            let source_normal = &source_elem.normal;
+            let source_dof = source_elem.dof_addresses[0];
+            let (bc_type, bc_value) = get_bc_type_and_value(&source_elem.boundary_condition);
 
-            let result = if jel == iel {
-                singular_integration(
-                    source_point,
-                    source_normal,
-                    &element_coords,
-                    field_elem.element_type,
-                    physics,
-                    if compute_rhs { Some(&field_bc_values) } else { None },
-                    field_bc_type,
-                    compute_rhs,
-                )
-            } else {
-                regular_integration(
-                    source_point,
-                    source_normal,
-                    &element_coords,
-                    field_elem.element_type,
-                    field_elem.area,
-                    physics,
-                    if compute_rhs { Some(&field_bc_values) } else { None },
-                    field_bc_type,
-                    compute_rhs,
-                )
-            };
+            // Compute row locally
+            let mut local_row = Array1::<Complex64>::zeros(num_dofs);
+            let mut local_rhs = Complex64::new(0.0, 0.0);
 
-            let coeff = match field_bc_type {
-                // Velocity BC: K' + βH for direct formulation
-                0 => result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta,
-                // Pressure BC: G + βH^T for direct formulation
-                1 => -(result.g_integral * gamma * tau + result.dg_dnx_integral * beta),
-                _ => Complex64::new(0.0, 0.0),
-            };
-
-            local_row[field_dof] += coeff;
-
-            if compute_rhs {
-                local_rhs += result.rhs_contribution;
+            // Add free terms (c = +1/2 for exterior problem)
+            let avg_bc = bc_value.iter().sum::<Complex64>() / bc_value.len() as f64;
+            match bc_type {
+                0 => {
+                    local_row[source_dof] += gamma * 0.5;
+                    local_rhs += avg_bc * beta * tau * 0.5;
+                }
+                1 => {
+                    local_row[source_dof] += beta * tau * 0.5;
+                    local_rhs += avg_bc * tau * 0.5;
+                }
+                _ => {}
             }
-        }
 
-        // Write row to global system
-        let mut sys = system.lock().unwrap();
-        for j in 0..num_dofs {
-            sys.matrix[[source_dof, j]] += local_row[j];
-        }
-        sys.rhs[source_dof] += local_rhs;
-    });
+            // Loop over field elements
+            for (jel, field_elem) in elements.iter().enumerate() {
+                if field_elem.property.is_evaluation() {
+                    continue;
+                }
+
+                let element_coords = get_element_coords(field_elem, nodes);
+                let field_dof = field_elem.dof_addresses[0];
+                let (field_bc_type, field_bc_values) =
+                    get_bc_type_and_value(&field_elem.boundary_condition);
+                let compute_rhs = has_nonzero_bc(&field_bc_values);
+
+                let result = if jel == iel {
+                    singular_integration(
+                        source_point,
+                        source_normal,
+                        &element_coords,
+                        field_elem.element_type,
+                        physics,
+                        if compute_rhs {
+                            Some(&field_bc_values)
+                        } else {
+                            None
+                        },
+                        field_bc_type,
+                        compute_rhs,
+                    )
+                } else {
+                    regular_integration(
+                        source_point,
+                        source_normal,
+                        &element_coords,
+                        field_elem.element_type,
+                        field_elem.area,
+                        physics,
+                        if compute_rhs {
+                            Some(&field_bc_values)
+                        } else {
+                            None
+                        },
+                        field_bc_type,
+                        compute_rhs,
+                    )
+                };
+
+                let coeff = match field_bc_type {
+                    // Velocity BC: K' + βH for direct formulation
+                    0 => result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta,
+                    // Pressure BC: G + βH^T for direct formulation
+                    1 => -(result.g_integral * gamma * tau + result.dg_dnx_integral * beta),
+                    _ => Complex64::new(0.0, 0.0),
+                };
+
+                local_row[field_dof] += coeff;
+
+                if compute_rhs {
+                    local_rhs += result.rhs_contribution;
+                }
+            }
+
+            // Write row to global system
+            let mut sys = system.lock().unwrap();
+            for j in 0..num_dofs {
+                sys.matrix[[source_dof, j]] += local_row[j];
+            }
+            sys.rhs[source_dof] += local_rhs;
+        });
 
     system.into_inner().unwrap()
 }
@@ -482,10 +507,10 @@ mod tests {
         let nodes = Array2::from_shape_vec(
             (4, 3),
             vec![
-                0.0, 0.0, 0.0,  // node 0
-                1.0, 0.0, 0.0,  // node 1
-                0.5, 1.0, 0.0,  // node 2
-                1.5, 1.0, 0.0,  // node 3
+                0.0, 0.0, 0.0, // node 0
+                1.0, 0.0, 0.0, // node 1
+                0.5, 1.0, 0.0, // node 2
+                1.5, 1.0, 0.0, // node 3
             ],
         )
         .unwrap();

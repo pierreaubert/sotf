@@ -106,7 +106,11 @@ impl LegendConfig {
 }
 
 /// Render a single legend entry
-fn render_legend_entry(entry: &LegendEntry, config: &LegendConfig, theme: &Theme) -> impl IntoElement {
+fn render_legend_entry(
+    entry: &LegendEntry,
+    config: &LegendConfig,
+    theme: &Theme,
+) -> impl IntoElement {
     div()
         .flex()
         .items_center()

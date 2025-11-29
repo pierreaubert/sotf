@@ -521,7 +521,14 @@ mod tests {
             for j in 0..2 {
                 let expected = if i == j { 1.0 } else { 0.0 };
                 let diff = (product[[i, j]] - Complex64::new(expected, 0.0)).norm();
-                assert!(diff < 1e-10, "Product[{},{}] = {:?}, expected {}", i, j, product[[i, j]], expected);
+                assert!(
+                    diff < 1e-10,
+                    "Product[{},{}] = {:?}, expected {}",
+                    i,
+                    j,
+                    product[[i, j]],
+                    expected
+                );
             }
         }
     }
@@ -560,7 +567,11 @@ mod tests {
         let det = determinant(&a).unwrap();
 
         // Note: with partial pivoting, sign may differ
-        assert!((det.norm() - 2.0).abs() < 1e-10, "det = {:?}, expected ±2", det);
+        assert!(
+            (det.norm() - 2.0).abs() < 1e-10,
+            "det = {:?}, expected ±2",
+            det
+        );
     }
 
     #[test]

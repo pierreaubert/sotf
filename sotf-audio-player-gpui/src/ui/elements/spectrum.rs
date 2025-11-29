@@ -47,9 +47,9 @@ impl Default for SpectrumColors {
     fn default() -> Self {
         Self {
             background: rgb(0x000000),
-            low: rgb(0x22c55e),   // Green for bass
-            mid: rgb(0xeab308),   // Yellow for mids
-            high: rgb(0xef4444),  // Red for highs
+            low: rgb(0x22c55e),  // Green for bass
+            mid: rgb(0xeab308),  // Yellow for mids
+            high: rgb(0xef4444), // Red for highs
         }
     }
 }

@@ -71,8 +71,14 @@ fn main() {
         println!("  β = {:.4} + {:.4}i", beta.re, beta.im);
         println!("  {} elements", n);
         println!("  Avg diagonal = {:.6} + {:.6}i", avg_diag.re, avg_diag.im);
-        println!("  Avg off-diag sum = {:.6} + {:.6}i (should be ~ -0.5 for K'[1])", avg_offdiag.re, avg_offdiag.im);
-        println!("  Avg row sum = {:.6} + {:.6}i (should be ~ 0)", avg_row_sum.re, avg_row_sum.im);
+        println!(
+            "  Avg off-diag sum = {:.6} + {:.6}i (should be ~ -0.5 for K'[1])",
+            avg_offdiag.re, avg_offdiag.im
+        );
+        println!(
+            "  Avg row sum = {:.6} + {:.6}i (should be ~ 0)",
+            avg_row_sum.re, avg_row_sum.im
+        );
 
         // What we expect:
         // - Diagonal ≈ 0.5 + K'_self + β*E_self
@@ -83,13 +89,19 @@ fn main() {
 
         // Sample a few elements
         println!("\n  Sample element row sums:");
-        for i in [0, n/4, n/2, 3*n/4] {
+        for i in [0, n / 4, n / 2, 3 * n / 4] {
             let mut row_sum = Complex64::new(0.0, 0.0);
             for j in 0..n {
                 row_sum += system.matrix[[i, j]];
             }
-            println!("    elem[{}]: row_sum = {:.6} + {:.6}i, diag = {:.6} + {:.6}i",
-                     i, row_sum.re, row_sum.im, system.matrix[[i, i]].re, system.matrix[[i, i]].im);
+            println!(
+                "    elem[{}]: row_sum = {:.6} + {:.6}i, diag = {:.6} + {:.6}i",
+                i,
+                row_sum.re,
+                row_sum.im,
+                system.matrix[[i, i]].re,
+                system.matrix[[i, i]].im
+            );
         }
         println!();
     }
@@ -133,7 +145,10 @@ fn main() {
     println!("  k = {:.4} (very low)", k);
     println!("  {} elements", n);
     println!("  Avg diagonal = {:.6} (should be ~ 0.5)", avg_diag);
-    println!("  Avg off-diag sum = {:.6} (should be ~ -0.5 for K'[1])", avg_offdiag);
+    println!(
+        "  Avg off-diag sum = {:.6} (should be ~ -0.5 for K'[1])",
+        avg_offdiag
+    );
     println!("  Avg row sum = {:.6} (should be ~ 0)", avg_row_sum);
 }
 

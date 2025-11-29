@@ -301,7 +301,9 @@ pub fn gmres_solve(
 
             // Modified Gram-Schmidt orthogonalization
             for i in 0..=j {
-                h[[i, j]] = v[i].iter().zip(w_orth.iter())
+                h[[i, j]] = v[i]
+                    .iter()
+                    .zip(w_orth.iter())
                     .map(|(vi, wi)| vi.conj() * wi)
                     .sum();
 
@@ -490,9 +492,9 @@ pub fn build_bem_matrix_adaptive(mesh: &RoomMesh, k: f64, use_adaptive: bool) ->
         frequency,
         omega,
         wave_length: speed_of_sound / frequency,
-        harmonic_factor: 1.0,  // exp(+ikr) convention
+        harmonic_factor: 1.0, // exp(+ikr) convention
         pressure_factor: 1.0 * omega * 1.0,
-        tau: -1.0,  // internal problem (room interior)
+        tau: -1.0, // internal problem (room interior)
     };
 
     // Precompute element data (parallel when available)
@@ -534,7 +536,7 @@ pub fn build_bem_matrix_adaptive(mesh: &RoomMesh, k: f64, use_adaptive: bool) ->
                     ElementType::Tri3,
                     &physics,
                     None,
-                    0, // Dirichlet BC type
+                    0,     // Dirichlet BC type
                     false, // don't compute RHS
                     &quad_params,
                 );
@@ -662,7 +664,8 @@ pub fn calculate_field_pressure_bem_parallel(
     frequency: f64,
 ) -> Array1<Complex64> {
     // Precompute element data
-    let element_data: Vec<_> = mesh.elements
+    let element_data: Vec<_> = mesh
+        .elements
         .iter()
         .map(|element| {
             let nodes: Vec<Point3D> = element.nodes.iter().map(|&i| mesh.nodes[i]).collect();
@@ -707,14 +710,14 @@ pub fn calculate_field_pressure_bem_parallel(
 // FMM Integration for Room Acoustics
 // ============================================================================
 
+use crate::core::assembly::slfmm::{SlfmmSystem, build_slfmm_system};
 use crate::core::mesh::octree::Octree;
+use crate::core::solver::{
+    GmresConfig, GmresSolution, IluMethod, IluScanningDegree, SlfmmOperator,
+    gmres_solve_with_ilu_operator,
+};
 use crate::core::types::{
     BoundaryCondition, Cluster, Element, ElementProperty, ElementType, PhysicsParams,
-};
-use crate::core::assembly::slfmm::{build_slfmm_system, SlfmmSystem};
-use crate::core::solver::{
-    gmres_solve_with_ilu_operator, GmresConfig, GmresSolution,
-    IluMethod, IluScanningDegree, SlfmmOperator,
 };
 
 /// FMM solver configuration
@@ -747,10 +750,7 @@ impl Default for FmmSolverConfig {
 }
 
 /// Convert RoomMesh to core Element and nodes arrays for FMM
-pub fn room_mesh_to_core_elements(
-    mesh: &RoomMesh,
-    _k: f64,
-) -> (Vec<Element>, Array2<f64>) {
+pub fn room_mesh_to_core_elements(mesh: &RoomMesh, _k: f64) -> (Vec<Element>, Array2<f64>) {
     let n_nodes = mesh.nodes.len();
     let n_elements = mesh.elements.len();
 
@@ -765,9 +765,7 @@ pub fn room_mesh_to_core_elements(
     // Convert elements
     let mut elements = Vec::with_capacity(n_elements);
     for (elem_idx, surface_elem) in mesh.elements.iter().enumerate() {
-        let elem_nodes: Vec<Point3D> = surface_elem.nodes.iter()
-            .map(|&i| mesh.nodes[i])
-            .collect();
+        let elem_nodes: Vec<Point3D> = surface_elem.nodes.iter().map(|&i| mesh.nodes[i]).collect();
 
         let (center, normal) = element_center_and_normal(&elem_nodes);
         let area = element_area(&elem_nodes);
@@ -799,10 +797,7 @@ pub fn room_mesh_to_core_elements(
 }
 
 /// Build clusters from octree for FMM
-pub fn build_clusters_from_octree(
-    octree: &Octree,
-    elements: &[Element],
-) -> Vec<Cluster> {
+pub fn build_clusters_from_octree(octree: &Octree, elements: &[Element]) -> Vec<Cluster> {
     let leaves = octree.leaves();
     let mut clusters = Vec::with_capacity(leaves.len());
 
@@ -820,7 +815,9 @@ pub fn build_clusters_from_octree(
         cluster.level = node.level;
 
         // Count DOFs
-        cluster.num_dofs = node.element_indices.iter()
+        cluster.num_dofs = node
+            .element_indices
+            .iter()
             .filter(|&&i| !elements[i].property.is_evaluation())
             .count();
         cluster.dofs_per_element = 1;
@@ -830,7 +827,8 @@ pub fn build_clusters_from_octree(
 
     // Build near/far lists using octree's computed lists
     // Map from octree leaf indices to cluster indices
-    let leaf_to_cluster: std::collections::HashMap<usize, usize> = leaves.iter()
+    let leaf_to_cluster: std::collections::HashMap<usize, usize> = leaves
+        .iter()
         .filter(|&&i| !octree.nodes[i].element_indices.is_empty())
         .enumerate()
         .map(|(cluster_idx, &leaf_idx)| (leaf_idx, cluster_idx))
@@ -845,12 +843,16 @@ pub fn build_clusters_from_octree(
         let octree_node = &octree.nodes[leaf_idx];
 
         // Map near clusters
-        let near: Vec<usize> = octree_node.near_clusters.iter()
+        let near: Vec<usize> = octree_node
+            .near_clusters
+            .iter()
             .filter_map(|&near_leaf| leaf_to_cluster.get(&near_leaf).copied())
             .collect();
 
         // Map far clusters
-        let far: Vec<usize> = octree_node.far_clusters.iter()
+        let far: Vec<usize> = octree_node
+            .far_clusters
+            .iter()
             .filter_map(|&far_leaf| leaf_to_cluster.get(&far_leaf).copied())
             .collect();
 
@@ -877,9 +879,7 @@ pub fn build_fmm_system(
 
     // Compute element centers for octree
     println!("  Building octree...");
-    let centers: Vec<Array1<f64>> = elements.iter()
-        .map(|e| e.center.clone())
-        .collect();
+    let centers: Vec<Array1<f64>> = elements.iter().map(|e| e.center.clone()).collect();
 
     let mut octree = Octree::build(
         &centers,
@@ -891,8 +891,10 @@ pub fn build_fmm_system(
     octree.compute_interaction_lists(fmm_config.separation_ratio);
 
     let stats = octree.stats();
-    println!("    {} leaves, {} levels, avg {:.1} elements/leaf",
-        stats.num_leaves, stats.num_levels, stats.avg_elements_per_leaf);
+    println!(
+        "    {} leaves, {} levels, avg {:.1} elements/leaf",
+        stats.num_leaves, stats.num_levels, stats.avg_elements_per_leaf
+    );
 
     // Build clusters from octree
     println!("  Building clusters...");
@@ -949,7 +951,11 @@ pub fn solve_bem_fmm_gmres_ilu(
     // This uses only the already-computed near-field blocks, not a full O(N²) assembly
     println!("  Extracting near-field matrix for ILU...");
     let nearfield_matrix = system.extract_near_field_matrix();
-    println!("    Near-field matrix: {}x{}", nearfield_matrix.nrows(), nearfield_matrix.ncols());
+    println!(
+        "    Near-field matrix: {}x{}",
+        nearfield_matrix.nrows(),
+        nearfield_matrix.ncols()
+    );
 
     // Create FMM operator (takes ownership of system)
     let fmm_operator = SlfmmOperator::new(system);
@@ -977,11 +983,15 @@ pub fn solve_bem_fmm_gmres_ilu(
     );
 
     if result.converged {
-        println!("    Converged in {} iterations, residual: {:.2e}",
-            result.iterations, result.residual);
+        println!(
+            "    Converged in {} iterations, residual: {:.2e}",
+            result.iterations, result.residual
+        );
     } else {
-        println!("    Warning: Did not converge after {} iterations, residual: {:.2e}",
-            result.iterations, result.residual);
+        println!(
+            "    Warning: Did not converge after {} iterations, residual: {:.2e}",
+            result.iterations, result.residual
+        );
     }
 
     Ok(result.x)
@@ -1031,11 +1041,15 @@ pub fn solve_bem_fmm_gmres_hierarchical(
     let result = gmres_solve_with_hierarchical_precond(&system, &rhs, &gmres_config);
 
     if result.converged {
-        println!("    Converged in {} iterations, residual: {:.2e}",
-            result.iterations, result.residual);
+        println!(
+            "    Converged in {} iterations, residual: {:.2e}",
+            result.iterations, result.residual
+        );
     } else {
-        println!("    Warning: Did not converge after {} iterations, residual: {:.2e}",
-            result.iterations, result.residual);
+        println!(
+            "    Warning: Did not converge after {} iterations, residual: {:.2e}",
+            result.iterations, result.residual
+        );
     }
 
     Ok(result.x)
@@ -1063,7 +1077,11 @@ pub fn solve_bem_fmm_gmres_ilu_with_result(
     // Extract near-field matrix for ILU preconditioning BEFORE moving system to operator
     println!("  Extracting near-field matrix for ILU...");
     let nearfield_matrix = system.extract_near_field_matrix();
-    println!("    Near-field matrix: {}x{}", nearfield_matrix.nrows(), nearfield_matrix.ncols());
+    println!(
+        "    Near-field matrix: {}x{}",
+        nearfield_matrix.nrows(),
+        nearfield_matrix.ncols()
+    );
 
     // Create FMM operator (takes ownership of system)
     let fmm_operator = SlfmmOperator::new(system);
@@ -1091,11 +1109,15 @@ pub fn solve_bem_fmm_gmres_ilu_with_result(
     );
 
     if result.converged {
-        println!("    Converged in {} iterations, residual: {:.2e}",
-            result.iterations, result.residual);
+        println!(
+            "    Converged in {} iterations, residual: {:.2e}",
+            result.iterations, result.residual
+        );
     } else {
-        println!("    Warning: Did not converge after {} iterations, residual: {:.2e}",
-            result.iterations, result.residual);
+        println!(
+            "    Warning: Did not converge after {} iterations, residual: {:.2e}",
+            result.iterations, result.residual
+        );
     }
 
     Ok(result)
@@ -1130,9 +1152,9 @@ mod tests {
             Point3D::new(1.0, 0.0, 0.0),
             Point3D::new(0.5, 1.0, 0.0),
         ];
-        let elements = vec![
-            SurfaceElement { nodes: vec![0, 1, 2] },
-        ];
+        let elements = vec![SurfaceElement {
+            nodes: vec![0, 1, 2],
+        }];
         let mesh = RoomMesh { nodes, elements };
 
         let k = 2.0 * PI * 100.0 / 343.0;

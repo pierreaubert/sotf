@@ -5,7 +5,9 @@
 use std::sync::Arc;
 
 use sotf_audio::devices::AudioDevice;
-use sotf_audio_player::{LoudnessData, MusicLibrary, Player, PluginChain, PluginType, SpectrumData};
+use sotf_audio_player::{
+    LoudnessData, MusicLibrary, Player, PluginChain, PluginType, SpectrumData,
+};
 
 use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
@@ -27,11 +29,11 @@ pub struct App {
     // UI state
     pub search_query: String,
     pub directory_input: String,
-    pub plugin_file_input: String,     // For save/load plugin chain
-    pub apo_file_input: String,        // For loading APO EQ files
-    pub sofa_file_input: String,       // For loading SOFA HRTF files
-    pub headphone_curve_path: String,       // Headphone measurement file
-    pub headphone_target: String,           // Selected target curve
+    pub plugin_file_input: String,    // For save/load plugin chain
+    pub apo_file_input: String,       // For loading APO EQ files
+    pub sofa_file_input: String,      // For loading SOFA HRTF files
+    pub headphone_curve_path: String, // Headphone measurement file
+    pub headphone_target: String,     // Selected target curve
     pub headphone_params: crate::optimization_params::OptimizationParams, // All optimization parameters
     pub headphone_optimization_running: bool, // Is optimization in progress
     pub headphone_optimization_progress: Vec<(usize, f64)>, // (iteration, fitness)
@@ -336,7 +338,8 @@ impl App {
             },
             window_geometry: window_geometry.unwrap_or_else(|| {
                 // If no geometry provided, use current saved value or default
-                Config::load().ok()
+                Config::load()
+                    .ok()
                     .and_then(|c| Some(c.window_geometry))
                     .unwrap_or_default()
             }),

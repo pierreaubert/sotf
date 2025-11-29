@@ -21,10 +21,12 @@ pub mod waveform_scanner;
 // Re-export commonly used types
 pub use config::AppConfig;
 pub use database::MusicDatabase;
-pub use library::{Album, AlbumChannelType, DirectoryInfo, MusicLibrary, Playlist, PlaylistEntry, Track};
+pub use library::{
+    Album, AlbumChannelType, DirectoryInfo, MusicLibrary, Playlist, PlaylistEntry, Track,
+};
+pub use library_scanner::{LibraryScanMessage, LibraryScanner};
 pub use player::{PlaybackState, Player};
 pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
-pub use library_scanner::{LibraryScanMessage, LibraryScanner};
 pub use replay_gain_scanner::{ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanMessage, WaveformScanner};

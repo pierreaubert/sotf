@@ -34,7 +34,11 @@ fn main() {
     // Create mesh (subdivisions = 2 for ~80 elements)
     let mesh = generate_icosphere_mesh(radius, 2);
     let n_elements = mesh.elements.len();
-    println!("Mesh: {} elements, {} nodes", n_elements, mesh.nodes.nrows());
+    println!(
+        "Mesh: {} elements, {} nodes",
+        n_elements,
+        mesh.nodes.nrows()
+    );
 
     // Set up physics
     let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
@@ -53,8 +57,16 @@ fn main() {
     // Empirically, β_scale ≈ 3-4 gives best accuracy at ka=1
     println!("Assembling TBEM system...");
     let (beta, beta_scale) = physics.burton_miller_beta_adaptive(radius);
-    println!("Using adaptive β (scale={:.1}): {:.4} + {:.4}i", beta_scale, beta.re, beta.im);
-    let system = bem::core::assembly::tbem::build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta);
+    println!(
+        "Using adaptive β (scale={:.1}): {:.4} + {:.4}i",
+        beta_scale, beta.re, beta.im
+    );
+    let system = bem::core::assembly::tbem::build_tbem_system_with_beta(
+        &elements,
+        &mesh.nodes,
+        &physics,
+        beta,
+    );
 
     println!("Matrix assembled: {}x{}", system.num_dofs, system.num_dofs);
 
@@ -78,7 +90,10 @@ fn main() {
     }
     avg_row_sum /= system.num_dofs as f64;
     println!("Max row sum: {:.6}", max_row_sum);
-    println!("Avg row sum: {:.6} + {:.6}i", avg_row_sum.re, avg_row_sum.im);
+    println!(
+        "Avg row sum: {:.6} + {:.6}i",
+        avg_row_sum.re, avg_row_sum.im
+    );
 
     // Check diagonal dominance
     let mut avg_diag_ratio = 0.0;
@@ -107,8 +122,11 @@ fn main() {
             }
         }
     }
-    sum_off_diag /= system.num_dofs as f64;  // Average per row
-    println!("K'[1] (avg off-diag sum per row): {:.6} + {:.6}i", sum_off_diag.re, sum_off_diag.im);
+    sum_off_diag /= system.num_dofs as f64; // Average per row
+    println!(
+        "K'[1] (avg off-diag sum per row): {:.6} + {:.6}i",
+        sum_off_diag.re, sum_off_diag.im
+    );
 
     // The diagonal term (c)
     let mut avg_diag = Complex64::new(0.0, 0.0);
@@ -117,7 +135,11 @@ fn main() {
     }
     avg_diag /= system.num_dofs as f64;
     println!("Avg diagonal (c): {:.6} + {:.6}i", avg_diag.re, avg_diag.im);
-    println!("c + K'[1] should be 0: {:.6} + {:.6}i", avg_diag.re + sum_off_diag.re, avg_diag.im + sum_off_diag.im);
+    println!(
+        "c + K'[1] should be 0: {:.6} + {:.6}i",
+        avg_diag.re + sum_off_diag.re,
+        avg_diag.im + sum_off_diag.im
+    );
     println!();
 
     // Compute RHS from incident field
@@ -138,17 +160,29 @@ fn main() {
     let incident_rhs = incident_field.compute_rhs_with_beta(&centers, &normals, &physics, beta);
 
     println!("RHS from incident field:");
-    println!("  Max |RHS|: {:.6}", incident_rhs.iter().map(|z| z.norm()).fold(0.0, f64::max));
-    println!("  Sum RHS: {:.6} + {:.6}i", incident_rhs.iter().sum::<Complex64>().re,
-             incident_rhs.iter().sum::<Complex64>().im);
+    println!(
+        "  Max |RHS|: {:.6}",
+        incident_rhs.iter().map(|z| z.norm()).fold(0.0, f64::max)
+    );
+    println!(
+        "  Sum RHS: {:.6} + {:.6}i",
+        incident_rhs.iter().sum::<Complex64>().re,
+        incident_rhs.iter().sum::<Complex64>().im
+    );
     println!();
 
     // Total RHS = TBEM RHS (should be 0 for v=0) + incident RHS
     println!("Total RHS:");
-    println!("  TBEM RHS sum: {:.6} + {:.6}i", system.rhs.iter().sum::<Complex64>().re,
-             system.rhs.iter().sum::<Complex64>().im);
+    println!(
+        "  TBEM RHS sum: {:.6} + {:.6}i",
+        system.rhs.iter().sum::<Complex64>().re,
+        system.rhs.iter().sum::<Complex64>().im
+    );
     let rhs = &system.rhs + &incident_rhs;
-    println!("  Max |total RHS|: {:.6}", rhs.iter().map(|z| z.norm()).fold(0.0, f64::max));
+    println!(
+        "  Max |total RHS|: {:.6}",
+        rhs.iter().map(|z| z.norm()).fold(0.0, f64::max)
+    );
     println!();
 
     // Solve the system
@@ -161,8 +195,14 @@ fn main() {
     }
 
     println!("Solution found!");
-    println!("  Max |p_surface|: {:.6}", solution.x.iter().map(|z| z.norm()).fold(0.0, f64::max));
-    println!("  Min |p_surface|: {:.6}", solution.x.iter().map(|z| z.norm()).fold(f64::MAX, f64::min));
+    println!(
+        "  Max |p_surface|: {:.6}",
+        solution.x.iter().map(|z| z.norm()).fold(0.0, f64::max)
+    );
+    println!(
+        "  Min |p_surface|: {:.6}",
+        solution.x.iter().map(|z| z.norm()).fold(f64::MAX, f64::min)
+    );
     println!();
 
     // Compare with analytical at surface
@@ -203,27 +243,40 @@ fn main() {
         } else {
             0.0
         };
-        println!("{:8.1}    {:10.6}   {:10.6}    {:6.1}%", theta, p_bem, p_ana, error);
+        println!(
+            "{:8.1}    {:10.6}   {:10.6}    {:6.1}%",
+            theta, p_bem, p_ana, error
+        );
     }
 
     // Overall statistics
-    let total_err: f64 = comparisons.iter()
+    let total_err: f64 = comparisons
+        .iter()
         .filter(|(_, _, p_ana)| *p_ana > 0.0)
         .map(|(_, p_bem, p_ana)| (p_bem - p_ana).abs() / p_ana)
         .sum();
     let avg_err = total_err / comparisons.len() as f64 * 100.0;
 
-    let max_err: f64 = comparisons.iter()
+    let max_err: f64 = comparisons
+        .iter()
         .filter(|(_, _, p_ana)| *p_ana > 0.0)
         .map(|(_, p_bem, p_ana)| (p_bem - p_ana).abs() / p_ana)
-        .fold(0.0, f64::max) * 100.0;
+        .fold(0.0, f64::max)
+        * 100.0;
 
     // Average magnitudes for scaling check
-    let avg_bem: f64 = comparisons.iter().map(|(_, p, _)| p).sum::<f64>() / comparisons.len() as f64;
-    let avg_mie: f64 = comparisons.iter().map(|(_, _, p)| p).sum::<f64>() / comparisons.len() as f64;
+    let avg_bem: f64 =
+        comparisons.iter().map(|(_, p, _)| p).sum::<f64>() / comparisons.len() as f64;
+    let avg_mie: f64 =
+        comparisons.iter().map(|(_, _, p)| p).sum::<f64>() / comparisons.len() as f64;
 
     println!();
-    println!("Avg |p| BEM: {:.4}, Mie: {:.4}, ratio: {:.3}", avg_bem, avg_mie, avg_bem/avg_mie);
+    println!(
+        "Avg |p| BEM: {:.4}, Mie: {:.4}, ratio: {:.3}",
+        avg_bem,
+        avg_mie,
+        avg_bem / avg_mie
+    );
     println!("Average error: {:.1}%", avg_err);
     println!("Max error: {:.1}%", max_err);
 }

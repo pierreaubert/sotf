@@ -14,9 +14,9 @@
 #![allow(clippy::too_many_arguments)] // Scientific code often has many parameters
 
 pub mod analytical;
-pub mod testing;
-pub mod room_acoustics;
 pub mod core;
+pub mod room_acoustics;
+pub mod testing;
 
 // Re-exports
 pub use analytical::*;

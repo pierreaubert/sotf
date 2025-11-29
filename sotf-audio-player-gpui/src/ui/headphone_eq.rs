@@ -31,7 +31,7 @@ impl PlayerView {
 
             // Validate inputs
             if state.app.headphone_curve_path.is_empty() {
-	        let _ = state;
+                let _ = state;
                 self.state.update(cx, |state, _cx| {
                     state.app.toast_message = Some(crate::app::ToastMessage::error(
                         "Please select a headphone measurement file",
@@ -65,18 +65,20 @@ impl PlayerView {
                     // Update state with success
                     let _ = state_clone.update(cx, |state, _cx| {
                         state.app.headphone_optimization_running = false;
-                        state.app.toast_message = Some(crate::app::ToastMessage::success(
-                            format!("EQ optimization complete! Saved to: {}", result_path),
-                        ));
+                        state.app.toast_message = Some(crate::app::ToastMessage::success(format!(
+                            "EQ optimization complete! Saved to: {}",
+                            result_path
+                        )));
                     });
                 }
                 Err(e) => {
                     // Update state with error
                     let _ = state_clone.update(cx, |state, _cx| {
                         state.app.headphone_optimization_running = false;
-                        state.app.toast_message = Some(crate::app::ToastMessage::error(
-                            format!("Optimization failed: {}", e),
-                        ));
+                        state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                            "Optimization failed: {}",
+                            e
+                        )));
                     });
                 }
             }
@@ -107,17 +109,19 @@ impl PlayerView {
                 // Parse the EQ file (format TBD - could be array of biquad filters)
                 // For now, just show success
                 self.state.update(cx, |state, _cx| {
-                    state.app.toast_message = Some(crate::app::ToastMessage::success(
-                        format!("Loaded EQ from: {}", path.display()),
-                    ));
+                    state.app.toast_message = Some(crate::app::ToastMessage::success(format!(
+                        "Loaded EQ from: {}",
+                        path.display()
+                    )));
                 });
                 cx.notify();
             }
             Err(e) => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.toast_message = Some(crate::app::ToastMessage::error(
-                        format!("Failed to load EQ: {}", e),
-                    ));
+                    state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                        "Failed to load EQ: {}",
+                        e
+                    )));
                 });
                 cx.notify();
             }
@@ -129,17 +133,19 @@ impl PlayerView {
         match std::fs::remove_file(&path) {
             Ok(_) => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.toast_message = Some(crate::app::ToastMessage::success(
-                        format!("Deleted EQ file: {}", path.display()),
-                    ));
+                    state.app.toast_message = Some(crate::app::ToastMessage::success(format!(
+                        "Deleted EQ file: {}",
+                        path.display()
+                    )));
                 });
                 cx.notify();
             }
             Err(e) => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.toast_message = Some(crate::app::ToastMessage::error(
-                        format!("Failed to delete EQ: {}", e),
-                    ));
+                    state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                        "Failed to delete EQ: {}",
+                        e
+                    )));
                 });
                 cx.notify();
             }
@@ -168,8 +174,10 @@ async fn run_optimization_task(
         let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
 
         // Normalize and interpolate curves
-        let input_curve_norm = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
-        let target_curve_norm = autoeq::normalize_and_interpolate_response(&standard_freq, &target_curve);
+        let input_curve_norm =
+            autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
+        let target_curve_norm =
+            autoeq::normalize_and_interpolate_response(&standard_freq, &target_curve);
 
         // Create deviation curve
         let deviation_curve = autoeq::Curve {
@@ -255,7 +263,8 @@ async fn run_optimization_task(
                 // Progress updates would go here
                 autoeq::de::CallbackAction::Continue
             }),
-        ).map_err(|e| format!("Optimization failed: {}", e))?;
+        )
+        .map_err(|e| format!("Optimization failed: {}", e))?;
 
         // Convert to biquad filters
         let biquads = autoeq::x2peq::x2peq(&filter_params, args.sample_rate, args.peq_model);

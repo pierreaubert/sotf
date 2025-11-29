@@ -128,7 +128,10 @@ impl Accordion {
     }
 
     /// Set change handler (receives item ID and new expanded state)
-    pub fn on_change(mut self, handler: impl Fn(&SharedString, bool, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_change(
+        mut self,
+        handler: impl Fn(&SharedString, bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_change = Some(Box::new(handler));
         self
     }
@@ -177,11 +180,10 @@ impl Accordion {
                         handler.as_ref();
                     let id = item_id.clone();
                     let new_state = !is_expanded;
-                    header = header.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                        unsafe {
+                    header =
+                        header.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
                             (*handler_ptr)(&id, new_state, window, cx);
-                        }
-                    });
+                        });
                 }
             }
 

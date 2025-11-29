@@ -7,7 +7,8 @@
 //! - Advanced parameter controls
 
 use super::common::{
-    render_edit_hints, render_param_row, render_section_header, render_toggle, render_vertical_slider,
+    render_edit_hints, render_param_row, render_section_header, render_toggle,
+    render_vertical_slider,
 };
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -431,82 +432,64 @@ pub fn render_upmixer_plugin(
                 ),
         )
         // Advanced toggles
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .children([
-                    div()
-                        .flex_1()
-                        .child(render_toggle(
-                            "Subharmonic Synth",
-                            enable_subharmonic_synth,
-                            9,
-                            selected_param,
-                            is_editing,
-                            theme,
-                        )),
-                    div()
-                        .flex_1()
-                        .child(render_toggle(
-                            "HR Direct",
-                            enable_hr_direct,
-                            11,
-                            selected_param,
-                            is_editing,
-                            theme,
-                        )),
-                ]),
-        )
+        .child(div().flex().gap_4().children([
+            div().flex_1().child(render_toggle(
+                "Subharmonic Synth",
+                enable_subharmonic_synth,
+                9,
+                selected_param,
+                is_editing,
+                theme,
+            )),
+            div().flex_1().child(render_toggle(
+                "HR Direct",
+                enable_hr_direct,
+                11,
+                selected_param,
+                is_editing,
+                theme,
+            )),
+        ]))
         // Additional parameters when subharmonic or HR is enabled
         .when(enable_subharmonic_synth || enable_hr_direct, |d| {
-            d.child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .children([
+            d.child(div().flex().gap_4().children([
+                div().flex_1().when(enable_subharmonic_synth, |d| {
+                    d.child(
                         div()
-                            .flex_1()
-                            .when(enable_subharmonic_synth, |d| {
-                                d.child(
-                                    div()
-                                        .rounded_xl()
-                                        .bg(theme.background_secondary)
-                                        .border_1()
-                                        .border_color(theme.border)
-                                        .p_3()
-                                        .child(render_param_row(
-                                            "Subharm Gain",
-                                            &format!("{:.2}", subharmonic_gain),
-                                            10,
-                                            selected_param,
-                                            is_editing,
-                                            theme,
-                                        )),
-                                )
-                            }),
+                            .rounded_xl()
+                            .bg(theme.background_secondary)
+                            .border_1()
+                            .border_color(theme.border)
+                            .p_3()
+                            .child(render_param_row(
+                                "Subharm Gain",
+                                &format!("{:.2}", subharmonic_gain),
+                                10,
+                                selected_param,
+                                is_editing,
+                                theme,
+                            )),
+                    )
+                }),
+                div().flex_1().when(enable_hr_direct, |d| {
+                    d.child(
                         div()
-                            .flex_1()
-                            .when(enable_hr_direct, |d| {
-                                d.child(
-                                    div()
-                                        .rounded_xl()
-                                        .bg(theme.background_secondary)
-                                        .border_1()
-                                        .border_color(theme.border)
-                                        .p_3()
-                                        .child(render_param_row(
-                                            "HR Sharpen",
-                                            &format!("{:.2}", hr_sharpen),
-                                            12,
-                                            selected_param,
-                                            is_editing,
-                                            theme,
-                                        )),
-                                )
-                            }),
-                    ]),
-            )
+                            .rounded_xl()
+                            .bg(theme.background_secondary)
+                            .border_1()
+                            .border_color(theme.border)
+                            .p_3()
+                            .child(render_param_row(
+                                "HR Sharpen",
+                                &format!("{:.2}", hr_sharpen),
+                                12,
+                                selected_param,
+                                is_editing,
+                                theme,
+                            )),
+                    )
+                }),
+            ]))
         })
         // Keyboard hints
         .child(

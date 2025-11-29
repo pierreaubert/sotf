@@ -7,13 +7,13 @@
 //! **Note**: The solver functionality requires the `native` feature for parallel processing.
 //! Data structures (RoomGeometry, Source, etc.) are always available.
 
+mod config;
 #[cfg(feature = "native")]
 mod solver;
-mod config;
 
+pub use config::*;
 #[cfg(feature = "native")]
 pub use solver::*;
-pub use config::*;
 
 use ndarray::Array2;
 use serde::{Deserialize, Serialize};
@@ -82,12 +82,18 @@ impl RoomGeometry {
         speed_of_sound: f64,
     ) -> RoomMesh {
         match self {
-            RoomGeometry::Rectangular(room) => {
-                room.generate_adaptive_mesh(base_elements_per_meter, frequency, sources, speed_of_sound)
-            }
-            RoomGeometry::LShaped(room) => {
-                room.generate_adaptive_mesh(base_elements_per_meter, frequency, sources, speed_of_sound)
-            }
+            RoomGeometry::Rectangular(room) => room.generate_adaptive_mesh(
+                base_elements_per_meter,
+                frequency,
+                sources,
+                speed_of_sound,
+            ),
+            RoomGeometry::LShaped(room) => room.generate_adaptive_mesh(
+                base_elements_per_meter,
+                frequency,
+                sources,
+                speed_of_sound,
+            ),
         }
     }
 
@@ -418,7 +424,8 @@ impl RectangularRoom {
             u_vec.x * v_vec.y - u_vec.y * v_vec.x,
         );
 
-        let normal_length = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+        let normal_length =
+            (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
 
         if normal_length < 1e-10 {
             return point.distance_to(&surface.origin);
@@ -441,20 +448,56 @@ impl RectangularRoom {
     pub fn get_edges(&self) -> Vec<(Point3D, Point3D)> {
         vec![
             // Floor edges
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(self.width, 0.0, 0.0)),
-            (Point3D::new(self.width, 0.0, 0.0), Point3D::new(self.width, self.depth, 0.0)),
-            (Point3D::new(self.width, self.depth, 0.0), Point3D::new(0.0, self.depth, 0.0)),
-            (Point3D::new(0.0, self.depth, 0.0), Point3D::new(0.0, 0.0, 0.0)),
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(self.width, 0.0, 0.0),
+            ),
+            (
+                Point3D::new(self.width, 0.0, 0.0),
+                Point3D::new(self.width, self.depth, 0.0),
+            ),
+            (
+                Point3D::new(self.width, self.depth, 0.0),
+                Point3D::new(0.0, self.depth, 0.0),
+            ),
+            (
+                Point3D::new(0.0, self.depth, 0.0),
+                Point3D::new(0.0, 0.0, 0.0),
+            ),
             // Ceiling edges
-            (Point3D::new(0.0, 0.0, self.height), Point3D::new(self.width, 0.0, self.height)),
-            (Point3D::new(self.width, 0.0, self.height), Point3D::new(self.width, self.depth, self.height)),
-            (Point3D::new(self.width, self.depth, self.height), Point3D::new(0.0, self.depth, self.height)),
-            (Point3D::new(0.0, self.depth, self.height), Point3D::new(0.0, 0.0, self.height)),
+            (
+                Point3D::new(0.0, 0.0, self.height),
+                Point3D::new(self.width, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width, 0.0, self.height),
+                Point3D::new(self.width, self.depth, self.height),
+            ),
+            (
+                Point3D::new(self.width, self.depth, self.height),
+                Point3D::new(0.0, self.depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, self.depth, self.height),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
             // Vertical edges
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 0.0, self.height)),
-            (Point3D::new(self.width, 0.0, 0.0), Point3D::new(self.width, 0.0, self.height)),
-            (Point3D::new(self.width, self.depth, 0.0), Point3D::new(self.width, self.depth, self.height)),
-            (Point3D::new(0.0, self.depth, 0.0), Point3D::new(0.0, self.depth, self.height)),
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width, 0.0, 0.0),
+                Point3D::new(self.width, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width, self.depth, 0.0),
+                Point3D::new(self.width, self.depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, self.depth, 0.0),
+                Point3D::new(0.0, self.depth, self.height),
+            ),
         ]
     }
 
@@ -506,11 +549,11 @@ impl RectangularRoom {
 /// Section 2: extension from (0, depth1) to (width2, depth1 + depth2)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LShapedRoom {
-    pub width1: f64,   // Main section width (x)
-    pub depth1: f64,   // Main section depth (y)
-    pub width2: f64,   // Extension width (x), typically < width1
-    pub depth2: f64,   // Extension depth (y)
-    pub height: f64,   // Common height for both sections
+    pub width1: f64, // Main section width (x)
+    pub depth1: f64, // Main section depth (y)
+    pub width2: f64, // Extension width (x), typically < width1
+    pub depth2: f64, // Extension depth (y)
+    pub height: f64, // Common height for both sections
 }
 
 impl LShapedRoom {
@@ -663,28 +706,80 @@ impl LShapedRoom {
         let total_depth = self.depth1 + self.depth2;
         vec![
             // Floor edges - Main section
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(self.width1, 0.0, 0.0)),
-            (Point3D::new(self.width1, 0.0, 0.0), Point3D::new(self.width1, self.depth1, 0.0)),
-            (Point3D::new(self.width1, self.depth1, 0.0), Point3D::new(self.width2, self.depth1, 0.0)),
-            (Point3D::new(self.width2, self.depth1, 0.0), Point3D::new(self.width2, total_depth, 0.0)),
-            (Point3D::new(self.width2, total_depth, 0.0), Point3D::new(0.0, total_depth, 0.0)),
-            (Point3D::new(0.0, total_depth, 0.0), Point3D::new(0.0, 0.0, 0.0)),
-
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(self.width1, 0.0, 0.0),
+            ),
+            (
+                Point3D::new(self.width1, 0.0, 0.0),
+                Point3D::new(self.width1, self.depth1, 0.0),
+            ),
+            (
+                Point3D::new(self.width1, self.depth1, 0.0),
+                Point3D::new(self.width2, self.depth1, 0.0),
+            ),
+            (
+                Point3D::new(self.width2, self.depth1, 0.0),
+                Point3D::new(self.width2, total_depth, 0.0),
+            ),
+            (
+                Point3D::new(self.width2, total_depth, 0.0),
+                Point3D::new(0.0, total_depth, 0.0),
+            ),
+            (
+                Point3D::new(0.0, total_depth, 0.0),
+                Point3D::new(0.0, 0.0, 0.0),
+            ),
             // Ceiling edges
-            (Point3D::new(0.0, 0.0, self.height), Point3D::new(self.width1, 0.0, self.height)),
-            (Point3D::new(self.width1, 0.0, self.height), Point3D::new(self.width1, self.depth1, self.height)),
-            (Point3D::new(self.width1, self.depth1, self.height), Point3D::new(self.width2, self.depth1, self.height)),
-            (Point3D::new(self.width2, self.depth1, self.height), Point3D::new(self.width2, total_depth, self.height)),
-            (Point3D::new(self.width2, total_depth, self.height), Point3D::new(0.0, total_depth, self.height)),
-            (Point3D::new(0.0, total_depth, self.height), Point3D::new(0.0, 0.0, self.height)),
-
+            (
+                Point3D::new(0.0, 0.0, self.height),
+                Point3D::new(self.width1, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width1, 0.0, self.height),
+                Point3D::new(self.width1, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width1, self.depth1, self.height),
+                Point3D::new(self.width2, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width2, self.depth1, self.height),
+                Point3D::new(self.width2, total_depth, self.height),
+            ),
+            (
+                Point3D::new(self.width2, total_depth, self.height),
+                Point3D::new(0.0, total_depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, total_depth, self.height),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
             // Vertical edges
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 0.0, self.height)),
-            (Point3D::new(self.width1, 0.0, 0.0), Point3D::new(self.width1, 0.0, self.height)),
-            (Point3D::new(self.width1, self.depth1, 0.0), Point3D::new(self.width1, self.depth1, self.height)),
-            (Point3D::new(self.width2, self.depth1, 0.0), Point3D::new(self.width2, self.depth1, self.height)),
-            (Point3D::new(self.width2, total_depth, 0.0), Point3D::new(self.width2, total_depth, self.height)),
-            (Point3D::new(0.0, total_depth, 0.0), Point3D::new(0.0, total_depth, self.height)),
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width1, 0.0, 0.0),
+                Point3D::new(self.width1, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width1, self.depth1, 0.0),
+                Point3D::new(self.width1, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width2, self.depth1, 0.0),
+                Point3D::new(self.width2, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width2, total_depth, 0.0),
+                Point3D::new(self.width2, total_depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, total_depth, 0.0),
+                Point3D::new(0.0, total_depth, self.height),
+            ),
         ]
     }
 
@@ -835,10 +930,7 @@ pub enum CrossoverFilter {
         order: u32, // Filter order (2, 4, 6, 8)
     },
     /// Highpass filter (for tweeters/small speakers)
-    Highpass {
-        cutoff_freq: f64,
-        order: u32,
-    },
+    Highpass { cutoff_freq: f64, order: u32 },
     /// Bandpass filter
     Bandpass {
         low_cutoff: f64,

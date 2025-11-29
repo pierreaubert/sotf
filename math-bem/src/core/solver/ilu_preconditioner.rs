@@ -658,8 +658,7 @@ impl IluPreconditioner {
                 let mut mu = 0;
                 for m in 0..i {
                     if mk_vct[m] && mi_col[m] {
-                        l_values[j1] -=
-                            l_values[l_row_ptr[k] + ml] * u_values[u_col_ptr[i] + mu];
+                        l_values[j1] -= l_values[l_row_ptr[k] + ml] * u_values[u_col_ptr[i] + mu];
                     }
                     if mk_vct[m] {
                         ml += 1;
@@ -698,8 +697,7 @@ impl IluPreconditioner {
                 let mut mu = 0;
                 for m in 0..i {
                     if mi_row[m] && mk_vct[m] {
-                        u_values[j1] -=
-                            l_values[l_row_ptr[i] + ml] * u_values[u_col_ptr[k] + mu];
+                        u_values[j1] -= l_values[l_row_ptr[i] + ml] * u_values[u_col_ptr[k] + mu];
                     }
                     if mi_row[m] {
                         ml += 1;
@@ -816,7 +814,8 @@ mod tests {
         )
         .unwrap();
 
-        let precond = IluPreconditioner::from_matrix(&a, IluMethod::Tbem, IluScanningDegree::Coarse);
+        let precond =
+            IluPreconditioner::from_matrix(&a, IluMethod::Tbem, IluScanningDegree::Coarse);
 
         // Check that ILU was created
         assert!(precond.nnz_l() > 0);

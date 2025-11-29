@@ -401,9 +401,8 @@ pub fn save_config<P: AsRef<Path>>(config: &BemConfig, path: P) -> Result<(), Co
 /// Serialize BEM configuration to a string
 pub fn serialize_config(config: &BemConfig, format: ConfigFormat) -> Result<String, ConfigError> {
     match format {
-        ConfigFormat::Json => {
-            serde_json::to_string_pretty(config).map_err(|e| ConfigError::SerializeError(e.to_string()))
-        }
+        ConfigFormat::Json => serde_json::to_string_pretty(config)
+            .map_err(|e| ConfigError::SerializeError(e.to_string())),
         ConfigFormat::Toml => {
             toml::to_string_pretty(config).map_err(|e| ConfigError::SerializeError(e.to_string()))
         }
@@ -500,7 +499,9 @@ impl BemConfig {
             return Ok(nodes);
         }
 
-        Err(ConfigError::MissingField("mesh.nodes or mesh.nodes_file".to_string()))
+        Err(ConfigError::MissingField(
+            "mesh.nodes or mesh.nodes_file".to_string(),
+        ))
     }
 
     /// Load elements from configuration
@@ -525,7 +526,9 @@ impl BemConfig {
             return Ok(elements);
         }
 
-        Err(ConfigError::MissingField("mesh.elements or mesh.elements_file".to_string()))
+        Err(ConfigError::MissingField(
+            "mesh.elements or mesh.elements_file".to_string(),
+        ))
     }
 }
 

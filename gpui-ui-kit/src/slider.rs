@@ -173,24 +173,21 @@ impl RenderOnce for Slider {
         let step = self.step;
         let disabled = self.disabled;
 
-        let mut container = div()
-            .flex()
-            .flex_col()
-            .gap_1();
+        let mut container = div().flex().flex_col().gap_1();
 
         // Label row
         if self.label.is_some() || self.show_value {
-            let mut label_row = div()
-                .flex()
-                .justify_between()
-                .w(px(width))
-                .text_sm();
+            let mut label_row = div().flex().justify_between().w(px(width)).text_sm();
 
             if let Some(label) = &self.label {
                 label_row = label_row.child(
                     div()
-                        .text_color(if disabled { rgba(0x999999ff) } else { rgba(0x333333ff) })
-                        .child(label.clone())
+                        .text_color(if disabled {
+                            rgba(0x999999ff)
+                        } else {
+                            rgba(0x333333ff)
+                        })
+                        .child(label.clone()),
                 );
             }
 
@@ -198,7 +195,7 @@ impl RenderOnce for Slider {
                 label_row = label_row.child(
                     div()
                         .text_color(rgba(0x666666ff))
-                        .child(format!("{:.1}", self.value))
+                        .child(format!("{:.1}", self.value)),
                 );
             }
 
@@ -222,7 +219,7 @@ impl RenderOnce for Slider {
                     .w_full()
                     .h(px(track_height))
                     .rounded(px(track_height / 2.0))
-                    .bg(track_color)
+                    .bg(track_color),
             )
             // Fill
             .child(
@@ -232,7 +229,11 @@ impl RenderOnce for Slider {
                     .w(px(fill_width))
                     .h(px(track_height))
                     .rounded(px(track_height / 2.0))
-                    .bg(if disabled { rgba(0xccccccff) } else { fill_color })
+                    .bg(if disabled {
+                        rgba(0xccccccff)
+                    } else {
+                        fill_color
+                    }),
             )
             // Thumb
             .child(
@@ -244,8 +245,12 @@ impl RenderOnce for Slider {
                     .rounded_full()
                     .bg(thumb_color)
                     .border_2()
-                    .border_color(if disabled { rgba(0xccccccff) } else { fill_color })
-                    .shadow_sm()
+                    .border_color(if disabled {
+                        rgba(0xccccccff)
+                    } else {
+                        fill_color
+                    })
+                    .shadow_sm(),
             );
 
         // Apply cursor style

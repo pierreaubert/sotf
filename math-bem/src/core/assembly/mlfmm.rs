@@ -151,8 +151,7 @@ impl MlfmmSystem {
             let fld_dofs = &self.leaf_dof_indices[block.field_cluster];
 
             // Gather x values from field cluster (columns of the matrix)
-            let x_local: Array1<Complex64> =
-                Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
+            let x_local: Array1<Complex64> = Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
 
             // Apply block matrix: y_local[i] = sum_j A[i,j] * x[j]
             let y_local = block.coefficients.dot(&x_local);
@@ -168,8 +167,7 @@ impl MlfmmSystem {
             // which is the transpose of this block
             if block.source_cluster != block.field_cluster {
                 // Gather x from source cluster DOFs
-                let x_src: Array1<Complex64> =
-                    Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
+                let x_src: Array1<Complex64> = Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
                 // Apply transpose: the (fld, src) block
                 let y_fld = block.coefficients.t().dot(&x_src);
                 // Scatter to field cluster DOFs
@@ -277,7 +275,11 @@ impl MlfmmSystem {
                     continue;
                 }
 
-                let child_num_points = self.sphere_points_per_level.get(child_level).copied().unwrap_or(0);
+                let child_num_points = self
+                    .sphere_points_per_level
+                    .get(child_level)
+                    .copied()
+                    .unwrap_or(0);
                 let mut child_multipoles = Array1::zeros(cluster.sons.len() * child_num_points);
 
                 for (son_idx, &child_cluster_idx) in cluster.sons.iter().enumerate() {
@@ -315,7 +317,11 @@ impl MlfmmSystem {
             } else {
                 0
             };
-            let num_points = self.sphere_points_per_level.get(level).copied().unwrap_or(0);
+            let num_points = self
+                .sphere_points_per_level
+                .get(level)
+                .copied()
+                .unwrap_or(0);
             locals.push(
                 (0..num_clusters)
                     .map(|_| Array1::zeros(num_points))
@@ -386,7 +392,11 @@ impl MlfmmSystem {
                     continue;
                 }
 
-                let child_num_points = self.sphere_points_per_level.get(child_level).copied().unwrap_or(0);
+                let child_num_points = self
+                    .sphere_points_per_level
+                    .get(child_level)
+                    .copied()
+                    .unwrap_or(0);
 
                 // Distribute to children
                 for (son_idx, &child_cluster_idx) in cluster.sons.iter().enumerate() {
@@ -398,7 +408,8 @@ impl MlfmmSystem {
                     for i in 0..child_num_points {
                         if offset + i < child_locals.len() {
                             if i < locals[child_level][child_cluster_idx].len() {
-                                locals[child_level][child_cluster_idx][i] += child_locals[offset + i];
+                                locals[child_level][child_cluster_idx][i] +=
+                                    child_locals[offset + i];
                             }
                         }
                     }
@@ -421,7 +432,8 @@ impl MlfmmSystem {
         let s_level = &self.s_matrices[leaf_level];
 
         for cluster_idx in 0..s_level.num_clusters {
-            if cluster_idx >= self.leaf_dof_indices.len() || cluster_idx >= locals[leaf_level].len() {
+            if cluster_idx >= self.leaf_dof_indices.len() || cluster_idx >= locals[leaf_level].len()
+            {
                 continue;
             }
 
@@ -691,8 +703,7 @@ fn compute_near_block(
             };
 
             // Assemble using Burton-Miller formulation
-            let coeff =
-                result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta;
+            let coeff = result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta;
             block[[i, j]] = coeff;
         }
     }
@@ -730,9 +741,8 @@ fn build_t_matrices_level(
                 }
 
                 for (p, coord) in sphere_coords.iter().enumerate() {
-                    let diff: Vec<f64> = (0..3)
-                        .map(|d| elem.center[d] - cluster.center[d])
-                        .collect();
+                    let diff: Vec<f64> =
+                        (0..3).map(|d| elem.center[d] - cluster.center[d]).collect();
                     let s_dot_diff: f64 = (0..3).map(|d| coord[d] * diff[d]).sum();
 
                     let exp_factor =
@@ -871,13 +881,11 @@ fn build_s_matrices_level(
                 }
 
                 for (p, coord) in sphere_coords.iter().enumerate() {
-                    let diff: Vec<f64> = (0..3)
-                        .map(|d| elem.center[d] - cluster.center[d])
-                        .collect();
+                    let diff: Vec<f64> =
+                        (0..3).map(|d| elem.center[d] - cluster.center[d]).collect();
                     let s_dot_diff: f64 = (0..3).map(|d| coord[d] * diff[d]).sum();
 
-                    let exp_factor =
-                        Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
+                    let exp_factor = Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
 
                     s_matrix[[j, p]] = exp_factor * sphere_weights[p];
                 }
@@ -1073,7 +1081,9 @@ fn subdivide_level(
             sum_radius += leaf.radius;
 
             let child_idx = child_level.clusters.len();
-            levels[parent_level].clusters[parent_idx].sons.push(child_idx);
+            levels[parent_level].clusters[parent_idx]
+                .sons
+                .push(child_idx);
             child_level.clusters.push(leaf);
             continue;
         }
@@ -1108,9 +1118,7 @@ fn subdivide_level(
                     let dy = elem.center[1] - parent.center[1];
                     let dz = elem.center[2] - parent.center[2];
 
-                    (dx * offset[0] >= 0.0)
-                        && (dy * offset[1] >= 0.0)
-                        && (dz * offset[2] >= 0.0)
+                    (dx * offset[0] >= 0.0) && (dy * offset[1] >= 0.0) && (dz * offset[2] >= 0.0)
                 })
                 .copied()
                 .collect();
@@ -1130,7 +1138,9 @@ fn subdivide_level(
             sum_radius += child.radius;
 
             let child_idx = child_level.clusters.len();
-            levels[parent_level].clusters[parent_idx].sons.push(child_idx);
+            levels[parent_level].clusters[parent_idx]
+                .sons
+                .push(child_idx);
             child_level.clusters.push(child);
         }
     }
@@ -1161,7 +1171,13 @@ fn subdivide_level(
         .any(|c| c.element_indices.len() > target_elements_per_leaf);
 
     if should_continue && current_level < 7 {
-        subdivide_level(levels, elements, current_level, target_elements_per_leaf, physics);
+        subdivide_level(
+            levels,
+            elements,
+            current_level,
+            target_elements_per_leaf,
+            physics,
+        );
     }
 }
 

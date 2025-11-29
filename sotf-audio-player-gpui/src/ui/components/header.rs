@@ -3,9 +3,11 @@
 use crate::app::{ActiveMenu, LayoutMode, Screen};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
-use gpui_ui_kit::{menu_bar_button, Button, ButtonVariant, ButtonSize, HStack, VStack, StackSpacing, Divider};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, Divider, HStack, StackSpacing, VStack, menu_bar_button,
+};
 
 impl PlayerView {
     /// Render the application menu bar with dropdown menus
@@ -27,9 +29,27 @@ impl PlayerView {
                 // Left side: menus only (no title)
                 HStack::new()
                     .spacing(StackSpacing::Xs)
-                    .child(self.render_menu_button("File", ActiveMenu::File, active_menu, theme.clone(), cx))
-                    .child(self.render_menu_button("View", ActiveMenu::View, active_menu, theme.clone(), cx))
-                    .child(self.render_menu_button("Help", ActiveMenu::Help, active_menu, theme.clone(), cx))
+                    .child(self.render_menu_button(
+                        "File",
+                        ActiveMenu::File,
+                        active_menu,
+                        theme.clone(),
+                        cx,
+                    ))
+                    .child(self.render_menu_button(
+                        "View",
+                        ActiveMenu::View,
+                        active_menu,
+                        theme.clone(),
+                        cx,
+                    ))
+                    .child(self.render_menu_button(
+                        "Help",
+                        ActiveMenu::Help,
+                        active_menu,
+                        theme.clone(),
+                        cx,
+                    )),
             )
             .child(
                 // Right side: Quick status
@@ -41,7 +61,7 @@ impl PlayerView {
                     .text_color(theme.text_muted)
                     .when(scan_in_progress, |el| {
                         el.child(format!("Scanning: {} files", scan_progress_tracks))
-                    })
+                    }),
             )
             .build()
             .px_4()
@@ -97,27 +117,32 @@ impl PlayerView {
     ) -> impl IntoElement {
         let is_open = active_menu == menu_id;
 
-        menu_bar_button(format!("menu-{}", label), label, is_open)
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        if state.app.active_menu == menu_id {
-                            state.app.active_menu = ActiveMenu::None;
-                        } else {
-                            state.app.active_menu = menu_id;
-                        }
-                    });
-                    cx.notify();
-                }),
-            )
+        menu_bar_button(format!("menu-{}", label), label, is_open).on_mouse_up(
+            MouseButton::Left,
+            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                view.state.update(cx, |state, _cx| {
+                    if state.app.active_menu == menu_id {
+                        state.app.active_menu = ActiveMenu::None;
+                    } else {
+                        state.app.active_menu = menu_id;
+                    }
+                });
+                cx.notify();
+            }),
+        )
     }
 
     /// Render File menu dropdown
     fn render_file_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(self.render_menu_item_simple("Settings", Some("⌘,"), theme.clone(), Screen::Settings, cx))
+            .child(self.render_menu_item_simple(
+                "Settings",
+                Some("⌘,"),
+                theme.clone(),
+                Screen::Settings,
+                cx,
+            ))
             .child(Divider::new())
             .child(self.render_quit_item(theme, cx))
             .build()
@@ -139,10 +164,28 @@ impl PlayerView {
 
         VStack::new()
             .spacing(StackSpacing::None)
-            .child(self.render_menu_item_simple("Library", Some("1"), theme.clone(), Screen::Library, cx))
-            .child(self.render_menu_item_simple("Queue", Some("2"), theme.clone(), Screen::Queue, cx))
+            .child(self.render_menu_item_simple(
+                "Library",
+                Some("1"),
+                theme.clone(),
+                Screen::Library,
+                cx,
+            ))
+            .child(self.render_menu_item_simple(
+                "Queue",
+                Some("2"),
+                theme.clone(),
+                Screen::Queue,
+                cx,
+            ))
             .child(Divider::new())
-            .child(self.render_menu_item_simple("Settings", Some("3"), theme.clone(), Screen::Settings, cx))
+            .child(self.render_menu_item_simple(
+                "Settings",
+                Some("3"),
+                theme.clone(),
+                Screen::Settings,
+                cx,
+            ))
             .child(Divider::new())
             .child(
                 div()
@@ -156,7 +199,7 @@ impl PlayerView {
                             LayoutMode::Compact => "Compact",
                             LayoutMode::Expanded => "Expanded",
                         }
-                    ))
+                    )),
             )
             .build()
             .absolute()
@@ -378,7 +421,11 @@ impl PlayerView {
     ) -> impl IntoElement {
         let label_string = SharedString::from(label.to_string());
         let btn = Button::new(SharedString::from(format!("tab-{}", label)), label_string)
-            .variant(if is_active { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+            .variant(if is_active {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Secondary
+            })
             .size(ButtonSize::Md)
             .selected(is_active)
             .theme(theme.to_button_theme())

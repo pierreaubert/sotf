@@ -3,7 +3,7 @@
 //! Adaptive subdivision for nearly-singular and singular element integrals.
 //! Direct port of NC_SingularIntegration from NC_EquationSystem.cpp.
 
-use ndarray::{array, Array1, Array2};
+use ndarray::{Array1, Array2, array};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
@@ -311,69 +311,67 @@ pub fn singular_integration_with_params(
                 for (j, &tga) in gau_coords.iter().enumerate() {
                     let wei_gau = gau_weights[i] * gau_weights[j];
 
-                // Map from subtriangle to original element coordinates
-                let sgg = 0.5 * (1.0 - sga) * ssub[0]
-                    + 0.25 * (1.0 + sga) * ((1.0 - tga) * ssub[1] + (1.0 + tga) * ssub[2]);
-                let tgg = 0.5 * (1.0 - sga) * tsub[0]
-                    + 0.25 * (1.0 + sga) * ((1.0 - tga) * tsub[1] + (1.0 + tga) * tsub[2]);
+                    // Map from subtriangle to original element coordinates
+                    let sgg = 0.5 * (1.0 - sga) * ssub[0]
+                        + 0.25 * (1.0 + sga) * ((1.0 - tga) * ssub[1] + (1.0 + tga) * ssub[2]);
+                    let tgg = 0.5 * (1.0 - sga) * tsub[0]
+                        + 0.25 * (1.0 + sga) * ((1.0 - tga) * tsub[1] + (1.0 + tga) * tsub[2]);
 
-                // Compute shape functions and Jacobian
-                let (shape_fn, _shape_ds, _shape_dt, jacobian, el_norm, crd_poi) =
-                    compute_shape_and_jacobian(element_coords, element_type, sgg, tgg);
+                    // Compute shape functions and Jacobian
+                    let (shape_fn, _shape_ds, _shape_dt, jacobian, el_norm, crd_poi) =
+                        compute_shape_and_jacobian(element_coords, element_type, sgg, tgg);
 
-                let wga = wei_gau * (1.0 + sga) * aresub * jacobian;
+                    let wga = wei_gau * (1.0 + sga) * aresub * jacobian;
 
-                // Compute kernel functions
-                let mut diff_fsp = Array1::zeros(3);
-                for i in 0..3 {
-                    diff_fsp[i] = crd_poi[i] - source_point[i];
-                }
-
-                let (unit_r, dis_fsp) = normalize(&diff_fsp);
-
-                if dis_fsp < 1e-15 {
-                    continue;
-                }
-
-                // G kernel
-                let re1 = wavruim * dis_fsp;
-                let re2 = wga / (4.0 * PI * dis_fsp);
-                let zg = Complex64::new(re1.cos() * re2, re1.sin() * re2);
-
-                // H and H^T kernels
-                let z1 = Complex64::new(-1.0 / dis_fsp, wavruim);
-                let zhh_base = zg * z1;
-                let re1_h = unit_r.dot(&el_norm); // (y-x)·n_y / r
-                let re2_h = -unit_r.dot(source_normal); // -(y-x)·n_x / r
-                let zhh = zhh_base * re1_h;
-                let zht = zhh_base * re2_h;
-
-                // Accumulate integrals
-                result.g_integral += zg;
-                result.dg_dn_integral += zhh;
-                result.dg_dnx_integral += zht;
-
-                // E kernel contribution
-                result.d2g_dnxdny_integral +=
-                    zg * k2 * source_normal.dot(&el_norm);
-
-                // RHS contribution if needed
-                if compute_rhs && bc_type == 0 {
-                    // Velocity BC
-                    if let Some(bc) = bc_values {
-                        let mut zbgao = Complex64::new(0.0, 0.0);
-                        for (ii, &n) in shape_fn.iter().enumerate() {
-                            if ii < bc.len() {
-                                zbgao += bc[ii] * n;
-                            }
-                        }
-                        let gamma = physics.gamma();
-                        let tau = physics.tau;
-                        let beta = physics.burton_miller_beta();
-                        result.rhs_contribution +=
-                            (zg * gamma * tau + zht * beta) * zbgao;
+                    // Compute kernel functions
+                    let mut diff_fsp = Array1::zeros(3);
+                    for i in 0..3 {
+                        diff_fsp[i] = crd_poi[i] - source_point[i];
                     }
-                }
+
+                    let (unit_r, dis_fsp) = normalize(&diff_fsp);
+
+                    if dis_fsp < 1e-15 {
+                        continue;
+                    }
+
+                    // G kernel
+                    let re1 = wavruim * dis_fsp;
+                    let re2 = wga / (4.0 * PI * dis_fsp);
+                    let zg = Complex64::new(re1.cos() * re2, re1.sin() * re2);
+
+                    // H and H^T kernels
+                    let z1 = Complex64::new(-1.0 / dis_fsp, wavruim);
+                    let zhh_base = zg * z1;
+                    let re1_h = unit_r.dot(&el_norm); // (y-x)·n_y / r
+                    let re2_h = -unit_r.dot(source_normal); // -(y-x)·n_x / r
+                    let zhh = zhh_base * re1_h;
+                    let zht = zhh_base * re2_h;
+
+                    // Accumulate integrals
+                    result.g_integral += zg;
+                    result.dg_dn_integral += zhh;
+                    result.dg_dnx_integral += zht;
+
+                    // E kernel contribution
+                    result.d2g_dnxdny_integral += zg * k2 * source_normal.dot(&el_norm);
+
+                    // RHS contribution if needed
+                    if compute_rhs && bc_type == 0 {
+                        // Velocity BC
+                        if let Some(bc) = bc_values {
+                            let mut zbgao = Complex64::new(0.0, 0.0);
+                            for (ii, &n) in shape_fn.iter().enumerate() {
+                                if ii < bc.len() {
+                                    zbgao += bc[ii] * n;
+                                }
+                            }
+                            let gamma = physics.gamma();
+                            let tau = physics.tau;
+                            let beta = physics.burton_miller_beta();
+                            result.rhs_contribution += (zg * gamma * tau + zht * beta) * zbgao;
+                        }
+                    }
                 }
             }
         }
@@ -386,9 +384,8 @@ pub fn singular_integration_with_params(
             let gamma = physics.gamma();
             let tau = physics.tau;
             let beta = physics.burton_miller_beta();
-            result.rhs_contribution = -(result.dg_dn_integral * gamma * tau
-                + result.d2g_dnxdny_integral * beta)
-                * zbgao;
+            result.rhs_contribution =
+                -(result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta) * zbgao;
         }
     }
 
@@ -544,8 +541,10 @@ pub fn generate_subelements(
 
         for idi in 0..nsel {
             // Compute center of current subelement
-            let scent: f64 = xi_sep[idi].iter().take(num_vertices).sum::<f64>() / num_vertices as f64;
-            let tcent: f64 = et_sep[idi].iter().take(num_vertices).sum::<f64>() / num_vertices as f64;
+            let scent: f64 =
+                xi_sep[idi].iter().take(num_vertices).sum::<f64>() / num_vertices as f64;
+            let tcent: f64 =
+                et_sep[idi].iter().take(num_vertices).sum::<f64>() / num_vertices as f64;
 
             // Global coordinates of center
             let crd_poip = local_to_global(element_coords, element_type, scent, tcent);
@@ -785,18 +784,34 @@ mod tests {
         // Use low frequency so kr << 1 and cos(kr) ≈ 1 (positive real part)
         let physics = PhysicsParams::new(10.0, 343.0, 1.21, false);
 
-        let result =
-            singular_integration(&source, &normal, &coords, ElementType::Tri3, &physics, None, 0, false);
+        let result = singular_integration(
+            &source,
+            &normal,
+            &coords,
+            ElementType::Tri3,
+            &physics,
+            None,
+            0,
+            false,
+        );
 
         // G integral should be finite and non-zero
         assert!(result.g_integral.norm().is_finite());
         assert!(result.g_integral.norm() > 0.0, "G integral was zero");
 
         // At low frequency (small kr), the real part should be positive
-        assert!(result.g_integral.re > 0.0, "G integral real part was: {} (expected positive at low freq)", result.g_integral.re);
+        assert!(
+            result.g_integral.re > 0.0,
+            "G integral real part was: {} (expected positive at low freq)",
+            result.g_integral.re
+        );
 
         // H integral should be zero (source normal perpendicular to element)
-        assert!(result.dg_dn_integral.norm() < 1e-10, "H integral should be zero, was: {:?}", result.dg_dn_integral);
+        assert!(
+            result.dg_dn_integral.norm() < 1e-10,
+            "H integral should be zero, was: {:?}",
+            result.dg_dn_integral
+        );
     }
 
     #[test]

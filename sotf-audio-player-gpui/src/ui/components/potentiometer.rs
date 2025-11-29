@@ -50,13 +50,7 @@ pub fn render_potentiometer(
         .h(px(size))
         .cursor_pointer()
         // Background circle
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .rounded_full()
-                .bg(bg_color),
-        )
+        .child(div().absolute().inset_0().rounded_full().bg(bg_color))
         // Filled portion (circular, slides up from bottom)
         .child(
             div()
@@ -73,8 +67,8 @@ pub fn render_potentiometer(
                         .w(px(size))
                         .h(px(size))
                         .rounded_full()
-                        .bg(fill_color)
-                )
+                        .bg(fill_color),
+                ),
         )
         // Border ring
         .child(

@@ -44,7 +44,8 @@ fn check_mesh(mesh: &bem::core::types::Mesh, radius: f64, name: &str) {
         }
 
         // Normal should be unit length
-        let n_len = (elem.normal[0].powi(2) + elem.normal[1].powi(2) + elem.normal[2].powi(2)).sqrt();
+        let n_len =
+            (elem.normal[0].powi(2) + elem.normal[1].powi(2) + elem.normal[2].powi(2)).sqrt();
         if (n_len - 1.0).abs() > 1e-6 {
             println!("  WARNING: Non-unit normal: len = {}", n_len);
         }
@@ -58,10 +59,16 @@ fn check_mesh(mesh: &bem::core::types::Mesh, radius: f64, name: &str) {
     let area_error = (total_area - expected_area).abs() / expected_area * 100.0;
 
     println!("  Normal direction errors: {}", normal_errors);
-    println!("  Area range: {:.6e} to {:.6e} (ratio = {:.1}x)",
-             area_min, area_max, area_max / area_min);
-    println!("  Total area: {:.6e} (expected {:.6e}, error = {:.1}%)",
-             total_area, expected_area, area_error);
+    println!(
+        "  Area range: {:.6e} to {:.6e} (ratio = {:.1}x)",
+        area_min,
+        area_max,
+        area_max / area_min
+    );
+    println!(
+        "  Total area: {:.6e} (expected {:.6e}, error = {:.1}%)",
+        total_area, expected_area, area_error
+    );
 
     // Check element aspect ratios and show some examples
     println!("\n  First 5 elements:");
@@ -69,13 +76,17 @@ fn check_mesh(mesh: &bem::core::types::Mesh, radius: f64, name: &str) {
         let n_dot_c = elem.normal[0] * elem.center[0]
             + elem.normal[1] * elem.center[1]
             + elem.normal[2] * elem.center[2];
-        let center_r = (elem.center[0].powi(2) + elem.center[1].powi(2) + elem.center[2].powi(2)).sqrt();
+        let center_r =
+            (elem.center[0].powi(2) + elem.center[1].powi(2) + elem.center[2].powi(2)).sqrt();
 
-        println!("    [{}] center=({:.4},{:.4},{:.4}) |center|={:.4} area={:.6e} n·c={:.4}",
-                 i, elem.center[0], elem.center[1], elem.center[2],
-                 center_r, elem.area, n_dot_c);
-        println!("        normal=({:.4},{:.4},{:.4})",
-                 elem.normal[0], elem.normal[1], elem.normal[2]);
+        println!(
+            "    [{}] center=({:.4},{:.4},{:.4}) |center|={:.4} area={:.6e} n·c={:.4}",
+            i, elem.center[0], elem.center[1], elem.center[2], center_r, elem.area, n_dot_c
+        );
+        println!(
+            "        normal=({:.4},{:.4},{:.4})",
+            elem.normal[0], elem.normal[1], elem.normal[2]
+        );
     }
 
     // Check edge lengths for first element
@@ -89,7 +100,7 @@ fn check_mesh(mesh: &bem::core::types::Mesh, radius: f64, name: &str) {
             let dx = mesh.nodes[[n1, 0]] - mesh.nodes[[n0, 0]];
             let dy = mesh.nodes[[n1, 1]] - mesh.nodes[[n0, 1]];
             let dz = mesh.nodes[[n1, 2]] - mesh.nodes[[n0, 2]];
-            let edge_len = (dx*dx + dy*dy + dz*dz).sqrt();
+            let edge_len = (dx * dx + dy * dy + dz * dz).sqrt();
             println!("    Edge {}-{}: {:.6e}", i, j, edge_len);
         }
     }

@@ -21,9 +21,18 @@ fn main() {
     let frequency = ka_target * speed_of_sound / (2.0 * PI * radius);
     let k = 2.0 * PI * frequency / speed_of_sound;
 
-    println!("Parameters: ka = {:.2}, k = {:.2}, radius = {:.2}", ka_target, k, radius);
-    println!("At z = +radius: exp(ikr) phase = {:.2}° ", k * radius * 180.0 / PI);
-    println!("At z = -radius: exp(-ikr) phase = {:.2}°\n", -k * radius * 180.0 / PI);
+    println!(
+        "Parameters: ka = {:.2}, k = {:.2}, radius = {:.2}",
+        ka_target, k, radius
+    );
+    println!(
+        "At z = +radius: exp(ikr) phase = {:.2}° ",
+        k * radius * 180.0 / PI
+    );
+    println!(
+        "At z = -radius: exp(-ikr) phase = {:.2}°\n",
+        -k * radius * 180.0 / PI
+    );
 
     let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
     let incident = IncidentField::plane_wave_z();
@@ -64,10 +73,23 @@ fn main() {
             // Expected: dpdn = ik * n_z * p_inc
             let expected_dpdn = num_complex::Complex64::new(0.0, k) * n_z * expected_p;
 
-            println!("  {:>4}   | {:>10.4} | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i | {:>6.3}",
-                     i, z, p.norm(), p.arg() * 180.0 / PI, dpdn.re, dpdn.im, n_z);
-            println!("         |  expected: | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i |",
-                     expected_p.norm(), expected_p.arg() * 180.0 / PI, expected_dpdn.re, expected_dpdn.im);
+            println!(
+                "  {:>4}   | {:>10.4} | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i | {:>6.3}",
+                i,
+                z,
+                p.norm(),
+                p.arg() * 180.0 / PI,
+                dpdn.re,
+                dpdn.im,
+                n_z
+            );
+            println!(
+                "         |  expected: | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i |",
+                expected_p.norm(),
+                expected_p.arg() * 180.0 / PI,
+                expected_dpdn.re,
+                expected_dpdn.im
+            );
         }
     }
 
@@ -87,10 +109,23 @@ fn main() {
             // Expected: dpdn = ik * n_z * p_inc
             let expected_dpdn = num_complex::Complex64::new(0.0, k) * n_z * expected_p;
 
-            println!("  {:>4}   | {:>10.4} | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i | {:>6.3}",
-                     i, z, p.norm(), p.arg() * 180.0 / PI, dpdn.re, dpdn.im, n_z);
-            println!("         |  expected: | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i |",
-                     expected_p.norm(), expected_p.arg() * 180.0 / PI, expected_dpdn.re, expected_dpdn.im);
+            println!(
+                "  {:>4}   | {:>10.4} | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i | {:>6.3}",
+                i,
+                z,
+                p.norm(),
+                p.arg() * 180.0 / PI,
+                dpdn.re,
+                dpdn.im,
+                n_z
+            );
+            println!(
+                "         |  expected: | {:>8.4} | {:>13.1}° | {:>7.4} + {:>7.4}i |",
+                expected_p.norm(),
+                expected_p.arg() * 180.0 / PI,
+                expected_dpdn.re,
+                expected_dpdn.im
+            );
         }
     }
 
@@ -110,8 +145,13 @@ fn main() {
             let rhs_std = p + beta_std * dpdn;
             let rhs_2x = p + beta_2x * dpdn;
 
-            println!("  elem[{}]: z={:.4}, |RHS_std|={:.4}, |RHS_2x|={:.4}",
-                     i, elem.center[2], rhs_std.norm(), rhs_2x.norm());
+            println!(
+                "  elem[{}]: z={:.4}, |RHS_std|={:.4}, |RHS_2x|={:.4}",
+                i,
+                elem.center[2],
+                rhs_std.norm(),
+                rhs_2x.norm()
+            );
         }
     }
 
@@ -123,8 +163,13 @@ fn main() {
             let rhs_std = p + beta_std * dpdn;
             let rhs_2x = p + beta_2x * dpdn;
 
-            println!("  elem[{}]: z={:.4}, |RHS_std|={:.4}, |RHS_2x|={:.4}",
-                     i, elem.center[2], rhs_std.norm(), rhs_2x.norm());
+            println!(
+                "  elem[{}]: z={:.4}, |RHS_std|={:.4}, |RHS_2x|={:.4}",
+                i,
+                elem.center[2],
+                rhs_std.norm(),
+                rhs_2x.norm()
+            );
         }
     }
 }

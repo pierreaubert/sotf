@@ -135,12 +135,10 @@ fn test_sort_by_year() {
 #[test]
 fn test_search_query() {
     let mut state = new_test_state();
-    state.library.albums.push(make_test_album(
-        "Pink Floyd DSOTM",
-        "Pink Floyd",
-        10,
-        2,
-    ));
+    state
+        .library
+        .albums
+        .push(make_test_album("Pink Floyd DSOTM", "Pink Floyd", 10, 2));
     state
         .library
         .albums

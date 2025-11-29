@@ -160,12 +160,7 @@ pub fn render_limiter_plugin(
                                 .child(format!("{:.2} dB", threshold_db)),
                         ),
                 )
-                .child(
-                    div()
-                        .w(px(1.0))
-                        .h(px(40.0))
-                        .bg(theme.border),
-                )
+                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
                 .child(
                     div()
                         .flex()

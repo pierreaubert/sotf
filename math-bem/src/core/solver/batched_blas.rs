@@ -83,8 +83,7 @@ pub fn batched_t_matrix_apply(
             }
 
             // Gather x values (avoiding allocation by reusing iterator)
-            let x_local: Array1<Complex64> =
-                Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
+            let x_local: Array1<Complex64> = Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
 
             // Apply T-matrix
             let result = t_mat.dot(&x_local);
@@ -261,10 +260,19 @@ pub fn slfmm_matvec_batched(
     );
 
     // Step 2: D-matrix translation: locals = D * multipoles
-    batched_d_matrix_apply(&system.d_matrices, &workspace.multipoles, &mut workspace.locals);
+    batched_d_matrix_apply(
+        &system.d_matrices,
+        &workspace.multipoles,
+        &mut workspace.locals,
+    );
 
     // Step 3: S-matrix application: y += S * locals
-    batched_s_matrix_apply(&system.s_matrices, &workspace.locals, &system.cluster_dof_indices, &mut y);
+    batched_s_matrix_apply(
+        &system.s_matrices,
+        &workspace.locals,
+        &system.cluster_dof_indices,
+        &mut y,
+    );
 
     y
 }
@@ -279,8 +287,11 @@ pub fn create_batched_matvec<'a>(
     system: &'a super::super::assembly::slfmm::SlfmmSystem,
 ) -> impl FnMut(&Array1<Complex64>) -> Array1<Complex64> + 'a {
     // Pre-allocate workspace
-    let mut workspace =
-        SlfmmMatvecWorkspace::new(system.num_clusters, system.num_sphere_points, system.num_dofs);
+    let mut workspace = SlfmmMatvecWorkspace::new(
+        system.num_clusters,
+        system.num_sphere_points,
+        system.num_dofs,
+    );
 
     move |x: &Array1<Complex64>| slfmm_matvec_batched(system, x, &mut workspace)
 }

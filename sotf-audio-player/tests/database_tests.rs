@@ -205,7 +205,11 @@ fn test_album_with_multiple_tracks() {
     );
     track3.track_number = Some(3);
 
-    let album = test_album("Multi Track Album", Some(2023), vec![track1, track2, track3]);
+    let album = test_album(
+        "Multi Track Album",
+        Some(2023),
+        vec![track1, track2, track3],
+    );
 
     // Save album
     db.save_albums(&[album]).expect("Failed to save album");

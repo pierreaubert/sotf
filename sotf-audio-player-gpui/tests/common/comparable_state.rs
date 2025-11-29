@@ -226,8 +226,11 @@ pub fn compare_states(expected: &ComparableState, actual: &ComparableState) -> V
             actual: format!("{}", actual.plugins.len()),
         });
     } else {
-        for (i, (exp_plugin, act_plugin)) in
-            expected.plugins.iter().zip(actual.plugins.iter()).enumerate()
+        for (i, (exp_plugin, act_plugin)) in expected
+            .plugins
+            .iter()
+            .zip(actual.plugins.iter())
+            .enumerate()
         {
             if exp_plugin != act_plugin {
                 diffs.push(StateDiff {

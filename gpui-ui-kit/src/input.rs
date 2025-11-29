@@ -168,7 +168,9 @@ impl Input {
                 input_wrapper = input_wrapper.bg(rgb(0x1e1e1e));
             }
             InputVariant::Filled => {
-                input_wrapper = input_wrapper.bg(rgb(0x2a2a2a)).border_color(rgba(0x00000000));
+                input_wrapper = input_wrapper
+                    .bg(rgb(0x2a2a2a))
+                    .border_color(rgba(0x00000000));
             }
             InputVariant::Flushed => {
                 input_wrapper = input_wrapper
@@ -188,26 +190,18 @@ impl Input {
 
         // Left icon
         if let Some(icon) = self.icon_left {
-            input_wrapper = input_wrapper.child(
-                div().text_color(rgb(0x666666)).child(icon),
-            );
+            input_wrapper = input_wrapper.child(div().text_color(rgb(0x666666)).child(icon));
         }
 
         // Input text/placeholder
         let text_el = if self.value.is_empty() {
             if let Some(placeholder) = self.placeholder {
-                div()
-                    .flex_1()
-                    .text_color(rgb(0x666666))
-                    .child(placeholder)
+                div().flex_1().text_color(rgb(0x666666)).child(placeholder)
             } else {
                 div().flex_1()
             }
         } else {
-            div()
-                .flex_1()
-                .text_color(rgb(0xffffff))
-                .child(self.value)
+            div().flex_1().text_color(rgb(0xffffff)).child(self.value)
         };
 
         // Apply text size
@@ -221,21 +215,14 @@ impl Input {
 
         // Right icon
         if let Some(icon) = self.icon_right {
-            input_wrapper = input_wrapper.child(
-                div().text_color(rgb(0x666666)).child(icon),
-            );
+            input_wrapper = input_wrapper.child(div().text_color(rgb(0x666666)).child(icon));
         }
 
         container = container.child(input_wrapper);
 
         // Error message
         if let Some(error) = self.error {
-            container = container.child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(0xcc3333))
-                    .child(error),
-            );
+            container = container.child(div().text_xs().text_color(rgb(0xcc3333)).child(error));
         }
 
         container

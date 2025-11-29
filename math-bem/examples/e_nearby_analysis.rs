@@ -130,9 +130,15 @@ fn main() {
             }
         }
 
-        println!("\n  Total off-diag E: {:.4}+{:.4}i", total_offdiag.re, total_offdiag.im);
-        println!("  E[1] = self + offdiag: {:.4}+{:.4}i",
-                 self_e.re + total_offdiag.re, self_e.im + total_offdiag.im);
+        println!(
+            "\n  Total off-diag E: {:.4}+{:.4}i",
+            total_offdiag.re, total_offdiag.im
+        );
+        println!(
+            "  E[1] = self + offdiag: {:.4}+{:.4}i",
+            self_e.re + total_offdiag.re,
+            self_e.im + total_offdiag.im
+        );
 
         // Show nearest neighbors contribution
         println!("\n  Nearest {} elements:", 5.min(distances.len()));

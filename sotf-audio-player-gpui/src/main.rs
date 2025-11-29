@@ -1,8 +1,8 @@
-use sotf_audio_player_gpui::app::{App, AppState};
-use sotf_audio_player_gpui::keybindings::{get_keybindings, KeymapPreset};
-use sotf_audio_player_gpui::ui;
 use gpui::*;
 use sotf_audio_player::Player;
+use sotf_audio_player_gpui::app::{App, AppState};
+use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
+use sotf_audio_player_gpui::ui;
 use std::fs::OpenOptions;
 use std::sync::Arc;
 
@@ -11,11 +11,7 @@ actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 fn main() {
     // Initialize logging to file
     if let Some(log_path) = sotf_audio_player::config::get_gpui_log_path() {
-        if let Ok(log_file) = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_path)
-        {
+        if let Ok(log_file) = OpenOptions::new().create(true).append(true).open(&log_path) {
             env_logger::Builder::from_default_env()
                 .target(env_logger::Target::Pipe(Box::new(log_file)))
                 .filter_level(log::LevelFilter::Debug)

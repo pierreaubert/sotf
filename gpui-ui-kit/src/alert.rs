@@ -113,12 +113,7 @@ impl Alert {
 
         // Icon
         let icon = self.icon.unwrap_or_else(|| default_icon.into());
-        alert = alert.child(
-            div()
-                .text_lg()
-                .text_color(icon_color)
-                .child(icon),
-        );
+        alert = alert.child(div().text_lg().text_color(icon_color).child(icon));
 
         // Content
         let mut content = div().flex_1().flex().flex_col().gap_1();
@@ -153,11 +148,10 @@ impl Alert {
 
             if let Some(handler) = self.on_close {
                 let handler_ptr: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
-                close_btn = close_btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    unsafe {
+                close_btn =
+                    close_btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
                         (*handler_ptr)(window, cx);
-                    }
-                });
+                    });
                 std::mem::forget(handler);
             }
 

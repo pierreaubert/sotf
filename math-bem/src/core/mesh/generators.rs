@@ -87,7 +87,11 @@ pub fn generate_sphere_mesh(radius: f64, n_theta: usize, n_phi: usize) -> Mesh {
     let last_row_start = 1 + (n_theta - 2) * n_phi;
     for j in 0..n_phi {
         let j_next = (j + 1) % n_phi;
-        elements.push(vec![last_row_start + j, south_pole_idx, last_row_start + j_next]);
+        elements.push(vec![
+            last_row_start + j,
+            south_pole_idx,
+            last_row_start + j_next,
+        ]);
     }
 
     create_mesh_from_data(nodes, elements, radius)
@@ -377,7 +381,12 @@ pub fn generate_closed_cylinder_mesh(
     let outer_bottom_ring = bottom_center_idx + 1 + (n_cap_rings - 1) * n_circumference;
     for j in 0..n_circumference {
         let j_next = (j + 1) % n_circumference;
-        elements.push(vec![outer_bottom_ring + j, outer_bottom_ring + j_next, j_next, j]);
+        elements.push(vec![
+            outer_bottom_ring + j,
+            outer_bottom_ring + j_next,
+            j_next,
+            j,
+        ]);
     }
 
     // Top cap (similar structure, opposite winding)
@@ -423,7 +432,11 @@ pub fn generate_closed_cylinder_mesh(
 }
 
 /// Create a Mesh struct from raw node and element data
-fn create_mesh_from_data(nodes: Vec<[f64; 3]>, connectivity: Vec<Vec<usize>>, _char_length: f64) -> Mesh {
+fn create_mesh_from_data(
+    nodes: Vec<[f64; 3]>,
+    connectivity: Vec<Vec<usize>>,
+    _char_length: f64,
+) -> Mesh {
     let n_nodes = nodes.len();
     let n_elements = connectivity.len();
 
@@ -642,7 +655,12 @@ mod tests {
         // Check all nodes are on cylinder surface
         for i in 0..mesh.nodes.nrows() {
             let r = (mesh.nodes[[i, 0]].powi(2) + mesh.nodes[[i, 1]].powi(2)).sqrt();
-            assert!((r - 1.0).abs() < 1e-10, "Node {} not on cylinder: r={}", i, r);
+            assert!(
+                (r - 1.0).abs() < 1e-10,
+                "Node {} not on cylinder: r={}",
+                i,
+                r
+            );
         }
 
         // Check elements are valid quads

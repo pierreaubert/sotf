@@ -1,10 +1,10 @@
 //! Library screen rendering functions
 
-use crate::ui::components::album_card::{AlbumCard, AlbumCardMode};
 use crate::ui::PlayerView;
-use gpui_ui_kit::{Button, ButtonVariant, ButtonSize};
+use crate::ui::components::album_card::{AlbumCard, AlbumCardMode};
 use gpui::prelude::*;
 use gpui::{img, uniform_list, *};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use std::sync::Arc;
 
 impl PlayerView {
@@ -38,7 +38,9 @@ impl PlayerView {
         let is_search_mode = input_mode == crate::app::InputMode::Search;
 
         let content = match library_view_mode {
-            crate::app::LibraryViewMode::TreeView => self.render_library_tree(cx).into_any_element(),
+            crate::app::LibraryViewMode::TreeView => {
+                self.render_library_tree(cx).into_any_element()
+            }
             crate::app::LibraryViewMode::Grid => self.render_library_grid(cx).into_any_element(),
             crate::app::LibraryViewMode::Flat => self.render_library_flat(cx).into_any_element(),
         };
@@ -338,10 +340,15 @@ impl PlayerView {
             .bg(theme.background)
             .border_t_1()
             .border_color(theme.border)
-            .child(div().text_sm().text_color(theme.text_secondary).child(format!(
-                "Page {} of {} ({} items/page)",
-                current_page, total_pages, items_per_page
-            )))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.text_secondary)
+                    .child(format!(
+                        "Page {} of {} ({} items/page)",
+                        current_page, total_pages, items_per_page
+                    )),
+            )
             .child(
                 div()
                     .flex()
@@ -405,7 +412,11 @@ impl PlayerView {
             // Convert to Arc for efficient cloning in render callback
             let albums: Vec<Arc<sotf_audio_player::Album>> =
                 filtered.into_iter().cloned().map(Arc::new).collect();
-            (albums, state.app.selected_album_index, state.app.theme.clone())
+            (
+                albums,
+                state.app.selected_album_index,
+                state.app.theme.clone(),
+            )
         };
 
         let album_count = albums.len();
@@ -420,56 +431,56 @@ impl PlayerView {
             .flex_1()
             .p_2()
             .child(
-                uniform_list(
-                    "album-list-flat",
-                    album_count,
-                    {
-                        let albums = albums.clone();
-                        let theme = theme.clone();
-                        let state_entity = state_entity.clone();
-                        move |range, _window, cx| {
-                            range
-                                .map(|idx| {
-                                    let album = albums[idx].clone();
-                                    let is_selected = selected_album_index == idx;
-                                    let theme = theme.clone();
-                                    let state_entity = state_entity.clone();
+                uniform_list("album-list-flat", album_count, {
+                    let albums = albums.clone();
+                    let theme = theme.clone();
+                    let state_entity = state_entity.clone();
+                    move |range, _window, cx| {
+                        range
+                            .map(|idx| {
+                                let album = albums[idx].clone();
+                                let is_selected = selected_album_index == idx;
+                                let theme = theme.clone();
+                                let state_entity = state_entity.clone();
 
-                                    // Wrap AlbumCard in a container with click handlers
-                                    div()
-                                        .id(SharedString::from(format!("album-flat-{}", idx)))
-                                        .mb_2()
-                                        .on_mouse_up(MouseButton::Left, {
-                                            let state_entity = state_entity.clone();
-                                            move |_event, _window, cx| {
-                                                state_entity.update(cx, |state, cx| {
-                                                    state.app.selected_album_index = idx;
-                                                    cx.notify();
-                                                });
-                                            }
-                                        })
-                                        .on_mouse_up(MouseButton::Right, {
-                                            let state_entity = state_entity.clone();
-                                            move |event: &MouseUpEvent, _window, cx| {
-                                                state_entity.update(cx, |state, cx| {
-                                                    state.app.selected_album_index = idx;
-                                                    state.app.context_menu =
-                                                        Some(crate::app::ContextMenuState {
-                                                            menu_type: crate::app::ContextMenuType::Album,
-                                                            position_x: event.position.x.into(),
-                                                            position_y: event.position.y.into(),
-                                                            item_index: idx,
-                                                        });
-                                                    cx.notify();
-                                                });
-                                            }
-                                        })
-                                        .child(AlbumCard::new(album, idx, is_selected, theme).mode(AlbumCardMode::List))
-                                })
-                                .collect()
-                        }
-                    },
-                )
+                                // Wrap AlbumCard in a container with click handlers
+                                div()
+                                    .id(SharedString::from(format!("album-flat-{}", idx)))
+                                    .mb_2()
+                                    .on_mouse_up(MouseButton::Left, {
+                                        let state_entity = state_entity.clone();
+                                        move |_event, _window, cx| {
+                                            state_entity.update(cx, |state, cx| {
+                                                state.app.selected_album_index = idx;
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                                    .on_mouse_up(MouseButton::Right, {
+                                        let state_entity = state_entity.clone();
+                                        move |event: &MouseUpEvent, _window, cx| {
+                                            state_entity.update(cx, |state, cx| {
+                                                state.app.selected_album_index = idx;
+                                                state.app.context_menu =
+                                                    Some(crate::app::ContextMenuState {
+                                                        menu_type:
+                                                            crate::app::ContextMenuType::Album,
+                                                        position_x: event.position.x.into(),
+                                                        position_y: event.position.y.into(),
+                                                        item_index: idx,
+                                                    });
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                                    .child(
+                                        AlbumCard::new(album, idx, is_selected, theme)
+                                            .mode(AlbumCardMode::List),
+                                    )
+                            })
+                            .collect()
+                    }
+                })
                 .track_scroll(&self.library_scroll_handle)
                 .size_full()
                 .with_sizing_behavior(ListSizingBehavior::Infer),
@@ -522,12 +533,7 @@ impl PlayerView {
                                 .gap_2()
                                 .child(if *expanded { "▼" } else { "▶" })
                                 .child(letter.to_string())
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("-"),
-                                ),
+                                .child(div().text_xs().text_color(theme.text_muted).child("-")),
                         ),
                     crate::app::TreeItem::Album { index } => {
                         let album = &albums[*index];
@@ -542,8 +548,9 @@ impl PlayerView {
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    view.state
-                                        .update(cx, |state, _cx| state.app.selected_tree_index = idx);
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.selected_tree_index = idx
+                                    });
                                     cx.notify();
                                 }),
                             )
@@ -553,16 +560,12 @@ impl PlayerView {
                                     .justify_between()
                                     .w_full()
                                     .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .child(album.title.clone())
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(theme.text_muted)
-                                                    .child(album.artist()),
-                                            ),
+                                        div().flex().flex_col().child(album.title.clone()).child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child(album.artist()),
+                                        ),
                                     )
                                     .child(
                                         div()
@@ -599,119 +602,111 @@ impl PlayerView {
             .flex_1()
             .overflow_y_scroll()
             .children(albums.iter().enumerate().map(|(idx, album)| {
-            let is_selected = selected_album_index == idx;
-            let theme = theme.clone();
-            let has_thumbnail = album.album_art_thumbnail.is_some();
+                let is_selected = selected_album_index == idx;
+                let theme = theme.clone();
+                let has_thumbnail = album.album_art_thumbnail.is_some();
 
-            div()
-                .id(SharedString::from(format!("album-card-{}", idx)))
-                .w(px(card_width))
-                .flex()
-                .flex_col()
-                .items_center()
-                .p_2()
-                .rounded_lg()
-                .when(is_selected, |d| d.bg(theme.accent))
-                .when(!is_selected, |d| d.bg(theme.surface))
-                .hover(|style| style.bg(theme.surface_hover))
-                .cursor_pointer()
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                        view.state.update(cx, |state, _cx| {
-                            state.app.selected_album_index = idx;
-                        });
-                        cx.notify();
-                    }),
-                )
-                .on_mouse_up(
-                    MouseButton::Right,
-                    cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
-                        view.state.update(cx, |state, _cx| {
-                            state.app.selected_album_index = idx;
-                            state.app.context_menu = Some(crate::app::ContextMenuState {
-                                menu_type: crate::app::ContextMenuType::Album,
-                                position_x: event.position.x.into(),
-                                position_y: event.position.y.into(),
-                                item_index: idx,
+                div()
+                    .id(SharedString::from(format!("album-card-{}", idx)))
+                    .w(px(card_width))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .p_2()
+                    .rounded_lg()
+                    .when(is_selected, |d| d.bg(theme.accent))
+                    .when(!is_selected, |d| d.bg(theme.surface))
+                    .hover(|style| style.bg(theme.surface_hover))
+                    .cursor_pointer()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.selected_album_index = idx;
                             });
-                        });
-                        cx.notify();
-                    }),
-                )
-                // Album art thumbnail or placeholder
-                .child(
-                    div()
-                        .w(px(thumbnail_size))
-                        .h(px(thumbnail_size))
-                        .rounded_md()
-                        .overflow_hidden()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(has_thumbnail, |d| {
-                            // Use album art path if available
-                            if let Some(ref path) = album.album_art_path {
-                                d.child(
-                                    img(path.clone())
-                                        .w(px(thumbnail_size))
-                                        .h(px(thumbnail_size))
-                                        .object_fit(gpui::ObjectFit::Cover)
-                                )
-                            } else {
-                                // Fallback to placeholder even if has_thumbnail is true
-                                d.child(
-                                    div()
-                                        .text_3xl()
-                                        .text_color(theme.text_muted)
-                                        .child("♪")
-                                )
-                            }
-                        })
-                        .when(!has_thumbnail, |d| {
-                            d.child(
-                                div()
-                                    .text_3xl()
-                                    .text_color(theme.text_muted)
-                                    .child("♪")
-                            )
-                        })
-                )
-                // Album title
-                .child(
-                    div()
-                        .w_full()
-                        .mt_2()
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_primary)
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap()
-                        .child(album.title.clone())
-                )
-                // Artist name
-                .child(
-                    div()
-                        .w_full()
-                        .text_xs()
-                        .text_color(theme.text_secondary)
-                        .overflow_hidden()
-                        .text_ellipsis()
-                        .whitespace_nowrap()
-                        .child(album.artist())
-                )
-                // Track count
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child(format!("{} tracks", album.tracks.len()))
-                )
-        }));
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_up(
+                        MouseButton::Right,
+                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                state.app.selected_album_index = idx;
+                                state.app.context_menu = Some(crate::app::ContextMenuState {
+                                    menu_type: crate::app::ContextMenuType::Album,
+                                    position_x: event.position.x.into(),
+                                    position_y: event.position.y.into(),
+                                    item_index: idx,
+                                });
+                            });
+                            cx.notify();
+                        }),
+                    )
+                    // Album art thumbnail or placeholder
+                    .child(
+                        div()
+                            .w(px(thumbnail_size))
+                            .h(px(thumbnail_size))
+                            .rounded_md()
+                            .overflow_hidden()
+                            .bg(theme.background_secondary)
+                            .border_1()
+                            .border_color(theme.border)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(has_thumbnail, |d| {
+                                // Use album art path if available
+                                if let Some(ref path) = album.album_art_path {
+                                    d.child(
+                                        img(path.clone())
+                                            .w(px(thumbnail_size))
+                                            .h(px(thumbnail_size))
+                                            .object_fit(gpui::ObjectFit::Cover),
+                                    )
+                                } else {
+                                    // Fallback to placeholder even if has_thumbnail is true
+                                    d.child(
+                                        div().text_3xl().text_color(theme.text_muted).child("♪"),
+                                    )
+                                }
+                            })
+                            .when(!has_thumbnail, |d| {
+                                d.child(div().text_3xl().text_color(theme.text_muted).child("♪"))
+                            }),
+                    )
+                    // Album title
+                    .child(
+                        div()
+                            .w_full()
+                            .mt_2()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .child(album.title.clone()),
+                    )
+                    // Artist name
+                    .child(
+                        div()
+                            .w_full()
+                            .text_xs()
+                            .text_color(theme.text_secondary)
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .child(album.artist()),
+                    )
+                    // Track count
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .child(format!("{} tracks", album.tracks.len())),
+                    )
+            }));
 
         grid
     }
@@ -728,7 +723,11 @@ impl PlayerView {
         let is_active = current_sort == sort_order;
 
         Button::new(SharedString::from(format!("sort-btn-{}", label)), label)
-            .variant(if is_active { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+            .variant(if is_active {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Secondary
+            })
             .size(ButtonSize::Xs)
             .selected(is_active)
             .theme(theme.to_button_theme())
@@ -756,7 +755,11 @@ impl PlayerView {
         let is_active = current_filter == filter;
 
         Button::new(SharedString::from(format!("filter-btn-{}", label)), label)
-            .variant(if is_active { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+            .variant(if is_active {
+                ButtonVariant::Primary
+            } else {
+                ButtonVariant::Secondary
+            })
             .size(ButtonSize::Xs)
             .selected(is_active)
             .theme(theme.to_button_theme())

@@ -38,14 +38,13 @@ fn relative_error(computed: f64, reference: f64) -> f64 {
 fn l2_relative_error(computed: &[Complex64], reference: &[Complex64]) -> f64 {
     assert_eq!(computed.len(), reference.len());
 
-    let diff_sq: f64 = computed.iter()
+    let diff_sq: f64 = computed
+        .iter()
         .zip(reference.iter())
         .map(|(c, r)| (c - r).norm_sqr())
         .sum();
 
-    let ref_sq: f64 = reference.iter()
-        .map(|r| r.norm_sqr())
-        .sum();
+    let ref_sq: f64 = reference.iter().map(|r| r.norm_sqr()).sum();
 
     if ref_sq < 1e-30 {
         diff_sq.sqrt()
@@ -75,8 +74,12 @@ fn test_accuracy_rayleigh_regime() {
 
         // Create BEM problem with appropriate mesh
         let problem = BemProblem::rigid_sphere_scattering_custom(
-            radius, frequency, speed_of_sound, density,
-            8, 16, // Mesh resolution
+            radius,
+            frequency,
+            speed_of_sound,
+            density,
+            8,
+            16, // Mesh resolution
         );
 
         let solver = BemSolver::new().with_solver_method(SolverMethod::Direct);
@@ -101,8 +104,10 @@ fn test_accuracy_rayleigh_regime() {
         let bem_magnitudes: Vec<f64> = bem_field.iter().map(|fp| fp.magnitude()).collect();
 
         // Get analytical Mie solution
-        let analytical = sphere_scattering_3d(k, radius, 30, vec![eval_radius], theta_points.clone());
-        let analytical_magnitudes: Vec<f64> = analytical.pressure.iter().map(|p| p.norm()).collect();
+        let analytical =
+            sphere_scattering_3d(k, radius, 30, vec![eval_radius], theta_points.clone());
+        let analytical_magnitudes: Vec<f64> =
+            analytical.pressure.iter().map(|p| p.norm()).collect();
 
         // Compute errors
         let mut max_rel_error = 0.0f64;
@@ -113,7 +118,8 @@ fn test_accuracy_rayleigh_regime() {
             let rel_err = relative_error(bem_magnitudes[i], analytical_magnitudes[i]);
             max_rel_error = max_rel_error.max(rel_err);
 
-            println!("{:8.1}    {:10.6}   {:10.6}       {:6.2}%",
+            println!(
+                "{:8.1}    {:10.6}   {:10.6}       {:6.2}%",
                 theta * 180.0 / PI,
                 bem_magnitudes[i],
                 analytical_magnitudes[i],
@@ -124,9 +130,12 @@ fn test_accuracy_rayleigh_regime() {
         println!("\nMax relative error: {:.2}%", max_rel_error * 100.0);
 
         // Target: < 20% for Rayleigh regime (coarse mesh)
-        assert!(max_rel_error < 0.20,
+        assert!(
+            max_rel_error < 0.20,
             "ka={:.2}: Max error {:.2}% exceeds 20% target",
-            ka, max_rel_error * 100.0);
+            ka,
+            max_rel_error * 100.0
+        );
     }
 }
 
@@ -157,8 +166,12 @@ fn test_accuracy_mie_regime() {
 
         // Finer mesh for Mie regime
         let problem = BemProblem::rigid_sphere_scattering_custom(
-            radius, frequency, speed_of_sound, density,
-            10, 20,
+            radius,
+            frequency,
+            speed_of_sound,
+            density,
+            10,
+            20,
         );
 
         let solver = BemSolver::new().with_solver_method(SolverMethod::Direct);
@@ -172,8 +185,10 @@ fn test_accuracy_mie_regime() {
         let theta_points: Vec<f64> = (0..=12).map(|i| PI * i as f64 / 12.0).collect();
 
         // Get Mie solution at slightly outside surface
-        let analytical = sphere_scattering_3d(k, radius, 50, vec![eval_radius], theta_points.clone());
-        let analytical_magnitudes: Vec<f64> = analytical.pressure.iter().map(|p| p.norm()).collect();
+        let analytical =
+            sphere_scattering_3d(k, radius, 50, vec![eval_radius], theta_points.clone());
+        let analytical_magnitudes: Vec<f64> =
+            analytical.pressure.iter().map(|p| p.norm()).collect();
 
         // For each theta, find the closest element and compare its pressure
         let mut max_rel_error = 0.0f64;
@@ -187,7 +202,8 @@ fn test_accuracy_mie_regime() {
             let mut best_dist = f64::MAX;
             for (j, elem) in solution.elements.iter().enumerate() {
                 let z = elem.center[2];
-                let r = (elem.center[0].powi(2) + elem.center[1].powi(2) + elem.center[2].powi(2)).sqrt();
+                let r = (elem.center[0].powi(2) + elem.center[1].powi(2) + elem.center[2].powi(2))
+                    .sqrt();
                 let elem_theta = (z / r).acos();
                 let dist = (elem_theta - theta_target).abs();
                 if dist < best_dist {
@@ -201,8 +217,12 @@ fn test_accuracy_mie_regime() {
 
             // Skip comparison if analytical value is very small (numerical issues)
             if ana_mag < 0.1 {
-                println!("{:8.1}    {:10.6}   {:10.6}       (skipped - small ref value)",
-                    theta_target * 180.0 / PI, bem_mag, ana_mag);
+                println!(
+                    "{:8.1}    {:10.6}   {:10.6}       (skipped - small ref value)",
+                    theta_target * 180.0 / PI,
+                    bem_mag,
+                    ana_mag
+                );
                 continue;
             }
 
@@ -210,7 +230,8 @@ fn test_accuracy_mie_regime() {
             max_rel_error = max_rel_error.max(rel_err);
             errors.push(rel_err);
 
-            println!("{:8.1}    {:10.6}   {:10.6}       {:6.2}%",
+            println!(
+                "{:8.1}    {:10.6}   {:10.6}       {:6.2}%",
                 theta_target * 180.0 / PI,
                 bem_mag,
                 ana_mag,
@@ -218,7 +239,9 @@ fn test_accuracy_mie_regime() {
             );
         }
 
-        let avg_error = if errors.is_empty() { 0.0 } else {
+        let avg_error = if errors.is_empty() {
+            0.0
+        } else {
             errors.iter().sum::<f64>() / errors.len() as f64
         };
 
@@ -227,9 +250,12 @@ fn test_accuracy_mie_regime() {
 
         // Target: < 30% for Mie regime surface comparison
         // This is a reasonable target for coarse mesh BEM
-        assert!(max_rel_error < 0.30,
+        assert!(
+            max_rel_error < 0.30,
             "ka={:.2}: Max error {:.2}% exceeds 30% target",
-            ka, max_rel_error * 100.0);
+            ka,
+            max_rel_error * 100.0
+        );
     }
 }
 
@@ -251,8 +277,12 @@ fn test_accuracy_higher_frequency() {
 
     // Fine mesh required for higher ka
     let problem = BemProblem::rigid_sphere_scattering_custom(
-        radius, frequency, speed_of_sound, density,
-        12, 24,
+        radius,
+        frequency,
+        speed_of_sound,
+        density,
+        12,
+        24,
     );
 
     let solver = BemSolver::new().with_solver_method(SolverMethod::Direct);
@@ -286,9 +316,12 @@ fn test_accuracy_higher_frequency() {
     println!("Max relative error: {:.2}%", max_rel_error * 100.0);
 
     // Target: < 35% for ka=2 with medium mesh
-    assert!(max_rel_error < 0.35,
+    assert!(
+        max_rel_error < 0.35,
         "ka={:.2}: Max error {:.2}% exceeds 35% target",
-        ka, max_rel_error * 100.0);
+        ka,
+        max_rel_error * 100.0
+    );
 }
 
 /// Test mesh convergence - error should decrease with mesh refinement
@@ -309,8 +342,9 @@ fn test_mesh_convergence() {
     let theta = PI / 4.0;
     let eval_point = Array2::from_shape_vec(
         (1, 3),
-        vec![eval_radius * theta.sin(), 0.0, eval_radius * theta.cos()]
-    ).unwrap();
+        vec![eval_radius * theta.sin(), 0.0, eval_radius * theta.cos()],
+    )
+    .unwrap();
 
     // Analytical reference
     let analytical = sphere_scattering_3d(k, radius, 50, vec![eval_radius], vec![theta]);
@@ -326,8 +360,12 @@ fn test_mesh_convergence() {
 
     for (n_theta, n_phi) in mesh_sizes {
         let problem = BemProblem::rigid_sphere_scattering_custom(
-            radius, frequency, speed_of_sound, density,
-            n_theta, n_phi,
+            radius,
+            frequency,
+            speed_of_sound,
+            density,
+            n_theta,
+            n_phi,
         );
 
         let solver = BemSolver::new();
@@ -340,27 +378,37 @@ fn test_mesh_convergence() {
         errors.push(error);
         dofs.push(solution.num_dofs());
 
-        println!("{:2}x{:2}    {:4}    {:10.6}   {:10.6}   {:6.2}%",
-            n_theta, n_phi,
+        println!(
+            "{:2}x{:2}    {:4}    {:10.6}   {:10.6}   {:6.2}%",
+            n_theta,
+            n_phi,
             solution.num_dofs(),
-            p_bem, p_analytical,
+            p_bem,
+            p_analytical,
             error * 100.0
         );
     }
 
     // Check that finest mesh has lowest error
-    let min_error_idx = errors.iter()
+    let min_error_idx = errors
+        .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .map(|(i, _)| i)
         .unwrap();
 
-    println!("\nBest result: mesh {} with {:.2}% error", min_error_idx + 1, errors[min_error_idx] * 100.0);
+    println!(
+        "\nBest result: mesh {} with {:.2}% error",
+        min_error_idx + 1,
+        errors[min_error_idx] * 100.0
+    );
 
     // The finest mesh should give reasonable results
-    assert!(errors[errors.len() - 1] < 0.25,
+    assert!(
+        errors[errors.len() - 1] < 0.25,
         "Finest mesh should achieve < 25% error, got {:.2}%",
-        errors[errors.len() - 1] * 100.0);
+        errors[errors.len() - 1] * 100.0
+    );
 }
 
 /// Test forward vs backscatter ratio
@@ -381,8 +429,12 @@ fn test_forward_backscatter_ratio() {
     println!("\n=== Forward/Backscatter Ratio Test ===");
 
     let problem = BemProblem::rigid_sphere_scattering_custom(
-        radius, frequency, speed_of_sound, density,
-        10, 20,
+        radius,
+        frequency,
+        speed_of_sound,
+        density,
+        10,
+        20,
     );
 
     let solver = BemSolver::new();
@@ -394,10 +446,15 @@ fn test_forward_backscatter_ratio() {
     let eval_points = Array2::from_shape_vec(
         (2, 3),
         vec![
-            0.0, 0.0, eval_radius,   // Forward
-            0.0, 0.0, -eval_radius,  // Back
-        ]
-    ).unwrap();
+            0.0,
+            0.0,
+            eval_radius, // Forward
+            0.0,
+            0.0,
+            -eval_radius, // Back
+        ],
+    )
+    .unwrap();
 
     let bem_field = solution.evaluate_pressure_field(&eval_points);
     let p_forward = bem_field[0].magnitude();
@@ -422,13 +479,18 @@ fn test_forward_backscatter_ratio() {
 
     // Forward should generally be larger than back at ka=1
     // (wave enhancement at stagnation point)
-    assert!(p_forward > 0.0 && p_back > 0.0, "Pressures should be positive");
+    assert!(
+        p_forward > 0.0 && p_back > 0.0,
+        "Pressures should be positive"
+    );
 
     // Ratio should be within 50% of analytical
     let ratio_error = relative_error(bem_ratio, ana_ratio);
-    assert!(ratio_error < 0.50,
+    assert!(
+        ratio_error < 0.50,
         "Forward/back ratio error {:.2}% exceeds 50% target",
-        ratio_error * 100.0);
+        ratio_error * 100.0
+    );
 }
 
 /// Test pressure phase accuracy
@@ -448,8 +510,12 @@ fn test_pressure_phase() {
     println!("\n=== Phase Accuracy Test ===");
 
     let problem = BemProblem::rigid_sphere_scattering_custom(
-        radius, frequency, speed_of_sound, density,
-        10, 20,
+        radius,
+        frequency,
+        speed_of_sound,
+        density,
+        10,
+        20,
     );
 
     let solver = BemSolver::new();
@@ -486,7 +552,8 @@ fn test_pressure_phase() {
 
         max_phase_diff = max_phase_diff.max(phase_diff);
 
-        println!("{:8.1}    {:8.3}    {:8.3}    {:6.3}",
+        println!(
+            "{:8.1}    {:8.3}    {:8.3}    {:6.3}",
             theta * 180.0 / PI,
             bem_phase * 180.0 / PI,
             ana_phase * 180.0 / PI,
@@ -494,12 +561,17 @@ fn test_pressure_phase() {
         );
     }
 
-    println!("\nMax phase difference: {:.1} degrees", max_phase_diff * 180.0 / PI);
+    println!(
+        "\nMax phase difference: {:.1} degrees",
+        max_phase_diff * 180.0 / PI
+    );
 
     // Phase should be within 45 degrees (allowing for BEM discretization error)
-    assert!(max_phase_diff < PI / 4.0,
+    assert!(
+        max_phase_diff < PI / 4.0,
         "Max phase error {:.1} deg exceeds 45 deg target",
-        max_phase_diff * 180.0 / PI);
+        max_phase_diff * 180.0 / PI
+    );
 }
 
 /// Summary test - reports overall accuracy metrics using far-field comparison
@@ -536,8 +608,12 @@ fn test_accuracy_summary() {
         let frequency = k * speed_of_sound / (2.0 * PI);
 
         let problem = BemProblem::rigid_sphere_scattering_custom(
-            radius, frequency, speed_of_sound, density,
-            n_theta, n_phi,
+            radius,
+            frequency,
+            speed_of_sound,
+            density,
+            n_theta,
+            n_phi,
         );
 
         let solver = BemSolver::new();
@@ -558,39 +634,62 @@ fn test_accuracy_summary() {
         let bem_field = solution.evaluate_pressure_field(&eval_points);
         let bem_magnitudes: Vec<f64> = bem_field.iter().map(|fp| fp.magnitude()).collect();
 
-        let analytical = sphere_scattering_3d(k, radius, 50, vec![eval_radius], theta_points.clone());
-        let analytical_magnitudes: Vec<f64> = analytical.pressure.iter().map(|p| p.norm()).collect();
+        let analytical =
+            sphere_scattering_3d(k, radius, 50, vec![eval_radius], theta_points.clone());
+        let analytical_magnitudes: Vec<f64> =
+            analytical.pressure.iter().map(|p| p.norm()).collect();
 
         // Compute errors, skipping small reference values
         let mut errors = Vec::new();
         for (i, _) in theta_points.iter().enumerate() {
             let ana_mag = analytical_magnitudes[i];
-            if ana_mag < 0.1 { continue; }
+            if ana_mag < 0.1 {
+                continue;
+            }
             let rel_err = relative_error(bem_magnitudes[i], ana_mag);
             errors.push(rel_err);
         }
 
         let max_err = errors.iter().cloned().fold(0.0f64, f64::max);
-        let avg_err = if errors.is_empty() { 0.0 } else {
+        let avg_err = if errors.is_empty() {
+            0.0
+        } else {
             errors.iter().sum::<f64>() / errors.len() as f64
         };
 
         // Threshold depends on ka
         // Far-field evaluation has larger errors than surface comparison due to
         // propagation of discretization errors through the representation formula
-        let threshold = if ka < 0.5 { 0.10 } else if ka < 1.5 { 0.70 } else { 0.35 };
+        let threshold = if ka < 0.5 {
+            0.10
+        } else if ka < 1.5 {
+            0.70
+        } else {
+            0.35
+        };
         let passed = max_err < threshold;
         all_passed = all_passed && passed;
 
-        println!("{:10}  {:4.1}   {:4}   {:6.1}%   {:6.1}%   {}",
-            name, ka, solution.num_dofs(),
-            max_err * 100.0, avg_err * 100.0,
+        println!(
+            "{:10}  {:4.1}   {:4}   {:6.1}%   {:6.1}%   {}",
+            name,
+            ka,
+            solution.num_dofs(),
+            max_err * 100.0,
+            avg_err * 100.0,
             if passed { "✓" } else { "✗" }
         );
     }
 
     println!("\n---------------------------------------------------");
-    println!("Overall: {}", if all_passed { "ALL TESTS PASSED" } else { "SOME TESTS FAILED" });
+    println!(
+        "Overall: {}",
+        if all_passed {
+            "ALL TESTS PASSED"
+        } else {
+            "SOME TESTS FAILED"
+        }
+    );
 
     assert!(all_passed, "Some accuracy tests failed - see report above");
 }

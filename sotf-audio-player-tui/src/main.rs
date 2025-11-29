@@ -1,7 +1,3 @@
-use sotf_audio_player_tui::app::{App, InputMode, Screen};
-use sotf_audio_player_tui::events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
-use sotf_audio_player_tui::theme;
-use sotf_audio_player_tui::ui;
 use clap::Parser;
 use crossterm::{
     execute,
@@ -10,6 +6,10 @@ use crossterm::{
 use ratatui::{Terminal, backend::CrosstermBackend};
 use sotf_audio::run_preflight_checks;
 use sotf_audio_player::{Player, PluginSettings, PluginType};
+use sotf_audio_player_tui::app::{App, InputMode, Screen};
+use sotf_audio_player_tui::events::{AppEvent, PlayerCommand, handle_events, handle_key_event};
+use sotf_audio_player_tui::theme;
+use sotf_audio_player_tui::ui;
 use std::fs::OpenOptions;
 use std::io;
 use std::path::PathBuf;
@@ -42,8 +42,8 @@ struct Args {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging to file to avoid corrupting the TUI
-    let log_path = sotf_audio_player::config::get_tui_log_path()
-        .ok_or("Could not determine log file path")?;
+    let log_path =
+        sotf_audio_player::config::get_tui_log_path().ok_or("Could not determine log file path")?;
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)

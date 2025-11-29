@@ -16,8 +16,10 @@ fn main() {
     let k = 2.0 * PI * frequency / speed_of_sound;
 
     println!("=== Analytical Values Check ===\n");
-    println!("ka = {:.2}, k = {:.4}, radius = {}, frequency = {:.2} Hz",
-             ka_target, k, radius, frequency);
+    println!(
+        "ka = {:.2}, k = {:.4}, radius = {}, frequency = {:.2} Hz",
+        ka_target, k, radius, frequency
+    );
 
     // Mie theory at the surface
     let theta_angles: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0 * PI / 180.0).collect();
@@ -28,8 +30,13 @@ fn main() {
     println!("--------|-----------------|----------");
     for (i, &theta) in theta_angles.iter().enumerate() {
         let p = mie.pressure[i];
-        println!("{:>7.0}° | {:.4}+{:.4}i | {:.4}",
-                 theta * 180.0 / PI, p.re, p.im, p.norm());
+        println!(
+            "{:>7.0}° | {:.4}+{:.4}i | {:.4}",
+            theta * 180.0 / PI,
+            p.re,
+            p.im,
+            p.norm()
+        );
     }
 
     // Expected incident field at surface
@@ -42,9 +49,9 @@ fn main() {
     let mut normals = Array2::zeros((theta_angles.len(), 3));
     for (i, &theta) in theta_angles.iter().enumerate() {
         // Point on sphere at angle theta (spherical coords: z = r*cos(theta), x = r*sin(theta))
-        centers[[i, 0]] = radius * theta.sin();  // x
-        centers[[i, 1]] = 0.0;                    // y
-        centers[[i, 2]] = radius * theta.cos();  // z
+        centers[[i, 0]] = radius * theta.sin(); // x
+        centers[[i, 1]] = 0.0; // y
+        centers[[i, 2]] = radius * theta.cos(); // z
 
         // Normal pointing outward
         normals[[i, 0]] = theta.sin();
@@ -65,8 +72,17 @@ fn main() {
         let p = p_inc_values[i];
         let dpdn = dpdn_values[i];
         let rhs = rhs_values[i];
-        println!("{:>7.0}° | {:.4}+{:.4}i | {:.4}+{:.4}i | {:.4}+{:.4}i (|.|={:.4})",
-                 theta * 180.0 / PI, p.re, p.im, dpdn.re, dpdn.im, rhs.re, rhs.im, rhs.norm());
+        println!(
+            "{:>7.0}° | {:.4}+{:.4}i | {:.4}+{:.4}i | {:.4}+{:.4}i (|.|={:.4})",
+            theta * 180.0 / PI,
+            p.re,
+            p.im,
+            dpdn.re,
+            dpdn.im,
+            rhs.re,
+            rhs.im,
+            rhs.norm()
+        );
     }
 
     // What should the solution be?
@@ -74,8 +90,10 @@ fn main() {
     println!("At ka = 0.2 (Rayleigh regime), total surface pressure |p| ≈ 1");
 
     // For reference, compute incident pressure magnitude
-    let avg_p_inc: f64 = p_inc_values.iter().map(|x| x.norm()).sum::<f64>() / p_inc_values.len() as f64;
-    let avg_mie: f64 = mie.pressure.iter().map(|x| x.norm()).sum::<f64>() / mie.pressure.len() as f64;
+    let avg_p_inc: f64 =
+        p_inc_values.iter().map(|x| x.norm()).sum::<f64>() / p_inc_values.len() as f64;
+    let avg_mie: f64 =
+        mie.pressure.iter().map(|x| x.norm()).sum::<f64>() / mie.pressure.len() as f64;
     let avg_rhs: f64 = rhs_values.iter().map(|x| x.norm()).sum::<f64>() / rhs_values.len() as f64;
 
     println!("\nAverage |p_inc| = {:.4}", avg_p_inc);
@@ -84,9 +102,14 @@ fn main() {
     println!("β = {:.4}+{:.4}i", beta.re, beta.im);
 
     // Check: if A*p = b, and A ≈ 0.5*I (dominant diagonal), then p ≈ 2*b
-    println!("\nIf matrix was just 0.5*I, solution would be: 2 * RHS ≈ {:.4}", 2.0 * avg_rhs);
-    println!("But BEM gives |p| ≈ 4-6, which is about {}x expected",
-             4.0 / avg_mie);
+    println!(
+        "\nIf matrix was just 0.5*I, solution would be: 2 * RHS ≈ {:.4}",
+        2.0 * avg_rhs
+    );
+    println!(
+        "But BEM gives |p| ≈ 4-6, which is about {}x expected",
+        4.0 / avg_mie
+    );
 }
 
 #[cfg(not(feature = "pure-rust"))]

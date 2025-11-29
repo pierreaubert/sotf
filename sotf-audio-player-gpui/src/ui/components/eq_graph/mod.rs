@@ -14,8 +14,14 @@ pub mod legend;
 
 use axis::{FrequencyAxis, SplAxis};
 use grid::{GridConfig, render_grid};
-use label::{LabelConfig, render_db_labels_vertical, render_freq_labels_horizontal, db_label_width, freq_label_height, format_frequency};
-use legend::{LegendConfig, LegendEntry, LegendPosition, legend_dimensions, render_legend_right, render_legend_below};
+use label::{
+    LabelConfig, db_label_width, format_frequency, freq_label_height, render_db_labels_vertical,
+    render_freq_labels_horizontal,
+};
+use legend::{
+    LegendConfig, LegendEntry, LegendPosition, legend_dimensions, render_legend_below,
+    render_legend_right,
+};
 
 use crate::theme::Theme;
 use autoeq_iir::Biquad;
@@ -128,8 +134,13 @@ fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
     filters
         .iter()
         .map(|f| {
-            let biquad =
-                Biquad::new(f.filter_type.clone(), f.frequency, SAMPLE_RATE, f.q, f.gain_db);
+            let biquad = Biquad::new(
+                f.filter_type.clone(),
+                f.frequency,
+                SAMPLE_RATE,
+                f.q,
+                f.gain_db,
+            );
             biquad.log_result(freq)
         })
         .sum()
@@ -231,11 +242,7 @@ pub fn render_freq_response_graph(
                         ))
                         // Response visualization
                         .when(config.show_response_curve, |el| {
-                            el.child(render_response_bars(
-                                &responses,
-                                &config.spl_axis,
-                                &theme,
-                            ))
+                            el.child(render_response_bars(&responses, &config.spl_axis, &theme))
                         })
                         // Filter point indicators
                         .child(render_filter_points(
@@ -389,13 +396,7 @@ pub fn render_eq_band_controls(
                         .flex()
                         .items_center()
                         .gap_1()
-                        .child(
-                            div()
-                                .w(px(8.0))
-                                .h(px(8.0))
-                                .rounded_full()
-                                .bg(color),
-                        )
+                        .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(color))
                         .child(
                             div()
                                 .text_xs()
@@ -454,14 +455,11 @@ pub fn render_eq_visualization(
 /// Legacy compatibility: Frequency axis labels
 pub fn render_freq_labels(theme: &Theme) -> impl IntoElement {
     let freq_labels = ["20Hz", "100", "1k", "10k", "20kHz"];
-    div()
-        .flex()
-        .justify_between()
-        .w_full()
-        .px_2()
-        .children(freq_labels.iter().map(|label| {
-            div().text_xs().text_color(theme.text_muted).child(*label)
-        }))
+    div().flex().justify_between().w_full().px_2().children(
+        freq_labels
+            .iter()
+            .map(|label| div().text_xs().text_color(theme.text_muted).child(*label)),
+    )
 }
 
 /// Legacy compatibility: dB axis labels
@@ -473,7 +471,9 @@ pub fn render_db_labels(theme: &Theme) -> impl IntoElement {
         .justify_between()
         .h_full()
         .pr_2()
-        .children(db_labels.iter().map(|label| {
-            div().text_xs().text_color(theme.text_muted).child(*label)
-        }))
+        .children(
+            db_labels
+                .iter()
+                .map(|label| div().text_xs().text_color(theme.text_muted).child(*label)),
+        )
 }

@@ -1062,11 +1062,11 @@ impl MusicDatabase {
         let mut albums = Vec::new();
         let album_rows = albums_stmt.query_map([], |row| {
             Ok((
-                row.get::<_, i64>(0)?,               // id
-                row.get::<_, String>(1)?,            // title
-                row.get::<_, Option<i64>>(2)?,       // year
-                row.get::<_, Option<String>>(3)?,    // album_art_path
-                row.get::<_, Option<Vec<u8>>>(4)?,   // album_art_thumbnail
+                row.get::<_, i64>(0)?,             // id
+                row.get::<_, String>(1)?,          // title
+                row.get::<_, Option<i64>>(2)?,     // year
+                row.get::<_, Option<String>>(3)?,  // album_art_path
+                row.get::<_, Option<Vec<u8>>>(4)?, // album_art_thumbnail
             ))
         })?;
 
@@ -1233,11 +1233,26 @@ impl MusicDatabase {
                 )?;
 
                 // Clear existing junction table entries for this track
-                tx.execute("DELETE FROM track_genres WHERE track_id = ?1", params![track_id])?;
-                tx.execute("DELETE FROM track_composers WHERE track_id = ?1", params![track_id])?;
-                tx.execute("DELETE FROM track_conductors WHERE track_id = ?1", params![track_id])?;
-                tx.execute("DELETE FROM track_performers WHERE track_id = ?1", params![track_id])?;
-                tx.execute("DELETE FROM track_ensembles WHERE track_id = ?1", params![track_id])?;
+                tx.execute(
+                    "DELETE FROM track_genres WHERE track_id = ?1",
+                    params![track_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM track_composers WHERE track_id = ?1",
+                    params![track_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM track_conductors WHERE track_id = ?1",
+                    params![track_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM track_performers WHERE track_id = ?1",
+                    params![track_id],
+                )?;
+                tx.execute(
+                    "DELETE FROM track_ensembles WHERE track_id = ?1",
+                    params![track_id],
+                )?;
 
                 // Insert into normalized tables and junction tables
                 // Genre, composer, and performer can contain multiple values separated by , / ;
@@ -1748,18 +1763,21 @@ impl MusicDatabase {
         let now = current_timestamp();
 
         // Get the next position (max + 1)
-        let next_position: i64 = self
-            .conn
-            .query_row(
-                "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
-                params![playlist_id],
-                |row| row.get(0),
-            )?;
+        let next_position: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?;
 
         self.conn.execute(
             "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_path, position, added_at)
              VALUES (?1, ?2, ?3, ?4)",
-            params![playlist_id, track_path.to_str().unwrap(), next_position, now],
+            params![
+                playlist_id,
+                track_path.to_str().unwrap(),
+                next_position,
+                now
+            ],
         )?;
 
         // Update playlist's updated_at
@@ -1933,9 +1951,9 @@ impl MusicDatabase {
 
     /// Get all genres in the library
     pub fn get_all_genres(&self) -> SqlResult<Vec<(i64, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name FROM genres ORDER BY name COLLATE NOCASE",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name FROM genres ORDER BY name COLLATE NOCASE")?;
 
         let genres = stmt
             .query_map([], |row| {
@@ -1948,9 +1966,9 @@ impl MusicDatabase {
 
     /// Get all composers in the library
     pub fn get_all_composers(&self) -> SqlResult<Vec<(i64, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name FROM composers ORDER BY name COLLATE NOCASE",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name FROM composers ORDER BY name COLLATE NOCASE")?;
 
         let composers = stmt
             .query_map([], |row| {
@@ -1963,9 +1981,9 @@ impl MusicDatabase {
 
     /// Get all conductors in the library
     pub fn get_all_conductors(&self) -> SqlResult<Vec<(i64, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name FROM conductors ORDER BY name COLLATE NOCASE",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name FROM conductors ORDER BY name COLLATE NOCASE")?;
 
         let conductors = stmt
             .query_map([], |row| {
@@ -1978,9 +1996,9 @@ impl MusicDatabase {
 
     /// Get all performers in the library
     pub fn get_all_performers(&self) -> SqlResult<Vec<(i64, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name FROM performers ORDER BY name COLLATE NOCASE",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name FROM performers ORDER BY name COLLATE NOCASE")?;
 
         let performers = stmt
             .query_map([], |row| {
@@ -1993,9 +2011,9 @@ impl MusicDatabase {
 
     /// Get all ensembles in the library
     pub fn get_all_ensembles(&self) -> SqlResult<Vec<(i64, String)>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name FROM ensembles ORDER BY name COLLATE NOCASE",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name FROM ensembles ORDER BY name COLLATE NOCASE")?;
 
         let ensembles = stmt
             .query_map([], |row| {

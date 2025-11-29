@@ -49,14 +49,14 @@ pub struct DirectoryInfo {
 pub struct Track {
     pub path: PathBuf,
     pub title: Option<String>,
-    pub artist: Option<String>,   // Track artist (may differ from album artist for compilations)
+    pub artist: Option<String>, // Track artist (may differ from album artist for compilations)
     pub track_number: Option<u32>,
     pub duration_secs: Option<u64>,
     pub channels: Option<u32>,
-    pub replay_gain: Option<f64>, // Track gain in dB
-    pub replay_peak: Option<f64>, // Track peak (0.0 - 1.0)
-    pub album_gain: Option<f64>,  // Album gain in dB
-    pub album_peak: Option<f64>,  // Album peak (0.0 - 1.0)
+    pub replay_gain: Option<f64>,  // Track gain in dB
+    pub replay_peak: Option<f64>,  // Track peak (0.0 - 1.0)
+    pub album_gain: Option<f64>,   // Album gain in dB
+    pub album_peak: Option<f64>,   // Album peak (0.0 - 1.0)
     pub waveform: Option<Vec<u8>>, // 128 amplitude samples (0-255) for waveform visualization
     // Extended metadata fields (from audio file tags)
     pub genre: Option<String>,
@@ -1170,20 +1170,12 @@ fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
         Ok(reader) => match reader.decode() {
             Ok(img) => img,
             Err(e) => {
-                log::warn!(
-                    "Failed to decode image {}: {}",
-                    image_path.display(),
-                    e
-                );
+                log::warn!("Failed to decode image {}: {}", image_path.display(), e);
                 return None;
             }
         },
         Err(e) => {
-            log::warn!(
-                "Failed to open image {}: {}",
-                image_path.display(),
-                e
-            );
+            log::warn!("Failed to open image {}: {}", image_path.display(), e);
             return None;
         }
     };

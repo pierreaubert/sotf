@@ -29,16 +29,21 @@ fn main() {
     let beta = physics.burton_miller_beta_scaled(2.0);
 
     // Mie reference at front, side, back
-    let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI/2.0, PI]);
+    let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI / 2.0, PI]);
     let mie_front = mie.pressure[0].norm();
     let mie_side = mie.pressure[1].norm();
     let mie_back = mie.pressure[2].norm();
 
     println!("ka = {:.2}, β = {:.4}i", ka_target, beta.im);
-    println!("Mie reference: front = {:.4}, side = {:.4}, back = {:.4}\n", mie_front, mie_side, mie_back);
+    println!(
+        "Mie reference: front = {:.4}, side = {:.4}, back = {:.4}\n",
+        mie_front, mie_side, mie_back
+    );
 
-    println!("{:>6} | {:>8} | {:>8} | {:>8} | {:>8} | {:>8}",
-             "Elems", "BEM avg", "Mie avg", "Error%", "Front%", "Back%");
+    println!(
+        "{:>6} | {:>8} | {:>8} | {:>8} | {:>8} | {:>8}",
+        "Elems", "BEM avg", "Mie avg", "Error%", "Front%", "Back%"
+    );
     println!("{}", "-".repeat(65));
 
     for subdivisions in [2, 3, 4] {
@@ -95,8 +100,10 @@ fn main() {
         let error_front = 100.0 * (bem_front - mie_front).abs() / mie_front;
         let error_back = 100.0 * (bem_back - mie_back).abs() / mie_back;
 
-        println!("{:>6} | {:>8.4} | {:>8.4} | {:>8.1} | {:>8.1} | {:>8.1}",
-                 n, avg_p, mie_avg, error_avg, error_front, error_back);
+        println!(
+            "{:>6} | {:>8.4} | {:>8.4} | {:>8.1} | {:>8.1} | {:>8.1}",
+            n, avg_p, mie_avg, error_avg, error_front, error_back
+        );
     }
 
     // Also test at ka = 0.5 where we expect better accuracy
@@ -109,16 +116,21 @@ fn main() {
     let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
     let beta = physics.burton_miller_beta_scaled(2.0);
 
-    let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI/2.0, PI]);
+    let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI / 2.0, PI]);
     let mie_front = mie.pressure[0].norm();
     let mie_side = mie.pressure[1].norm();
     let mie_back = mie.pressure[2].norm();
 
     println!("ka = {:.2}, β = {:.4}i", ka_target, beta.im);
-    println!("Mie reference: front = {:.4}, side = {:.4}, back = {:.4}\n", mie_front, mie_side, mie_back);
+    println!(
+        "Mie reference: front = {:.4}, side = {:.4}, back = {:.4}\n",
+        mie_front, mie_side, mie_back
+    );
 
-    println!("{:>6} | {:>8} | {:>8} | {:>8} | {:>8} | {:>8}",
-             "Elems", "BEM avg", "Mie avg", "Error%", "Front%", "Back%");
+    println!(
+        "{:>6} | {:>8} | {:>8} | {:>8} | {:>8} | {:>8}",
+        "Elems", "BEM avg", "Mie avg", "Error%", "Front%", "Back%"
+    );
     println!("{}", "-".repeat(65));
 
     for subdivisions in [2, 3, 4] {
@@ -174,8 +186,10 @@ fn main() {
         let error_front = 100.0 * (bem_front - mie_front).abs() / mie_front;
         let error_back = 100.0 * (bem_back - mie_back).abs() / mie_back;
 
-        println!("{:>6} | {:>8.4} | {:>8.4} | {:>8.1} | {:>8.1} | {:>8.1}",
-                 n, avg_p, mie_avg, error_avg, error_front, error_back);
+        println!(
+            "{:>6} | {:>8.4} | {:>8.4} | {:>8.1} | {:>8.1} | {:>8.1}",
+            n, avg_p, mie_avg, error_avg, error_front, error_back
+        );
     }
 }
 

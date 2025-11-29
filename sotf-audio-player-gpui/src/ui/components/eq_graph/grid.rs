@@ -122,11 +122,7 @@ pub fn render_freq_lines(
 }
 
 /// Render horizontal grid lines at dB ticks
-pub fn render_db_lines(
-    spl_axis: &SplAxis,
-    config: &GridConfig,
-    theme: &Theme,
-) -> impl IntoElement {
+pub fn render_db_lines(spl_axis: &SplAxis, config: &GridConfig, theme: &Theme) -> impl IntoElement {
     let db_positions = spl_axis.tick_positions();
 
     div()

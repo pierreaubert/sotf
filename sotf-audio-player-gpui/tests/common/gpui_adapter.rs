@@ -471,8 +471,7 @@ impl AppAdapter for GpuiAdapter {
                     if self.app.selected_directory_index >= self.app.library.directories.len()
                         && !self.app.library.directories.is_empty()
                     {
-                        self.app.selected_directory_index =
-                            self.app.library.directories.len() - 1;
+                        self.app.selected_directory_index = self.app.library.directories.len() - 1;
                     }
                 }
             }
@@ -480,9 +479,9 @@ impl AppAdapter for GpuiAdapter {
             // Device management
             Operation::SelectNextDevice => {
                 if !self.app.output_devices.is_empty() {
-                    self.app.selected_output_device_index =
-                        (self.app.selected_output_device_index + 1)
-                            .min(self.app.output_devices.len().saturating_sub(1));
+                    self.app.selected_output_device_index = (self.app.selected_output_device_index
+                        + 1)
+                    .min(self.app.output_devices.len().saturating_sub(1));
                 }
             }
             Operation::SelectPreviousDevice => {

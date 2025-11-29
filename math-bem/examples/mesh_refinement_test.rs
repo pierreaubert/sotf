@@ -31,7 +31,7 @@ fn main() {
     let theta_refs: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0 * PI / 180.0).collect();
     let mie = sphere_scattering_3d(k, radius, 50, vec![radius], theta_refs.clone());
     let mie_front = mie.pressure[0].norm();
-    let mie_side = mie.pressure[9].norm();  // 90 degrees
+    let mie_side = mie.pressure[9].norm(); // 90 degrees
     let mie_back = mie.pressure[18].norm();
 
     println!("ka = {:.2}, Mie reference:", ka_target);
@@ -40,8 +40,10 @@ fn main() {
     println!("  Back (θ=180°):  |p| = {:.4}", mie_back);
     println!();
 
-    println!("{:>12} | {:>6} | {:>10} | {:>10} | {:>10} | {:>10}",
-             "Subdivisions", "Elems", "Front err%", "Side err%", "Back err%", "Avg err%");
+    println!(
+        "{:>12} | {:>6} | {:>10} | {:>10} | {:>10} | {:>10}",
+        "Subdivisions", "Elems", "Front err%", "Side err%", "Back err%", "Avg err%"
+    );
     println!("{}", "-".repeat(75));
 
     // Test different subdivision levels
@@ -112,8 +114,10 @@ fn main() {
         let err_back = 100.0 * (bem_back - mie_back).abs() / mie_back;
         let err_avg = (err_front + err_side + err_back) / 3.0;
 
-        println!("{:>12} | {:>6} | {:>10.1}% | {:>10.1}% | {:>10.1}% | {:>10.1}%",
-                 subdivisions, n, err_front, err_side, err_back, err_avg);
+        println!(
+            "{:>12} | {:>6} | {:>10.1}% | {:>10.1}% | {:>10.1}% | {:>10.1}%",
+            subdivisions, n, err_front, err_side, err_back, err_avg
+        );
     }
 
     // Also test at ka = 0.5 where resolution should be adequate
@@ -137,8 +141,10 @@ fn main() {
     println!("  Back (θ=180°):  |p| = {:.4}", mie_back);
     println!();
 
-    println!("{:>12} | {:>6} | {:>10} | {:>10} | {:>10} | {:>10}",
-             "Subdivisions", "Elems", "Front err%", "Side err%", "Back err%", "Avg err%");
+    println!(
+        "{:>12} | {:>6} | {:>10} | {:>10} | {:>10} | {:>10}",
+        "Subdivisions", "Elems", "Front err%", "Side err%", "Back err%", "Avg err%"
+    );
     println!("{}", "-".repeat(75));
 
     for subdivisions in [1, 2, 3, 4] {
@@ -198,8 +204,10 @@ fn main() {
         let err_back = 100.0 * (bem_back - mie_back).abs() / mie_back;
         let err_avg = (err_front + err_side + err_back) / 3.0;
 
-        println!("{:>12} | {:>6} | {:>10.1}% | {:>10.1}% | {:>10.1}% | {:>10.1}%",
-                 subdivisions, n, err_front, err_side, err_back, err_avg);
+        println!(
+            "{:>12} | {:>6} | {:>10.1}% | {:>10.1}% | {:>10.1}% | {:>10.1}%",
+            subdivisions, n, err_front, err_side, err_back, err_avg
+        );
     }
 }
 

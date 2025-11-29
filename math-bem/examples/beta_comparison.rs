@@ -32,12 +32,15 @@ fn main() {
         let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
 
         // Mie reference
-        let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI/2.0, PI]);
-        let mie_avg = (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
+        let mie = sphere_scattering_3d(k, radius, 50, vec![radius], vec![0.0, PI / 2.0, PI]);
+        let mie_avg =
+            (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
 
         println!("=== ka = {:.1} === (Mie avg = {:.4})", ka_target, mie_avg);
-        println!("{:>10} | {:>10} | {:>10} | {:>10}",
-                 "β scale", "β value", "BEM avg", "Error%");
+        println!(
+            "{:>10} | {:>10} | {:>10} | {:>10}",
+            "β scale", "β value", "BEM avg", "Error%"
+        );
         println!("{}", "-".repeat(50));
 
         for &scale in &[0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0] {
@@ -45,7 +48,8 @@ fn main() {
 
             let mut elements = mesh.elements.clone();
             for (i, elem) in elements.iter_mut().enumerate() {
-                elem.boundary_condition = BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
+                elem.boundary_condition =
+                    BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
                 elem.dof_addresses = vec![i];
             }
 
@@ -72,9 +76,17 @@ fn main() {
             let avg_p: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
             let error = 100.0 * (avg_p - mie_avg).abs() / mie_avg;
 
-            let marker = if error < 20.0 { " *" } else if error < 50.0 { " ." } else { "" };
-            println!("{:>10.1} | {:>10.4}i | {:>10.4} | {:>10.1}{}",
-                     scale, beta.im, avg_p, error, marker);
+            let marker = if error < 20.0 {
+                " *"
+            } else if error < 50.0 {
+                " ."
+            } else {
+                ""
+            };
+            println!(
+                "{:>10.1} | {:>10.4}i | {:>10.4} | {:>10.1}{}",
+                scale, beta.im, avg_p, error, marker
+            );
         }
         println!();
     }

@@ -129,11 +129,8 @@ impl WithTooltip {
         let mut container = div().relative().child(self.child);
 
         if self.show_tooltip {
-            container = container.child(
-                Tooltip::new(self.tooltip)
-                    .placement(self.placement)
-                    .build(),
-            );
+            container =
+                container.child(Tooltip::new(self.tooltip).placement(self.placement).build());
         }
 
         container

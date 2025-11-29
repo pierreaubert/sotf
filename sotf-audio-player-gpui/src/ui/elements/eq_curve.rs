@@ -284,7 +284,9 @@ impl EQCurveElement {
     /// Paint grid lines for frequency and dB reference
     fn paint_grid(&self, bounds: Bounds<Pixels>, window: &mut Window) {
         // Frequency grid lines (octave-based)
-        let freq_marks = [20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+        let freq_marks = [
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
         for &freq in &freq_marks {
             let x_norm = self.freq_to_x(freq) as f32;
             if x_norm >= 0.0 && x_norm <= 1.0 {
@@ -370,12 +372,7 @@ impl EQCurveElement {
     }
 
     /// Paint the curve line using small quads
-    fn paint_curve_line(
-        &self,
-        points: &[(f64, f64)],
-        bounds: Bounds<Pixels>,
-        window: &mut Window,
-    ) {
+    fn paint_curve_line(&self, points: &[(f64, f64)], bounds: Bounds<Pixels>, window: &mut Window) {
         let origin_y: f32 = bounds.origin.y.into();
         let height: f32 = bounds.size.height.into();
         let zero_y = (origin_y + height * self.db_to_y(0.0) as f32) as f64;

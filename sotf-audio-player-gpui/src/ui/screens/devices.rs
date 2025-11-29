@@ -1,9 +1,11 @@
 //! Devices screen rendering functions
 
 use crate::ui::PlayerView;
-use gpui_ui_kit::{Badge, BadgeVariant, Text, TextSize, TextWeight, HStack, VStack, StackSpacing, Heading};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{
+    Badge, BadgeVariant, HStack, Heading, StackSpacing, Text, TextSize, TextWeight, VStack,
+};
 
 impl PlayerView {
     pub(crate) fn render_devices_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -12,9 +14,7 @@ impl PlayerView {
 
         VStack::new()
             .spacing(StackSpacing::Lg)
-            .child(
-                Heading::h2("Audio Output Devices")
-            )
+            .child(Heading::h2("Audio Output Devices"))
             .child(
                 // Grid layout with 2 columns
                 div().grid().grid_cols(2).gap_3().flex_1().children(
@@ -45,13 +45,12 @@ impl PlayerView {
                                 .rounded_lg()
                                 .border_1()
                                 .when(is_selected, |d| {
-                                    d.bg(theme.accent_muted)
-                                     .border_color(theme.accent)
+                                    d.bg(theme.accent_muted).border_color(theme.accent)
                                 })
                                 .when(!is_selected, |d| {
                                     d.bg(theme.surface)
-                                     .border_color(theme.border)
-                                     .hover(|s| s.bg(theme.surface_hover))
+                                        .border_color(theme.border)
+                                        .hover(|s| s.bg(theme.surface_hover))
                                 })
                                 .cursor_pointer()
                                 .on_mouse_up(
@@ -93,32 +92,30 @@ impl PlayerView {
                                             Text::new(device_name)
                                                 .size(TextSize::Sm)
                                                 .weight(TextWeight::Semibold)
-                                                .color(theme.text_primary)
+                                                .color(theme.text_primary),
                                         )
                                         .child(
                                             HStack::new()
                                                 .spacing(StackSpacing::Md)
                                                 .child(
                                                     Badge::new(format!("{} ch", channels))
-                                                        .variant(BadgeVariant::Default)
+                                                        .variant(BadgeVariant::Default),
                                                 )
                                                 .child(
-                                                    Badge::new(
-                                                        if sample_rate >= 1000 {
-                                                            format!("{} kHz", sample_rate / 1000)
-                                                        } else {
-                                                            format!("{} Hz", sample_rate)
-                                                        }
-                                                    )
-                                                    .variant(BadgeVariant::Default)
-                                                )
+                                                    Badge::new(if sample_rate >= 1000 {
+                                                        format!("{} kHz", sample_rate / 1000)
+                                                    } else {
+                                                        format!("{} Hz", sample_rate)
+                                                    })
+                                                    .variant(BadgeVariant::Default),
+                                                ),
                                         )
                                         .when(is_default, |v| {
                                             v.child(
                                                 Badge::new("Default")
-                                                    .variant(BadgeVariant::Success)
+                                                    .variant(BadgeVariant::Success),
                                             )
-                                        })
+                                        }),
                                 )
                         }),
                 ),

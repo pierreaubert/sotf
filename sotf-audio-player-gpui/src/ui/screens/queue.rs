@@ -1,8 +1,8 @@
 //! Queue screen rendering functions
 
 use crate::theme::Theme;
-use crate::ui::components::plugins::{MeterTheme, TickConfig, render_tick_row};
 use crate::ui::PlayerView;
+use crate::ui::components::plugins::{MeterTheme, TickConfig, render_tick_row};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -25,7 +25,6 @@ fn db_to_position(db: f64) -> f32 {
     normalized.clamp(0.0, 1.0) as f32
 }
 
-
 impl PlayerView {
     /// Render a single meter group with M/S/D buttons below the channels
     fn render_meter_group(
@@ -42,24 +41,33 @@ impl PlayerView {
         let dimmed = group.dimmed;
 
         // Pre-compute channel data to avoid closure issues with cx
-        let channel_data: Vec<_> = group.channels.iter().map(|channel| {
-            let peak = loudness
-                .and_then(|l| l.channel_peaks.get(channel.index))
-                .copied()
-                .unwrap_or(0.0);
+        let channel_data: Vec<_> = group
+            .channels
+            .iter()
+            .map(|channel| {
+                let peak = loudness
+                    .and_then(|l| l.channel_peaks.get(channel.index))
+                    .copied()
+                    .unwrap_or(0.0);
 
-            let peak_db = if peak > 0.0001 {
-                20.0 * peak.log10()
-            } else {
-                -60.0
-            };
+                let peak_db = if peak > 0.0001 {
+                    20.0 * peak.log10()
+                } else {
+                    -60.0
+                };
 
-            let fill_ratio = db_to_position(peak_db);
-            let yellow_threshold = db_to_position(-6.0);
-            let red_threshold = db_to_position(-1.0);
+                let fill_ratio = db_to_position(peak_db);
+                let yellow_threshold = db_to_position(-6.0);
+                let red_threshold = db_to_position(-1.0);
 
-            (fill_ratio, yellow_threshold, red_threshold, channel.name.clone())
-        }).collect();
+                (
+                    fill_ratio,
+                    yellow_threshold,
+                    red_threshold,
+                    channel.name.clone(),
+                )
+            })
+            .collect();
 
         let theme_c = theme.clone();
         div()
@@ -80,16 +88,19 @@ impl PlayerView {
                     .child(group.name.clone()),
             )
             // Channel meters
-            .child(
-                div()
-                    .flex()
-                    .gap_1()
-                    .flex_1()
-                    .min_h(px(80.0))
-                    .children(channel_data.into_iter().map(|(fill_ratio, yellow_threshold, red_threshold, name)| {
-                        render_gradient_meter(fill_ratio, yellow_threshold, red_threshold, name, theme)
-                    })),
-            )
+            .child(div().flex().gap_1().flex_1().min_h(px(80.0)).children(
+                channel_data.into_iter().map(
+                    |(fill_ratio, yellow_threshold, red_threshold, name)| {
+                        render_gradient_meter(
+                            fill_ratio,
+                            yellow_threshold,
+                            red_threshold,
+                            name,
+                            theme,
+                        )
+                    },
+                ),
+            ))
             // M/S/D buttons below channels (spans all channels in group)
             .child(
                 div()
@@ -97,9 +108,33 @@ impl PlayerView {
                     .gap(px(2.0))
                     .mt_1()
                     .justify_center()
-                    .child(self.render_msd_button("M", muted, theme.button_mute_active, group_idx, "mute", theme, cx))
-                    .child(self.render_msd_button("S", soloed, theme.button_solo_active, group_idx, "solo", theme, cx))
-                    .child(self.render_msd_button("D", dimmed, theme.button_dim_active, group_idx, "dim", theme, cx)),
+                    .child(self.render_msd_button(
+                        "M",
+                        muted,
+                        theme.button_mute_active,
+                        group_idx,
+                        "mute",
+                        theme,
+                        cx,
+                    ))
+                    .child(self.render_msd_button(
+                        "S",
+                        soloed,
+                        theme.button_solo_active,
+                        group_idx,
+                        "solo",
+                        theme,
+                        cx,
+                    ))
+                    .child(self.render_msd_button(
+                        "D",
+                        dimmed,
+                        theme.button_dim_active,
+                        group_idx,
+                        "dim",
+                        theme,
+                        cx,
+                    )),
             )
     }
 
@@ -116,13 +151,18 @@ impl PlayerView {
     ) -> impl IntoElement {
         let theme_c = theme.clone();
         div()
-            .id(SharedString::from(format!("msd-{}-{}", button_type, group_idx)))
+            .id(SharedString::from(format!(
+                "msd-{}-{}",
+                button_type, group_idx
+            )))
             .px_2()
             .py(px(2.0))
             .rounded(px(2.0))
             .text_xs()
             .cursor_pointer()
-            .when(active, |d| d.bg(active_color).text_color(theme_c.text_primary))
+            .when(active, |d| {
+                d.bg(active_color).text_color(theme_c.text_primary)
+            })
             .when(!active, |d| {
                 d.bg(theme_c.surface)
                     .text_color(theme_c.text_muted)
@@ -134,9 +174,18 @@ impl PlayerView {
                     view.state.update(cx, |state, _cx| {
                         if group_idx < state.app.level_meter_groups.len() {
                             match button_type {
-                                "mute" => state.app.level_meter_groups[group_idx].muted = !state.app.level_meter_groups[group_idx].muted,
-                                "solo" => state.app.level_meter_groups[group_idx].soloed = !state.app.level_meter_groups[group_idx].soloed,
-                                "dim" => state.app.level_meter_groups[group_idx].dimmed = !state.app.level_meter_groups[group_idx].dimmed,
+                                "mute" => {
+                                    state.app.level_meter_groups[group_idx].muted =
+                                        !state.app.level_meter_groups[group_idx].muted
+                                }
+                                "solo" => {
+                                    state.app.level_meter_groups[group_idx].soloed =
+                                        !state.app.level_meter_groups[group_idx].soloed
+                                }
+                                "dim" => {
+                                    state.app.level_meter_groups[group_idx].dimmed =
+                                        !state.app.level_meter_groups[group_idx].dimmed
+                                }
                                 _ => {}
                             }
                         }
@@ -191,7 +240,9 @@ fn render_gradient_meter(
                         .bottom_0()
                         .left_0()
                         .right_0()
-                        .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(green_height)))
+                        .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                            green_height,
+                        )))
                         .bg(theme_c.meter_normal),
                 )
                 // Yellow segment (above green)
@@ -201,8 +252,12 @@ fn render_gradient_meter(
                             .absolute()
                             .left_0()
                             .right_0()
-                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(yellow_threshold)))
-                            .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(yellow_height)))
+                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                yellow_threshold,
+                            )))
+                            .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                yellow_height,
+                            )))
                             .bg(theme_c.meter_warning),
                     )
                 })
@@ -213,8 +268,12 @@ fn render_gradient_meter(
                             .absolute()
                             .left_0()
                             .right_0()
-                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(red_threshold)))
-                            .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(red_height)))
+                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                red_threshold,
+                            )))
+                            .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                red_height,
+                            )))
                             .bg(theme_c.meter_clip),
                     )
                 }),
@@ -310,10 +369,11 @@ impl PlayerView {
                                     )
                                     .on_mouse_up(
                                         MouseButton::Right,
-                                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.current_queue_index = Some(idx);
-                                                state.app.context_menu =
+                                        cx.listener(
+                                            move |view, event: &MouseUpEvent, _window, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.current_queue_index = Some(idx);
+                                                    state.app.context_menu =
                                                     Some(crate::app::ContextMenuState {
                                                         menu_type:
                                                             crate::app::ContextMenuType::QueueItem,
@@ -321,9 +381,10 @@ impl PlayerView {
                                                         position_y: event.position.y.into(),
                                                         item_index: idx,
                                                     });
-                                            });
-                                            cx.notify();
-                                        }),
+                                                });
+                                                cx.notify();
+                                            },
+                                        ),
                                     )
                                     .child(
                                         div()
@@ -398,19 +459,22 @@ impl PlayerView {
                     .or_else(|| album.tracks.iter().find_map(|t| t.replay_gain));
 
                 // Get channel count from current track
-                let channels = current_track
-                    .and_then(|t| t.channels)
-                    .unwrap_or(2);
+                let channels = current_track.and_then(|t| t.channels).unwrap_or(2);
 
                 let album_title = album.title.clone();
                 let artist = album.artist();
                 let art_path = album.album_art_path.clone();
-                let tracks: Vec<_> = album.tracks.iter().enumerate().map(|(idx, track)| {
-                    let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
-                    let duration = track.duration_secs.unwrap_or(0);
-                    let is_current = idx == current_track_idx;
-                    (idx, title, duration, is_current)
-                }).collect();
+                let tracks: Vec<_> = album
+                    .tracks
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, track)| {
+                        let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
+                        let duration = track.duration_secs.unwrap_or(0);
+                        let is_current = idx == current_track_idx;
+                        (idx, title, duration, is_current)
+                    })
+                    .collect();
 
                 d.child(
                     div()
@@ -440,7 +504,7 @@ impl PlayerView {
                                     img(path)
                                         .w_full()
                                         .h_full()
-                                        .object_fit(gpui::ObjectFit::Cover)
+                                        .object_fit(gpui::ObjectFit::Cover),
                                 )
                             } else {
                                 art_div
@@ -495,11 +559,15 @@ impl PlayerView {
                                             div()
                                                 .text_xs()
                                                 .font_weight(FontWeight::MEDIUM)
-                                                .text_color(if replay_gain.is_some() { theme.text_secondary } else { theme.text_muted })
+                                                .text_color(if replay_gain.is_some() {
+                                                    theme.text_secondary
+                                                } else {
+                                                    theme.text_muted
+                                                })
                                                 .child(
                                                     replay_gain
                                                         .map(|g| format!("{:+.1} dB", g))
-                                                        .unwrap_or_else(|| "N/A".to_string())
+                                                        .unwrap_or_else(|| "N/A".to_string()),
                                                 ),
                                         ),
                                 )
@@ -548,51 +616,63 @@ impl PlayerView {
                                 .gap(px(2.0))
                                 .flex_1()
                                 .overflow_y_scroll()
-                                .children(tracks.into_iter().map(|(idx, title, duration, is_current)| {
-                                    let duration_str = format!("{}:{:02}", duration / 60, duration % 60);
-                                    let theme_c = theme.clone();
+                                .children(tracks.into_iter().map(
+                                    |(idx, title, duration, is_current)| {
+                                        let duration_str =
+                                            format!("{}:{:02}", duration / 60, duration % 60);
+                                        let theme_c = theme.clone();
 
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_2()
-                                        .px_2()
-                                        .py(px(4.0))
-                                        .rounded(px(4.0))
-                                        .when(is_current, |d| {
-                                            d.bg(theme_c.accent)
-                                                .text_color(rgb(0xffffff))
-                                        })
-                                        .when(!is_current, |d| {
-                                            d.hover(|s| s.bg(theme_c.surface_hover))
-                                        })
-                                        // Track number
-                                        .child(
-                                            div()
-                                                .w(px(24.0))
-                                                .text_xs()
-                                                .text_color(if is_current { rgb(0xffffff) } else { theme_c.text_muted })
-                                                .child(format!("{}", idx + 1)),
-                                        )
-                                        // Track title
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .text_sm()
-                                                .overflow_hidden()
-                                                .text_ellipsis()
-                                                .whitespace_nowrap()
-                                                .when(is_current, |d| d.font_weight(FontWeight::SEMIBOLD))
-                                                .child(title),
-                                        )
-                                        // Duration
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(if is_current { rgb(0xffffff) } else { theme_c.text_muted })
-                                                .child(duration_str),
-                                        )
-                                })),
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .px_2()
+                                            .py(px(4.0))
+                                            .rounded(px(4.0))
+                                            .when(is_current, |d| {
+                                                d.bg(theme_c.accent).text_color(rgb(0xffffff))
+                                            })
+                                            .when(!is_current, |d| {
+                                                d.hover(|s| s.bg(theme_c.surface_hover))
+                                            })
+                                            // Track number
+                                            .child(
+                                                div()
+                                                    .w(px(24.0))
+                                                    .text_xs()
+                                                    .text_color(if is_current {
+                                                        rgb(0xffffff)
+                                                    } else {
+                                                        theme_c.text_muted
+                                                    })
+                                                    .child(format!("{}", idx + 1)),
+                                            )
+                                            // Track title
+                                            .child(
+                                                div()
+                                                    .flex_1()
+                                                    .text_sm()
+                                                    .overflow_hidden()
+                                                    .text_ellipsis()
+                                                    .whitespace_nowrap()
+                                                    .when(is_current, |d| {
+                                                        d.font_weight(FontWeight::SEMIBOLD)
+                                                    })
+                                                    .child(title),
+                                            )
+                                            // Duration
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(if is_current {
+                                                        rgb(0xffffff)
+                                                    } else {
+                                                        theme_c.text_muted
+                                                    })
+                                                    .child(duration_str),
+                                            )
+                                    },
+                                )),
                         ),
                 )
             })
@@ -607,11 +687,7 @@ impl PlayerView {
                         .gap_2()
                         .text_color(theme.text_muted)
                         .child("No track playing")
-                        .child(
-                            div()
-                                .text_sm()
-                                .child("Select an album from the queue"),
-                        ),
+                        .child(div().text_sm().child("Select an album from the queue")),
                 )
             })
     }
@@ -706,7 +782,13 @@ impl PlayerView {
                         )
                     })
                     .when(has_groups, |d| {
-                        d.child(self.render_meters_with_legend(loudness.as_ref(), &groups, selected_group, &theme, cx))
+                        d.child(self.render_meters_with_legend(
+                            loudness.as_ref(),
+                            &groups,
+                            selected_group,
+                            &theme,
+                            cx,
+                        ))
                     }),
             )
             // Keyboard hints at bottom
@@ -735,7 +817,10 @@ impl PlayerView {
         let mut meter_children = Vec::new();
         for (group_idx, group) in groups.iter().enumerate() {
             let is_selected = group_idx == selected_group;
-            meter_children.push(self.render_meter_group(group, group_idx, is_selected, loudness, theme, cx).into_any_element());
+            meter_children.push(
+                self.render_meter_group(group, group_idx, is_selected, loudness, theme, cx)
+                    .into_any_element(),
+            );
         }
 
         let theme_c = theme.clone();
@@ -756,13 +841,7 @@ impl PlayerView {
                     .child(div().child("-60")),
             )
             // Meters area
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .gap_2()
-                    .children(meter_children),
-            )
+            .child(div().flex().flex_1().gap_2().children(meter_children))
             // Right scale legend (if more than 2 groups)
             .when(groups_len > 2, |d| {
                 d.child(
@@ -794,7 +873,7 @@ impl PlayerView {
         div()
             .flex()
             .items_center()
-            .gap(px(4.0))  // Tighter gap for more bar space
+            .gap(px(4.0)) // Tighter gap for more bar space
             // Label
             .child(
                 div()
@@ -813,12 +892,7 @@ impl PlayerView {
                     .border_color(meter_theme.color_border)
                     .bg(meter_theme.color_background)
                     .overflow_hidden()
-                    .child(
-                        div()
-                            .h_full()
-                            .w(gpui::relative(ratio))
-                            .bg(bar_color),
-                    ),
+                    .child(div().h_full().w(gpui::relative(ratio)).bg(bar_color)),
             )
             // Value display
             .child(
@@ -838,25 +912,32 @@ impl PlayerView {
         loudness: Option<&sotf_audio_player::LoudnessData>,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        let (integrated_lufs, shortterm_lufs, momentary_lufs, true_peak_left, true_peak_right, stereo_width) =
-            if let Some(l) = loudness {
-                let tp_left = l.true_peaks_dbtp.first().copied().unwrap_or(-60.0);
-                let tp_right = l.true_peaks_dbtp.get(1).copied().unwrap_or(tp_left);
-                // Stereo width derived from correlation: +1 = mono (0), 0 = uncorrelated (0.5), -1 = out of phase (1)
-                let width = l.correlation_lr
-                    .map(|c| ((1.0 - c) / 2.0).clamp(0.0, 1.0))
-                    .unwrap_or(0.5);
-                (
-                    l.integrated_lufs,
-                    l.shortterm_lufs,
-                    l.momentary_lufs,
-                    tp_left,
-                    tp_right,
-                    width,
-                )
-            } else {
-                (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5)
-            };
+        let (
+            integrated_lufs,
+            shortterm_lufs,
+            momentary_lufs,
+            true_peak_left,
+            true_peak_right,
+            stereo_width,
+        ) = if let Some(l) = loudness {
+            let tp_left = l.true_peaks_dbtp.first().copied().unwrap_or(-60.0);
+            let tp_right = l.true_peaks_dbtp.get(1).copied().unwrap_or(tp_left);
+            // Stereo width derived from correlation: +1 = mono (0), 0 = uncorrelated (0.5), -1 = out of phase (1)
+            let width = l
+                .correlation_lr
+                .map(|c| ((1.0 - c) / 2.0).clamp(0.0, 1.0))
+                .unwrap_or(0.5);
+            (
+                l.integrated_lufs,
+                l.shortterm_lufs,
+                l.momentary_lufs,
+                tp_left,
+                tp_right,
+                width,
+            )
+        } else {
+            (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5)
+        };
 
         let meter_theme = MeterTheme::default();
 
@@ -1016,7 +1097,11 @@ impl PlayerView {
                             .child("Stereo Width"),
                     )
                     // Width bar (uses same scale as ticks)
-                    .child(Self::render_width_bar(stereo_width, &tick_config, &meter_theme))
+                    .child(Self::render_width_bar(
+                        stereo_width,
+                        &tick_config,
+                        &meter_theme,
+                    ))
                     // Tick marks (aligned with bar using same flex layout)
                     .child(render_tick_row(
                         &tick_config,
@@ -1050,7 +1135,11 @@ impl PlayerView {
 
     /// Render stereo width bar (0 = mono, 1 = wide)
     /// Uses the TickConfig's scale for bar fill to match tick mark positions
-    fn render_width_bar(width: f64, tick_config: &TickConfig, meter_theme: &MeterTheme) -> impl IntoElement {
+    fn render_width_bar(
+        width: f64,
+        tick_config: &TickConfig,
+        meter_theme: &MeterTheme,
+    ) -> impl IntoElement {
         // Use the same scale as the ticks for bar fill
         let ratio = tick_config.value_to_position(width);
         // Color: cyan/teal for width
@@ -1078,12 +1167,7 @@ impl PlayerView {
                     .border_color(meter_theme.color_border)
                     .bg(meter_theme.color_background)
                     .overflow_hidden()
-                    .child(
-                        div()
-                            .h_full()
-                            .w(gpui::relative(ratio))
-                            .bg(bar_color),
-                    ),
+                    .child(div().h_full().w(gpui::relative(ratio)).bg(bar_color)),
             )
             // Value display
             .child(
@@ -1129,17 +1213,29 @@ impl PlayerView {
                     .child("LUFS"),
             )
             // Integrated LUFS (main loudness)
-            .child(
-                self.render_lufs_row("Integrated", integrated_lufs, theme.accent.into(), -24.0, true),
-            )
+            .child(self.render_lufs_row(
+                "Integrated",
+                integrated_lufs,
+                theme.accent.into(),
+                -24.0,
+                true,
+            ))
             // Short-term LUFS
-            .child(
-                self.render_lufs_row("Short-term", shortterm_lufs, theme.success.into(), -24.0, false),
-            )
+            .child(self.render_lufs_row(
+                "Short-term",
+                shortterm_lufs,
+                theme.success.into(),
+                -24.0,
+                false,
+            ))
             // Momentary LUFS
-            .child(
-                self.render_lufs_row("Momentary", momentary_lufs, theme.progress_bar_fill.into(), -24.0, false),
-            )
+            .child(self.render_lufs_row(
+                "Momentary",
+                momentary_lufs,
+                theme.progress_bar_fill.into(),
+                -24.0,
+                false,
+            ))
             // True Peak
             .child(
                 div()
@@ -1147,16 +1243,14 @@ impl PlayerView {
                     .justify_between()
                     .items_center()
                     .text_xs()
-                    .child(
-                        div()
-                            .text_color(rgb(0x999999))
-                            .child("True Peak"),
-                    )
+                    .child(div().text_color(rgb(0x999999)).child("True Peak"))
                     .child(
                         div()
                             .when(true_peak_dbtp > -1.0, |d| d.text_color(rgb(0xf59e0b)))
                             .when(true_peak_dbtp > 0.0, |d| d.text_color(rgb(0xdc2626)))
-                            .when(true_peak_dbtp <= -1.0, |d| d.text_color(theme.text_secondary))
+                            .when(true_peak_dbtp <= -1.0, |d| {
+                                d.text_color(theme.text_secondary)
+                            })
                             .child(format!("{:.1} dBTP", true_peak_dbtp)),
                     ),
             )
@@ -1173,7 +1267,11 @@ impl PlayerView {
                             .justify_between()
                             .text_xs()
                             .child(div().text_color(rgb(0x999999)).child("Width"))
-                            .child(div().text_color(theme.text_secondary).child(format!("{:.0}%", stereo_width * 100.0))),
+                            .child(
+                                div()
+                                    .text_color(theme.text_secondary)
+                                    .child(format!("{:.0}%", stereo_width * 100.0)),
+                            ),
                     )
                     .child(
                         div()
@@ -1220,11 +1318,7 @@ impl PlayerView {
                     .justify_between()
                     .items_center()
                     .text_xs()
-                    .child(
-                        div()
-                            .text_color(rgb(0x999999))
-                            .child(label),
-                    )
+                    .child(div().text_color(rgb(0x999999)).child(label))
                     .child(
                         div()
                             .when(is_main, |d| d.font_weight(FontWeight::BOLD))
@@ -1245,7 +1339,9 @@ impl PlayerView {
                     .child(
                         div()
                             .h_full()
-                            .w(gpui::Length::Definite(gpui::DefiniteLength::Fraction(ratio)))
+                            .w(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                ratio,
+                            )))
                             .bg(color)
                             .rounded_full(),
                     ),

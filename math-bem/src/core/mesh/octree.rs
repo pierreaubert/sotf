@@ -270,7 +270,9 @@ impl Octree {
         // Distribute elements to children
         for &elem_idx in &element_indices {
             let octant = bounds.child_index(&centers[elem_idx]);
-            self.nodes[child_indices[octant]].element_indices.push(elem_idx);
+            self.nodes[child_indices[octant]]
+                .element_indices
+                .push(elem_idx);
         }
 
         // Clear parent's elements

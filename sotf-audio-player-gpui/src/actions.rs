@@ -22,8 +22,8 @@ actions!(
         SwitchToSpectrum,
         SwitchToDirectoryManager,
         SwitchToSettings,
-        OpenConfig,  // Menu bar: open config (cmd-,)
-        QuitApp,     // Menu bar: quit app (cmd-q)
+        OpenConfig, // Menu bar: open config (cmd-,)
+        QuitApp,    // Menu bar: quit app (cmd-q)
         CycleTheme,
         CycleLanguage,
         ToggleSearch,
@@ -44,8 +44,8 @@ actions!(
         SelectPrev,
         SelectNextPage,
         SelectPrevPage,
-        NextPage, // For library pagination
-        PrevPage, // For library pagination
+        NextPage,    // For library pagination
+        PrevPage,    // For library pagination
         SelectLeft,  // Grid: move left
         SelectRight, // Grid: move right
         SelectUp,    // Grid: move up

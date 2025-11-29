@@ -9,7 +9,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::cgs::{cgs_solve, CgsConfig};
+    use bem::core::solver::cgs::{CgsConfig, cgs_solve};
     use bem::core::solver::direct::direct_solve;
     use bem::core::types::{BoundaryCondition, Cluster, PhysicsParams};
     use ndarray::{Array1, Array2};
@@ -26,7 +26,10 @@ fn main() {
     let freq = ka * speed_of_sound / (2.0 * PI * radius);
     let k = ka / radius;
 
-    println!("Configuration: ka={}, freq={:.0}Hz, radius={}\n", ka, freq, radius);
+    println!(
+        "Configuration: ka={}, freq={:.0}Hz, radius={}\n",
+        ka, freq, radius
+    );
 
     // Test different mesh sizes
     let subdivisions = [2, 3]; // 320, 1280 elements
@@ -44,8 +47,7 @@ fn main() {
         // Prepare elements
         let mut elements = mesh.elements.clone();
         for (i, elem) in elements.iter_mut().enumerate() {
-            elem.boundary_condition =
-                BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
+            elem.boundary_condition = BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
             elem.dof_addresses = vec![i];
         }
 
@@ -202,18 +204,9 @@ fn main() {
 
     println!("Method   | Avg Pressure | Error vs Mie");
     println!("{}", "-".repeat(45));
-    println!(
-        "Mie      | {:>12.6}  | Reference",
-        mie_avg
-    );
-    println!(
-        "TBEM     | {:>12.6}  | {:>5.2}%",
-        tbem_avg, tbem_error
-    );
-    println!(
-        "SLFMM    | {:>12.6}  | {:>5.2}%",
-        slfmm_avg, slfmm_error
-    );
+    println!("Mie      | {:>12.6}  | Reference", mie_avg);
+    println!("TBEM     | {:>12.6}  | {:>5.2}%", tbem_avg, tbem_error);
+    println!("SLFMM    | {:>12.6}  | {:>5.2}%", slfmm_avg, slfmm_error);
 
     println!("\n=== Summary ===");
     println!("SLFMM near-field matches TBEM exactly (single-cluster validation).");

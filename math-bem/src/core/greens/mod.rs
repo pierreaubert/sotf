@@ -6,10 +6,10 @@
 //! - Legendre polynomials
 //! - Derivatives for hypersingular kernels
 
-pub mod spherical;
-pub mod legendre;
 pub mod helmholtz;
+pub mod legendre;
+pub mod spherical;
 
-pub use spherical::*;
-pub use legendre::*;
 pub use helmholtz::*;
+pub use legendre::*;
+pub use spherical::*;

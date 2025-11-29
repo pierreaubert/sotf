@@ -1,7 +1,7 @@
 //! Common utilities for plugin UI components
 
-use crate::theme::Theme;
 use super::ticks::{TickConfig, render_tick_row};
+use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -23,15 +23,31 @@ pub fn render_param_row(
         .px_3()
         .py_2()
         .rounded_lg()
-        .bg(if is_selected { theme.accent_muted } else { theme.surface })
+        .bg(if is_selected {
+            theme.accent_muted
+        } else {
+            theme.surface
+        })
         .border_l_4()
-        .border_color(if is_selected { theme.accent } else { theme.surface })
+        .border_color(if is_selected {
+            theme.accent
+        } else {
+            theme.surface
+        })
         // Parameter name
         .child(
             div()
                 .text_sm()
-                .text_color(if is_selected { theme.text_primary } else { theme.text_secondary })
-                .font_weight(if is_selected { FontWeight::MEDIUM } else { FontWeight::NORMAL })
+                .text_color(if is_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                })
+                .font_weight(if is_selected {
+                    FontWeight::MEDIUM
+                } else {
+                    FontWeight::NORMAL
+                })
                 .child(name.to_string()),
         )
         // Value
@@ -41,7 +57,11 @@ pub fn render_param_row(
                 .px_2()
                 .py_1()
                 .rounded_md()
-                .bg(if is_selected { theme.background } else { theme.background_secondary })
+                .bg(if is_selected {
+                    theme.background
+                } else {
+                    theme.background_secondary
+                })
                 .text_sm()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(theme.text_primary)
@@ -191,12 +211,7 @@ pub fn render_horizontal_meter(
                         .border_color(theme.border)
                         .bg(theme.background)
                         .overflow_hidden()
-                        .child(
-                            div()
-                                .h_full()
-                                .w(relative(ratio))
-                                .bg(bar_color),
-                        ),
+                        .child(div().h_full().w(relative(ratio)).bg(bar_color)),
                 )
                 // Value display
                 .child(
@@ -303,15 +318,31 @@ pub fn render_toggle(
         .px_3()
         .py_2()
         .rounded_lg()
-        .bg(if is_selected { theme.accent_muted } else { theme.surface })
+        .bg(if is_selected {
+            theme.accent_muted
+        } else {
+            theme.surface
+        })
         .border_l_4()
-        .border_color(if is_selected { theme.accent } else { theme.surface })
+        .border_color(if is_selected {
+            theme.accent
+        } else {
+            theme.surface
+        })
         // Label
         .child(
             div()
                 .text_sm()
-                .text_color(if is_selected { theme.text_primary } else { theme.text_secondary })
-                .font_weight(if is_selected { FontWeight::MEDIUM } else { FontWeight::NORMAL })
+                .text_color(if is_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                })
+                .font_weight(if is_selected {
+                    FontWeight::MEDIUM
+                } else {
+                    FontWeight::NORMAL
+                })
                 .child(label.to_string()),
         )
         // Toggle switch: [OFF | ON]
@@ -334,17 +365,20 @@ pub fn render_toggle_switch(enabled: bool, theme: &Theme) -> impl IntoElement {
                 .py_1()
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
-                .bg(if !enabled { theme.surface_hover } else { theme.background })
-                .text_color(if !enabled { theme.text_primary } else { theme.text_muted })
+                .bg(if !enabled {
+                    theme.surface_hover
+                } else {
+                    theme.background
+                })
+                .text_color(if !enabled {
+                    theme.text_primary
+                } else {
+                    theme.text_muted
+                })
                 .child("OFF"),
         )
         // Separator
-        .child(
-            div()
-                .w(px(1.0))
-                .h_full()
-                .bg(theme.border),
-        )
+        .child(div().w(px(1.0)).h_full().bg(theme.border))
         // ON button
         .child(
             div()
@@ -352,18 +386,22 @@ pub fn render_toggle_switch(enabled: bool, theme: &Theme) -> impl IntoElement {
                 .py_1()
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
-                .bg(if enabled { theme.success } else { theme.background })
-                .text_color(if enabled { rgb(0xffffff) } else { theme.text_muted })
+                .bg(if enabled {
+                    theme.success
+                } else {
+                    theme.background
+                })
+                .text_color(if enabled {
+                    rgb(0xffffff)
+                } else {
+                    theme.text_muted
+                })
                 .child("ON"),
         )
 }
 
 /// Render a compact toggle button (just the switch, no row styling)
-pub fn render_compact_toggle(
-    label: &str,
-    enabled: bool,
-    theme: &Theme,
-) -> impl IntoElement {
+pub fn render_compact_toggle(label: &str, enabled: bool, theme: &Theme) -> impl IntoElement {
     div()
         .flex()
         .items_center()
@@ -380,7 +418,12 @@ pub fn render_compact_toggle(
 }
 
 /// Render a value with unit and color coding
-pub fn render_colored_value(value: f64, unit: &str, zero_is_neutral: bool, theme: &Theme) -> impl IntoElement {
+pub fn render_colored_value(
+    value: f64,
+    unit: &str,
+    zero_is_neutral: bool,
+    theme: &Theme,
+) -> impl IntoElement {
     let color = if zero_is_neutral {
         if value > 0.5 {
             rgb(0x22c55e) // Green for positive
@@ -455,16 +498,28 @@ pub fn render_vertical_slider(
         .gap_2()
         .p_2()
         .rounded_lg()
-        .bg(if is_selected { theme.accent_muted } else { theme.surface })
+        .bg(if is_selected {
+            theme.accent_muted
+        } else {
+            theme.surface
+        })
         .border_2()
-        .border_color(if is_selected { theme.accent } else { theme.border })
+        .border_color(if is_selected {
+            theme.accent
+        } else {
+            theme.border
+        })
         .min_w(px(70.0))
         // Label with keyboard shortcut
         .child(
             div()
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(if is_selected { theme.text_primary } else { theme.text_secondary })
+                .text_color(if is_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                })
                 .text_center()
                 .child(formatted_label),
         )
@@ -474,10 +529,18 @@ pub fn render_vertical_slider(
                 .px_2()
                 .py_1()
                 .rounded_md()
-                .bg(if is_selected { theme.success } else { theme.background_secondary })
+                .bg(if is_selected {
+                    theme.success
+                } else {
+                    theme.background_secondary
+                })
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
-                .text_color(if is_selected { rgb(0xffffff) } else { theme.text_primary })
+                .text_color(if is_selected {
+                    rgb(0xffffff)
+                } else {
+                    theme.text_primary
+                })
                 .child(value_str),
         )
         // Vertical slider track
@@ -499,7 +562,11 @@ pub fn render_vertical_slider(
                         .left_0()
                         .right_0()
                         .h(relative(normalized))
-                        .bg(if is_selected { theme.accent } else { rgb(0x4f46e5) })
+                        .bg(if is_selected {
+                            theme.accent
+                        } else {
+                            rgb(0x4f46e5)
+                        })
                         .rounded_b_lg(),
                 )
                 // Thumb indicator
@@ -510,7 +577,11 @@ pub fn render_vertical_slider(
                         .right_0()
                         .bottom(relative(normalized))
                         .h(px(4.0))
-                        .bg(if is_selected { theme.accent } else { rgb(0x818cf8) })
+                        .bg(if is_selected {
+                            theme.accent
+                        } else {
+                            rgb(0x818cf8)
+                        })
                         .rounded_sm(),
                 ),
         )
@@ -541,8 +612,8 @@ pub fn render_gr_meter(
     let color = gr_color(gr_abs);
 
     let meter_config = HorizontalMeterConfig {
-        label_width: 0.0,  // No label column for GR meter
-        value_width: 0.0,  // No value column (shown in header)
+        label_width: 0.0, // No label column for GR meter
+        value_width: 0.0, // No value column (shown in header)
         bar_height: 12.0,
         show_ticks: true,
         show_legend: true,
@@ -605,9 +676,12 @@ pub fn render_gr_meter(
                 .justify_between()
                 .text_xs()
                 .text_color(theme.text_muted)
-                .children(tick_config.major_values.iter().map(|v| {
-                    div().child(format!("{:.0}", v))
-                })),
+                .children(
+                    tick_config
+                        .major_values
+                        .iter()
+                        .map(|v| div().child(format!("{:.0}", v))),
+                ),
         )
 }
 
@@ -694,11 +768,7 @@ pub fn render_transfer_curve(
                 .items_end()
                 .gap_px()
                 .children(bars.into_iter().map(|(height, color)| {
-                    div()
-                        .flex_1()
-                        .h(relative(height))
-                        .bg(color)
-                        .rounded_t_sm()
+                    div().flex_1().h(relative(height)).bg(color).rounded_t_sm()
                 })),
         )
         // Axis labels
@@ -715,11 +785,7 @@ pub fn render_transfer_curve(
 }
 
 /// Render a peak meter (vertical)
-pub fn render_peak_meter(
-    peak_db: f64,
-    ceiling_db: f64,
-    theme: &Theme,
-) -> impl IntoElement {
+pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl IntoElement {
     let min_db = -60.0;
     let normalized = ((peak_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
     let ceiling_normalized = ((ceiling_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;

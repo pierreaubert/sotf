@@ -32,11 +32,7 @@ pub struct RoomConfig {
 #[serde(tag = "type")]
 pub enum RoomGeometryConfig {
     #[serde(rename = "rectangular")]
-    Rectangular {
-        width: f64,
-        depth: f64,
-        height: f64,
-    },
+    Rectangular { width: f64, depth: f64, height: f64 },
     #[serde(rename = "lshaped")]
     LShaped {
         /// Main section width
@@ -68,7 +64,11 @@ impl From<Point3DConfig> for Point3D {
 
 impl From<Point3D> for Point3DConfig {
     fn from(p: Point3D) -> Self {
-        Point3DConfig { x: p.x, y: p.y, z: p.z }
+        Point3DConfig {
+            x: p.x,
+            y: p.y,
+            z: p.z,
+        }
     }
 }
 
@@ -390,11 +390,11 @@ impl Default for MetadataConfig {
 impl RoomConfig {
     /// Load configuration from JSON file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, String> {
-        let contents = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read config file: {}", e))?;
+        let contents =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read config file: {}", e))?;
 
-        let config: RoomConfig = serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        let config: RoomConfig =
+            serde_json::from_str(&contents).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
         Ok(config)
     }
@@ -404,8 +404,7 @@ impl RoomConfig {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-        fs::write(path, json)
-            .map_err(|e| format!("Failed to write config file: {}", e))?;
+        fs::write(path, json).map_err(|e| format!("Failed to write config file: {}", e))?;
 
         Ok(())
     }
@@ -416,14 +415,15 @@ impl RoomConfig {
         let room = self.room.to_geometry()?;
 
         // Convert sources
-        let sources: Vec<Source> = self.sources.iter()
+        let sources: Vec<Source> = self
+            .sources
+            .iter()
             .map(|s| s.to_source())
             .collect::<Result<Vec<_>, _>>()?;
 
         // Convert listening positions
-        let lps: Vec<ListeningPosition> = self.listening_positions.iter()
-            .map(|&p| p.into())
-            .collect();
+        let lps: Vec<ListeningPosition> =
+            self.listening_positions.iter().map(|&p| p.into()).collect();
 
         // Create simulation
         let simulation = RoomSimulation::with_frequencies(
@@ -442,12 +442,22 @@ impl RoomConfig {
 impl RoomGeometryConfig {
     fn to_geometry(&self) -> Result<RoomGeometry, String> {
         match self {
-            RoomGeometryConfig::Rectangular { width, depth, height } => {
-                Ok(RoomGeometry::Rectangular(RectangularRoom::new(*width, *depth, *height)))
-            }
-            RoomGeometryConfig::LShaped { width1, depth1, width2, depth2, height } => {
-                Ok(RoomGeometry::LShaped(LShapedRoom::new(*width1, *depth1, *width2, *depth2, *height)))
-            }
+            RoomGeometryConfig::Rectangular {
+                width,
+                depth,
+                height,
+            } => Ok(RoomGeometry::Rectangular(RectangularRoom::new(
+                *width, *depth, *height,
+            ))),
+            RoomGeometryConfig::LShaped {
+                width1,
+                depth1,
+                width2,
+                depth2,
+                height,
+            } => Ok(RoomGeometry::LShaped(LShapedRoom::new(
+                *width1, *depth1, *width2, *depth2, *height,
+            ))),
         }
     }
 }
@@ -457,13 +467,9 @@ impl SourceConfig {
         let directivity = self.directivity.to_pattern()?;
         let crossover = self.crossover.to_filter();
 
-        let source = Source::new(
-            self.position.into(),
-            directivity,
-            self.amplitude,
-        )
-        .with_name(self.name.clone())
-        .with_crossover(crossover);
+        let source = Source::new(self.position.into(), directivity, self.amplitude)
+            .with_name(self.name.clone())
+            .with_crossover(crossover);
 
         Ok(source)
     }
@@ -472,10 +478,12 @@ impl SourceConfig {
 impl DirectivityConfig {
     fn to_pattern(&self) -> Result<DirectivityPattern, String> {
         match self {
-            DirectivityConfig::Omnidirectional => {
-                Ok(DirectivityPattern::omnidirectional())
-            }
-            DirectivityConfig::Custom { horizontal_angles, vertical_angles, magnitude } => {
+            DirectivityConfig::Omnidirectional => Ok(DirectivityPattern::omnidirectional()),
+            DirectivityConfig::Custom {
+                horizontal_angles,
+                vertical_angles,
+                magnitude,
+            } => {
                 use ndarray::Array2;
 
                 if magnitude.is_empty() {
@@ -486,14 +494,25 @@ impl DirectivityConfig {
                 let n_horiz = magnitude[0].len();
 
                 if n_vert != vertical_angles.len() {
-                    return Err(format!("Vertical angles mismatch: {} vs {}", n_vert, vertical_angles.len()));
+                    return Err(format!(
+                        "Vertical angles mismatch: {} vs {}",
+                        n_vert,
+                        vertical_angles.len()
+                    ));
                 }
                 if n_horiz != horizontal_angles.len() {
-                    return Err(format!("Horizontal angles mismatch: {} vs {}", n_horiz, horizontal_angles.len()));
+                    return Err(format!(
+                        "Horizontal angles mismatch: {} vs {}",
+                        n_horiz,
+                        horizontal_angles.len()
+                    ));
                 }
 
                 // Convert Vec<Vec<f64>> to Array2
-                let flat: Vec<f64> = magnitude.iter().flat_map(|row| row.iter().copied()).collect();
+                let flat: Vec<f64> = magnitude
+                    .iter()
+                    .flat_map(|row| row.iter().copied())
+                    .collect();
                 let mag_array = Array2::from_shape_vec((n_vert, n_horiz), flat)
                     .map_err(|e| format!("Failed to create magnitude array: {}", e))?;
 
@@ -511,25 +530,23 @@ impl CrossoverConfig {
     fn to_filter(&self) -> CrossoverFilter {
         match self {
             CrossoverConfig::FullRange => CrossoverFilter::FullRange,
-            CrossoverConfig::Lowpass { cutoff_freq, order } => {
-                CrossoverFilter::Lowpass {
-                    cutoff_freq: *cutoff_freq,
-                    order: *order,
-                }
-            }
-            CrossoverConfig::Highpass { cutoff_freq, order } => {
-                CrossoverFilter::Highpass {
-                    cutoff_freq: *cutoff_freq,
-                    order: *order,
-                }
-            }
-            CrossoverConfig::Bandpass { low_cutoff, high_cutoff, order } => {
-                CrossoverFilter::Bandpass {
-                    low_cutoff: *low_cutoff,
-                    high_cutoff: *high_cutoff,
-                    order: *order,
-                }
-            }
+            CrossoverConfig::Lowpass { cutoff_freq, order } => CrossoverFilter::Lowpass {
+                cutoff_freq: *cutoff_freq,
+                order: *order,
+            },
+            CrossoverConfig::Highpass { cutoff_freq, order } => CrossoverFilter::Highpass {
+                cutoff_freq: *cutoff_freq,
+                order: *order,
+            },
+            CrossoverConfig::Bandpass {
+                low_cutoff,
+                high_cutoff,
+                order,
+            } => CrossoverFilter::Bandpass {
+                low_cutoff: *low_cutoff,
+                high_cutoff: *high_cutoff,
+                order: *order,
+            },
         }
     }
 }

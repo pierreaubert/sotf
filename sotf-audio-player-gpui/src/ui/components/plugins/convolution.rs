@@ -71,7 +71,11 @@ pub fn render_convolution_plugin(
                                         .text_ellipsis()
                                         .max_w(px(200.0))
                                         .child(if has_ir {
-                                            ir_file.rsplit('/').next().unwrap_or(ir_file).to_string()
+                                            ir_file
+                                                .rsplit('/')
+                                                .next()
+                                                .unwrap_or(ir_file)
+                                                .to_string()
                                         } else {
                                             "Load an impulse response file".to_string()
                                         }),
@@ -92,7 +96,11 @@ pub fn render_convolution_plugin(
                         .justify_center()
                         .text_sm()
                         .text_color(theme.text_muted)
-                        .child(if has_ir { "IR Waveform" } else { "No IR loaded" }),
+                        .child(if has_ir {
+                            "IR Waveform"
+                        } else {
+                            "No IR loaded"
+                        }),
                 ),
         )
         // Mix section with visual
@@ -113,12 +121,7 @@ pub fn render_convolution_plugin(
                         .items_center()
                         .gap_4()
                         .py_2()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("DRY"),
-                        )
+                        .child(div().text_xs().text_color(theme.text_muted).child("DRY"))
                         .child(
                             div()
                                 .flex_1()
@@ -126,19 +129,9 @@ pub fn render_convolution_plugin(
                                 .bg(theme.surface)
                                 .rounded_full()
                                 .overflow_hidden()
-                                .child(
-                                    div()
-                                        .h_full()
-                                        .w(relative(mix as f32))
-                                        .bg(rgb(0x4f46e5)),
-                                ),
+                                .child(div().h_full().w(relative(mix as f32)).bg(rgb(0x4f46e5))),
                         )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("WET"),
-                        ),
+                        .child(div().text_xs().text_color(theme.text_muted).child("WET")),
                 )
                 .child(
                     div()
@@ -163,14 +156,32 @@ pub fn render_convolution_plugin(
                 .child(render_section_header("PARAMETERS", theme))
                 .child(render_param_row(
                     "IR File",
-                    if ir_file.is_empty() { "None" } else { ir_file.rsplit('/').next().unwrap_or(ir_file) },
+                    if ir_file.is_empty() {
+                        "None"
+                    } else {
+                        ir_file.rsplit('/').next().unwrap_or(ir_file)
+                    },
                     0,
                     selected_param,
                     is_editing,
                     theme,
                 ))
-                .child(render_param_row("Mix", &format!("{:.0}%", mix * 100.0), 1, selected_param, is_editing, theme))
-                .child(render_param_row("Gain", &format!("{:+.1} dB", gain_db), 2, selected_param, is_editing, theme)),
+                .child(render_param_row(
+                    "Mix",
+                    &format!("{:.0}%", mix * 100.0),
+                    1,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Gain",
+                    &format!("{:+.1} dB", gain_db),
+                    2,
+                    selected_param,
+                    is_editing,
+                    theme,
+                )),
         )
         .when(is_editing, |d| d.child(render_edit_hints(theme)))
 }

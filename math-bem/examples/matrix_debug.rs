@@ -78,10 +78,18 @@ fn analyze_system(
 
     println!("  {} DOFs", n);
     println!("  β = {:.4} + {:.4}i", beta.re, beta.im);
-    println!("  Diagonal avg: {:.4} + {:.4}i (|.| = {:.4})",
-             diag_avg.re, diag_avg.im, diag_avg.norm());
-    println!("  Off-diagonal avg: {:.6} + {:.6}i (|.| = {:.6})",
-             off_diag_avg.re, off_diag_avg.im, off_diag_avg.norm());
+    println!(
+        "  Diagonal avg: {:.4} + {:.4}i (|.| = {:.4})",
+        diag_avg.re,
+        diag_avg.im,
+        diag_avg.norm()
+    );
+    println!(
+        "  Off-diagonal avg: {:.6} + {:.6}i (|.| = {:.6})",
+        off_diag_avg.re,
+        off_diag_avg.im,
+        off_diag_avg.norm()
+    );
 
     // First few diagonal entries
     println!("  First 3 diagonal entries:");
@@ -123,7 +131,13 @@ fn analyze_system(
     println!("\n  Solution (first 3):");
     for i in 0..3.min(n) {
         let p = solution.x[i];
-        println!("    p[{}] = {:.4} + {:.4}i (|.| = {:.4})", i, p.re, p.im, p.norm());
+        println!(
+            "    p[{}] = {:.4} + {:.4}i (|.| = {:.4})",
+            i,
+            p.re,
+            p.im,
+            p.norm()
+        );
     }
 
     // Compute residual
@@ -137,7 +151,10 @@ fn analyze_system(
     let residual_norm: f64 = residual.iter().map(|r| r.norm_sqr()).sum::<f64>().sqrt();
     let rhs_norm: f64 = total_rhs.iter().map(|r| r.norm_sqr()).sum::<f64>().sqrt();
 
-    println!("\n  Residual ||Ax-b||/||b|| = {:.2e}", residual_norm / rhs_norm);
+    println!(
+        "\n  Residual ||Ax-b||/||b|| = {:.2e}",
+        residual_norm / rhs_norm
+    );
 
     // Solution statistics
     let p_avg: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
@@ -155,9 +172,16 @@ fn analyze_system(
                 row_sum_off_diag += system.matrix[[i, j]];
             }
         }
-        println!("    Row {}: total={:.4}+{:.4}i (|.|={:.4}), off-diag={:.4}+{:.4}i (|.|={:.4})",
-                 i, row_sum.re, row_sum.im, row_sum.norm(),
-                 row_sum_off_diag.re, row_sum_off_diag.im, row_sum_off_diag.norm());
+        println!(
+            "    Row {}: total={:.4}+{:.4}i (|.|={:.4}), off-diag={:.4}+{:.4}i (|.|={:.4})",
+            i,
+            row_sum.re,
+            row_sum.im,
+            row_sum.norm(),
+            row_sum_off_diag.re,
+            row_sum_off_diag.im,
+            row_sum_off_diag.norm()
+        );
     }
 
     // Average row sum of off-diagonal elements
@@ -170,8 +194,12 @@ fn analyze_system(
         }
     }
     let avg_off_diag_row_sum = total_off_diag_row_sum / n as f64;
-    println!("  Avg off-diagonal row sum: {:.4}+{:.4}i (|.|={:.4})",
-             avg_off_diag_row_sum.re, avg_off_diag_row_sum.im, avg_off_diag_row_sum.norm());
+    println!(
+        "  Avg off-diagonal row sum: {:.4}+{:.4}i (|.|={:.4})",
+        avg_off_diag_row_sum.re,
+        avg_off_diag_row_sum.im,
+        avg_off_diag_row_sum.norm()
+    );
 }
 
 #[cfg(not(feature = "pure-rust"))]

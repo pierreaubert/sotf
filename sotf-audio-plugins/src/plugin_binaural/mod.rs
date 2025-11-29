@@ -23,7 +23,9 @@ pub mod params;
 pub mod room;
 
 pub use self::error::BinauralError;
-pub use self::params::{BinauralDecoderParams, default_enable_optimization as binaural_default_enable_optimization};
+pub use self::params::{
+    BinauralDecoderParams, default_enable_optimization as binaural_default_enable_optimization,
+};
 pub use self::room::{Reflection, RoomModel};
 
 // ============================================================================

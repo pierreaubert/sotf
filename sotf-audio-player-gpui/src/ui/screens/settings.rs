@@ -3,9 +3,9 @@
 use crate::i18n::Language;
 use crate::theme::ThemeId;
 use crate::ui::PlayerView;
-use gpui_ui_kit::{Button, ButtonVariant, ButtonSize, HStack, StackSpacing};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, HStack, StackSpacing};
 
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -22,19 +22,43 @@ impl PlayerView {
 
         // Pre-render all content sections (convert to AnyElement to release borrow)
         let library_content = self.render_library_settings_content(cx).into_any_element();
-        let appearance_content = self.render_appearance_settings_content(cx).into_any_element();
-        let audio_device_content = self.render_audio_device_settings_content(cx).into_any_element();
+        let appearance_content = self
+            .render_appearance_settings_content(cx)
+            .into_any_element();
+        let audio_device_content = self
+            .render_audio_device_settings_content(cx)
+            .into_any_element();
         let plugins_content = self.render_plugins_screen(cx).into_any_element();
         let room_eq_content = self.render_roomeq_settings_content(cx).into_any_element();
-        let headphone_content = self.render_headphone_settings_content(cx).into_any_element();
+        let headphone_content = self
+            .render_headphone_settings_content(cx)
+            .into_any_element();
 
         // Pre-render all headers (convert to AnyElement to release borrow)
-        let library_header = self.render_accordion_header("library", "Library", library_expanded, true, cx).into_any_element();
-        let appearance_header = self.render_accordion_header("appearance", "Appearance", appearance_expanded, false, cx).into_any_element();
-        let audio_device_header = self.render_accordion_header("audio-device", "Audio Device", audio_device_expanded, false, cx).into_any_element();
-        let plugins_header = self.render_accordion_header("plugins", "Plugins", plugins_expanded, false, cx).into_any_element();
-        let room_eq_header = self.render_accordion_header("room-eq", "Room EQ", room_eq_expanded, false, cx).into_any_element();
-        let headphone_header = self.render_accordion_header("headphone", "Headphone", headphone_expanded, false, cx).into_any_element();
+        let library_header = self
+            .render_accordion_header("library", "Library", library_expanded, true, cx)
+            .into_any_element();
+        let appearance_header = self
+            .render_accordion_header("appearance", "Appearance", appearance_expanded, false, cx)
+            .into_any_element();
+        let audio_device_header = self
+            .render_accordion_header(
+                "audio-device",
+                "Audio Device",
+                audio_device_expanded,
+                false,
+                cx,
+            )
+            .into_any_element();
+        let plugins_header = self
+            .render_accordion_header("plugins", "Plugins", plugins_expanded, false, cx)
+            .into_any_element();
+        let room_eq_header = self
+            .render_accordion_header("room-eq", "Room EQ", room_eq_expanded, false, cx)
+            .into_any_element();
+        let headphone_header = self
+            .render_accordion_header("headphone", "Headphone", headphone_expanded, false, cx)
+            .into_any_element();
 
         div()
             .id("settings-screen")
@@ -61,7 +85,7 @@ impl PlayerView {
                                 .bg(theme.background)
                                 .border_t_1()
                                 .border_color(theme.border)
-                                .child(library_content)
+                                .child(library_content),
                         )
                     })
                     // Appearance section
@@ -74,7 +98,7 @@ impl PlayerView {
                                 .bg(theme.background)
                                 .border_t_1()
                                 .border_color(theme.border)
-                                .child(appearance_content)
+                                .child(appearance_content),
                         )
                     })
                     // Audio Device section
@@ -87,7 +111,7 @@ impl PlayerView {
                                 .bg(theme.background)
                                 .border_t_1()
                                 .border_color(theme.border)
-                                .child(audio_device_content)
+                                .child(audio_device_content),
                         )
                     })
                     // Plugins section
@@ -100,7 +124,7 @@ impl PlayerView {
                                 .bg(theme.background)
                                 .border_t_1()
                                 .border_color(theme.border)
-                                .child(plugins_content)
+                                .child(plugins_content),
                         )
                     })
                     // Room EQ section
@@ -113,7 +137,7 @@ impl PlayerView {
                                 .bg(theme.background)
                                 .border_t_1()
                                 .border_color(theme.border)
-                                .child(room_eq_content)
+                                .child(room_eq_content),
                         )
                     })
                     // Headphone section
@@ -126,9 +150,9 @@ impl PlayerView {
                                 .bg(theme.background)
                                 .border_t_1()
                                 .border_color(theme.border)
-                                .child(headphone_content)
+                                .child(headphone_content),
                         )
-                    })
+                    }),
             )
     }
 
@@ -196,7 +220,13 @@ impl PlayerView {
         let scan_progress_albums = state.app.scan_progress_albums;
         let directories = state.app.library.directories.clone();
         let album_count = state.app.library.albums.len();
-        let track_count: usize = state.app.library.albums.iter().map(|a| a.tracks.len()).sum();
+        let track_count: usize = state
+            .app
+            .library
+            .albums
+            .iter()
+            .map(|a| a.tracks.len())
+            .sum();
 
         div()
             .flex()
@@ -243,8 +273,7 @@ impl PlayerView {
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
-                                        state.app.input_mode =
-                                            crate::app::InputMode::AddDirectory;
+                                        state.app.input_mode = crate::app::InputMode::AddDirectory;
                                         state.app.directory_input.clear();
                                     });
                                     cx.notify();
@@ -325,13 +354,17 @@ impl PlayerView {
                         let button_theme = theme.to_button_theme();
                         let btn = Button::new(
                             "scan-library-btn",
-                            if scan_in_progress { "Scanning..." } else { "Scan Library" }
+                            if scan_in_progress {
+                                "Scanning..."
+                            } else {
+                                "Scan Library"
+                            },
                         )
-                            .variant(ButtonVariant::Primary)
-                            .size(ButtonSize::Md)
-                            .disabled(scan_in_progress)
-                            .theme(button_theme)
-                            .build();
+                        .variant(ButtonVariant::Primary)
+                        .size(ButtonSize::Md)
+                        .disabled(scan_in_progress)
+                        .theme(button_theme)
+                        .build();
                         if scan_in_progress {
                             btn
                         } else {
@@ -380,22 +413,26 @@ impl PlayerView {
                                 let btn_theme = button_theme.clone();
                                 Button::new(
                                     SharedString::from(format!("theme-{}", id.name())),
-                                    id.name()
+                                    id.name(),
                                 )
-                                    .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
-                                    .size(ButtonSize::Sm)
-                                    .selected(is_selected)
-                                    .theme(btn_theme)
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.set_theme(id);
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
+                                .variant(if is_selected {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Sm)
+                                .selected(is_selected)
+                                .theme(btn_theme)
+                                .build()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.set_theme(id);
+                                        });
+                                        cx.notify();
+                                    }),
+                                )
                             }))
                     }),
             )
@@ -423,22 +460,26 @@ impl PlayerView {
                                 let btn_theme = button_theme.clone();
                                 Button::new(
                                     SharedString::from(format!("language-{}", lang.name())),
-                                    lang.name()
+                                    lang.name(),
                                 )
-                                    .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
-                                    .size(ButtonSize::Sm)
-                                    .selected(is_selected)
-                                    .theme(btn_theme)
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.set_language(lang);
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
+                                .variant(if is_selected {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Sm)
+                                .selected(is_selected)
+                                .theme(btn_theme)
+                                .build()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.set_language(lang);
+                                        });
+                                        cx.notify();
+                                    }),
+                                )
                             }))
                     }),
             )
@@ -484,9 +525,7 @@ impl PlayerView {
                                 .p_3()
                                 .rounded_md()
                                 .when(is_selected, |div| {
-                                    div.bg(theme.accent)
-                                        .border_2()
-                                        .border_color(theme.accent)
+                                    div.bg(theme.accent).border_2().border_color(theme.accent)
                                 })
                                 .when(!is_selected, |div| {
                                     div.bg(theme.surface_hover)
@@ -582,7 +621,14 @@ impl PlayerView {
     }
 
     fn render_headphone_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, headphone_curve_path, headphone_target, headphone_params, optimization_running, optimization_progress) = {
+        let (
+            theme,
+            headphone_curve_path,
+            headphone_target,
+            headphone_params,
+            optimization_running,
+            optimization_progress,
+        ) = {
             let state = self.state.read(cx);
             (
                 state.app.theme.clone(),

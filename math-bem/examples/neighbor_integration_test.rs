@@ -5,7 +5,9 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    use bem::core::integration::{regular_integration, regular_integration_fixed_order, singular_integration};
+    use bem::core::integration::{
+        regular_integration, regular_integration_fixed_order, singular_integration,
+    };
     use bem::core::mesh::generators::generate_icosphere_mesh;
     use bem::core::types::PhysicsParams;
     use num_complex::Complex64;
@@ -25,7 +27,11 @@ fn main() {
         let mesh = generate_icosphere_mesh(radius, subdivisions);
         let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
 
-        println!("--- Icosphere subdivisions={} ({} elements) ---", subdivisions, mesh.elements.len());
+        println!(
+            "--- Icosphere subdivisions={} ({} elements) ---",
+            subdivisions,
+            mesh.elements.len()
+        );
 
         // Find neighbor elements for source element 0
         let source_idx = 0;
@@ -48,7 +54,11 @@ fn main() {
             }
         }
 
-        println!("  Source element {} has {} neighbor elements", source_idx, neighbors.len());
+        println!(
+            "  Source element {} has {} neighbor elements",
+            source_idx,
+            neighbors.len()
+        );
 
         // Compute E integrals with STANDARD integration
         let source_coords = mesh.element_nodes(source_elem);
@@ -96,9 +106,17 @@ fn main() {
 
         println!("  Standard integration:");
         println!("    Self E: {:.4}", self_e.re);
-        println!("    Neighbor E sum: {:.4} ({} elements)", neighbor_e_standard.re, neighbors.len());
+        println!(
+            "    Neighbor E sum: {:.4} ({} elements)",
+            neighbor_e_standard.re,
+            neighbors.len()
+        );
         println!("    Far E sum: {:.4}", far_e_standard.re);
-        println!("    E[1] = {:.4} (error = {:.2}%)", e1_standard.re, e1_standard.norm() / self_e.norm() * 100.0);
+        println!(
+            "    E[1] = {:.4} (error = {:.2}%)",
+            e1_standard.re,
+            e1_standard.norm() / self_e.norm() * 100.0
+        );
 
         // Compute E integrals with HIGH-ORDER integration for neighbors
         let mut offdiag_e_high = Complex64::new(0.0, 0.0);
@@ -144,13 +162,22 @@ fn main() {
 
         println!("\n  High-order neighbor integration (order=12):");
         println!("    Neighbor E sum: {:.4}", neighbor_e_high.re);
-        println!("    E[1] = {:.4} (error = {:.2}%)", e1_high.re, e1_high.norm() / self_e.norm() * 100.0);
+        println!(
+            "    E[1] = {:.4} (error = {:.2}%)",
+            e1_high.re,
+            e1_high.norm() / self_e.norm() * 100.0
+        );
 
         // Compare neighbor contributions
         let neighbor_diff = (neighbor_e_high - neighbor_e_standard).norm();
-        println!("\n  Neighbor E difference (high vs standard): {:.4}", neighbor_diff);
-        println!("  This accounts for {:.2}% of the E[1] error improvement",
-                 (e1_standard.norm() - e1_high.norm()) / e1_standard.norm() * 100.0);
+        println!(
+            "\n  Neighbor E difference (high vs standard): {:.4}",
+            neighbor_diff
+        );
+        println!(
+            "  This accounts for {:.2}% of the E[1] error improvement",
+            (e1_standard.norm() - e1_high.norm()) / e1_standard.norm() * 100.0
+        );
 
         println!();
     }

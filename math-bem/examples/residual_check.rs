@@ -79,26 +79,39 @@ fn main() {
     println!("ka = {:.2}, {} elements, β = {:.4}i", ka_target, n, beta.im);
     println!();
     println!("||b|| / n = {:.6} (average RHS magnitude)", rhs_norm);
-    println!("||x|| / n = {:.6} (average solution magnitude)", solution_norm);
+    println!(
+        "||x|| / n = {:.6} (average solution magnitude)",
+        solution_norm
+    );
     println!("||Ax - b|| / n = {:.10} (average residual)", residual_norm);
     println!("Relative residual = {:.2e}", residual_norm / rhs_norm);
 
     // Check some individual elements
     println!("\nSample residuals:");
-    for i in [0, n/4, n/2, 3*n/4, n-1] {
-        println!("  elem[{}]: residual = {:.2e} + {:.2e}i, |rhs| = {:.4}, |x| = {:.4}",
-                 i, residual[i].re, residual[i].im, rhs[i].norm(), solution.x[i].norm());
+    for i in [0, n / 4, n / 2, 3 * n / 4, n - 1] {
+        println!(
+            "  elem[{}]: residual = {:.2e} + {:.2e}i, |rhs| = {:.4}, |x| = {:.4}",
+            i,
+            residual[i].re,
+            residual[i].im,
+            rhs[i].norm(),
+            solution.x[i].norm()
+        );
     }
 
     // Mie reference
     let theta_refs: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0 * PI / 180.0).collect();
     let mie = sphere_scattering_3d(k, radius, 50, vec![radius], theta_refs.clone());
-    let mie_avg: f64 = mie.pressure.iter().map(|p| p.norm()).sum::<f64>() / mie.pressure.len() as f64;
+    let mie_avg: f64 =
+        mie.pressure.iter().map(|p| p.norm()).sum::<f64>() / mie.pressure.len() as f64;
 
     println!("\n=== Comparison with Mie ===");
     println!("Mie average |p| = {:.4}", mie_avg);
     println!("BEM average |p| = {:.4}", solution_norm);
-    println!("Error = {:.1}%", 100.0 * (solution_norm - mie_avg).abs() / mie_avg);
+    println!(
+        "Error = {:.1}%",
+        100.0 * (solution_norm - mie_avg).abs() / mie_avg
+    );
 
     // Check front/back
     let mut front_bem: Vec<f64> = Vec::new();
@@ -114,20 +127,31 @@ fn main() {
     let front_avg = front_bem.iter().sum::<f64>() / front_bem.len() as f64;
     let back_avg = back_bem.iter().sum::<f64>() / back_bem.len() as f64;
 
-    println!("\nFront (z > 0): BEM = {:.4}, Mie @ 0° = {:.4}, error = {:.1}%",
-             front_avg, mie.pressure[0].norm(),
-             100.0 * (front_avg - mie.pressure[0].norm()).abs() / mie.pressure[0].norm());
-    println!("Back (z < 0): BEM = {:.4}, Mie @ 180° = {:.4}, error = {:.1}%",
-             back_avg, mie.pressure[18].norm(),
-             100.0 * (back_avg - mie.pressure[18].norm()).abs() / mie.pressure[18].norm());
+    println!(
+        "\nFront (z > 0): BEM = {:.4}, Mie @ 0° = {:.4}, error = {:.1}%",
+        front_avg,
+        mie.pressure[0].norm(),
+        100.0 * (front_avg - mie.pressure[0].norm()).abs() / mie.pressure[0].norm()
+    );
+    println!(
+        "Back (z < 0): BEM = {:.4}, Mie @ 180° = {:.4}, error = {:.1}%",
+        back_avg,
+        mie.pressure[18].norm(),
+        100.0 * (back_avg - mie.pressure[18].norm()).abs() / mie.pressure[18].norm()
+    );
 
     // Verify the incident field RHS values
     println!("\n=== Incident Field Values ===");
     println!("Front element sample:");
     for (i, elem) in elements.iter().enumerate() {
         if elem.center[2] > 0.08 {
-            println!("  elem[{}]: z = {:.4}, |p_inc| = {:.4}, |dpdn| = {:.4}",
-                     i, elem.center[2], p_inc[i].norm(), dpdn_inc[i].norm());
+            println!(
+                "  elem[{}]: z = {:.4}, |p_inc| = {:.4}, |dpdn| = {:.4}",
+                i,
+                elem.center[2],
+                p_inc[i].norm(),
+                dpdn_inc[i].norm()
+            );
             println!("           |rhs| = {:.4} = |p_inc + β*dpdn|", rhs[i].norm());
             break;
         }
@@ -136,8 +160,13 @@ fn main() {
     println!("\nBack element sample:");
     for (i, elem) in elements.iter().enumerate() {
         if elem.center[2] < -0.08 {
-            println!("  elem[{}]: z = {:.4}, |p_inc| = {:.4}, |dpdn| = {:.4}",
-                     i, elem.center[2], p_inc[i].norm(), dpdn_inc[i].norm());
+            println!(
+                "  elem[{}]: z = {:.4}, |p_inc| = {:.4}, |dpdn| = {:.4}",
+                i,
+                elem.center[2],
+                p_inc[i].norm(),
+                dpdn_inc[i].norm()
+            );
             println!("           |rhs| = {:.4} = |p_inc + β*dpdn|", rhs[i].norm());
             break;
         }
@@ -147,7 +176,10 @@ fn main() {
         println!("\n✓ Solver is working correctly (relative residual < 1e-8)");
         println!("  The issue is in the BEM formulation or RHS computation.");
     } else {
-        println!("\n✗ Solver may have issues (relative residual = {:.2e})", residual_norm / rhs_norm);
+        println!(
+            "\n✗ Solver may have issues (relative residual = {:.2e})",
+            residual_norm / rhs_norm
+        );
     }
 }
 

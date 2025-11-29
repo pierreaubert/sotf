@@ -158,7 +158,12 @@ impl Button {
 
         // Handle selected state for Primary variant
         let (bg, bg_hover, text_color, border_color) = if self.selected {
-            (theme.accent, theme.accent_hover, theme.text_primary, theme.accent)
+            (
+                theme.accent,
+                theme.accent_hover,
+                theme.text_primary,
+                theme.accent,
+            )
         } else {
             match self.variant {
                 ButtonVariant::Primary => (
@@ -173,12 +178,9 @@ impl Button {
                     theme.text_secondary,
                     theme.surface,
                 ),
-                ButtonVariant::Destructive => (
-                    theme.error,
-                    rgb(0xe64545),
-                    theme.text_primary,
-                    theme.error,
-                ),
+                ButtonVariant::Destructive => {
+                    (theme.error, rgb(0xe64545), theme.text_primary, theme.error)
+                }
                 ButtonVariant::Ghost => (
                     rgba(0x00000000),
                     theme.surface_hover,
@@ -257,7 +259,12 @@ impl RenderOnce for Button {
 
         // Handle selected state for Primary variant
         let (bg, bg_hover, text_color, border_color) = if self.selected {
-            (theme.accent, theme.accent_hover, theme.text_primary, theme.accent)
+            (
+                theme.accent,
+                theme.accent_hover,
+                theme.text_primary,
+                theme.accent,
+            )
         } else {
             match self.variant {
                 ButtonVariant::Primary => (
@@ -272,12 +279,9 @@ impl RenderOnce for Button {
                     theme.text_secondary,
                     theme.surface,
                 ),
-                ButtonVariant::Destructive => (
-                    theme.error,
-                    rgb(0xe64545),
-                    theme.text_primary,
-                    theme.error,
-                ),
+                ButtonVariant::Destructive => {
+                    (theme.error, rgb(0xe64545), theme.text_primary, theme.error)
+                }
                 ButtonVariant::Ghost => (
                     rgba(0x00000000),
                     theme.surface_hover,

@@ -37,13 +37,7 @@ fn main() {
     );
     println!("{}", "-".repeat(50));
 
-    fn solve_for_mesh(
-        mesh: &Mesh,
-        ka: f64,
-        radius: f64,
-        speed_of_sound: f64,
-        density: f64,
-    ) -> f64 {
+    fn solve_for_mesh(mesh: &Mesh, ka: f64, radius: f64, speed_of_sound: f64, density: f64) -> f64 {
         let freq = ka * speed_of_sound / (2.0 * PI * radius);
         let k = ka / radius;
         let n = mesh.elements.len();
@@ -51,8 +45,7 @@ fn main() {
         // Prepare elements
         let mut elements = mesh.elements.clone();
         for (i, elem) in elements.iter_mut().enumerate() {
-            elem.boundary_condition =
-                BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
+            elem.boundary_condition = BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
             elem.dof_addresses = vec![i];
         }
 

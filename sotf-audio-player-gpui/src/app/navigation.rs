@@ -252,8 +252,7 @@ impl App {
             self.library_page -= 1;
             let albums = self.get_paginated_albums();
             if !albums.is_empty() {
-                let last_row_start =
-                    ((albums.len() - 1) / grid_columns) * grid_columns;
+                let last_row_start = ((albums.len() - 1) / grid_columns) * grid_columns;
                 self.selected_album_index = (self.selected_album_index % grid_columns)
                     .min(albums.len() - 1 - last_row_start)
                     + last_row_start;

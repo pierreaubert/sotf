@@ -32,9 +32,15 @@ fn main() {
     let k = 2.0 * PI * frequency / speed_of_sound;
     let ka = k * radius;
 
-    println!("Testing ka = {:.2} (f = {:.1} Hz, k = {:.4})", ka, frequency, k);
-    println!("Wavelength λ = {:.4} m, Sphere diameter = {:.4} m",
-             2.0 * PI / k, 2.0 * radius);
+    println!(
+        "Testing ka = {:.2} (f = {:.1} Hz, k = {:.4})",
+        ka, frequency, k
+    );
+    println!(
+        "Wavelength λ = {:.4} m, Sphere diameter = {:.4} m",
+        2.0 * PI / k,
+        2.0 * radius
+    );
     println!("Elements per wavelength criterion: ~6-10 needed\n");
 
     // Test different mesh resolutions
@@ -42,8 +48,10 @@ fn main() {
         let n_elements = n_theta * n_phi * 2;
         let elements_per_wavelength = (n_elements as f64).sqrt() * 2.0 * PI / (ka * 2.0 * PI);
 
-        println!("=== Mesh: {} ({} elements, ~{:.1} per λ) ===",
-                 name, n_elements, elements_per_wavelength);
+        println!(
+            "=== Mesh: {} ({} elements, ~{:.1} per λ) ===",
+            name, n_elements, elements_per_wavelength
+        );
 
         let mesh = generate_sphere_mesh(radius, n_theta, n_phi);
         let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
@@ -109,9 +117,11 @@ fn main() {
             }
 
             // Average BEM pressure in this angular bin
-            let avg_p: Complex64 = elements_in_bin.iter()
+            let avg_p: Complex64 = elements_in_bin
+                .iter()
                 .map(|(idx, _)| solution.x[*idx])
-                .sum::<Complex64>() / elements_in_bin.len() as f64;
+                .sum::<Complex64>()
+                / elements_in_bin.len() as f64;
             let bem_mag = avg_p.norm();
 
             // Get corresponding analytical value
@@ -132,8 +142,15 @@ fn main() {
             count += 1;
 
             let err_marker = if error_pct > 20.0 { " <--" } else { "" };
-            println!("  {:>7.1}° |  {:>7.4}  |  {:>7.4}  |  {:>7.1}%  |  {:>5}{}",
-                     bin_theta, bem_mag, mie_mag, error_pct, elements_in_bin.len(), err_marker);
+            println!(
+                "  {:>7.1}° |  {:>7.4}  |  {:>7.4}  |  {:>7.1}%  |  {:>5}{}",
+                bin_theta,
+                bem_mag,
+                mie_mag,
+                error_pct,
+                elements_in_bin.len(),
+                err_marker
+            );
         }
 
         let avg_error = total_error / count as f64;
@@ -179,8 +196,10 @@ fn main() {
     let edge_e_magnitude = 70.0;
     let min_beta_e = 10.0;
     let beta_floored = physics.burton_miller_beta_floored(edge_e_magnitude, min_beta_e);
-    let system_floored = build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta_floored);
-    let incident_rhs_floored = incident.compute_rhs_with_beta(&centers, &normals, &physics, beta_floored);
+    let system_floored =
+        build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta_floored);
+    let incident_rhs_floored =
+        incident.compute_rhs_with_beta(&centers, &normals, &physics, beta_floored);
     let total_rhs_floored = &system_floored.rhs + &incident_rhs_floored;
     let solution_floored = direct_solve(&system_floored.matrix, &total_rhs_floored);
 
@@ -201,8 +220,11 @@ fn main() {
         angle_bins[bin_idx].1.push(i);
     }
 
-    println!("  β_traditional = {:.4}i, β_floored = {:.4}i",
-             physics.burton_miller_beta().im, beta_floored.im);
+    println!(
+        "  β_traditional = {:.4}i, β_floored = {:.4}i",
+        physics.burton_miller_beta().im,
+        beta_floored.im
+    );
     println!("\n  θ (deg)  |  BEM(trad) |  BEM(floor)|  Mie |p|  |  Err(t) |  Err(f)");
     println!("  ---------|------------|------------|-----------|---------|--------");
 
@@ -215,13 +237,17 @@ fn main() {
             continue;
         }
 
-        let avg_trad: f64 = indices.iter()
+        let avg_trad: f64 = indices
+            .iter()
             .map(|idx| solution_trad.x[*idx].norm())
-            .sum::<f64>() / indices.len() as f64;
+            .sum::<f64>()
+            / indices.len() as f64;
 
-        let avg_floor: f64 = indices.iter()
+        let avg_floor: f64 = indices
+            .iter()
             .map(|idx| solution_floored.x[*idx].norm())
-            .sum::<f64>() / indices.len() as f64;
+            .sum::<f64>()
+            / indices.len() as f64;
 
         let bin_idx = (*bin_theta / 10.0).floor() as usize;
         let mie_mag = if bin_idx < mie.pressure.len() {
@@ -232,22 +258,31 @@ fn main() {
 
         let err_trad = if mie_mag > 1e-10 {
             100.0 * (avg_trad - mie_mag).abs() / mie_mag
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         let err_floor = if mie_mag > 1e-10 {
             100.0 * (avg_floor - mie_mag).abs() / mie_mag
-        } else { 0.0 };
+        } else {
+            0.0
+        };
 
         total_err_trad += err_trad;
         total_err_floor += err_floor;
         count += 1;
 
-        println!("  {:>7.1}° |  {:>8.4}  |  {:>8.4}  |  {:>7.4}  | {:>6.1}% | {:>6.1}%",
-                 bin_theta, avg_trad, avg_floor, mie_mag, err_trad, err_floor);
+        println!(
+            "  {:>7.1}° |  {:>8.4}  |  {:>8.4}  |  {:>7.4}  | {:>6.1}% | {:>6.1}%",
+            bin_theta, avg_trad, avg_floor, mie_mag, err_trad, err_floor
+        );
     }
 
-    println!("\n  Average error: traditional={:.1}%, floored={:.1}%",
-             total_err_trad / count as f64, total_err_floor / count as f64);
+    println!(
+        "\n  Average error: traditional={:.1}%, floored={:.1}%",
+        total_err_trad / count as f64,
+        total_err_floor / count as f64
+    );
 }
 
 #[cfg(not(feature = "pure-rust"))]

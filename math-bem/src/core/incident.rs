@@ -100,12 +100,16 @@ impl IncidentField {
         let mut pressure = Array1::zeros(n);
 
         match self {
-            IncidentField::PlaneWave { direction, amplitude } => {
+            IncidentField::PlaneWave {
+                direction,
+                amplitude,
+            } => {
                 for i in 0..n {
                     // k·x = k * (d·x)
-                    let kdotx = k * (direction[0] * points[[i, 0]]
-                        + direction[1] * points[[i, 1]]
-                        + direction[2] * points[[i, 2]]);
+                    let kdotx = k
+                        * (direction[0] * points[[i, 0]]
+                            + direction[1] * points[[i, 1]]
+                            + direction[2] * points[[i, 2]]);
 
                     // p = A * exp(i k·x)
                     pressure[i] = *amplitude * Complex64::new(kdotx.cos(), kdotx.sin());
@@ -131,9 +135,10 @@ impl IncidentField {
             IncidentField::MultiplePlaneWaves(waves) => {
                 for (direction, amplitude) in waves {
                     for i in 0..n {
-                        let kdotx = k * (direction[0] * points[[i, 0]]
-                            + direction[1] * points[[i, 1]]
-                            + direction[2] * points[[i, 2]]);
+                        let kdotx = k
+                            * (direction[0] * points[[i, 0]]
+                                + direction[1] * points[[i, 1]]
+                                + direction[2] * points[[i, 2]]);
                         pressure[i] += *amplitude * Complex64::new(kdotx.cos(), kdotx.sin());
                     }
                 }
@@ -180,16 +185,21 @@ impl IncidentField {
         let mut dpdn = Array1::zeros(n);
 
         match self {
-            IncidentField::PlaneWave { direction, amplitude } => {
+            IncidentField::PlaneWave {
+                direction,
+                amplitude,
+            } => {
                 for i in 0..n {
-                    let kdotx = k * (direction[0] * points[[i, 0]]
-                        + direction[1] * points[[i, 1]]
-                        + direction[2] * points[[i, 2]]);
+                    let kdotx = k
+                        * (direction[0] * points[[i, 0]]
+                            + direction[1] * points[[i, 1]]
+                            + direction[2] * points[[i, 2]]);
 
                     // ∂p/∂n = ik (d·n) p
-                    let kdotn = k * (direction[0] * normals[[i, 0]]
-                        + direction[1] * normals[[i, 1]]
-                        + direction[2] * normals[[i, 2]]);
+                    let kdotn = k
+                        * (direction[0] * normals[[i, 0]]
+                            + direction[1] * normals[[i, 1]]
+                            + direction[2] * normals[[i, 2]]);
 
                     let p = *amplitude * Complex64::new(kdotx.cos(), kdotx.sin());
                     dpdn[i] = Complex64::new(0.0, kdotn) * p;
@@ -213,7 +223,9 @@ impl IncidentField {
                         let dgdr = (Complex64::new(0.0, k) - Complex64::new(1.0 / r, 0.0)) * g;
 
                         // ∂r/∂n = (x-x0)·n / r
-                        let drdn = (dx * normals[[i, 0]] + dy * normals[[i, 1]] + dz * normals[[i, 2]]) / r;
+                        let drdn =
+                            (dx * normals[[i, 0]] + dy * normals[[i, 1]] + dz * normals[[i, 2]])
+                                / r;
 
                         dpdn[i] = *strength * dgdr * drdn;
                     }
@@ -223,13 +235,15 @@ impl IncidentField {
             IncidentField::MultiplePlaneWaves(waves) => {
                 for (direction, amplitude) in waves {
                     for i in 0..n {
-                        let kdotx = k * (direction[0] * points[[i, 0]]
-                            + direction[1] * points[[i, 1]]
-                            + direction[2] * points[[i, 2]]);
+                        let kdotx = k
+                            * (direction[0] * points[[i, 0]]
+                                + direction[1] * points[[i, 1]]
+                                + direction[2] * points[[i, 2]]);
 
-                        let kdotn = k * (direction[0] * normals[[i, 0]]
-                            + direction[1] * normals[[i, 1]]
-                            + direction[2] * normals[[i, 2]]);
+                        let kdotn = k
+                            * (direction[0] * normals[[i, 0]]
+                                + direction[1] * normals[[i, 1]]
+                                + direction[2] * normals[[i, 2]]);
 
                         let p = *amplitude * Complex64::new(kdotx.cos(), kdotx.sin());
                         dpdn[i] += Complex64::new(0.0, kdotn) * p;
@@ -250,7 +264,10 @@ impl IncidentField {
                             let exp_ikr = Complex64::new(kr.cos(), kr.sin());
                             let g = exp_ikr / (4.0 * PI * r);
                             let dgdr = (Complex64::new(0.0, k) - Complex64::new(1.0 / r, 0.0)) * g;
-                            let drdn = (dx * normals[[i, 0]] + dy * normals[[i, 1]] + dz * normals[[i, 2]]) / r;
+                            let drdn = (dx * normals[[i, 0]]
+                                + dy * normals[[i, 1]]
+                                + dz * normals[[i, 2]])
+                                / r;
 
                             dpdn[i] += *strength * dgdr * drdn;
                         }
@@ -341,11 +358,9 @@ mod tests {
         let physics = make_physics(1.0);
 
         // Points on z-axis
-        let points = Array2::from_shape_vec(
-            (3, 3),
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0],
-        )
-        .unwrap();
+        let points =
+            Array2::from_shape_vec((3, 3), vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0])
+                .unwrap();
 
         let p = incident.evaluate_pressure(&points, &physics);
 
@@ -365,11 +380,9 @@ mod tests {
         let physics = make_physics(1.0);
 
         // Points at different distances
-        let points = Array2::from_shape_vec(
-            (3, 3),
-            vec![1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 4.0, 0.0, 0.0],
-        )
-        .unwrap();
+        let points =
+            Array2::from_shape_vec((3, 3), vec![1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 4.0, 0.0, 0.0])
+                .unwrap();
 
         let p = incident.evaluate_pressure(&points, &physics);
 

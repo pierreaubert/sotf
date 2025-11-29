@@ -170,8 +170,22 @@ impl LoadingDots {
             .items_center()
             .gap_1()
             .child(div().w(dot_size).h(dot_size).rounded_full().bg(color))
-            .child(div().w(dot_size).h(dot_size).rounded_full().bg(color).opacity(0.7))
-            .child(div().w(dot_size).h(dot_size).rounded_full().bg(color).opacity(0.4))
+            .child(
+                div()
+                    .w(dot_size)
+                    .h(dot_size)
+                    .rounded_full()
+                    .bg(color)
+                    .opacity(0.7),
+            )
+            .child(
+                div()
+                    .w(dot_size)
+                    .h(dot_size)
+                    .rounded_full()
+                    .bg(color)
+                    .opacity(0.4),
+            )
     }
 }
 

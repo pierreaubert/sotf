@@ -14,11 +14,11 @@ pub mod singular;
 
 pub use gauss::*;
 pub use regular::{
-    integrate_g_only, integrate_h_only, optimal_quadrature_order, quasi_singular_integration,
-    regular_integration, regular_integration_fixed_order, HIGH_ACCURACY_THRESHOLD,
-    QUASI_SINGULAR_THRESHOLD,
+    HIGH_ACCURACY_THRESHOLD, QUASI_SINGULAR_THRESHOLD, integrate_g_only, integrate_h_only,
+    optimal_quadrature_order, quasi_singular_integration, regular_integration,
+    regular_integration_fixed_order,
 };
 pub use singular::{
-    generate_subelements, singular_integration, singular_integration_with_params,
-    QuadratureParams, Subelement, MAX_SUBELEMENTS,
+    MAX_SUBELEMENTS, QuadratureParams, Subelement, generate_subelements, singular_integration,
+    singular_integration_with_params,
 };

@@ -37,18 +37,13 @@ pub fn render_loudness_compensation_plugin(
                 .child(render_section_header("TARGET LOUDNESS", theme))
                 // Large LUFS display
                 .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .py_4()
-                        .child(
-                            div()
-                                .text_size(px(36.0))
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(rgb(0x0891b2))
-                                .child(format!("{:.1} LUFS", target_lufs)),
-                        ),
+                    div().flex().items_center().justify_center().py_4().child(
+                        div()
+                            .text_size(px(36.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(rgb(0x0891b2))
+                            .child(format!("{:.1} LUFS", target_lufs)),
+                    ),
                 )
                 // LUFS meter bar (uses same scale as ticks)
                 .child(
@@ -74,9 +69,12 @@ pub fn render_loudness_compensation_plugin(
                         .justify_between()
                         .text_xs()
                         .text_color(theme.text_muted)
-                        .children(lufs_tick_config.major_values.iter().map(|v| {
-                            div().child(format!("{:.0}", v))
-                        })),
+                        .children(
+                            lufs_tick_config
+                                .major_values
+                                .iter()
+                                .map(|v| div().child(format!("{:.0}", v))),
+                        ),
                 ),
         )
         // Gain range section
@@ -161,18 +159,36 @@ pub fn render_loudness_compensation_plugin(
                 .border_color(theme.border)
                 .p_3()
                 .child(render_section_header("PARAMETERS", theme))
-                .child(render_param_row("Target LUFS", &format!("{:.1}", target_lufs), 0, selected_param, is_editing, theme))
-                .child(render_param_row("Min Gain", &format!("{:.1} dB", min_gain_db), 1, selected_param, is_editing, theme))
-                .child(render_param_row("Max Gain", &format!("{:.1} dB", max_gain_db), 2, selected_param, is_editing, theme)),
+                .child(render_param_row(
+                    "Target LUFS",
+                    &format!("{:.1}", target_lufs),
+                    0,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Min Gain",
+                    &format!("{:.1} dB", min_gain_db),
+                    1,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Max Gain",
+                    &format!("{:.1} dB", max_gain_db),
+                    2,
+                    selected_param,
+                    is_editing,
+                    theme,
+                )),
         )
         .when(is_editing, |d| d.child(render_edit_hints(theme)))
 }
 
 /// Render the Loudness Monitor plugin (analyzer)
-pub fn render_loudness_monitor_plugin(
-    _is_editing: bool,
-    theme: &Theme,
-) -> impl IntoElement {
+pub fn render_loudness_monitor_plugin(_is_editing: bool, theme: &Theme) -> impl IntoElement {
     div()
         .flex()
         .flex_col()
@@ -289,12 +305,9 @@ pub fn render_loudness_monitor_plugin(
                 .border_1()
                 .border_color(theme.border)
                 .p_3()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.text_muted)
-                        .child("Real-time loudness monitoring following EBU R128 / ITU-R BS.1770 standards."),
-                )
+                .child(div().text_sm().text_color(theme.text_muted).child(
+                    "Real-time loudness monitoring following EBU R128 / ITU-R BS.1770 standards.",
+                ))
                 .child(
                     div()
                         .text_xs()

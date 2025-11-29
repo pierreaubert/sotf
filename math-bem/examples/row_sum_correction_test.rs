@@ -5,7 +5,7 @@
 #[cfg(feature = "pure-rust")]
 fn main() {
     use bem::analytical::sphere_scattering_3d;
-    use bem::core::assembly::tbem::{build_tbem_system, apply_row_sum_correction};
+    use bem::core::assembly::tbem::{apply_row_sum_correction, build_tbem_system};
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
@@ -21,14 +21,20 @@ fn main() {
     let k = 2.0 * PI * frequency / speed_of_sound;
 
     println!("=== Row Sum Correction Test ===\n");
-    println!("ka = {:.2}, k = {:.4}, radius = {}, frequency = {:.2} Hz",
-             ka_target, k, radius, frequency);
+    println!(
+        "ka = {:.2}, k = {:.4}, radius = {}, frequency = {:.2} Hz",
+        ka_target, k, radius, frequency
+    );
 
     // Mie theory reference at surface
     let theta_samples: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0 * PI / 180.0).collect();
     let mie = sphere_scattering_3d(k, radius, 50, vec![radius], theta_samples.clone());
-    let mie_avg_magnitude: f64 = mie.pressure.iter().map(|p| p.norm()).sum::<f64>() / mie.pressure.len() as f64;
-    println!("\nMie theory: average |p_total| at surface = {:.4}", mie_avg_magnitude);
+    let mie_avg_magnitude: f64 =
+        mie.pressure.iter().map(|p| p.norm()).sum::<f64>() / mie.pressure.len() as f64;
+    println!(
+        "\nMie theory: average |p_total| at surface = {:.4}",
+        mie_avg_magnitude
+    );
 
     // Test with different mesh resolutions
     for subdivisions in [1, 2] {
@@ -36,7 +42,11 @@ fn main() {
         let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
         let beta = physics.burton_miller_beta();
 
-        println!("\n--- Icosphere subdivisions={} ({} elements) ---", subdivisions, mesh.elements.len());
+        println!(
+            "\n--- Icosphere subdivisions={} ({} elements) ---",
+            subdivisions,
+            mesh.elements.len()
+        );
         println!("    β = {:.4}+{:.4}i", beta.re, beta.im);
 
         // Prepare elements with velocity BC (rigid scatterer)
@@ -60,8 +70,12 @@ fn main() {
             row_sums_before.push(row_sum);
         }
         let avg_row_sum_before: Complex64 = row_sums_before.iter().sum::<Complex64>() / n as f64;
-        println!("    Row sum before correction: avg = {:.4}+{:.4}i (|.|={:.4})",
-                 avg_row_sum_before.re, avg_row_sum_before.im, avg_row_sum_before.norm());
+        println!(
+            "    Row sum before correction: avg = {:.4}+{:.4}i (|.|={:.4})",
+            avg_row_sum_before.re,
+            avg_row_sum_before.im,
+            avg_row_sum_before.norm()
+        );
 
         // Build RHS from incident field
         let incident = IncidentField::plane_wave_z();
@@ -85,10 +99,14 @@ fn main() {
         // Solve uncorrected system
         let p_uncorrected = solve_system(&system_uncorrected.matrix, &rhs);
         let avg_p_uncorrected: f64 = p_uncorrected.iter().map(|p| p.norm()).sum::<f64>() / n as f64;
-        let error_uncorrected = (avg_p_uncorrected - mie_avg_magnitude).abs() / mie_avg_magnitude * 100.0;
+        let error_uncorrected =
+            (avg_p_uncorrected - mie_avg_magnitude).abs() / mie_avg_magnitude * 100.0;
 
         println!("    Without correction:");
-        println!("      avg |p| = {:.4}, error vs Mie = {:.1}%", avg_p_uncorrected, error_uncorrected);
+        println!(
+            "      avg |p| = {:.4}, error vs Mie = {:.1}%",
+            avg_p_uncorrected, error_uncorrected
+        );
 
         // Build system WITH correction
         let mut system_corrected = build_tbem_system(&elements, &mesh.nodes, &physics);
@@ -104,21 +122,28 @@ fn main() {
             row_sums_after.push(row_sum);
         }
         let avg_row_sum_after: Complex64 = row_sums_after.iter().sum::<Complex64>() / n as f64;
-        println!("    Row sum after correction: avg = {:.2e}+{:.2e}i (should be ~0)",
-                 avg_row_sum_after.re, avg_row_sum_after.im);
+        println!(
+            "    Row sum after correction: avg = {:.2e}+{:.2e}i (should be ~0)",
+            avg_row_sum_after.re, avg_row_sum_after.im
+        );
 
         // Solve corrected system
         let p_corrected = solve_system(&system_corrected.matrix, &rhs);
         let avg_p_corrected: f64 = p_corrected.iter().map(|p| p.norm()).sum::<f64>() / n as f64;
-        let error_corrected = (avg_p_corrected - mie_avg_magnitude).abs() / mie_avg_magnitude * 100.0;
+        let error_corrected =
+            (avg_p_corrected - mie_avg_magnitude).abs() / mie_avg_magnitude * 100.0;
 
         println!("    With correction:");
-        println!("      avg |p| = {:.4}, error vs Mie = {:.1}%", avg_p_corrected, error_corrected);
+        println!(
+            "      avg |p| = {:.4}, error vs Mie = {:.1}%",
+            avg_p_corrected, error_corrected
+        );
 
         // Check diagonal change
         let diag_change: f64 = (0..n)
-            .map(|i| (system_corrected.matrix[[i,i]] - system_uncorrected.matrix[[i,i]]).norm())
-            .sum::<f64>() / n as f64;
+            .map(|i| (system_corrected.matrix[[i, i]] - system_uncorrected.matrix[[i, i]]).norm())
+            .sum::<f64>()
+            / n as f64;
         println!("    Avg diagonal change: {:.4}", diag_change);
     }
 
@@ -129,7 +154,10 @@ fn main() {
 }
 
 /// Solve linear system using LU decomposition
-fn solve_system(a: &ndarray::Array2<num_complex::Complex64>, b: &ndarray::Array1<num_complex::Complex64>) -> ndarray::Array1<num_complex::Complex64> {
+fn solve_system(
+    a: &ndarray::Array2<num_complex::Complex64>,
+    b: &ndarray::Array1<num_complex::Complex64>,
+) -> ndarray::Array1<num_complex::Complex64> {
     use ndarray_linalg::Solve;
     a.solve(b).expect("Failed to solve linear system")
 }

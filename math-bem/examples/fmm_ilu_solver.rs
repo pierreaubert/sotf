@@ -34,7 +34,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::cgs::{cgs_solve, CgsConfig};
+    use bem::core::solver::cgs::{CgsConfig, cgs_solve};
     use bem::core::solver::direct::direct_solve;
     use bem::core::solver::ilu_preconditioner::IluPreconditioner;
     use bem::core::solver::preconditioner::Preconditioner;
@@ -51,10 +51,7 @@ fn main() {
     let density = 1.21;
 
     // Test different mesh sizes
-    let mesh_configs = vec![
-        (2, "Small (320 elements)"),
-        (3, "Medium (1280 elements)"),
-    ];
+    let mesh_configs = vec![(2, "Small (320 elements)"), (3, "Medium (1280 elements)")];
 
     // Test frequency (ka = 1.0 for best accuracy)
     let ka = 1.0;
@@ -130,10 +127,14 @@ fn main() {
 
         // For dense TBEM, use very low threshold (or 0 for full LU)
         let ilu_threshold = 0.01;
-        let ilu_setup = IluPreconditioner::setup_system_with_threshold(&tbem_system.matrix, ilu_threshold);
+        let ilu_setup =
+            IluPreconditioner::setup_system_with_threshold(&tbem_system.matrix, ilu_threshold);
 
         println!("    ILU threshold: {}", ilu_threshold);
-        println!("    Fill ratio: {:.1}%", ilu_setup.preconditioner.fill_ratio() * 100.0);
+        println!(
+            "    Fill ratio: {:.1}%",
+            ilu_setup.preconditioner.fill_ratio() * 100.0
+        );
 
         let scaled_rhs = &ilu_setup.row_scale * &rhs;
         let precond_rhs = ilu_setup.preconditioner.apply(&scaled_rhs);
@@ -170,13 +171,16 @@ fn main() {
         println!("    Build time: {:?}", fmm_build_time);
         println!("    Cluster levels: {}", mlfmm_system.num_levels);
         for level in 0..mlfmm_system.num_levels {
-            println!("      Level {}: {} clusters", level, mlfmm_system.num_clusters_at_level(level));
+            println!(
+                "      Level {}: {} clusters",
+                level,
+                mlfmm_system.num_clusters_at_level(level)
+            );
         }
 
         // Test FMM matvec
-        let test_x: Array1<Complex64> = Array1::from_iter(
-            (0..n).map(|i| Complex64::new((i as f64).sin(), (i as f64).cos()))
-        );
+        let test_x: Array1<Complex64> =
+            Array1::from_iter((0..n).map(|i| Complex64::new((i as f64).sin(), (i as f64).cos())));
 
         let fmm_matvec_start = std::time::Instant::now();
         let _fmm_y = mlfmm_system.matvec(&test_x);
@@ -190,8 +194,10 @@ fn main() {
         println!("    TBEM matvec: {:?}", tbem_matvec_time);
 
         if fmm_matvec_time < tbem_matvec_time {
-            println!("    FMM is {:.1}x faster for matvec",
-                tbem_matvec_time.as_secs_f64() / fmm_matvec_time.as_secs_f64());
+            println!(
+                "    FMM is {:.1}x faster for matvec",
+                tbem_matvec_time.as_secs_f64() / fmm_matvec_time.as_secs_f64()
+            );
         }
 
         println!();

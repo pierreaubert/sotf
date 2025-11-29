@@ -118,9 +118,19 @@ impl IconButton {
             }
             IconButtonVariant::Outline => {
                 if self.selected {
-                    (rgb(0x2a2a2a), rgb(0x3a3a3a), rgb(0xffffff), Some(rgb(0x007acc)))
+                    (
+                        rgb(0x2a2a2a),
+                        rgb(0x3a3a3a),
+                        rgb(0xffffff),
+                        Some(rgb(0x007acc)),
+                    )
                 } else {
-                    (rgba(0x00000000), rgb(0x2a2a2a), rgb(0xcccccc), Some(rgb(0x555555)))
+                    (
+                        rgba(0x00000000),
+                        rgb(0x2a2a2a),
+                        rgb(0xcccccc),
+                        Some(rgb(0x555555)),
+                    )
                 }
             }
         };

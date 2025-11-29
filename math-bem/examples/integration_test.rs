@@ -54,8 +54,12 @@ fn test_integration(
     let total_area: f64 = mesh.elements.iter().map(|e| e.area).sum();
     let expected_area = 4.0 * PI * radius * radius;
     println!("  {} elements", n);
-    println!("  Sum of element areas: {:.6e} (expected {:.6e}, error = {:.2}%)",
-             total_area, expected_area, 100.0 * (total_area - expected_area).abs() / expected_area);
+    println!(
+        "  Sum of element areas: {:.6e} (expected {:.6e}, error = {:.2}%)",
+        total_area,
+        expected_area,
+        100.0 * (total_area - expected_area).abs() / expected_area
+    );
 
     // Test: integrate G from a far-away source point
     // For r >> element_size, G ≈ exp(ikR)/(4πR) ≈ constant over element
@@ -89,11 +93,22 @@ fn test_integration(
     let expected_g = Complex64::new((k * r_far).cos(), (k * r_far).sin()) / (4.0 * PI * r_far);
     let expected_g_integral = expected_g * expected_area;
 
-    println!("  G integral sum: {:.6e} + {:.6e}i (|.|={:.6e})",
-             total_g_integral.re, total_g_integral.im, total_g_integral.norm());
-    println!("  Expected G integral: {:.6e} + {:.6e}i (|.|={:.6e})",
-             expected_g_integral.re, expected_g_integral.im, expected_g_integral.norm());
-    println!("  Ratio: {:.4}", total_g_integral.norm() / expected_g_integral.norm());
+    println!(
+        "  G integral sum: {:.6e} + {:.6e}i (|.|={:.6e})",
+        total_g_integral.re,
+        total_g_integral.im,
+        total_g_integral.norm()
+    );
+    println!(
+        "  Expected G integral: {:.6e} + {:.6e}i (|.|={:.6e})",
+        expected_g_integral.re,
+        expected_g_integral.im,
+        expected_g_integral.norm()
+    );
+    println!(
+        "  Ratio: {:.4}",
+        total_g_integral.norm() / expected_g_integral.norm()
+    );
 
     // Test: integrate 1 using the quadrature (compute sum of weighted Jacobians)
     // This tests if the weight × Jacobian gives the correct element areas
@@ -127,14 +142,19 @@ fn test_integration(
 
         errors.push(area_error);
         if i < 5 {
-            println!("    Element {}: actual area={:.6e}, computed={:.6e} (error={:.2}%)",
-                     i, elem.area, computed_area.re, area_error);
+            println!(
+                "    Element {}: actual area={:.6e}, computed={:.6e} (error={:.2}%)",
+                i, elem.area, computed_area.re, area_error
+            );
         }
     }
 
     let avg_error: f64 = errors.iter().sum::<f64>() / errors.len() as f64;
     let max_error = errors.iter().cloned().fold(0.0f64, f64::max);
-    println!("  Area reconstruction: avg error={:.2}%, max error={:.2}%", avg_error, max_error);
+    println!(
+        "  Area reconstruction: avg error={:.2}%, max error={:.2}%",
+        avg_error, max_error
+    );
 }
 
 #[cfg(not(feature = "pure-rust"))]

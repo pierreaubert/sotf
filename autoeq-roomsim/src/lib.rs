@@ -242,26 +242,66 @@ pub struct RectangularRoom {
 
 impl RectangularRoom {
     pub fn new(width: f64, depth: f64, height: f64) -> Self {
-        Self { width, depth, height }
+        Self {
+            width,
+            depth,
+            height,
+        }
     }
 
     pub fn get_edges(&self) -> Vec<(Point3D, Point3D)> {
         vec![
             // Floor edges
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(self.width, 0.0, 0.0)),
-            (Point3D::new(self.width, 0.0, 0.0), Point3D::new(self.width, self.depth, 0.0)),
-            (Point3D::new(self.width, self.depth, 0.0), Point3D::new(0.0, self.depth, 0.0)),
-            (Point3D::new(0.0, self.depth, 0.0), Point3D::new(0.0, 0.0, 0.0)),
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(self.width, 0.0, 0.0),
+            ),
+            (
+                Point3D::new(self.width, 0.0, 0.0),
+                Point3D::new(self.width, self.depth, 0.0),
+            ),
+            (
+                Point3D::new(self.width, self.depth, 0.0),
+                Point3D::new(0.0, self.depth, 0.0),
+            ),
+            (
+                Point3D::new(0.0, self.depth, 0.0),
+                Point3D::new(0.0, 0.0, 0.0),
+            ),
             // Ceiling edges
-            (Point3D::new(0.0, 0.0, self.height), Point3D::new(self.width, 0.0, self.height)),
-            (Point3D::new(self.width, 0.0, self.height), Point3D::new(self.width, self.depth, self.height)),
-            (Point3D::new(self.width, self.depth, self.height), Point3D::new(0.0, self.depth, self.height)),
-            (Point3D::new(0.0, self.depth, self.height), Point3D::new(0.0, 0.0, self.height)),
+            (
+                Point3D::new(0.0, 0.0, self.height),
+                Point3D::new(self.width, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width, 0.0, self.height),
+                Point3D::new(self.width, self.depth, self.height),
+            ),
+            (
+                Point3D::new(self.width, self.depth, self.height),
+                Point3D::new(0.0, self.depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, self.depth, self.height),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
             // Vertical edges
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 0.0, self.height)),
-            (Point3D::new(self.width, 0.0, 0.0), Point3D::new(self.width, 0.0, self.height)),
-            (Point3D::new(self.width, self.depth, 0.0), Point3D::new(self.width, self.depth, self.height)),
-            (Point3D::new(0.0, self.depth, 0.0), Point3D::new(0.0, self.depth, self.height)),
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width, 0.0, 0.0),
+                Point3D::new(self.width, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width, self.depth, 0.0),
+                Point3D::new(self.width, self.depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, self.depth, 0.0),
+                Point3D::new(0.0, self.depth, self.height),
+            ),
         ]
     }
 }
@@ -277,7 +317,13 @@ pub struct LShapedRoom {
 
 impl LShapedRoom {
     pub fn new(width1: f64, depth1: f64, width2: f64, depth2: f64, height: f64) -> Self {
-        Self { width1, depth1, width2, depth2, height }
+        Self {
+            width1,
+            depth1,
+            width2,
+            depth2,
+            height,
+        }
     }
 
     /// Check if a 2D point (x, y) is inside the L-shaped room footprint
@@ -309,7 +355,12 @@ impl LShapedRoom {
     /// The reflection path from source to listener via the image source must:
     /// 1. Cross the intended wall
     /// 2. Not pass through any internal walls or outside the room
-    pub fn is_valid_image_source(&self, image: &Point3D, listener: &Point3D, _source: &Point3D) -> bool {
+    pub fn is_valid_image_source(
+        &self,
+        image: &Point3D,
+        listener: &Point3D,
+        _source: &Point3D,
+    ) -> bool {
         // The image source should be outside the room (on the other side of the wall)
         // For an L-shaped room, we also need to check that the path doesn't pass
         // through the internal corner or outside the room
@@ -395,48 +446,39 @@ impl LShapedRoom {
         let mut images = Vec::new();
 
         // Left wall (x = 0) - always present for full depth
-        images.push((
-            Point3D::new(-source.x, source.y, source.z),
-            "left"
-        ));
+        images.push((Point3D::new(-source.x, source.y, source.z), "left"));
 
         // Right wall handling depends on source y position
         if source.y <= self.depth1 {
             // Source is in section 1 (front), reflect off x = width1
             images.push((
                 Point3D::new(2.0 * self.width1 - source.x, source.y, source.z),
-                "right"
+                "right",
             ));
         } else {
             // Source is in section 2 (back), reflect off x = width2
             images.push((
                 Point3D::new(2.0 * self.width2 - source.x, source.y, source.z),
-                "right"
+                "right",
             ));
         }
 
         // Front wall (y = 0)
-        images.push((
-            Point3D::new(source.x, -source.y, source.z),
-            "front"
-        ));
+        images.push((Point3D::new(source.x, -source.y, source.z), "front"));
 
         // Back wall (y = total_depth)
         images.push((
             Point3D::new(source.x, 2.0 * total_depth - source.y, source.z),
-            "back"
+            "back",
         ));
 
         // Floor (z = 0)
-        images.push((
-            Point3D::new(source.x, source.y, -source.z),
-            "floor"
-        ));
+        images.push((Point3D::new(source.x, source.y, -source.z), "floor"));
 
         // Ceiling (z = height)
         images.push((
             Point3D::new(source.x, source.y, 2.0 * self.height - source.z),
-            "ceiling"
+            "ceiling",
         ));
 
         // Interior walls (the step)
@@ -446,7 +488,7 @@ impl LShapedRoom {
             // Can reflect off the interior horizontal step (y = depth1)
             images.push((
                 Point3D::new(source.x, 2.0 * self.depth1 - source.y, source.z),
-                "step_horizontal"
+                "step_horizontal",
             ));
         }
 
@@ -470,26 +512,80 @@ impl LShapedRoom {
         let total_depth = self.depth1 + self.depth2;
         vec![
             // Floor edges - Main section
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(self.width1, 0.0, 0.0)),
-            (Point3D::new(self.width1, 0.0, 0.0), Point3D::new(self.width1, self.depth1, 0.0)),
-            (Point3D::new(self.width1, self.depth1, 0.0), Point3D::new(self.width2, self.depth1, 0.0)),
-            (Point3D::new(self.width2, self.depth1, 0.0), Point3D::new(self.width2, total_depth, 0.0)),
-            (Point3D::new(self.width2, total_depth, 0.0), Point3D::new(0.0, total_depth, 0.0)),
-            (Point3D::new(0.0, total_depth, 0.0), Point3D::new(0.0, 0.0, 0.0)),
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(self.width1, 0.0, 0.0),
+            ),
+            (
+                Point3D::new(self.width1, 0.0, 0.0),
+                Point3D::new(self.width1, self.depth1, 0.0),
+            ),
+            (
+                Point3D::new(self.width1, self.depth1, 0.0),
+                Point3D::new(self.width2, self.depth1, 0.0),
+            ),
+            (
+                Point3D::new(self.width2, self.depth1, 0.0),
+                Point3D::new(self.width2, total_depth, 0.0),
+            ),
+            (
+                Point3D::new(self.width2, total_depth, 0.0),
+                Point3D::new(0.0, total_depth, 0.0),
+            ),
+            (
+                Point3D::new(0.0, total_depth, 0.0),
+                Point3D::new(0.0, 0.0, 0.0),
+            ),
             // Ceiling edges
-            (Point3D::new(0.0, 0.0, self.height), Point3D::new(self.width1, 0.0, self.height)),
-            (Point3D::new(self.width1, 0.0, self.height), Point3D::new(self.width1, self.depth1, self.height)),
-            (Point3D::new(self.width1, self.depth1, self.height), Point3D::new(self.width2, self.depth1, self.height)),
-            (Point3D::new(self.width2, self.depth1, self.height), Point3D::new(self.width2, total_depth, self.height)),
-            (Point3D::new(self.width2, total_depth, self.height), Point3D::new(0.0, total_depth, self.height)),
-            (Point3D::new(0.0, total_depth, self.height), Point3D::new(0.0, 0.0, self.height)),
+            (
+                Point3D::new(0.0, 0.0, self.height),
+                Point3D::new(self.width1, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width1, 0.0, self.height),
+                Point3D::new(self.width1, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width1, self.depth1, self.height),
+                Point3D::new(self.width2, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width2, self.depth1, self.height),
+                Point3D::new(self.width2, total_depth, self.height),
+            ),
+            (
+                Point3D::new(self.width2, total_depth, self.height),
+                Point3D::new(0.0, total_depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, total_depth, self.height),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
             // Vertical edges
-            (Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 0.0, self.height)),
-            (Point3D::new(self.width1, 0.0, 0.0), Point3D::new(self.width1, 0.0, self.height)),
-            (Point3D::new(self.width1, self.depth1, 0.0), Point3D::new(self.width1, self.depth1, self.height)),
-            (Point3D::new(self.width2, self.depth1, 0.0), Point3D::new(self.width2, self.depth1, self.height)),
-            (Point3D::new(self.width2, total_depth, 0.0), Point3D::new(self.width2, total_depth, self.height)),
-            (Point3D::new(0.0, total_depth, 0.0), Point3D::new(0.0, total_depth, self.height)),
+            (
+                Point3D::new(0.0, 0.0, 0.0),
+                Point3D::new(0.0, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width1, 0.0, 0.0),
+                Point3D::new(self.width1, 0.0, self.height),
+            ),
+            (
+                Point3D::new(self.width1, self.depth1, 0.0),
+                Point3D::new(self.width1, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width2, self.depth1, 0.0),
+                Point3D::new(self.width2, self.depth1, self.height),
+            ),
+            (
+                Point3D::new(self.width2, total_depth, 0.0),
+                Point3D::new(self.width2, total_depth, self.height),
+            ),
+            (
+                Point3D::new(0.0, total_depth, 0.0),
+                Point3D::new(0.0, total_depth, self.height),
+            ),
         ]
     }
 }
@@ -512,9 +608,19 @@ impl RoomGeometry {
 /// Crossover filter
 pub enum CrossoverFilter {
     FullRange,
-    Lowpass { cutoff_freq: f64, order: u32 },
-    Highpass { cutoff_freq: f64, order: u32 },
-    Bandpass { low_cutoff: f64, high_cutoff: f64, order: u32 },
+    Lowpass {
+        cutoff_freq: f64,
+        order: u32,
+    },
+    Highpass {
+        cutoff_freq: f64,
+        order: u32,
+    },
+    Bandpass {
+        low_cutoff: f64,
+        high_cutoff: f64,
+        order: u32,
+    },
 }
 
 impl CrossoverFilter {
@@ -529,7 +635,11 @@ impl CrossoverFilter {
                 let ratio = cutoff_freq / frequency;
                 1.0 / (1.0 + ratio.powi(*order as i32 * 2)).sqrt()
             }
-            CrossoverFilter::Bandpass { low_cutoff, high_cutoff, order } => {
+            CrossoverFilter::Bandpass {
+                low_cutoff,
+                high_cutoff,
+                order,
+            } => {
                 let hp = 1.0 / (1.0 + (low_cutoff / frequency).powi(*order as i32 * 2)).sqrt();
                 let lp = 1.0 / (1.0 + (frequency / high_cutoff).powi(*order as i32 * 2)).sqrt();
                 hp * lp
@@ -551,15 +661,23 @@ impl DirectivityPattern {
         let vertical_angles: Vec<f64> = (0..19).map(|i| i as f64 * 10.0).collect();
         let magnitude = Array2::ones((vertical_angles.len(), horizontal_angles.len()));
 
-        Self { horizontal_angles, vertical_angles, magnitude }
+        Self {
+            horizontal_angles,
+            vertical_angles,
+            magnitude,
+        }
     }
 
     pub fn interpolate(&self, theta: f64, phi: f64) -> f64 {
         let theta_deg = theta.to_degrees();
         let mut phi_deg = phi.to_degrees();
 
-        while phi_deg < 0.0 { phi_deg += 360.0; }
-        while phi_deg >= 360.0 { phi_deg -= 360.0; }
+        while phi_deg < 0.0 {
+            phi_deg += 360.0;
+        }
+        while phi_deg >= 360.0 {
+            phi_deg -= 360.0;
+        }
 
         let h_idx = (phi_deg / 10.0).floor() as usize;
         let v_idx = (theta_deg / 10.0).floor() as usize;
@@ -675,7 +793,13 @@ pub enum RoomGeometryConfig {
     #[serde(rename = "rectangular")]
     Rectangular { width: f64, depth: f64, height: f64 },
     #[serde(rename = "lshaped")]
-    LShaped { width1: f64, depth1: f64, width2: f64, depth2: f64, height: f64 },
+    LShaped {
+        width1: f64,
+        depth1: f64,
+        width2: f64,
+        depth2: f64,
+        height: f64,
+    },
 }
 
 /// 3D point configuration
@@ -704,7 +828,11 @@ pub enum CrossoverConfig {
     #[serde(rename = "highpass")]
     Highpass { cutoff_freq: f64, order: u32 },
     #[serde(rename = "bandpass")]
-    Bandpass { low_cutoff: f64, high_cutoff: f64, order: u32 },
+    Bandpass {
+        low_cutoff: f64,
+        high_cutoff: f64,
+        order: u32,
+    },
 }
 
 impl CrossoverConfig {
@@ -719,7 +847,11 @@ impl CrossoverConfig {
                 cutoff_freq: *cutoff_freq,
                 order: *order,
             },
-            CrossoverConfig::Bandpass { low_cutoff, high_cutoff, order } => CrossoverFilter::Bandpass {
+            CrossoverConfig::Bandpass {
+                low_cutoff,
+                high_cutoff,
+                order,
+            } => CrossoverFilter::Bandpass {
                 low_cutoff: *low_cutoff,
                 high_cutoff: *high_cutoff,
                 order: *order,
@@ -780,7 +912,9 @@ fn default_absorption() -> [f64; 6] {
 
 impl Default for WallMaterialConfig {
     fn default() -> Self {
-        WallMaterialConfig::Preset { name: "plaster".to_string() }
+        WallMaterialConfig::Preset {
+            name: "plaster".to_string(),
+        }
     }
 }
 
@@ -796,10 +930,16 @@ impl WallMaterialConfig {
                     "plaster" => WallMaterial::plaster(),
                     "glass" => WallMaterial::glass(),
                     "wood_thin" | "wood-thin" | "thin_wood" => WallMaterial::wood_thin(),
-                    "wood_thick" | "wood-thick" | "thick_wood" | "wood" => WallMaterial::wood_thick(),
+                    "wood_thick" | "wood-thick" | "thick_wood" | "wood" => {
+                        WallMaterial::wood_thick()
+                    }
                     "carpet_thin" | "carpet-thin" | "thin_carpet" => WallMaterial::carpet_thin(),
-                    "carpet_thick" | "carpet-thick" | "thick_carpet" | "carpet" => WallMaterial::carpet_thick(),
-                    "acoustic_tile" | "acoustic-tile" | "ceiling_tile" => WallMaterial::acoustic_tile(),
+                    "carpet_thick" | "carpet-thick" | "thick_carpet" | "carpet" => {
+                        WallMaterial::carpet_thick()
+                    }
+                    "acoustic_tile" | "acoustic-tile" | "ceiling_tile" => {
+                        WallMaterial::acoustic_tile()
+                    }
                     "curtains" | "drapes" => WallMaterial::curtains(),
                     "acoustic_foam" | "acoustic-foam" | "foam" => WallMaterial::acoustic_foam(),
                     "hardwood" | "wood_floor" | "wood-floor" => WallMaterial::hardwood(),
@@ -807,9 +947,7 @@ impl WallMaterialConfig {
                     _ => WallMaterial::plaster(), // Default fallback
                 }
             }
-            WallMaterialConfig::Custom { name, absorption } => {
-                WallMaterial::new(name, *absorption)
-            }
+            WallMaterialConfig::Custom { name, absorption } => WallMaterial::new(name, *absorption),
         }
     }
 
@@ -843,11 +981,15 @@ pub struct WallMaterialsConfig {
 }
 
 fn default_floor_material() -> WallMaterialConfig {
-    WallMaterialConfig::Preset { name: "hardwood".to_string() }
+    WallMaterialConfig::Preset {
+        name: "hardwood".to_string(),
+    }
 }
 
 fn default_ceiling_material() -> WallMaterialConfig {
-    WallMaterialConfig::Preset { name: "plaster".to_string() }
+    WallMaterialConfig::Preset {
+        name: "plaster".to_string(),
+    }
 }
 
 impl Default for WallMaterialsConfig {
@@ -878,13 +1020,15 @@ impl WallMaterialsConfig {
 
     /// Get reflection coefficient for a wall at a given frequency
     pub fn reflection_at(&self, surface: WallSurface, frequency: f64) -> f64 {
-        self.get_material(surface).reflection_at_frequency(frequency)
+        self.get_material(surface)
+            .reflection_at_frequency(frequency)
     }
 
     /// Get average absorption coefficient across all walls at a given frequency
     pub fn average_absorption_at(&self, frequency: f64) -> f64 {
         let surfaces = WallSurface::all();
-        let total: f64 = surfaces.iter()
+        let total: f64 = surfaces
+            .iter()
             .map(|&s| self.get_material(s).absorption_at_frequency(frequency))
             .sum();
         total / surfaces.len() as f64
@@ -910,7 +1054,9 @@ pub struct SourceConfig {
     pub invert_phase: bool,
 }
 
-fn default_amplitude() -> f64 { 1.0 }
+fn default_amplitude() -> f64 {
+    1.0
+}
 
 /// Frequency range configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -922,7 +1068,9 @@ pub struct FrequencyConfig {
     pub spacing: String,
 }
 
-fn default_spacing() -> String { "logarithmic".to_string() }
+fn default_spacing() -> String {
+    "logarithmic".to_string()
+}
 
 /// Solver configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -957,16 +1105,36 @@ pub struct SolverConfig {
     pub modal_damping: f64,
 }
 
-fn default_method() -> String { "direct".to_string() }
-fn default_mesh_resolution() -> usize { 2 }
-fn default_speed_of_sound() -> f64 { 343.0 }
-fn default_temperature() -> f64 { 20.0 }  // 20°C
-fn default_humidity() -> f64 { 50.0 }      // 50% relative humidity
-fn default_air_absorption() -> bool { true }
-fn default_edge_diffraction() -> bool { false } // Disabled by default (computationally expensive)
-fn default_hybrid_crossover_width() -> f64 { 0.5 } // 0.5 octaves
-fn default_max_mode_order() -> u32 { 20 }
-fn default_modal_damping() -> f64 { 10.0 } // Q factor (typical for residential rooms)
+fn default_method() -> String {
+    "direct".to_string()
+}
+fn default_mesh_resolution() -> usize {
+    2
+}
+fn default_speed_of_sound() -> f64 {
+    343.0
+}
+fn default_temperature() -> f64 {
+    20.0
+} // 20°C
+fn default_humidity() -> f64 {
+    50.0
+} // 50% relative humidity
+fn default_air_absorption() -> bool {
+    true
+}
+fn default_edge_diffraction() -> bool {
+    false
+} // Disabled by default (computationally expensive)
+fn default_hybrid_crossover_width() -> f64 {
+    0.5
+} // 0.5 octaves
+fn default_max_mode_order() -> u32 {
+    20
+}
+fn default_modal_damping() -> f64 {
+    10.0
+} // Q factor (typical for residential rooms)
 
 impl Default for SolverConfig {
     fn default() -> Self {
@@ -1052,9 +1220,15 @@ pub struct VisualizationConfig {
     pub binaural: BinauralConfig,
 }
 
-fn default_generate_slices() -> bool { true }
-fn default_slice_resolution() -> usize { 50 }
-fn default_generate_impulse_response() -> bool { false }
+fn default_generate_slices() -> bool {
+    true
+}
+fn default_slice_resolution() -> usize {
+    50
+}
+fn default_generate_impulse_response() -> bool {
+    false
+}
 
 impl Default for VisualizationConfig {
     fn default() -> Self {
@@ -1281,9 +1455,9 @@ pub fn calculate_modal_pressure(
     source: &Point3D,
     listener: &Point3D,
     frequency: f64,
-    room_width: f64,   // Lx
-    room_depth: f64,   // Ly
-    room_height: f64,  // Lz
+    room_width: f64,  // Lx
+    room_depth: f64,  // Ly
+    room_height: f64, // Lz
     speed_of_sound: f64,
     max_mode_order: u32,
     modal_damping: f64, // Q factor
@@ -1328,16 +1502,14 @@ pub fn calculate_modal_pressure(
 
                 // Calculate mode shape at source position
                 // Ψ(r) = cos(nπx/Lx) * cos(mπy/Ly) * cos(pπz/Lz)
-                let source_mode =
-                    (n as f64 * PI * source.x / room_width).cos() *
-                    (m as f64 * PI * source.y / room_depth).cos() *
-                    (p as f64 * PI * source.z / room_height).cos();
+                let source_mode = (n as f64 * PI * source.x / room_width).cos()
+                    * (m as f64 * PI * source.y / room_depth).cos()
+                    * (p as f64 * PI * source.z / room_height).cos();
 
                 // Calculate mode shape at listener position
-                let listener_mode =
-                    (n as f64 * PI * listener.x / room_width).cos() *
-                    (m as f64 * PI * listener.y / room_depth).cos() *
-                    (p as f64 * PI * listener.z / room_height).cos();
+                let listener_mode = (n as f64 * PI * listener.x / room_width).cos()
+                    * (m as f64 * PI * listener.y / room_depth).cos()
+                    * (p as f64 * PI * listener.z / room_height).cos();
 
                 // Neumann factor: ε = 1 if index is 0, else 2
                 let epsilon = |i: u32| if i == 0 { 1.0 } else { 2.0 };
@@ -1584,8 +1756,12 @@ pub struct ImpulseResponseConfig {
     pub max_freq: Option<f64>,
 }
 
-fn default_ir_sample_rate() -> f64 { 48000.0 }
-fn default_ir_min_freq() -> f64 { 20.0 }
+fn default_ir_sample_rate() -> f64 {
+    48000.0
+}
+fn default_ir_min_freq() -> f64 {
+    20.0
+}
 
 impl Default for ImpulseResponseConfig {
     fn default() -> Self {
@@ -1671,9 +1847,7 @@ pub fn calculate_impulse_response(
     };
 
     // Calculate time vector
-    let time: Vec<f64> = (0..fft_size)
-        .map(|i| i as f64 / sample_rate)
-        .collect();
+    let time: Vec<f64> = (0..fft_size).map(|i| i as f64 / sample_rate).collect();
 
     // Calculate energy decay curve (Schroeder integration)
     let energy_decay = calculate_energy_decay(&normalized);
@@ -1830,7 +2004,10 @@ fn calculate_energy_decay(ir: &[f64]) -> Vec<f64> {
 
     // Normalize and convert to dB
     let max_energy = decay[0].max(1e-10);
-    decay.iter().map(|&e| 10.0 * (e / max_energy).log10()).collect()
+    decay
+        .iter()
+        .map(|&e| 10.0 * (e / max_energy).log10())
+        .collect()
 }
 
 // ============================================================================
@@ -1883,8 +2060,12 @@ pub struct BinauralConfig {
     pub ir_config: ImpulseResponseConfig,
 }
 
-fn default_head_radius() -> f64 { DEFAULT_HEAD_RADIUS }
-fn default_ear_spacing() -> f64 { DEFAULT_EAR_SPACING }
+fn default_head_radius() -> f64 {
+    DEFAULT_HEAD_RADIUS
+}
+fn default_ear_spacing() -> f64 {
+    DEFAULT_EAR_SPACING
+}
 
 impl Default for BinauralConfig {
     fn default() -> Self {
@@ -2017,7 +2198,11 @@ pub fn calculate_binaural_response(
     let mut itd_sum = 0.0;
     let mut weight_sum = 0.0;
 
-    for i in 0..frequencies.len().min(left_pressures.len()).min(right_pressures.len()) {
+    for i in 0..frequencies
+        .len()
+        .min(left_pressures.len())
+        .min(right_pressures.len())
+    {
         let left_phase = left_pressures[i].arg();
         let right_phase = right_pressures[i].arg();
         let freq = frequencies[i];
@@ -2078,12 +2263,12 @@ pub fn calculate_binaural_response(
 /// Reference: Svensson, U. P., Fred, R. I., & Vanderkooy, J. (1999).
 /// "An analytic secondary source model of edge diffraction impulse responses."
 pub fn edge_diffraction_coefficient(
-    wedge_angle: f64,     // Interior wedge angle (radians), typically PI/2 for room corners
-    r_source: f64,        // Distance from source to edge
-    r_receiver: f64,      // Distance from receiver to edge
-    theta_source: f64,    // Angle from source to edge face (radians)
-    theta_receiver: f64,  // Angle from receiver to edge face (radians)
-    k: f64,               // Wavenumber (2 * PI * f / c)
+    wedge_angle: f64,  // Interior wedge angle (radians), typically PI/2 for room corners
+    r_source: f64,     // Distance from source to edge
+    r_receiver: f64,   // Distance from receiver to edge
+    theta_source: f64, // Angle from source to edge face (radians)
+    theta_receiver: f64, // Angle from receiver to edge face (radians)
+    k: f64,            // Wavenumber (2 * PI * f / c)
 ) -> Complex64 {
     // Wedge index (n = PI / wedge_angle)
     let n = PI / wedge_angle;
@@ -2142,7 +2327,11 @@ pub struct DiffractionEdge {
 
 impl DiffractionEdge {
     pub fn new(start: Point3D, end: Point3D, wedge_angle: f64) -> Self {
-        Self { start, end, wedge_angle }
+        Self {
+            start,
+            end,
+            wedge_angle,
+        }
     }
 
     /// Get the edge direction vector
@@ -2172,7 +2361,8 @@ impl DiffractionEdge {
             point.z - self.start.z,
         );
 
-        let edge_len_sq = edge_vec.x * edge_vec.x + edge_vec.y * edge_vec.y + edge_vec.z * edge_vec.z;
+        let edge_len_sq =
+            edge_vec.x * edge_vec.x + edge_vec.y * edge_vec.y + edge_vec.z * edge_vec.z;
         if edge_len_sq < 1e-10 {
             return self.start;
         }
@@ -2213,7 +2403,7 @@ impl DiffractionEdge {
 
         // Simplified angles (assume perpendicular to edge)
         // In a full implementation, we'd calculate the actual angles relative to edge faces
-        let theta_source = PI / 4.0;  // 45 degrees - typical value
+        let theta_source = PI / 4.0; // 45 degrees - typical value
         let theta_receiver = PI / 4.0;
 
         edge_diffraction_coefficient(
@@ -2233,20 +2423,68 @@ pub fn get_rectangular_room_edges(width: f64, depth: f64, height: f64) -> Vec<Di
 
     vec![
         // Floor edges
-        DiffractionEdge::new(Point3D::new(0.0, 0.0, 0.0), Point3D::new(width, 0.0, 0.0), wedge_90),
-        DiffractionEdge::new(Point3D::new(width, 0.0, 0.0), Point3D::new(width, depth, 0.0), wedge_90),
-        DiffractionEdge::new(Point3D::new(width, depth, 0.0), Point3D::new(0.0, depth, 0.0), wedge_90),
-        DiffractionEdge::new(Point3D::new(0.0, depth, 0.0), Point3D::new(0.0, 0.0, 0.0), wedge_90),
+        DiffractionEdge::new(
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(width, 0.0, 0.0),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(width, 0.0, 0.0),
+            Point3D::new(width, depth, 0.0),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(width, depth, 0.0),
+            Point3D::new(0.0, depth, 0.0),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(0.0, depth, 0.0),
+            Point3D::new(0.0, 0.0, 0.0),
+            wedge_90,
+        ),
         // Ceiling edges
-        DiffractionEdge::new(Point3D::new(0.0, 0.0, height), Point3D::new(width, 0.0, height), wedge_90),
-        DiffractionEdge::new(Point3D::new(width, 0.0, height), Point3D::new(width, depth, height), wedge_90),
-        DiffractionEdge::new(Point3D::new(width, depth, height), Point3D::new(0.0, depth, height), wedge_90),
-        DiffractionEdge::new(Point3D::new(0.0, depth, height), Point3D::new(0.0, 0.0, height), wedge_90),
+        DiffractionEdge::new(
+            Point3D::new(0.0, 0.0, height),
+            Point3D::new(width, 0.0, height),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(width, 0.0, height),
+            Point3D::new(width, depth, height),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(width, depth, height),
+            Point3D::new(0.0, depth, height),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(0.0, depth, height),
+            Point3D::new(0.0, 0.0, height),
+            wedge_90,
+        ),
         // Vertical edges
-        DiffractionEdge::new(Point3D::new(0.0, 0.0, 0.0), Point3D::new(0.0, 0.0, height), wedge_90),
-        DiffractionEdge::new(Point3D::new(width, 0.0, 0.0), Point3D::new(width, 0.0, height), wedge_90),
-        DiffractionEdge::new(Point3D::new(width, depth, 0.0), Point3D::new(width, depth, height), wedge_90),
-        DiffractionEdge::new(Point3D::new(0.0, depth, 0.0), Point3D::new(0.0, depth, height), wedge_90),
+        DiffractionEdge::new(
+            Point3D::new(0.0, 0.0, 0.0),
+            Point3D::new(0.0, 0.0, height),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(width, 0.0, 0.0),
+            Point3D::new(width, 0.0, height),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(width, depth, 0.0),
+            Point3D::new(width, depth, height),
+            wedge_90,
+        ),
+        DiffractionEdge::new(
+            Point3D::new(0.0, depth, 0.0),
+            Point3D::new(0.0, depth, height),
+            wedge_90,
+        ),
     ]
 }
 
@@ -2272,7 +2510,9 @@ fn pressure_to_spl(pressure: Complex64) -> f64 {
 
 /// Generate logarithmically spaced frequencies
 fn log_space(start: f64, end: f64, num: usize) -> Vec<f64> {
-    if num <= 1 { return vec![start]; }
+    if num <= 1 {
+        return vec![start];
+    }
     let log_start = start.ln();
     let log_end = end.ln();
     (0..num)
@@ -2285,7 +2525,9 @@ fn log_space(start: f64, end: f64, num: usize) -> Vec<f64> {
 
 /// Generate linearly spaced values
 fn lin_space(start: f64, end: f64, num: usize) -> Vec<f64> {
-    if num <= 1 { return vec![start]; }
+    if num <= 1 {
+        return vec![start];
+    }
     (0..num)
         .map(|i| start + (end - start) * i as f64 / (num - 1) as f64)
         .collect()
@@ -2313,7 +2555,11 @@ fn create_cardioid_pattern(front_back_ratio: f64) -> DirectivityPattern {
         }
     }
 
-    DirectivityPattern { horizontal_angles, vertical_angles, magnitude }
+    DirectivityPattern {
+        horizontal_angles,
+        vertical_angles,
+        magnitude,
+    }
 }
 
 /// Create a DirectivityPattern from spinorama.org directivity data
@@ -2486,54 +2732,102 @@ impl RoomSimulatorWasm {
 
         // Build room geometry
         let room_geometry = match &config.room {
-            RoomGeometryConfig::Rectangular { width, depth, height } => {
-                console_log!("Creating rectangular room: {}x{}x{} m", width, depth, height);
+            RoomGeometryConfig::Rectangular {
+                width,
+                depth,
+                height,
+            } => {
+                console_log!(
+                    "Creating rectangular room: {}x{}x{} m",
+                    width,
+                    depth,
+                    height
+                );
                 RoomGeometry::Rectangular(RectangularRoom::new(*width, *depth, *height))
             }
-            RoomGeometryConfig::LShaped { width1, depth1, width2, depth2, height } => {
-                console_log!("Creating L-shaped room: {}x{} + {}x{} x {} m", width1, depth1, width2, depth2, height);
-                RoomGeometry::LShaped(LShapedRoom::new(*width1, *depth1, *width2, *depth2, *height))
+            RoomGeometryConfig::LShaped {
+                width1,
+                depth1,
+                width2,
+                depth2,
+                height,
+            } => {
+                console_log!(
+                    "Creating L-shaped room: {}x{} + {}x{} x {} m",
+                    width1,
+                    depth1,
+                    width2,
+                    depth2,
+                    height
+                );
+                RoomGeometry::LShaped(LShapedRoom::new(
+                    *width1, *depth1, *width2, *depth2, *height,
+                ))
             }
         };
 
         // Build sources
-        let sources: Vec<Source> = config.sources.iter().map(|s| {
-            let directivity = match &s.directivity {
-                DirectivityConfig::Omnidirectional => DirectivityPattern::omnidirectional(),
-                DirectivityConfig::Cardioid { front_back_ratio } => create_cardioid_pattern(*front_back_ratio),
-                DirectivityConfig::Spinorama { horizontal, vertical } => {
-                    // Use 1kHz as the representative frequency for the directivity pattern
-                    // This is a common choice for speaker directivity visualization
-                    create_spinorama_pattern(horizontal, vertical, 1000.0)
-                }
-            };
+        let sources: Vec<Source> = config
+            .sources
+            .iter()
+            .map(|s| {
+                let directivity = match &s.directivity {
+                    DirectivityConfig::Omnidirectional => DirectivityPattern::omnidirectional(),
+                    DirectivityConfig::Cardioid { front_back_ratio } => {
+                        create_cardioid_pattern(*front_back_ratio)
+                    }
+                    DirectivityConfig::Spinorama {
+                        horizontal,
+                        vertical,
+                    } => {
+                        // Use 1kHz as the representative frequency for the directivity pattern
+                        // This is a common choice for speaker directivity visualization
+                        create_spinorama_pattern(horizontal, vertical, 1000.0)
+                    }
+                };
 
-            Source::new(s.position.into(), directivity, s.amplitude)
-                .with_name(s.name.clone())
-                .with_crossover(s.crossover.to_filter())
-                .with_delay_ms(s.delay_ms)
-                .with_phase_inversion(s.invert_phase)
-        }).collect();
+                Source::new(s.position.into(), directivity, s.amplitude)
+                    .with_name(s.name.clone())
+                    .with_crossover(s.crossover.to_filter())
+                    .with_delay_ms(s.delay_ms)
+                    .with_phase_inversion(s.invert_phase)
+            })
+            .collect();
 
         console_log!("Created {} sources", sources.len());
         for source in &sources {
             if source.delay_sec > 0.0 || source.invert_phase {
-                console_log!("  {}: delay={:.2}ms, invert={}",
-                    source.name, source.delay_sec * 1000.0, source.invert_phase);
+                console_log!(
+                    "  {}: delay={:.2}ms, invert={}",
+                    source.name,
+                    source.delay_sec * 1000.0,
+                    source.invert_phase
+                );
             }
         }
 
-        let listening_position = config.listening_positions.first()
+        let listening_position = config
+            .listening_positions
+            .first()
             .map(|p| (*p).into())
             .unwrap_or(Point3D::new(0.0, 0.0, 0.0));
 
         let frequencies = if config.frequencies.spacing == "linear" {
-            lin_space(config.frequencies.min_freq, config.frequencies.max_freq, config.frequencies.num_points)
+            lin_space(
+                config.frequencies.min_freq,
+                config.frequencies.max_freq,
+                config.frequencies.num_points,
+            )
         } else {
-            log_space(config.frequencies.min_freq, config.frequencies.max_freq, config.frequencies.num_points)
+            log_space(
+                config.frequencies.min_freq,
+                config.frequencies.max_freq,
+                config.frequencies.num_points,
+            )
         };
 
-        console_log!("Frequency range: {:.1} - {:.1} Hz ({} points)",
+        console_log!(
+            "Frequency range: {:.1} - {:.1} Hz ({} points)",
             frequencies.first().unwrap_or(&0.0),
             frequencies.last().unwrap_or(&0.0),
             frequencies.len()
@@ -2546,7 +2840,8 @@ impl RoomSimulatorWasm {
         let air_absorption_enabled = config.solver.air_absorption;
 
         // Log wall materials
-        console_log!("Wall materials: Left={}, Right={}, Front={}, Back={}, Floor={}, Ceiling={}",
+        console_log!(
+            "Wall materials: Left={}, Right={}, Front={}, Back={}, Floor={}, Ceiling={}",
             wall_materials.get_material(WallSurface::Left).name,
             wall_materials.get_material(WallSurface::Right).name,
             wall_materials.get_material(WallSurface::Front).name,
@@ -2557,7 +2852,11 @@ impl RoomSimulatorWasm {
 
         // Log environmental conditions
         if air_absorption_enabled {
-            console_log!("Air absorption enabled: T={:.1}°C, RH={:.0}%", temperature, humidity);
+            console_log!(
+                "Air absorption enabled: T={:.1}°C, RH={:.0}%",
+                temperature,
+                humidity
+            );
         }
 
         let edge_diffraction_enabled = config.solver.edge_diffraction;
@@ -2650,7 +2949,10 @@ impl RoomSimulatorWasm {
                 // Hybrid: blend modal and ISM based on Schroeder frequency
                 let volume = room_width * room_depth * room_height;
                 let avg_absorption = self.wall_materials.average_absorption_at(frequency);
-                let surface_area = 2.0 * (room_width * room_depth + room_width * room_height + room_depth * room_height);
+                let surface_area = 2.0
+                    * (room_width * room_depth
+                        + room_width * room_height
+                        + room_depth * room_height);
                 let total_abs = avg_absorption * surface_area;
                 let rt60 = rt60_sabine(volume, total_abs);
                 let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
@@ -2689,21 +2991,33 @@ impl RoomSimulatorWasm {
             "image-source-1" => 1,
             "image-source-2" => 2,
             "image-source-3" => 3,
-            "modal" => 0, // Modal doesn't use ISM reflections
+            "modal" => 0,  // Modal doesn't use ISM reflections
             "hybrid" => 2, // Hybrid uses 2nd order ISM
-            _ => 2, // Default to 2nd order
+            _ => 2,        // Default to 2nd order
         };
 
         // Get room dimensions for image source calculation
         let (room_width, room_depth, room_height) = self.get_room_dimensions();
 
         // Get frequency-dependent reflection coefficients for each wall
-        let r_left = self.wall_materials.reflection_at(WallSurface::Left, frequency);
-        let r_right = self.wall_materials.reflection_at(WallSurface::Right, frequency);
-        let r_front = self.wall_materials.reflection_at(WallSurface::Front, frequency);
-        let r_back = self.wall_materials.reflection_at(WallSurface::Back, frequency);
-        let r_floor = self.wall_materials.reflection_at(WallSurface::Floor, frequency);
-        let r_ceiling = self.wall_materials.reflection_at(WallSurface::Ceiling, frequency);
+        let r_left = self
+            .wall_materials
+            .reflection_at(WallSurface::Left, frequency);
+        let r_right = self
+            .wall_materials
+            .reflection_at(WallSurface::Right, frequency);
+        let r_front = self
+            .wall_materials
+            .reflection_at(WallSurface::Front, frequency);
+        let r_back = self
+            .wall_materials
+            .reflection_at(WallSurface::Back, frequency);
+        let r_floor = self
+            .wall_materials
+            .reflection_at(WallSurface::Floor, frequency);
+        let r_ceiling = self
+            .wall_materials
+            .reflection_at(WallSurface::Ceiling, frequency);
 
         for source in &self.sources {
             let amplitude = source.amplitude_towards(point, frequency);
@@ -2713,14 +3027,16 @@ impl RoomSimulatorWasm {
             // Direct sound (always included) with air absorption and phase
             let r_direct = source.position.distance_to(point);
             let air_atten_direct = self.air_absorption_factor(r_direct, frequency);
-            total_pressure += greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
+            total_pressure +=
+                greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
 
             if reflection_order >= 1 {
                 // First-order image sources - handle L-shaped rooms specially
                 let first_order_images: Vec<(Point3D, f64)> = match &self.room_geometry {
                     RoomGeometry::LShaped(l_room) => {
                         // Use L-shaped room's proper image source generation
-                        l_room.get_first_order_images(&source.position)
+                        l_room
+                            .get_first_order_images(&source.position)
                             .into_iter()
                             .filter_map(|(image, wall_name)| {
                                 // Validate the image source path
@@ -2749,17 +3065,59 @@ impl RoomSimulatorWasm {
                         // Standard rectangular room image sources (6 walls)
                         vec![
                             // Left wall (x=0)
-                            (Point3D::new(-source.position.x, source.position.y, source.position.z), r_left),
+                            (
+                                Point3D::new(
+                                    -source.position.x,
+                                    source.position.y,
+                                    source.position.z,
+                                ),
+                                r_left,
+                            ),
                             // Right wall (x=width)
-                            (Point3D::new(2.0 * room_width - source.position.x, source.position.y, source.position.z), r_right),
+                            (
+                                Point3D::new(
+                                    2.0 * room_width - source.position.x,
+                                    source.position.y,
+                                    source.position.z,
+                                ),
+                                r_right,
+                            ),
                             // Front wall (y=0)
-                            (Point3D::new(source.position.x, -source.position.y, source.position.z), r_front),
+                            (
+                                Point3D::new(
+                                    source.position.x,
+                                    -source.position.y,
+                                    source.position.z,
+                                ),
+                                r_front,
+                            ),
                             // Back wall (y=depth)
-                            (Point3D::new(source.position.x, 2.0 * room_depth - source.position.y, source.position.z), r_back),
+                            (
+                                Point3D::new(
+                                    source.position.x,
+                                    2.0 * room_depth - source.position.y,
+                                    source.position.z,
+                                ),
+                                r_back,
+                            ),
                             // Floor (z=0)
-                            (Point3D::new(source.position.x, source.position.y, -source.position.z), r_floor),
+                            (
+                                Point3D::new(
+                                    source.position.x,
+                                    source.position.y,
+                                    -source.position.z,
+                                ),
+                                r_floor,
+                            ),
                             // Ceiling (z=height)
-                            (Point3D::new(source.position.x, source.position.y, 2.0 * room_height - source.position.z), r_ceiling),
+                            (
+                                Point3D::new(
+                                    source.position.x,
+                                    source.position.y,
+                                    2.0 * room_height - source.position.z,
+                                ),
+                                r_ceiling,
+                            ),
                         ]
                     }
                 };
@@ -2768,7 +3126,11 @@ impl RoomSimulatorWasm {
                     let r_image = image_src.distance_to(point);
                     if r_image > 1e-6 {
                         let air_atten = self.air_absorption_factor(r_image, frequency);
-                        total_pressure += greens_function_3d(r_image, k) * amplitude * refl_coeff * air_atten * phase_factor;
+                        total_pressure += greens_function_3d(r_image, k)
+                            * amplitude
+                            * refl_coeff
+                            * air_atten
+                            * phase_factor;
                     }
                 }
             }
@@ -2781,36 +3143,112 @@ impl RoomSimulatorWasm {
                     // Each involves reflection off two walls, so multiply their coefficients
                     let second_order_images = [
                         // Left + Front (x=0, y=0)
-                        (Point3D::new(-source.position.x, -source.position.y, source.position.z), r_left * r_front),
+                        (
+                            Point3D::new(-source.position.x, -source.position.y, source.position.z),
+                            r_left * r_front,
+                        ),
                         // Left + Back (x=0, y=depth)
-                        (Point3D::new(-source.position.x, 2.0 * room_depth - source.position.y, source.position.z), r_left * r_back),
+                        (
+                            Point3D::new(
+                                -source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                source.position.z,
+                            ),
+                            r_left * r_back,
+                        ),
                         // Right + Front (x=width, y=0)
-                        (Point3D::new(2.0 * room_width - source.position.x, -source.position.y, source.position.z), r_right * r_front),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                -source.position.y,
+                                source.position.z,
+                            ),
+                            r_right * r_front,
+                        ),
                         // Right + Back (x=width, y=depth)
-                        (Point3D::new(2.0 * room_width - source.position.x, 2.0 * room_depth - source.position.y, source.position.z), r_right * r_back),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                source.position.z,
+                            ),
+                            r_right * r_back,
+                        ),
                         // Left + Floor (x=0, z=0)
-                        (Point3D::new(-source.position.x, source.position.y, -source.position.z), r_left * r_floor),
+                        (
+                            Point3D::new(-source.position.x, source.position.y, -source.position.z),
+                            r_left * r_floor,
+                        ),
                         // Left + Ceiling (x=0, z=height)
-                        (Point3D::new(-source.position.x, source.position.y, 2.0 * room_height - source.position.z), r_left * r_ceiling),
+                        (
+                            Point3D::new(
+                                -source.position.x,
+                                source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_left * r_ceiling,
+                        ),
                         // Right + Floor (x=width, z=0)
-                        (Point3D::new(2.0 * room_width - source.position.x, source.position.y, -source.position.z), r_right * r_floor),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                source.position.y,
+                                -source.position.z,
+                            ),
+                            r_right * r_floor,
+                        ),
                         // Right + Ceiling (x=width, z=height)
-                        (Point3D::new(2.0 * room_width - source.position.x, source.position.y, 2.0 * room_height - source.position.z), r_right * r_ceiling),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_right * r_ceiling,
+                        ),
                         // Front + Floor (y=0, z=0)
-                        (Point3D::new(source.position.x, -source.position.y, -source.position.z), r_front * r_floor),
+                        (
+                            Point3D::new(source.position.x, -source.position.y, -source.position.z),
+                            r_front * r_floor,
+                        ),
                         // Front + Ceiling (y=0, z=height)
-                        (Point3D::new(source.position.x, -source.position.y, 2.0 * room_height - source.position.z), r_front * r_ceiling),
+                        (
+                            Point3D::new(
+                                source.position.x,
+                                -source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_front * r_ceiling,
+                        ),
                         // Back + Floor (y=depth, z=0)
-                        (Point3D::new(source.position.x, 2.0 * room_depth - source.position.y, -source.position.z), r_back * r_floor),
+                        (
+                            Point3D::new(
+                                source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                -source.position.z,
+                            ),
+                            r_back * r_floor,
+                        ),
                         // Back + Ceiling (y=depth, z=height)
-                        (Point3D::new(source.position.x, 2.0 * room_depth - source.position.y, 2.0 * room_height - source.position.z), r_back * r_ceiling),
+                        (
+                            Point3D::new(
+                                source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_back * r_ceiling,
+                        ),
                     ];
 
                     for (image_src, refl_coeff) in &second_order_images {
                         let r_image = image_src.distance_to(point);
                         if r_image > 1e-6 {
                             let air_atten = self.air_absorption_factor(r_image, frequency);
-                            total_pressure += greens_function_3d(r_image, k) * amplitude * refl_coeff * air_atten * phase_factor;
+                            total_pressure += greens_function_3d(r_image, k)
+                                * amplitude
+                                * refl_coeff
+                                * air_atten
+                                * phase_factor;
                         }
                     }
                 }
@@ -2820,28 +3258,88 @@ impl RoomSimulatorWasm {
                     // Each involves reflection off three walls
                     let third_order_images = [
                         // Left + Front + Floor
-                        (Point3D::new(-source.position.x, -source.position.y, -source.position.z), r_left * r_front * r_floor),
+                        (
+                            Point3D::new(
+                                -source.position.x,
+                                -source.position.y,
+                                -source.position.z,
+                            ),
+                            r_left * r_front * r_floor,
+                        ),
                         // Left + Front + Ceiling
-                        (Point3D::new(-source.position.x, -source.position.y, 2.0 * room_height - source.position.z), r_left * r_front * r_ceiling),
+                        (
+                            Point3D::new(
+                                -source.position.x,
+                                -source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_left * r_front * r_ceiling,
+                        ),
                         // Left + Back + Floor
-                        (Point3D::new(-source.position.x, 2.0 * room_depth - source.position.y, -source.position.z), r_left * r_back * r_floor),
+                        (
+                            Point3D::new(
+                                -source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                -source.position.z,
+                            ),
+                            r_left * r_back * r_floor,
+                        ),
                         // Left + Back + Ceiling
-                        (Point3D::new(-source.position.x, 2.0 * room_depth - source.position.y, 2.0 * room_height - source.position.z), r_left * r_back * r_ceiling),
+                        (
+                            Point3D::new(
+                                -source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_left * r_back * r_ceiling,
+                        ),
                         // Right + Front + Floor
-                        (Point3D::new(2.0 * room_width - source.position.x, -source.position.y, -source.position.z), r_right * r_front * r_floor),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                -source.position.y,
+                                -source.position.z,
+                            ),
+                            r_right * r_front * r_floor,
+                        ),
                         // Right + Front + Ceiling
-                        (Point3D::new(2.0 * room_width - source.position.x, -source.position.y, 2.0 * room_height - source.position.z), r_right * r_front * r_ceiling),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                -source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_right * r_front * r_ceiling,
+                        ),
                         // Right + Back + Floor
-                        (Point3D::new(2.0 * room_width - source.position.x, 2.0 * room_depth - source.position.y, -source.position.z), r_right * r_back * r_floor),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                -source.position.z,
+                            ),
+                            r_right * r_back * r_floor,
+                        ),
                         // Right + Back + Ceiling
-                        (Point3D::new(2.0 * room_width - source.position.x, 2.0 * room_depth - source.position.y, 2.0 * room_height - source.position.z), r_right * r_back * r_ceiling),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_right * r_back * r_ceiling,
+                        ),
                     ];
 
                     for (image_src, refl_coeff) in &third_order_images {
                         let r_image = image_src.distance_to(point);
                         if r_image > 1e-6 {
                             let air_atten = self.air_absorption_factor(r_image, frequency);
-                            total_pressure += greens_function_3d(r_image, k) * amplitude * refl_coeff * air_atten * phase_factor;
+                            total_pressure += greens_function_3d(r_image, k)
+                                * amplitude
+                                * refl_coeff
+                                * air_atten
+                                * phase_factor;
                         }
                     }
                 }
@@ -2860,7 +3358,12 @@ impl RoomSimulatorWasm {
         total_pressure
     }
 
-    fn calculate_source_field(&self, source_idx: usize, point: &Point3D, frequency: f64) -> Complex64 {
+    fn calculate_source_field(
+        &self,
+        source_idx: usize,
+        point: &Point3D,
+        frequency: f64,
+    ) -> Complex64 {
         if source_idx >= self.sources.len() {
             return Complex64::new(0.0, 0.0);
         }
@@ -2872,12 +3375,24 @@ impl RoomSimulatorWasm {
         let (room_width, room_depth, room_height) = self.get_room_dimensions();
 
         // Get frequency-dependent reflection coefficients for each wall
-        let r_left = self.wall_materials.reflection_at(WallSurface::Left, frequency);
-        let r_right = self.wall_materials.reflection_at(WallSurface::Right, frequency);
-        let r_front = self.wall_materials.reflection_at(WallSurface::Front, frequency);
-        let r_back = self.wall_materials.reflection_at(WallSurface::Back, frequency);
-        let r_floor = self.wall_materials.reflection_at(WallSurface::Floor, frequency);
-        let r_ceiling = self.wall_materials.reflection_at(WallSurface::Ceiling, frequency);
+        let r_left = self
+            .wall_materials
+            .reflection_at(WallSurface::Left, frequency);
+        let r_right = self
+            .wall_materials
+            .reflection_at(WallSurface::Right, frequency);
+        let r_front = self
+            .wall_materials
+            .reflection_at(WallSurface::Front, frequency);
+        let r_back = self
+            .wall_materials
+            .reflection_at(WallSurface::Back, frequency);
+        let r_floor = self
+            .wall_materials
+            .reflection_at(WallSurface::Floor, frequency);
+        let r_ceiling = self
+            .wall_materials
+            .reflection_at(WallSurface::Ceiling, frequency);
 
         let mut total_pressure = Complex64::new(0.0, 0.0);
 
@@ -2885,23 +3400,58 @@ impl RoomSimulatorWasm {
         let r_direct = source.position.distance_to(point);
         let air_atten_direct = self.air_absorption_factor(r_direct, frequency);
         let phase_factor = source.phase_factor(frequency);
-        total_pressure += greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
+        total_pressure +=
+            greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
 
         // First-order reflections with individual wall reflection coefficients and air absorption
         let first_order_images = [
-            (Point3D::new(-source.position.x, source.position.y, source.position.z), r_left),
-            (Point3D::new(2.0 * room_width - source.position.x, source.position.y, source.position.z), r_right),
-            (Point3D::new(source.position.x, -source.position.y, source.position.z), r_front),
-            (Point3D::new(source.position.x, 2.0 * room_depth - source.position.y, source.position.z), r_back),
-            (Point3D::new(source.position.x, source.position.y, -source.position.z), r_floor),
-            (Point3D::new(source.position.x, source.position.y, 2.0 * room_height - source.position.z), r_ceiling),
+            (
+                Point3D::new(-source.position.x, source.position.y, source.position.z),
+                r_left,
+            ),
+            (
+                Point3D::new(
+                    2.0 * room_width - source.position.x,
+                    source.position.y,
+                    source.position.z,
+                ),
+                r_right,
+            ),
+            (
+                Point3D::new(source.position.x, -source.position.y, source.position.z),
+                r_front,
+            ),
+            (
+                Point3D::new(
+                    source.position.x,
+                    2.0 * room_depth - source.position.y,
+                    source.position.z,
+                ),
+                r_back,
+            ),
+            (
+                Point3D::new(source.position.x, source.position.y, -source.position.z),
+                r_floor,
+            ),
+            (
+                Point3D::new(
+                    source.position.x,
+                    source.position.y,
+                    2.0 * room_height - source.position.z,
+                ),
+                r_ceiling,
+            ),
         ];
 
         for (image_src, refl_coeff) in &first_order_images {
             let r_image = image_src.distance_to(point);
             if r_image > 1e-6 {
                 let air_atten = self.air_absorption_factor(r_image, frequency);
-                total_pressure += greens_function_3d(r_image, k) * amplitude * refl_coeff * air_atten * phase_factor;
+                total_pressure += greens_function_3d(r_image, k)
+                    * amplitude
+                    * refl_coeff
+                    * air_atten
+                    * phase_factor;
             }
         }
 
@@ -2919,27 +3469,41 @@ impl RoomSimulatorWasm {
         // Precompute ear positions for binaural
         let (left_ear_pos, right_ear_pos) = if compute_binaural {
             let binaural_config = &self.config.visualization.binaural;
-            let head_center = binaural_config.head_position
+            let head_center = binaural_config
+                .head_position
                 .as_ref()
                 .map(|p| Point3D::new(p.x, p.y, p.z))
                 .unwrap_or(self.listening_position);
-            calculate_ear_positions(&head_center, binaural_config.head_yaw, binaural_config.ear_spacing)
+            calculate_ear_positions(
+                &head_center,
+                binaural_config.head_yaw,
+                binaural_config.ear_spacing,
+            )
         } else {
             (self.listening_position, self.listening_position)
         };
 
         // Precompute head center and yaw for HRTF
-        let head_center_for_hrtf = self.config.visualization.binaural.head_position
+        let head_center_for_hrtf = self
+            .config
+            .visualization
+            .binaural
+            .head_position
             .as_ref()
             .map(|p| Point3D::new(p.x, p.y, p.z))
             .unwrap_or(self.listening_position);
         let head_yaw = self.config.visualization.binaural.head_yaw;
 
-        console_log!("Computing frequency response using {} threads...", rayon::current_num_threads());
+        console_log!(
+            "Computing frequency response using {} threads...",
+            rayon::current_num_threads()
+        );
 
         // Parallel computation of frequency response
         // Each frequency is computed independently, results collected in order
-        let freq_results: Vec<_> = self.frequencies.par_iter()
+        let freq_results: Vec<_> = self
+            .frequencies
+            .par_iter()
             .enumerate()
             .map(|(idx, &freq)| {
                 // Main pressure at listening position
@@ -2949,7 +3513,8 @@ impl RoomSimulatorWasm {
                 // Per-source SPL values
                 let source_spls: Vec<f64> = (0..self.sources.len())
                     .map(|src_idx| {
-                        let p = self.calculate_source_field(src_idx, &self.listening_position, freq);
+                        let p =
+                            self.calculate_source_field(src_idx, &self.listening_position, freq);
                         pressure_to_spl(p)
                     })
                     .collect();
@@ -2983,7 +3548,9 @@ impl RoomSimulatorWasm {
         // Unpack parallel results into separate vectors (maintaining order)
         let mut combined_spl = Vec::with_capacity(self.frequencies.len());
         let mut complex_pressures = Vec::with_capacity(self.frequencies.len());
-        let mut source_responses: Vec<Vec<f64>> = self.sources.iter()
+        let mut source_responses: Vec<Vec<f64>> = self
+            .sources
+            .iter()
             .map(|_| Vec::with_capacity(self.frequencies.len()))
             .collect();
         let mut left_ear_pressures = Vec::with_capacity(self.frequencies.len());
@@ -3008,9 +3575,14 @@ impl RoomSimulatorWasm {
 
         console_log!("Frequency response computed");
 
-        let source_responses_output: Vec<SourceResponse> = self.sources.iter()
+        let source_responses_output: Vec<SourceResponse> = self
+            .sources
+            .iter()
             .zip(source_responses)
-            .map(|(source, spl)| SourceResponse { source_name: source.name.clone(), spl })
+            .map(|(source, spl)| SourceResponse {
+                source_name: source.name.clone(),
+                spl,
+            })
             .collect();
 
         let (horizontal_slices, vertical_slices) = if self.config.visualization.generate_slices {
@@ -3024,7 +3596,11 @@ impl RoomSimulatorWasm {
 
         // Calculate room modes and acoustics for rectangular rooms only
         let (room_modes, room_acoustics) = match &self.config.room {
-            RoomGeometryConfig::Rectangular { width, depth, height } => {
+            RoomGeometryConfig::Rectangular {
+                width,
+                depth,
+                height,
+            } => {
                 let max_freq = self.frequencies.last().copied().unwrap_or(500.0);
                 let modes = calculate_room_modes(
                     *width,
@@ -3035,13 +3611,8 @@ impl RoomSimulatorWasm {
                     10, // max order
                 );
                 // Calculate room acoustics at 1kHz (mid-frequency reference)
-                let acoustics = calculate_room_acoustics(
-                    *width,
-                    *depth,
-                    *height,
-                    &self.wall_materials,
-                    1000.0,
-                );
+                let acoustics =
+                    calculate_room_acoustics(*width, *depth, *height, &self.wall_materials, 1000.0);
                 (Some(modes), Some(acoustics))
             }
             _ => (None, None), // L-shaped and complex rooms don't have simple calculations
@@ -3053,9 +3624,9 @@ impl RoomSimulatorWasm {
             let ir_config = &self.config.visualization.impulse_response;
 
             // If duration not set, use RT60 + 100ms if available, otherwise default
-            let ir_duration = ir_config.duration.or_else(|| {
-                room_acoustics.as_ref().map(|ra| ra.rt60_eyring + 0.1)
-            });
+            let ir_duration = ir_config
+                .duration
+                .or_else(|| room_acoustics.as_ref().map(|ra| ra.rt60_eyring + 0.1));
 
             let config_with_duration = ImpulseResponseConfig {
                 duration: ir_duration,
@@ -3075,7 +3646,8 @@ impl RoomSimulatorWasm {
         let binaural_response = if compute_binaural && !left_ear_pressures.is_empty() {
             console_log!("Computing binaural response...");
             let binaural_config = &self.config.visualization.binaural;
-            let head_center = binaural_config.head_position
+            let head_center = binaural_config
+                .head_position
                 .as_ref()
                 .map(|p| Point3D::new(p.x, p.y, p.z))
                 .unwrap_or(self.listening_position);
@@ -3092,14 +3664,24 @@ impl RoomSimulatorWasm {
             None
         };
 
-        let sources_output: Vec<SourceOutputInfo> = self.sources.iter()
+        let sources_output: Vec<SourceOutputInfo> = self
+            .sources
+            .iter()
             .zip(self.config.sources.iter())
             .map(|(source, config)| {
                 let crossover_str = match &config.crossover {
                     CrossoverConfig::FullRange => None,
-                    CrossoverConfig::Lowpass { cutoff_freq, order } => Some(format!("LP {}Hz {}nd", cutoff_freq, order)),
-                    CrossoverConfig::Highpass { cutoff_freq, order } => Some(format!("HP {}Hz {}nd", cutoff_freq, order)),
-                    CrossoverConfig::Bandpass { low_cutoff, high_cutoff, order } => Some(format!("BP {}-{}Hz {}nd", low_cutoff, high_cutoff, order)),
+                    CrossoverConfig::Lowpass { cutoff_freq, order } => {
+                        Some(format!("LP {}Hz {}nd", cutoff_freq, order))
+                    }
+                    CrossoverConfig::Highpass { cutoff_freq, order } => {
+                        Some(format!("HP {}Hz {}nd", cutoff_freq, order))
+                    }
+                    CrossoverConfig::Bandpass {
+                        low_cutoff,
+                        high_cutoff,
+                        order,
+                    } => Some(format!("BP {}-{}Hz {}nd", low_cutoff, high_cutoff, order)),
                 };
 
                 SourceOutputInfo {
@@ -3113,7 +3695,11 @@ impl RoomSimulatorWasm {
         let results = SimulationResults {
             room: room_output,
             sources: sources_output,
-            listening_position: [self.listening_position.x, self.listening_position.y, self.listening_position.z],
+            listening_position: [
+                self.listening_position.x,
+                self.listening_position.y,
+                self.listening_position.z,
+            ],
             frequencies: self.frequencies.clone(),
             frequency_response: combined_spl,
             source_responses: Some(source_responses_output),
@@ -3256,7 +3842,8 @@ impl RoomSimulatorWasm {
 
     fn build_room_output(&self) -> RoomOutput {
         let edges = self.room_geometry.get_edges();
-        let edges_arrays: Vec<[[f64; 3]; 2]> = edges.iter()
+        let edges_arrays: Vec<[[f64; 3]; 2]> = edges
+            .iter()
             .map(|(p1, p2)| [[p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]])
             .collect();
 
@@ -3286,25 +3873,34 @@ impl RoomSimulatorWasm {
         let y_points = lin_space(0.0, room_depth, resolution);
         let z_points = lin_space(0.0, room_height, resolution);
 
-        let freq_indices: Vec<usize> = if self.config.visualization.slice_frequency_indices.is_empty() {
-            let step = (self.frequencies.len() / 10).max(1);
-            (0..self.frequencies.len()).step_by(step).collect()
-        } else {
-            self.config.visualization.slice_frequency_indices.iter()
-                .filter(|&&i| i < self.frequencies.len())
-                .copied()
-                .collect()
-        };
+        let freq_indices: Vec<usize> =
+            if self.config.visualization.slice_frequency_indices.is_empty() {
+                let step = (self.frequencies.len() / 10).max(1);
+                (0..self.frequencies.len()).step_by(step).collect()
+            } else {
+                self.config
+                    .visualization
+                    .slice_frequency_indices
+                    .iter()
+                    .filter(|&&i| i < self.frequencies.len())
+                    .copied()
+                    .collect()
+            };
 
-        console_log!("Computing {} spatial slices in parallel...", freq_indices.len());
+        console_log!(
+            "Computing {} spatial slices in parallel...",
+            freq_indices.len()
+        );
 
         // Parallel computation of slices - each frequency slice is independent
-        let slices: Vec<(SliceOutput, SliceOutput)> = freq_indices.par_iter()
+        let slices: Vec<(SliceOutput, SliceOutput)> = freq_indices
+            .par_iter()
             .map(|&freq_idx| {
                 let freq = self.frequencies[freq_idx];
 
                 // Horizontal slice - parallelize the grid computation
-                let h_spl: Vec<f64> = y_points.iter()
+                let h_spl: Vec<f64> = y_points
+                    .iter()
                     .flat_map(|&y| {
                         x_points.iter().map(move |&x| {
                             let point = Point3D::new(x, y, self.listening_position.z);
@@ -3324,7 +3920,8 @@ impl RoomSimulatorWasm {
                 };
 
                 // Vertical slice - parallelize the grid computation
-                let v_spl: Vec<f64> = z_points.iter()
+                let v_spl: Vec<f64> = z_points
+                    .iter()
                     .flat_map(|&z| {
                         x_points.iter().map(move |&x| {
                             let point = Point3D::new(x, self.listening_position.y, z);
@@ -3364,11 +3961,19 @@ impl RoomSimulatorWasm {
 #[wasm_bindgen]
 pub fn create_default_config() -> String {
     let config = SimulationConfig {
-        room: RoomGeometryConfig::Rectangular { width: 5.0, depth: 4.0, height: 2.5 },
+        room: RoomGeometryConfig::Rectangular {
+            width: 5.0,
+            depth: 4.0,
+            height: 2.5,
+        },
         sources: vec![
             SourceConfig {
                 name: "Left Speaker".to_string(),
-                position: Point3DConfig { x: 1.5, y: 0.5, z: 1.2 },
+                position: Point3DConfig {
+                    x: 1.5,
+                    y: 0.5,
+                    z: 1.2,
+                },
                 amplitude: 1.0,
                 directivity: DirectivityConfig::Omnidirectional,
                 crossover: CrossoverConfig::FullRange,
@@ -3377,7 +3982,11 @@ pub fn create_default_config() -> String {
             },
             SourceConfig {
                 name: "Right Speaker".to_string(),
-                position: Point3DConfig { x: 3.5, y: 0.5, z: 1.2 },
+                position: Point3DConfig {
+                    x: 3.5,
+                    y: 0.5,
+                    z: 1.2,
+                },
                 amplitude: 1.0,
                 directivity: DirectivityConfig::Omnidirectional,
                 crossover: CrossoverConfig::FullRange,
@@ -3385,7 +3994,11 @@ pub fn create_default_config() -> String {
                 invert_phase: false,
             },
         ],
-        listening_positions: vec![Point3DConfig { x: 2.5, y: 2.5, z: 1.2 }],
+        listening_positions: vec![Point3DConfig {
+            x: 2.5,
+            y: 2.5,
+            z: 1.2,
+        }],
         frequencies: FrequencyConfig {
             min_freq: 20.0,
             max_freq: 500.0,
@@ -3410,23 +4023,80 @@ pub fn create_default_config() -> String {
 #[wasm_bindgen]
 pub fn get_material_presets() -> String {
     let presets = vec![
-        ("concrete", "Concrete/Brick (painted)", [0.01, 0.01, 0.02, 0.02, 0.02, 0.03]),
-        ("brick", "Unpainted Brick", [0.03, 0.03, 0.03, 0.04, 0.05, 0.07]),
-        ("drywall", "Drywall/Gypsum", [0.29, 0.10, 0.05, 0.04, 0.07, 0.09]),
-        ("plaster", "Plaster on Brick", [0.01, 0.02, 0.02, 0.03, 0.04, 0.05]),
-        ("glass", "Glass (large pane)", [0.18, 0.06, 0.04, 0.03, 0.02, 0.02]),
-        ("wood_thin", "Wood Paneling (thin)", [0.42, 0.21, 0.10, 0.08, 0.06, 0.06]),
-        ("wood_thick", "Heavy Wood/Door", [0.14, 0.10, 0.06, 0.08, 0.10, 0.10]),
-        ("carpet_thin", "Carpet (thin)", [0.02, 0.06, 0.14, 0.37, 0.60, 0.65]),
-        ("carpet_thick", "Carpet (heavy)", [0.08, 0.24, 0.57, 0.69, 0.71, 0.73]),
-        ("acoustic_tile", "Acoustic Ceiling Tiles", [0.50, 0.70, 0.60, 0.70, 0.70, 0.50]),
-        ("curtains", "Curtains/Drapes", [0.07, 0.31, 0.49, 0.75, 0.70, 0.60]),
-        ("acoustic_foam", "Acoustic Foam", [0.08, 0.25, 0.60, 0.90, 0.95, 0.90]),
-        ("hardwood", "Hardwood Floor", [0.15, 0.11, 0.10, 0.07, 0.06, 0.07]),
-        ("concrete_floor", "Concrete Floor", [0.01, 0.01, 0.02, 0.02, 0.02, 0.02]),
+        (
+            "concrete",
+            "Concrete/Brick (painted)",
+            [0.01, 0.01, 0.02, 0.02, 0.02, 0.03],
+        ),
+        (
+            "brick",
+            "Unpainted Brick",
+            [0.03, 0.03, 0.03, 0.04, 0.05, 0.07],
+        ),
+        (
+            "drywall",
+            "Drywall/Gypsum",
+            [0.29, 0.10, 0.05, 0.04, 0.07, 0.09],
+        ),
+        (
+            "plaster",
+            "Plaster on Brick",
+            [0.01, 0.02, 0.02, 0.03, 0.04, 0.05],
+        ),
+        (
+            "glass",
+            "Glass (large pane)",
+            [0.18, 0.06, 0.04, 0.03, 0.02, 0.02],
+        ),
+        (
+            "wood_thin",
+            "Wood Paneling (thin)",
+            [0.42, 0.21, 0.10, 0.08, 0.06, 0.06],
+        ),
+        (
+            "wood_thick",
+            "Heavy Wood/Door",
+            [0.14, 0.10, 0.06, 0.08, 0.10, 0.10],
+        ),
+        (
+            "carpet_thin",
+            "Carpet (thin)",
+            [0.02, 0.06, 0.14, 0.37, 0.60, 0.65],
+        ),
+        (
+            "carpet_thick",
+            "Carpet (heavy)",
+            [0.08, 0.24, 0.57, 0.69, 0.71, 0.73],
+        ),
+        (
+            "acoustic_tile",
+            "Acoustic Ceiling Tiles",
+            [0.50, 0.70, 0.60, 0.70, 0.70, 0.50],
+        ),
+        (
+            "curtains",
+            "Curtains/Drapes",
+            [0.07, 0.31, 0.49, 0.75, 0.70, 0.60],
+        ),
+        (
+            "acoustic_foam",
+            "Acoustic Foam",
+            [0.08, 0.25, 0.60, 0.90, 0.95, 0.90],
+        ),
+        (
+            "hardwood",
+            "Hardwood Floor",
+            [0.15, 0.11, 0.10, 0.07, 0.06, 0.07],
+        ),
+        (
+            "concrete_floor",
+            "Concrete Floor",
+            [0.01, 0.01, 0.02, 0.02, 0.02, 0.02],
+        ),
     ];
 
-    let result: Vec<serde_json::Value> = presets.iter()
+    let result: Vec<serde_json::Value> = presets
+        .iter()
         .map(|(id, name, absorption)| {
             serde_json::json!({
                 "id": id,
@@ -3508,12 +4178,7 @@ pub fn get_schroeder_frequency(volume: f64, rt60: f64) -> f64 {
 /// * `average_absorption` - Average absorption coefficient (0.0 to 1.0)
 /// * `frequency` - Reference frequency for absorption (typically 1000 Hz)
 #[wasm_bindgen]
-pub fn get_rt60(
-    width: f64,
-    depth: f64,
-    height: f64,
-    average_absorption: f64,
-) -> String {
+pub fn get_rt60(width: f64, depth: f64, height: f64, average_absorption: f64) -> String {
     let volume = width * depth * height;
     let surface_area = 2.0 * (width * depth + width * height + depth * height);
     let total_absorption = average_absorption * surface_area;
@@ -3562,13 +4227,17 @@ pub fn compute_impulse_response(input_json: &str) -> String {
         Err(e) => return format!(r#"{{"error": "Invalid JSON: {}"}}"#, e),
     };
 
-    if input.frequencies.len() != input.magnitudes.len() ||
-       input.frequencies.len() != input.phases.len() {
-        return r#"{"error": "frequencies, magnitudes, and phases arrays must have same length"}"#.to_string();
+    if input.frequencies.len() != input.magnitudes.len()
+        || input.frequencies.len() != input.phases.len()
+    {
+        return r#"{"error": "frequencies, magnitudes, and phases arrays must have same length"}"#
+            .to_string();
     }
 
     // Build complex frequency response from magnitude and phase
-    let complex_response: Vec<Complex64> = input.magnitudes.iter()
+    let complex_response: Vec<Complex64> = input
+        .magnitudes
+        .iter()
         .zip(input.phases.iter())
         .map(|(&mag, &phase)| Complex64::from_polar(mag, phase))
         .collect();
@@ -3576,7 +4245,8 @@ pub fn compute_impulse_response(input_json: &str) -> String {
     let config = input.config.unwrap_or_default();
     let ir = calculate_impulse_response(&input.frequencies, &complex_response, &config);
 
-    serde_json::to_string(&ir).unwrap_or_else(|_| r#"{"error": "Serialization failed"}"#.to_string())
+    serde_json::to_string(&ir)
+        .unwrap_or_else(|_| r#"{"error": "Serialization failed"}"#.to_string())
 }
 
 /// Validate a configuration JSON and return any errors
@@ -3587,8 +4257,18 @@ pub fn validate_config(config_json: &str) -> String {
             let mut warnings = Vec::new();
 
             let (w, d, h) = match &config.room {
-                RoomGeometryConfig::Rectangular { width, depth, height } => (*width, *depth, *height),
-                RoomGeometryConfig::LShaped { width1, depth1, depth2, height, .. } => (*width1, depth1 + depth2, *height),
+                RoomGeometryConfig::Rectangular {
+                    width,
+                    depth,
+                    height,
+                } => (*width, *depth, *height),
+                RoomGeometryConfig::LShaped {
+                    width1,
+                    depth1,
+                    depth2,
+                    height,
+                    ..
+                } => (*width1, depth1 + depth2, *height),
             };
 
             if w <= 0.0 || d <= 0.0 || h <= 0.0 {
@@ -3600,9 +4280,13 @@ pub fn validate_config(config_json: &str) -> String {
             }
 
             for (idx, source) in config.sources.iter().enumerate() {
-                if source.position.x < 0.0 || source.position.x > w ||
-                   source.position.y < 0.0 || source.position.y > d ||
-                   source.position.z < 0.0 || source.position.z > h {
+                if source.position.x < 0.0
+                    || source.position.x > w
+                    || source.position.y < 0.0
+                    || source.position.y > d
+                    || source.position.z < 0.0
+                    || source.position.z > h
+                {
                     warnings.push(format!("Source {} is outside room bounds", idx + 1));
                 }
             }
@@ -3613,7 +4297,10 @@ pub fn validate_config(config_json: &str) -> String {
 
             for (idx, lp) in config.listening_positions.iter().enumerate() {
                 if lp.x < 0.0 || lp.x > w || lp.y < 0.0 || lp.y > d || lp.z < 0.0 || lp.z > h {
-                    warnings.push(format!("Listening position {} is outside room bounds", idx + 1));
+                    warnings.push(format!(
+                        "Listening position {} is outside room bounds",
+                        idx + 1
+                    ));
                 }
             }
 
@@ -3633,8 +4320,6 @@ pub fn validate_config(config_json: &str) -> String {
                 serde_json::json!({"valid": false, "warnings": warnings}).to_string()
             }
         }
-        Err(e) => {
-            serde_json::json!({"valid": false, "error": e.to_string()}).to_string()
-        }
+        Err(e) => serde_json::json!({"valid": false, "error": e.to_string()}).to_string(),
     }
 }

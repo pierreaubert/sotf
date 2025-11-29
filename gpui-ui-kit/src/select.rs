@@ -117,7 +117,10 @@ impl Select {
     }
 
     /// Set change handler
-    pub fn on_change(mut self, handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_change(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_change = Some(Box::new(handler));
         self
     }
@@ -145,7 +148,10 @@ impl Select {
 
         // Find selected option label
         let selected_label = self.selected.as_ref().and_then(|val| {
-            self.options.iter().find(|o| &o.value == val).map(|o| o.label.clone())
+            self.options
+                .iter()
+                .find(|o| &o.value == val)
+                .map(|o| o.label.clone())
         });
 
         // Select trigger
@@ -188,12 +194,7 @@ impl Select {
         trigger = trigger.child(display_text);
 
         // Dropdown arrow
-        trigger = trigger.child(
-            div()
-                .text_xs()
-                .text_color(rgb(0x666666))
-                .child("▼"),
-        );
+        trigger = trigger.child(div().text_xs().text_color(rgb(0x666666)).child("▼"));
 
         container = container.child(trigger);
 
@@ -217,10 +218,7 @@ impl Select {
                 let is_selected = self.selected.as_ref() == Some(&option.value);
                 let option_value = option.value.clone();
 
-                let mut option_el = div()
-                    .px_3()
-                    .py(px(6.0))
-                    .cursor_pointer();
+                let mut option_el = div().px_3().py(px(6.0)).cursor_pointer();
 
                 // Apply text size
                 option_el = match self.size {
@@ -230,13 +228,9 @@ impl Select {
                 };
 
                 if option.disabled {
-                    option_el = option_el
-                        .text_color(rgb(0x666666))
-                        .cursor_not_allowed();
+                    option_el = option_el.text_color(rgb(0x666666)).cursor_not_allowed();
                 } else if is_selected {
-                    option_el = option_el
-                        .bg(rgb(0x007acc))
-                        .text_color(rgb(0xffffff));
+                    option_el = option_el.bg(rgb(0x007acc)).text_color(rgb(0xffffff));
                 } else {
                     option_el = option_el
                         .text_color(rgb(0xcccccc))

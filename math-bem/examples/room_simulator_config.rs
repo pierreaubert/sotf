@@ -59,9 +59,9 @@ fn run_rectangular_room() -> Result<(), Box<dyn std::error::Error>> {
         room_geom,
         vec![source],
         vec![lp],
-        50.0,   // min frequency
+        50.0,    // min frequency
         10000.0, // max frequency
-        100,    // number of points
+        100,     // number of points
     );
 
     run_simulation(simulation, "rectangular_room")?;
@@ -99,14 +99,8 @@ fn run_lshaped_room() -> Result<(), Box<dyn std::error::Error>> {
     let lp = Point3D::new(3.0, 2.5, 1.2);
 
     // Standard frequency range
-    let simulation = RoomSimulation::with_frequencies(
-        room_geom,
-        vec![source],
-        vec![lp],
-        20.0,
-        20000.0,
-        200,
-    );
+    let simulation =
+        RoomSimulation::with_frequencies(room_geom, vec![source], vec![lp], 20.0, 20000.0, 200);
 
     run_simulation(simulation, "lshaped_room")?;
 
@@ -157,12 +151,18 @@ fn run_multi_source_system() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     println!("Sources:");
-    println!("  Left Main: ({:.1}, {:.1}, {:.1}) - HPF 80Hz",
-        left_main.position.x, left_main.position.y, left_main.position.z);
-    println!("  Right Main: ({:.1}, {:.1}, {:.1}) - HPF 80Hz",
-        right_main.position.x, right_main.position.y, right_main.position.z);
-    println!("  Subwoofer: ({:.1}, {:.1}, {:.1}) - LPF 80Hz",
-        subwoofer.position.x, subwoofer.position.y, subwoofer.position.z);
+    println!(
+        "  Left Main: ({:.1}, {:.1}, {:.1}) - HPF 80Hz",
+        left_main.position.x, left_main.position.y, left_main.position.z
+    );
+    println!(
+        "  Right Main: ({:.1}, {:.1}, {:.1}) - HPF 80Hz",
+        right_main.position.x, right_main.position.y, right_main.position.z
+    );
+    println!(
+        "  Subwoofer: ({:.1}, {:.1}, {:.1}) - LPF 80Hz",
+        subwoofer.position.x, subwoofer.position.y, subwoofer.position.z
+    );
 
     // Listening position
     let lp = Point3D::new(2.5, 2.0, 1.2);
@@ -189,19 +189,30 @@ fn run_simulation(
     println!("\nSimulation Configuration:");
     println!("  Sources: {}", simulation.sources.len());
     for source in &simulation.sources {
-        println!("    - {}: ({:.1}, {:.1}, {:.1})",
-            source.name, source.position.x, source.position.y, source.position.z);
+        println!(
+            "    - {}: ({:.1}, {:.1}, {:.1})",
+            source.name, source.position.x, source.position.y, source.position.z
+        );
     }
-    println!("  Listening positions: {}", simulation.listening_positions.len());
-    println!("  Frequency range: {:.0} Hz to {:.0} Hz ({} points)",
+    println!(
+        "  Listening positions: {}",
+        simulation.listening_positions.len()
+    );
+    println!(
+        "  Frequency range: {:.0} Hz to {:.0} Hz ({} points)",
         simulation.frequencies[0],
         simulation.frequencies.last().unwrap(),
-        simulation.frequencies.len());
+        simulation.frequencies.len()
+    );
 
     // Generate mesh
     println!("\nGenerating room mesh...");
     let mesh = simulation.room.generate_mesh(2); // 2 elements per meter
-    println!("Mesh: {} nodes, {} elements", mesh.nodes.len(), mesh.elements.len());
+    println!(
+        "Mesh: {} nodes, {} elements",
+        mesh.nodes.len(),
+        mesh.elements.len()
+    );
 
     // Get room edges for visualization
     let edges = simulation.room.get_edges();
@@ -214,20 +225,19 @@ fn run_simulation(
 
     for (idx, &freq) in simulation.frequencies.iter().enumerate() {
         if idx % 20 == 0 || simulation.frequencies.len() < 50 {
-            println!("  Progress: {}/{} ({:.0} Hz)", idx + 1, simulation.frequencies.len(), freq);
+            println!(
+                "  Progress: {}/{} ({:.0} Hz)",
+                idx + 1,
+                simulation.frequencies.len(),
+                freq
+            );
         }
         let k = simulation.wavenumber(freq);
         let incident = calculate_incident_field(&mesh, &simulation.sources, k, freq);
 
         // Calculate SPL at listening position
-        let lp_pressure = calculate_field_pressure(
-            &mesh,
-            &incident,
-            &simulation.sources,
-            &[lp],
-            k,
-            freq,
-        );
+        let lp_pressure =
+            calculate_field_pressure(&mesh, &incident, &simulation.sources, &[lp], k, freq);
         let lp_spl = pressure_to_spl(lp_pressure[0]);
         lp_spl_values.push(lp_spl);
     }
@@ -238,7 +248,11 @@ fn run_simulation(
         .step_by(simulation.frequencies.len() / 20.max(1))
         .collect();
 
-    println!("Computing {} slices out of {} frequencies", slice_indices.len(), simulation.frequencies.len());
+    println!(
+        "Computing {} slices out of {} frequencies",
+        slice_indices.len(),
+        simulation.frequencies.len()
+    );
 
     let slice_resolution = 50;
 

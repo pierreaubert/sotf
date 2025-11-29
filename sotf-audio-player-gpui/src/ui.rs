@@ -5,9 +5,9 @@ mod screens;
 
 use crate::actions::*;
 use crate::app::{AppState, Screen};
-use gpui_ui_kit::Divider;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::Divider;
 use std::time::Duration;
 
 // Re-export all actions for backward compatibility
@@ -153,8 +153,15 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = Screen::Settings;
             // Expand the plugins section
-            if !state.app.expanded_settings_sections.contains(&"plugins".to_string()) {
-                state.app.expanded_settings_sections.push("plugins".to_string());
+            if !state
+                .app
+                .expanded_settings_sections
+                .contains(&"plugins".to_string())
+            {
+                state
+                    .app
+                    .expanded_settings_sections
+                    .push("plugins".to_string());
             }
         });
         cx.notify();
@@ -164,8 +171,15 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = Screen::Settings;
             // Expand the audio-device section
-            if !state.app.expanded_settings_sections.contains(&"audio-device".to_string()) {
-                state.app.expanded_settings_sections.push("audio-device".to_string());
+            if !state
+                .app
+                .expanded_settings_sections
+                .contains(&"audio-device".to_string())
+            {
+                state
+                    .app
+                    .expanded_settings_sections
+                    .push("audio-device".to_string());
             }
         });
         cx.notify();
@@ -292,7 +306,9 @@ impl PlayerView {
             // Bottom section: Queue (configurable height ratio)
             .child(
                 div()
-                    .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(queue_ratio)))
+                    .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                        queue_ratio,
+                    )))
                     .border_t_1()
                     .border_color(theme.border)
                     .overflow_hidden()
@@ -301,7 +317,11 @@ impl PlayerView {
     }
 
     /// Render a horizontal divider that can be dragged to resize panels
-    fn render_horizontal_divider(&self, theme: crate::theme::Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_horizontal_divider(
+        &self,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         Divider::new()
             .id("queue-divider")
             .color(theme.border)
@@ -537,8 +557,9 @@ impl PlayerView {
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        let new_index = self.state.update(cx, |state, _cx| {
-            match state.app.current_screen {
+        let new_index = self
+            .state
+            .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.select_next_tree_item();
@@ -557,8 +578,7 @@ impl PlayerView {
                     None
                 }
                 _ => None,
-            }
-        });
+            });
         // Scroll to the selected item in flat list view
         if let Some(idx) = new_index {
             self.library_scroll_handle
@@ -568,8 +588,9 @@ impl PlayerView {
     }
 
     fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
-        let new_index = self.state.update(cx, |state, _cx| {
-            match state.app.current_screen {
+        let new_index = self
+            .state
+            .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.select_previous_tree_item();
@@ -588,8 +609,7 @@ impl PlayerView {
                     None
                 }
                 _ => None,
-            }
-        });
+            });
         // Scroll to the selected item in flat list view
         if let Some(idx) = new_index {
             self.library_scroll_handle
@@ -601,8 +621,9 @@ impl PlayerView {
     fn select_next_page(&mut self, _: &SelectNextPage, _: &mut Window, cx: &mut Context<Self>) {
         const PAGE_SIZE: usize = 20;
 
-        let new_index = self.state.update(cx, |state, _cx| {
-            match state.app.current_screen {
+        let new_index = self
+            .state
+            .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.page_down_tree(PAGE_SIZE);
@@ -621,8 +642,7 @@ impl PlayerView {
                     None
                 }
                 _ => None,
-            }
-        });
+            });
         // Scroll to the selected item in flat list view
         if let Some(idx) = new_index {
             self.library_scroll_handle
@@ -634,8 +654,9 @@ impl PlayerView {
     fn select_prev_page(&mut self, _: &SelectPrevPage, _: &mut Window, cx: &mut Context<Self>) {
         const PAGE_SIZE: usize = 20;
 
-        let new_index = self.state.update(cx, |state, _cx| {
-            match state.app.current_screen {
+        let new_index = self
+            .state
+            .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
                     if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
                         state.app.page_up_tree(PAGE_SIZE);
@@ -654,8 +675,7 @@ impl PlayerView {
                     None
                 }
                 _ => None,
-            }
-        });
+            });
         // Scroll to the selected item in flat list view
         if let Some(idx) = new_index {
             self.library_scroll_handle
@@ -992,36 +1012,21 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn toggle_meter_mute(
-        &mut self,
-        _: &ToggleMeterMute,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn toggle_meter_mute(&mut self, _: &ToggleMeterMute, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.toggle_level_meter_mute();
         });
         cx.notify();
     }
 
-    fn toggle_meter_solo(
-        &mut self,
-        _: &ToggleMeterSolo,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn toggle_meter_solo(&mut self, _: &ToggleMeterSolo, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.toggle_level_meter_solo();
         });
         cx.notify();
     }
 
-    fn toggle_meter_dim(
-        &mut self,
-        _: &ToggleMeterDim,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn toggle_meter_dim(&mut self, _: &ToggleMeterDim, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.toggle_level_meter_dim();
         });
@@ -1220,7 +1225,9 @@ impl PlayerView {
                 // Autocomplete from available presets
                 self.state.update(cx, |state, _cx| {
                     if state.app.autocomplete_suggestions.is_empty() {
-                        state.app.generate_autocomplete_suggestions_for_save_preset();
+                        state
+                            .app
+                            .generate_autocomplete_suggestions_for_save_preset();
                         if !state.app.autocomplete_suggestions.is_empty() {
                             state.app.apply_autocomplete_to_plugin_file();
                         }
@@ -1303,7 +1310,9 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     if !state.app.plugin_file_input.is_empty() {
                         if state.app.autocomplete_suggestions.is_empty() {
-                            state.app.generate_autocomplete_suggestions_for_plugin_file();
+                            state
+                                .app
+                                .generate_autocomplete_suggestions_for_plugin_file();
                             if !state.app.autocomplete_suggestions.is_empty() {
                                 state.app.apply_autocomplete_to_plugin_file();
                             }
@@ -1406,7 +1415,11 @@ impl PlayerView {
                 }
                 Screen::Settings => {
                     // If Plugins section is expanded, enter plugin edit mode
-                    if state.app.expanded_settings_sections.contains(&"plugins".to_string()) {
+                    if state
+                        .app
+                        .expanded_settings_sections
+                        .contains(&"plugins".to_string())
+                    {
                         state.app.enter_plugin_edit_mode();
                     }
                 }
@@ -1453,7 +1466,8 @@ impl Render for PlayerView {
             Some(last_bounds) => {
                 let pos_changed = (last_bounds.origin.x - window_bounds.origin.x).abs() > px(1.0)
                     || (last_bounds.origin.y - window_bounds.origin.y).abs() > px(1.0);
-                let size_changed = (last_bounds.size.width - window_bounds.size.width).abs() > px(1.0)
+                let size_changed = (last_bounds.size.width - window_bounds.size.width).abs()
+                    > px(1.0)
                     || (last_bounds.size.height - window_bounds.size.height).abs() > px(1.0);
                 pos_changed || size_changed
             }
@@ -1585,7 +1599,11 @@ impl Render for PlayerView {
                     crate::app::InputMode::Normal => {
                         // Handle screen-specific shortcuts in Normal mode
                         if current_screen == crate::app::Screen::Settings
-                            && view.state.read(cx).app.expanded_settings_sections
+                            && view
+                                .state
+                                .read(cx)
+                                .app
+                                .expanded_settings_sections
                                 .contains(&"plugins".to_string())
                         {
                             match event.keystroke.key.as_str() {
@@ -1630,7 +1648,9 @@ impl Render for PlayerView {
                         crate::app::LayoutMode::Expanded => {
                             // Split view: Library on bottom, Queue on top
                             match current_screen {
-                                Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
+                                Screen::Spectrum => {
+                                    self.render_spectrum_screen(cx).into_any_element()
+                                }
                                 Screen::DirectoryManager => {
                                     self.render_directory_screen(cx).into_any_element()
                                 }
@@ -1682,9 +1702,10 @@ impl Render for PlayerView {
             .when(input_mode == crate::app::InputMode::LoadPlugins, |div| {
                 div.child(self.render_load_plugins_dialog(cx))
             })
-            .when(input_mode == crate::app::InputMode::KeyboardShortcuts, |div| {
-                div.child(self.render_keyboard_shortcuts_dialog(cx))
-            })
+            .when(
+                input_mode == crate::app::InputMode::KeyboardShortcuts,
+                |div| div.child(self.render_keyboard_shortcuts_dialog(cx)),
+            )
             .when(input_mode == crate::app::InputMode::About, |div| {
                 div.child(self.render_about_dialog(cx))
             })

@@ -148,22 +148,13 @@ pub fn create_test_library() -> Vec<TestAlbum> {
             ])
             .with_channels(2),
         TestAlbum::new("Artist A", "Album Two", 2021)
-            .with_tracks(vec![
-                ("Track 1", 180.0),
-                ("Track 2", 200.0),
-            ])
+            .with_tracks(vec![("Track 1", 180.0), ("Track 2", 200.0)])
             .with_channels(2),
         TestAlbum::new("Artist B", "First Release", 2019)
-            .with_tracks(vec![
-                ("Intro", 60.0),
-                ("Song", 240.0),
-                ("Outro", 90.0),
-            ])
+            .with_tracks(vec![("Intro", 60.0), ("Song", 240.0), ("Outro", 90.0)])
             .with_channels(2),
         TestAlbum::new("Artist C", "Surround Album", 2022)
-            .with_tracks(vec![
-                ("Immersive", 300.0),
-            ])
+            .with_tracks(vec![("Immersive", 300.0)])
             .with_channels(6), // 5.1 surround
         TestAlbum::new("The Beatles", "Abbey Road", 1969)
             .with_tracks(vec![

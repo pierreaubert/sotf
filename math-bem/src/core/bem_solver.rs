@@ -39,7 +39,7 @@ use std::f64::consts::PI;
 use crate::core::assembly::tbem::build_tbem_system_with_beta;
 use crate::core::incident::IncidentField;
 use crate::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-use crate::core::postprocess::pressure::{compute_total_field, FieldPoint};
+use crate::core::postprocess::pressure::{FieldPoint, compute_total_field};
 use crate::core::solver::direct::direct_solve;
 use crate::core::types::{BoundaryCondition, Element, Mesh, PhysicsParams};
 
@@ -290,7 +290,8 @@ impl BemSolver {
         let elements = self.prepare_elements(problem);
 
         // Step 2: Assemble system matrix and RHS
-        let (matrix, rhs) = self.assemble_system(&elements, &problem.mesh.nodes, &problem.physics)?;
+        let (matrix, rhs) =
+            self.assemble_system(&elements, &problem.mesh.nodes, &problem.physics)?;
 
         // Step 3: Add incident field contribution to RHS
         let rhs = self.add_incident_field_rhs(
@@ -305,8 +306,13 @@ impl BemSolver {
         let surface_pressure = self.solve_linear_system(&matrix, &rhs)?;
 
         if self.verbose {
-            log::info!("Solution complete. Max surface pressure: {:.6}",
-                surface_pressure.iter().map(|p| p.norm()).fold(0.0f64, f64::max));
+            log::info!(
+                "Solution complete. Max surface pressure: {:.6}",
+                surface_pressure
+                    .iter()
+                    .map(|p| p.norm())
+                    .fold(0.0f64, f64::max)
+            );
         }
 
         Ok(BemSolution {
@@ -422,7 +428,9 @@ impl BemSolver {
                 if solution.success {
                     Ok(solution.x)
                 } else {
-                    Err(BemError::SolverFailed("LU decomposition failed".to_string()))
+                    Err(BemError::SolverFailed(
+                        "LU decomposition failed".to_string(),
+                    ))
                 }
             }
             SolverMethod::Cgs | SolverMethod::BiCgStab => {
@@ -453,7 +461,8 @@ pub struct BemSolution {
 impl BemSolution {
     /// Evaluate total pressure at a single point
     pub fn evaluate_pressure(&self, point: &[f64; 3]) -> Complex64 {
-        let eval_points = Array2::from_shape_vec((1, 3), vec![point[0], point[1], point[2]]).unwrap();
+        let eval_points =
+            Array2::from_shape_vec((1, 3), vec![point[0], point[1], point[2]]).unwrap();
 
         let field_points = compute_total_field(
             &eval_points,
@@ -558,9 +567,7 @@ mod tests {
         let problem = BemProblem::rigid_sphere_scattering_custom(
             0.1,   // radius
             100.0, // very low frequency for quick test
-            343.0,
-            1.21,
-            4, // coarse mesh
+            343.0, 1.21, 4, // coarse mesh
             8,
         );
 
@@ -576,14 +583,7 @@ mod tests {
     #[test]
     fn test_field_evaluation() {
         // Very small problem
-        let problem = BemProblem::rigid_sphere_scattering_custom(
-            0.1,
-            100.0,
-            343.0,
-            1.21,
-            4,
-            8,
-        );
+        let problem = BemProblem::rigid_sphere_scattering_custom(0.1, 100.0, 343.0, 1.21, 4, 8);
 
         let solver = BemSolver::new();
         let solution = solver.solve(&problem).unwrap();

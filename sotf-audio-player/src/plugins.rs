@@ -202,12 +202,9 @@ impl EQFilter {
 
 // Import plugin defaults from sotf-audio-plugins for consistent preset migration
 use sotf_plugins::{
+    binaural_default_enable_optimization, compressor_default_link_channels,
+    compressor_default_sidechain_hpf_hz, upmixer_default_hr_sharpen, upmixer_default_safety_cap_db,
     upmixer_default_subharmonic_gain,
-    upmixer_default_hr_sharpen,
-    upmixer_default_safety_cap_db,
-    compressor_default_link_channels,
-    compressor_default_sidechain_hpf_hz,
-    binaural_default_enable_optimization,
 };
 
 // Wrapper functions to convert f32 -> f64 for PluginSettings (which uses f64)

@@ -6,7 +6,8 @@
 //! - Gain reduction meter
 
 use super::common::{
-    render_edit_hints, render_gr_meter, render_section_header, render_toggle, render_vertical_slider,
+    render_edit_hints, render_gr_meter, render_section_header, render_toggle,
+    render_vertical_slider,
 };
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -195,16 +196,13 @@ pub fn render_gate_plugin(
                                         .relative()
                                         .overflow_hidden()
                                         // Input level bar
-                                        .child(
-                                            div()
-                                                .h_full()
-                                                .w(relative(input_normalized))
-                                                .bg(if gate_open {
-                                                    rgb(0x22c55e)
-                                                } else {
-                                                    rgb(0xef4444)
-                                                }),
-                                        )
+                                        .child(div().h_full().w(relative(input_normalized)).bg(
+                                            if gate_open {
+                                                rgb(0x22c55e)
+                                            } else {
+                                                rgb(0xef4444)
+                                            },
+                                        ))
                                         // Threshold marker
                                         .child(
                                             div()
@@ -260,12 +258,7 @@ pub fn render_gate_plugin(
                                 .child(format!("{:.1} dB", threshold_db)),
                         ),
                 )
-                .child(
-                    div()
-                        .w(px(1.0))
-                        .h(px(40.0))
-                        .bg(theme.border),
-                )
+                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
                 .child(
                     div()
                         .flex()
@@ -302,46 +295,41 @@ pub fn render_gate_plugin(
         )
         // Options row
         .child(
-            div()
-                .flex()
-                .gap_4()
-                .children([
-                    // Link channels toggle
-                    div()
-                        .flex_1()
-                        .child(render_toggle(
-                            "Link Channels",
-                            link_channels,
-                            5,
-                            selected_param,
-                            is_editing,
-                            theme,
-                        )),
-                    // Sidechain HPF
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .p_3()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Sidechain HPF"),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_primary)
-                                .child(format!("{:.0} Hz", sidechain_hpf_hz)),
-                        ),
-                ]),
+            div().flex().gap_4().children([
+                // Link channels toggle
+                div().flex_1().child(render_toggle(
+                    "Link Channels",
+                    link_channels,
+                    5,
+                    selected_param,
+                    is_editing,
+                    theme,
+                )),
+                // Sidechain HPF
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .p_3()
+                    .rounded_xl()
+                    .bg(theme.background_secondary)
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .child("Sidechain HPF"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(format!("{:.0} Hz", sidechain_hpf_hz)),
+                    ),
+            ]),
         )
         // Keyboard hints
         .child(

@@ -16,7 +16,12 @@ pub enum Language {
 
 impl Language {
     pub fn all() -> &'static [Language] {
-        &[Language::English, Language::French, Language::German, Language::Spanish]
+        &[
+            Language::English,
+            Language::French,
+            Language::German,
+            Language::Spanish,
+        ]
     }
 
     pub fn name(&self) -> &'static str {

@@ -158,22 +158,18 @@ pub fn render_compressor_plugin(
                             theme,
                         ))
                         // Mix slider
-                        .child(
-                            div()
-                                .w_full()
-                                .child(render_vertical_slider(
-                                    "Mix",
-                                    mix,
-                                    0.0,
-                                    1.0,
-                                    "%",
-                                    6,
-                                    selected_param,
-                                    is_editing,
-                                    Some('x'),
-                                    theme,
-                                )),
-                        ),
+                        .child(div().w_full().child(render_vertical_slider(
+                            "Mix",
+                            mix,
+                            0.0,
+                            1.0,
+                            "%",
+                            6,
+                            selected_param,
+                            is_editing,
+                            Some('x'),
+                            theme,
+                        ))),
                 ),
         )
         // Gain reduction meter
@@ -188,57 +184,50 @@ pub fn render_compressor_plugin(
         )
         // Options row
         .child(
-            div()
-                .flex()
-                .gap_4()
-                .children([
-                    // Auto makeup toggle
-                    div()
-                        .flex_1()
-                        .child(render_toggle(
-                            "Auto Makeup",
-                            auto_makeup,
-                            7,
-                            selected_param,
-                            is_editing,
-                            theme,
-                        )),
-                    // Link channels toggle
-                    div()
-                        .flex_1()
-                        .child(render_toggle(
-                            "Link Channels",
-                            link_channels,
-                            8,
-                            selected_param,
-                            is_editing,
-                            theme,
-                        )),
-                    // Sidechain HPF
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .p_3()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Sidechain HPF"),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_primary)
-                                .child(format!("{:.0} Hz", sidechain_hpf_hz)),
-                        ),
-                ]),
+            div().flex().gap_4().children([
+                // Auto makeup toggle
+                div().flex_1().child(render_toggle(
+                    "Auto Makeup",
+                    auto_makeup,
+                    7,
+                    selected_param,
+                    is_editing,
+                    theme,
+                )),
+                // Link channels toggle
+                div().flex_1().child(render_toggle(
+                    "Link Channels",
+                    link_channels,
+                    8,
+                    selected_param,
+                    is_editing,
+                    theme,
+                )),
+                // Sidechain HPF
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .p_3()
+                    .rounded_xl()
+                    .bg(theme.background_secondary)
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .child("Sidechain HPF"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(format!("{:.0} Hz", sidechain_hpf_hz)),
+                    ),
+            ]),
         )
         // Keyboard hints
         .child(

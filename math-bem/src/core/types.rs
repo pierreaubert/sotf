@@ -180,15 +180,15 @@ impl PhysicsParams {
         // Select optimal scale based on ka
         // These values were empirically determined from Mie solution comparisons
         let scale = if ka < 0.85 {
-            32.0  // Low frequencies need very high β
+            32.0 // Low frequencies need very high β
         } else if ka < 0.92 {
-            8.0   // Transition region around ka=0.9
+            8.0 // Transition region around ka=0.9
         } else if ka < 1.2 {
-            4.0   // Sweet spot around ka=1
+            4.0 // Sweet spot around ka=1
         } else if ka < 1.8 {
-            8.0   // Intermediate range
+            8.0 // Intermediate range
         } else {
-            16.0  // High frequencies also benefit from high β
+            16.0 // High frequencies also benefit from high β
         };
 
         let beta = Complex64::new(0.0, self.harmonic_factor * scale / self.wave_number);
@@ -278,9 +278,7 @@ pub enum BoundaryCondition {
         admittance: Complex64,
     },
     /// Transfer admittance
-    TransferAdmittance {
-        admittance: Complex64,
-    },
+    TransferAdmittance { admittance: Complex64 },
     /// Transfer with surface admittance
     TransferWithSurfaceAdmittance {
         transfer_admittance: Complex64,

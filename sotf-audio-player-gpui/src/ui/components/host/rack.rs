@@ -1,7 +1,7 @@
 //! Plugin screen rendering functions - Professional DAW-style interface
 
-use crate::ui::components::plugins::render_plugin_content;
 use crate::ui::PlayerView;
+use crate::ui::components::plugins::render_plugin_content;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::PluginType;
@@ -30,13 +30,7 @@ impl Render for PluginDragInfo {
             .shadow_lg()
             .opacity(0.9)
             // Top bar with color
-            .child(
-                div()
-                    .h(px(3.0))
-                    .w_full()
-                    .bg(self.color)
-                    .rounded_t_md(),
-            )
+            .child(div().h(px(3.0)).w_full().bg(self.color).rounded_t_md())
             // Icon
             .child(
                 div()
@@ -66,18 +60,18 @@ impl Render for PluginDragInfo {
 // Plugin color scheme for different types
 fn plugin_color(plugin_type: &PluginType) -> Rgba {
     match plugin_type {
-        PluginType::EQ => rgb(0x2563eb),           // Blue - EQ
-        PluginType::Gain => rgb(0x059669),          // Green - Gain
-        PluginType::Upmixer => rgb(0x7c3aed),       // Purple - Upmixer
-        PluginType::Compressor => rgb(0xdc2626),    // Red - Compressor
-        PluginType::Limiter => rgb(0xea580c),       // Orange - Limiter
-        PluginType::Gate => rgb(0xca8a04),          // Yellow - Gate
+        PluginType::EQ => rgb(0x2563eb),                   // Blue - EQ
+        PluginType::Gain => rgb(0x059669),                 // Green - Gain
+        PluginType::Upmixer => rgb(0x7c3aed),              // Purple - Upmixer
+        PluginType::Compressor => rgb(0xdc2626),           // Red - Compressor
+        PluginType::Limiter => rgb(0xea580c),              // Orange - Limiter
+        PluginType::Gate => rgb(0xca8a04),                 // Yellow - Gate
         PluginType::LoudnessCompensation => rgb(0x0891b2), // Cyan - Loudness
-        PluginType::BinauralDecoder => rgb(0xdb2777),     // Pink - Binaural
-        PluginType::Convolution => rgb(0x4f46e5),   // Indigo - Convolution
-        PluginType::LoudnessMonitor => rgb(0x14b8a6), // Teal - Monitor
-        PluginType::SpectrumAnalyzer => rgb(0x8b5cf6), // Violet - Spectrum
-        PluginType::ChannelMuteSolo => rgb(0x6366f1),  // Blue-violet - Mute/Solo
+        PluginType::BinauralDecoder => rgb(0xdb2777),      // Pink - Binaural
+        PluginType::Convolution => rgb(0x4f46e5),          // Indigo - Convolution
+        PluginType::LoudnessMonitor => rgb(0x14b8a6),      // Teal - Monitor
+        PluginType::SpectrumAnalyzer => rgb(0x8b5cf6),     // Violet - Spectrum
+        PluginType::ChannelMuteSolo => rgb(0x6366f1),      // Blue-violet - Mute/Solo
     }
 }
 
@@ -139,15 +133,36 @@ impl PlayerView {
                 .plugin_chain
                 .plugins()
                 .iter()
-                .map(|p| (p.plugin_type().clone(), p.enabled, p.plugin_type().name().to_string()))
+                .map(|p| {
+                    (
+                        p.plugin_type().clone(),
+                        p.enabled,
+                        p.plugin_type().name().to_string(),
+                    )
+                })
                 .collect();
-            (plugins, state.app.selected_plugin_index, state.app.theme.clone())
+            (
+                plugins,
+                state.app.selected_plugin_index,
+                state.app.theme.clone(),
+            )
         };
 
         // Pre-compute static data for plugin modules
-        let modules_info: Vec<_> = plugins_data.iter().enumerate().map(|(idx, (pt, enabled, name))| {
-            (idx, plugin_color(pt), plugin_icon(pt), name.clone(), *enabled, selected_idx == idx)
-        }).collect();
+        let modules_info: Vec<_> = plugins_data
+            .iter()
+            .enumerate()
+            .map(|(idx, (pt, enabled, name))| {
+                (
+                    idx,
+                    plugin_color(pt),
+                    plugin_icon(pt),
+                    name.clone(),
+                    *enabled,
+                    selected_idx == idx,
+                )
+            })
+            .collect();
 
         let is_empty = plugins_data.is_empty();
         let plugin_count = plugins_data.len();
@@ -204,176 +219,166 @@ impl PlayerView {
                             .flex()
                             .flex_col()
                             .items_center()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .child("IN"),
-                            )
-                            .child(
-                                div()
-                                    .w(px(2.0))
-                                    .h(px(30.0))
-                                    .bg(theme.accent),
-                            ),
+                            .child(div().text_xs().text_color(theme.text_muted).child("IN"))
+                            .child(div().w(px(2.0)).h(px(30.0)).bg(theme.accent)),
                     )
                     // Plugin modules - inline creation with drag-and-drop
-                    .children(modules_info.into_iter().map(|(idx, color, icon, name, enabled, is_selected)| {
-                        let theme_c = theme.clone();
-                        let drag_info = PluginDragInfo {
-                            source_index: idx,
-                            name: name.clone(),
-                            color,
-                            icon,
-                        };
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            // Connection line before
-                            .child(
-                                div()
-                                    .w(px(20.0))
-                                    .h(px(2.0))
-                                    .bg(if enabled { theme_c.accent } else { theme_c.text_muted }),
-                            )
-                            // Plugin module box - draggable and droppable
-                            .child(
-                                div()
-                                    .id(SharedString::from(format!("plugin-module-{}", idx)))
-                                    .w(px(100.0))
-                                    .h(px(110.0))
-                                    .flex()
-                                    .flex_col()
-                                    .rounded_lg()
-                                    .border_2()
-                                    .border_color(if is_selected { color } else { theme_c.border })
-                                    .bg(theme_c.surface)
-                                    .when(!enabled, |d| d.opacity(0.5))
-                                    .shadow_md()
-                                    .cursor_grab()
-                                    .hover(|s| s.border_color(color))
-                                    // Drag-over visual feedback - highlight when dragging over
-                                    .drag_over::<PluginDragInfo>(|style, _, _, _| {
-                                        style
-                                            .bg(rgba(0x3b82f640)) // Blue tint when dragging over
-                                            .border_color(rgb(0x3b82f6))
-                                    })
-                                    // Handle drop - reorder plugins
-                                    .on_drop(cx.listener(move |view, info: &PluginDragInfo, _window, cx| {
-                                        let source = info.source_index;
-                                        let target = idx;
-                                        if source != target {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.plugin_chain.move_plugin(source, target);
-                                                state.app.selected_plugin_index = target;
-                                                state.app.needs_plugin_update = true;
-                                            });
-                                            cx.notify();
-                                        }
-                                    }))
-                                    // Start drag
-                                    .on_drag(drag_info, |info, _position, _window, cx| {
-                                        cx.new(|_| info.clone())
-                                    })
-                                    // Click to select
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state
-                                                .update(cx, |state, _cx| state.app.selected_plugin_index = idx);
-                                            cx.notify();
-                                        }),
-                                    )
-                                    // Top bar with color
-                                    .child(
-                                        div()
-                                            .h(px(4.0))
-                                            .w_full()
-                                            .bg(color)
-                                            .rounded_t_md(),
-                                    )
-                                    // Icon
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_2xl()
-                                            .text_color(color)
-                                            .child(icon),
-                                    )
-                                    // Name
-                                    .child(
-                                        div()
-                                            .px_2()
-                                            .text_xs()
-                                            .text_color(theme_c.text_primary)
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .overflow_hidden()
-                                            .text_ellipsis()
-                                            .child(name),
-                                    )
-                                    // Bottom controls
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .justify_between()
-                                            .items_center()
-                                            .px_2()
-                                            .py_1()
-                                            .border_t_1()
-                                            .border_color(theme_c.border)
-                                            // Power indicator
-                                            .child(
-                                                div()
-                                                    .w(px(16.0))
-                                                    .h(px(16.0))
-                                                    .rounded_full()
-                                                    .flex()
-                                                    .items_center()
-                                                    .justify_center()
-                                                    .bg(if enabled { theme_c.success } else { theme_c.error })
-                                                    .text_xs()
-                                                    .text_color(rgb(0xffffff))
-                                                    .child(if enabled { "●" } else { "○" }),
-                                            )
-                                            // Index indicator
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(theme_c.text_muted)
-                                                    .child(format!("{}", idx + 1)),
+                    .children(modules_info.into_iter().map(
+                        |(idx, color, icon, name, enabled, is_selected)| {
+                            let theme_c = theme.clone();
+                            let drag_info = PluginDragInfo {
+                                source_index: idx,
+                                name: name.clone(),
+                                color,
+                                icon,
+                            };
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                // Connection line before
+                                .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
+                                    theme_c.accent
+                                } else {
+                                    theme_c.text_muted
+                                }))
+                                // Plugin module box - draggable and droppable
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("plugin-module-{}", idx)))
+                                        .w(px(100.0))
+                                        .h(px(110.0))
+                                        .flex()
+                                        .flex_col()
+                                        .rounded_lg()
+                                        .border_2()
+                                        .border_color(if is_selected {
+                                            color
+                                        } else {
+                                            theme_c.border
+                                        })
+                                        .bg(theme_c.surface)
+                                        .when(!enabled, |d| d.opacity(0.5))
+                                        .shadow_md()
+                                        .cursor_grab()
+                                        .hover(|s| s.border_color(color))
+                                        // Drag-over visual feedback - highlight when dragging over
+                                        .drag_over::<PluginDragInfo>(|style, _, _, _| {
+                                            style
+                                                .bg(rgba(0x3b82f640)) // Blue tint when dragging over
+                                                .border_color(rgb(0x3b82f6))
+                                        })
+                                        // Handle drop - reorder plugins
+                                        .on_drop(cx.listener(
+                                            move |view, info: &PluginDragInfo, _window, cx| {
+                                                let source = info.source_index;
+                                                let target = idx;
+                                                if source != target {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state
+                                                            .app
+                                                            .plugin_chain
+                                                            .move_plugin(source, target);
+                                                        state.app.selected_plugin_index = target;
+                                                        state.app.needs_plugin_update = true;
+                                                    });
+                                                    cx.notify();
+                                                }
+                                            },
+                                        ))
+                                        // Start drag
+                                        .on_drag(drag_info, |info, _position, _window, cx| {
+                                            cx.new(|_| info.clone())
+                                        })
+                                        // Click to select
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(
+                                                move |view, _: &MouseUpEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.selected_plugin_index = idx
+                                                    });
+                                                    cx.notify();
+                                                },
                                             ),
-                                    ),
-                            )
-                            // Connection line after
-                            .child(
-                                div()
-                                    .w(px(20.0))
-                                    .h(px(2.0))
-                                    .bg(if enabled { theme_c.accent } else { theme_c.text_muted }),
-                            )
-                    }))
+                                        )
+                                        // Top bar with color
+                                        .child(div().h(px(4.0)).w_full().bg(color).rounded_t_md())
+                                        // Icon
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_2xl()
+                                                .text_color(color)
+                                                .child(icon),
+                                        )
+                                        // Name
+                                        .child(
+                                            div()
+                                                .px_2()
+                                                .text_xs()
+                                                .text_color(theme_c.text_primary)
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .overflow_hidden()
+                                                .text_ellipsis()
+                                                .child(name),
+                                        )
+                                        // Bottom controls
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .justify_between()
+                                                .items_center()
+                                                .px_2()
+                                                .py_1()
+                                                .border_t_1()
+                                                .border_color(theme_c.border)
+                                                // Power indicator
+                                                .child(
+                                                    div()
+                                                        .w(px(16.0))
+                                                        .h(px(16.0))
+                                                        .rounded_full()
+                                                        .flex()
+                                                        .items_center()
+                                                        .justify_center()
+                                                        .bg(if enabled {
+                                                            theme_c.success
+                                                        } else {
+                                                            theme_c.error
+                                                        })
+                                                        .text_xs()
+                                                        .text_color(rgb(0xffffff))
+                                                        .child(if enabled { "●" } else { "○" }),
+                                                )
+                                                // Index indicator
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(theme_c.text_muted)
+                                                        .child(format!("{}", idx + 1)),
+                                                ),
+                                        ),
+                                )
+                                // Connection line after
+                                .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
+                                    theme_c.accent
+                                } else {
+                                    theme_c.text_muted
+                                }))
+                        },
+                    ))
                     // Signal flow indicator (output)
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .items_center()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .child("OUT"),
-                            )
-                            .child(
-                                div()
-                                    .w(px(2.0))
-                                    .h(px(30.0))
-                                    .bg(theme.success),
-                            ),
+                            .child(div().text_xs().text_color(theme.text_muted).child("OUT"))
+                            .child(div().w(px(2.0)).h(px(30.0)).bg(theme.success)),
                     )
                     // Empty state
                     .when(is_empty, |d| {
@@ -498,13 +503,7 @@ impl PlayerView {
                                 .items_center()
                                 .gap_3()
                                 // Color indicator
-                                .child(
-                                    div()
-                                        .w(px(4.0))
-                                        .h(px(24.0))
-                                        .rounded_full()
-                                        .bg(color),
-                                )
+                                .child(div().w(px(4.0)).h(px(24.0)).rounded_full().bg(color))
                                 .child(
                                     div()
                                         .flex()
@@ -516,12 +515,13 @@ impl PlayerView {
                                                 .text_color(theme.text_primary)
                                                 .child(plugin_name),
                                         )
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(theme.text_muted)
-                                                .child(format!("Slot {} • {}", selected_idx + 1, if plugin_enabled { "Active" } else { "Bypassed" })),
-                                        ),
+                                        .child(div().text_xs().text_color(theme.text_muted).child(
+                                            format!(
+                                                "Slot {} • {}",
+                                                selected_idx + 1,
+                                                if plugin_enabled { "Active" } else { "Bypassed" }
+                                            ),
+                                        )),
                                 ),
                         )
                         .child(
@@ -581,7 +581,11 @@ impl PlayerView {
                                         .px_3()
                                         .py_1()
                                         .rounded_md()
-                                        .bg(if plugin_enabled { theme.success } else { theme.error })
+                                        .bg(if plugin_enabled {
+                                            theme.success
+                                        } else {
+                                            theme.error
+                                        })
                                         .text_sm()
                                         .text_color(rgb(0xffffff))
                                         .cursor_pointer()
@@ -605,7 +609,11 @@ impl PlayerView {
                                         .px_4()
                                         .py_1()
                                         .rounded_md()
-                                        .bg(if is_editing { theme.accent } else { theme.surface })
+                                        .bg(if is_editing {
+                                            theme.accent
+                                        } else {
+                                            theme.surface
+                                        })
                                         .text_sm()
                                         .font_weight(FontWeight::MEDIUM)
                                         .cursor_pointer()
@@ -666,7 +674,12 @@ impl PlayerView {
                         .flex_1()
                         .overflow_y_scroll()
                         .p_4()
-                        .child(render_plugin_content(&plugin.settings, is_editing, param_selection, &theme)),
+                        .child(render_plugin_content(
+                            &plugin.settings,
+                            is_editing,
+                            param_selection,
+                            &theme,
+                        )),
                 )
             })
             .when(!has_plugin, |d| {
@@ -680,11 +693,7 @@ impl PlayerView {
                         .gap_2()
                         .text_color(theme.text_muted)
                         .child("No plugin selected")
-                        .child(
-                            div()
-                                .text_sm()
-                                .child("Add a plugin to get started"),
-                        ),
+                        .child(div().text_sm().child("Add a plugin to get started")),
                 )
             })
     }

@@ -32,8 +32,7 @@ fn main() {
         // Prepare elements
         let mut elements = mesh.elements.clone();
         for (i, elem) in elements.iter_mut().enumerate() {
-            elem.boundary_condition =
-                BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
+            elem.boundary_condition = BoundaryCondition::Velocity(vec![Complex64::new(0.0, 0.0)]);
             elem.dof_addresses = vec![i];
         }
 
@@ -58,7 +57,10 @@ fn main() {
         cluster.near_clusters = vec![]; // Self-interaction is always near
         cluster.far_clusters = vec![];
         let clusters = vec![cluster];
-        println!("  Clusters: {} (all elements in one cluster for validation)", clusters.len());
+        println!(
+            "  Clusters: {} (all elements in one cluster for validation)",
+            clusters.len()
+        );
 
         // Build SLFMM system
         let start = Instant::now();
@@ -72,7 +74,10 @@ fn main() {
             10, // n_terms
         );
         let slfmm_time = start.elapsed();
-        println!("  SLFMM assembly: {:.2}ms", slfmm_time.as_secs_f64() * 1000.0);
+        println!(
+            "  SLFMM assembly: {:.2}ms",
+            slfmm_time.as_secs_f64() * 1000.0
+        );
 
         // Create test vectors
         let mut x_real = Array1::<Complex64>::zeros(n);
@@ -82,10 +87,7 @@ fn main() {
         for i in 0..n {
             x_real[i] = Complex64::new(1.0, 0.0);
             x_imag[i] = Complex64::new(0.0, 1.0);
-            x_rand[i] = Complex64::new(
-                (i as f64 * 0.1).sin(),
-                (i as f64 * 0.2).cos(),
-            );
+            x_rand[i] = Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos());
         }
 
         // Compare matvec results
@@ -108,7 +110,13 @@ fn main() {
             let y_norm: f64 = y_tbem.iter().map(|y| y.norm_sqr()).sum::<f64>().sqrt();
             let rel_error = diff_norm / y_norm.max(1e-15);
 
-            let status = if rel_error < 0.01 { "✓" } else if rel_error < 0.1 { "~" } else { "✗" };
+            let status = if rel_error < 0.01 {
+                "✓"
+            } else if rel_error < 0.1 {
+                "~"
+            } else {
+                "✗"
+            };
 
             println!(
                 "    {:<8}: rel_error={:.2e} {} (TBEM:{:.2}ms, SLFMM:{:.2}ms)",

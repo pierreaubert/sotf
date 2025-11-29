@@ -158,8 +158,7 @@ impl SlfmmSystem {
                 let mut contributions = Vec::new();
 
                 // Gather x values from field cluster
-                let x_local: Array1<Complex64> =
-                    Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
+                let x_local: Array1<Complex64> = Array1::from_iter(fld_dofs.iter().map(|&i| x[i]));
 
                 // Apply block matrix
                 let y_local = block.coefficients.dot(&x_local);
@@ -280,8 +279,7 @@ impl SlfmmSystem {
                 let mut contributions = Vec::new();
 
                 // For transpose: gather from source DOFs, scatter to field DOFs
-                let x_local: Array1<Complex64> =
-                    Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
+                let x_local: Array1<Complex64> = Array1::from_iter(src_dofs.iter().map(|&i| x[i]));
                 let y_local = block.coefficients.t().dot(&x_local);
                 for (local_j, &global_j) in fld_dofs.iter().enumerate() {
                     contributions.push((global_j, y_local[local_j]));
@@ -609,8 +607,7 @@ fn compute_near_block(
             };
 
             // Assemble using Burton-Miller formulation
-            let coeff =
-                result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta;
+            let coeff = result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta;
             block[[i, j]] = coeff;
         }
     }
@@ -770,8 +767,7 @@ fn build_s_matrices(
                 // For each integration direction on the unit sphere
                 for (p, coord) in sphere_coords.iter().enumerate() {
                     let s_dot_diff = coord[0] * diff[0] + coord[1] * diff[1] + coord[2] * diff[2];
-                    let exp_factor =
-                        Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
+                    let exp_factor = Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
                     s_matrix[[j, p]] = exp_factor * sphere_weights[p];
                 }
             }

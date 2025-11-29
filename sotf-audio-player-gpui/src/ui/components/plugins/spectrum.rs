@@ -4,8 +4,8 @@
 
 use super::common::{render_edit_hints, render_param_row, render_section_header};
 use crate::theme::Theme;
-use crate::ui::elements::SpectrumElement;
 use crate::ui::PlayerView;
+use crate::ui::elements::SpectrumElement;
 use gpui::prelude::*;
 use gpui::*;
 use std::sync::Arc;
@@ -73,11 +73,7 @@ pub fn render_spectrum_analyzer_plugin(
                                 rgb(0xef4444) // Red for highs
                             };
 
-                            div()
-                                .flex_1()
-                                .h(relative(height))
-                                .bg(color)
-                                .rounded_t_sm()
+                            div().flex_1().h(relative(height)).bg(color).rounded_t_sm()
                         })),
                 )
                 // Frequency labels
@@ -96,68 +92,65 @@ pub fn render_spectrum_analyzer_plugin(
         )
         // Analyzer info
         .child(
-            div()
-                .flex()
-                .gap_4()
-                .children([
-                    // Resolution
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .p_3()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(div().text_xs().text_color(theme.text_muted).child("Bins"))
-                        .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_primary)
-                                .child(format!("{}", num_bins)),
-                        ),
-                    // Frequency range
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .p_3()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(div().text_xs().text_color(theme.text_muted).child("Range"))
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_primary)
-                                .child(format!("{:.0}-{:.0}k", min_freq, max_freq / 1000.0)),
-                        ),
-                    // Smoothing
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .p_3()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(div().text_xs().text_color(theme.text_muted).child("Smooth"))
-                        .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_primary)
-                                .child(format!("{:.0}%", smoothing * 100.0)),
-                        ),
-                ]),
+            div().flex().gap_4().children([
+                // Resolution
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .p_3()
+                    .rounded_xl()
+                    .bg(theme.background_secondary)
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(div().text_xs().text_color(theme.text_muted).child("Bins"))
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(format!("{}", num_bins)),
+                    ),
+                // Frequency range
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .p_3()
+                    .rounded_xl()
+                    .bg(theme.background_secondary)
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(div().text_xs().text_color(theme.text_muted).child("Range"))
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(format!("{:.0}-{:.0}k", min_freq, max_freq / 1000.0)),
+                    ),
+                // Smoothing
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .p_3()
+                    .rounded_xl()
+                    .bg(theme.background_secondary)
+                    .border_1()
+                    .border_color(theme.border)
+                    .child(div().text_xs().text_color(theme.text_muted).child("Smooth"))
+                    .child(
+                        div()
+                            .text_lg()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(format!("{:.0}%", smoothing * 100.0)),
+                    ),
+            ]),
         )
         // Parameters section
         .child(
@@ -171,10 +164,38 @@ pub fn render_spectrum_analyzer_plugin(
                 .border_color(theme.border)
                 .p_3()
                 .child(render_section_header("PARAMETERS", theme))
-                .child(render_param_row("Bins", &format!("{}", num_bins), 0, selected_param, is_editing, theme))
-                .child(render_param_row("Min Freq", &format!("{:.0} Hz", min_freq), 1, selected_param, is_editing, theme))
-                .child(render_param_row("Max Freq", &format!("{:.0} Hz", max_freq), 2, selected_param, is_editing, theme))
-                .child(render_param_row("Smoothing", &format!("{:.2}", smoothing), 3, selected_param, is_editing, theme)),
+                .child(render_param_row(
+                    "Bins",
+                    &format!("{}", num_bins),
+                    0,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Min Freq",
+                    &format!("{:.0} Hz", min_freq),
+                    1,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Max Freq",
+                    &format!("{:.0} Hz", max_freq),
+                    2,
+                    selected_param,
+                    is_editing,
+                    theme,
+                ))
+                .child(render_param_row(
+                    "Smoothing",
+                    &format!("{:.2}", smoothing),
+                    3,
+                    selected_param,
+                    is_editing,
+                    theme,
+                )),
         )
         .when(is_editing, |d| d.child(render_edit_hints(theme)))
 }

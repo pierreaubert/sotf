@@ -15,9 +15,7 @@ use std::path::{Path, PathBuf};
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
-use crate::core::types::{
-    BoundaryCondition, Element, ElementProperty, ElementType, PhysicsParams,
-};
+use crate::core::types::{BoundaryCondition, Element, ElementProperty, ElementType, PhysicsParams};
 
 /// Parsed NC.inp configuration
 #[derive(Debug, Clone)]
@@ -203,7 +201,10 @@ pub fn parse_nc_input<P: AsRef<Path>>(path: P) -> Result<NcInputConfig, NcParseE
 }
 
 /// Parse NC.inp content from a string
-pub fn parse_nc_input_string(content: &str, base_dir: PathBuf) -> Result<NcInputConfig, NcParseError> {
+pub fn parse_nc_input_string(
+    content: &str,
+    base_dir: PathBuf,
+) -> Result<NcInputConfig, NcParseError> {
     let mut config = NcInputConfig {
         version: String::new(),
         description: String::new(),
@@ -256,23 +257,33 @@ pub fn parse_nc_input_string(content: &str, base_dir: PathBuf) -> Result<NcInput
         }
 
         // Control parameters I (exclude II)
-        if i > 0 && lines.get(i.saturating_sub(1)).map_or(false, |l| {
-            l.contains("Controlparameter I") && !l.contains("Controlparameter II")
-        }) {
+        if i > 0
+            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+                l.contains("Controlparameter I") && !l.contains("Controlparameter II")
+            })
+        {
             config.control_params_i = parse_int_line(line);
             i += 1;
             continue;
         }
 
         // Control parameters II
-        if i > 0 && lines.get(i.saturating_sub(1)).map_or(false, |l| l.contains("Controlparameter II")) {
+        if i > 0
+            && lines
+                .get(i.saturating_sub(1))
+                .map_or(false, |l| l.contains("Controlparameter II"))
+        {
             config.control_params_ii = parse_float_line(line);
             i += 1;
             continue;
         }
 
         // Frequency curve
-        if i > 0 && lines.get(i.saturating_sub(1)).map_or(false, |l| l.contains("Frequency Curve")) {
+        if i > 0
+            && lines
+                .get(i.saturating_sub(1))
+                .map_or(false, |l| l.contains("Frequency Curve"))
+        {
             let header = parse_int_line(line);
             let num_points = header.get(1).copied().unwrap_or(0) as usize;
             i += 1;
@@ -281,7 +292,9 @@ pub fn parse_nc_input_string(content: &str, base_dir: PathBuf) -> Result<NcInput
                 if i < lines.len() {
                     let values = parse_float_line(lines[i]);
                     if values.len() >= 3 {
-                        config.frequency_curve.push((values[0], values[1], values[2]));
+                        config
+                            .frequency_curve
+                            .push((values[0], values[1], values[2]));
                     }
                     i += 1;
                 }
@@ -290,10 +303,14 @@ pub fn parse_nc_input_string(content: &str, base_dir: PathBuf) -> Result<NcInput
         }
 
         // Main Parameters I (exclude II, III, IV)
-        if i > 0 && lines.get(i.saturating_sub(1)).map_or(false, |l| {
-            l.contains("Main Parameters I") && !l.contains("Main Parameters II")
-                && !l.contains("Main Parameters III") && !l.contains("Main Parameters IV")
-        }) {
+        if i > 0
+            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+                l.contains("Main Parameters I")
+                    && !l.contains("Main Parameters II")
+                    && !l.contains("Main Parameters III")
+                    && !l.contains("Main Parameters IV")
+            })
+        {
             let values = parse_int_line(line);
             config.main_params_i = MainParamsI {
                 element_type: values.get(0).copied().unwrap_or(0),
@@ -311,10 +328,13 @@ pub fn parse_nc_input_string(content: &str, base_dir: PathBuf) -> Result<NcInput
         }
 
         // Main Parameters II (exclude III, IV)
-        if i > 0 && lines.get(i.saturating_sub(1)).map_or(false, |l| {
-            l.contains("Main Parameters II") && !l.contains("Main Parameters III")
-                && !l.contains("Main Parameters IV")
-        }) {
+        if i > 0
+            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+                l.contains("Main Parameters II")
+                    && !l.contains("Main Parameters III")
+                    && !l.contains("Main Parameters IV")
+            })
+        {
             let values = parse_mixed_line(line);
             config.main_params_ii = MainParamsII {
                 preconditioner: values.get(0).map(|v| *v as i32).unwrap_or(0),
@@ -330,16 +350,22 @@ pub fn parse_nc_input_string(content: &str, base_dir: PathBuf) -> Result<NcInput
         }
 
         // Main Parameters III (exclude IV)
-        if i > 0 && lines.get(i.saturating_sub(1)).map_or(false, |l| {
-            l.contains("Main Parameters III") && !l.contains("Main Parameters IV")
-        }) {
+        if i > 0
+            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+                l.contains("Main Parameters III") && !l.contains("Main Parameters IV")
+            })
+        {
             config.main_params_iii = parse_int_line(line);
             i += 1;
             continue;
         }
 
         // Main Parameters IV
-        if i > 0 && lines.get(i.saturating_sub(1)).map_or(false, |l| l.contains("Main Parameters IV")) {
+        if i > 0
+            && lines
+                .get(i.saturating_sub(1))
+                .map_or(false, |l| l.contains("Main Parameters IV"))
+        {
             let values = parse_float_line(line);
             config.main_params_iv = MainParamsIV {
                 speed_of_sound: values.get(0).copied().unwrap_or(343.0),
@@ -576,7 +602,11 @@ pub fn load_nc_nodes<P: AsRef<Path>>(path: P) -> Result<Array2<f64>, NcParseErro
     }
 
     // First line may contain node count
-    let start_line = if lines[0].trim().parse::<usize>().is_ok() { 1 } else { 0 };
+    let start_line = if lines[0].trim().parse::<usize>().is_ok() {
+        1
+    } else {
+        0
+    };
 
     let mut nodes = Vec::new();
     for line in &lines[start_line..] {
@@ -592,8 +622,7 @@ pub fn load_nc_nodes<P: AsRef<Path>>(path: P) -> Result<Array2<f64>, NcParseErro
 
     let n = nodes.len();
     let flat: Vec<f64> = nodes.into_iter().flatten().collect();
-    Array2::from_shape_vec((n, 3), flat)
-        .map_err(|e| NcParseError::InvalidFormat(e.to_string()))
+    Array2::from_shape_vec((n, 3), flat).map_err(|e| NcParseError::InvalidFormat(e.to_string()))
 }
 
 /// Load elements from a NumCalc elements file
@@ -608,7 +637,11 @@ pub fn load_nc_elements<P: AsRef<Path>>(
         return Ok(Vec::new());
     }
 
-    let start_line = if lines[0].trim().parse::<usize>().is_ok() { 1 } else { 0 };
+    let start_line = if lines[0].trim().parse::<usize>().is_ok() {
+        1
+    } else {
+        0
+    };
 
     let mut elements = Vec::new();
     for (idx, line) in lines[start_line..].iter().enumerate() {

@@ -58,8 +58,11 @@ fn main() {
         let p_inc = incident.evaluate_pressure(&centers, &physics);
         let dpdn_inc = incident.evaluate_normal_derivative(&centers, &normals, &physics);
 
-        println!("Testing different β values (element size = {:.4})", avg_elem_size);
-        println!("Standard β = i/k = i*{:.4}", 1.0/k);
+        println!(
+            "Testing different β values (element size = {:.4})",
+            avg_elem_size
+        );
+        println!("Standard β = i/k = i*{:.4}", 1.0 / k);
         println!("Mie reference: avg |p| = {:.4}\n", mie_avg);
 
         // Test different beta scalings
@@ -95,8 +98,10 @@ fn main() {
             }
             avg_row_sum /= n as f64;
 
-            println!("  β = {:.2}×(i/k): η = {:.4}, |p| = {:.4}, error = {:.1}%, row_sum = {:.4}+{:.4}i",
-                     factor, eta, avg_p, error, avg_row_sum.re, avg_row_sum.im);
+            println!(
+                "  β = {:.2}×(i/k): η = {:.4}, |p| = {:.4}, error = {:.1}%, row_sum = {:.4}+{:.4}i",
+                factor, eta, avg_p, error, avg_row_sum.re, avg_row_sum.im
+            );
         }
 
         // Also test optimal bounded beta
@@ -109,7 +114,8 @@ fn main() {
             rhs_bounded[i] = p_inc[i] + beta_bounded * dpdn_inc[i];
         }
 
-        let system_bounded = build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta_bounded);
+        let system_bounded =
+            build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta_bounded);
         let p_bounded = solve_system(&system_bounded.matrix, &rhs_bounded);
         let avg_p_bounded: f64 = p_bounded.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
         let error_bounded = (avg_p_bounded - mie_avg).abs() / mie_avg * 100.0;
@@ -124,14 +130,22 @@ fn main() {
         }
         avg_row_sum_bounded /= n as f64;
 
-        println!("\n  Bounded β = i/(k+1/h): η = {:.4}, |p| = {:.4}, error = {:.1}%, row_sum = {:.4}+{:.4}i",
-                 eta_bounded, avg_p_bounded, error_bounded,
-                 avg_row_sum_bounded.re, avg_row_sum_bounded.im);
+        println!(
+            "\n  Bounded β = i/(k+1/h): η = {:.4}, |p| = {:.4}, error = {:.1}%, row_sum = {:.4}+{:.4}i",
+            eta_bounded,
+            avg_p_bounded,
+            error_bounded,
+            avg_row_sum_bounded.re,
+            avg_row_sum_bounded.im
+        );
         println!();
     }
 }
 
-fn solve_system(a: &ndarray::Array2<num_complex::Complex64>, b: &ndarray::Array1<num_complex::Complex64>) -> ndarray::Array1<num_complex::Complex64> {
+fn solve_system(
+    a: &ndarray::Array2<num_complex::Complex64>,
+    b: &ndarray::Array1<num_complex::Complex64>,
+) -> ndarray::Array1<num_complex::Complex64> {
     use ndarray_linalg::Solve;
     a.solve(b).expect("Failed to solve linear system")
 }

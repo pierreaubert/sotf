@@ -98,7 +98,8 @@ impl VStack {
 
     /// Add multiple children
     pub fn children(mut self, children: impl IntoIterator<Item = impl IntoElement>) -> Self {
-        self.children.extend(children.into_iter().map(|c| c.into_any_element()));
+        self.children
+            .extend(children.into_iter().map(|c| c.into_any_element()));
         self
     }
 
@@ -193,7 +194,8 @@ impl HStack {
 
     /// Add multiple children
     pub fn children(mut self, children: impl IntoIterator<Item = impl IntoElement>) -> Self {
-        self.children.extend(children.into_iter().map(|c| c.into_any_element()));
+        self.children
+            .extend(children.into_iter().map(|c| c.into_any_element()));
         self
     }
 
@@ -384,7 +386,8 @@ impl Divider {
             } else {
                 gpui::CursorStyle::ResizeUpDown
             };
-            base.cursor(cursor).hover(move |style| style.bg(hover_color))
+            base.cursor(cursor)
+                .hover(move |style| style.bg(hover_color))
         } else {
             base
         }

@@ -43,15 +43,17 @@ fn main() {
     let tbem_system = build_tbem_system_scaled(&elements, &mesh.nodes, &physics, beta_scale);
 
     // Create a test vector
-    let x: Array1<Complex64> = Array1::from_iter(
-        (0..n).map(|i| Complex64::new((i as f64).sin(), (i as f64).cos())),
-    );
+    let x: Array1<Complex64> =
+        Array1::from_iter((0..n).map(|i| Complex64::new((i as f64).sin(), (i as f64).cos())));
 
     // TBEM matvec: y = A * x
     let y_tbem: Array1<Complex64> = tbem_system.matrix.dot(&x);
 
     println!("TBEM matvec result:");
-    println!("  ||y|| = {:.6}", y_tbem.iter().map(|v| v.norm()).sum::<f64>() / n as f64);
+    println!(
+        "  ||y|| = {:.6}",
+        y_tbem.iter().map(|v| v.norm()).sum::<f64>() / n as f64
+    );
 
     // === Test SLFMM ===
     // Create a single cluster containing all elements
@@ -61,13 +63,15 @@ fn main() {
     cluster.near_clusters = vec![]; // All elements are in the same cluster = all near-field
     cluster.far_clusters = vec![];
 
-    let slfmm_system =
-        build_slfmm_system(&elements, &mesh.nodes, &[cluster], &physics, 4, 8, 5);
+    let slfmm_system = build_slfmm_system(&elements, &mesh.nodes, &[cluster], &physics, 4, 8, 5);
 
     let y_slfmm = slfmm_system.matvec(&x);
 
     println!("\nSLFMM matvec result:");
-    println!("  ||y|| = {:.6}", y_slfmm.iter().map(|v| v.norm()).sum::<f64>() / n as f64);
+    println!(
+        "  ||y|| = {:.6}",
+        y_slfmm.iter().map(|v| v.norm()).sum::<f64>() / n as f64
+    );
 
     // === Test MLFMM ===
     let cluster_tree = build_cluster_tree(&elements, 20, &physics);
@@ -75,13 +79,20 @@ fn main() {
 
     println!("\nMLFMM cluster tree: {} levels", mlfmm_system.num_levels);
     for level in 0..mlfmm_system.num_levels {
-        println!("  Level {}: {} clusters", level, mlfmm_system.num_clusters_at_level(level));
+        println!(
+            "  Level {}: {} clusters",
+            level,
+            mlfmm_system.num_clusters_at_level(level)
+        );
     }
 
     let y_mlfmm = mlfmm_system.matvec(&x);
 
     println!("\nMLFMM matvec result:");
-    println!("  ||y|| = {:.6}", y_mlfmm.iter().map(|v| v.norm()).sum::<f64>() / n as f64);
+    println!(
+        "  ||y|| = {:.6}",
+        y_mlfmm.iter().map(|v| v.norm()).sum::<f64>() / n as f64
+    );
 
     // === Compare results ===
     let diff_slfmm: f64 = y_tbem

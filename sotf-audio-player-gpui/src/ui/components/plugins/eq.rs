@@ -21,7 +21,11 @@ pub fn render_eq_plugin(
     selected_band: usize,
     theme: &Theme,
 ) -> impl IntoElement {
-    let selected = if is_editing { Some(selected_band) } else { None };
+    let selected = if is_editing {
+        Some(selected_band)
+    } else {
+        None
+    };
 
     div()
         .flex()

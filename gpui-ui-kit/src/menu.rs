@@ -51,7 +51,11 @@ impl MenuItem {
     }
 
     /// Create a checkbox menu item
-    pub fn checkbox(id: impl Into<SharedString>, label: impl Into<SharedString>, checked: bool) -> Self {
+    pub fn checkbox(
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        checked: bool,
+    ) -> Self {
         Self {
             id: id.into(),
             label: label.into(),
@@ -124,7 +128,10 @@ impl Menu {
     }
 
     /// Set the selection handler
-    pub fn on_select(mut self, handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_select(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_select = Some(Box::new(handler));
         self
     }
@@ -181,22 +188,20 @@ impl Menu {
 
                     if let Some(handler_ptr) = on_select {
                         let id = item_id.clone();
-                        row = row.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                            unsafe {
+                        row =
+                            row.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
                                 (*handler_ptr)(&id, window, cx);
-                            }
-                        });
+                            });
                     }
                 }
 
                 // Checkbox indicator
                 if is_checkbox {
-                    row = row.child(
-                        div()
-                            .w(px(16.0))
-                            .text_xs()
-                            .child(if checked { "✓" } else { " " }),
-                    );
+                    row = row.child(div().w(px(16.0)).text_xs().child(if checked {
+                        "✓"
+                    } else {
+                        " "
+                    }));
                 }
 
                 // Icon
@@ -209,12 +214,7 @@ impl Menu {
 
                 // Shortcut
                 if let Some(shortcut) = shortcut {
-                    row = row.child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x777777))
-                            .child(shortcut),
-                    );
+                    row = row.child(div().text_xs().text_color(rgb(0x777777)).child(shortcut));
                 }
 
                 menu = menu.child(row);
@@ -298,13 +298,19 @@ impl MenuBar {
     }
 
     /// Set the item selection handler
-    pub fn on_select(mut self, handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_select(
+        mut self,
+        handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_select = Some(Box::new(handler));
         self
     }
 
     /// Set the menu toggle handler
-    pub fn on_menu_toggle(mut self, handler: impl Fn(Option<&SharedString>, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_menu_toggle(
+        mut self,
+        handler: impl Fn(Option<&SharedString>, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_menu_toggle = Some(Box::new(handler));
         self
     }
@@ -352,13 +358,11 @@ impl MenuBar {
             if let Some(handler_ptr) = on_toggle {
                 let id = menu_id.clone();
                 let currently_open = is_open;
-                button = button.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    unsafe {
-                        if currently_open {
-                            (*handler_ptr)(None, window, cx);
-                        } else {
-                            (*handler_ptr)(Some(&id), window, cx);
-                        }
+                button = button.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
+                    if currently_open {
+                        (*handler_ptr)(None, window, cx);
+                    } else {
+                        (*handler_ptr)(Some(&id), window, cx);
                     }
                 });
             }

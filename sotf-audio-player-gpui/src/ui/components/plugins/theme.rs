@@ -40,20 +40,20 @@ impl MeterTheme {
     /// Create default meter theme with green/yellow/red colors
     pub fn default() -> Self {
         Self {
-            color_normal: rgb(0x22c55e),      // Green
-            color_warning: rgb(0xeab308),     // Yellow
-            color_critical: rgb(0xef4444),    // Red
-            color_background: rgb(0x2a2a2a),  // Dark gray
-            color_border: rgb(0x444444),      // Border gray
-            color_text: rgb(0xcccccc),        // Light gray text
-            color_text_muted: rgb(0x888888),  // Muted gray
+            color_normal: rgb(0x22c55e),     // Green
+            color_warning: rgb(0xeab308),    // Yellow
+            color_critical: rgb(0xef4444),   // Red
+            color_background: rgb(0x2a2a2a), // Dark gray
+            color_border: rgb(0x444444),     // Border gray
+            color_text: rgb(0xcccccc),       // Light gray text
+            color_text_muted: rgb(0x888888), // Muted gray
             bar_height: 20.0,
             border_radius: 4.0,
             border_width: 1.0,
-            label_width: 32.0,  // Reduced from 80px to make bars 60% longer
-            value_width: 50.0,  // Value display width
-            warning_threshold: 0.75,   // 75% of range
-            critical_threshold: 0.90,  // 90% of range
+            label_width: 32.0,        // Reduced from 80px to make bars 60% longer
+            value_width: 50.0,        // Value display width
+            warning_threshold: 0.75,  // 75% of range
+            critical_threshold: 0.90, // 90% of range
         }
     }
 

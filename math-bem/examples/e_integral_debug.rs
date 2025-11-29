@@ -34,14 +34,20 @@ fn main() {
     let source_point = &source_elem.center;
     let source_normal = &source_elem.normal;
 
-    println!("\nSource element {}: center=({:.4},{:.4},{:.4}), normal=({:.4},{:.4},{:.4})",
-             source_idx,
-             source_point[0], source_point[1], source_point[2],
-             source_normal[0], source_normal[1], source_normal[2]);
+    println!(
+        "\nSource element {}: center=({:.4},{:.4},{:.4}), normal=({:.4},{:.4},{:.4})",
+        source_idx,
+        source_point[0],
+        source_point[1],
+        source_point[2],
+        source_normal[0],
+        source_normal[1],
+        source_normal[2]
+    );
 
     // Compute all E integrals for this row
     let mut total_e = Complex64::new(0.0, 0.0);
-    let mut total_k = Complex64::new(0.0, 0.0);  // Double-layer K
+    let mut total_k = Complex64::new(0.0, 0.0); // Double-layer K
     let mut self_e = Complex64::new(0.0, 0.0);
     let mut off_diag_e = Complex64::new(0.0, 0.0);
 
@@ -80,31 +86,53 @@ fn main() {
 
         if j == source_idx {
             self_e = result.d2g_dnxdny_integral;
-            println!("\nSelf-element E: {:.4}+{:.4}i (|.|={:.4})",
-                     self_e.re, self_e.im, self_e.norm());
-            println!("Self-element K: {:.4}+{:.4}i (|.|={:.4})",
-                     result.dg_dn_integral.re, result.dg_dn_integral.im,
-                     result.dg_dn_integral.norm());
+            println!(
+                "\nSelf-element E: {:.4}+{:.4}i (|.|={:.4})",
+                self_e.re,
+                self_e.im,
+                self_e.norm()
+            );
+            println!(
+                "Self-element K: {:.4}+{:.4}i (|.|={:.4})",
+                result.dg_dn_integral.re,
+                result.dg_dn_integral.im,
+                result.dg_dn_integral.norm()
+            );
         } else {
             off_diag_e += result.d2g_dnxdny_integral;
         }
     }
 
-    println!("\nTotal E (sum of all j): {:.4}+{:.4}i (|.|={:.4})",
-             total_e.re, total_e.im, total_e.norm());
-    println!("Off-diagonal E sum: {:.4}+{:.4}i (|.|={:.4})",
-             off_diag_e.re, off_diag_e.im, off_diag_e.norm());
-    println!("Total K (should be ~-0.5): {:.4}+{:.4}i",
-             total_k.re, total_k.im);
+    println!(
+        "\nTotal E (sum of all j): {:.4}+{:.4}i (|.|={:.4})",
+        total_e.re,
+        total_e.im,
+        total_e.norm()
+    );
+    println!(
+        "Off-diagonal E sum: {:.4}+{:.4}i (|.|={:.4})",
+        off_diag_e.re,
+        off_diag_e.im,
+        off_diag_e.norm()
+    );
+    println!(
+        "Total K (should be ~-0.5): {:.4}+{:.4}i",
+        total_k.re, total_k.im
+    );
 
     // β*E[1] contribution to row sum
     let beta_e_one = beta * total_e;
-    println!("\nβ*E[1] = {:.4}+{:.4}i (should be ~0)", beta_e_one.re, beta_e_one.im);
+    println!(
+        "\nβ*E[1] = {:.4}+{:.4}i (should be ~0)",
+        beta_e_one.re, beta_e_one.im
+    );
 
     // Check symmetry: compare E_ij for i=0 with E_ji
     println!("\n--- Symmetry check E_ij vs E_ji ---");
     for j in [1, 10, 50, 100, 200] {
-        if j >= mesh.elements.len() { continue; }
+        if j >= mesh.elements.len() {
+            continue;
+        }
 
         let field_elem_j = &mesh.elements[j];
         let coords_j = mesh.element_nodes(field_elem_j);
@@ -141,12 +169,17 @@ fn main() {
         let e_ji = result_ji.d2g_dnxdny_integral;
         let diff = (e_ij - e_ji).norm();
 
-        println!("E[0,{}]: {:.4}+{:.4}i, E[{},0]: {:.4}+{:.4}i, |diff|={:.4}",
-                 j, e_ij.re, e_ij.im, j, e_ji.re, e_ji.im, diff);
+        println!(
+            "E[0,{}]: {:.4}+{:.4}i, E[{},0]: {:.4}+{:.4}i, |diff|={:.4}",
+            j, e_ij.re, e_ij.im, j, e_ji.re, e_ji.im, diff
+        );
     }
 
     // Check: compute (n_i · n_j) distribution
-    println!("\n--- Normal dot products (n_i · n_j) for source {} ---", source_idx);
+    println!(
+        "\n--- Normal dot products (n_i · n_j) for source {} ---",
+        source_idx
+    );
     let mut nx_ny_sum = 0.0;
     for j in 0..mesh.elements.len() {
         let nj = &mesh.elements[j].normal;

@@ -102,7 +102,8 @@ fn main() {
             continue;
         }
 
-        let mie_avg = (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
+        let mie_avg =
+            (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
 
         // Incident field
         let incident = IncidentField::plane_wave_z();
@@ -164,7 +165,8 @@ fn main() {
         // Mie reference
         let num_terms = (ka as usize + 20).max(30);
         let mie = sphere_scattering_3d(k, radius, num_terms, vec![radius], vec![0.0, PI / 2.0, PI]);
-        let mie_avg = (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
+        let mie_avg =
+            (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
 
         // Build and solve with optimal β
         let system = build_tbem_system_scaled(&elements, &mesh.nodes, &physics, optimal_scale);
@@ -213,7 +215,8 @@ fn main() {
         // Mie reference
         let num_terms = (ka as usize + 20).max(30);
         let mie = sphere_scattering_3d(k, radius, num_terms, vec![radius], vec![0.0, PI / 2.0, PI]);
-        let mie_avg = (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
+        let mie_avg =
+            (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
 
         // Fixed β = 4
         let fixed_scale = 4.0;
@@ -249,7 +252,10 @@ fn main() {
     println!("=== Optimal β Scale vs ka ===\n");
     println!("Empirical relationship for this mesh:");
     for &(ka, optimal_scale, error) in &optimal_betas {
-        println!("  ka={:.1}: β_scale={:.1} (error={:.1}%)", ka, optimal_scale, error);
+        println!(
+            "  ka={:.1}: β_scale={:.1} (error={:.1}%)",
+            ka, optimal_scale, error
+        );
     }
 
     println!();

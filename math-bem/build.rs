@@ -244,7 +244,9 @@ fn find_cpp_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
         let path = entry.path();
 
         if path.is_file()
-            && path.extension().is_some_and(|ext| ext == "cpp" || ext == "cc" || ext == "cxx")
+            && path
+                .extension()
+                .is_some_and(|ext| ext == "cpp" || ext == "cc" || ext == "cxx")
         {
             files.push(path);
         }

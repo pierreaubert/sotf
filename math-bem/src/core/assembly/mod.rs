@@ -20,13 +20,13 @@ pub mod slfmm;
 pub mod sparse;
 pub mod tbem;
 
-pub use mlfmm::{build_cluster_tree, build_mlfmm_system, MlfmmSystem};
+pub use mlfmm::{MlfmmSystem, build_cluster_tree, build_mlfmm_system};
 #[cfg(feature = "native")]
-pub use slfmm::{build_slfmm_system, SlfmmSystem};
+pub use slfmm::{SlfmmSystem, build_slfmm_system};
 pub use sparse::{BlockedCsr, CsrBuilder, CsrMatrix};
 pub use tbem::{
-    apply_row_sum_correction, build_tbem_system, build_tbem_system_corrected,
-    build_tbem_system_scaled, build_tbem_system_with_beta, TbemSystem,
+    TbemSystem, apply_row_sum_correction, build_tbem_system, build_tbem_system_corrected,
+    build_tbem_system_scaled, build_tbem_system_with_beta,
 };
 
 #[cfg(feature = "parallel")]

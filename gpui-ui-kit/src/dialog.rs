@@ -188,10 +188,8 @@ impl Dialog {
                             .cursor_pointer()
                             .text_color(rgb(0x888888))
                             .hover(|s| s.bg(rgb(0x3a3a3a)).text_color(rgb(0xffffff)))
-                            .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                                unsafe {
-                                    (*handler)(window, cx);
-                                }
+                            .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
+                                (*handler)(window, cx);
                             })
                             .child("×"),
                     );

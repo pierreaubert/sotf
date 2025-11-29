@@ -2,9 +2,11 @@
 
 use crate::app::Screen;
 use crate::ui::PlayerView;
-use gpui_ui_kit::{Dialog, DialogSize, VStack, HStack, Badge, BadgeVariant, Text, TextSize, TextWeight};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{
+    Badge, BadgeVariant, Dialog, DialogSize, HStack, Text, TextSize, TextWeight, VStack,
+};
 
 impl PlayerView {
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -32,9 +34,13 @@ impl PlayerView {
                         Text::new("GLOBAL KEYBINDINGS")
                             .size(TextSize::Lg)
                             .weight(TextWeight::Semibold)
-                            .color(theme.accent)
+                            .color(theme.accent),
                     )
-                    .child(self.render_keybinding_row("Shift-L/Q/P/O/D", "Jump to Library/Queue/Plugins/Devices/Directories", &theme))
+                    .child(self.render_keybinding_row(
+                        "Shift-L/Q/P/O/D",
+                        "Jump to Library/Queue/Plugins/Devices/Directories",
+                        &theme,
+                    ))
                     .child(self.render_keybinding_row("+/=", "Increase volume", &theme))
                     .child(self.render_keybinding_row("-/_", "Decrease volume", &theme))
                     .child(self.render_keybinding_row("?", "Show this help", &theme))
@@ -44,36 +50,37 @@ impl PlayerView {
                         Text::new(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
                             .size(TextSize::Lg)
                             .weight(TextWeight::Semibold)
-                            .color(theme.accent)
+                            .color(theme.accent),
                     )
-                    .children(
-                        keybindings
-                            .iter()
-                            .map(|(key, desc)| self.render_keybinding_row(key, desc, &theme).into_any_element()),
-                    )
+                    .children(keybindings.iter().map(|(key, desc)| {
+                        self.render_keybinding_row(key, desc, &theme)
+                            .into_any_element()
+                    })),
             )
             .footer(
                 Text::new("Press ESC or ? to close")
                     .size(TextSize::Xs)
-                    .muted(true)
+                    .muted(true),
             )
     }
 
-    fn render_keybinding_row(&self, key: &str, description: &str, theme: &crate::theme::Theme) -> impl IntoElement {
+    fn render_keybinding_row(
+        &self,
+        key: &str,
+        description: &str,
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
         HStack::new()
             .spacing(gpui_ui_kit::StackSpacing::Md)
             .child(
                 div()
                     .w(Rems(12.0))
-                    .child(
-                        Badge::new(key.to_string())
-                            .variant(BadgeVariant::Primary)
-                    )
+                    .child(Badge::new(key.to_string()).variant(BadgeVariant::Primary)),
             )
             .child(
                 Text::new(description.to_string())
                     .size(TextSize::Sm)
-                    .color(theme.text_secondary)
+                    .color(theme.text_secondary),
             )
     }
 
@@ -130,22 +137,16 @@ impl PlayerView {
                             Text::new(icon)
                                 .size(TextSize::Lg)
                                 .weight(TextWeight::Bold)
-                                .color(border_color)
+                                .color(border_color),
                         )
                         .child(
-                            div()
-                                .flex_1()
-                                .child(
-                                    Text::new(toast.message.clone())
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_primary)
-                                )
+                            div().flex_1().child(
+                                Text::new(toast.message.clone())
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_primary),
+                            ),
                         )
-                        .child(
-                            Text::new("ESC to dismiss")
-                                .size(TextSize::Xs)
-                                .muted(true)
-                        )
+                        .child(Text::new("ESC to dismiss").size(TextSize::Xs).muted(true)),
                 )
         } else {
             div() // Return empty div if no toast
@@ -299,7 +300,7 @@ impl PlayerView {
                                 .justify(gpui_ui_kit::StackJustify::SpaceBetween)
                                 .align(gpui_ui_kit::StackAlign::Center)
                                 .child(Text::new(label).size(TextSize::Sm))
-                                .child(Text::new(shortcut).size(TextSize::Xs).muted(true))
+                                .child(Text::new(shortcut).size(TextSize::Xs).muted(true)),
                         )
                 }))
         } else {
@@ -320,7 +321,7 @@ impl PlayerView {
                     .child(
                         Text::new("Enter path to APO file:")
                             .size(TextSize::Sm)
-                            .muted(true)
+                            .muted(true),
                     )
                     .child(
                         div()
@@ -331,14 +332,14 @@ impl PlayerView {
                             .border_color(theme.accent)
                             .child(
                                 Text::new(format!("{}█", state.app.apo_file_input))
-                                    .size(TextSize::Sm)
-                            )
-                    )
+                                    .size(TextSize::Sm),
+                            ),
+                    ),
             )
             .footer(
                 Text::new("Enter: Load file | ESC: Cancel")
                     .size(TextSize::Xs)
-                    .muted(true)
+                    .muted(true),
             )
     }
 
@@ -355,7 +356,7 @@ impl PlayerView {
                     .child(
                         Text::new("Enter path to SOFA file:")
                             .size(TextSize::Sm)
-                            .muted(true)
+                            .muted(true),
                     )
                     .child(
                         div()
@@ -366,14 +367,14 @@ impl PlayerView {
                             .border_color(theme.accent)
                             .child(
                                 Text::new(format!("{}█", state.app.sofa_file_input))
-                                    .size(TextSize::Sm)
-                            )
-                    )
+                                    .size(TextSize::Sm),
+                            ),
+                    ),
             )
             .footer(
                 Text::new("Enter: Load file | ESC: Cancel")
                     .size(TextSize::Xs)
-                    .muted(true)
+                    .muted(true),
             )
     }
 
@@ -393,7 +394,7 @@ impl PlayerView {
                     .child(
                         Text::new("Enter preset name (or select existing to overwrite):")
                             .size(TextSize::Sm)
-                            .muted(true)
+                            .muted(true),
                     )
                     .child(
                         div()
@@ -402,17 +403,14 @@ impl PlayerView {
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.accent)
-                            .child(
-                                Text::new(format!("{}█", input))
-                                    .size(TextSize::Sm)
-                            )
+                            .child(Text::new(format!("{}█", input)).size(TextSize::Sm)),
                     )
                     // Show existing presets if available
                     .when(!presets.is_empty(), |el| {
                         el.child(
                             Text::new("Existing presets (↑/↓ to select):")
                                 .size(TextSize::Sm)
-                                .muted(true)
+                                .muted(true),
                         )
                         .child(
                             div()
@@ -422,28 +420,26 @@ impl PlayerView {
                                 .bg(theme.surface)
                                 .rounded_md()
                                 .p_2()
-                                .children(presets.iter().enumerate().map(
-                                    |(idx, preset)| {
-                                        let is_selected = idx == selected_preset;
-                                        let theme = theme.clone();
-                                        div()
-                                            .p_1()
-                                            .rounded_md()
-                                            .text_sm()
-                                            .when(is_selected, |d| {
-                                                d.bg(theme.accent_muted).text_color(theme.text_primary)
-                                            })
-                                            .when(!is_selected, |d| d.text_color(theme.text_secondary))
-                                            .child(preset.clone())
-                                    },
-                                ))
+                                .children(presets.iter().enumerate().map(|(idx, preset)| {
+                                    let is_selected = idx == selected_preset;
+                                    let theme = theme.clone();
+                                    div()
+                                        .p_1()
+                                        .rounded_md()
+                                        .text_sm()
+                                        .when(is_selected, |d| {
+                                            d.bg(theme.accent_muted).text_color(theme.text_primary)
+                                        })
+                                        .when(!is_selected, |d| d.text_color(theme.text_secondary))
+                                        .child(preset.clone())
+                                })),
                         )
-                    })
+                    }),
             )
             .footer(
                 Text::new("Enter: Save | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
                     .size(TextSize::Xs)
-                    .muted(true)
+                    .muted(true),
             )
     }
 
@@ -463,7 +459,7 @@ impl PlayerView {
                     .child(
                         Text::new("Enter preset name or select from list:")
                             .size(TextSize::Sm)
-                            .muted(true)
+                            .muted(true),
                     )
                     .child(
                         div()
@@ -472,17 +468,14 @@ impl PlayerView {
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.success)
-                            .child(
-                                Text::new(format!("{}█", input))
-                                    .size(TextSize::Sm)
-                            )
+                            .child(Text::new(format!("{}█", input)).size(TextSize::Sm)),
                     )
                     // Show existing presets
                     .when(!presets.is_empty(), |el| {
                         el.child(
                             Text::new("Available presets (↑/↓ to select):")
                                 .size(TextSize::Sm)
-                                .muted(true)
+                                .muted(true),
                         )
                         .child(
                             div()
@@ -492,40 +485,35 @@ impl PlayerView {
                                 .bg(theme.surface)
                                 .rounded_md()
                                 .p_2()
-                                .children(presets.iter().enumerate().map(
-                                    |(idx, preset)| {
-                                        let is_selected = idx == selected_preset;
-                                        let theme = theme.clone();
-                                        div()
-                                            .p_1()
-                                            .rounded_md()
-                                            .text_sm()
-                                            .when(is_selected, |d| {
-                                                d.bg(theme.accent_muted).text_color(theme.text_primary)
-                                            })
-                                            .when(!is_selected, |d| d.text_color(theme.text_secondary))
-                                            .child(preset.clone())
-                                    },
-                                ))
+                                .children(presets.iter().enumerate().map(|(idx, preset)| {
+                                    let is_selected = idx == selected_preset;
+                                    let theme = theme.clone();
+                                    div()
+                                        .p_1()
+                                        .rounded_md()
+                                        .text_sm()
+                                        .when(is_selected, |d| {
+                                            d.bg(theme.accent_muted).text_color(theme.text_primary)
+                                        })
+                                        .when(!is_selected, |d| d.text_color(theme.text_secondary))
+                                        .child(preset.clone())
+                                })),
                         )
                     })
                     .when(presets.is_empty(), |el| {
                         el.child(
-                            div()
-                                .p_4()
-                                .text_center()
-                                .child(
-                                    Text::new("No presets found. Save a preset first with 's'.")
-                                        .size(TextSize::Sm)
-                                        .muted(true)
-                                )
+                            div().p_4().text_center().child(
+                                Text::new("No presets found. Save a preset first with 's'.")
+                                    .size(TextSize::Sm)
+                                    .muted(true),
+                            ),
                         )
-                    })
+                    }),
             )
             .footer(
                 Text::new("Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
                     .size(TextSize::Xs)
-                    .muted(true)
+                    .muted(true),
             )
     }
 
@@ -544,38 +532,42 @@ impl PlayerView {
                 .content(
                     VStack::new()
                         .spacing(gpui_ui_kit::StackSpacing::Sm)
-                        .children(
-                            params.iter().enumerate().map(|(idx, (name, value))| {
-                                let is_selected = idx == selected_idx;
-                                let theme = theme.clone();
-                                div()
-                                    .p_2()
-                                    .rounded_md()
-                                    .when(is_selected, |d| d.bg(theme.accent_muted))
-                                    .when(!is_selected, |d| d.bg(theme.surface))
-                                    .child(
-                                        HStack::new()
-                                            .justify(gpui_ui_kit::StackJustify::SpaceBetween)
-                                            .child(
-                                                Text::new(name.clone())
-                                                    .size(TextSize::Sm)
-                                                    .weight(TextWeight::Semibold)
-                                                    .color(if is_selected { theme.text_primary } else { theme.accent })
-                                            )
-                                            .child(
-                                                Text::new(value.clone())
-                                                    .size(TextSize::Sm)
-                                                    .color(if is_selected { theme.text_primary } else { theme.text_secondary })
-                                            )
-                                    )
-                                    .into_any_element()
-                            }),
-                        )
+                        .children(params.iter().enumerate().map(|(idx, (name, value))| {
+                            let is_selected = idx == selected_idx;
+                            let theme = theme.clone();
+                            div()
+                                .p_2()
+                                .rounded_md()
+                                .when(is_selected, |d| d.bg(theme.accent_muted))
+                                .when(!is_selected, |d| d.bg(theme.surface))
+                                .child(
+                                    HStack::new()
+                                        .justify(gpui_ui_kit::StackJustify::SpaceBetween)
+                                        .child(
+                                            Text::new(name.clone())
+                                                .size(TextSize::Sm)
+                                                .weight(TextWeight::Semibold)
+                                                .color(if is_selected {
+                                                    theme.text_primary
+                                                } else {
+                                                    theme.accent
+                                                }),
+                                        )
+                                        .child(Text::new(value.clone()).size(TextSize::Sm).color(
+                                            if is_selected {
+                                                theme.text_primary
+                                            } else {
+                                                theme.text_secondary
+                                            },
+                                        )),
+                                )
+                                .into_any_element()
+                        })),
                 )
                 .footer(
                     Text::new("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit")
                         .size(TextSize::Xs)
-                        .muted(true)
+                        .muted(true),
                 )
                 .into_element()
         } else {
@@ -616,10 +608,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("C", "Clear entire queue"),
         ],
         Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
-        Screen::Settings => vec![
-            ("T", "Cycle theme"),
-            ("Alt-L", "Cycle language"),
-        ],
+        Screen::Settings => vec![("T", "Cycle theme"), ("Alt-L", "Cycle language")],
     }
 }
 
@@ -867,7 +856,9 @@ fn render_plugin_param_list(
             ("Max Frequency".to_string(), format!("{:.0} Hz", max_freq)),
             ("Smoothing".to_string(), format!("{:.2}", smoothing)),
         ],
-        PluginSettings::Gain { gain_db } => vec![("Gain".to_string(), format!("{:.1} dB", gain_db))],
+        PluginSettings::Gain { gain_db } => {
+            vec![("Gain".to_string(), format!("{:.1} dB", gain_db))]
+        }
         PluginSettings::ChannelMuteSolo { .. } => {
             vec![("Mute/Solo".to_string(), "Use meters panel".to_string())]
         }
@@ -876,7 +867,10 @@ fn render_plugin_param_list(
 
 impl PlayerView {
     /// Render a comprehensive keyboard shortcuts dialog
-    pub(crate) fn render_keyboard_shortcuts_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_keyboard_shortcuts_dialog(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let theme = self.state.read(cx).app.theme.clone();
 
         let global_shortcuts = vec![
@@ -885,7 +879,10 @@ impl PlayerView {
             ("P", "Previous track"),
             ("+/-", "Volume up/down"),
             ("M", "Toggle mute"),
-            ("1-5", "Switch screens (Library/Queue/Plugins/Devices/Settings)"),
+            (
+                "1-5",
+                "Switch screens (Library/Queue/Plugins/Devices/Settings)",
+            ),
             ("?", "Toggle help"),
             ("Esc", "Close dialog / Cancel"),
             ("T", "Cycle theme"),
@@ -913,7 +910,10 @@ impl PlayerView {
         ];
 
         let plugin_shortcuts = vec![
-            ("E/U/G/L/O/B", "Add EQ/Upmixer/Gate/Limiter/Loudness/Binaural"),
+            (
+                "E/U/G/L/O/B",
+                "Add EQ/Upmixer/Gate/Limiter/Loudness/Binaural",
+            ),
             ("Enter/e", "Edit plugin parameters"),
             ("D/Delete", "Delete plugin"),
             ("Space", "Toggle plugin on/off"),
@@ -977,13 +977,25 @@ impl PlayerView {
                             .flex_wrap()
                             .gap_6()
                             // Global
-                            .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
+                            .child(self.render_shortcut_section(
+                                "Global",
+                                &global_shortcuts,
+                                &theme,
+                            ))
                             // Library
-                            .child(self.render_shortcut_section("Library", &library_shortcuts, &theme))
+                            .child(self.render_shortcut_section(
+                                "Library",
+                                &library_shortcuts,
+                                &theme,
+                            ))
                             // Queue
                             .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
                             // Plugins
-                            .child(self.render_shortcut_section("Plugins", &plugin_shortcuts, &theme)),
+                            .child(self.render_shortcut_section(
+                                "Plugins",
+                                &plugin_shortcuts,
+                                &theme,
+                            )),
                     ),
             )
     }
@@ -1104,7 +1116,7 @@ impl PlayerView {
                             .text_color(theme.text_muted)
                             .child("Version 0.5.3")
                             .child("Built with Rust & GPUI")
-                            .child("spinorama.org")
+                            .child("spinorama.org"),
                     )
                     // Close hint
                     .child(

@@ -17,7 +17,12 @@ pub enum ThemeId {
 
 impl ThemeId {
     pub fn all() -> &'static [ThemeId] {
-        &[ThemeId::Dark, ThemeId::Light, ThemeId::Midnight, ThemeId::Forest]
+        &[
+            ThemeId::Dark,
+            ThemeId::Light,
+            ThemeId::Midnight,
+            ThemeId::Forest,
+        ]
     }
 
     pub fn name(&self) -> &'static str {

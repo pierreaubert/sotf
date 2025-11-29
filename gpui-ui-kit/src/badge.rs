@@ -178,11 +178,7 @@ impl BadgeDot {
     pub fn build(self) -> Div {
         let (bg, _) = self.variant.colors();
 
-        div()
-            .w(self.size)
-            .h(self.size)
-            .rounded_full()
-            .bg(bg)
+        div().w(self.size).h(self.size).rounded_full().bg(bg)
     }
 }
 

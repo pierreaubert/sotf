@@ -866,7 +866,11 @@ impl App {
                         "Scan complete: {} tracks in {} albums",
                         tracks, albums
                     ));
-                    log::info!("Library scan complete: {} tracks in {} albums", tracks, albums);
+                    log::info!(
+                        "Library scan complete: {} tracks in {} albums",
+                        tracks,
+                        albums
+                    );
 
                     // Reload library from database to get the new data
                     if let Err(e) = self.library.load_from_database() {
@@ -1354,10 +1358,7 @@ impl App {
 
         // Group albums by artist
         for (idx, album) in self.library.albums.iter().enumerate() {
-            artist_map
-                .entry(album.artist())
-                .or_default()
-                .push(idx);
+            artist_map.entry(album.artist()).or_default().push(idx);
         }
 
         // Create artist nodes

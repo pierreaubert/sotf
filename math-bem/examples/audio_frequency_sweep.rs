@@ -78,9 +78,18 @@ fn main() {
     // ka = 2πf × r / c = f × 0.00183
     // f = ka × 546 Hz
     println!("Frequency-ka relationship (for r=0.1m):");
-    println!("  ka=0.5 → {:>6.0} Hz", 0.5 * speed_of_sound / (2.0 * PI * radius));
-    println!("  ka=1.0 → {:>6.0} Hz (optimal range)", 1.0 * speed_of_sound / (2.0 * PI * radius));
-    println!("  ka=2.0 → {:>6.0} Hz", 2.0 * speed_of_sound / (2.0 * PI * radius));
+    println!(
+        "  ka=0.5 → {:>6.0} Hz",
+        0.5 * speed_of_sound / (2.0 * PI * radius)
+    );
+    println!(
+        "  ka=1.0 → {:>6.0} Hz (optimal range)",
+        1.0 * speed_of_sound / (2.0 * PI * radius)
+    );
+    println!(
+        "  ka=2.0 → {:>6.0} Hz",
+        2.0 * speed_of_sound / (2.0 * PI * radius)
+    );
     println!();
 
     // Prepare elements once
@@ -102,9 +111,7 @@ fn main() {
 
     // Test across ka range (focus on audio frequencies)
     // Using ka values directly to show the limitation
-    let ka_values: Vec<f64> = vec![
-        0.3, 0.5, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.5, 2.0, 3.0,
-    ];
+    let ka_values: Vec<f64> = vec![0.3, 0.5, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.5, 2.0, 3.0];
 
     println!(
         "{:>8} | {:>8} | {:>8} | {:>10} | {:>10} | {:>10} | {:>10}",
@@ -133,13 +140,7 @@ fn main() {
         if mie.pressure.iter().any(|p| !p.is_finite()) {
             println!(
                 "{:>8.0} | {:>8.2} | {:>8.1} | {:>10} | {:>10} | {:>10} | {}",
-                freq,
-                ka,
-                scale,
-                "NaN",
-                "-",
-                "-",
-                "error"
+                freq, ka, scale, "NaN", "-", "-", "error"
             );
             continue;
         }
@@ -213,13 +214,7 @@ fn main() {
 
         println!(
             "{:>8.0} | {:>8.3} | {:>8.1} | {:>10.4} | {:>10.4} | {:>9.1}% | {}",
-            freq,
-            ka,
-            scale,
-            mie_avg,
-            bem_all_avg,
-            error_pct,
-            status
+            freq, ka, scale, mie_avg, bem_all_avg, error_pct, status
         );
     }
 

@@ -35,9 +35,11 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::cgs::{cgs_solve, CgsConfig};
+    use bem::core::solver::cgs::{CgsConfig, cgs_solve};
     use bem::core::solver::direct::direct_solve;
-    use bem::core::solver::ilu_preconditioner::{IluMethod, IluPreconditioner, IluScanningDegree, IluSetup};
+    use bem::core::solver::ilu_preconditioner::{
+        IluMethod, IluPreconditioner, IluScanningDegree, IluSetup,
+    };
     use bem::core::solver::preconditioner::Preconditioner;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
@@ -107,7 +109,8 @@ fn main() {
             );
             continue;
         }
-        let mie_avg = (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
+        let mie_avg =
+            (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
 
         // Incident field
         let incident = IncidentField::plane_wave_z();
@@ -134,7 +137,7 @@ fn main() {
         // For dense TBEM, we need a MUCH lower threshold to keep more entries.
         let ilu_setup = IluPreconditioner::setup_system_with_threshold(
             &tbem_system.matrix,
-            0.0,  // Full ILU - keeps ALL entries (equivalent to full LU)
+            0.0, // Full ILU - keeps ALL entries (equivalent to full LU)
         );
 
         // Scale the RHS to match the scaled matrix
@@ -144,32 +147,46 @@ fn main() {
         // Compute ||M⁻¹ * A - I|| for a few test vectors
         if ka == ka_values[0] {
             println!("\n  ILU diagnostic:");
-            println!("    Fill ratio: {:.2}%", ilu_setup.preconditioner.fill_ratio() * 100.0);
+            println!(
+                "    Fill ratio: {:.2}%",
+                ilu_setup.preconditioner.fill_ratio() * 100.0
+            );
 
             // Test: M⁻¹ * A * e_1 should be close to e_1 if M ≈ A
             let mut e1 = Array1::zeros(n);
             e1[0] = Complex64::new(1.0, 0.0);
             let a_e1 = ilu_setup.scaled_matrix.dot(&e1);
             let minv_a_e1 = ilu_setup.preconditioner.apply(&a_e1);
-            let error1 = (&minv_a_e1 - &e1).iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
+            let error1 = (&minv_a_e1 - &e1)
+                .iter()
+                .map(|x| x.norm_sqr())
+                .sum::<f64>()
+                .sqrt();
             println!("    ||M⁻¹ * A * e_1 - e_1|| = {:.2e}", error1);
 
             // Test with random-ish vector
             let mut test_vec: Array1<Complex64> = Array1::from_iter(
-                (0..n).map(|i| Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos()))
+                (0..n).map(|i| Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos())),
             );
             let a_test = ilu_setup.scaled_matrix.dot(&test_vec);
             let minv_a_test = ilu_setup.preconditioner.apply(&a_test);
-            let error_test = (&minv_a_test - &test_vec).iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
+            let error_test = (&minv_a_test - &test_vec)
+                .iter()
+                .map(|x| x.norm_sqr())
+                .sum::<f64>()
+                .sqrt();
             let test_norm = test_vec.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
-            println!("    ||M⁻¹ * A * v - v|| / ||v|| = {:.2e}", error_test / test_norm);
+            println!(
+                "    ||M⁻¹ * A * v - v|| / ||v|| = {:.2e}",
+                error_test / test_norm
+            );
             println!();
         }
 
         // CGS solver config - enable progress output for first frequency only
         let print_interval = if ka == ka_values[0] { 100 } else { 0 };
         let cgs_config = CgsConfig {
-            max_iterations: 500,  // More iterations
+            max_iterations: 500, // More iterations
             tolerance: 1e-6,
             print_interval,
         };
@@ -193,14 +210,7 @@ fn main() {
 
         println!(
             "{:>8.0} | {:>8.3} | {:>10.4} | {:>11.1}% | {:>12.4} | {:>9.1}% | {:>6} {}",
-            freq,
-            ka,
-            mie_avg,
-            direct_err,
-            cgs_avg,
-            cgs_err,
-            cgs_solution.iterations,
-            status
+            freq, ka, mie_avg, direct_err, cgs_avg, cgs_err, cgs_solution.iterations, status
         );
     }
 

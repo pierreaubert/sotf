@@ -715,8 +715,10 @@ impl App {
                     format!("{}.json", self.plugin_file_input)
                 };
 
-                self.toast_message =
-                    Some(ToastMessage::success(format!("Loaded preset: {}", filename)));
+                self.toast_message = Some(ToastMessage::success(format!(
+                    "Loaded preset: {}",
+                    filename
+                )));
                 self.needs_plugin_update = true;
                 self.last_loaded_preset = Some(filename);
             }

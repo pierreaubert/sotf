@@ -1,11 +1,11 @@
 //! Mesh structures and element operations
 
-pub mod element;
 pub mod cluster;
-pub mod octree;
+pub mod element;
 pub mod generators;
+pub mod octree;
 
-pub use element::*;
 pub use cluster::*;
+pub use element::*;
 pub use generators::*;
-pub use octree::{Octree, OctreeNode, OctreeStats, AABB};
+pub use octree::{AABB, Octree, OctreeNode, OctreeStats};

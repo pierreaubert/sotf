@@ -231,11 +231,17 @@ pub fn render_tick_row(
                 .h(px(major_height))
                 .relative()
                 .children(ticks.into_iter().map(move |tick| {
-                    let height = if tick.is_major { major_height } else { minor_height };
+                    let height = if tick.is_major {
+                        major_height
+                    } else {
+                        minor_height
+                    };
 
                     div()
                         .absolute()
-                        .left(gpui::Length::Definite(gpui::DefiniteLength::Fraction(tick.position)))
+                        .left(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                            tick.position,
+                        )))
                         .top_0() // All ticks start from top
                         .w(px(1.0))
                         .h(px(height))

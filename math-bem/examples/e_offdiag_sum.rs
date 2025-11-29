@@ -29,7 +29,11 @@ fn main() {
         let mesh = generate_icosphere_mesh(radius, subdivisions);
         let physics = PhysicsParams::new(frequency, speed_of_sound, density, false);
 
-        println!("\n--- Icosphere subdivisions={} ({} elements) ---", subdivisions, mesh.elements.len());
+        println!(
+            "\n--- Icosphere subdivisions={} ({} elements) ---",
+            subdivisions,
+            mesh.elements.len()
+        );
 
         // Average over several source elements to get a representative picture
         let source_indices: Vec<usize> = (0..10.min(mesh.elements.len())).collect();
@@ -90,9 +94,24 @@ fn main() {
         avg_offdiag_e /= n;
         avg_total_e /= n;
 
-        println!("  Avg self E:     {:.4}+{:.4}i (|.|={:.4})", avg_self_e.re, avg_self_e.im, avg_self_e.norm());
-        println!("  Avg offdiag E:  {:.4}+{:.4}i (|.|={:.4})", avg_offdiag_e.re, avg_offdiag_e.im, avg_offdiag_e.norm());
-        println!("  Avg total E[1]: {:.4}+{:.4}i (|.|={:.4}, should be ~0)", avg_total_e.re, avg_total_e.im, avg_total_e.norm());
+        println!(
+            "  Avg self E:     {:.4}+{:.4}i (|.|={:.4})",
+            avg_self_e.re,
+            avg_self_e.im,
+            avg_self_e.norm()
+        );
+        println!(
+            "  Avg offdiag E:  {:.4}+{:.4}i (|.|={:.4})",
+            avg_offdiag_e.re,
+            avg_offdiag_e.im,
+            avg_offdiag_e.norm()
+        );
+        println!(
+            "  Avg total E[1]: {:.4}+{:.4}i (|.|={:.4}, should be ~0)",
+            avg_total_e.re,
+            avg_total_e.im,
+            avg_total_e.norm()
+        );
 
         // Relative error
         let rel_error = avg_total_e.norm() / avg_self_e.norm() * 100.0;

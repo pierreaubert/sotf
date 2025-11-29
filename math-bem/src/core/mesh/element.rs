@@ -2,7 +2,7 @@
 //!
 //! Direct port of shape function computations from NC_3dFunctions.cpp.
 
-use ndarray::{array, Array1, Array2};
+use ndarray::{Array1, Array2, array};
 
 use crate::core::types::{Element, ElementType};
 
@@ -229,11 +229,9 @@ mod tests {
     use num_complex::Complex64;
 
     fn make_test_triangle() -> (Element, Array2<f64>) {
-        let nodes = Array2::from_shape_vec(
-            (3, 3),
-            vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-        )
-        .unwrap();
+        let nodes =
+            Array2::from_shape_vec((3, 3), vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+                .unwrap();
 
         let element = Element {
             connectivity: vec![0, 1, 2],
@@ -311,11 +309,9 @@ mod tests {
 
     #[test]
     fn test_element_area() {
-        let nodes = Array2::from_shape_vec(
-            (3, 3),
-            vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-        )
-        .unwrap();
+        let nodes =
+            Array2::from_shape_vec((3, 3), vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+                .unwrap();
 
         let area = compute_element_area(&nodes, &[0, 1, 2], ElementType::Tri3);
         assert!((area - 0.5).abs() < 1e-10);

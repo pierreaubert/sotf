@@ -60,10 +60,7 @@ impl CsrMatrix {
     /// Create a CSR matrix from a dense matrix
     ///
     /// Only stores entries with magnitude > threshold
-    pub fn from_dense(
-        dense: &ndarray::Array2<Complex64>,
-        threshold: f64,
-    ) -> Self {
+    pub fn from_dense(dense: &ndarray::Array2<Complex64>, threshold: f64) -> Self {
         let num_rows = dense.nrows();
         let num_cols = dense.ncols();
 
@@ -132,7 +129,11 @@ impl CsrMatrix {
 
                 // Update row pointers for any rows we skipped
                 if row != prev_row {
-                    let start = if prev_row == usize::MAX { 0 } else { prev_row + 1 };
+                    let start = if prev_row == usize::MAX {
+                        0
+                    } else {
+                        prev_row + 1
+                    };
                     for r in start..=row {
                         row_ptrs[r] = values.len() - 1;
                     }
@@ -144,7 +145,11 @@ impl CsrMatrix {
         }
 
         // Fill remaining row pointers
-        let last_row = if prev_row == usize::MAX { 0 } else { prev_row + 1 };
+        let last_row = if prev_row == usize::MAX {
+            0
+        } else {
+            prev_row + 1
+        };
         for r in last_row..=num_rows {
             row_ptrs[r] = values.len();
         }
@@ -485,9 +490,21 @@ mod tests {
     #[test]
     fn test_csr_from_dense() {
         let dense = array![
-            [Complex64::new(1.0, 0.0), Complex64::new(0.0, 0.0), Complex64::new(2.0, 0.0)],
-            [Complex64::new(0.0, 0.0), Complex64::new(3.0, 0.0), Complex64::new(0.0, 0.0)],
-            [Complex64::new(4.0, 0.0), Complex64::new(0.0, 0.0), Complex64::new(5.0, 0.0)],
+            [
+                Complex64::new(1.0, 0.0),
+                Complex64::new(0.0, 0.0),
+                Complex64::new(2.0, 0.0)
+            ],
+            [
+                Complex64::new(0.0, 0.0),
+                Complex64::new(3.0, 0.0),
+                Complex64::new(0.0, 0.0)
+            ],
+            [
+                Complex64::new(4.0, 0.0),
+                Complex64::new(0.0, 0.0),
+                Complex64::new(5.0, 0.0)
+            ],
         ];
 
         let csr = CsrMatrix::from_dense(&dense, 1e-15);
@@ -574,8 +591,7 @@ mod tests {
 
         // Row 0: entries at columns 0 and 2
         builder.add_row_entries(
-            [(0, Complex64::new(1.0, 0.0)), (2, Complex64::new(2.0, 0.0))]
-                .into_iter(),
+            [(0, Complex64::new(1.0, 0.0)), (2, Complex64::new(2.0, 0.0))].into_iter(),
         );
 
         // Row 1: entry at column 1
@@ -583,8 +599,7 @@ mod tests {
 
         // Row 2: entries at columns 0 and 2
         builder.add_row_entries(
-            [(0, Complex64::new(4.0, 0.0)), (2, Complex64::new(5.0, 0.0))]
-                .into_iter(),
+            [(0, Complex64::new(4.0, 0.0)), (2, Complex64::new(5.0, 0.0))].into_iter(),
         );
 
         let csr = builder.finish();

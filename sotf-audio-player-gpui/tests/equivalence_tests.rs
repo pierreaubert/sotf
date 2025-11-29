@@ -6,8 +6,8 @@
 mod common;
 
 use common::{
-    create_test_library, operations::sequences, run_equivalence_test, AppAdapter, GpuiAdapter,
-    Operation, OperationSequence, ScreenId, TestHarness, TuiAdapter, assert_equivalent,
+    AppAdapter, GpuiAdapter, Operation, OperationSequence, ScreenId, TestHarness, TuiAdapter,
+    assert_equivalent, create_test_library, operations::sequences, run_equivalence_test,
 };
 
 // ============================================================================

@@ -79,8 +79,8 @@ pub use fmm_interface::SlfmmOperator;
 // These require native feature for BLAS/LAPACK
 #[cfg(feature = "native")]
 pub use fmm_interface::{
-    ilu_diagnostics, solve_tbem_with_ilu, solve_with_ilu, solve_with_ilu_operator, IluDiagnostics,
-    IluOperator,
+    IluDiagnostics, IluOperator, ilu_diagnostics, solve_tbem_with_ilu, solve_with_ilu,
+    solve_with_ilu_operator,
 };
 
 // GMRES solver and ILU integration (native feature for ILU variants)
@@ -98,16 +98,14 @@ pub use fmm_interface::{gmres_solve_fmm_batched, gmres_solve_fmm_batched_with_il
 
 // Frequency-adaptive mesh utilities (portable)
 pub use fmm_interface::{
-    recommended_mesh_resolution, mesh_resolution_for_frequency_range,
-    estimate_element_count, AdaptiveMeshConfig,
+    AdaptiveMeshConfig, estimate_element_count, mesh_resolution_for_frequency_range,
+    recommended_mesh_resolution,
 };
 
 // Preconditioner types - most are portable
 pub use preconditioner::{
-    DiagonalPreconditioner as BasicDiagonalPreconditioner,
-    IdentityPreconditioner, Preconditioner,
-    RowScalingPreconditioner, SparseNearfieldIlu,
-    BlockDiagonalPreconditioner,
+    BlockDiagonalPreconditioner, DiagonalPreconditioner as BasicDiagonalPreconditioner,
+    IdentityPreconditioner, Preconditioner, RowScalingPreconditioner, SparseNearfieldIlu,
 };
 
 // HierarchicalFmmPreconditioner requires native (uses rayon for parallel block processing)
@@ -118,15 +116,14 @@ pub use preconditioner::HierarchicalFmmPreconditioner;
 pub use ilu_preconditioner::{IluMethod, IluPreconditioner, IluScanningDegree, IluSetup};
 
 // GMRES configuration and solution types (portable)
-pub use gmres::{gmres_solve, gmres_solve_preconditioned, GmresConfig, GmresSolution};
+pub use gmres::{GmresConfig, GmresSolution, gmres_solve, gmres_solve_preconditioned};
 
 // Batched BLAS operations for optimized FMM matvec (native only for parallel)
 #[cfg(feature = "native")]
 pub use batched_blas::{
-    SlfmmMatvecWorkspace, slfmm_matvec_batched, create_batched_matvec,
-    batched_t_matrix_apply, batched_s_matrix_apply, batched_d_matrix_apply,
-    batched_near_field_apply,
+    SlfmmMatvecWorkspace, batched_d_matrix_apply, batched_near_field_apply, batched_s_matrix_apply,
+    batched_t_matrix_apply, create_batched_matvec, slfmm_matvec_batched,
 };
 
 // Direct solver (portable - uses BLAS when available, pure Rust fallback otherwise)
-pub use direct::{direct_solve, direct_solve_lu, DirectSolution};
+pub use direct::{DirectSolution, direct_solve, direct_solve_lu};

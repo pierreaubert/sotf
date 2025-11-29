@@ -12,10 +12,7 @@ pub enum LibraryScanMessage {
     /// Progress update during scanning
     Progress { tracks: usize, albums: usize },
     /// Scanning completed successfully
-    Complete {
-        tracks: usize,
-        albums: usize,
-    },
+    Complete { tracks: usize, albums: usize },
     /// Scanning failed
     Error { message: String },
 }
@@ -112,8 +109,7 @@ impl LibraryScanner {
 
             match result {
                 Ok(()) => {
-                    let track_count: usize =
-                        library.albums.iter().map(|a| a.tracks.len()).sum();
+                    let track_count: usize = library.albums.iter().map(|a| a.tracks.len()).sum();
                     let album_count = library.albums.len();
 
                     log::info!(
