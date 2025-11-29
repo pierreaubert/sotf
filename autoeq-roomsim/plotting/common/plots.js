@@ -14,6 +14,34 @@ const SOURCE_COLORS_3D = ['#ff6b6b', '#ee5a6f', '#f06595', '#cc5de8', '#845ef7']
  * @param {Object} options - Optional settings (darkMode, etc.)
  */
 function plotFrequencyResponse(data, containerId, options = {}) {
+    console.log('plotFrequencyResponse called with:', {
+        frequencies: data.frequencies?.length,
+        frequency_response: data.frequency_response?.length,
+        source_responses: data.source_responses?.length,
+        containerId
+    });
+
+    // Validate required data
+    if (!data.frequencies || !data.frequency_response) {
+        console.error('Missing required data for frequency response plot:', {
+            hasFrequencies: !!data.frequencies,
+            hasFrequencyResponse: !!data.frequency_response
+        });
+        return null;
+    }
+
+    if (data.frequencies.length === 0 || data.frequency_response.length === 0) {
+        console.error('Empty frequency or response data');
+        return null;
+    }
+
+    // Check for NaN/Infinity values
+    const invalidFreqCount = data.frequencies.filter(f => !isFinite(f)).length;
+    const invalidSplCount = data.frequency_response.filter(s => !isFinite(s)).length;
+    if (invalidFreqCount > 0 || invalidSplCount > 0) {
+        console.warn(`Invalid values detected: ${invalidFreqCount} frequencies, ${invalidSplCount} SPL values`);
+    }
+
     const traces = [];
     const darkMode = options.darkMode || false;
 
@@ -37,7 +65,7 @@ function plotFrequencyResponse(data, containerId, options = {}) {
     }
 
     // Main frequency response trace (combined, on top)
-    traces.push({
+    const mainTrace = {
         x: data.frequencies,
         y: data.frequency_response,
         type: 'scatter',
@@ -46,62 +74,151 @@ function plotFrequencyResponse(data, containerId, options = {}) {
             color: '#667eea',
             width: 3
         },
-        marker: options.showMarkers ? {
+        name: 'Combined Response',
+        hovertemplate: 'Frequency: %{x:.1f} Hz<br>SPL: %{y:.1f} dB<extra></extra>'
+    };
+    if (options.showMarkers) {
+        mainTrace.marker = {
             size: 6,
             color: '#667eea',
             line: { color: 'white', width: 1 }
-        } : undefined,
-        name: 'Combined Response',
-        hovertemplate: 'Frequency: %{x:.1f} Hz<br>SPL: %{y:.1f} dB<extra></extra>'
-    });
+        };
+    }
+    traces.push(mainTrace);
 
     // Determine axis range
     const minFreq = Math.min(...data.frequencies);
     const maxFreq = Math.max(...data.frequencies);
     const allSPL = data.frequency_response;
-    const meanSPL = allSPL.reduce((a, b) => a + b, 0) / allSPL.length;
-    const splSpan = options.splSpan || 50;
-    const splMin = meanSPL - splSpan / 2;
-    const splMax = meanSPL + splSpan / 2;
+
+    // Filter out non-finite values for SPL range calculation
+    const finiteSPL = allSPL.filter(v => isFinite(v));
+    let splMin, splMax;
+
+    if (finiteSPL.length > 0) {
+        const meanSPL = finiteSPL.reduce((a, b) => a + b, 0) / finiteSPL.length;
+        const splSpan = options.splSpan || 50;
+        splMin = meanSPL - splSpan / 2;
+        splMax = meanSPL + splSpan / 2;
+        console.log('SPL range calculated:', { meanSPL, splMin, splMax, finiteCount: finiteSPL.length });
+    } else {
+        // Fallback if all values are non-finite
+        console.warn('All SPL values are non-finite, using default range');
+        splMin = 40;
+        splMax = 100;
+    }
 
     // Store for use by slice plots
     window.sharedSPLRange = { min: splMin, max: splMax };
 
+    // Build shapes for room modes and Schroeder frequency
+    const shapes = [];
+    const annotations = [];
+
+    // Add Schroeder frequency line if available
+    if (data.room_acoustics && data.room_acoustics.schroeder_frequency) {
+        const schroederFreq = data.room_acoustics.schroeder_frequency;
+        if (schroederFreq >= minFreq && schroederFreq <= maxFreq) {
+            shapes.push({
+                type: 'line',
+                x0: schroederFreq,
+                x1: schroederFreq,
+                y0: splMin,
+                y1: splMax,
+                line: { color: '#ff9f43', width: 2, dash: 'dash' }
+            });
+            annotations.push({
+                x: Math.log10(schroederFreq),
+                y: splMax - 2,
+                xref: 'x',
+                yref: 'y',
+                text: `Schroeder ${schroederFreq.toFixed(0)} Hz`,
+                showarrow: false,
+                font: { color: '#ff9f43', size: 10 },
+                bgcolor: darkMode ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)',
+                borderpad: 2
+            });
+        }
+    }
+
+    // Add room mode lines if available (show only modes within frequency range)
+    if (data.room_modes && data.room_modes.length > 0) {
+        // Mode colors by type
+        const modeColors = {
+            'axial': 'rgba(255, 100, 100, 0.4)',
+            'tangential': 'rgba(100, 200, 100, 0.3)',
+            'oblique': 'rgba(100, 100, 255, 0.2)'
+        };
+
+        data.room_modes.forEach(mode => {
+            if (mode.frequency >= minFreq && mode.frequency <= maxFreq) {
+                const color = modeColors[mode.mode_type] || 'rgba(150, 150, 150, 0.3)';
+                shapes.push({
+                    type: 'line',
+                    x0: mode.frequency,
+                    x1: mode.frequency,
+                    y0: splMin,
+                    y1: splMax,
+                    line: { color: color, width: 1 }
+                });
+            }
+        });
+    }
+
     const layout = {
         title: {
             text: options.title || 'Frequency Response at Listening Position',
-            font: { size: 18, weight: 'bold' }
+            font: { size: 18, weight: 'bold', color: darkMode ? '#fff' : '#000' }
         },
         xaxis: {
-            title: 'Frequency (Hz)',
+            title: { text: 'Frequency (Hz)', font: { color: darkMode ? '#fff' : '#000' } },
             type: minFreq >= 10 && maxFreq > minFreq * 5 ? 'log' : 'linear',
-            gridcolor: darkMode ? 'rgba(255,255,255,0.1)' : '#e0e0e0',
+            gridcolor: darkMode ? 'rgba(255,255,255,0.15)' : '#e0e0e0',
+            linecolor: darkMode ? 'rgba(255,255,255,0.3)' : '#000',
+            tickfont: { color: darkMode ? '#ccc' : '#000' },
             autorange: true
         },
         yaxis: {
-            title: 'SPL (dB)',
-            gridcolor: darkMode ? 'rgba(255,255,255,0.1)' : '#e0e0e0',
+            title: { text: 'SPL (dB)', font: { color: darkMode ? '#fff' : '#000' } },
+            gridcolor: darkMode ? 'rgba(255,255,255,0.15)' : '#e0e0e0',
+            linecolor: darkMode ? 'rgba(255,255,255,0.3)' : '#000',
+            tickfont: { color: darkMode ? '#ccc' : '#000' },
             range: [splMin, splMax]
         },
         hovermode: 'closest',
         autosize: true,
-        plot_bgcolor: darkMode ? 'rgba(0,0,0,0)' : '#fafafa',
+        plot_bgcolor: darkMode ? 'rgba(0,0,0,0.3)' : '#fafafa',
         paper_bgcolor: darkMode ? 'rgba(0,0,0,0)' : 'white',
         showlegend: true,
         legend: {
             x: 1.02,
             y: 1,
             xanchor: 'left',
-            yanchor: 'top'
+            yanchor: 'top',
+            font: { color: darkMode ? '#fff' : '#000' }
         },
-        margin: { t: 50, r: 150 }
+        margin: { t: 50, r: 150 },
+        shapes: shapes,
+        annotations: annotations
     };
 
     if (darkMode) {
         layout.font = { color: '#fff' };
     }
 
-    Plotly.newPlot(containerId, traces, layout, { responsive: true });
+    console.log('Calling Plotly.newPlot with:', {
+        containerId,
+        numTraces: traces.length,
+        layout: JSON.stringify(layout).substring(0, 200) + '...'
+    });
+
+    try {
+        Plotly.newPlot(containerId, traces, layout, { responsive: true });
+        console.log('Plotly.newPlot completed successfully');
+    } catch (plotlyError) {
+        console.error('Plotly.newPlot threw an error:', plotlyError);
+        throw plotlyError;
+    }
 
     return { splMin, splMax };
 }
@@ -240,10 +357,33 @@ function plot3DRoom(data, containerId, options = {}) {
  */
 function initSpatialSlices(data, sliderId, displayId) {
     const slider = document.getElementById(sliderId);
-    slider.max = data.horizontal_slices.length - 1;
-    slider.value = Math.floor(data.horizontal_slices.length / 2);
+    const numSlices = data.horizontal_slices?.length || 0;
+
+    console.log('initSpatialSlices called with:', {
+        numSlices,
+        numFrequencies: data.frequencies?.length,
+        sliceFrequencies: data.horizontal_slices?.map(s => s.frequency)
+    });
+
+    if (numSlices === 0) {
+        console.error('No slices available for spatial visualization');
+        slider.disabled = true;
+        document.getElementById(displayId).textContent = 'No slices computed';
+        return;
+    }
+
+    slider.min = 0;
+    slider.max = numSlices - 1;
+    slider.value = Math.floor(numSlices / 2);
+    slider.disabled = false;
 
     window.currentSliceData = data;
+
+    // Update the display with initial value
+    const initialFreq = data.horizontal_slices[slider.value]?.frequency;
+    if (initialFreq) {
+        document.getElementById(displayId).textContent = `${initialFreq.toFixed(1)} Hz (${parseInt(slider.value) + 1}/${numSlices})`;
+    }
 }
 
 /**
@@ -258,18 +398,29 @@ function initSpatialSlices(data, sliderId, displayId) {
  */
 function updateSlicePlots(sliderId, displayId, hSliceId, vSliceId, combinedId, options = {}) {
     const data = window.currentSliceData;
-    if (!data || !data.horizontal_slices || !data.vertical_slices) return;
+    if (!data || !data.horizontal_slices || !data.vertical_slices) {
+        console.warn('updateSlicePlots: No slice data available');
+        return;
+    }
 
     const idx = parseInt(document.getElementById(sliderId).value);
-    if (idx >= data.horizontal_slices.length || idx >= data.vertical_slices.length) return;
+    const numSlices = data.horizontal_slices.length;
+
+    if (idx >= numSlices || idx >= data.vertical_slices.length) {
+        console.warn(`updateSlicePlots: Invalid index ${idx} for ${numSlices} slices`);
+        return;
+    }
 
     const hSlice = data.horizontal_slices[idx];
     const vSlice = data.vertical_slices[idx];
 
-    if (!hSlice || !vSlice || !hSlice.x || !hSlice.y || !hSlice.spl) return;
+    if (!hSlice || !vSlice || !hSlice.x || !hSlice.y || !hSlice.spl) {
+        console.warn('updateSlicePlots: Invalid slice data at index', idx);
+        return;
+    }
 
-    // Update frequency display
-    document.getElementById(displayId).textContent = `${hSlice.frequency.toFixed(1)} Hz`;
+    // Update frequency display with slice count
+    document.getElementById(displayId).textContent = `${hSlice.frequency.toFixed(1)} Hz (${idx + 1}/${numSlices})`;
 
     // Reshape SPL data into 2D grid
     const hShape = hSlice.shape;

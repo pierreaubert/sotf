@@ -241,8 +241,9 @@
         }
 
         .plot-container-large {
-            min-height: 300px;
-            aspect-ratio: 2 / 1;
+            min-height: 350px;
+            height: 350px;
+            width: 100%;
         }
 
         .plot-container-3d {
@@ -509,6 +510,40 @@
                     </div>
                 </div>
 
+                <!-- Wall Materials -->
+                <div class="panel panel-collapsible">
+                    <div class="panel-header" onclick="togglePanel(this)">
+                        <h2 style="margin: 0; border: none; padding: 0;">Wall Materials</h2>
+                        <span class="collapse-icon">+</span>
+                    </div>
+                    <div class="panel-content collapsed">
+                        <div class="form-group">
+                            <label>Left Wall (x=0)</label>
+                            <select id="materialLeft" class="material-select"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Right Wall (x=width)</label>
+                            <select id="materialRight" class="material-select"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Front Wall (y=0)</label>
+                            <select id="materialFront" class="material-select"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Back Wall (y=depth)</label>
+                            <select id="materialBack" class="material-select"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Floor (z=0)</label>
+                            <select id="materialFloor" class="material-select"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Ceiling (z=height)</label>
+                            <select id="materialCeiling" class="material-select"></select>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Frequency & Solver Configuration -->
                 <div class="panel panel-collapsible">
                     <div class="panel-header" onclick="togglePanel(this)">
@@ -532,13 +567,6 @@
                         <div class="form-group">
                             <label>Number of Frequency Points</label>
                             <input type="number" id="numFreqPoints" value="100" min="10" max="500">
-                        </div>
-                        <div class="form-group">
-                            <label>Frequency Spacing</label>
-                            <select id="freqSpacing">
-                                <option value="logarithmic">Logarithmic</option>
-                                <option value="linear">Linear</option>
-                            </select>
                         </div>
                         <div class="form-group">
                             <label>Solver Method</label>
@@ -628,7 +656,7 @@
                 <div class="plot-panel" id="slicesPanel" style="display: none;">
                     <h2>Spatial Pressure Field</h2>
                     <div class="slice-controls">
-                        <label>Select Frequency for Spatial View</label>
+                        <label>Select Frequency for Spatial View (computed at ~10 frequencies for performance)</label>
                         <input type="range" class="frequency-slider" id="freqSlider" min="0" max="0" value="0" oninput="handleSliderUpdate()">
                         <div class="frequency-display" id="freqDisplay">- Hz</div>
                     </div>
@@ -778,6 +806,46 @@
             document.getElementById('lshapedConfig').classList.toggle('hidden', roomType !== 'lshaped');
         };
 
+        // Wall material presets
+        let materialPresets = [];
+
+        function initMaterialSelectors() {
+            if (!wasmModule || !wasmModule.get_material_presets) {
+                console.warn('get_material_presets not available in WASM module');
+                return;
+            }
+
+            try {
+                const presetsJson = wasmModule.get_material_presets();
+                materialPresets = JSON.parse(presetsJson);
+                console.log('Loaded material presets:', materialPresets.length);
+
+                const selectors = ['materialLeft', 'materialRight', 'materialFront', 'materialBack', 'materialFloor', 'materialCeiling'];
+                const defaults = {
+                    materialLeft: 'plaster',
+                    materialRight: 'plaster',
+                    materialFront: 'plaster',
+                    materialBack: 'plaster',
+                    materialFloor: 'hardwood',
+                    materialCeiling: 'plaster'
+                };
+
+                selectors.forEach(id => {
+                    const select = document.getElementById(id);
+                    select.innerHTML = materialPresets.map(p =>
+                        `<option value="${p.id}" ${p.id === defaults[id] ? 'selected' : ''}>${p.name}</option>`
+                    ).join('');
+                });
+            } catch (e) {
+                console.error('Failed to load material presets:', e);
+            }
+        }
+
+        function getMaterialConfig(selectId) {
+            const value = document.getElementById(selectId).value;
+            return { type: 'preset', name: value };
+        }
+
         // Build configuration object
         function buildConfig() {
             const roomType = document.getElementById('roomType').value;
@@ -830,7 +898,7 @@
                     min_freq: parseFloat(document.getElementById('minFreq').value),
                     max_freq: parseFloat(document.getElementById('maxFreq').value),
                     num_points: parseInt(document.getElementById('numFreqPoints').value),
-                    spacing: document.getElementById('freqSpacing').value
+                    spacing: 'logarithmic'
                 },
                 solver: {
                     method: document.getElementById('solverMethod').value,
@@ -839,7 +907,15 @@
                 visualization: {
                     generate_slices: true,
                     slice_resolution: parseInt(document.getElementById('sliceResolution').value),
-                    slice_frequency_indices: []
+                    slice_frequency_indices: Array.from({length: parseInt(document.getElementById('numFreqPoints').value)}, (_, i) => i)
+                },
+                wall_materials: {
+                    left: getMaterialConfig('materialLeft'),
+                    right: getMaterialConfig('materialRight'),
+                    front: getMaterialConfig('materialFront'),
+                    back: getMaterialConfig('materialBack'),
+                    floor: getMaterialConfig('materialFloor'),
+                    ceiling: getMaterialConfig('materialCeiling')
                 },
                 metadata: {
                     description: 'WASM Room Simulation',
@@ -916,12 +992,22 @@
 
         // Display simulation results using common plotting functions
         function displayResults(results) {
-            console.log('Results:', results);
+            console.log('======= SIMULATION RESULTS =======');
+            console.log('Full results object:', results);
+            console.log('frequencies:', results.frequencies);
+            console.log('frequency_response:', results.frequency_response);
+            console.log('source_responses:', results.source_responses);
+            console.log('Room:', results.room);
+            console.log('Sources:', results.sources);
+            console.log('Listening position:', results.listening_position);
+            console.log('================================');
 
             // Show info panel
             document.getElementById('infoPanel').style.display = 'block';
             const infoGrid = document.getElementById('infoGrid');
-            infoGrid.innerHTML = `
+
+            // Build info cards
+            let infoHtml = `
                 <div class="info-card">
                     <div class="info-value">${results.room.width.toFixed(1)} x ${results.room.depth.toFixed(1)} x ${results.room.height.toFixed(1)}</div>
                     <div class="info-label">Room (m)</div>
@@ -940,15 +1026,66 @@
                 </div>
             `;
 
+            // Add acoustics info if available
+            if (results.room_acoustics) {
+                const ra = results.room_acoustics;
+                infoHtml += `
+                    <div class="info-card">
+                        <div class="info-value">${ra.rt60_eyring.toFixed(2)}s</div>
+                        <div class="info-label">RT60 (Eyring)</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-value">${ra.schroeder_frequency.toFixed(0)} Hz</div>
+                        <div class="info-label">Schroeder Freq</div>
+                    </div>
+                    <div class="info-card">
+                        <div class="info-value">${ra.critical_distance.toFixed(2)}m</div>
+                        <div class="info-label">Critical Distance</div>
+                    </div>
+                `;
+            }
+
+            // Add room modes count if available
+            if (results.room_modes && results.room_modes.length > 0) {
+                infoHtml += `
+                    <div class="info-card">
+                        <div class="info-value">${results.room_modes.length}</div>
+                        <div class="info-label">Room Modes</div>
+                    </div>
+                `;
+            }
+
+            infoGrid.innerHTML = infoHtml;
+
             // Plot frequency response using common function
             try {
+                console.log('Attempting to plot frequency response...');
+                console.log('  frequencies:', results.frequencies?.length, 'points');
+                console.log('  frequency_response:', results.frequency_response?.length, 'points');
+                console.log('  first few freqs:', results.frequencies?.slice(0, 5));
+                console.log('  first few SPLs:', results.frequency_response?.slice(0, 5));
+                console.log('  RoomPlots available:', typeof RoomPlots);
+                console.log('  plotFrequencyResponse available:', typeof RoomPlots?.plotFrequencyResponse);
+
+                const container = document.getElementById('plotFrequencyResponse');
+                console.log('  container element:', container);
+                console.log('  container size:', container?.offsetWidth, 'x', container?.offsetHeight);
+
                 document.getElementById('freqResponsePanel').style.display = 'block';
-                RoomPlots.plotFrequencyResponse(results, 'plotFrequencyResponse', {
+
+                // Check container size after display
+                setTimeout(() => {
+                    console.log('  container size (after display):', container?.offsetWidth, 'x', container?.offsetHeight);
+                }, 100);
+
+                const plotResult = RoomPlots.plotFrequencyResponse(results, 'plotFrequencyResponse', {
                     darkMode: true,
                     sourceLineDash: 'solid'
                 });
+                console.log('  plot result:', plotResult);
             } catch (e) {
                 console.error('Error plotting frequency response:', e);
+                console.error('  Stack:', e.stack);
             }
 
             // Plot 3D room using common function
@@ -1064,11 +1201,25 @@
             document.getElementById('minFreq').value = config.frequencies.min_freq;
             document.getElementById('maxFreq').value = config.frequencies.max_freq;
             document.getElementById('numFreqPoints').value = config.frequencies.num_points;
-            document.getElementById('freqSpacing').value = config.frequencies.spacing || 'logarithmic';
 
             // Solver
             document.getElementById('solverMethod').value = config.solver?.method || 'direct';
             document.getElementById('sliceResolution').value = config.visualization?.slice_resolution || 40;
+
+            // Wall materials
+            if (config.wall_materials) {
+                const setMaterial = (id, mat) => {
+                    if (mat && mat.name) {
+                        document.getElementById(id).value = mat.name;
+                    }
+                };
+                setMaterial('materialLeft', config.wall_materials.left);
+                setMaterial('materialRight', config.wall_materials.right);
+                setMaterial('materialFront', config.wall_materials.front);
+                setMaterial('materialBack', config.wall_materials.back);
+                setMaterial('materialFloor', config.wall_materials.floor);
+                setMaterial('materialCeiling', config.wall_materials.ceiling);
+            }
         }
 
         // Presets
@@ -1139,8 +1290,18 @@
             const statusEl = document.getElementById('wasmStatus');
 
             try {
-                const wasmPath = './pkg/math_bem_wasm.js';
-                const module = await import(wasmPath);
+                // Try the new package name first, then fall back to old name
+                let wasmPath = './pkg/autoeq_roomsim.js';
+                let module;
+
+                try {
+                    module = await import(wasmPath);
+                } catch (e) {
+                    console.log('Trying legacy WASM path...');
+                    wasmPath = './pkg/math_bem_wasm.js';
+                    module = await import(wasmPath);
+                }
+
                 await module.default();
 
                 wasmModule = module;
@@ -1150,14 +1311,17 @@
                 statusEl.innerHTML = '<span class="status-dot"></span><span>WASM Ready</span>';
 
                 document.getElementById('runBtn').disabled = false;
-                console.log('WASM module loaded successfully');
+                console.log('WASM module loaded successfully from', wasmPath);
+
+                // Populate wall material dropdowns
+                initMaterialSelectors();
 
             } catch (error) {
                 console.error('Failed to load WASM module:', error);
                 statusEl.className = 'wasm-error';
                 statusEl.innerHTML = '<span class="status-dot"></span><span>WASM Error</span>';
 
-                showStatus(`Failed to load WASM module. Make sure to build with: cd math-bem-wasm && wasm-pack build --target web --release`, 'error');
+                showStatus(`Failed to load WASM module. Make sure to build with: cd autoeq-roomsim && wasm-pack build --target web`, 'error');
             }
         }
 
