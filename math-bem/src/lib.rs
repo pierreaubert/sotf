@@ -26,7 +26,6 @@
 
 pub mod analytical;
 pub mod testing;
-pub mod room_acoustics;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;

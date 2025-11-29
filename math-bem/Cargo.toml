@@ -18,10 +18,6 @@ name = "bem-runner"
 path = "bin/runner.rs"
 required-features = ["cli", "ffi"]
 
-[[bin]]
-name = "room-simulator-bem"
-path = "bin/room_simulator_bem.rs"
-
 [dependencies]
 # Core numerical computing
 ndarray = { workspace = true }
@@ -79,7 +75,7 @@ cc = "1.2"  # For compiling NumCalc C++ code
 which = { workspace = true }
 
 [features]
-default = ["parallel", "pure-rust", "cli", "benchmarks"]
+default = ["parallel", "pure-rust", "cli", "benchmarks", "ffi"]
 ffi = []  # FFI wrapper to NumCalc
 pure-rust = []  # Pure Rust BEM implementation
 parallel = []  # Parallel TBEM assembly using Rayon
