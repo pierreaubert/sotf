@@ -18,9 +18,13 @@
 
 use ndarray::Array2;
 use num_complex::Complex64;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::PI;
 use wasm_bindgen::prelude::*;
+
+// Re-export thread pool initialization for WASM
+pub use wasm_bindgen_rayon::init_thread_pool;
 
 // BEM solver from math-bem (with pure Rust fallbacks for WASM)
 mod bem_solver;
@@ -962,7 +966,7 @@ fn default_air_absorption() -> bool { true }
 fn default_edge_diffraction() -> bool { false } // Disabled by default (computationally expensive)
 fn default_hybrid_crossover_width() -> f64 { 0.5 } // 0.5 octaves
 fn default_max_mode_order() -> u32 { 20 }
-fn default_modal_damping() -> f64 { 50.0 } // Q factor
+fn default_modal_damping() -> f64 { 10.0 } // Q factor (typical for residential rooms)
 
 impl Default for SolverConfig {
     fn default() -> Self {
@@ -1266,6 +1270,12 @@ pub fn calculate_room_modes(
 ///
 /// The transfer function H(f, f_nmp) = 1 / (1 - (f/f_nmp)² + j*f/(f_nmp*Q))
 /// where Q is the modal damping factor.
+///
+/// Reference: Kuttruff, "Room Acoustics", Chapter 3 - Modal expansion of room Green's function
+///
+/// G_modal = (c²/V) Σ [ε * Ψ(rs) * Ψ(r) / (ω² - ωₙ² + j*δₙ*ω)]
+///
+/// This has units of 1/m, matching the free-field Green's function G = e^(ikr)/(4πr).
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_modal_pressure(
     source: &Point3D,
@@ -1278,12 +1288,19 @@ pub fn calculate_modal_pressure(
     max_mode_order: u32,
     modal_damping: f64, // Q factor
 ) -> Complex64 {
-    let mut total_pressure = Complex64::new(0.0, 0.0);
-
-    // Normalization factor for mode amplitudes
-    // Each mode contributes proportionally to the source and receiver coupling
     let volume = room_width * room_depth * room_height;
-    let normalization = 8.0 / volume; // For rigid boundary modes
+
+    // Direct source-listener distance for phase
+    let r = source.distance_to(listener).max(0.1);
+    let omega = 2.0 * PI * frequency;
+    let omega_sq = omega * omega;
+    let k = omega / speed_of_sound;
+    let c_sq = speed_of_sound * speed_of_sound;
+
+    // Modal Green's function prefactor: c²/V (units: m²/s² / m³ = m⁻¹ when divided by ω²)
+    let prefactor = c_sq / volume;
+
+    let mut modal_sum = Complex64::new(0.0, 0.0);
 
     for n in 0..=max_mode_order {
         for m in 0..=max_mode_order {
@@ -1293,50 +1310,67 @@ pub fn calculate_modal_pressure(
                     continue;
                 }
 
-                // Calculate mode frequency
+                // Calculate mode angular frequency
+                // ωₙ = c * π * sqrt((n/Lx)² + (m/Ly)² + (p/Lz)²)
                 let nx = n as f64 / room_width;
                 let my = m as f64 / room_depth;
                 let pz = p as f64 / room_height;
-                let mode_freq = (speed_of_sound / 2.0) * (nx * nx + my * my + pz * pz).sqrt();
+                let omega_n = speed_of_sound * PI * (nx * nx + my * my + pz * pz).sqrt();
+                let omega_n_sq = omega_n * omega_n;
 
-                // Skip modes far from the frequency of interest
-                // (more than 2 octaves above or below)
+                // Mode frequency for filtering
+                let mode_freq = omega_n / (2.0 * PI);
+
+                // Skip modes far from the frequency of interest (2 octaves)
                 if mode_freq > frequency * 4.0 || mode_freq < frequency / 4.0 {
                     continue;
                 }
 
-                // Calculate mode shape at source position (excitation)
-                // cos(n*π*x/Lx) * cos(m*π*y/Ly) * cos(p*π*z/Lz)
+                // Calculate mode shape at source position
+                // Ψ(r) = cos(nπx/Lx) * cos(mπy/Ly) * cos(pπz/Lz)
                 let source_mode =
                     (n as f64 * PI * source.x / room_width).cos() *
                     (m as f64 * PI * source.y / room_depth).cos() *
                     (p as f64 * PI * source.z / room_height).cos();
 
-                // Calculate mode shape at listener position (response)
+                // Calculate mode shape at listener position
                 let listener_mode =
                     (n as f64 * PI * listener.x / room_width).cos() *
                     (m as f64 * PI * listener.y / room_depth).cos() *
                     (p as f64 * PI * listener.z / room_height).cos();
 
-                // Mode normalization factor (depends on how many indices are non-zero)
+                // Neumann factor: ε = 1 if index is 0, else 2
                 let epsilon = |i: u32| if i == 0 { 1.0 } else { 2.0 };
                 let mode_norm = epsilon(n) * epsilon(m) * epsilon(p);
 
-                // Modal transfer function: H(f) = 1 / (1 - (f/f0)² + j*f/(f0*Q))
-                // This gives a resonant peak at f = f0 with bandwidth f0/Q
-                let f_ratio = frequency / mode_freq;
-                let damping_term = f_ratio / modal_damping;
-                let denominator = Complex64::new(1.0 - f_ratio * f_ratio, damping_term);
+                // Modal transfer function (Kuttruff Eq. 3.27):
+                // H(ω) = 1 / (ωₙ² - ω² - j*2*δₙ*ω)
+                // where δₙ = ωₙ/(2*Q) is the damping coefficient
+                // The factor of 2 comes from expressing damping in terms of Q
+                //
+                // Units: 1/(rad/s)² = s²/rad²
+                let delta_n = omega_n / (2.0 * modal_damping);
+                let denominator = Complex64::new(omega_n_sq - omega_sq, -2.0 * delta_n * omega);
                 let transfer_function = Complex64::new(1.0, 0.0) / denominator;
 
                 // Add mode contribution
-                let mode_amplitude = mode_norm * normalization * source_mode * listener_mode;
-                total_pressure += transfer_function * mode_amplitude;
+                // Ψ(rs) * Ψ(r) is dimensionless (product of cosines)
+                // mode_norm is dimensionless (Neumann factors)
+                let mode_amplitude = mode_norm * source_mode * listener_mode;
+                modal_sum += transfer_function * mode_amplitude;
             }
         }
     }
 
-    total_pressure
+    // Apply prefactor c²/V
+    // Final units: (m²/s²) / m³ * (s²/rad²) = m⁻¹/rad² = 1/m (treating radians as dimensionless)
+    // This matches the Green's function units
+    modal_sum *= prefactor;
+
+    // Add phase term to match Green's function form e^(ikr)
+    let phase = Complex64::new(0.0, k * r).exp();
+
+    modal_sum * phase
 }
 
 /// Calculate hybrid crossover weight for blending modal and ISM responses
@@ -2879,19 +2913,10 @@ impl RoomSimulatorWasm {
     pub fn run_simulation(&self) -> Result<String, JsValue> {
         console_log!("Starting simulation...");
 
-        let mut combined_spl = Vec::with_capacity(self.frequencies.len());
-        let mut complex_pressures = Vec::with_capacity(self.frequencies.len());
-        let mut source_responses: Vec<Vec<f64>> = self.sources.iter()
-            .map(|_| Vec::with_capacity(self.frequencies.len()))
-            .collect();
-
         let compute_ir = self.config.visualization.generate_impulse_response;
         let compute_binaural = self.config.visualization.binaural.enabled;
 
-        // For binaural: compute pressures at left and right ear positions
-        let mut left_ear_pressures = Vec::with_capacity(self.frequencies.len());
-        let mut right_ear_pressures = Vec::with_capacity(self.frequencies.len());
-
+        // Precompute ear positions for binaural
         let (left_ear_pos, right_ear_pos) = if compute_binaural {
             let binaural_config = &self.config.visualization.binaural;
             let head_center = binaural_config.head_position
@@ -2903,49 +2928,81 @@ impl RoomSimulatorWasm {
             (self.listening_position, self.listening_position)
         };
 
-        for (idx, &freq) in self.frequencies.iter().enumerate() {
-            if idx % 20 == 0 {
-                console_log!("Computing frequency {}/{} ({:.1} Hz)", idx + 1, self.frequencies.len(), freq);
-            }
+        // Precompute head center and yaw for HRTF
+        let head_center_for_hrtf = self.config.visualization.binaural.head_position
+            .as_ref()
+            .map(|p| Point3D::new(p.x, p.y, p.z))
+            .unwrap_or(self.listening_position);
+        let head_yaw = self.config.visualization.binaural.head_yaw;
 
-            let pressure = self.calculate_direct_field(&self.listening_position, freq);
-            combined_spl.push(pressure_to_spl(pressure));
+        console_log!("Computing frequency response using {} threads...", rayon::current_num_threads());
 
-            // Store complex pressure if IR generation is enabled
+        // Parallel computation of frequency response
+        // Each frequency is computed independently, results collected in order
+        let freq_results: Vec<_> = self.frequencies.par_iter()
+            .enumerate()
+            .map(|(idx, &freq)| {
+                // Main pressure at listening position
+                let pressure = self.calculate_direct_field(&self.listening_position, freq);
+                let spl = pressure_to_spl(pressure);
+
+                // Per-source SPL values
+                let source_spls: Vec<f64> = (0..self.sources.len())
+                    .map(|src_idx| {
+                        let p = self.calculate_source_field(src_idx, &self.listening_position, freq);
+                        pressure_to_spl(p)
+                    })
+                    .collect();
+
+                // Binaural computation if enabled
+                let binaural = if compute_binaural {
+                    let left_pressure = self.calculate_direct_field(&left_ear_pos, freq);
+                    let right_pressure = self.calculate_direct_field(&right_ear_pos, freq);
+
+                    // Apply simplified HRTF magnitude correction
+                    let (mut left_total, mut right_total) = (left_pressure, right_pressure);
+                    for source in &self.sources {
+                        let (left_gain, right_gain) = approximate_hrtf_magnitude(
+                            &source.position,
+                            &head_center_for_hrtf,
+                            head_yaw,
+                            freq,
+                        );
+                        left_total *= Complex64::new(left_gain, 0.0);
+                        right_total *= Complex64::new(right_gain, 0.0);
+                    }
+                    Some((left_total, right_total))
+                } else {
+                    None
+                };
+
+                (idx, spl, pressure, source_spls, binaural)
+            })
+            .collect();
+
+        // Unpack parallel results into separate vectors (maintaining order)
+        let mut combined_spl = Vec::with_capacity(self.frequencies.len());
+        let mut complex_pressures = Vec::with_capacity(self.frequencies.len());
+        let mut source_responses: Vec<Vec<f64>> = self.sources.iter()
+            .map(|_| Vec::with_capacity(self.frequencies.len()))
+            .collect();
+        let mut left_ear_pressures = Vec::with_capacity(self.frequencies.len());
+        let mut right_ear_pressures = Vec::with_capacity(self.frequencies.len());
+
+        for (_idx, spl, pressure, source_spls, binaural) in freq_results {
+            combined_spl.push(spl);
+
             if compute_ir {
                 complex_pressures.push(pressure);
             }
 
-            // Compute binaural pressures at ear positions
-            if compute_binaural {
-                let left_pressure = self.calculate_direct_field(&left_ear_pos, freq);
-                let right_pressure = self.calculate_direct_field(&right_ear_pos, freq);
-
-                // Apply simplified HRTF magnitude correction for each source
-                let (mut left_total, mut right_total) = (left_pressure, right_pressure);
-                for source in &self.sources {
-                    let head_center = self.config.visualization.binaural.head_position
-                        .as_ref()
-                        .map(|p| Point3D::new(p.x, p.y, p.z))
-                        .unwrap_or(self.listening_position);
-                    let (left_gain, right_gain) = approximate_hrtf_magnitude(
-                        &source.position,
-                        &head_center,
-                        self.config.visualization.binaural.head_yaw,
-                        freq,
-                    );
-                    // Apply gains (simplified - in reality would need per-source calculation)
-                    left_total *= Complex64::new(left_gain, 0.0);
-                    right_total *= Complex64::new(right_gain, 0.0);
-                }
-
-                left_ear_pressures.push(left_total);
-                right_ear_pressures.push(right_total);
+            for (src_idx, src_spl) in source_spls.into_iter().enumerate() {
+                source_responses[src_idx].push(src_spl);
             }
 
-            for (src_idx, src_spl) in source_responses.iter_mut().enumerate() {
-                let p = self.calculate_source_field(src_idx, &self.listening_position, freq);
-                src_spl.push(pressure_to_spl(p));
+            if let Some((left, right)) = binaural {
+                left_ear_pressures.push(left);
+                right_ear_pressures.push(right);
             }
         }
 
@@ -3239,54 +3296,61 @@ impl RoomSimulatorWasm {
                 .collect()
         };
 
-        let mut horizontal_slices = Vec::with_capacity(freq_indices.len());
-        let mut vertical_slices = Vec::with_capacity(freq_indices.len());
+        console_log!("Computing {} spatial slices in parallel...", freq_indices.len());
 
-        for (idx, &freq_idx) in freq_indices.iter().enumerate() {
-            let freq = self.frequencies[freq_idx];
+        // Parallel computation of slices - each frequency slice is independent
+        let slices: Vec<(SliceOutput, SliceOutput)> = freq_indices.par_iter()
+            .map(|&freq_idx| {
+                let freq = self.frequencies[freq_idx];
 
-            if idx % 3 == 0 {
-                console_log!("Computing slice {}/{} ({:.1} Hz)", idx + 1, freq_indices.len(), freq);
-            }
+                // Horizontal slice - parallelize the grid computation
+                let h_spl: Vec<f64> = y_points.iter()
+                    .flat_map(|&y| {
+                        x_points.iter().map(move |&x| {
+                            let point = Point3D::new(x, y, self.listening_position.z);
+                            let pressure = self.calculate_direct_field(&point, freq);
+                            pressure_to_spl(pressure)
+                        })
+                    })
+                    .collect();
 
-            // Horizontal slice
-            let mut h_spl = Vec::with_capacity(resolution * resolution);
-            for &y in &y_points {
-                for &x in &x_points {
-                    let point = Point3D::new(x, y, self.listening_position.z);
-                    let pressure = self.calculate_direct_field(&point, freq);
-                    h_spl.push(pressure_to_spl(pressure));
-                }
-            }
+                let h_slice = SliceOutput {
+                    frequency: freq,
+                    x: x_points.clone(),
+                    y: y_points.clone(),
+                    z: None,
+                    spl: h_spl,
+                    shape: [resolution, resolution],
+                };
 
-            horizontal_slices.push(SliceOutput {
-                frequency: freq,
-                x: x_points.clone(),
-                y: y_points.clone(),
-                z: None,
-                spl: h_spl,
-                shape: [resolution, resolution],
-            });
+                // Vertical slice - parallelize the grid computation
+                let v_spl: Vec<f64> = z_points.iter()
+                    .flat_map(|&z| {
+                        x_points.iter().map(move |&x| {
+                            let point = Point3D::new(x, self.listening_position.y, z);
+                            let pressure = self.calculate_direct_field(&point, freq);
+                            pressure_to_spl(pressure)
+                        })
+                    })
+                    .collect();
 
-            // Vertical slice
-            let mut v_spl = Vec::with_capacity(resolution * resolution);
-            for &z in &z_points {
-                for &x in &x_points {
-                    let point = Point3D::new(x, self.listening_position.y, z);
-                    let pressure = self.calculate_direct_field(&point, freq);
-                    v_spl.push(pressure_to_spl(pressure));
-                }
-            }
+                let v_slice = SliceOutput {
+                    frequency: freq,
+                    x: x_points.clone(),
+                    y: Vec::new(),
+                    z: Some(z_points.clone()),
+                    spl: v_spl,
+                    shape: [resolution, resolution],
+                };
 
-            vertical_slices.push(SliceOutput {
-                frequency: freq,
-                x: x_points.clone(),
-                y: Vec::new(),
-                z: Some(z_points.clone()),
-                spl: v_spl,
-                shape: [resolution, resolution],
-            });
-        }
+                (h_slice, v_slice)
+            })
+            .collect();
+
+        // Unzip into separate vectors
+        let (horizontal_slices, vertical_slices): (Vec<_>, Vec<_>) = slices.into_iter().unzip();
+
+        console_log!("Spatial slices computed");
 
         (Some(horizontal_slices), Some(vertical_slices))
     }

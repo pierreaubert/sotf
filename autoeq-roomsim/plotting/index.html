@@ -208,6 +208,7 @@
             height: 6px;
             background: rgba(255, 255, 255, 0.1);
             overflow: hidden;
+            border-radius: 3px;
         }
         .progress-fill {
             height: 100%;
@@ -215,10 +216,24 @@
             width: 0%;
             transition: width 0.3s;
         }
+        .progress-fill.indeterminate {
+            width: 30%;
+            animation: indeterminate 1.5s ease-in-out infinite;
+        }
+        @keyframes indeterminate {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(400%); }
+        }
         .progress-text {
             font-size: 0.85em;
             color: #aaa;
             margin-top: 8px;
+            text-align: center;
+        }
+        .progress-details {
+            font-size: 0.75em;
+            color: #888;
+            margin-top: 4px;
             text-align: center;
         }
 
@@ -572,11 +587,13 @@
                             <label>Solver Method</label>
                             <select id="solverMethod">
                                 <option value="direct">Direct (Free-field only)</option>
-                                <option value="image-source-1" selected>Image Source (1st order)</option>
+                                <option value="image-source-1">Image Source (1st order)</option>
                                 <option value="image-source-2">Image Source (2nd order)</option>
                                 <option value="image-source-3">Image Source (3rd order)</option>
+                                <option value="modal">Modal (Standing waves)</option>
+                                <option value="hybrid" selected>Hybrid (Modal + ISM)</option>
                             </select>
-                            <small style="color: #666;">Higher order = more accurate but slower</small>
+                            <small style="color: #666;">Hybrid blends modal (low freq) with ISM (high freq)</small>
                         </div>
                         <div class="form-group">
                             <label>Slice Resolution</label>
@@ -596,6 +613,7 @@
                             <div class="progress-fill" id="progressFill"></div>
                         </div>
                         <div class="progress-text" id="progressText">Initializing...</div>
+                        <div class="progress-details" id="progressDetails"></div>
                     </div>
                     <div id="statusMessage"></div>
                 </div>
@@ -937,19 +955,36 @@
             const progressContainer = document.getElementById('progressContainer');
             const progressFill = document.getElementById('progressFill');
             const progressText = document.getElementById('progressText');
+            const progressDetails = document.getElementById('progressDetails');
 
             runBtn.disabled = true;
             runBtnText.textContent = 'Running...';
             progressContainer.style.display = 'block';
             progressFill.style.width = '0%';
+            progressFill.classList.remove('indeterminate');
             progressText.textContent = 'Building configuration...';
+            progressDetails.textContent = '';
 
             try {
                 const config = buildConfig();
                 const configJson = JSON.stringify(config);
 
+                // Show solver info
+                const solverMethod = config.solver.method;
+                const numFreqs = config.frequencies.num_points;
+                const resolution = config.visualization.slice_resolution;
+                const solverNames = {
+                    'direct': 'Direct (free-field)',
+                    'image-source-1': 'Image Source (1st order)',
+                    'image-source-2': 'Image Source (2nd order)',
+                    'image-source-3': 'Image Source (3rd order)',
+                    'modal': 'Modal Analysis',
+                    'hybrid': 'Hybrid (Modal + ISM)'
+                };
+
                 progressText.textContent = 'Validating configuration...';
                 progressFill.style.width = '10%';
+                progressDetails.textContent = `Solver: ${solverNames[solverMethod] || solverMethod}`;
 
                 const validationResult = JSON.parse(wasmModule.validate_config(configJson));
                 if (!validationResult.valid) {
@@ -963,23 +998,34 @@
 
                 currentSimulator = new wasmModule.RoomSimulatorWasm(configJson);
 
-                progressText.textContent = 'Running simulation...';
+                // Switch to indeterminate progress for the main simulation
+                progressText.textContent = 'Computing frequency response...';
                 progressFill.style.width = '30%';
+                progressFill.classList.add('indeterminate');
+                progressDetails.textContent = `${numFreqs} frequencies × ${resolution}×${resolution} spatial grid`;
 
+                // Use setTimeout to allow UI to update before blocking WASM call
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                const startTime = performance.now();
                 const resultsJson = currentSimulator.run_simulation();
+                const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
                 currentResults = JSON.parse(resultsJson);
 
+                progressFill.classList.remove('indeterminate');
                 progressFill.style.width = '90%';
                 progressText.textContent = 'Rendering results...';
+                progressDetails.textContent = `Computed in ${elapsed}s`;
 
                 displayResults(currentResults);
 
                 progressFill.style.width = '100%';
                 progressText.textContent = 'Complete!';
-                showStatus('Simulation completed successfully', 'success');
+                showStatus(`Simulation completed in ${elapsed}s`, 'success');
 
             } catch (error) {
                 console.error('Simulation error:', error);
+                progressFill.classList.remove('indeterminate');
                 showStatus(`Simulation failed: ${error.message || error}`, 'error');
             } finally {
                 runBtn.disabled = false;
@@ -1307,8 +1353,24 @@
                 wasmModule = module;
                 RoomSimulatorWasm = module.RoomSimulatorWasm;
 
-                statusEl.className = 'wasm-ready';
-                statusEl.innerHTML = '<span class="status-dot"></span><span>WASM Ready</span>';
+                // Initialize thread pool for parallel execution
+                const numThreads = navigator.hardwareConcurrency || 4;
+                if (typeof module.initThreadPool === 'function') {
+                    try {
+                        await module.initThreadPool(numThreads);
+                        console.log(`Thread pool initialized with ${numThreads} threads`);
+                        statusEl.className = 'wasm-ready';
+                        statusEl.innerHTML = `<span class="status-dot"></span><span>WASM Ready (${numThreads} threads)</span>`;
+                    } catch (threadError) {
+                        console.warn('Thread pool initialization failed (SharedArrayBuffer may not be available):', threadError);
+                        console.warn('Falling back to single-threaded execution. For parallel execution, serve with COOP/COEP headers.');
+                        statusEl.className = 'wasm-ready';
+                        statusEl.innerHTML = '<span class="status-dot"></span><span>WASM Ready (single-threaded)</span>';
+                    }
+                } else {
+                    statusEl.className = 'wasm-ready';
+                    statusEl.innerHTML = '<span class="status-dot"></span><span>WASM Ready</span>';
+                }
 
                 document.getElementById('runBtn').disabled = false;
                 console.log('WASM module loaded successfully from', wasmPath);
