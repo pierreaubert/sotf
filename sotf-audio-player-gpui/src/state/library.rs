@@ -277,7 +277,7 @@ impl LibraryState {
 
         for (idx, album) in self.library.albums.iter().enumerate() {
             let first_letter = album
-                .artist
+                .artist()
                 .chars()
                 .next()
                 .unwrap_or('#')

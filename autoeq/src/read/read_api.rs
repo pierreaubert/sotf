@@ -7,11 +7,11 @@ use serde_json::Value;
 use tokio::fs;
 use urlencoding;
 
-use crate::Curve;
 use crate::cea2034 as score;
 use crate::read::directory::{data_dir_for, measurement_filename};
 use crate::read::interpolate::interpolate;
 use crate::read::plot::{normalize_plotly_json_from_str, normalize_plotly_value_with_suggestions};
+use crate::{Curve, DirectivityCurve, DirectivityData};
 
 /// Fetch a frequency response curve from the spinorama API
 ///
@@ -492,4 +492,177 @@ pub fn extract_cea2034_curves(
     );
 
     Ok(curves)
+}
+
+/// Parse an angle string from trace names (e.g., "-60°", "0° (ON)", "10°")
+///
+/// # Arguments
+/// * `name` - The trace name containing an angle
+///
+/// # Returns
+/// * Some(angle) if the angle could be parsed, None otherwise
+fn parse_angle_from_trace_name(name: &str) -> Option<f64> {
+    // Handle special case "0° (ON)"
+    let name = name.replace("(ON)", "").trim().to_string();
+
+    // Remove degree symbol and parse
+    let angle_str = name.replace('°', "").trim().to_string();
+
+    angle_str.parse::<f64>().ok()
+}
+
+/// Extract all directivity curves from a measurement plot
+///
+/// # Arguments
+/// * `plot_data` - The Plotly JSON data containing directivity measurements
+///
+/// # Returns
+/// * Vector of DirectivityCurve structs, sorted by angle
+fn extract_directivity_curves(plot_data: &Value) -> Result<Vec<DirectivityCurve>, Box<dyn Error>> {
+    let mut curves = Vec::new();
+
+    if let Some(data) = plot_data.get("data").and_then(|d| d.as_array()) {
+        for trace in data {
+            // Get the trace name
+            let name = match trace.get("name").and_then(|n| n.as_str()) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            // Try to parse the angle from the name
+            let angle = match parse_angle_from_trace_name(name) {
+                Some(a) => a,
+                None => continue, // Skip traces without valid angles
+            };
+
+            // Extract x and y data which are encoded as typed arrays
+            if let (Some(x_data), Some(y_data)) = (
+                trace.get("x").and_then(|x| x.as_object()),
+                trace.get("y").and_then(|y| y.as_object()),
+            ) {
+                let mut freqs = Vec::new();
+                let mut spls = Vec::new();
+
+                // Decode x values (frequency)
+                if let (Some(dtype), Some(bdata)) = (
+                    x_data.get("dtype").and_then(|d| d.as_str()),
+                    x_data.get("bdata").and_then(|b| b.as_str()),
+                ) {
+                    freqs = decode_typed_array(bdata, dtype)?;
+                }
+
+                // Decode y values (SPL)
+                if let (Some(dtype), Some(bdata)) = (
+                    y_data.get("dtype").and_then(|d| d.as_str()),
+                    y_data.get("bdata").and_then(|b| b.as_str()),
+                ) {
+                    spls = decode_typed_array(bdata, dtype)?;
+                }
+
+                if !freqs.is_empty() && freqs.len() == spls.len() {
+                    curves.push(DirectivityCurve {
+                        angle,
+                        freq: Array1::from(freqs),
+                        spl: Array1::from(spls),
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by angle
+    curves.sort_by(|a, b| a.angle.partial_cmp(&b.angle).unwrap_or(std::cmp::Ordering::Equal));
+
+    Ok(curves)
+}
+
+/// Fetch directivity data (SPL Horizontal and SPL Vertical) from the spinorama API
+///
+/// # Arguments
+/// * `speaker` - Speaker name
+/// * `version` - Measurement version
+///
+/// # Returns
+/// * Result containing DirectivityData or an error
+///
+/// # Details
+/// Fetches both "SPL Horizontal" and "SPL Vertical" measurements, extracting
+/// all angle traces (typically -60° to +60° in 10° increments).
+pub async fn fetch_directivity_data(
+    speaker: &str,
+    version: &str,
+) -> Result<DirectivityData, Box<dyn Error>> {
+    // Fetch horizontal data
+    let horizontal_data = fetch_measurement_plot_data(speaker, version, "SPL Horizontal").await?;
+    let horizontal = extract_directivity_curves(&horizontal_data)?;
+
+    if horizontal.is_empty() {
+        return Err("No horizontal directivity curves found".into());
+    }
+
+    // Fetch vertical data
+    let vertical_data = fetch_measurement_plot_data(speaker, version, "SPL Vertical").await?;
+    let vertical = extract_directivity_curves(&vertical_data)?;
+
+    if vertical.is_empty() {
+        return Err("No vertical directivity curves found".into());
+    }
+
+    Ok(DirectivityData {
+        horizontal,
+        vertical,
+    })
+}
+
+/// Extract a single directivity curve at a specific angle
+///
+/// # Arguments
+/// * `directivity` - The full directivity data
+/// * `angle` - The desired angle in degrees
+/// * `plane` - "horizontal" or "vertical"
+///
+/// # Returns
+/// * Option containing the DirectivityCurve if found
+pub fn get_directivity_at_angle<'a>(
+    directivity: &'a DirectivityData,
+    angle: f64,
+    plane: &str,
+) -> Option<&'a DirectivityCurve> {
+    let curves = match plane.to_lowercase().as_str() {
+        "horizontal" | "h" => &directivity.horizontal,
+        "vertical" | "v" => &directivity.vertical,
+        _ => return None,
+    };
+
+    curves.iter().find(|c| (c.angle - angle).abs() < 0.5)
+}
+
+/// Get the on-axis response from directivity data
+///
+/// # Arguments
+/// * `directivity` - The full directivity data
+/// * `plane` - "horizontal" or "vertical"
+///
+/// # Returns
+/// * Option containing the on-axis DirectivityCurve
+pub fn get_on_axis<'a>(directivity: &'a DirectivityData, plane: &str) -> Option<&'a DirectivityCurve> {
+    get_directivity_at_angle(directivity, 0.0, plane)
+}
+
+/// Get available angles in the directivity data
+///
+/// # Arguments
+/// * `directivity` - The full directivity data
+/// * `plane` - "horizontal" or "vertical"
+///
+/// # Returns
+/// * Vector of available angles
+pub fn get_available_angles(directivity: &DirectivityData, plane: &str) -> Vec<f64> {
+    let curves = match plane.to_lowercase().as_str() {
+        "horizontal" | "h" => &directivity.horizontal,
+        "vertical" | "v" => &directivity.vertical,
+        _ => return Vec::new(),
+    };
+
+    curves.iter().map(|c| c.angle).collect()
 }

@@ -1,5 +1,16 @@
 [workspace]
 members = [
+    "autoeq",
+    "autoeq-cea2034",
+    "autoeq-env",
+    "autoeq-roomsim",
+    "gpui-d3rs",
+    "gpui-ui-kit",
+    "math-bem",
+    "math-iir",
+    "math-testfunctions",
+    "math-convexhull3d",
+    "math-de",
     "sotf-audio-engine",
     "sotf-audio-player",
     "sotf-audio-player-gpui",
@@ -7,32 +18,19 @@ members = [
     "sotf-audio-player-tui",
     "sotf-audio-plugins",
     "sotf-audio-plugins-ffi",
-    "autoeq",
-    "autoeq-cea2034",
-    "math-bem",
-    "math-bem-wasm",
-    "math-iir",
-    "math-testfunctions",
-    "math-convexhull3d",
-    "math-de",
-    "autoeq-env",
     "sotf-macos-hal",
     "sotf-head-scanner",
     "sotf-tauri",
-    "d3rs",
 ]
 # Default members excludes
 #   - macOS-only sotf-hal, sotf-configbar
-#   - src-bem
 #   - sotf-head-scanner
-#   - src-gpui-player
 #
 # On macOS, you can still build it explicitly with:
 #            just prod-hal
 #            just prod-configbar
 #
 # Crate head-scanner is build separetly since it is hard to get all the dependency right
-# sotf-gpui-player is also excluded from default build due to heavy GPUI dependency
 #
 default-members = [
     "sotf-audio-engine",
@@ -40,12 +38,15 @@ default-members = [
     "sotf-audio-player",
     "sotf-audio-player-midi",
     "sotf-audio-player-tui",
+    "sotf-audio-player-gpui",
+    "gpui-d3rs",
+    "gpui-ui-kit",
     "autoeq",
     "autoeq-env",
     "autoeq-cea2034",
+    "autoeq-roomsim",
     "math-convexhull3d",
     "math-bem",
-    "math-bem-wasm",
     "math-de",
     "math-iir",
     "math-testfunctions",

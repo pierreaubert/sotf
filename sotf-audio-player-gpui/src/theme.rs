@@ -329,3 +329,31 @@ fn rgba(hex: u32) -> Rgba {
         a: 1.0,
     }
 }
+
+impl Theme {
+    /// Convert to ButtonTheme for use with ui_kit Button component
+    pub fn to_button_theme(&self) -> gpui_ui_kit::ButtonTheme {
+        gpui_ui_kit::ButtonTheme {
+            accent: self.accent,
+            accent_hover: self.accent_hover,
+            surface: self.surface,
+            surface_hover: self.surface_hover,
+            text_primary: self.text_primary,
+            text_secondary: self.text_secondary,
+            error: self.error,
+            border: self.border,
+        }
+    }
+
+    /// Convert to AccordionTheme for use with ui_kit Accordion component
+    pub fn to_accordion_theme(&self) -> gpui_ui_kit::AccordionTheme {
+        gpui_ui_kit::AccordionTheme {
+            header_bg: self.surface,
+            header_hover_bg: self.surface_hover,
+            content_bg: self.background,
+            border: self.border,
+            title_color: self.text_primary,
+            indicator_color: self.text_muted,
+        }
+    }
+}

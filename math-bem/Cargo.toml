@@ -20,7 +20,9 @@ required-features = ["cli", "native", "parallel", "memory-optimized", "out-of-co
 
 [dependencies]
 # Core numerical computing
-ndarray = { workspace = true }
+# Note: We don't use workspace = true for ndarray because workspace has "blas" and "rayon" features
+# which are not portable to WASM. We conditionally enable these features via our own "native" feature.
+ndarray = { version = "0.17", features = ["serde"] }
 num-complex = { workspace = true, features = ["serde"] }
 num-traits = { workspace = true }
 special = { workspace = true }
@@ -82,6 +84,8 @@ default = ["native", "cli"]
 # Native feature: enables all BLAS/LAPACK and system-specific functionality
 # Disable this feature for WASM builds
 native = [
+    "ndarray/blas",
+    "ndarray/rayon",
     "ndarray-linalg",
     "rayon",
     "env_logger",

@@ -5,6 +5,7 @@ mod screens;
 
 use crate::actions::*;
 use crate::app::{AppState, Screen};
+use gpui_ui_kit::Divider;
 use gpui::prelude::*;
 use gpui::*;
 use std::time::Duration;
@@ -151,7 +152,10 @@ impl PlayerView {
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = Screen::Settings;
-            state.app.selected_settings_tab = crate::app::types::SettingsTab::Plugins;
+            // Expand the plugins section
+            if !state.app.expanded_settings_sections.contains(&"plugins".to_string()) {
+                state.app.expanded_settings_sections.push("plugins".to_string());
+            }
         });
         cx.notify();
     }
@@ -159,7 +163,10 @@ impl PlayerView {
     fn switch_to_devices(&mut self, _: &SwitchToDevices, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = Screen::Settings;
-            state.app.selected_settings_tab = crate::app::types::SettingsTab::AudioDevice;
+            // Expand the audio-device section
+            if !state.app.expanded_settings_sections.contains(&"audio-device".to_string()) {
+                state.app.expanded_settings_sections.push("audio-device".to_string());
+            }
         });
         cx.notify();
     }
@@ -295,13 +302,13 @@ impl PlayerView {
 
     /// Render a horizontal divider that can be dragged to resize panels
     fn render_horizontal_divider(&self, theme: crate::theme::Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        Divider::new()
             .id("queue-divider")
-            .w_full()
-            .h(px(6.0))
-            .bg(theme.border)
-            .cursor(gpui::CursorStyle::ResizeUpDown)
-            .hover(|style| style.bg(theme.accent))
+            .color(theme.border)
+            .hover_color(theme.accent)
+            .thickness(px(6.0))
+            .interactive()
+            .build()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseDownEvent, _window, cx| {
@@ -1398,8 +1405,8 @@ impl PlayerView {
                     // TODO: Implement playing specific track from queue
                 }
                 Screen::Settings => {
-                    // If on Plugins tab, enter plugin edit mode
-                    if state.app.selected_settings_tab == crate::app::types::SettingsTab::Plugins {
+                    // If Plugins section is expanded, enter plugin edit mode
+                    if state.app.expanded_settings_sections.contains(&"plugins".to_string()) {
                         state.app.enter_plugin_edit_mode();
                     }
                 }
@@ -1578,8 +1585,8 @@ impl Render for PlayerView {
                     crate::app::InputMode::Normal => {
                         // Handle screen-specific shortcuts in Normal mode
                         if current_screen == crate::app::Screen::Settings
-                            && view.state.read(cx).app.selected_settings_tab
-                                == crate::app::types::SettingsTab::Plugins
+                            && view.state.read(cx).app.expanded_settings_sections
+                                .contains(&"plugins".to_string())
                         {
                             match event.keystroke.key.as_str() {
                                 "S" => {

@@ -2,12 +2,14 @@
 
 use crate::app::Screen;
 use crate::ui::PlayerView;
+use gpui_ui_kit::{Dialog, DialogSize, VStack, HStack, Badge, BadgeVariant, Text, TextSize, TextWeight};
 use gpui::prelude::*;
 use gpui::*;
 
 impl PlayerView {
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
         let screen_name = match state.app.current_screen {
             Screen::Library => "Library",
             Screen::DirectoryManager => "Directories",
@@ -19,71 +21,59 @@ impl PlayerView {
         // Get keybindings for current screen
         let keybindings = get_keybindings_for_screen(state.app.current_screen);
 
-        // Create modal overlay (centered, 80% width, 90% height)
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
+        Dialog::new("help-modal")
+            .title(format!("Help - {} Screen", screen_name))
+            .size(DialogSize::Full)
+            .content(
+                VStack::new()
+                    .spacing(gpui_ui_kit::StackSpacing::Sm)
+                    // Global keybindings section
+                    .child(
+                        Text::new("GLOBAL KEYBINDINGS")
+                            .size(TextSize::Lg)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.accent)
+                    )
+                    .child(self.render_keybinding_row("Shift-L/Q/P/O/D", "Jump to Library/Queue/Plugins/Devices/Directories", &theme))
+                    .child(self.render_keybinding_row("+/=", "Increase volume", &theme))
+                    .child(self.render_keybinding_row("-/_", "Decrease volume", &theme))
+                    .child(self.render_keybinding_row("?", "Show this help", &theme))
+                    .child(div().h_4()) // Spacer
+                    // Screen-specific keybindings section
+                    .child(
+                        Text::new(format!("{} KEYBINDINGS", screen_name.to_uppercase()))
+                            .size(TextSize::Lg)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.accent)
+                    )
+                    .children(
+                        keybindings
+                            .iter()
+                            .map(|(key, desc)| self.render_keybinding_row(key, desc, &theme).into_any_element()),
+                    )
+            )
+            .footer(
+                Text::new("Press ESC or ? to close")
+                    .size(TextSize::Xs)
+                    .muted(true)
+            )
+    }
+
+    fn render_keybinding_row(&self, key: &str, description: &str, theme: &crate::theme::Theme) -> impl IntoElement {
+        HStack::new()
+            .spacing(gpui_ui_kit::StackSpacing::Md)
             .child(
                 div()
-                    .id("help-modal")
-                    .w(Rems(60.0)) // 80% approx
-                    .h(Rems(40.0)) // 90% approx
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x007acc))
-                    .rounded_md()
-                    .p_4()
+                    .w(Rems(12.0))
                     .child(
-                        div()
-                            .text_xl()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child(format!(
-                                "Help - {} Screen (Press ESC or ? to close)",
-                                screen_name
-                            )),
+                        Badge::new(key.to_string())
+                            .variant(BadgeVariant::Primary)
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            // Global keybindings section
-                            .child(
-                                div()
-                                    .text_lg()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0x4ec9b0))
-                                    .mb_2()
-                                    .child("GLOBAL KEYBINDINGS"),
-                            )
-                            .child(self.render_keybinding(
-                                "Shift-L/Q/P/O/D",
-                                "Jump to Library/Queue/Plugins/Devices/Directories",
-                            ))
-                            .child(self.render_keybinding("+/=", "Increase volume"))
-                            .child(self.render_keybinding("-/_", "Decrease volume"))
-                            .child(self.render_keybinding("?", "Show this help"))
-                            .child(div().h_4()) // Spacer
-                            // Screen-specific keybindings section
-                            .child(
-                                div()
-                                    .text_lg()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0x4ec9b0))
-                                    .mb_2()
-                                    .child(format!("{} KEYBINDINGS", screen_name.to_uppercase())),
-                            )
-                            .children(
-                                keybindings
-                                    .iter()
-                                    .map(|(key, desc)| self.render_keybinding(key, desc)),
-                            ),
-                    ),
+            )
+            .child(
+                Text::new(description.to_string())
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary)
             )
     }
 
@@ -110,13 +100,14 @@ impl PlayerView {
 
     pub(crate) fn render_toast(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
 
         if let Some(toast) = &state.app.toast_message {
             let (bg_color, border_color, icon) = match toast.toast_type {
-                crate::app::ToastType::Success => (rgb(0x1e3a1e), rgb(0x4ec9b0), "✓"),
-                crate::app::ToastType::Error => (rgb(0x3a1e1e), rgb(0xf48771), "✗"),
-                crate::app::ToastType::Info => (rgb(0x1e2a3a), rgb(0x569cd6), "ℹ"),
-                crate::app::ToastType::Warning => (rgb(0x3a2e1e), rgb(0xdcdcaa), "⚠"),
+                crate::app::ToastType::Success => (theme.toast_success_bg, theme.success, "✓"),
+                crate::app::ToastType::Error => (theme.toast_error_bg, theme.error, "✗"),
+                crate::app::ToastType::Info => (theme.toast_info_bg, theme.accent, "ℹ"),
+                crate::app::ToastType::Warning => (theme.toast_warning_bg, theme.warning, "⚠"),
             };
 
             div()
@@ -132,30 +123,29 @@ impl PlayerView {
                 .shadow_lg()
                 .p_3()
                 .child(
-                    div()
-                        .flex()
-                        .gap_3()
-                        .items_center()
+                    HStack::new()
+                        .spacing(gpui_ui_kit::StackSpacing::Md)
+                        .align(gpui_ui_kit::StackAlign::Center)
                         .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(border_color)
-                                .child(icon),
+                            Text::new(icon)
+                                .size(TextSize::Lg)
+                                .weight(TextWeight::Bold)
+                                .color(border_color)
                         )
                         .child(
                             div()
                                 .flex_1()
-                                .text_sm()
-                                .text_color(rgb(0xffffff))
-                                .child(toast.message.clone()),
+                                .child(
+                                    Text::new(toast.message.clone())
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_primary)
+                                )
                         )
                         .child(
-                            div()
-                                .text_xs()
-                                .text_color(rgb(0x999999))
-                                .child("ESC to dismiss"),
-                        ),
+                            Text::new("ESC to dismiss")
+                                .size(TextSize::Xs)
+                                .muted(true)
+                        )
                 )
         } else {
             div() // Return empty div if no toast
@@ -164,6 +154,7 @@ impl PlayerView {
 
     pub(crate) fn render_context_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
 
         if let Some(menu) = &state.app.context_menu {
             let menu_items: Vec<(&'static str, &'static str)> = match menu.menu_type {
@@ -190,17 +181,18 @@ impl PlayerView {
                 .top(px(menu.position_y))
                 .left(px(menu.position_x))
                 .w(Rems(15.0))
-                .bg(rgb(0x2d2d2d))
+                .bg(theme.surface)
                 .border_1()
-                .border_color(rgb(0x007acc))
+                .border_color(theme.accent)
                 .rounded_md()
                 .shadow_lg()
                 .overflow_hidden()
                 .children(menu_items.into_iter().map(|(label, shortcut)| {
+                    let theme = theme.clone();
                     div()
                         .px_3()
                         .py_2()
-                        .hover(|style| style.bg(rgb(0x3e3e3e)))
+                        .hover(|style| style.bg(theme.surface_hover))
                         .cursor_pointer()
                         .on_mouse_up(
                             MouseButton::Left,
@@ -303,12 +295,11 @@ impl PlayerView {
                             }),
                         )
                         .child(
-                            div()
-                                .flex()
-                                .justify_between()
-                                .items_center()
-                                .child(div().text_sm().child(label))
-                                .child(div().text_xs().text_color(rgb(0x666666)).child(shortcut)),
+                            HStack::new()
+                                .justify(gpui_ui_kit::StackJustify::SpaceBetween)
+                                .align(gpui_ui_kit::StackAlign::Center)
+                                .child(Text::new(label).size(TextSize::Sm))
+                                .child(Text::new(shortcut).size(TextSize::Xs).muted(true))
                         )
                 }))
         } else {
@@ -318,386 +309,275 @@ impl PlayerView {
 
     pub(crate) fn render_apo_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
-            .child(
-                div()
-                    .w(Rems(40.0))
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x007acc))
-                    .rounded_md()
-                    .p_4()
+        Dialog::new("apo-file-dialog")
+            .title("Load APO File for EQ Plugin")
+            .size(DialogSize::Lg)
+            .content(
+                VStack::new()
+                    .spacing(gpui_ui_kit::StackSpacing::Md)
                     .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child("Load APO File for EQ Plugin"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .mb_2()
-                            .text_color(rgb(0x999999))
-                            .child("Enter path to APO file:"),
+                        Text::new("Enter path to APO file:")
+                            .size(TextSize::Sm)
+                            .muted(true)
                     )
                     .child(
                         div()
                             .p_2()
-                            .mb_4()
                             .rounded_md()
-                            .bg(rgb(0x2d2d2d))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x007acc))
+                            .border_color(theme.accent)
                             .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("{}█", state.app.apo_file_input)),
-                            ),
+                                Text::new(format!("{}█", state.app.apo_file_input))
+                                    .size(TextSize::Sm)
+                            )
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child("Enter: Load file | ESC: Cancel"),
-                    ),
+            )
+            .footer(
+                Text::new("Enter: Load file | ESC: Cancel")
+                    .size(TextSize::Xs)
+                    .muted(true)
             )
     }
 
     pub(crate) fn render_sofa_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
-            .child(
-                div()
-                    .w(Rems(40.0))
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x007acc))
-                    .rounded_md()
-                    .p_4()
+        Dialog::new("sofa-file-dialog")
+            .title("Load SOFA File for Binaural Decoder")
+            .size(DialogSize::Lg)
+            .content(
+                VStack::new()
+                    .spacing(gpui_ui_kit::StackSpacing::Md)
                     .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child("Load SOFA File for Binaural Decoder"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .mb_2()
-                            .text_color(rgb(0x999999))
-                            .child("Enter path to SOFA file:"),
+                        Text::new("Enter path to SOFA file:")
+                            .size(TextSize::Sm)
+                            .muted(true)
                     )
                     .child(
                         div()
                             .p_2()
-                            .mb_4()
                             .rounded_md()
-                            .bg(rgb(0x2d2d2d))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x007acc))
+                            .border_color(theme.accent)
                             .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("{}█", state.app.sofa_file_input)),
-                            ),
+                                Text::new(format!("{}█", state.app.sofa_file_input))
+                                    .size(TextSize::Sm)
+                            )
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x999999))
-                            .child("Enter: Load file | ESC: Cancel"),
-                    ),
+            )
+            .footer(
+                Text::new("Enter: Load file | ESC: Cancel")
+                    .size(TextSize::Xs)
+                    .muted(true)
             )
     }
 
     pub(crate) fn render_save_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let presets = state.app.available_plugin_presets.clone();
+        let selected_preset = state.app.selected_preset_index;
+        let input = state.app.plugin_file_input.clone();
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
-            .child(
-                div()
-                    .w(Rems(50.0))
-                    .max_h(Rems(30.0))
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x007acc))
-                    .rounded_md()
-                    .p_4()
+        Dialog::new("save-plugins-dialog")
+            .title("Save Plugin Preset")
+            .size(DialogSize::Xl)
+            .content(
+                VStack::new()
+                    .spacing(gpui_ui_kit::StackSpacing::Md)
                     .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child("Save Plugin Preset"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .mb_2()
-                            .text_color(rgb(0x999999))
-                            .child("Enter preset name (or select existing to overwrite):"),
+                        Text::new("Enter preset name (or select existing to overwrite):")
+                            .size(TextSize::Sm)
+                            .muted(true)
                     )
                     .child(
                         div()
                             .p_2()
-                            .mb_4()
                             .rounded_md()
-                            .bg(rgb(0x2d2d2d))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x007acc))
+                            .border_color(theme.accent)
                             .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("{}█", state.app.plugin_file_input)),
-                            ),
+                                Text::new(format!("{}█", input))
+                                    .size(TextSize::Sm)
+                            )
                     )
                     // Show existing presets if available
-                    .when(!state.app.available_plugin_presets.is_empty(), |el| {
+                    .when(!presets.is_empty(), |el| {
                         el.child(
-                            div()
-                                .text_sm()
-                                .mb_2()
-                                .text_color(rgb(0x999999))
-                                .child("Existing presets (↑/↓ to select):"),
+                            Text::new("Existing presets (↑/↓ to select):")
+                                .size(TextSize::Sm)
+                                .muted(true)
                         )
                         .child(
                             div()
                                 .id("save-plugins-presets-list")
                                 .max_h(Rems(12.0))
                                 .overflow_y_scroll()
-                                .bg(rgb(0x2d2d2d))
+                                .bg(theme.surface)
                                 .rounded_md()
                                 .p_2()
-                                .children(state.app.available_plugin_presets.iter().enumerate().map(
+                                .children(presets.iter().enumerate().map(
                                     |(idx, preset)| {
-                                        let is_selected = idx == state.app.selected_preset_index;
+                                        let is_selected = idx == selected_preset;
+                                        let theme = theme.clone();
                                         div()
                                             .p_1()
                                             .rounded_md()
                                             .text_sm()
                                             .when(is_selected, |d| {
-                                                d.bg(rgb(0x264f78)).text_color(rgb(0xffffff))
+                                                d.bg(theme.accent_muted).text_color(theme.text_primary)
                                             })
-                                            .when(!is_selected, |d| d.text_color(rgb(0xcccccc)))
+                                            .when(!is_selected, |d| d.text_color(theme.text_secondary))
                                             .child(preset.clone())
                                     },
-                                )),
+                                ))
                         )
                     })
-                    .child(
-                        div()
-                            .text_xs()
-                            .mt_4()
-                            .text_color(rgb(0x999999))
-                            .child("Enter: Save | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel"),
-                    ),
+            )
+            .footer(
+                Text::new("Enter: Save | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
+                    .size(TextSize::Xs)
+                    .muted(true)
             )
     }
 
     pub(crate) fn render_load_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let presets = state.app.available_plugin_presets.clone();
+        let selected_preset = state.app.selected_preset_index;
+        let input = state.app.plugin_file_input.clone();
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x000000aa)) // Semi-transparent background
-            .child(
-                div()
-                    .w(Rems(50.0))
-                    .max_h(Rems(30.0))
-                    .bg(rgb(0x1e1e1e))
-                    .border_2()
-                    .border_color(rgb(0x4ec9b0))
-                    .rounded_md()
-                    .p_4()
+        Dialog::new("load-plugins-dialog")
+            .title("Load Plugin Preset")
+            .size(DialogSize::Xl)
+            .content(
+                VStack::new()
+                    .spacing(gpui_ui_kit::StackSpacing::Md)
                     .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .mb_4()
-                            .child("Load Plugin Preset"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .mb_2()
-                            .text_color(rgb(0x999999))
-                            .child("Enter preset name or select from list:"),
+                        Text::new("Enter preset name or select from list:")
+                            .size(TextSize::Sm)
+                            .muted(true)
                     )
                     .child(
                         div()
                             .p_2()
-                            .mb_4()
                             .rounded_md()
-                            .bg(rgb(0x2d2d2d))
+                            .bg(theme.surface)
                             .border_1()
-                            .border_color(rgb(0x4ec9b0))
+                            .border_color(theme.success)
                             .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("{}█", state.app.plugin_file_input)),
-                            ),
+                                Text::new(format!("{}█", input))
+                                    .size(TextSize::Sm)
+                            )
                     )
                     // Show existing presets
-                    .when(!state.app.available_plugin_presets.is_empty(), |el| {
+                    .when(!presets.is_empty(), |el| {
                         el.child(
-                            div()
-                                .text_sm()
-                                .mb_2()
-                                .text_color(rgb(0x999999))
-                                .child("Available presets (↑/↓ to select):"),
+                            Text::new("Available presets (↑/↓ to select):")
+                                .size(TextSize::Sm)
+                                .muted(true)
                         )
                         .child(
                             div()
                                 .id("load-plugins-presets-list")
                                 .max_h(Rems(12.0))
                                 .overflow_y_scroll()
-                                .bg(rgb(0x2d2d2d))
+                                .bg(theme.surface)
                                 .rounded_md()
                                 .p_2()
-                                .children(state.app.available_plugin_presets.iter().enumerate().map(
+                                .children(presets.iter().enumerate().map(
                                     |(idx, preset)| {
-                                        let is_selected = idx == state.app.selected_preset_index;
+                                        let is_selected = idx == selected_preset;
+                                        let theme = theme.clone();
                                         div()
                                             .p_1()
                                             .rounded_md()
                                             .text_sm()
                                             .when(is_selected, |d| {
-                                                d.bg(rgb(0x264f78)).text_color(rgb(0xffffff))
+                                                d.bg(theme.accent_muted).text_color(theme.text_primary)
                                             })
-                                            .when(!is_selected, |d| d.text_color(rgb(0xcccccc)))
+                                            .when(!is_selected, |d| d.text_color(theme.text_secondary))
                                             .child(preset.clone())
                                     },
-                                )),
+                                ))
                         )
                     })
-                    .when(state.app.available_plugin_presets.is_empty(), |el| {
+                    .when(presets.is_empty(), |el| {
                         el.child(
                             div()
                                 .p_4()
                                 .text_center()
-                                .text_sm()
-                                .text_color(rgb(0x999999))
-                                .child("No presets found. Save a preset first with 's'."),
+                                .child(
+                                    Text::new("No presets found. Save a preset first with 's'.")
+                                        .size(TextSize::Sm)
+                                        .muted(true)
+                                )
                         )
                     })
-                    .child(
-                        div()
-                            .text_xs()
-                            .mt_4()
-                            .text_color(rgb(0x999999))
-                            .child("Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel"),
-                    ),
+            )
+            .footer(
+                Text::new("Enter: Load | ↑/↓: Select preset | Tab: Autocomplete | ESC: Cancel")
+                    .size(TextSize::Xs)
+                    .muted(true)
             )
     }
 
     pub(crate) fn render_plugin_edit_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
 
         if let Some(plugin) = state.app.get_editing_plugin() {
             let plugin_name = plugin.plugin_type().name().to_string();
             let params = render_plugin_param_list(plugin, state.app.plugin_param_selection);
+            let selected_idx = state.app.plugin_param_selection;
 
-            // Create modal overlay
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(rgba(0x000000aa)) // Semi-transparent background
-                .child(
-                    div()
-                        .id("plugin-edit-modal")
-                        .w(Rems(50.0))
-                        .h(Rems(35.0))
-                        .bg(rgb(0x1e1e1e))
-                        .border_2()
-                        .border_color(rgb(0x4ec9b0))
-                        .rounded_md()
-                        .p_4()
-                        .child(
-                            div()
-                                .text_xl()
-                                .font_weight(FontWeight::BOLD)
-                                .mb_4()
-                                .child(format!(
-                                    "Edit Plugin: {} (Press ESC to close)",
-                                    plugin_name
-                                )),
-                        )
-                        .child(div().flex().flex_col().gap_2().children(
+            Dialog::new("plugin-edit-modal")
+                .title(format!("Edit Plugin: {}", plugin_name))
+                .size(DialogSize::Xl)
+                .content(
+                    VStack::new()
+                        .spacing(gpui_ui_kit::StackSpacing::Sm)
+                        .children(
                             params.iter().enumerate().map(|(idx, (name, value))| {
-                                let is_selected = idx == state.app.plugin_param_selection;
+                                let is_selected = idx == selected_idx;
+                                let theme = theme.clone();
                                 div()
                                     .p_2()
                                     .rounded_md()
-                                    .when(is_selected, |div| div.bg(rgb(0x264f78)))
-                                    .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
+                                    .when(is_selected, |d| d.bg(theme.accent_muted))
+                                    .when(!is_selected, |d| d.bg(theme.surface))
                                     .child(
-                                        div()
-                                            .flex()
-                                            .justify_between()
+                                        HStack::new()
+                                            .justify(gpui_ui_kit::StackJustify::SpaceBetween)
                                             .child(
-                                                div()
-                                                    .text_sm()
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_color(if is_selected {
-                                                        rgb(0xffffff)
-                                                    } else {
-                                                        rgb(0x569cd6)
-                                                    })
-                                                    .child(name.clone()),
+                                                Text::new(name.clone())
+                                                    .size(TextSize::Sm)
+                                                    .weight(TextWeight::Semibold)
+                                                    .color(if is_selected { theme.text_primary } else { theme.accent })
                                             )
                                             .child(
-                                                div()
-                                                    .text_sm()
-                                                    .text_color(if is_selected {
-                                                        rgb(0xffffff)
-                                                    } else {
-                                                        rgb(0xcccccc)
-                                                    })
-                                                    .child(value.clone()),
-                                            ),
+                                                Text::new(value.clone())
+                                                    .size(TextSize::Sm)
+                                                    .color(if is_selected { theme.text_primary } else { theme.text_secondary })
+                                            )
                                     )
+                                    .into_any_element()
                             }),
-                        ))
-                        .child(
-                            div()
-                                .p_3()
-                                .mt_4()
-                                .rounded_md()
-                                .bg(rgb(0x1e1e1e))
-                                .text_xs()
-                                .text_color(rgb(0x999999))
-                                .child("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit"),
-                        ),
+                        )
                 )
+                .footer(
+                    Text::new("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit")
+                        .size(TextSize::Xs)
+                        .muted(true)
+                )
+                .into_element()
         } else {
             div() // Return empty div if no plugin is being edited
         }

@@ -1,0 +1,100 @@
+{
+  "room": {
+    "type": "rectangular",
+    "width": 5.5,
+    "depth": 7.0,
+    "height": 2.6
+  },
+  "sources": [
+    {
+      "name": "Front Left",
+      "position": {
+        "x": 1.2,
+        "y": 0.3,
+        "z": 1.1
+      },
+      "amplitude": 0.8,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Front Right",
+      "position": {
+        "x": 4.3,
+        "y": 0.3,
+        "z": 1.1
+      },
+      "amplitude": 0.8,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Subwoofer",
+      "position": {
+        "x": 0.5,
+        "y": 0.5,
+        "z": 0.3
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "lowpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    }
+  ],
+  "listening_positions": [
+    {
+      "x": 2.75,
+      "y": 4.0,
+      "z": 1.2
+    }
+  ],
+  "frequencies": {
+    "min_freq": 20.0,
+    "max_freq": 300.0,
+    "num_points": 100,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "gmres+ilu",
+    "mesh_resolution": 10,
+    "gmres": {
+      "max_iter": 10000,
+      "restart": 300,
+      "tolerance": 1e-12
+    },
+    "ilu": {
+      "method": "tbem",
+      "scanning_degree": "fine"
+    },
+    "adaptive_integration": true,
+    "adaptive_meshing": true
+  },
+  "visualization": {
+    "generate_slices": true,
+    "slice_resolution": 50,
+    "slice_frequency_indices": []
+  },
+  "metadata": {
+    "description": "Home theater 2.1 with subwoofer - same room as 5.1.4 setup",
+    "author": "Room Simulator",
+    "date": "2025-11-28",
+    "notes": "5.5m × 7.0m × 2.6m room with LR speakers + subwoofer (80 Hz crossover). Listener at sweet spot."
+  }
+}

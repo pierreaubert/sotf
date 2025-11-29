@@ -1,8 +1,9 @@
 <!-- markdownlint-disable-file MD013 -->
 
-# SotF: an automatic eq for your speaker or headset
+# SotF: an automatic eq for your speakers or headsets
 
-The software either an app or a cli helps you to get better sound from your speakers or your headsets.
+The software either an app or a cli helps you to get better sound from your speakers or your headsets. It is also a toolkit with many components helping to build audio related applications: mathematical crates to do DSP or BEM, graphical crates to do GUI, audio crates to do audio, and so on.
+
 *Sound of the Future* or *SotF* in short comes from the song from [Giorgio Moroder](https://en.wikipedia.org/wiki/Giorgio_Moroder) made popular by [Daft Punk](https://en.wikipedia.org/wiki/Daft_Punk). You can find 100 versions on Youtube. Here is an [official one](https://youtu.be/zhl-Cs1-sG4?si=H4hgakoEdQn-HMH6&t=73).
 
 ## Install
@@ -45,33 +46,39 @@ This feature is disabled by default to reduce dependencies and build complexity.
 
 ## Toolkit
 
-### src-testfunctions
+### math-testfunctions
 
-A [set of functions](src-testfunctions/README.md) for testing non linear optimisation algorithms used in the next crate.
+A [set of functions](math-testfunctions/README.md) for testing non linear optimisation algorithms used in the next crate.
 
-### src-de
+### math-de
 
-A implementation of [differential evolution algorithm](src-de/README.md) (forked from Scipy) with an interface to NLopt and MetaHeuristics two libraries that also provide various optimisation algorithms. DE support linear and non-linear constraints and implement other features like JADE or adaptative behaviour.
+A implementation of [differential evolution algorithm](math-de/README.md) (forked from Scipy) with an interface to NLopt and MetaHeuristics two libraries that also provide various optimisation algorithms. DE support linear and non-linear constraints and implement other features like JADE or adaptative behaviour.
 
 Status: good for speaker equalisation. Not tested enough for other use cases.
 
-### src-cea2034
+### autoeq-cea2034
 
 A implementation of CEA2034 aka [Spinorama](https://spinorama.org): a set of metrics and curves that describe a loudspeaker performance.
 
 Status: mature.
 
-### src-autoeq
+### autoeq
 
-A [CLI](src-autoeq/README.md) to optimise the response of your headset or headphone.
+A [CLI](autoeq/README.md) to optimise the response of your headset or headphone.
 
 Status: good up to very good depending what you optimise for.
 
-### src-env
+### autoeq-roomsim
+
+A room simulator to help you to understand the response of your speakers on your room. [Available online](https://roomsim.spinorama.org) try it out!
+
+Status: getting good.
+
+### autoeq-env
 
 A small set of functions and constants used by the other crates but you are unlikely to be interested.
 
-### src-audio-*
+### sotf-audio-*
 
 This backend take care of all the Audio activities (from recording to playing). It also provides support for IIR filters, SPL computations etc.
 
@@ -117,19 +124,19 @@ src-confbar crate allows you to configure the above driver and is conveniently a
 
 Status: experimental for HAL and ok for confbar.
 
-### src-convexhull3d
+### math-convexhull3d
 
 This crate computes a convex hull in 3d.
 
 Status: good quality aka no known bug.
 
-### src-bem
+### math-bem
 
-This experimental crate will be a BEM (Boundary Element Solver) for the HRTF computation. It will also be used for optimal shape of speaker waveguide.
+This crate implements a BEM (Boundary Element Solver) for the HRTF computation. It will also be used for optimal shape of speaker waveguide.
 This part is not on GH yet. It is a merge of previous projects in python and will come step by step. BEM is the first crate but the control theory part is
 not converted yet (adjoint computation etc).
 
-Status: experimental
+Status: ok-ish
 
 ### src-head-scanner
 

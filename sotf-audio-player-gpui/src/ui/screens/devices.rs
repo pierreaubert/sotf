@@ -1,24 +1,19 @@
 //! Devices screen rendering functions
 
 use crate::ui::PlayerView;
+use gpui_ui_kit::{Badge, BadgeVariant, Text, TextSize, TextWeight, HStack, VStack, StackSpacing, Heading};
 use gpui::prelude::*;
 use gpui::*;
 
 impl PlayerView {
     pub(crate) fn render_devices_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
 
-        div()
-            .flex()
-            .flex_col()
-            .size_full()
-            .p_4()
+        VStack::new()
+            .spacing(StackSpacing::Lg)
             .child(
-                div()
-                    .text_lg()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .mb_4()
-                    .child("Audio Output Devices"),
+                Heading::h2("Audio Output Devices")
             )
             .child(
                 // Grid layout with 2 columns
@@ -40,13 +35,24 @@ impl PlayerView {
                                 .as_ref()
                                 .map(|c| c.channels)
                                 .unwrap_or(0);
+                            let is_default = device.is_default;
+                            let device_name = device.name.clone();
+                            let theme = theme.clone();
 
                             div()
-                                .p_2()
-                                .rounded_md()
-                                .when(is_selected, |div| div.bg(rgb(0x007acc)))
-                                .when(!is_selected, |div| div.bg(rgb(0x2d2d2d)))
-                                .hover(|style| style.bg(rgb(0x3e3e3e)))
+                                .id(ElementId::Name(format!("device-{}", idx).into()))
+                                .p_3()
+                                .rounded_lg()
+                                .border_1()
+                                .when(is_selected, |d| {
+                                    d.bg(theme.accent_muted)
+                                     .border_color(theme.accent)
+                                })
+                                .when(!is_selected, |d| {
+                                    d.bg(theme.surface)
+                                     .border_color(theme.border)
+                                     .hover(|s| s.bg(theme.surface_hover))
+                                })
                                 .cursor_pointer()
                                 .on_mouse_up(
                                     MouseButton::Left,
@@ -81,45 +87,38 @@ impl PlayerView {
                                     }),
                                 )
                                 .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
+                                    VStack::new()
+                                        .spacing(StackSpacing::Sm)
                                         .child(
-                                            div()
-                                                .text_sm()
-                                                .font_weight(FontWeight::SEMIBOLD)
-                                                .child(device.name.clone()),
+                                            Text::new(device_name)
+                                                .size(TextSize::Sm)
+                                                .weight(TextWeight::Semibold)
+                                                .color(theme.text_primary)
                                         )
                                         .child(
-                                            div()
-                                                .flex()
-                                                .gap_3()
-                                                .text_xs()
-                                                .text_color(rgb(0x999999))
+                                            HStack::new()
+                                                .spacing(StackSpacing::Md)
                                                 .child(
-                                                    div()
-                                                        .flex()
-                                                        .gap_1()
-                                                        .child("📊")
-                                                        .child(format!("{} ch", channels)),
+                                                    Badge::new(format!("{} ch", channels))
+                                                        .variant(BadgeVariant::Default)
                                                 )
-                                                .child(div().flex().gap_1().child("🎵").child(
-                                                    if sample_rate >= 1000 {
-                                                        format!("{} kHz", sample_rate / 1000)
-                                                    } else {
-                                                        format!("{} Hz", sample_rate)
-                                                    },
-                                                )),
+                                                .child(
+                                                    Badge::new(
+                                                        if sample_rate >= 1000 {
+                                                            format!("{} kHz", sample_rate / 1000)
+                                                        } else {
+                                                            format!("{} Hz", sample_rate)
+                                                        }
+                                                    )
+                                                    .variant(BadgeVariant::Default)
+                                                )
                                         )
-                                        .when(device.is_default, |this| {
-                                            this.child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(rgb(0x4ec9b0))
-                                                    .child("✓ Default"),
+                                        .when(is_default, |v| {
+                                            v.child(
+                                                Badge::new("Default")
+                                                    .variant(BadgeVariant::Success)
                                             )
-                                        }),
+                                        })
                                 )
                         }),
                 ),

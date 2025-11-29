@@ -1,0 +1,53 @@
+{
+  "room": {
+    "type": "rectangular",
+    "width": 5.0,
+    "depth": 4.0,
+    "height": 2.5
+  },
+  "sources": [
+    {
+      "name": "Main Speaker",
+      "position": {
+        "x": 2.5,
+        "y": 0.5,
+        "z": 1.2
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "fullrange"
+      }
+    }
+  ],
+  "listening_positions": [
+    {
+      "x": 2.5,
+      "y": 2.0,
+      "z": 1.2
+    }
+  ],
+  "frequencies": {
+    "min_freq": 50.0,
+    "max_freq": 1000.0,
+    "num_points": 50,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "gmres",
+    "mesh_resolution": 2,
+    "gmres": {
+      "max_iter": 100,
+      "restart": 50,
+      "tolerance": 1e-6
+    },
+    "adaptive_integration": false
+  },
+  "metadata": {
+    "description": "Simple rectangular room with single source",
+    "author": "Room Simulator",
+    "date": "2025-01-28"
+  }
+}

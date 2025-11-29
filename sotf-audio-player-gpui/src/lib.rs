@@ -14,7 +14,6 @@ pub mod keybindings;
 pub mod optimization_params;
 pub mod state;
 pub mod theme;
-pub mod ui_kit;
 // Note: ui must be loaded before app because app re-exports from ui::components::host
 pub mod ui;
 pub mod app;

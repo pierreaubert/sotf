@@ -1,5 +1,6 @@
 //! Queue screen rendering functions
 
+use crate::theme::Theme;
 use crate::ui::components::plugins::{MeterTheme, TickConfig, render_tick_row};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -33,6 +34,7 @@ impl PlayerView {
         group_idx: usize,
         is_selected: bool,
         loudness: Option<&sotf_audio_player::LoudnessData>,
+        theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let muted = group.muted;
@@ -59,20 +61,21 @@ impl PlayerView {
             (fill_ratio, yellow_threshold, red_threshold, channel.name.clone())
         }).collect();
 
+        let theme_c = theme.clone();
         div()
             .flex()
             .flex_col()
             .flex_1()
             .p_2()
             .rounded_md()
-            .when(is_selected, |d| d.bg(rgb(0x2d3748)))
-            .when(!is_selected, |d| d.bg(rgb(0x252525)))
+            .when(is_selected, |d| d.bg(theme_c.surface_selected))
+            .when(!is_selected, |d| d.bg(theme_c.background_secondary))
             // Group header (just the name)
             .child(
                 div()
                     .text_xs()
                     .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb(0xcccccc))
+                    .text_color(theme.text_secondary)
                     .mb_1()
                     .child(group.name.clone()),
             )
@@ -84,7 +87,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h(px(80.0))
                     .children(channel_data.into_iter().map(|(fill_ratio, yellow_threshold, red_threshold, name)| {
-                        render_gradient_meter(fill_ratio, yellow_threshold, red_threshold, name)
+                        render_gradient_meter(fill_ratio, yellow_threshold, red_threshold, name, theme)
                     })),
             )
             // M/S/D buttons below channels (spans all channels in group)
@@ -94,9 +97,9 @@ impl PlayerView {
                     .gap(px(2.0))
                     .mt_1()
                     .justify_center()
-                    .child(self.render_msd_button("M", muted, rgb(0xdc2626), group_idx, "mute", cx))
-                    .child(self.render_msd_button("S", soloed, rgb(0xf59e0b), group_idx, "solo", cx))
-                    .child(self.render_msd_button("D", dimmed, rgb(0x6366f1), group_idx, "dim", cx)),
+                    .child(self.render_msd_button("M", muted, theme.button_mute_active, group_idx, "mute", theme, cx))
+                    .child(self.render_msd_button("S", soloed, theme.button_solo_active, group_idx, "solo", theme, cx))
+                    .child(self.render_msd_button("D", dimmed, theme.button_dim_active, group_idx, "dim", theme, cx)),
             )
     }
 
@@ -108,8 +111,10 @@ impl PlayerView {
         active_color: gpui::Rgba,
         group_idx: usize,
         button_type: &'static str,
+        theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let theme_c = theme.clone();
         div()
             .id(SharedString::from(format!("msd-{}-{}", button_type, group_idx)))
             .px_2()
@@ -117,11 +122,11 @@ impl PlayerView {
             .rounded(px(2.0))
             .text_xs()
             .cursor_pointer()
-            .when(active, |d| d.bg(active_color).text_color(rgb(0xffffff)))
+            .when(active, |d| d.bg(active_color).text_color(theme_c.text_primary))
             .when(!active, |d| {
-                d.bg(rgb(0x3e3e3e))
-                    .text_color(rgb(0x999999))
-                    .hover(|style| style.bg(rgb(0x4e4e4e)))
+                d.bg(theme_c.surface)
+                    .text_color(theme_c.text_muted)
+                    .hover(|style| style.bg(theme_c.surface_hover))
             })
             .on_mouse_up(
                 MouseButton::Left,
@@ -149,6 +154,7 @@ fn render_gradient_meter(
     yellow_threshold: f32,
     red_threshold: f32,
     channel_name: String,
+    theme: &Theme,
 ) -> impl IntoElement {
     // Calculate segment heights
     let green_height = fill_ratio.min(yellow_threshold);
@@ -163,6 +169,7 @@ fn render_gradient_meter(
         0.0
     };
 
+    let theme_c = theme.clone();
     div()
         .flex()
         .flex_col()
@@ -173,7 +180,7 @@ fn render_gradient_meter(
             div()
                 .w(px(16.0))
                 .flex_1()
-                .bg(rgb(0x1e1e1e))
+                .bg(theme_c.background)
                 .rounded(px(2.0))
                 .overflow_hidden()
                 .relative()
@@ -185,7 +192,7 @@ fn render_gradient_meter(
                         .left_0()
                         .right_0()
                         .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(green_height)))
-                        .bg(rgb(0x22c55e)),
+                        .bg(theme_c.meter_normal),
                 )
                 // Yellow segment (above green)
                 .when(yellow_height > 0.001, |el| {
@@ -196,7 +203,7 @@ fn render_gradient_meter(
                             .right_0()
                             .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(yellow_threshold)))
                             .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(yellow_height)))
-                            .bg(rgb(0xf59e0b)),
+                            .bg(theme_c.meter_warning),
                     )
                 })
                 // Red segment (above yellow)
@@ -208,7 +215,7 @@ fn render_gradient_meter(
                             .right_0()
                             .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(red_threshold)))
                             .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(red_height)))
-                            .bg(rgb(0xdc2626)),
+                            .bg(theme_c.meter_clip),
                     )
                 }),
         )
@@ -216,7 +223,7 @@ fn render_gradient_meter(
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(0x999999))
+                .text_color(theme.text_muted)
                 .mt_1()
                 .child(channel_name),
         )
@@ -622,13 +629,14 @@ impl PlayerView {
         };
 
         let has_groups = !groups.is_empty();
+        let theme_c = theme.clone();
 
         div()
             .w(px(320.0))
             .flex()
             .flex_col()
             .p_4()
-            .bg(rgb(0x1e1e1e))
+            .bg(theme.background)
             // LUFS section on TOP (40% height) with True Peak
             .child(
                 div()
@@ -637,7 +645,7 @@ impl PlayerView {
                     .h(gpui::Length::Definite(gpui::DefiniteLength::Fraction(0.4)))
                     .pb_3()
                     .border_b_1()
-                    .border_color(rgb(0x3e3e3e))
+                    .border_color(theme.border)
                     .child(self.render_lufs_with_true_peak(loudness.as_ref(), &theme)),
             )
             // Level meters section (60% height)
@@ -665,10 +673,10 @@ impl PlayerView {
                                     .py(px(2.0))
                                     .rounded(px(3.0))
                                     .text_xs()
-                                    .bg(rgb(0x3a3a3a))
-                                    .text_color(rgb(0xcccccc))
+                                    .bg(theme.surface)
+                                    .text_color(theme.text_secondary)
                                     .cursor_pointer()
-                                    .hover(|style| style.bg(rgb(0x4a4a4a)))
+                                    .hover(|style| style.bg(theme_c.surface_hover))
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -692,13 +700,13 @@ impl PlayerView {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .text_color(rgb(0x666666))
+                                .text_color(theme.text_muted)
                                 .text_sm()
                                 .child("No audio playing"),
                         )
                     })
                     .when(has_groups, |d| {
-                        d.child(self.render_meters_with_legend(loudness.as_ref(), &groups, selected_group, cx))
+                        d.child(self.render_meters_with_legend(loudness.as_ref(), &groups, selected_group, &theme, cx))
                     }),
             )
             // Keyboard hints at bottom
@@ -707,7 +715,7 @@ impl PlayerView {
                     .mt_auto()
                     .pt_2()
                     .text_xs()
-                    .text_color(rgb(0x666666))
+                    .text_color(theme.text_muted)
                     .child("Tab: Select group | M: Mute | S: Solo"),
             )
     }
@@ -718,6 +726,7 @@ impl PlayerView {
         loudness: Option<&sotf_audio_player::LoudnessData>,
         groups: &[crate::app::ChannelGroup],
         selected_group: usize,
+        theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let groups_len = groups.len();
@@ -726,9 +735,10 @@ impl PlayerView {
         let mut meter_children = Vec::new();
         for (group_idx, group) in groups.iter().enumerate() {
             let is_selected = group_idx == selected_group;
-            meter_children.push(self.render_meter_group(group, group_idx, is_selected, loudness, cx).into_any_element());
+            meter_children.push(self.render_meter_group(group, group_idx, is_selected, loudness, theme, cx).into_any_element());
         }
 
+        let theme_c = theme.clone();
         div()
             .flex()
             .flex_1()
@@ -741,7 +751,7 @@ impl PlayerView {
                     .justify_between()
                     .w(px(28.0))
                     .text_xs()
-                    .text_color(rgb(0x666666))
+                    .text_color(theme_c.text_muted)
                     .child(div().child("  0"))
                     .child(div().child("-60")),
             )

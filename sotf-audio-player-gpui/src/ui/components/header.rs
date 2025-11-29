@@ -3,6 +3,7 @@
 use crate::app::{ActiveMenu, LayoutMode, Screen};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
+use gpui_ui_kit::{menu_bar_button, Button, ButtonVariant, ButtonSize, HStack, VStack, StackSpacing, Divider};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -19,30 +20,19 @@ impl PlayerView {
             )
         };
 
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_4()
-            .py_1()
-            .bg(rgb(0x2a2a2a))
-            .border_b_1()
-            .border_color(rgb(0x3a3a3a))
-            // Left side: menus only (no title)
+        HStack::new()
+            .spacing(StackSpacing::None)
+            .justify(gpui_ui_kit::StackJustify::SpaceBetween)
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    // File menu
+                // Left side: menus only (no title)
+                HStack::new()
+                    .spacing(StackSpacing::Xs)
                     .child(self.render_menu_button("File", ActiveMenu::File, active_menu, theme.clone(), cx))
-                    // View menu
                     .child(self.render_menu_button("View", ActiveMenu::View, active_menu, theme.clone(), cx))
-                    // Help menu
-                    .child(self.render_menu_button("Help", ActiveMenu::Help, active_menu, theme.clone(), cx)),
+                    .child(self.render_menu_button("Help", ActiveMenu::Help, active_menu, theme.clone(), cx))
             )
-            // Right side: Quick status
             .child(
+                // Right side: Quick status
                 div()
                     .flex()
                     .items_center()
@@ -51,8 +41,14 @@ impl PlayerView {
                     .text_color(theme.text_muted)
                     .when(scan_in_progress, |el| {
                         el.child(format!("Scanning: {} files", scan_progress_tracks))
-                    }),
+                    })
             )
+            .build()
+            .px_4()
+            .py_1()
+            .bg(rgb(0x2a2a2a))
+            .border_b_1()
+            .border_color(rgb(0x3a3a3a))
     }
 
     /// Render the dropdown menus overlay (called separately for z-ordering)
@@ -90,7 +86,7 @@ impl PlayerView {
             })
     }
 
-    /// Render a single menu button
+    /// Render a single menu button using menu_bar_button from ui_kit
     fn render_menu_button(
         &self,
         label: &'static str,
@@ -101,20 +97,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let is_open = active_menu == menu_id;
 
-        div()
-            .id(SharedString::from(format!("menu-btn-{}", label)))
-            .px_3()
-            .py_1()
-            .rounded(px(3.0))
-            .text_sm()
-            .text_color(rgb(0xcccccc))
-            .cursor_pointer()
-            .when(is_open, |div| {
-                div.bg(rgb(0x3a3a3a))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0xffffff))
-            })
-            .when(!is_open, |div| div.hover(|style| style.bg(rgb(0x333333))))
+        menu_bar_button(format!("menu-{}", label), label, is_open)
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -128,12 +111,16 @@ impl PlayerView {
                     cx.notify();
                 }),
             )
-            .child(label)
     }
 
     /// Render File menu dropdown
     fn render_file_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        VStack::new()
+            .spacing(StackSpacing::None)
+            .child(self.render_menu_item_simple("Settings", Some("⌘,"), theme.clone(), Screen::Settings, cx))
+            .child(Divider::new())
+            .child(self.render_quit_item(theme, cx))
+            .build()
             .absolute()
             .top(px(28.0))
             .left(px(16.0))
@@ -144,21 +131,34 @@ impl PlayerView {
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(self.render_menu_item_simple("Settings", Some("⌘,"), theme.clone(), Screen::Settings, cx))
-                    .child(self.render_menu_separator(theme.clone()))
-                    .child(self.render_quit_item(theme, cx)),
-            )
     }
 
     /// Render View menu dropdown
     fn render_view_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let layout_mode = self.state.read(cx).app.layout_mode;
 
-        div()
+        VStack::new()
+            .spacing(StackSpacing::None)
+            .child(self.render_menu_item_simple("Library", Some("1"), theme.clone(), Screen::Library, cx))
+            .child(self.render_menu_item_simple("Queue", Some("2"), theme.clone(), Screen::Queue, cx))
+            .child(Divider::new())
+            .child(self.render_menu_item_simple("Settings", Some("3"), theme.clone(), Screen::Settings, cx))
+            .child(Divider::new())
+            .child(
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_sm()
+                    .text_color(theme.text_muted)
+                    .child(format!(
+                        "Layout: {}",
+                        match layout_mode {
+                            LayoutMode::Compact => "Compact",
+                            LayoutMode::Expanded => "Expanded",
+                        }
+                    ))
+            )
+            .build()
             .absolute()
             .top(px(28.0))
             .left(px(52.0))
@@ -169,35 +169,16 @@ impl PlayerView {
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(self.render_menu_item_simple("Library", Some("1"), theme.clone(), Screen::Library, cx))
-                    .child(self.render_menu_item_simple("Queue", Some("2"), theme.clone(), Screen::Queue, cx))
-                    .child(self.render_menu_separator(theme.clone()))
-                    .child(self.render_menu_item_simple("Settings", Some("3"), theme.clone(), Screen::Settings, cx))
-                    .child(self.render_menu_separator(theme.clone()))
-                    .child(
-                        div()
-                            .px_3()
-                            .py_2()
-                            .text_sm()
-                            .text_color(theme.text_muted)
-                            .child(format!(
-                                "Layout: {}",
-                                match layout_mode {
-                                    LayoutMode::Compact => "Compact",
-                                    LayoutMode::Expanded => "Expanded",
-                                }
-                            )),
-                    ),
-            )
     }
 
     /// Render Help menu dropdown
     fn render_help_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
+        VStack::new()
+            .spacing(StackSpacing::None)
+            .child(self.render_help_item(theme.clone(), cx))
+            .child(Divider::new())
+            .child(self.render_about_item(theme, cx))
+            .build()
             .absolute()
             .top(px(28.0))
             .left(px(96.0))
@@ -208,14 +189,6 @@ impl PlayerView {
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .child(self.render_help_item(theme.clone(), cx))
-                    .child(self.render_menu_separator(theme.clone()))
-                    .child(self.render_about_item(theme, cx)),
-            )
     }
 
     /// Render a simple menu item that navigates to a screen
@@ -337,9 +310,10 @@ impl PlayerView {
             .child(div().text_xs().text_color(rgb(0x777777)).child("⌘Q"))
     }
 
-    /// Render a menu separator line
+    /// Render a menu separator line (kept for backward compatibility)
+    #[allow(dead_code)]
     fn render_menu_separator(&self, _theme: Theme) -> impl IntoElement {
-        div().my_1().h(px(1.0)).bg(rgb(0x3a3a3a)).mx_2()
+        Divider::new().build().mx_2()
     }
 
     /// Render the tab bar header (for compact mode)
@@ -402,26 +376,23 @@ impl PlayerView {
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let button = div()
-            .id(SharedString::from(format!("tab-{}", label)))
-            .px_4()
-            .py_2()
-            .rounded_md()
-            .cursor_pointer()
-            .child(label.to_string());
+        let label_string = SharedString::from(label.to_string());
+        let btn = Button::new(SharedString::from(format!("tab-{}", label)), label_string)
+            .variant(if is_active { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+            .size(ButtonSize::Md)
+            .selected(is_active)
+            .theme(theme.to_button_theme())
+            .build();
 
         if is_active {
-            button.bg(theme.accent).text_color(theme.text_primary)
+            btn
         } else {
-            button
-                .bg(theme.surface_hover)
-                .hover(|style| style.bg(theme.background_tertiary))
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                        view.switch_screen(screen, cx);
-                    }),
-                )
+            btn.on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                    view.switch_screen(screen, cx);
+                }),
+            )
         }
     }
 

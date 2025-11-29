@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Acoustics BEM Simulator - Results</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link rel="stylesheet" href="common/styles.css">
+    <script src="common/plots.js"></script>
+    <style>
+        /* Page-specific styles */
+        body {
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .info {
+            color: #666;
+            margin: 10px 0;
+        }
+
+        .metadata {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .metadata h3 {
+            margin-bottom: 10px;
+            color: #555;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            font-weight: bold;
+            color: #555;
+        }
+
+        input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        .plot-container {
+            background: white;
+        }
+
+        #plotFrequencyResponse {
+            grid-column: 1 / -1;
+        }
+
+        .room-3d-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .slice-controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .slices-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Room Acoustics BEM Simulator</h1>
+        <p>Advanced boundary element method acoustic simulation with adaptive meshing</p>
+        <div id="roomInfo" style="margin-top: 15px; display: none;">
+            <div style="margin-bottom: 10px;">
+                <span id="roomDims" class="info-badge">Room: -</span>
+                <span id="solverInfo" class="info-badge">Solver: -</span>
+                <span id="meshInfo" class="info-badge">Mesh: -</span>
+            </div>
+            <div id="sourcesInfo" style="margin-top: 10px;"></div>
+            <div id="lpInfo" style="margin-top: 10px;">
+                <span id="lpPos" class="info-badge">Listening Position: -</span>
+            </div>
+        </div>
+        <div id="metadataInfo" class="metadata" style="display: none;">
+            <h3>Simulation Info</h3>
+            <div id="metadataContent"></div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="fileInput">Load simulation results JSON:</label>
+            <input type="file" id="fileInput" accept=".json">
+        </div>
+        <button onclick="loadFile('output_nearfield.json')">Load Near-Field Stereo</button>
+        <button onclick="loadFile('output_home_theater.json')">Load 5.1.4 Home Theater</button>
+    </div>
+
+    <div id="plotFrequencyResponse" class="plot-container panel" style="display: none;">
+        <div id="plotFrequencyResponseChart"></div>
+    </div>
+
+    <div id="plot3DRoom" class="room-3d-container" style="display: none;">
+        <h2 style="margin-bottom: 15px;">3D Room Visualization</h2>
+        <div id="plot3DRoomChart"></div>
+    </div>
+
+    <div id="plotSlices" class="plot-container panel" style="display: none;">
+        <h2 style="margin-bottom: 15px;">Spatial Pressure Field</h2>
+        <div class="slice-controls">
+            <label for="freqSlider" style="font-weight: bold; display: block; margin-bottom: 10px;">
+                Frequency: <span id="freqValue" style="color: #667eea; font-size: 1.1em;">-</span>
+            </label>
+            <input type="range" id="freqSlider" class="frequency-slider" min="0" max="0" value="0"
+                   oninput="handleSliderUpdate()">
+        </div>
+        <div class="slices-grid">
+            <div>
+                <h3>Horizontal Slice (XY plane at listening height)</h3>
+                <div id="plotHorizontalSlice"></div>
+            </div>
+            <div>
+                <h3>Vertical Slice (XZ plane at listening depth)</h3>
+                <div id="plotVerticalSlice"></div>
+            </div>
+        </div>
+        <div>
+            <h3>3D Combined View (Orthogonal Slices)</h3>
+            <div id="plot3DSlices"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentData = null;
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    try {
+                        currentData = JSON.parse(event.target.result);
+                        plotData(currentData);
+                    } catch (error) {
+                        alert('Error parsing JSON file: ' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        function loadFile(filename) {
+            fetch(filename)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`File not found: ${filename}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    currentData = data;
+                    plotData(data);
+                })
+                .catch(error => {
+                    alert('Error loading file: ' + error.message);
+                });
+        }
+
+        function plotData(data) {
+            console.log('Loaded data:', data);
+
+            // Update room info
+            document.getElementById('roomInfo').style.display = 'block';
+            document.getElementById('roomDims').textContent =
+                `Room: ${data.room.width}x${data.room.depth}x${data.room.height} m`;
+
+            // Solver info
+            if (data.solver) {
+                document.getElementById('solverInfo').textContent = `Solver: ${data.solver}`;
+            }
+
+            // Mesh info (if available)
+            if (data.mesh_nodes && data.mesh_elements) {
+                document.getElementById('meshInfo').textContent =
+                    `Mesh: ${data.mesh_nodes} nodes, ${data.mesh_elements} elements`;
+            }
+
+            // Display sources
+            if (data.sources && data.sources.length > 0) {
+                const sourcesDiv = document.getElementById('sourcesInfo');
+                sourcesDiv.innerHTML = '<strong>Sources:</strong><br>';
+                data.sources.forEach((source, idx) => {
+                    const badge = document.createElement('span');
+                    badge.className = 'info-badge source-badge';
+                    badge.textContent = `${source.name}: (${source.position[0].toFixed(1)}, ${source.position[1].toFixed(1)}, ${source.position[2].toFixed(1)})`;
+                    sourcesDiv.appendChild(badge);
+                });
+            }
+
+            // Display listening position
+            if (data.listening_position) {
+                document.getElementById('lpPos').textContent =
+                    `LP: (${data.listening_position[0].toFixed(1)}, ${data.listening_position[1].toFixed(1)}, ${data.listening_position[2].toFixed(1)})`;
+            }
+
+            // Display metadata
+            if (data.metadata) {
+                document.getElementById('metadataInfo').style.display = 'block';
+                const metadataDiv = document.getElementById('metadataContent');
+                let metadataHTML = '';
+                if (data.metadata.description) {
+                    metadataHTML += `<strong>Description:</strong> ${data.metadata.description}<br>`;
+                }
+                if (data.metadata.author) {
+                    metadataHTML += `<strong>Author:</strong> ${data.metadata.author}<br>`;
+                }
+                if (data.metadata.date) {
+                    metadataHTML += `<strong>Date:</strong> ${data.metadata.date}<br>`;
+                }
+                if (data.metadata.notes) {
+                    metadataHTML += `<strong>Notes:</strong> ${data.metadata.notes}`;
+                }
+                metadataDiv.innerHTML = metadataHTML;
+            }
+
+            // Plot frequency response using common function
+            if (data.frequencies && data.frequency_response) {
+                document.getElementById('plotFrequencyResponse').style.display = 'block';
+                RoomPlots.plotFrequencyResponse(data, 'plotFrequencyResponseChart', {
+                    showMarkers: true,
+                    sourceLineDash: 'dot'
+                });
+            }
+
+            // Plot 3D room visualization using common function
+            if (data.room && data.sources && data.listening_position) {
+                document.getElementById('plot3DRoom').style.display = 'block';
+                RoomPlots.plot3DRoom(data, 'plot3DRoomChart', {
+                    aspectmode: 'manual'
+                });
+            }
+
+            // Plot spatial slices if available
+            if (data.horizontal_slices && data.vertical_slices) {
+                document.getElementById('plotSlices').style.display = 'block';
+                RoomPlots.initSpatialSlices(data, 'freqSlider', 'freqValue');
+                handleSliderUpdate();
+            }
+        }
+
+        function handleSliderUpdate() {
+            RoomPlots.updateSlicePlots(
+                'freqSlider',
+                'freqValue',
+                'plotHorizontalSlice',
+                'plotVerticalSlice',
+                'plot3DSlices',
+                { showTitle: true }
+            );
+        }
+    </script>
+</body>
+</html>

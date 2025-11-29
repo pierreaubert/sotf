@@ -3483,6 +3483,7 @@ mod tests {
             tracks.push(Track {
                 path: PathBuf::from(format!("{}/track{}.flac", base_path, i)),
                 title: None,
+                artist: Some(artist.to_string()),
                 track_number: Some(i as u32),
                 duration_secs: None,
                 channels: None,
@@ -3503,7 +3504,6 @@ mod tests {
         }
         Album {
             id: None,
-            artist: artist.to_string(),
             title: title.to_string(),
             year: None,
             tracks,

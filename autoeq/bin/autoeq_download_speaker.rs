@@ -87,14 +87,28 @@ async fn process_speaker(
     if measurements.iter().any(|m| m == "CEA2034") {
         let dir = read::data_dir_for(speaker);
 
+        // Check which directivity measurements are available
+        let has_spl_horizontal = measurements.iter().any(|m| m == "SPL Horizontal");
+        let has_spl_vertical = measurements.iter().any(|m| m == "SPL Vertical");
+
         // Check if measurements already exist (unless --force is specified)
         if !force {
             let cea2034_file = dir.join("CEA2034.json");
             let in_room_file = dir.join("Estimated In-Room Response.json");
             let metadata_file = dir.join("metadata.json");
+            let spl_h_file = dir.join("SPL Horizontal.json");
+            let spl_v_file = dir.join("SPL Vertical.json");
 
-            // If all files exist, skip downloading
-            if cea2034_file.exists() && in_room_file.exists() && metadata_file.exists() {
+            // Check core files exist
+            let core_files_exist =
+                cea2034_file.exists() && in_room_file.exists() && metadata_file.exists();
+
+            // Check directivity files if they should exist
+            let directivity_files_exist = (!has_spl_horizontal || spl_h_file.exists())
+                && (!has_spl_vertical || spl_v_file.exists());
+
+            // If all required files exist, skip downloading
+            if core_files_exist && directivity_files_exist {
                 println!(
                     "Skipping '{}': measurements already cached (use --force to re-download)",
                     speaker
@@ -117,17 +131,36 @@ async fn process_speaker(
         if force {
             let cea2034_file = dir.join("CEA2034.json");
             let in_room_file = dir.join("Estimated In-Room Response.json");
+            let spl_h_file = dir.join("SPL Horizontal.json");
+            let spl_v_file = dir.join("SPL Vertical.json");
             let _ = fs::remove_file(&cea2034_file).await;
             let _ = fs::remove_file(&in_room_file).await;
+            let _ = fs::remove_file(&spl_h_file).await;
+            let _ = fs::remove_file(&spl_v_file).await;
         }
 
         let _ = read::fetch_measurement_plot_data(speaker, version, "CEA2034").await?;
         let _ = read::fetch_measurement_plot_data(speaker, version, "Estimated In-Room Response")
             .await?;
 
+        // Download directivity data if available
+        if has_spl_horizontal {
+            let _ = read::fetch_measurement_plot_data(speaker, version, "SPL Horizontal").await?;
+        }
+        if has_spl_vertical {
+            let _ = read::fetch_measurement_plot_data(speaker, version, "SPL Vertical").await?;
+        }
+
+        let directivity_info = match (has_spl_horizontal, has_spl_vertical) {
+            (true, true) => " + SPL Horizontal + SPL Vertical",
+            (true, false) => " + SPL Horizontal",
+            (false, true) => " + SPL Vertical",
+            (false, false) => "",
+        };
+
         println!(
-            "Saved CEA2034, Estimated In-Room Response and metadata for '{}' (version '{}')",
-            speaker, version
+            "Saved CEA2034, Estimated In-Room Response{} and metadata for '{}' (version '{}')",
+            directivity_info, speaker, version
         );
     }
 

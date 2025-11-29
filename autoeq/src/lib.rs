@@ -29,8 +29,8 @@ pub use autoeq_cea2034 as cea2034;
 pub use autoeq_de as de;
 pub use autoeq_iir as iir;
 
-// Re-export Curve from CEA2034 crate to ensure type compatibility
-pub use autoeq_cea2034::Curve;
+// Re-export types from CEA2034 crate to ensure type compatibility
+pub use autoeq_cea2034::{Curve, DirectivityCurve, DirectivityData};
 
 /// Common CLI argument definitions shared across binaries
 pub mod cli;

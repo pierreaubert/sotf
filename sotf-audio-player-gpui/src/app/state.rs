@@ -13,7 +13,7 @@ use crate::theme::{Theme, ThemeId};
 
 use super::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode, LetterNode,
-    LibrarySortOrder, LibraryViewMode, QueueItem, Screen, SettingsTab, ToastMessage,
+    LibrarySortOrder, LibraryViewMode, QueueItem, Screen, ToastMessage,
 };
 
 #[derive(Debug)]
@@ -135,8 +135,8 @@ pub struct App {
     // Device popup state
     pub show_device_popup: bool,
 
-    // Settings tab selection
-    pub selected_settings_tab: SettingsTab,
+    // Settings accordion expanded sections
+    pub expanded_settings_sections: Vec<String>,
 }
 
 /// GPUI-compatible state wrapper
@@ -234,7 +234,7 @@ impl App {
             is_dragging_meters_divider: false,
             scan_total_files: 0,
             show_device_popup: false,
-            selected_settings_tab: SettingsTab::Library,
+            expanded_settings_sections: vec!["library".to_string()],
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts

@@ -11,6 +11,9 @@ repository.workspace = true
 # GPUI framework
 gpui = { git = "https://github.com/zed-industries/zed.git" }
 
+# GPUI UI Kit
+gpui-ui-kit = { path = "../gpui-ui-kit" }
+
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-audio-player = { path = "../sotf-audio-player" }
 

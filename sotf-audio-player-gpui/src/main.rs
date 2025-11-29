@@ -51,7 +51,7 @@ fn main() {
             .unwrap_or_default();
 
         // Create window with app state
-        cx.open_window(
+        let _ = cx.open_window(
             WindowOptions {
                 app_id: Some("org.spinorama.sotf".into()),
                 window_bounds: Some(WindowBounds::Windowed(Bounds {

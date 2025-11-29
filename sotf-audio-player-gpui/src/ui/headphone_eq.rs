@@ -31,7 +31,7 @@ impl PlayerView {
 
             // Validate inputs
             if state.app.headphone_curve_path.is_empty() {
-                drop(state);
+	        let _ = state;
                 self.state.update(cx, |state, _cx| {
                     state.app.toast_message = Some(crate::app::ToastMessage::error(
                         "Please select a headphone measurement file",

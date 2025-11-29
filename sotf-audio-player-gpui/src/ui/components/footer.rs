@@ -2,6 +2,7 @@
 
 use crate::ui::components::potentiometer::render_potentiometer;
 use crate::ui::PlayerView;
+use gpui_ui_kit::{HStack, VStack, StackSpacing, StackAlign, StackJustify};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -13,27 +14,28 @@ impl PlayerView {
         let bg_surface = theme.surface;
         let border_color = theme.border;
 
-        div()
-            .flex()
-            .flex_col()
-            .bg(bg_surface)
-            .border_t_1()
-            .border_color(border_color)
-            // Main footer content: three-section layout
+        VStack::new()
+            .spacing(StackSpacing::None)
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .h(px(80.0))
-                    .px_4()
+                // Main footer content: three-section layout
+                HStack::new()
+                    .spacing(StackSpacing::None)
+                    .justify(StackJustify::SpaceBetween)
+                    .align(StackAlign::Center)
                     // Left section: Track info
                     .child(self.render_footer_left(cx))
                     // Center section: Transport + waveform
                     .child(self.render_footer_center(cx))
                     // Right section: Device + Volume
-                    .child(self.render_footer_right(cx)),
+                    .child(self.render_footer_right(cx))
+                    .build()
+                    .h(px(80.0))
+                    .px_4()
             )
+            .build()
+            .bg(bg_surface)
+            .border_t_1()
+            .border_color(border_color)
     }
 
     /// Left section: Album artwork + track info
@@ -61,12 +63,9 @@ impl PlayerView {
         let text_muted = theme.text_muted;
         let surface_hover = theme.surface_hover;
 
-        div()
-            .flex()
-            .items_center()
-            .gap_3()
-            .min_w(px(250.0))
-            .max_w(px(350.0))
+        HStack::new()
+            .spacing(StackSpacing::Md)
+            .align(StackAlign::Center)
             // Album artwork (64x64)
             .child({
                 let art_div = div()
@@ -95,11 +94,9 @@ impl PlayerView {
             })
             // Track info
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .overflow_hidden()
+                VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .align(StackAlign::Start)
                     // Title (11px equivalent)
                     .child(
                         div()
@@ -134,8 +131,11 @@ impl PlayerView {
                             .text_ellipsis()
                             .whitespace_nowrap()
                             .child(artist),
-                    ),
+                    )
             )
+            .build()
+            .min_w(px(250.0))
+            .max_w(px(350.0))
     }
 
     /// Center section: Transport controls + waveform + time

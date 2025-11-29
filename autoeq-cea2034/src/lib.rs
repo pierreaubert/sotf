@@ -18,6 +18,29 @@ pub struct Curve {
     pub spl: Array1<f64>,
 }
 
+/// A single directivity measurement at a specific angle
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectivityCurve {
+    /// Angle in degrees (e.g., -60, -50, ..., 0, ..., 50, 60)
+    pub angle: f64,
+    /// Frequency points in Hz
+    pub freq: Array1<f64>,
+    /// Sound Pressure Level in dB
+    pub spl: Array1<f64>,
+}
+
+/// Complete directivity data for horizontal and vertical planes
+///
+/// Contains SPL measurements at multiple angles for both horizontal
+/// and vertical planes, as typically provided by spinorama.org.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectivityData {
+    /// Horizontal plane measurements (typically -60° to +60°)
+    pub horizontal: Vec<DirectivityCurve>,
+    /// Vertical plane measurements (typically -60° to +60°)
+    pub vertical: Vec<DirectivityCurve>,
+}
+
 /// Convert SPL values to pressure values
 ///
 /// # Arguments

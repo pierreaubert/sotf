@@ -2,6 +2,7 @@
 
 use crate::ui::components::album_card::{AlbumCard, AlbumCardMode};
 use crate::ui::PlayerView;
+use gpui_ui_kit::{Button, ButtonVariant, ButtonSize};
 use gpui::prelude::*;
 use gpui::{img, uniform_list, *};
 use std::sync::Arc;
@@ -726,19 +727,12 @@ impl PlayerView {
     ) -> impl IntoElement {
         let is_active = current_sort == sort_order;
 
-        div()
-            .id(SharedString::from(format!("sort-btn-{}", label)))
-            .px_2()
-            .py(px(2.0))
-            .rounded(px(4.0))
-            .text_xs()
-            .cursor_pointer()
-            .when(is_active, |d| d.bg(theme.accent).text_color(theme.text_primary))
-            .when(!is_active, |d| {
-                d.bg(theme.surface)
-                    .text_color(theme.text_secondary)
-                    .hover(|style| style.bg(theme.surface_hover))
-            })
+        Button::new(SharedString::from(format!("sort-btn-{}", label)), label)
+            .variant(if is_active { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+            .size(ButtonSize::Xs)
+            .selected(is_active)
+            .theme(theme.to_button_theme())
+            .build()
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -748,7 +742,6 @@ impl PlayerView {
                     cx.notify();
                 }),
             )
-            .child(label)
     }
 
     /// Render a filter button with active state styling
@@ -762,19 +755,12 @@ impl PlayerView {
     ) -> impl IntoElement {
         let is_active = current_filter == filter;
 
-        div()
-            .id(SharedString::from(format!("filter-btn-{}", label)))
-            .px_2()
-            .py(px(2.0))
-            .rounded(px(4.0))
-            .text_xs()
-            .cursor_pointer()
-            .when(is_active, |d| d.bg(theme.accent).text_color(theme.text_primary))
-            .when(!is_active, |d| {
-                d.bg(theme.surface)
-                    .text_color(theme.text_secondary)
-                    .hover(|style| style.bg(theme.surface_hover))
-            })
+        Button::new(SharedString::from(format!("filter-btn-{}", label)), label)
+            .variant(if is_active { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+            .size(ButtonSize::Xs)
+            .selected(is_active)
+            .theme(theme.to_button_theme())
+            .build()
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -784,6 +770,5 @@ impl PlayerView {
                     cx.notify();
                 }),
             )
-            .child(label)
     }
 }

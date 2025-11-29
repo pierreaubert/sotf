@@ -1,0 +1,32 @@
+[package]
+name = "autoeq-roomsim"
+version = "0.1.2"
+edition = "2021"
+authors = { workspace = true }
+description = "Room acoustic simulator"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["bem", "boundary-element", "acoustics", "numerical", "room acoustics"]
+categories = ["science", "mathematics", "simulation", "hifi"]
+
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.100"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+num-complex = { version = "0.4", features = ["serde"] }
+console_error_panic_hook = "0.1"
+getrandom = { version = "0.2", features = ["js"] }
+ndarray = "0.17"
+
+# Math-BEM with pure Rust fallbacks (no BLAS/LAPACK for WASM compatibility)
+math-bem = { path = "../math-bem", default-features = false }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
