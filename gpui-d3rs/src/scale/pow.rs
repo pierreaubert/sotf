@@ -3,7 +3,7 @@
 //! Power scales are similar to linear scales, but apply an exponential
 //! transform to the input domain before computing the output range.
 
-use super::{Scale, nice_number};
+use super::{nice_number, Scale};
 
 /// A power scale applies an exponential transform before linear interpolation
 ///
@@ -288,9 +288,7 @@ mod tests {
 
     #[test]
     fn test_sqrt_scale() {
-        let scale = sqrt_scale()
-            .domain(0.0, 100.0)
-            .range(0.0, 10.0);
+        let scale = sqrt_scale().domain(0.0, 100.0).range(0.0, 10.0);
 
         assert_relative_eq!(scale.scale(25.0), 5.0);
         assert_relative_eq!(scale.exponent_value(), 0.5);

@@ -6,12 +6,17 @@
 //! - Threshold calculation functions
 
 use d3rs::contour::{
-    // Marching squares
-    ContourGenerator, contours,
-    // Density estimation
-    DensityEstimator, density_2d, gaussian_kernel,
+    contours,
+    density_2d,
+    gaussian_kernel,
+    threshold_freedman_diaconis,
+    threshold_scott,
     // Thresholds
-    threshold_sturges, threshold_scott, threshold_freedman_diaconis,
+    threshold_sturges,
+    // Marching squares
+    ContourGenerator,
+    // Density estimation
+    DensityEstimator,
 };
 
 fn main() {
@@ -24,11 +29,8 @@ fn main() {
 
     // Create a simple 5x5 grid with a peak in the center
     let grid: Vec<f64> = vec![
-        0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.3, 0.5, 0.3, 0.0,
-        0.0, 0.5, 1.0, 0.5, 0.0,
-        0.0, 0.3, 0.5, 0.3, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.3, 0.5, 0.3, 0.0, 0.0, 0.5, 1.0, 0.5, 0.0, 0.0, 0.3, 0.5,
+        0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
     ];
 
     println!("5x5 grid with center peak:");
@@ -47,10 +49,19 @@ fn main() {
     println!("\nContours at thresholds {:?}:", thresholds);
     for threshold in &thresholds {
         let c = generator.contour(&grid, *threshold);
-        println!("  Threshold {:.2}: {} ring(s)", threshold, c.coordinates.len());
+        println!(
+            "  Threshold {:.2}: {} ring(s)",
+            threshold,
+            c.coordinates.len()
+        );
         for (i, ring) in c.coordinates.iter().enumerate() {
-            println!("    Ring {}: {} points, closed={}, area={:.2}",
-                i, ring.points.len(), ring.is_closed(), ring.area().abs());
+            println!(
+                "    Ring {}: {} points, closed={}, area={:.2}",
+                i,
+                ring.points.len(),
+                ring.is_closed(),
+                ring.area().abs()
+            );
         }
     }
 
@@ -72,8 +83,14 @@ fn main() {
     }
 
     println!("{}x{} Gaussian peak grid:", size, size);
-    println!("  Min: {:.3}", large_grid.iter().cloned().fold(f64::INFINITY, f64::min));
-    println!("  Max: {:.3}", large_grid.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+    println!(
+        "  Min: {:.3}",
+        large_grid.iter().cloned().fold(f64::INFINITY, f64::min)
+    );
+    println!(
+        "  Max: {:.3}",
+        large_grid.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+    );
 
     // Generate multiple contour levels
     let levels = vec![0.1, 0.3, 0.5, 0.7, 0.9];
@@ -82,8 +99,12 @@ fn main() {
     println!("\nContour levels:");
     for c in &multi_contours {
         let total_points: usize = c.coordinates.iter().map(|r| r.points.len()).sum();
-        println!("  Level {:.1}: {} ring(s), {} total points",
-            c.value, c.coordinates.len(), total_points);
+        println!(
+            "  Level {:.1}: {} ring(s), {} total points",
+            c.value,
+            c.coordinates.len(),
+            total_points
+        );
     }
 
     // ========================================
@@ -156,17 +177,15 @@ fn main() {
     // ========================================
     println!("\n--- Simple Density API ---\n");
 
-    let simple_points = vec![
-        (0.5, 0.5),
-        (0.6, 0.4),
-        (0.4, 0.6),
-        (0.55, 0.55),
-    ];
+    let simple_points = vec![(0.5, 0.5), (0.6, 0.4), (0.4, 0.6), (0.55, 0.55)];
 
     let (grid, width, height) = density_2d(&simple_points, 10, 10, 0.15);
     println!("Simple density_2d() for {} points:", simple_points.len());
     println!("  Grid size: {}x{}", width, height);
-    println!("  Max value: {:.4}", grid.iter().cloned().fold(0.0_f64, f64::max));
+    println!(
+        "  Max value: {:.4}",
+        grid.iter().cloned().fold(0.0_f64, f64::max)
+    );
 
     // ========================================
     // Gaussian Kernel
@@ -192,8 +211,11 @@ fn main() {
     // Sturges' formula
     let sturges = threshold_sturges(min, max, values.len());
     println!("Sturges' formula ({} values):", values.len());
-    println!("  {} thresholds: {:?}", sturges.len(),
-        sturges.iter().map(|v| v.round()).collect::<Vec<_>>());
+    println!(
+        "  {} thresholds: {:?}",
+        sturges.len(),
+        sturges.iter().map(|v| v.round()).collect::<Vec<_>>()
+    );
 
     // Scott's rule
     let scott = threshold_scott(&values, min, max);
@@ -219,7 +241,8 @@ fn main() {
             let fx = x as f64 / viz_size as f64;
             let fy = y as f64 / viz_size as f64;
             // Create a wave pattern
-            let val = 0.5 + 0.3 * (fx * 6.28).sin() * (fy * 6.28).cos()
+            let val = 0.5
+                + 0.3 * (fx * 6.28).sin() * (fy * 6.28).cos()
                 + 0.2 * ((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt() * -2.0;
             viz_grid[y * viz_size + x] = val.max(0.0).min(1.0);
         }

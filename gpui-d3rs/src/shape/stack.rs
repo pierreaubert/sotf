@@ -23,8 +23,7 @@ impl StackSeries {
 }
 
 /// Stack order strategies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StackOrder {
     /// Use the given order (no reordering)
     #[default]
@@ -41,10 +40,8 @@ pub enum StackOrder {
     Reverse,
 }
 
-
 /// Stack offset strategies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StackOffset {
     /// Zero baseline (standard stacked chart)
     #[default]
@@ -58,7 +55,6 @@ pub enum StackOffset {
     /// Wiggle (minimizes weighted wiggle)
     Wiggle,
 }
-
 
 /// Stack layout generator.
 ///
@@ -144,7 +140,10 @@ impl Stack {
             .iter()
             .enumerate()
             .map(|(i, key)| {
-                let series_data: Vec<f64> = data.iter().map(|row| row.get(i).copied().unwrap_or(0.0)).collect();
+                let series_data: Vec<f64> = data
+                    .iter()
+                    .map(|row| row.get(i).copied().unwrap_or(0.0))
+                    .collect();
                 StackSeries {
                     key: key.clone(),
                     data: series_data,
@@ -167,7 +166,11 @@ impl Stack {
         for j in 0..n {
             let mut y0 = 0.0;
             for series in &mut series {
-                let value = data.get(j).and_then(|row| row.get(series.index)).copied().unwrap_or(0.0);
+                let value = data
+                    .get(j)
+                    .and_then(|row| row.get(series.index))
+                    .copied()
+                    .unwrap_or(0.0);
                 series.values[j] = [y0, y0 + value];
                 y0 += value;
             }
@@ -194,7 +197,11 @@ impl Stack {
                             .sum()
                     })
                     .collect();
-                order.sort_by(|&a, &b| sums[a].partial_cmp(&sums[b]).unwrap_or(std::cmp::Ordering::Equal));
+                order.sort_by(|&a, &b| {
+                    sums[a]
+                        .partial_cmp(&sums[b])
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
             StackOrder::Descending => {
                 let sums: Vec<f64> = (0..m)
@@ -204,7 +211,11 @@ impl Stack {
                             .sum()
                     })
                     .collect();
-                order.sort_by(|&a, &b| sums[b].partial_cmp(&sums[a]).unwrap_or(std::cmp::Ordering::Equal));
+                order.sort_by(|&a, &b| {
+                    sums[b]
+                        .partial_cmp(&sums[a])
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
             }
             StackOrder::Appearance => {
                 // Find first non-zero appearance for each series
@@ -225,7 +236,11 @@ impl Stack {
                             .sum()
                     })
                     .collect();
-                order.sort_by(|&a, &b| sums[b].partial_cmp(&sums[a]).unwrap_or(std::cmp::Ordering::Equal));
+                order.sort_by(|&a, &b| {
+                    sums[b]
+                        .partial_cmp(&sums[a])
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
 
                 // Interleave: place largest in middle, then alternate sides
                 let mut result = Vec::with_capacity(m);

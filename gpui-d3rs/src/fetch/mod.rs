@@ -17,10 +17,13 @@
 //! assert_eq!(rows[0].get("name"), Some(&"alice".to_string()));
 //! ```
 
+mod auto_type;
 mod csv;
 mod dsv;
-mod auto_type;
 
-pub use csv::{parse_csv, parse_csv_with_options, parse_tsv, parse_tsv_with_options, format_csv, format_tsv, CsvOptions};
-pub use dsv::{parse_dsv, DsvParser, DsvRow};
 pub use auto_type::{auto_type, auto_type_row, auto_type_rows, AutoTyped};
+pub use csv::{
+    format_csv, format_tsv, parse_csv, parse_csv_with_options, parse_tsv, parse_tsv_with_options,
+    CsvOptions,
+};
+pub use dsv::{parse_dsv, DsvParser, DsvRow};

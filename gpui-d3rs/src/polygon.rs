@@ -106,7 +106,9 @@ pub fn polygon_centroid(polygon: &[(f64, f64)]) -> (f64, f64) {
 
     if area.abs() < 1e-10 {
         // Degenerate polygon, compute simple average
-        let sum: (f64, f64) = polygon.iter().fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
+        let sum: (f64, f64) = polygon
+            .iter()
+            .fold((0.0, 0.0), |acc, p| (acc.0 + p.0, acc.1 + p.1));
         return (sum.0 / n as f64, sum.1 / n as f64);
     }
 

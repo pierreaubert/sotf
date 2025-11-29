@@ -117,19 +117,21 @@ where
     YS: Scale<f64, f64> + Clone,
 {
     /// Create a new contour element
-    pub fn new(
-        contours: impl Into<Arc<[Contour]>>,
-        x_scale: XS,
-        y_scale: YS,
-    ) -> Self {
+    pub fn new(contours: impl Into<Arc<[Contour]>>, x_scale: XS, y_scale: YS) -> Self {
         let contours = contours.into();
 
         // Calculate value range from contours
         let value_range = if contours.is_empty() {
             (0.0, 1.0)
         } else {
-            let min = contours.iter().map(|c| c.value).fold(f64::INFINITY, f64::min);
-            let max = contours.iter().map(|c| c.value).fold(f64::NEG_INFINITY, f64::max);
+            let min = contours
+                .iter()
+                .map(|c| c.value)
+                .fold(f64::INFINITY, f64::min);
+            let max = contours
+                .iter()
+                .map(|c| c.value)
+                .fold(f64::NEG_INFINITY, f64::max);
             (min, max)
         };
 
@@ -367,8 +369,7 @@ where
     XS: Scale<f64, f64> + Clone,
     YS: Scale<f64, f64> + Clone,
 {
-    ContourElement::new(contours, x_scale.clone(), y_scale.clone())
-        .config(config.clone())
+    ContourElement::new(contours, x_scale.clone(), y_scale.clone()).config(config.clone())
 }
 
 /// Create a viridis-like color scale for contours

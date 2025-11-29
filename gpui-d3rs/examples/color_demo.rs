@@ -6,8 +6,8 @@
 //! - Color schemes (categorical)
 //! - Color interpolation
 
-use d3rs::color::{D3Color, ColorScheme, interpolate_colors, sequential_color};
-use d3rs::interpolate::{interpolate_rgb, interpolate_hsl, interpolate_lab};
+use d3rs::color::{interpolate_colors, sequential_color, ColorScheme, D3Color};
+use d3rs::interpolate::{interpolate_hsl, interpolate_lab, interpolate_rgb};
 
 fn main() {
     println!("=== d3-color Demonstration ===\n");
@@ -23,9 +23,27 @@ fn main() {
     let blue = D3Color::rgb(0, 0, 255);
 
     println!("RGB colors:");
-    println!("  Red:   {} | r={:.2}, g={:.2}, b={:.2}", red.to_hex(), red.r, red.g, red.b);
-    println!("  Green: {} | r={:.2}, g={:.2}, b={:.2}", green.to_hex(), green.r, green.g, green.b);
-    println!("  Blue:  {} | r={:.2}, g={:.2}, b={:.2}", blue.to_hex(), blue.r, blue.g, blue.b);
+    println!(
+        "  Red:   {} | r={:.2}, g={:.2}, b={:.2}",
+        red.to_hex(),
+        red.r,
+        red.g,
+        red.b
+    );
+    println!(
+        "  Green: {} | r={:.2}, g={:.2}, b={:.2}",
+        green.to_hex(),
+        green.r,
+        green.g,
+        green.b
+    );
+    println!(
+        "  Blue:  {} | r={:.2}, g={:.2}, b={:.2}",
+        blue.to_hex(),
+        blue.r,
+        blue.g,
+        blue.b
+    );
 
     // From hex
     let coral = D3Color::from_hex(0xFF7F50);
@@ -38,9 +56,9 @@ fn main() {
     println!("  Gold:   {}", gold.to_hex());
 
     // From HSL
-    let orange_hsl = D3Color::from_hsl(30.0, 1.0, 0.5);  // Orange
+    let orange_hsl = D3Color::from_hsl(30.0, 1.0, 0.5); // Orange
     let purple_hsl = D3Color::from_hsl(270.0, 0.8, 0.4); // Purple
-    let cyan_hsl = D3Color::from_hsl(180.0, 1.0, 0.5);   // Cyan
+    let cyan_hsl = D3Color::from_hsl(180.0, 1.0, 0.5); // Cyan
 
     println!("\nFrom HSL:");
     println!("  HSL(30 deg, 100%, 50%) = {}", orange_hsl.to_hex());
@@ -54,7 +72,10 @@ fn main() {
 
     let sample = D3Color::from_hex(0x4682B4); // Steel Blue
     println!("Steel Blue ({}):", sample.to_hex());
-    println!("  RGB (0-1): ({:.2}, {:.2}, {:.2})", sample.r, sample.g, sample.b);
+    println!(
+        "  RGB (0-1): ({:.2}, {:.2}, {:.2})",
+        sample.r, sample.g, sample.b
+    );
     println!("  Opacity: {}", sample.opacity());
     println!("  Luminance: {:.3}", sample.luminance());
 
@@ -88,15 +109,19 @@ fn main() {
 
     // With opacity
     let transparent = base.with_opacity(0.5);
-    println!("  50% opacity: {} (a={})", transparent.to_hex_alpha(), transparent.opacity());
+    println!(
+        "  50% opacity: {} (a={})",
+        transparent.to_hex_alpha(),
+        transparent.opacity()
+    );
 
     // ========================================
     // Color Interpolation
     // ========================================
     println!("\n--- Color Interpolation ---\n");
 
-    let from = D3Color::rgb(255, 0, 0);   // Red
-    let to = D3Color::rgb(0, 0, 255);     // Blue
+    let from = D3Color::rgb(255, 0, 0); // Red
+    let to = D3Color::rgb(0, 0, 255); // Blue
 
     println!("Interpolating from {} to {}:\n", from.to_hex(), to.to_hex());
 
@@ -243,8 +268,13 @@ fn main() {
     for (name, color) in &test_colors {
         let lum = color.luminance();
         let better_bg = if lum > 0.5 { "black" } else { "white" };
-        println!("  {:8} ({}) - luminance: {:.3} - better on {}",
-            name, color.to_hex(), lum, better_bg);
+        println!(
+            "  {:8} ({}) - luminance: {:.3} - better on {}",
+            name,
+            color.to_hex(),
+            lum,
+            better_bg
+        );
     }
 
     println!("\n=== End of d3-color Demo ===");

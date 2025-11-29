@@ -231,8 +231,12 @@ impl PathBuilder {
 
     /// Draw a rectangle.
     pub fn rect(mut self, x: f64, y: f64, width: f64, height: f64) -> Self {
-        self.commands
-            .push(PathCommand::Rect { x, y, width, height });
+        self.commands.push(PathCommand::Rect {
+            x,
+            y,
+            width,
+            height,
+        });
         self.current_point = Point::new(x, y);
         self
     }
@@ -342,7 +346,8 @@ impl Path {
                     min_y = min_y.min(y - radius);
                     max_x = max_x.max(x + radius);
                     max_y = max_y.max(y + radius);
-                    current = Point::new(x + radius * end_angle.cos(), y + radius * end_angle.sin());
+                    current =
+                        Point::new(x + radius * end_angle.cos(), y + radius * end_angle.sin());
                     // Update with start point too
                     let start_x = x + radius * start_angle.cos();
                     let start_y = y + radius * start_angle.sin();
@@ -359,7 +364,12 @@ impl Path {
                     max_y = max_y.max(y + ry);
                     current = Point::new(x, y);
                 }
-                PathCommand::Rect { x, y, width, height } => {
+                PathCommand::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                } => {
                     min_x = min_x.min(x);
                     min_y = min_y.min(y);
                     max_x = max_x.max(x + width);
@@ -457,7 +467,12 @@ impl Path {
                     current = Point::new(x, y);
                     points.push(current);
                 }
-                PathCommand::Rect { x, y, width, height } => {
+                PathCommand::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                } => {
                     points.push(Point::new(x, y));
                     points.push(Point::new(x + width, y));
                     points.push(Point::new(x + width, y + height));
@@ -556,7 +571,12 @@ impl Path {
                         y
                     ));
                 }
-                PathCommand::Rect { x, y, width, height } => {
+                PathCommand::Rect {
+                    x,
+                    y,
+                    width,
+                    height,
+                } => {
                     s.push_str(&format!(
                         "M{},{} L{},{} L{},{} L{},{} Z",
                         x,
@@ -665,7 +685,10 @@ fn flatten_arc(
     for i in 1..=n {
         let t = i as f64 / n as f64;
         let angle = start_angle + delta * t;
-        points.push(Point::new(cx + radius * angle.cos(), cy + radius * angle.sin()));
+        points.push(Point::new(
+            cx + radius * angle.cos(),
+            cy + radius * angle.sin(),
+        ));
     }
 }
 

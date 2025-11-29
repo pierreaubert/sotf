@@ -157,7 +157,9 @@ impl ContourGenerator {
                         continue;
                     }
 
-                    if let Some(ring) = self.trace_contour(values, threshold, i, j, edge, &mut visited) {
+                    if let Some(ring) =
+                        self.trace_contour(values, threshold, i, j, edge, &mut visited)
+                    {
                         if ring.points.len() >= 3 {
                             contour.add_ring(ring);
                         }
@@ -177,15 +179,15 @@ impl ContourGenerator {
         // Edge 2 crosses if bits 2 and 3 differ
         // Edge 3 crosses if bits 3 and 0 differ
         match case {
-            0 | 15 => &[],                  // No crossings
-            1 | 14 => &[0, 3],              // bottom and left
-            2 | 13 => &[0, 1],              // bottom and right
-            3 | 12 => &[1, 3],              // right and left
-            4 | 11 => &[1, 2],              // right and top
-            5 => &[0, 1, 2, 3],             // saddle: all edges
-            6 | 9 => &[0, 2],               // bottom and top
-            7 | 8 => &[2, 3],               // top and left
-            10 => &[0, 1, 2, 3],            // saddle: all edges
+            0 | 15 => &[],       // No crossings
+            1 | 14 => &[0, 3],   // bottom and left
+            2 | 13 => &[0, 1],   // bottom and right
+            3 | 12 => &[1, 3],   // right and left
+            4 | 11 => &[1, 2],   // right and top
+            5 => &[0, 1, 2, 3],  // saddle: all edges
+            6 | 9 => &[0, 2],    // bottom and top
+            7 | 8 => &[2, 3],    // top and left
+            10 => &[0, 1, 2, 3], // saddle: all edges
             _ => &[],
         }
     }
@@ -299,7 +301,14 @@ impl ContourGenerator {
     }
 
     /// Get the interpolated point on an edge.
-    fn edge_point(&self, values: &[f64], i: usize, j: usize, edge: usize, threshold: f64) -> Option<Point> {
+    fn edge_point(
+        &self,
+        values: &[f64],
+        i: usize,
+        j: usize,
+        edge: usize,
+        threshold: f64,
+    ) -> Option<Point> {
         let (x0, y0, x1, y1, v0, v1) = match edge {
             0 => {
                 // Bottom edge (i,j) to (i+1,j)
@@ -311,13 +320,27 @@ impl ContourGenerator {
                 // Right edge (i+1,j) to (i+1,j+1)
                 let v0 = values[j * self.width + i + 1];
                 let v1 = values[(j + 1) * self.width + i + 1];
-                ((i + 1) as f64, j as f64, (i + 1) as f64, (j + 1) as f64, v0, v1)
+                (
+                    (i + 1) as f64,
+                    j as f64,
+                    (i + 1) as f64,
+                    (j + 1) as f64,
+                    v0,
+                    v1,
+                )
             }
             2 => {
                 // Top edge (i+1,j+1) to (i,j+1)
                 let v0 = values[(j + 1) * self.width + i + 1];
                 let v1 = values[(j + 1) * self.width + i];
-                ((i + 1) as f64, (j + 1) as f64, i as f64, (j + 1) as f64, v0, v1)
+                (
+                    (i + 1) as f64,
+                    (j + 1) as f64,
+                    i as f64,
+                    (j + 1) as f64,
+                    v0,
+                    v1,
+                )
             }
             3 => {
                 // Left edge (i,j+1) to (i,j)
@@ -372,33 +395,87 @@ impl ContourGenerator {
             0 | 15 => None, // No contour
 
             // Single corner cases
-            1 => match entry_edge { 0 => Some(3), 3 => Some(0), _ => None },   // bottom-left above
-            2 => match entry_edge { 0 => Some(1), 1 => Some(0), _ => None },   // bottom-right above
-            4 => match entry_edge { 1 => Some(2), 2 => Some(1), _ => None },   // top-right above
-            8 => match entry_edge { 2 => Some(3), 3 => Some(2), _ => None },   // top-left above
+            1 => match entry_edge {
+                0 => Some(3),
+                3 => Some(0),
+                _ => None,
+            }, // bottom-left above
+            2 => match entry_edge {
+                0 => Some(1),
+                1 => Some(0),
+                _ => None,
+            }, // bottom-right above
+            4 => match entry_edge {
+                1 => Some(2),
+                2 => Some(1),
+                _ => None,
+            }, // top-right above
+            8 => match entry_edge {
+                2 => Some(3),
+                3 => Some(2),
+                _ => None,
+            }, // top-left above
 
             // Opposite corner cases (complement of single corner)
-            14 => match entry_edge { 0 => Some(3), 3 => Some(0), _ => None },  // complement of 1
-            13 => match entry_edge { 0 => Some(1), 1 => Some(0), _ => None },  // complement of 2
-            11 => match entry_edge { 1 => Some(2), 2 => Some(1), _ => None },  // complement of 4
-            7 => match entry_edge { 2 => Some(3), 3 => Some(2), _ => None },   // complement of 8
+            14 => match entry_edge {
+                0 => Some(3),
+                3 => Some(0),
+                _ => None,
+            }, // complement of 1
+            13 => match entry_edge {
+                0 => Some(1),
+                1 => Some(0),
+                _ => None,
+            }, // complement of 2
+            11 => match entry_edge {
+                1 => Some(2),
+                2 => Some(1),
+                _ => None,
+            }, // complement of 4
+            7 => match entry_edge {
+                2 => Some(3),
+                3 => Some(2),
+                _ => None,
+            }, // complement of 8
 
             // Two adjacent corners cases
-            3 => match entry_edge { 1 => Some(3), 3 => Some(1), _ => None },   // bottom two above
-            6 => match entry_edge { 0 => Some(2), 2 => Some(0), _ => None },   // right two above
-            12 => match entry_edge { 1 => Some(3), 3 => Some(1), _ => None },  // top two above
-            9 => match entry_edge { 0 => Some(2), 2 => Some(0), _ => None },   // left two above
+            3 => match entry_edge {
+                1 => Some(3),
+                3 => Some(1),
+                _ => None,
+            }, // bottom two above
+            6 => match entry_edge {
+                0 => Some(2),
+                2 => Some(0),
+                _ => None,
+            }, // right two above
+            12 => match entry_edge {
+                1 => Some(3),
+                3 => Some(1),
+                _ => None,
+            }, // top two above
+            9 => match entry_edge {
+                0 => Some(2),
+                2 => Some(0),
+                _ => None,
+            }, // left two above
 
             // Saddle cases (diagonal corners) - ambiguous, pick one interpretation
-            5 => match entry_edge {                                             // 0101: corners 0 and 2
-                0 => Some(1), 1 => Some(0),
-                2 => Some(3), 3 => Some(2),
-                _ => None
+            5 => match entry_edge {
+                // 0101: corners 0 and 2
+                0 => Some(1),
+                1 => Some(0),
+                2 => Some(3),
+                3 => Some(2),
+                _ => None,
             },
-            10 => match entry_edge {                                            // 1010: corners 1 and 3
-                0 => Some(3), 3 => Some(0),
-                1 => Some(2), 2 => Some(1),
-                _ => None
+            10 => match entry_edge {
+                // 1010: corners 1 and 3
+                0 => Some(3),
+                3 => Some(0),
+                1 => Some(2),
+                2 => Some(1),
+                _ => None,
             },
 
             _ => None,
@@ -407,7 +484,12 @@ impl ContourGenerator {
 
     /// Move to the adjacent cell when exiting through an edge.
     /// Returns (new_i, new_j, entry_edge_in_new_cell) or None if at boundary.
-    fn move_to_adjacent_cell(&self, i: usize, j: usize, exit_edge: usize) -> Option<(usize, usize, usize)> {
+    fn move_to_adjacent_cell(
+        &self,
+        i: usize,
+        j: usize,
+        exit_edge: usize,
+    ) -> Option<(usize, usize, usize)> {
         match exit_edge {
             0 => {
                 // Exit through bottom -> enter cell below through its top
@@ -500,10 +582,7 @@ mod tests {
     #[test]
     fn test_contour_generator() {
         let values = vec![
-            0.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 1.0, 0.0,
-            0.0, 1.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         ];
 
         let generator = ContourGenerator::new(4, 4);
@@ -513,11 +592,7 @@ mod tests {
 
     #[test]
     fn test_multiple_contours() {
-        let values = vec![
-            0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0,
-        ];
+        let values = vec![0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0];
 
         let thresholds = vec![0.25, 0.5, 0.75];
         let result = contours(&values, 3, 3, &thresholds);

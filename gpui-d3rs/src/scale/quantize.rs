@@ -128,8 +128,7 @@ impl<R: Clone> Scale<f64, R> for QuantizeScale<R> {
         }
 
         // Clamp and normalize to [0, 1]
-        let t = ((value - self.domain_min) / (self.domain_max - self.domain_min))
-            .clamp(0.0, 1.0);
+        let t = ((value - self.domain_min) / (self.domain_max - self.domain_min)).clamp(0.0, 1.0);
 
         // Map to discrete index
         let index = (t * n as f64).floor() as usize;
@@ -168,8 +167,7 @@ mod tests {
 
     #[test]
     fn test_quantize_scale_basic() {
-        let scale = QuantizeScale::with_range(vec!["a", "b", "c"])
-            .domain(0.0, 1.0);
+        let scale = QuantizeScale::with_range(vec!["a", "b", "c"]).domain(0.0, 1.0);
 
         assert_eq!(scale.scale(0.0), "a");
         assert_eq!(scale.scale(0.33), "a");
@@ -181,8 +179,7 @@ mod tests {
 
     #[test]
     fn test_quantize_scale_clamping() {
-        let scale = QuantizeScale::with_range(vec![1, 2, 3])
-            .domain(0.0, 100.0);
+        let scale = QuantizeScale::with_range(vec![1, 2, 3]).domain(0.0, 100.0);
 
         // Values outside domain should clamp
         assert_eq!(scale.scale(-50.0), 1);
@@ -191,8 +188,7 @@ mod tests {
 
     #[test]
     fn test_quantize_scale_thresholds() {
-        let scale = QuantizeScale::with_range(vec!["a", "b", "c", "d"])
-            .domain(0.0, 100.0);
+        let scale = QuantizeScale::with_range(vec!["a", "b", "c", "d"]).domain(0.0, 100.0);
 
         let thresholds = scale.thresholds();
         assert_eq!(thresholds.len(), 3);
@@ -203,8 +199,7 @@ mod tests {
 
     #[test]
     fn test_quantize_scale_invert_extent() {
-        let scale = QuantizeScale::with_range(vec!["a", "b", "c", "d"])
-            .domain(0.0, 100.0);
+        let scale = QuantizeScale::with_range(vec!["a", "b", "c", "d"]).domain(0.0, 100.0);
 
         let extent = scale.invert_extent(1).unwrap();
         assert!((extent.0 - 25.0).abs() < 1e-6);
@@ -213,8 +208,8 @@ mod tests {
 
     #[test]
     fn test_quantize_scale_numeric_range() {
-        let scale: QuantizeScale<f64> = QuantizeScale::with_range(vec![0.0, 0.5, 1.0])
-            .domain(0.0, 100.0);
+        let scale: QuantizeScale<f64> =
+            QuantizeScale::with_range(vec![0.0, 0.5, 1.0]).domain(0.0, 100.0);
 
         assert!((scale.scale(10.0) - 0.0).abs() < 1e-6);
         assert!((scale.scale(50.0) - 0.5).abs() < 1e-6);

@@ -43,8 +43,7 @@ impl<T> std::fmt::Debug for BinGenerator<T> {
 }
 
 /// Strategy for determining bin thresholds.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum ThresholdStrategy {
     /// Use a fixed number of bins.
     Count(usize),
@@ -58,7 +57,6 @@ pub enum ThresholdStrategy {
     /// Use Scott's normal reference rule.
     Scott,
 }
-
 
 impl<T: Clone> Default for BinGenerator<T> {
     fn default() -> Self {

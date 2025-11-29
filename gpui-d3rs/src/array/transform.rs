@@ -62,10 +62,7 @@ where
     R: Fn(&[&T]) -> V,
 {
     let groups = group(data, key);
-    groups
-        .into_iter()
-        .map(|(k, v)| (k, reduce(&v)))
-        .collect()
+    groups.into_iter().map(|(k, v)| (k, reduce(&v))).collect()
 }
 
 /// Creates an index from key to element.
@@ -380,9 +377,11 @@ mod tests {
     fn test_rollup() {
         let data = vec![("A", 10), ("B", 20), ("A", 30), ("B", 40)];
 
-        let sums = rollup(&data, |item| item.0, |group| {
-            group.iter().map(|item| item.1).sum::<i32>()
-        });
+        let sums = rollup(
+            &data,
+            |item| item.0,
+            |group| group.iter().map(|item| item.1).sum::<i32>(),
+        );
 
         assert_eq!(sums[&"A"], 40);
         assert_eq!(sums[&"B"], 60);

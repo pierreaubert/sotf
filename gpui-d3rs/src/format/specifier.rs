@@ -116,9 +116,8 @@ impl Default for FormatSpecifier {
 }
 
 static FORMAT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"^(?:(.)?([<>=^]))?([+\- (])?([#$])?(0)?(\d+)?(,)?(?:\.(\d+))?(~)?([a-zA-Z%])?$"
-    ).unwrap()
+    Regex::new(r"^(?:(.)?([<>=^]))?([+\- (])?([#$])?(0)?(\d+)?(,)?(?:\.(\d+))?(~)?([a-zA-Z%])?$")
+        .unwrap()
 });
 
 /// Parse a format specifier string

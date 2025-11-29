@@ -28,6 +28,10 @@ pub struct GridConfig {
     pub line_opacity: f32,
     /// Dot opacity (0.0 - 1.0)
     pub dot_opacity: f32,
+    /// Explicit vertical line positions (overrides scale ticks if provided)
+    pub vertical_line_values: Option<Vec<f64>>,
+    /// Explicit horizontal line positions (overrides scale ticks if provided)
+    pub horizontal_line_values: Option<Vec<f64>>,
 }
 
 impl Default for GridConfig {
@@ -40,6 +44,8 @@ impl Default for GridConfig {
             dot_radius: 2.0,
             line_opacity: 0.2,
             dot_opacity: 0.4,
+            vertical_line_values: None,
+            horizontal_line_values: None,
         }
     }
 }
@@ -127,6 +133,27 @@ impl GridConfig {
     /// Set the dot opacity
     pub fn with_dot_opacity(mut self, opacity: f32) -> Self {
         self.dot_opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set explicit vertical line positions (overrides scale ticks)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use d3rs::grid::GridConfig;
+    ///
+    /// let config = GridConfig::with_lines()
+    ///     .with_vertical_values(vec![50.0, 500.0, 5000.0]);
+    /// ```
+    pub fn with_vertical_values(mut self, values: Vec<f64>) -> Self {
+        self.vertical_line_values = Some(values);
+        self
+    }
+
+    /// Set explicit horizontal line positions (overrides scale ticks)
+    pub fn with_horizontal_values(mut self, values: Vec<f64>) -> Self {
+        self.horizontal_line_values = Some(values);
         self
     }
 }

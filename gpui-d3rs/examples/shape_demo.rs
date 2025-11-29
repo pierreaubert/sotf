@@ -9,19 +9,19 @@
 //! - Path building
 
 use d3rs::shape::{
-    // Pie/Arc
-    pie::{Pie, pie, donut, half_pie},
     arc::{Arc, ArcDatum},
     // Area
     area::Area,
     // Curves
     curve::Curve,
-    // Symbols
-    symbol::{SymbolType, Symbol},
-    // Stack
-    stack::{Stack, StackOrder, StackOffset},
     // Path
     path::{PathBuilder, Point},
+    // Pie/Arc
+    pie::{donut, half_pie, pie, Pie},
+    // Stack
+    stack::{Stack, StackOffset, StackOrder},
+    // Symbols
+    symbol::{Symbol, SymbolType},
 };
 
 fn main() {
@@ -45,44 +45,49 @@ fn main() {
     for (i, slice) in slices.iter().enumerate() {
         let degrees_start = slice.arc.start_angle.to_degrees();
         let degrees_end = slice.arc.end_angle.to_degrees();
-        println!("  {}: value={:5.1}, angle=[{:6.1} deg, {:6.1} deg]",
-            labels[i], slice.value,
-            degrees_start, degrees_end);
+        println!(
+            "  {}: value={:5.1}, angle=[{:6.1} deg, {:6.1} deg]",
+            labels[i], slice.value, degrees_start, degrees_end
+        );
     }
 
     // Donut (with inner radius)
     let donut_slices = donut(&data, 50.0, 100.0);
     println!("\nDonut Layout (inner=50, outer=100):");
     for (i, slice) in donut_slices.iter().enumerate() {
-        println!("  {}: [{:6.1} deg, {:6.1} deg], inner={}, outer={}",
+        println!(
+            "  {}: [{:6.1} deg, {:6.1} deg], inner={}, outer={}",
             labels[i],
             slice.arc.start_angle.to_degrees(),
             slice.arc.end_angle.to_degrees(),
             slice.arc.inner_radius,
-            slice.arc.outer_radius);
+            slice.arc.outer_radius
+        );
     }
 
     // Half pie using the Pie builder
     let half = half_pie(&data, 100.0);
     println!("\nHalf Pie (semicircle):");
     for (i, slice) in half.iter().enumerate() {
-        println!("  {}: [{:6.1} deg, {:6.1} deg]",
+        println!(
+            "  {}: [{:6.1} deg, {:6.1} deg]",
             labels[i],
             slice.arc.start_angle.to_degrees(),
-            slice.arc.end_angle.to_degrees());
+            slice.arc.end_angle.to_degrees()
+        );
     }
 
     // Custom pie with padding
-    let custom_pie = Pie::new()
-        .outer_radius(100.0)
-        .pad_angle(0.05);
+    let custom_pie = Pie::new().outer_radius(100.0).pad_angle(0.05);
     let custom_slices = custom_pie.generate(&data, |v| *v);
     println!("\nCustom Pie (with pad_angle=0.05):");
     for (i, slice) in custom_slices.iter().enumerate() {
-        println!("  {}: [{:6.1} deg, {:6.1} deg]",
+        println!(
+            "  {}: [{:6.1} deg, {:6.1} deg]",
             labels[i],
             slice.arc.start_angle.to_degrees(),
-            slice.arc.end_angle.to_degrees());
+            slice.arc.end_angle.to_degrees()
+        );
     }
 
     // ========================================
@@ -145,8 +150,13 @@ fn main() {
         Point::new(200.0, 60.0),
     ];
 
-    println!("Control points: {:?}", control_points.iter()
-        .map(|p| (p.x, p.y)).collect::<Vec<_>>());
+    println!(
+        "Control points: {:?}",
+        control_points
+            .iter()
+            .map(|p| (p.x, p.y))
+            .collect::<Vec<_>>()
+    );
 
     let curve_types = [
         ("Linear", Curve::Linear),
@@ -187,7 +197,11 @@ fn main() {
     for symbol_type in symbol_types.iter() {
         let symbol = Symbol::new(*symbol_type, 64.0);
         let path = symbol.generate();
-        println!("  {:15}: {} commands", format!("{:?}", symbol_type), path.commands().len());
+        println!(
+            "  {:15}: {} commands",
+            format!("{:?}", symbol_type),
+            path.commands().len()
+        );
     }
 
     // Star with custom points
@@ -204,9 +218,9 @@ fn main() {
     // Multi-series data for stacked chart
     // Each row is a time point, each column is a series
     let stack_data = vec![
-        vec![10.0, 15.0, 12.0],  // Time 0: Series A, B, C
-        vec![20.0, 25.0, 18.0],  // Time 1
-        vec![30.0, 20.0, 25.0],  // Time 2
+        vec![10.0, 15.0, 12.0], // Time 0: Series A, B, C
+        vec![20.0, 25.0, 18.0], // Time 1
+        vec![30.0, 20.0, 25.0], // Time 2
     ];
 
     println!("Input data (3 time points, 3 series):");
@@ -225,10 +239,12 @@ fn main() {
     for series in &stacked {
         let y0s: Vec<f64> = series.values.iter().map(|v| v[0]).collect();
         let y1s: Vec<f64> = series.values.iter().map(|v| v[1]).collect();
-        println!("  {}: y0={:?}, y1={:?}",
+        println!(
+            "  {}: y0={:?}, y1={:?}",
             series.key,
             y0s.iter().map(|v| v.round()).collect::<Vec<_>>(),
-            y1s.iter().map(|v| v.round()).collect::<Vec<_>>());
+            y1s.iter().map(|v| v.round()).collect::<Vec<_>>()
+        );
     }
 
     // Expanding stack (normalized to 100%)
@@ -239,10 +255,16 @@ fn main() {
     let expanded = expand_stack.generate(&stack_data);
     println!("\nExpanded stack (normalized 0-1):");
     for series in &expanded {
-        println!("  {}: y0=[{:.2}, {:.2}, {:.2}], y1=[{:.2}, {:.2}, {:.2}]",
+        println!(
+            "  {}: y0=[{:.2}, {:.2}, {:.2}], y1=[{:.2}, {:.2}, {:.2}]",
             series.key,
-            series.values[0][0], series.values[1][0], series.values[2][0],
-            series.values[0][1], series.values[1][1], series.values[2][1]);
+            series.values[0][0],
+            series.values[1][0],
+            series.values[2][0],
+            series.values[0][1],
+            series.values[1][1],
+            series.values[2][1]
+        );
     }
 
     // Wiggle (stream graph)
@@ -253,9 +275,10 @@ fn main() {
     let wiggled = wiggle_stack.generate(&stack_data);
     println!("\nWiggle stack (stream graph):");
     for series in &wiggled {
-        println!("  {}: y0=[{:6.1}, {:6.1}, {:6.1}]",
-            series.key,
-            series.values[0][0], series.values[1][0], series.values[2][0]);
+        println!(
+            "  {}: y0=[{:6.1}, {:6.1}, {:6.1}]",
+            series.key, series.values[0][0], series.values[1][0], series.values[2][0]
+        );
     }
 
     // ========================================

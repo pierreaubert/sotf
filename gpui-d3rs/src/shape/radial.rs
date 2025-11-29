@@ -3,8 +3,8 @@
 //! These generators create shapes in polar coordinates, useful for
 //! radar charts, polar area charts, and circular visualizations.
 
-use super::path::PathBuilder;
 use super::curve::Curve;
+use super::path::PathBuilder;
 
 /// A point in polar coordinates
 #[derive(Debug, Clone, Copy)]
@@ -238,11 +238,7 @@ pub fn radial_area(points: &[RadialPoint], config: &RadialAreaConfig) -> String 
 }
 
 /// Generate a polar grid of concentric circles
-pub fn polar_grid_circles(
-    cx: f64,
-    cy: f64,
-    radii: &[f64],
-) -> Vec<String> {
+pub fn polar_grid_circles(cx: f64, cy: f64, radii: &[f64]) -> Vec<String> {
     radii
         .iter()
         .map(|&r| {

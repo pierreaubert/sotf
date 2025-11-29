@@ -144,8 +144,16 @@ impl<T> Area<T> {
             let top_points: Vec<Point> = segment
                 .iter()
                 .map(|d| {
-                    let x = self.x1.as_ref().map(|f| f(d)).unwrap_or_else(|| (self.x)(d));
-                    let y = self.y1.as_ref().map(|f| f(d)).unwrap_or_else(|| (self.y)(d));
+                    let x = self
+                        .x1
+                        .as_ref()
+                        .map(|f| f(d))
+                        .unwrap_or_else(|| (self.x)(d));
+                    let y = self
+                        .y1
+                        .as_ref()
+                        .map(|f| f(d))
+                        .unwrap_or_else(|| (self.y)(d));
                     Point::new(x, y)
                 })
                 .collect();
@@ -155,7 +163,11 @@ impl<T> Area<T> {
                 .iter()
                 .rev()
                 .map(|d| {
-                    let x = self.x0.as_ref().map(|f| f(d)).unwrap_or_else(|| (self.x)(d));
+                    let x = self
+                        .x0
+                        .as_ref()
+                        .map(|f| f(d))
+                        .unwrap_or_else(|| (self.x)(d));
                     let y = (self.y0)(d);
                     Point::new(x, y)
                 })

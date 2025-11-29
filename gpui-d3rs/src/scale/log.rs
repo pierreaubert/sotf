@@ -1,6 +1,6 @@
 //! Logarithmic scale implementation
 
-use super::{Scale, generate_log_ticks};
+use super::{generate_log_ticks, Scale};
 
 /// A logarithmic scale maps a continuous domain to a continuous range using logarithmic transformation
 ///
@@ -72,8 +72,16 @@ impl LogScale {
     /// let scale = LogScale::new().domain(20.0, 20000.0);
     /// ```
     pub fn domain(mut self, min: f64, max: f64) -> Self {
-        debug_assert!(min > 0.0, "Log scale domain minimum must be positive, got {}", min);
-        debug_assert!(max > 0.0, "Log scale domain maximum must be positive, got {}", max);
+        debug_assert!(
+            min > 0.0,
+            "Log scale domain minimum must be positive, got {}",
+            min
+        );
+        debug_assert!(
+            max > 0.0,
+            "Log scale domain maximum must be positive, got {}",
+            max
+        );
         self.domain_min = min;
         self.domain_max = max;
         self
@@ -104,7 +112,10 @@ impl LogScale {
     /// let scale = LogScale::new().base(2.0); // Binary logarithm
     /// ```
     pub fn base(mut self, base: f64) -> Self {
-        debug_assert!(base > 0.0 && base != 1.0, "Log scale base must be positive and not 1.0");
+        debug_assert!(
+            base > 0.0 && base != 1.0,
+            "Log scale base must be positive and not 1.0"
+        );
         self.base = base;
         self
     }
@@ -165,9 +176,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_basic() {
-        let scale = LogScale::new()
-            .domain(1.0, 1000.0)
-            .range(0.0, 1.0);
+        let scale = LogScale::new().domain(1.0, 1000.0).range(0.0, 1.0);
 
         assert_relative_eq!(scale.scale(1.0), 0.0, epsilon = 1e-10);
         assert_relative_eq!(scale.scale(10.0), 1.0 / 3.0, epsilon = 1e-10);
@@ -177,9 +186,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_frequency() {
-        let scale = LogScale::new()
-            .domain(20.0, 20000.0)
-            .range(0.0, 1.0);
+        let scale = LogScale::new().domain(20.0, 20000.0).range(0.0, 1.0);
 
         assert_relative_eq!(scale.scale(20.0), 0.0, epsilon = 1e-10);
         assert_relative_eq!(scale.scale(20000.0), 1.0, epsilon = 1e-10);
@@ -191,9 +198,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_invert() {
-        let scale = LogScale::new()
-            .domain(1.0, 1000.0)
-            .range(0.0, 500.0);
+        let scale = LogScale::new().domain(1.0, 1000.0).range(0.0, 500.0);
 
         assert_relative_eq!(scale.invert(0.0).unwrap(), 1.0, epsilon = 1e-6);
         assert_relative_eq!(scale.invert(500.0).unwrap(), 1000.0, epsilon = 1e-6);
@@ -205,10 +210,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_base_2() {
-        let scale = LogScale::new()
-            .domain(1.0, 16.0)
-            .range(0.0, 1.0)
-            .base(2.0);
+        let scale = LogScale::new().domain(1.0, 16.0).range(0.0, 1.0).base(2.0);
 
         assert_relative_eq!(scale.scale(1.0), 0.0, epsilon = 1e-10);
         assert_relative_eq!(scale.scale(2.0), 0.25, epsilon = 1e-10);
@@ -219,9 +221,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_roundtrip() {
-        let scale = LogScale::new()
-            .domain(1.0, 1000.0)
-            .range(0.0, 500.0);
+        let scale = LogScale::new().domain(1.0, 1000.0).range(0.0, 500.0);
 
         for value in [1.0, 10.0, 100.0, 1000.0] {
             let scaled = scale.scale(value);
@@ -232,9 +232,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_inverted_range() {
-        let scale = LogScale::new()
-            .domain(1.0, 1000.0)
-            .range(500.0, 0.0); // Inverted range
+        let scale = LogScale::new().domain(1.0, 1000.0).range(500.0, 0.0); // Inverted range
 
         assert_relative_eq!(scale.scale(1.0), 500.0, epsilon = 1e-10);
         assert_relative_eq!(scale.scale(1000.0), 0.0, epsilon = 1e-10);
@@ -242,9 +240,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_clamping() {
-        let scale = LogScale::new()
-            .domain(10.0, 100.0)
-            .range(0.0, 1.0);
+        let scale = LogScale::new().domain(10.0, 100.0).range(0.0, 1.0);
 
         // Values outside domain should be clamped
         assert_relative_eq!(scale.scale(5.0), 0.0, epsilon = 1e-10); // Clamped to 10
@@ -253,9 +249,7 @@ mod tests {
 
     #[test]
     fn test_log_scale_ticks() {
-        let scale = LogScale::new()
-            .domain(1.0, 1000.0)
-            .range(0.0, 1.0);
+        let scale = LogScale::new().domain(1.0, 1000.0).range(0.0, 1.0);
 
         let ticks = scale.ticks(5);
 

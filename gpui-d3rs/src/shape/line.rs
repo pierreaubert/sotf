@@ -116,6 +116,77 @@ impl LinePoint {
     }
 }
 
+/// Clip a line segment to the unit rectangle [0,1] x [0,1] using Cohen-Sutherland algorithm
+/// Returns Some((x0, y0, x1, y1)) if the clipped segment is visible, None if entirely outside
+fn clip_line_segment(x0: f32, y0: f32, x1: f32, y1: f32) -> Option<(f32, f32, f32, f32)> {
+    const INSIDE: u8 = 0;
+    const LEFT: u8 = 1;
+    const RIGHT: u8 = 2;
+    const BOTTOM: u8 = 4;
+    const TOP: u8 = 8;
+
+    fn compute_outcode(x: f32, y: f32) -> u8 {
+        let mut code = INSIDE;
+        if x < 0.0 {
+            code |= LEFT;
+        } else if x > 1.0 {
+            code |= RIGHT;
+        }
+        if y < 0.0 {
+            code |= TOP;
+        } else if y > 1.0 {
+            code |= BOTTOM;
+        }
+        code
+    }
+
+    let mut x0 = x0;
+    let mut y0 = y0;
+    let mut x1 = x1;
+    let mut y1 = y1;
+    let mut outcode0 = compute_outcode(x0, y0);
+    let mut outcode1 = compute_outcode(x1, y1);
+
+    loop {
+        if (outcode0 | outcode1) == 0 {
+            // Both points inside
+            return Some((x0, y0, x1, y1));
+        } else if (outcode0 & outcode1) != 0 {
+            // Both points share an outside zone
+            return None;
+        } else {
+            // Calculate intersection
+            let outcode_out = if outcode0 != 0 { outcode0 } else { outcode1 };
+            let (x, y);
+
+            if (outcode_out & TOP) != 0 {
+                x = x0 + (x1 - x0) * (0.0 - y0) / (y1 - y0);
+                y = 0.0;
+            } else if (outcode_out & BOTTOM) != 0 {
+                x = x0 + (x1 - x0) * (1.0 - y0) / (y1 - y0);
+                y = 1.0;
+            } else if (outcode_out & RIGHT) != 0 {
+                y = y0 + (y1 - y0) * (1.0 - x0) / (x1 - x0);
+                x = 1.0;
+            } else {
+                // LEFT
+                y = y0 + (y1 - y0) * (0.0 - x0) / (x1 - x0);
+                x = 0.0;
+            }
+
+            if outcode_out == outcode0 {
+                x0 = x;
+                y0 = y;
+                outcode0 = compute_outcode(x0, y0);
+            } else {
+                x1 = x;
+                y1 = y;
+                outcode1 = compute_outcode(x1, y1);
+            }
+        }
+    }
+}
+
 /// Render a line chart using GPUI's PathBuilder for proper vector line rendering
 ///
 /// # Example
@@ -156,15 +227,15 @@ where
     let x_range_span = x_max - x_min;
     let y_range_span = (y_max - y_min).abs();
 
-    // Pre-calculate pixel positions for the line
-    let mut pixel_points: Vec<Point<Pixels>> = Vec::with_capacity(data.len());
+    // Pre-calculate relative positions for the line (in 0..1 range)
+    let mut relative_points: Vec<(f32, f32)> = Vec::with_capacity(data.len());
     for point in data {
         let x_range = x_scale.scale(point.x);
-        let x_px = ((x_range - x_min) / x_range_span) as f32;
+        let x_rel = ((x_range - x_min) / x_range_span) as f32;
         let y_range = y_scale.scale(point.y);
         // Invert Y for screen coordinates
-        let y_px = 1.0 - ((y_range - y_min) / y_range_span) as f32;
-        pixel_points.push(gpui::point(px(x_px), px(y_px)));
+        let y_rel = 1.0 - ((y_range - y_min) / y_range_span) as f32;
+        relative_points.push((x_rel, y_rel));
     }
 
     let stroke_color = config.stroke_color.to_rgba();
@@ -180,101 +251,134 @@ where
         .to_rgba();
 
     canvas(
-        // Prepaint: calculate actual pixel positions based on bounds
+        // Prepaint: pass through the relative points and bounds info
         move |bounds, _window, _cx| {
             let width: f32 = bounds.size.width.into();
             let height: f32 = bounds.size.height.into();
             let origin_x: f32 = bounds.origin.x.into();
             let origin_y: f32 = bounds.origin.y.into();
 
-            // Convert relative positions to absolute pixel positions
-            let absolute_points: Vec<Point<Pixels>> = pixel_points
-                .iter()
-                .map(|p| {
-                    let rel_x: f32 = p.x.into();
-                    let rel_y: f32 = p.y.into();
-                    gpui::point(
-                        px(origin_x + rel_x * width),
-                        px(origin_y + rel_y * height),
-                    )
-                })
-                .collect();
-
-            absolute_points
+            (relative_points.clone(), width, height, origin_x, origin_y)
         },
-        // Paint: draw the line path and optionally points
-        move |_bounds, absolute_points: Vec<Point<Pixels>>, window, _cx| {
-            if absolute_points.len() < 2 {
+        // Paint: draw clipped line segments
+        move |_bounds,
+              (rel_points, width, height, origin_x, origin_y): (
+            Vec<(f32, f32)>,
+            f32,
+            f32,
+            f32,
+            f32,
+        ),
+              window,
+              _cx| {
+            if rel_points.len() < 2 {
                 return;
             }
 
-            // Build the path based on curve type
-            let mut path_builder = PathBuilder::stroke(px(stroke_width));
-
-            match curve_type {
+            // Build segments to draw based on curve type, applying clipping
+            let segments_to_draw: Vec<(f32, f32, f32, f32)> = match curve_type {
                 CurveType::Linear => {
-                    path_builder.move_to(absolute_points[0]);
-                    for point in &absolute_points[1..] {
-                        path_builder.line_to(*point);
+                    let mut segments = Vec::new();
+                    for i in 1..rel_points.len() {
+                        let (x0, y0) = rel_points[i - 1];
+                        let (x1, y1) = rel_points[i];
+                        if let Some(clipped) = clip_line_segment(x0, y0, x1, y1) {
+                            segments.push(clipped);
+                        }
                     }
+                    segments
                 }
                 CurveType::Step | CurveType::StepAfter => {
-                    path_builder.move_to(absolute_points[0]);
-                    for i in 1..absolute_points.len() {
-                        let prev = absolute_points[i - 1];
-                        let curr = absolute_points[i];
-                        // Horizontal then vertical
-                        path_builder.line_to(gpui::point(curr.x, prev.y));
-                        path_builder.line_to(curr);
+                    let mut segments = Vec::new();
+                    for i in 1..rel_points.len() {
+                        let (x0, y0) = rel_points[i - 1];
+                        let (x1, y1) = rel_points[i];
+                        // Horizontal then vertical: (x0,y0) -> (x1,y0) -> (x1,y1)
+                        if let Some(clipped) = clip_line_segment(x0, y0, x1, y0) {
+                            segments.push(clipped);
+                        }
+                        if let Some(clipped) = clip_line_segment(x1, y0, x1, y1) {
+                            segments.push(clipped);
+                        }
                     }
+                    segments
                 }
                 CurveType::StepBefore => {
-                    path_builder.move_to(absolute_points[0]);
-                    for i in 1..absolute_points.len() {
-                        let prev = absolute_points[i - 1];
-                        let curr = absolute_points[i];
-                        // Vertical then horizontal
-                        path_builder.line_to(gpui::point(prev.x, curr.y));
-                        path_builder.line_to(curr);
+                    let mut segments = Vec::new();
+                    for i in 1..rel_points.len() {
+                        let (x0, y0) = rel_points[i - 1];
+                        let (x1, y1) = rel_points[i];
+                        // Vertical then horizontal: (x0,y0) -> (x0,y1) -> (x1,y1)
+                        if let Some(clipped) = clip_line_segment(x0, y0, x0, y1) {
+                            segments.push(clipped);
+                        }
+                        if let Some(clipped) = clip_line_segment(x0, y1, x1, y1) {
+                            segments.push(clipped);
+                        }
                     }
+                    segments
+                }
+            };
+
+            // Build continuous paths from clipped segments
+            if !segments_to_draw.is_empty() {
+                let mut path_builder = PathBuilder::stroke(px(stroke_width));
+                let mut last_end: Option<(f32, f32)> = None;
+
+                for (x0, y0, x1, y1) in &segments_to_draw {
+                    let start = (origin_x + x0 * width, origin_y + y0 * height);
+                    let end = (origin_x + x1 * width, origin_y + y1 * height);
+
+                    // Check if we need to start a new path segment
+                    let need_move = match last_end {
+                        Some((lx, ly)) => (lx - start.0).abs() > 0.5 || (ly - start.1).abs() > 0.5,
+                        None => true,
+                    };
+
+                    if need_move {
+                        path_builder.move_to(gpui::point(px(start.0), px(start.1)));
+                    }
+                    path_builder.line_to(gpui::point(px(end.0), px(end.1)));
+                    last_end = Some(end);
+                }
+
+                if let Ok(path) = path_builder.build() {
+                    let color_with_opacity = Rgba {
+                        r: stroke_color.r,
+                        g: stroke_color.g,
+                        b: stroke_color.b,
+                        a: stroke_color.a * opacity,
+                    };
+                    window.paint_path(path, color_with_opacity);
                 }
             }
 
-            // Build and paint the path
-            if let Ok(path) = path_builder.build() {
-                let color_with_opacity = Rgba {
-                    r: stroke_color.r,
-                    g: stroke_color.g,
-                    b: stroke_color.b,
-                    a: stroke_color.a * opacity,
-                };
-                window.paint_path(path, color_with_opacity);
-            }
-
-            // Paint points if enabled
+            // Paint points if enabled (only for points inside the clip region)
             if show_points {
-                for point in &absolute_points {
-                    let point_bounds = Bounds {
-                        origin: gpui::point(
-                            point.x - px(point_radius),
-                            point.y - px(point_radius),
-                        ),
-                        size: gpui::size(px(point_radius * 2.0), px(point_radius * 2.0)),
-                    };
-                    let color_with_opacity = Rgba {
-                        r: point_fill.r,
-                        g: point_fill.g,
-                        b: point_fill.b,
-                        a: point_fill.a * opacity,
-                    };
-                    window.paint_quad(PaintQuad {
-                        bounds: point_bounds,
-                        corner_radii: Corners::all(px(point_radius)),
-                        background: color_with_opacity.into(),
-                        border_widths: Edges::default(),
-                        border_color: transparent_black(),
-                        border_style: BorderStyle::default(),
-                    });
+                for &(x_rel, y_rel) in &rel_points {
+                    // Only draw points inside the chart area
+                    if x_rel >= 0.0 && x_rel <= 1.0 && y_rel >= 0.0 && y_rel <= 1.0 {
+                        let px_x = origin_x + x_rel * width;
+                        let px_y = origin_y + y_rel * height;
+                        let point_bounds = Bounds {
+                            origin: gpui::point(px(px_x - point_radius), px(px_y - point_radius)),
+                            size: gpui::size(px(point_radius * 2.0), px(point_radius * 2.0)),
+                        };
+                        let color_with_opacity = Rgba {
+                            r: point_fill.r,
+                            g: point_fill.g,
+                            b: point_fill.b,
+                            a: point_fill.a * opacity,
+                        };
+                        window.paint_quad(PaintQuad {
+                            bounds: point_bounds,
+                            corner_radii: Corners::all(px(point_radius)),
+                            background: color_with_opacity.into(),
+                            border_widths: Edges::default(),
+                            border_color: transparent_black(),
+                            border_style: BorderStyle::default(),
+                        });
+                    }
                 }
             }
         },

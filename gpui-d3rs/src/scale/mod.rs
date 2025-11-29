@@ -22,24 +22,24 @@
 //! - [`BandScale`]: Divide range into bands for categorical data (bar charts)
 //! - [`PointScale`]: Position categorical data at points (scatter plots)
 
-mod traits;
 mod linear;
 mod log;
+mod ordinal;
 mod pow;
-mod symlog;
-mod quantize;
 mod quantile;
+mod quantize;
+mod symlog;
 mod threshold;
 mod ticks;
-mod ordinal;
+mod traits;
 
-pub use traits::Scale;
 pub use linear::LinearScale;
 pub use log::LogScale;
-pub use pow::{PowScale, SqrtScale, sqrt_scale};
-pub use symlog::SymlogScale;
-pub use quantize::QuantizeScale;
+pub use ordinal::{BandScale, OrdinalScale, PointScale};
+pub use pow::{sqrt_scale, PowScale, SqrtScale};
 pub use quantile::QuantileScale;
+pub use quantize::QuantizeScale;
+pub use symlog::SymlogScale;
 pub use threshold::ThresholdScale;
-pub use ticks::{nice_number, generate_linear_ticks, generate_log_ticks};
-pub use ordinal::{OrdinalScale, BandScale, PointScale};
+pub use ticks::{generate_linear_ticks, generate_log_ticks, nice_number};
+pub use traits::Scale;

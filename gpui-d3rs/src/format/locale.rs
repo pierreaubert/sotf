@@ -1,6 +1,6 @@
 //! Locale-aware number formatting
 
-use super::specifier::{FormatSpecifier, FormatType, Align, Sign};
+use super::specifier::{Align, FormatSpecifier, FormatType, Sign};
 
 /// SI prefixes from yocto to yotta
 const SI_PREFIXES: &[&str] = &[
@@ -75,7 +75,8 @@ impl Locale {
         }
 
         // Handle percentage types
-        if spec.format_type == FormatType::Percent || spec.format_type == FormatType::PercentRounded {
+        if spec.format_type == FormatType::Percent || spec.format_type == FormatType::PercentRounded
+        {
             value *= 100.0;
             suffix.push_str(self.percent);
         }
@@ -151,7 +152,11 @@ impl Locale {
                 // Use shorter of exponential or fixed
                 let exp = format!("{:.prec$e}", value, prec = precision);
                 let fixed = format!("{:.prec$}", value, prec = precision);
-                if exp.len() < fixed.len() { exp } else { fixed }
+                if exp.len() < fixed.len() {
+                    exp
+                } else {
+                    fixed
+                }
             }
             FormatType::Round => {
                 // Round to significant digits
@@ -165,9 +170,7 @@ impl Locale {
                     format!("{}", rounded)
                 }
             }
-            FormatType::Si => {
-                self.format_si(value, precision)
-            }
+            FormatType::Si => self.format_si(value, precision),
             FormatType::Percent | FormatType::PercentRounded => {
                 format!("{:.prec$}", value, prec = precision)
             }

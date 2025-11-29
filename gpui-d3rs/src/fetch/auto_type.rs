@@ -167,9 +167,7 @@ fn is_iso_date(s: &str) -> bool {
 pub fn auto_type_row(
     row: &std::collections::HashMap<String, String>,
 ) -> std::collections::HashMap<String, AutoTyped> {
-    row.iter()
-        .map(|(k, v)| (k.clone(), auto_type(v)))
-        .collect()
+    row.iter().map(|(k, v)| (k.clone(), auto_type(v))).collect()
 }
 
 /// Convert multiple rows to auto-typed values.
@@ -233,10 +231,7 @@ mod tests {
 
     #[test]
     fn test_auto_type_string() {
-        assert_eq!(
-            auto_type("hello"),
-            AutoTyped::String("hello".to_string())
-        );
+        assert_eq!(auto_type("hello"), AutoTyped::String("hello".to_string()));
         assert_eq!(
             auto_type("foo bar"),
             AutoTyped::String("foo bar".to_string())
@@ -248,9 +243,6 @@ mod tests {
         assert_eq!(AutoTyped::Integer(42).as_f64(), Some(42.0));
         assert_eq!(AutoTyped::Float(3.14).as_i64(), Some(3));
         assert_eq!(AutoTyped::Bool(true).as_bool(), Some(true));
-        assert_eq!(
-            AutoTyped::String("test".to_string()).as_str(),
-            Some("test")
-        );
+        assert_eq!(AutoTyped::String("test".to_string()).as_str(), Some("test"));
     }
 }

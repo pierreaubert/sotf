@@ -511,9 +511,7 @@ mod tests {
 
     #[test]
     fn test_band_scale_unknown() {
-        let scale = BandScale::new()
-            .domain(vec!["a", "b"])
-            .range(0.0, 100.0);
+        let scale = BandScale::new().domain(vec!["a", "b"]).range(0.0, 100.0);
 
         assert_eq!(scale.scale(&"unknown"), None);
     }
@@ -531,9 +529,7 @@ mod tests {
 
     #[test]
     fn test_point_scale_single() {
-        let scale = PointScale::new()
-            .domain(vec!["only"])
-            .range(0.0, 100.0);
+        let scale = PointScale::new().domain(vec!["only"]).range(0.0, 100.0);
 
         // Single point should be centered
         assert_eq!(scale.scale(&"only"), Some(50.0));

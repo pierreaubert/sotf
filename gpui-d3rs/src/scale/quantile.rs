@@ -190,10 +190,7 @@ impl<R: Clone> Scale<f64, R> for QuantileScale<R> {
         if self.domain_samples.is_empty() {
             (0.0, 1.0)
         } else {
-            (
-                self.domain_samples[0],
-                *self.domain_samples.last().unwrap(),
-            )
+            (self.domain_samples[0], *self.domain_samples.last().unwrap())
         }
     }
 
@@ -214,8 +211,7 @@ mod tests {
 
     #[test]
     fn test_quantile_scale_basic() {
-        let scale = QuantileScale::with_range(vec!["a", "b"])
-            .domain(vec![1.0, 2.0, 3.0, 4.0]);
+        let scale = QuantileScale::with_range(vec!["a", "b"]).domain(vec![1.0, 2.0, 3.0, 4.0]);
 
         // First half maps to "a", second half to "b"
         assert_eq!(scale.scale(1.0), "a");

@@ -62,10 +62,7 @@ mod tests {
 
     #[test]
     fn test_interpolate_colors_two() {
-        let colors = vec![
-            D3Color::rgb(255, 0, 0),
-            D3Color::rgb(0, 0, 255),
-        ];
+        let colors = vec![D3Color::rgb(255, 0, 0), D3Color::rgb(0, 0, 255)];
 
         let start = interpolate_colors(&colors, 0.0);
         assert_relative_eq!(start.r, 1.0);
@@ -81,9 +78,9 @@ mod tests {
     #[test]
     fn test_interpolate_colors_three() {
         let colors = vec![
-            D3Color::rgb(255, 0, 0),    // Red
-            D3Color::rgb(0, 255, 0),    // Green
-            D3Color::rgb(0, 0, 255),    // Blue
+            D3Color::rgb(255, 0, 0), // Red
+            D3Color::rgb(0, 255, 0), // Green
+            D3Color::rgb(0, 0, 255), // Blue
         ];
 
         let quarter = interpolate_colors(&colors, 0.25);

@@ -17,8 +17,7 @@ use super::path::{Path, PathBuilder, Point};
 /// let path = circle.generate();
 /// assert!(!path.is_empty());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SymbolType {
     /// Circle symbol
     #[default]
@@ -42,7 +41,6 @@ pub enum SymbolType {
     /// X shape (rotated cross)
     Wye,
 }
-
 
 /// Symbol generator.
 #[derive(Debug, Clone)]
@@ -150,7 +148,14 @@ impl Symbol {
                     end_angle,
                     anticlockwise,
                 } => {
-                    builder = builder.arc(cx + x, cy + y, radius, start_angle, end_angle, anticlockwise);
+                    builder = builder.arc(
+                        cx + x,
+                        cy + y,
+                        radius,
+                        start_angle,
+                        end_angle,
+                        anticlockwise,
+                    );
                 }
                 _ => {}
             }
@@ -167,7 +172,10 @@ impl Symbol {
             SymbolType::Diamond => self.diamond_points(),
             SymbolType::Square => self.square_points(),
             SymbolType::Star => self.star_points(),
-            SymbolType::Triangle | SymbolType::TriangleDown | SymbolType::TriangleLeft | SymbolType::TriangleRight => {
+            SymbolType::Triangle
+            | SymbolType::TriangleDown
+            | SymbolType::TriangleLeft
+            | SymbolType::TriangleRight => {
                 let rotation = match self.symbol_type {
                     SymbolType::Triangle => 0.0,
                     SymbolType::TriangleDown => PI,
@@ -434,9 +442,10 @@ pub fn symbol_radius(symbol_type: SymbolType, size: f64) -> f64 {
             let ka = 0.890_813_091_529_285_2;
             (size * ka).sqrt()
         }
-        SymbolType::Triangle | SymbolType::TriangleDown | SymbolType::TriangleLeft | SymbolType::TriangleRight => {
-            (size / (3.0_f64.sqrt() * 3.0)).sqrt() * 2.0
-        }
+        SymbolType::Triangle
+        | SymbolType::TriangleDown
+        | SymbolType::TriangleLeft
+        | SymbolType::TriangleRight => (size / (3.0_f64.sqrt() * 3.0)).sqrt() * 2.0,
         SymbolType::Wye => (size / (3.0 + 3.0_f64.sqrt())).sqrt() * 2.0,
     }
 }

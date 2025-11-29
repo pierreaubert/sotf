@@ -18,10 +18,7 @@ use std::hash::Hash;
 /// ```
 pub fn difference<T: Clone + Eq + Hash>(a: &[T], b: &[T]) -> Vec<T> {
     let b_set: HashSet<&T> = b.iter().collect();
-    a.iter()
-        .filter(|x| !b_set.contains(x))
-        .cloned()
-        .collect()
+    a.iter().filter(|x| !b_set.contains(x)).cloned().collect()
 }
 
 /// Returns elements that are in both `a` and `b`.

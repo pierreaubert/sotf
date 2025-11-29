@@ -32,11 +32,11 @@
 #![cfg_attr(feature = "gpui", recursion_limit = "512")]
 
 pub mod array;
+pub mod color;
+pub mod ease;
+pub mod format;
 pub mod interpolate;
 pub mod scale;
-pub mod color;
-pub mod format;
-pub mod ease;
 pub mod time;
 // Note: axis, grid, and text modules are excluded from test builds due to
 // a known gpui_macros proc macro stack overflow issue in debug compilation.
@@ -45,29 +45,28 @@ pub mod time;
 // Release builds work fine. Tests can be run with --no-default-features.
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod axis;
-pub mod shape;
-#[cfg(all(feature = "gpui", not(test)))]
-pub mod grid;
-#[cfg(all(feature = "gpui", not(test)))]
-pub mod text;
-pub mod legend;
 pub mod contour;
 pub mod fetch;
+#[cfg(all(feature = "gpui", not(test)))]
+pub mod grid;
+pub mod legend;
 pub mod polygon;
 pub mod random;
+pub mod shape;
+#[cfg(all(feature = "gpui", not(test)))]
+pub mod text;
 
 /// Prelude module for convenient imports
 pub mod prelude {
+    #[cfg(all(feature = "gpui", not(test)))]
+    pub use crate::axis::{render_axis, AxisConfig, AxisOrientation, AxisTheme, DefaultAxisTheme};
+    pub use crate::color::{ColorScheme, D3Color};
+    #[cfg(all(feature = "gpui", not(test)))]
+    pub use crate::grid::{render_grid, GridConfig};
     pub use crate::scale::{LinearScale, LogScale, Scale};
-    pub use crate::color::{D3Color, ColorScheme};
-    #[cfg(all(feature = "gpui", not(test)))]
-    pub use crate::axis::{AxisConfig, AxisOrientation, AxisTheme, DefaultAxisTheme, render_axis};
-    #[cfg(all(feature = "gpui", not(test)))]
-    pub use crate::grid::{GridConfig, render_grid};
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::shape::{
-        BarConfig, BarDatum, render_bars,
-        LineConfig, LinePoint, CurveType, render_line,
-        ScatterConfig, ScatterPoint, render_scatter,
+        render_bars, render_line, render_scatter, BarConfig, BarDatum, CurveType, LineConfig,
+        LinePoint, ScatterConfig, ScatterPoint,
     };
 }

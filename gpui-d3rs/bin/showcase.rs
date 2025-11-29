@@ -7,7 +7,7 @@ use d3rs::color::{ColorScheme, D3Color};
 use d3rs::contour::{ContourGenerator, DensityEstimator};
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
-use d3rs::shape::contour::{render_contour, ContourConfig, viridis_color_scale, heat_color_scale};
+use d3rs::shape::contour::{heat_color_scale, render_contour, viridis_color_scale, ContourConfig};
 use gpui::{Menu, MenuItem, *};
 use gpui_ui_kit::Slider;
 
@@ -245,10 +245,9 @@ impl ShowcaseApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Linear Scale (0-100 -> 0-500)"),
                     )
-                    .child(self.scale_table(
-                        &[0.0, 25.0, 50.0, 75.0, 100.0],
-                        |v| format!("{:.0}", linear.scale(v)),
-                    )),
+                    .child(self.scale_table(&[0.0, 25.0, 50.0, 75.0, 100.0], |v| {
+                        format!("{:.0}", linear.scale(v))
+                    })),
             )
             // Log scale
             .child(
@@ -262,10 +261,11 @@ impl ShowcaseApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Logarithmic Scale (20Hz-20kHz -> 0-1)"),
                     )
-                    .child(self.scale_table(
-                        &[20.0, 100.0, 1000.0, 10000.0, 20000.0],
-                        |v| format!("{:.3}", log_scale.scale(v)),
-                    )),
+                    .child(
+                        self.scale_table(&[20.0, 100.0, 1000.0, 10000.0, 20000.0], |v| {
+                            format!("{:.3}", log_scale.scale(v))
+                        }),
+                    ),
             )
             // Ticks
             .child(
@@ -280,15 +280,11 @@ impl ShowcaseApp {
                             .child("Generated Ticks"),
                     )
                     .child(
-                        div()
-                            .p_3()
-                            .bg(rgb(0xf5f5f5))
-                            .rounded_md()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .child(format!("Linear ticks: {:?}", linear.ticks(5))),
-                            ),
+                        div().p_3().bg(rgb(0xf5f5f5)).rounded_md().child(
+                            div()
+                                .text_sm()
+                                .child(format!("Linear ticks: {:?}", linear.ticks(5))),
+                        ),
                     ),
             )
     }
@@ -498,22 +494,16 @@ impl ShowcaseApp {
                                         &data,
                                         500.0,
                                         250.0,
-                                        &BarConfig::new()
-                                            .fill_color(scheme.color(0))
-                                            .opacity(0.85),
+                                        &BarConfig::new().fill_color(scheme.color(0)).opacity(0.85),
                                     )),
                             ),
                     )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &x_scale,
-                                &AxisConfig::bottom().with_ticks(6),
-                                500.0,
-                                &theme,
-                            )),
-                    ),
+                    .child(div().ml(px(60.0)).child(render_axis(
+                        &x_scale,
+                        &AxisConfig::bottom().with_ticks(6),
+                        500.0,
+                        &theme,
+                    ))),
             )
             // Mixed positive/negative
             .child(
@@ -564,22 +554,16 @@ impl ShowcaseApp {
                                         &mixed_data,
                                         500.0,
                                         250.0,
-                                        &BarConfig::new()
-                                            .fill_color(scheme.color(2))
-                                            .bar_gap(4.0),
+                                        &BarConfig::new().fill_color(scheme.color(2)).bar_gap(4.0),
                                     )),
                             ),
                     )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &mixed_x_scale,
-                                &AxisConfig::bottom().with_ticks(5),
-                                500.0,
-                                &theme,
-                            )),
-                    ),
+                    .child(div().ml(px(60.0)).child(render_axis(
+                        &mixed_x_scale,
+                        &AxisConfig::bottom().with_ticks(5),
+                        500.0,
+                        &theme,
+                    ))),
             )
     }
 
@@ -674,16 +658,12 @@ impl ShowcaseApp {
                                     )),
                             ),
                     )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &x_scale,
-                                &AxisConfig::bottom().with_ticks(5),
-                                500.0,
-                                &theme,
-                            )),
-                    ),
+                    .child(div().ml(px(60.0)).child(render_axis(
+                        &x_scale,
+                        &AxisConfig::bottom().with_ticks(5),
+                        500.0,
+                        &theme,
+                    ))),
             )
             // Multiple series
             .child(
@@ -744,16 +724,12 @@ impl ShowcaseApp {
                                     )),
                             ),
                     )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &x_scale,
-                                &AxisConfig::bottom().with_ticks(5),
-                                500.0,
-                                &theme,
-                            )),
-                    ),
+                    .child(div().ml(px(60.0)).child(render_axis(
+                        &x_scale,
+                        &AxisConfig::bottom().with_ticks(5),
+                        500.0,
+                        &theme,
+                    ))),
             )
     }
 
@@ -846,16 +822,12 @@ impl ShowcaseApp {
                                     )),
                             ),
                     )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &x_scale,
-                                &AxisConfig::bottom().with_ticks(5),
-                                500.0,
-                                &theme,
-                            )),
-                    ),
+                    .child(div().ml(px(60.0)).child(render_axis(
+                        &x_scale,
+                        &AxisConfig::bottom().with_ticks(5),
+                        500.0,
+                        &theme,
+                    ))),
             )
             // Clusters
             .child(
@@ -916,16 +888,12 @@ impl ShowcaseApp {
                                     )),
                             ),
                     )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &x_scale,
-                                &AxisConfig::bottom().with_ticks(5),
-                                500.0,
-                                &theme,
-                            )),
-                    ),
+                    .child(div().ml(px(60.0)).child(render_axis(
+                        &x_scale,
+                        &AxisConfig::bottom().with_ticks(5),
+                        500.0,
+                        &theme,
+                    ))),
             )
     }
 
@@ -1004,9 +972,8 @@ impl ShowcaseApp {
 
         let density_generator = ContourGenerator::new(density_grid_size, density_grid_size);
 
-        let density_thresholds: Vec<f64> = (1..=5)
-            .map(|i| density_max * (i as f64 / 6.0))
-            .collect();
+        let density_thresholds: Vec<f64> =
+            (1..=5).map(|i| density_max * (i as f64 / 6.0)).collect();
         let density_contours = density_generator.contours(&density_grid, &density_thresholds);
 
         // Scales for the density plot
@@ -1065,12 +1032,15 @@ impl ShowcaseApp {
                                     .border_1()
                                     .border_color(rgb(0xcccccc))
                                     .relative()
-                                    .child(render_contour(
-                                        contours.clone(),
-                                        &x_scale_gaussian,
-                                        &y_scale_gaussian,
-                                        &gaussian_config,
-                                    ).height(px(300.0))),
+                                    .child(
+                                        render_contour(
+                                            contours.clone(),
+                                            &x_scale_gaussian,
+                                            &y_scale_gaussian,
+                                            &gaussian_config,
+                                        )
+                                        .height(px(300.0)),
+                                    ),
                             )
                             .child(
                                 div()
@@ -1108,12 +1078,15 @@ impl ShowcaseApp {
                                     .border_1()
                                     .border_color(rgb(0x333333))
                                     .relative()
-                                    .child(render_contour(
-                                        density_contours.into_iter().collect::<Vec<_>>(),
-                                        &x_scale_density,
-                                        &y_scale_density,
-                                        &density_config,
-                                    ).height(px(300.0)))
+                                    .child(
+                                        render_contour(
+                                            density_contours.into_iter().collect::<Vec<_>>(),
+                                            &x_scale_density,
+                                            &y_scale_density,
+                                            &density_config,
+                                        )
+                                        .height(px(300.0)),
+                                    )
                                     // Overlay the original points
                                     .children(points.iter().map(|(x, y)| {
                                         div()
@@ -1344,15 +1317,10 @@ impl ShowcaseApp {
                                     .text_color(rgb(0x333333))
                                     .child(format!("Levels: {}", num_levels)),
                             )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x333333))
-                                    .child(format!(
-                                        "Rings: {}",
-                                        contours.iter().map(|c| c.coordinates.len()).sum::<usize>()
-                                    )),
-                            )
+                            .child(div().text_sm().text_color(rgb(0x333333)).child(format!(
+                                "Rings: {}",
+                                contours.iter().map(|c| c.coordinates.len()).sum::<usize>()
+                            )))
                             .child(
                                 div()
                                     .text_sm()
@@ -1362,7 +1330,6 @@ impl ShowcaseApp {
                     ),
             )
     }
-
 
     fn render_colors_demo(&self) -> Div {
         let category10 = ColorScheme::category10();
@@ -1389,19 +1356,14 @@ impl ShowcaseApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Category10 Color Scheme"),
                     )
-                    .child(
+                    .child(div().flex().gap_2().children((0..10).map(|i| {
+                        let color = category10.color(i);
                         div()
-                            .flex()
-                            .gap_2()
-                            .children((0..10).map(|i| {
-                                let color = category10.color(i);
-                                div()
-                                    .w(px(40.0))
-                                    .h(px(40.0))
-                                    .rounded_md()
-                                    .bg(color.to_rgba())
-                            })),
-                    ),
+                            .w(px(40.0))
+                            .h(px(40.0))
+                            .rounded_md()
+                            .bg(color.to_rgba())
+                    }))),
             )
             // Interpolation
             .child(
@@ -1415,15 +1377,13 @@ impl ShowcaseApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Color Interpolation (Red -> Blue)"),
                     )
-                    .child(
-                        div().flex().gap_1().children((0..20).map(|i| {
-                            let t = i as f32 / 19.0;
-                            let red = D3Color::rgb(255, 0, 0);
-                            let blue = D3Color::rgb(0, 0, 255);
-                            let color = red.interpolate(&blue, t);
-                            div().w(px(20.0)).h(px(40.0)).bg(color.to_rgba())
-                        })),
-                    ),
+                    .child(div().flex().gap_1().children((0..20).map(|i| {
+                        let t = i as f32 / 19.0;
+                        let red = D3Color::rgb(255, 0, 0);
+                        let blue = D3Color::rgb(0, 0, 255);
+                        let color = red.interpolate(&blue, t);
+                        div().w(px(20.0)).h(px(40.0)).bg(color.to_rgba())
+                    }))),
             )
             // HSL Interpolation
             .child(
@@ -1437,13 +1397,11 @@ impl ShowcaseApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("HSL Gradient (Hue 0-360)"),
                     )
-                    .child(
-                        div().flex().gap_1().children((0..36).map(|i| {
-                            let hue = i as f32 * 10.0;
-                            let color = D3Color::from_hsl(hue, 0.8, 0.5);
-                            div().w(px(12.0)).h(px(40.0)).bg(color.to_rgba())
-                        })),
-                    ),
+                    .child(div().flex().gap_1().children((0..36).map(|i| {
+                        let hue = i as f32 * 10.0;
+                        let color = D3Color::from_hsl(hue, 0.8, 0.5);
+                        div().w(px(12.0)).h(px(40.0)).bg(color.to_rgba())
+                    }))),
             )
             // Lighten/Darken
             .child(
@@ -1457,21 +1415,16 @@ impl ShowcaseApp {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child("Lighten / Darken"),
                     )
-                    .child(
-                        div()
-                            .flex()
-                            .gap_1()
-                            .children((0..11).map(|i| {
-                                let base = D3Color::rgb(0, 122, 204);
-                                let amount = (i as f32 - 5.0) / 5.0;
-                                let color = if amount < 0.0 {
-                                    base.darken(-amount)
-                                } else {
-                                    base.lighten(amount)
-                                };
-                                div().w(px(36.0)).h(px(40.0)).bg(color.to_rgba())
-                            })),
-                    ),
+                    .child(div().flex().gap_1().children((0..11).map(|i| {
+                        let base = D3Color::rgb(0, 122, 204);
+                        let amount = (i as f32 - 5.0) / 5.0;
+                        let color = if amount < 0.0 {
+                            base.darken(-amount)
+                        } else {
+                            base.lighten(amount)
+                        };
+                        div().w(px(36.0)).h(px(40.0)).bg(color.to_rgba())
+                    }))),
             )
     }
 }

@@ -1,6 +1,6 @@
 //! Linear scale implementation
 
-use super::{Scale, generate_linear_ticks, nice_number};
+use super::{generate_linear_ticks, nice_number, Scale};
 
 /// A linear scale maps a continuous domain to a continuous range using linear interpolation
 ///
@@ -176,7 +176,10 @@ impl LinearScale {
 impl Scale<f64, f64> for LinearScale {
     fn scale(&self, value: f64) -> f64 {
         let value = if self.clamped {
-            value.clamp(self.domain_min.min(self.domain_max), self.domain_min.max(self.domain_max))
+            value.clamp(
+                self.domain_min.min(self.domain_max),
+                self.domain_min.max(self.domain_max),
+            )
         } else {
             value
         };
@@ -186,7 +189,10 @@ impl Scale<f64, f64> for LinearScale {
 
     fn invert(&self, value: f64) -> Option<f64> {
         let value = if self.clamped {
-            value.clamp(self.range_min.min(self.range_max), self.range_min.max(self.range_max))
+            value.clamp(
+                self.range_min.min(self.range_max),
+                self.range_min.max(self.range_max),
+            )
         } else {
             value
         };
@@ -214,9 +220,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_basic() {
-        let scale = LinearScale::new()
-            .domain(0.0, 100.0)
-            .range(0.0, 500.0);
+        let scale = LinearScale::new().domain(0.0, 100.0).range(0.0, 500.0);
 
         assert_relative_eq!(scale.scale(0.0), 0.0);
         assert_relative_eq!(scale.scale(50.0), 250.0);
@@ -225,9 +229,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_inverted_range() {
-        let scale = LinearScale::new()
-            .domain(0.0, 100.0)
-            .range(500.0, 0.0); // Inverted
+        let scale = LinearScale::new().domain(0.0, 100.0).range(500.0, 0.0); // Inverted
 
         assert_relative_eq!(scale.scale(0.0), 500.0);
         assert_relative_eq!(scale.scale(50.0), 250.0);
@@ -236,9 +238,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_invert() {
-        let scale = LinearScale::new()
-            .domain(0.0, 100.0)
-            .range(0.0, 500.0);
+        let scale = LinearScale::new().domain(0.0, 100.0).range(0.0, 500.0);
 
         assert_relative_eq!(scale.invert(0.0).unwrap(), 0.0);
         assert_relative_eq!(scale.invert(250.0).unwrap(), 50.0);
@@ -247,9 +247,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_extrapolation() {
-        let scale = LinearScale::new()
-            .domain(0.0, 100.0)
-            .range(0.0, 500.0);
+        let scale = LinearScale::new().domain(0.0, 100.0).range(0.0, 500.0);
 
         // Values outside domain should extrapolate
         assert_relative_eq!(scale.scale(-50.0), -250.0);
@@ -258,9 +256,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_negative_domain() {
-        let scale = LinearScale::new()
-            .domain(-100.0, 100.0)
-            .range(0.0, 1.0);
+        let scale = LinearScale::new().domain(-100.0, 100.0).range(0.0, 1.0);
 
         assert_relative_eq!(scale.scale(-100.0), 0.0);
         assert_relative_eq!(scale.scale(0.0), 0.5);
@@ -269,9 +265,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_normalized() {
-        let scale = LinearScale::new()
-            .domain(0.0, 100.0)
-            .range_normalized(1.0);
+        let scale = LinearScale::new().domain(0.0, 100.0).range_normalized(1.0);
 
         assert_relative_eq!(scale.scale(0.0), 0.0);
         assert_relative_eq!(scale.scale(50.0), 0.5);
@@ -280,9 +274,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_roundtrip() {
-        let scale = LinearScale::new()
-            .domain(0.0, 100.0)
-            .range(0.0, 500.0);
+        let scale = LinearScale::new().domain(0.0, 100.0).range(0.0, 500.0);
 
         for value in [0.0, 25.0, 50.0, 75.0, 100.0] {
             let scaled = scale.scale(value);
@@ -323,9 +315,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_nice() {
-        let scale = LinearScale::new()
-            .domain(0.123, 0.987)
-            .nice(None);
+        let scale = LinearScale::new().domain(0.123, 0.987).nice(None);
 
         // Domain should be extended to nice values
         // D3.js produces [0.1, 1] for domain [0.123, 0.987]
@@ -338,9 +328,7 @@ mod tests {
 
     #[test]
     fn test_linear_scale_nice_with_count() {
-        let scale = LinearScale::new()
-            .domain(1.0, 99.0)
-            .nice(Some(5));
+        let scale = LinearScale::new().domain(1.0, 99.0).nice(Some(5));
 
         // Domain should be extended to nice values
         assert!(scale.domain_min() <= 1.0);

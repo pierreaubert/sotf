@@ -42,42 +42,49 @@
 //! let star_path = star.generate();
 //! ```
 
-pub mod path;
 pub mod arc;
-pub mod pie;
 pub mod area;
 pub mod curve;
-pub mod symbol;
-pub mod stack;
 pub mod link;
+pub mod path;
+pub mod pie;
 pub mod radial;
+pub mod stack;
+pub mod symbol;
 
 #[cfg(feature = "gpui")]
 mod bar;
 #[cfg(feature = "gpui")]
+pub mod contour;
+#[cfg(feature = "gpui")]
 mod line;
 #[cfg(feature = "gpui")]
 mod scatter;
-#[cfg(feature = "gpui")]
-pub mod contour;
 
 // Re-export existing chart rendering functions (GPUI only)
 #[cfg(feature = "gpui")]
-pub use bar::{BarConfig, BarDatum, render_bars};
+pub use bar::{render_bars, BarConfig, BarDatum};
 #[cfg(feature = "gpui")]
-pub use line::{LineConfig, LinePoint, CurveType, render_line};
+pub use contour::{
+    heat_color_scale, render_contour, viridis_color_scale, ContourConfig, ContourElement,
+};
 #[cfg(feature = "gpui")]
-pub use scatter::{ScatterConfig, ScatterPoint, render_scatter};
+pub use line::{render_line, CurveType, LineConfig, LinePoint};
 #[cfg(feature = "gpui")]
-pub use contour::{ContourConfig, ContourElement, render_contour, viridis_color_scale, heat_color_scale};
+pub use scatter::{render_scatter, ScatterConfig, ScatterPoint};
 
 // Re-export new shape utilities (no GPUI dependency)
-pub use path::{Path, PathBuilder, PathCommand, Point};
-pub use arc::{Arc, ArcDatum, arc_points};
-pub use pie::{Pie, PieSlice, pie, donut, half_pie};
-pub use area::{Area, SimpleArea, area_points};
+pub use arc::{arc_points, Arc, ArcDatum};
+pub use area::{area_points, Area, SimpleArea};
 pub use curve::Curve;
-pub use symbol::{Symbol, SymbolType, symbol_radius};
-pub use stack::{Stack, StackSeries, StackOrder, StackOffset, stack, stack_expand, streamgraph};
-pub use link::{Link, RadialLink, LinkDirection, link_horizontal, link_vertical, link_radial, link_step};
-pub use radial::{RadialPoint, RadialLineConfig, RadialAreaConfig, radial_line, radial_area, polar_grid_circles, polar_grid_rays};
+pub use link::{
+    link_horizontal, link_radial, link_step, link_vertical, Link, LinkDirection, RadialLink,
+};
+pub use path::{Path, PathBuilder, PathCommand, Point};
+pub use pie::{donut, half_pie, pie, Pie, PieSlice};
+pub use radial::{
+    polar_grid_circles, polar_grid_rays, radial_area, radial_line, RadialAreaConfig,
+    RadialLineConfig, RadialPoint,
+};
+pub use stack::{stack, stack_expand, streamgraph, Stack, StackOffset, StackOrder, StackSeries};
+pub use symbol::{symbol_radius, Symbol, SymbolType};

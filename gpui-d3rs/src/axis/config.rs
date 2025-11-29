@@ -21,13 +21,19 @@ pub struct AxisConfig {
     pub orientation: AxisOrientation,
     /// Approximate number of ticks
     pub tick_count: usize,
+    /// Explicit tick values (overrides tick_count if provided)
+    pub tick_values: Option<Vec<f64>>,
+    /// Minor tick values (smaller ticks without labels)
+    pub minor_tick_values: Option<Vec<f64>>,
+    /// Minor tick size in pixels (usually smaller than main tick_size)
+    pub minor_tick_size: f32,
     /// Tick size in pixels (length of tick mark)
     pub tick_size: f32,
     /// Padding between tick mark and label
     pub tick_padding: f32,
     /// Font size for labels
     pub label_font_size: f32,
-    /// Custom tick formatter
+    /// Custom tick formatter (return empty string to hide label)
     pub tick_format: Option<fn(f64) -> String>,
     /// Whether to show the domain line
     pub show_domain_line: bool,
@@ -46,6 +52,9 @@ impl Default for AxisConfig {
         Self {
             orientation: AxisOrientation::Bottom,
             tick_count: 10,
+            tick_values: None,
+            minor_tick_values: None,
+            minor_tick_size: 3.0,
             tick_size: 6.0,
             tick_padding: 4.0,
             label_font_size: 10.0,
@@ -111,6 +120,43 @@ impl AxisConfig {
     /// ```
     pub fn with_ticks(mut self, count: usize) -> Self {
         self.tick_count = count;
+        self
+    }
+
+    /// Set explicit tick values (overrides tick_count)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use d3rs::axis::AxisConfig;
+    ///
+    /// let axis = AxisConfig::bottom()
+    ///     .with_tick_values(vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0]);
+    /// ```
+    pub fn with_tick_values(mut self, values: Vec<f64>) -> Self {
+        self.tick_values = Some(values);
+        self
+    }
+
+    /// Set minor tick values (smaller ticks without labels)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use d3rs::axis::AxisConfig;
+    ///
+    /// let axis = AxisConfig::bottom()
+    ///     .with_tick_values(vec![20.0, 100.0, 1000.0, 10000.0])
+    ///     .with_minor_tick_values(vec![30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0]);
+    /// ```
+    pub fn with_minor_tick_values(mut self, values: Vec<f64>) -> Self {
+        self.minor_tick_values = Some(values);
+        self
+    }
+
+    /// Set the minor tick size (length of minor tick mark)
+    pub fn with_minor_tick_size(mut self, size: f32) -> Self {
+        self.minor_tick_size = size;
         self
     }
 
@@ -239,8 +285,7 @@ mod tests {
 
     #[test]
     fn test_custom_formatter() {
-        let config = AxisConfig::bottom()
-            .with_formatter(|v| format!("{:.2}", v));
+        let config = AxisConfig::bottom().with_formatter(|v| format!("{:.2}", v));
 
         assert!(config.tick_format.is_some());
         let formatted = (config.tick_format.unwrap())(42.123);

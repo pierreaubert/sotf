@@ -22,8 +22,7 @@ use super::path::Point;
 /// let curved = Curve::CatmullRom { alpha: 0.5 }.interpolate(&points);
 /// assert!(curved.len() > points.len());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Curve {
     /// Linear interpolation (straight lines)
     #[default]
@@ -62,7 +61,6 @@ pub enum Curve {
     Natural,
 }
 
-
 impl Curve {
     /// Create a linear curve.
     pub fn linear() -> Self {
@@ -78,7 +76,9 @@ impl Curve {
     ///
     /// Tension ranges from 0 (smooth) to 1 (straight lines).
     pub fn cardinal(tension: f64) -> Self {
-        Curve::Cardinal { tension: tension.clamp(0.0, 1.0) }
+        Curve::Cardinal {
+            tension: tension.clamp(0.0, 1.0),
+        }
     }
 
     /// Create a Catmull-Rom spline with the given alpha.
@@ -87,7 +87,9 @@ impl Curve {
     /// - alpha = 0.5: centripetal Catmull-Rom
     /// - alpha = 1: chordal Catmull-Rom
     pub fn catmull_rom(alpha: f64) -> Self {
-        Curve::CatmullRom { alpha: alpha.clamp(0.0, 1.0) }
+        Curve::CatmullRom {
+            alpha: alpha.clamp(0.0, 1.0),
+        }
     }
 
     /// Create a monotone X curve.
@@ -115,12 +117,12 @@ impl Curve {
             Curve::StepAfter => interpolate_step(points, 1.0),
             Curve::Basis | Curve::BasisClosed | Curve::BasisOpen => interpolate_basis(points),
             Curve::Bundle { beta } => interpolate_bundle(points, *beta),
-            Curve::Cardinal { tension } | Curve::CardinalClosed { tension } | Curve::CardinalOpen { tension } => {
-                interpolate_cardinal(points, *tension)
-            }
-            Curve::CatmullRom { alpha } | Curve::CatmullRomClosed { alpha } | Curve::CatmullRomOpen { alpha } => {
-                interpolate_catmull_rom(points, *alpha)
-            }
+            Curve::Cardinal { tension }
+            | Curve::CardinalClosed { tension }
+            | Curve::CardinalOpen { tension } => interpolate_cardinal(points, *tension),
+            Curve::CatmullRom { alpha }
+            | Curve::CatmullRomClosed { alpha }
+            | Curve::CatmullRomOpen { alpha } => interpolate_catmull_rom(points, *alpha),
             Curve::MonotoneX => interpolate_monotone_x(points),
             Curve::MonotoneY => interpolate_monotone_y(points),
             Curve::Natural => interpolate_natural(points),
@@ -165,7 +167,10 @@ fn interpolate_basis(points: &[Point]) -> Vec<Point> {
     let mut result = Vec::with_capacity((n - 1) * subdivisions + 1);
 
     // Add reflected points for endpoints
-    let p0 = Point::new(2.0 * points[0].x - points[1].x, 2.0 * points[0].y - points[1].y);
+    let p0 = Point::new(
+        2.0 * points[0].x - points[1].x,
+        2.0 * points[0].y - points[1].y,
+    );
     let pn = Point::new(
         2.0 * points[n - 1].x - points[n - 2].x,
         2.0 * points[n - 1].y - points[n - 2].y,
@@ -257,7 +262,11 @@ fn interpolate_cardinal(points: &[Point], tension: f64) -> Vec<Point> {
         let p0 = if i > 0 { points[i - 1] } else { points[i] };
         let p1 = points[i];
         let p2 = points[i + 1];
-        let p3 = if i + 2 < n { points[i + 2] } else { points[i + 1] };
+        let p3 = if i + 2 < n {
+            points[i + 2]
+        } else {
+            points[i + 1]
+        };
 
         for j in 1..=subdivisions {
             let t = j as f64 / subdivisions as f64;
@@ -305,7 +314,11 @@ fn interpolate_catmull_rom(points: &[Point], alpha: f64) -> Vec<Point> {
         let p0 = if i > 0 { points[i - 1] } else { points[i] };
         let p1 = points[i];
         let p2 = points[i + 1];
-        let p3 = if i + 2 < n { points[i + 2] } else { points[i + 1] };
+        let p3 = if i + 2 < n {
+            points[i + 2]
+        } else {
+            points[i + 1]
+        };
 
         for j in 1..=subdivisions {
             let t = j as f64 / subdivisions as f64;
@@ -371,7 +384,9 @@ fn interpolate_monotone_x(points: &[Point]) -> Vec<Point> {
         if i == 0 {
             slopes.push((points[1].y - points[0].y) / (points[1].x - points[0].x).max(1e-8));
         } else if i == n - 1 {
-            slopes.push((points[n - 1].y - points[n - 2].y) / (points[n - 1].x - points[n - 2].x).max(1e-8));
+            slopes.push(
+                (points[n - 1].y - points[n - 2].y) / (points[n - 1].x - points[n - 2].x).max(1e-8),
+            );
         } else {
             let s0 = (points[i].y - points[i - 1].y) / (points[i].x - points[i - 1].x).max(1e-8);
             let s1 = (points[i + 1].y - points[i].y) / (points[i + 1].x - points[i].x).max(1e-8);
@@ -403,7 +418,10 @@ fn interpolate_monotone_x(points: &[Point]) -> Vec<Point> {
 
             result.push(Point::new(
                 points[i].x + dx * t,
-                h00 * points[i].y + h10 * dx * slopes[i] + h01 * points[i + 1].y + h11 * dx * slopes[i + 1],
+                h00 * points[i].y
+                    + h10 * dx * slopes[i]
+                    + h01 * points[i + 1].y
+                    + h11 * dx * slopes[i + 1],
             ));
         }
     }

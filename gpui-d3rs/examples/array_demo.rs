@@ -7,17 +7,36 @@
 //! - Ticks generation
 
 use d3rs::array::{
-    // Statistics
-    mean, median, deviation, variance, quantile, extent_by, sum, min_by, max_by,
-    min_index, max_index, cumsum,
+    bin,
     // Search
-    bisect_left_f64, bisect_right_f64, Bisector,
-    // Transformations
-    group, rollup, bin,
-    // Ticks
-    ticks, tick_step, nice, log_ticks,
+    bisect_left_f64,
+    bisect_right_f64,
+    cumsum,
+    deviation,
     // Set operations
-    difference, union, intersection,
+    difference,
+    extent_by,
+    // Transformations
+    group,
+    intersection,
+    log_ticks,
+    max_by,
+    max_index,
+    // Statistics
+    mean,
+    median,
+    min_by,
+    min_index,
+    nice,
+    quantile,
+    rollup,
+    sum,
+    tick_step,
+    // Ticks
+    ticks,
+    union,
+    variance,
+    Bisector,
 };
 use std::cmp::Ordering;
 
@@ -72,24 +91,54 @@ fn main() {
     println!("Sorted array: {:?}", sorted);
 
     // Find insertion points (using f64-specific functions)
-    println!("bisect_left(4.5):  {} (insert between 4 and 5)", bisect_left_f64(&sorted, 4.5));
-    println!("bisect_left(5.0):  {} (insert before 5)", bisect_left_f64(&sorted, 5.0));
-    println!("bisect_right(5.0): {} (insert after 5)", bisect_right_f64(&sorted, 5.0));
+    println!(
+        "bisect_left(4.5):  {} (insert between 4 and 5)",
+        bisect_left_f64(&sorted, 4.5)
+    );
+    println!(
+        "bisect_left(5.0):  {} (insert before 5)",
+        bisect_left_f64(&sorted, 5.0)
+    );
+    println!(
+        "bisect_right(5.0): {} (insert after 5)",
+        bisect_right_f64(&sorted, 5.0)
+    );
 
     // Custom bisector for objects
     #[derive(Debug)]
-    struct Person { name: &'static str, age: u32 }
+    struct Person {
+        name: &'static str,
+        age: u32,
+    }
 
     let people = vec![
-        Person { name: "Alice", age: 25 },
-        Person { name: "Bob", age: 30 },
-        Person { name: "Carol", age: 35 },
-        Person { name: "Dave", age: 40 },
+        Person {
+            name: "Alice",
+            age: 25,
+        },
+        Person {
+            name: "Bob",
+            age: 30,
+        },
+        Person {
+            name: "Carol",
+            age: 35,
+        },
+        Person {
+            name: "Dave",
+            age: 40,
+        },
     ];
 
     let age_bisector = Bisector::new(|p: &Person| p.age as f64);
-    println!("\nPeople by age: {:?}", people.iter().map(|p| (p.name, p.age)).collect::<Vec<_>>());
-    println!("bisect(age=32): {} (Carol is at 35)", age_bisector.right(&people, 32.0));
+    println!(
+        "\nPeople by age: {:?}",
+        people.iter().map(|p| (p.name, p.age)).collect::<Vec<_>>()
+    );
+    println!(
+        "bisect(age=32): {} (Carol is at 35)",
+        age_bisector.right(&people, 32.0)
+    );
 
     // ========================================
     // Grouping and Rollup
@@ -97,14 +146,32 @@ fn main() {
     println!("\n--- Grouping and Rollup ---");
 
     #[derive(Debug, Clone)]
-    struct Sale { category: String, amount: f64 }
+    struct Sale {
+        category: String,
+        amount: f64,
+    }
 
     let sales = vec![
-        Sale { category: "Electronics".into(), amount: 100.0 },
-        Sale { category: "Books".into(), amount: 25.0 },
-        Sale { category: "Electronics".into(), amount: 200.0 },
-        Sale { category: "Books".into(), amount: 15.0 },
-        Sale { category: "Clothing".into(), amount: 75.0 },
+        Sale {
+            category: "Electronics".into(),
+            amount: 100.0,
+        },
+        Sale {
+            category: "Books".into(),
+            amount: 25.0,
+        },
+        Sale {
+            category: "Electronics".into(),
+            amount: 200.0,
+        },
+        Sale {
+            category: "Books".into(),
+            amount: 15.0,
+        },
+        Sale {
+            category: "Clothing".into(),
+            amount: 75.0,
+        },
     ];
 
     // Group by category
@@ -115,9 +182,11 @@ fn main() {
     }
 
     // Rollup - sum amounts by category
-    let totals = rollup(&sales, |s| s.category.clone(), |items| {
-        items.iter().map(|s| s.amount).sum::<f64>()
-    });
+    let totals = rollup(
+        &sales,
+        |s| s.category.clone(),
+        |items| items.iter().map(|s| s.amount).sum::<f64>(),
+    );
     println!("\nTotal by category:");
     for (category, total) in &totals {
         println!("  {}: ${:.2}", category, total);
@@ -129,8 +198,8 @@ fn main() {
     println!("\n--- Binning (Histograms) ---");
 
     let values: Vec<f64> = vec![
-        12.0, 15.0, 18.0, 22.0, 25.0, 28.0, 31.0, 35.0,
-        42.0, 45.0, 48.0, 55.0, 62.0, 68.0, 75.0, 82.0,
+        12.0, 15.0, 18.0, 22.0, 25.0, 28.0, 31.0, 35.0, 42.0, 45.0, 48.0, 55.0, 62.0, 68.0, 75.0,
+        82.0,
     ];
     println!("Values: {:?}", values);
 
@@ -140,8 +209,13 @@ fn main() {
     println!("\nHistogram (5 bins):");
     for bin in &bins {
         let bar: String = std::iter::repeat('#').take(bin.values.len() * 2).collect();
-        println!("  [{:5.1}, {:5.1}): {} {}",
-            bin.x0, bin.x1, bar, bin.values.len());
+        println!(
+            "  [{:5.1}, {:5.1}): {} {}",
+            bin.x0,
+            bin.x1,
+            bar,
+            bin.values.len()
+        );
     }
 
     // ========================================

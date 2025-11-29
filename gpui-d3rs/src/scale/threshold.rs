@@ -166,8 +166,7 @@ mod tests {
 
     #[test]
     fn test_threshold_scale_basic() {
-        let scale = ThresholdScale::with_range(vec!["a", "b", "c"])
-            .domain(vec![0.0, 1.0]);
+        let scale = ThresholdScale::with_range(vec!["a", "b", "c"]).domain(vec![0.0, 1.0]);
 
         assert_eq!(scale.scale(-0.5), "a");
         assert_eq!(scale.scale(0.5), "b");
@@ -176,8 +175,7 @@ mod tests {
 
     #[test]
     fn test_threshold_scale_boundaries() {
-        let scale = ThresholdScale::with_range(vec!["low", "mid", "high"])
-            .domain(vec![33.0, 66.0]);
+        let scale = ThresholdScale::with_range(vec!["low", "mid", "high"]).domain(vec![33.0, 66.0]);
 
         // Values exactly at threshold should go to next bucket
         assert_eq!(scale.scale(32.9), "low");
@@ -200,8 +198,7 @@ mod tests {
 
     #[test]
     fn test_threshold_scale_invert_extent() {
-        let scale = ThresholdScale::with_range(vec!["a", "b", "c"])
-            .domain(vec![0.0, 1.0]);
+        let scale = ThresholdScale::with_range(vec!["a", "b", "c"]).domain(vec![0.0, 1.0]);
 
         let extent = scale.invert_extent(0).unwrap();
         assert!(extent.0.is_infinite() && extent.0 < 0.0);
@@ -218,8 +215,8 @@ mod tests {
 
     #[test]
     fn test_threshold_scale_numeric_range() {
-        let scale: ThresholdScale<f64> = ThresholdScale::with_range(vec![0.0, 0.5, 1.0])
-            .domain(vec![33.0, 66.0]);
+        let scale: ThresholdScale<f64> =
+            ThresholdScale::with_range(vec![0.0, 0.5, 1.0]).domain(vec![33.0, 66.0]);
 
         assert!((scale.scale(0.0) - 0.0).abs() < 1e-6);
         assert!((scale.scale(50.0) - 0.5).abs() < 1e-6);
@@ -228,8 +225,7 @@ mod tests {
 
     #[test]
     fn test_threshold_scale_single_threshold() {
-        let scale = ThresholdScale::with_range(vec!["negative", "positive"])
-            .domain(vec![0.0]);
+        let scale = ThresholdScale::with_range(vec!["negative", "positive"]).domain(vec![0.0]);
 
         assert_eq!(scale.scale(-1.0), "negative");
         assert_eq!(scale.scale(0.0), "positive");

@@ -21,7 +21,10 @@ use super::number::Interpolate;
 /// let mid = interp(0.5);
 /// assert_eq!(mid, vec![50.0, 100.0, 150.0]);
 /// ```
-pub fn interpolate_array<'a, T: Interpolate>(a: &'a [T], b: &'a [T]) -> impl Fn(f64) -> Vec<T> + 'a {
+pub fn interpolate_array<'a, T: Interpolate>(
+    a: &'a [T],
+    b: &'a [T],
+) -> impl Fn(f64) -> Vec<T> + 'a {
     let len = a.len().min(b.len());
     move |t| (0..len).map(|i| a[i].interpolate(&b[i], t)).collect()
 }
@@ -79,13 +82,18 @@ impl<T> ArrayInterpolator<T> {
 /// assert_eq!(mid[0][0], 5.0);
 /// assert_eq!(mid[1][1], 8.0);
 /// ```
-pub fn interpolate_matrix<'a>(a: &'a [Vec<f64>], b: &'a [Vec<f64>]) -> impl Fn(f64) -> Vec<Vec<f64>> + 'a {
+pub fn interpolate_matrix<'a>(
+    a: &'a [Vec<f64>],
+    b: &'a [Vec<f64>],
+) -> impl Fn(f64) -> Vec<Vec<f64>> + 'a {
     let rows = a.len().min(b.len());
     move |t| {
         (0..rows)
             .map(|i| {
                 let cols = a[i].len().min(b[i].len());
-                (0..cols).map(|j| a[i][j] + (b[i][j] - a[i][j]) * t).collect()
+                (0..cols)
+                    .map(|j| a[i][j] + (b[i][j] - a[i][j]) * t)
+                    .collect()
             })
             .collect()
     }

@@ -3,7 +3,7 @@
 //! A symmetric log scale is like a log scale but handles negative values
 //! and values close to zero by using a linear region around zero.
 
-use super::{Scale, nice_number};
+use super::{nice_number, Scale};
 
 /// A symmetric log scale handles negative values and zero
 ///
@@ -188,9 +188,7 @@ mod tests {
 
     #[test]
     fn test_symlog_scale_zero() {
-        let scale = SymlogScale::new()
-            .domain(-100.0, 100.0)
-            .range(0.0, 1.0);
+        let scale = SymlogScale::new().domain(-100.0, 100.0).range(0.0, 1.0);
 
         // Zero should map to middle of range
         assert_relative_eq!(scale.scale(0.0), 0.5, epsilon = 1e-6);
@@ -198,9 +196,7 @@ mod tests {
 
     #[test]
     fn test_symlog_scale_symmetric() {
-        let scale = SymlogScale::new()
-            .domain(-100.0, 100.0)
-            .range(0.0, 1.0);
+        let scale = SymlogScale::new().domain(-100.0, 100.0).range(0.0, 1.0);
 
         // Should be symmetric around zero
         let pos = scale.scale(50.0);
@@ -210,9 +206,7 @@ mod tests {
 
     #[test]
     fn test_symlog_scale_endpoints() {
-        let scale = SymlogScale::new()
-            .domain(-100.0, 100.0)
-            .range(0.0, 1.0);
+        let scale = SymlogScale::new().domain(-100.0, 100.0).range(0.0, 1.0);
 
         assert_relative_eq!(scale.scale(-100.0), 0.0, epsilon = 1e-6);
         assert_relative_eq!(scale.scale(100.0), 1.0, epsilon = 1e-6);
@@ -220,9 +214,7 @@ mod tests {
 
     #[test]
     fn test_symlog_scale_invert() {
-        let scale = SymlogScale::new()
-            .domain(-100.0, 100.0)
-            .range(0.0, 1.0);
+        let scale = SymlogScale::new().domain(-100.0, 100.0).range(0.0, 1.0);
 
         assert_relative_eq!(scale.invert(0.0).unwrap(), -100.0, epsilon = 1e-6);
         assert_relative_eq!(scale.invert(0.5).unwrap(), 0.0, epsilon = 1e-6);
@@ -265,9 +257,7 @@ mod tests {
 
     #[test]
     fn test_symlog_roundtrip() {
-        let scale = SymlogScale::new()
-            .domain(-100.0, 100.0)
-            .range(0.0, 1.0);
+        let scale = SymlogScale::new().domain(-100.0, 100.0).range(0.0, 1.0);
 
         for value in [-100.0, -50.0, -10.0, 0.0, 10.0, 50.0, 100.0] {
             let scaled = scale.scale(value);

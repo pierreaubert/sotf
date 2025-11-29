@@ -35,9 +35,15 @@ where
     YS: Scale<f64, f64>,
     T: AxisTheme,
 {
-    // Get tick positions
-    let x_ticks = x_scale.ticks(10);
-    let y_ticks = y_scale.ticks(10);
+    // Get tick positions - use explicit values if provided, otherwise use scale ticks
+    let x_ticks = config
+        .vertical_line_values
+        .clone()
+        .unwrap_or_else(|| x_scale.ticks(10));
+    let y_ticks = config
+        .horizontal_line_values
+        .clone()
+        .unwrap_or_else(|| y_scale.ticks(10));
 
     let (x_range_min, x_range_max) = x_scale.range();
     let (y_range_min, y_range_max) = y_scale.range();

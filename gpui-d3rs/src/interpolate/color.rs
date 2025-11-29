@@ -610,7 +610,12 @@ pub fn cubehelix_default() -> impl Fn(f64) -> D3Color {
 }
 
 /// Create a custom cubehelix interpolator.
-pub fn cubehelix_custom(start: f64, rotations: f64, hue: f64, gamma: f64) -> impl Fn(f64) -> D3Color {
+pub fn cubehelix_custom(
+    start: f64,
+    rotations: f64,
+    hue: f64,
+    gamma: f64,
+) -> impl Fn(f64) -> D3Color {
     move |t| {
         let t = t.clamp(0.0, 1.0);
         let l = t.powf(gamma);

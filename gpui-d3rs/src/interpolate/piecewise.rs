@@ -102,7 +102,10 @@ where
 /// assert_eq!(interp(0.3), 100.0);  // Exactly at position
 /// assert_eq!(interp(1.0), 200.0);
 /// ```
-pub fn piecewise_domain<'a, T: Interpolate>(positions: &'a [f64], values: &'a [T]) -> impl Fn(f64) -> T + 'a {
+pub fn piecewise_domain<'a, T: Interpolate>(
+    positions: &'a [f64],
+    values: &'a [T],
+) -> impl Fn(f64) -> T + 'a {
     let n = positions.len().min(values.len());
     move |t| {
         if n == 0 {
@@ -311,7 +314,8 @@ impl EaseFunction {
                 }
                 let p = 0.3;
                 let s = p / 4.0;
-                -(2.0_f64.powf(10.0 * (t - 1.0)) * ((t - 1.0 - s) * (2.0 * std::f64::consts::PI) / p).sin())
+                -(2.0_f64.powf(10.0 * (t - 1.0))
+                    * ((t - 1.0 - s) * (2.0 * std::f64::consts::PI) / p).sin())
             }
             EaseFunction::ElasticOut => {
                 if t == 0.0 || t == 1.0 {

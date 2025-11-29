@@ -107,7 +107,8 @@ fn test_linear_scale_golden() {
         // Test invert outputs
         if let Some(invert_inputs) = case.get("invert_inputs") {
             let invert_inputs: Vec<f64> = serde_json::from_value(invert_inputs.clone()).unwrap();
-            let expected: Vec<f64> = serde_json::from_value(case["invert_outputs"].clone()).unwrap();
+            let expected: Vec<f64> =
+                serde_json::from_value(case["invert_outputs"].clone()).unwrap();
 
             for (input, exp) in invert_inputs.iter().zip(expected.iter()) {
                 let actual = scale.invert(*input).unwrap();
@@ -129,9 +130,7 @@ fn test_linear_nice(case: &serde_json::Value) {
     let domain: Vec<f64> = serde_json::from_value(config["domain"].clone()).unwrap();
     let nice_domain: Vec<f64> = serde_json::from_value(case["nice_domain"].clone()).unwrap();
 
-    let scale = LinearScale::new()
-        .domain(domain[0], domain[1])
-        .nice(None);
+    let scale = LinearScale::new().domain(domain[0], domain[1]).nice(None);
 
     assert!(
         approx_eq(nice_domain[0], scale.domain_min()),
@@ -250,7 +249,8 @@ fn test_log_scale_golden() {
         // Test invert outputs
         if let Some(invert_inputs) = case.get("invert_inputs") {
             let invert_inputs: Vec<f64> = serde_json::from_value(invert_inputs.clone()).unwrap();
-            let expected: Vec<f64> = serde_json::from_value(case["invert_outputs"].clone()).unwrap();
+            let expected: Vec<f64> =
+                serde_json::from_value(case["invert_outputs"].clone()).unwrap();
 
             for (input, exp) in invert_inputs.iter().zip(expected.iter()) {
                 let actual = scale.invert(*input).unwrap();
@@ -273,9 +273,10 @@ fn test_log_scale_golden() {
 
 #[test]
 fn test_array_statistics_golden() {
-    use d3rs::array::{min, max, extent, sum, mean, median, variance, deviation, quantile, cumsum};
+    use d3rs::array::{cumsum, deviation, extent, max, mean, median, min, quantile, sum, variance};
 
-    let content = fs::read_to_string("golden/array/statistics.json").expect("golden file not found");
+    let content =
+        fs::read_to_string("golden/array/statistics.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
 
     assert_eq!(golden.module, "d3-array");
@@ -302,14 +303,8 @@ fn test_array_statistics_golden() {
                 );
 
                 let ext = extent(&ord_data).unwrap();
-                assert!(
-                    approx_eq(exp_extent[0], ext.0.0),
-                    "extent min mismatch"
-                );
-                assert!(
-                    approx_eq(exp_extent[1], ext.1.0),
-                    "extent max mismatch"
-                );
+                assert!(approx_eq(exp_extent[0], ext.0 .0), "extent min mismatch");
+                assert!(approx_eq(exp_extent[1], ext.1 .0), "extent max mismatch");
             }
             "sum_mean_median" => {
                 let mut data: Vec<f64> = serde_json::from_value(case["data"].clone()).unwrap();
@@ -343,7 +338,13 @@ fn test_array_statistics_golden() {
             "quantile" => {
                 let data: Vec<f64> = serde_json::from_value(case["data"].clone()).unwrap();
 
-                for (q, key) in [(0.0, "q0"), (0.25, "q25"), (0.5, "q50"), (0.75, "q75"), (1.0, "q100")] {
+                for (q, key) in [
+                    (0.0, "q0"),
+                    (0.25, "q25"),
+                    (0.5, "q50"),
+                    (0.75, "q75"),
+                    (1.0, "q100"),
+                ] {
                     let exp = case[key].as_f64().unwrap();
                     // Need to re-clone for each call since quantile modifies the array
                     let mut data_copy = data.clone();
@@ -388,7 +389,8 @@ fn test_array_statistics_golden() {
 fn test_interpolate_number_golden() {
     use d3rs::interpolate::interpolate;
 
-    let content = fs::read_to_string("golden/interpolate/number.json").expect("golden file not found");
+    let content =
+        fs::read_to_string("golden/interpolate/number.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
 
     assert_eq!(golden.module, "d3-interpolate");
@@ -399,7 +401,10 @@ fn test_interpolate_number_golden() {
         let config = &case["config"];
         let a = config["a"].as_f64().unwrap();
         let b = config["b"].as_f64().unwrap();
-        let is_round = config.get("round").and_then(|v| v.as_bool()).unwrap_or(false);
+        let is_round = config
+            .get("round")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         // Skip round tests for now since the API is different
         if is_round {

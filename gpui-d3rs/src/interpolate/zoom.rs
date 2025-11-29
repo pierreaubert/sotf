@@ -2,7 +2,6 @@
 //!
 //! Implements the zoom interpolation algorithm from d3-interpolate-zoom.
 
-
 /// Zoom view state representing (center_x, center_y, size)
 ///
 /// The view is defined by:
@@ -41,7 +40,9 @@ pub struct ZoomParams {
 
 impl Default for ZoomParams {
     fn default() -> Self {
-        Self { rho: 2.0_f64.sqrt() }
+        Self {
+            rho: 2.0_f64.sqrt(),
+        }
     }
 }
 
@@ -161,11 +162,7 @@ pub fn interpolate_zoom_with_params(
         let u_t = u_at(pos) / u_s; // Normalize so u goes from 0 to 1
         let w = w_at(pos);
 
-        ZoomView::new(
-            ux0 + u_t * dx,
-            uy0 + u_t * dy,
-            w,
-        )
+        ZoomView::new(ux0 + u_t * dx, uy0 + u_t * dy, w)
     }) as Box<dyn Fn(f64) -> ZoomView>
 }
 

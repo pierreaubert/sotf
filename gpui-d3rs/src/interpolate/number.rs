@@ -182,7 +182,11 @@ pub fn interpolate_basis(values: &[f64]) -> impl Fn(f64) -> f64 + '_ {
         let local_t = scaled - i as f64;
 
         basis_point(
-            if i > 0 { values[i - 1] } else { 2.0 * values[0] - values[1] },
+            if i > 0 {
+                values[i - 1]
+            } else {
+                2.0 * values[0] - values[1]
+            },
             values[i],
             values[i + 1],
             if i < n - 2 {

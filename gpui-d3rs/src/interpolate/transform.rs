@@ -183,7 +183,10 @@ impl Transform2D {
         let mut parts = Vec::new();
 
         if self.translate_x.abs() > 1e-10 || self.translate_y.abs() > 1e-10 {
-            parts.push(format!("translate({:.3}px, {:.3}px)", self.translate_x, self.translate_y));
+            parts.push(format!(
+                "translate({:.3}px, {:.3}px)",
+                self.translate_x, self.translate_y
+            ));
         }
         if rotate_deg.abs() > 1e-10 {
             parts.push(format!("rotate({:.3}deg)", rotate_deg));
@@ -205,7 +208,10 @@ impl Transform2D {
     /// Convert to SVG transform attribute string.
     pub fn to_svg(&self) -> String {
         let [a, b, c, d, e, f] = self.to_matrix();
-        format!("matrix({:.6}, {:.6}, {:.6}, {:.6}, {:.6}, {:.6})", a, b, c, d, e, f)
+        format!(
+            "matrix({:.6}, {:.6}, {:.6}, {:.6}, {:.6}, {:.6})",
+            a, b, c, d, e, f
+        )
     }
 }
 

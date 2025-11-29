@@ -50,7 +50,11 @@ pub fn interpolate_string(a: &str, b: &str) -> impl Fn(f64) -> String {
                 if val.fract().abs() < 1e-10 {
                     result.push_str(&format!("{}", val as i64));
                 } else {
-                    result.push_str(format!("{:.6}", val).trim_end_matches('0').trim_end_matches('.'));
+                    result.push_str(
+                        format!("{:.6}", val)
+                            .trim_end_matches('0')
+                            .trim_end_matches('.'),
+                    );
                 }
             } else if i < b_numbers.len() {
                 // Use b's number directly if a doesn't have enough numbers
@@ -129,7 +133,10 @@ fn parse_css_transforms(s: &str) -> Vec<CssTransform> {
             for part in args.split(',') {
                 let part = part.trim();
                 // Extract number and unit
-                let num_str: String = part.chars().take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-').collect();
+                let num_str: String = part
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+                    .collect();
                 let unit: String = part.chars().skip(num_str.len()).collect();
 
                 if let Ok(num) = num_str.parse::<f64>() {
@@ -138,7 +145,11 @@ fn parse_css_transforms(s: &str) -> Vec<CssTransform> {
                 }
             }
 
-            CssTransform { name, values, units }
+            CssTransform {
+                name,
+                values,
+                units,
+            }
         })
         .collect()
 }
@@ -198,10 +209,7 @@ mod tests {
 
     #[test]
     fn test_interpolate_transform_css() {
-        let interp = interpolate_transform_css(
-            "translate(0px, 0px)",
-            "translate(100px, 50px)"
-        );
+        let interp = interpolate_transform_css("translate(0px, 0px)", "translate(100px, 50px)");
 
         let mid = interp(0.5);
         assert!(mid.contains("50"));

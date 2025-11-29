@@ -302,7 +302,10 @@ mod tests {
     #[test]
     fn test_pie_sorted() {
         let data = vec![1.0, 3.0, 2.0];
-        let slices = Pie::new().sort(true).sort_descending(true).generate(&data, |d| *d);
+        let slices = Pie::new()
+            .sort(true)
+            .sort_descending(true)
+            .generate(&data, |d| *d);
 
         // Should be sorted descending: 3, 2, 1
         assert_eq!(slices[0].value, 3.0);

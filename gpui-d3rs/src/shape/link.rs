@@ -62,9 +62,12 @@ pub fn link_horizontal(link: &Link) -> String {
     PathBuilder::new()
         .move_to(link.source_x, link.source_y)
         .cubic_curve_to(
-            midx, link.source_y,
-            midx, link.target_y,
-            link.target_x, link.target_y,
+            midx,
+            link.source_y,
+            midx,
+            link.target_y,
+            link.target_x,
+            link.target_y,
         )
         .build()
         .to_svg_string()
@@ -90,9 +93,12 @@ pub fn link_vertical(link: &Link) -> String {
     PathBuilder::new()
         .move_to(link.source_x, link.source_y)
         .cubic_curve_to(
-            link.source_x, midy,
-            link.target_x, midy,
-            link.target_x, link.target_y,
+            link.source_x,
+            midy,
+            link.target_x,
+            midy,
+            link.target_x,
+            link.target_y,
         )
         .build()
         .to_svg_string()
@@ -109,7 +115,12 @@ pub struct RadialLink {
 
 impl RadialLink {
     /// Create a new radial link
-    pub fn new(source_angle: f64, source_radius: f64, target_angle: f64, target_radius: f64) -> Self {
+    pub fn new(
+        source_angle: f64,
+        source_radius: f64,
+        target_angle: f64,
+        target_radius: f64,
+    ) -> Self {
         Self {
             source_angle,
             source_radius,

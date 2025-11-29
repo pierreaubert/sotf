@@ -1,8 +1,8 @@
 //! Time scale implementation
 
-use crate::scale::{Scale, nice_number};
-use super::interval::{TimeInterval, Interval};
 use super::duration;
+use super::interval::{Interval, TimeInterval};
+use crate::scale::{nice_number, Scale};
 
 /// A time scale maps temporal domain to continuous range
 ///
@@ -197,9 +197,7 @@ mod tests {
 
     #[test]
     fn test_time_scale_invert() {
-        let scale = TimeScale::new()
-            .domain(0, 86400)
-            .range(0.0, 100.0);
+        let scale = TimeScale::new().domain(0, 86400).range(0.0, 100.0);
 
         assert_eq!(scale.invert(0.0).unwrap(), 0);
         assert_eq!(scale.invert(50.0).unwrap(), 43200);

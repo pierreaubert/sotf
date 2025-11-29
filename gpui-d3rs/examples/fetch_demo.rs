@@ -7,10 +7,8 @@
 //! - Automatic type inference
 
 use d3rs::fetch::{
-    parse_csv, parse_tsv, parse_dsv,
-    format_csv,
-    DsvParser, DsvRow,
-    auto_type, auto_type_row, AutoTyped,
+    auto_type, auto_type_row, format_csv, parse_csv, parse_dsv, parse_tsv, AutoTyped, DsvParser,
+    DsvRow,
 };
 
 fn main() {
@@ -62,10 +60,12 @@ Gizmo\t9.99\t200";
     let tsv_rows = parse_tsv(tsv_data);
     println!("Parsed {} rows:", tsv_rows.len());
     for row in &tsv_rows {
-        println!("  {}: ${} x {}",
+        println!(
+            "  {}: ${} x {}",
             row.get("product").unwrap_or(&String::new()),
             row.get("price").unwrap_or(&String::new()),
-            row.get("quantity").unwrap_or(&String::new()));
+            row.get("quantity").unwrap_or(&String::new())
+        );
     }
 
     // ========================================
@@ -84,10 +84,12 @@ Gizmo\t9.99\t200";
     let pipe_rows = parse_dsv(pipe_data, '|');
     println!("Parsed {} rows:", pipe_rows.len());
     for row in &pipe_rows {
-        println!("  {} - {}: {}",
+        println!(
+            "  {} - {}: {}",
             row.get("id").unwrap_or(&String::new()),
             row.get("category").unwrap_or(&String::new()),
-            row.get("value").unwrap_or(&String::new()));
+            row.get("value").unwrap_or(&String::new())
+        );
     }
 
     // ========================================
@@ -106,10 +108,12 @@ Gizmo\t9.99\t200";
     let quoted_rows = parse_csv(quoted_csv);
     println!("Parsed {} rows:", quoted_rows.len());
     for row in &quoted_rows {
-        println!("  {}: {} ({})",
+        println!(
+            "  {}: {} ({})",
             row.get("name").unwrap_or(&String::new()),
             row.get("description").unwrap_or(&String::new()),
-            row.get("price").unwrap_or(&String::new()));
+            row.get("price").unwrap_or(&String::new())
+        );
     }
 
     // ========================================
@@ -166,7 +170,12 @@ Gizmo\t9.99\t200";
             AutoTyped::String(_) => "String",
             AutoTyped::Date(_) => "Date",
         };
-        println!("  {:20} -> {:10} = {:?}", format!("\"{}\"", value), type_name, typed);
+        println!(
+            "  {:20} -> {:10} = {:?}",
+            format!("\"{}\"", value),
+            type_name,
+            typed
+        );
     }
 
     // ========================================
@@ -212,9 +221,7 @@ Gizmo\t9.99\t200";
     // ========================================
     println!("\n--- Custom Parser Configuration ---\n");
 
-    let parser = DsvParser::new(',')
-        .skip_empty_lines(true)
-        .trim_values(true);
+    let parser = DsvParser::new(',').skip_empty_lines(true).trim_values(true);
 
     let messy_csv = "  name  ,  value
   Alice  ,  100
@@ -227,9 +234,11 @@ Gizmo\t9.99\t200";
     let cleaned = parser.parse(messy_csv);
     println!("Parsed (trimmed):");
     for row in &cleaned {
-        println!("  '{}' = '{}'",
+        println!(
+            "  '{}' = '{}'",
             row.get("name").unwrap_or(&String::new()),
-            row.get("value").unwrap_or(&String::new()));
+            row.get("value").unwrap_or(&String::new())
+        );
     }
 
     // Parse without headers (rows mode)

@@ -232,7 +232,10 @@ pub fn arc_points(datum: &ArcDatum, segments: usize, cx: f64, cy: f64) -> Vec<Po
     for i in 0..=segments {
         let t = i as f64 / segments as f64;
         let angle = start + delta * t;
-        points.push(Point::new(cx + outer * angle.cos(), cy + outer * angle.sin()));
+        points.push(Point::new(
+            cx + outer * angle.cos(),
+            cy + outer * angle.sin(),
+        ));
     }
 
     if inner > 0.0 {
@@ -240,7 +243,10 @@ pub fn arc_points(datum: &ArcDatum, segments: usize, cx: f64, cy: f64) -> Vec<Po
         for i in (0..=segments).rev() {
             let t = i as f64 / segments as f64;
             let angle = start + delta * t;
-            points.push(Point::new(cx + inner * angle.cos(), cy + inner * angle.sin()));
+            points.push(Point::new(
+                cx + inner * angle.cos(),
+                cy + inner * angle.sin(),
+            ));
         }
     } else {
         // Single center point for pie slice

@@ -30,13 +30,13 @@
 //! assert_eq!(format(".4s")(1234.0), "1.2340k");
 //! ```
 
-mod specifier;
 mod locale;
 mod prefix;
+mod specifier;
 
-pub use specifier::{FormatSpecifier, FormatType, Align, Sign};
 pub use locale::{Locale, DEFAULT_LOCALE};
 pub use prefix::{format_prefix, prefix_exponent};
+pub use specifier::{Align, FormatSpecifier, FormatType, Sign};
 
 use specifier::parse_specifier;
 

@@ -18,7 +18,10 @@
 mod interval;
 mod scale;
 
-pub use interval::{TimeInterval, Interval, time_second, time_minute, time_hour, time_day, time_week, time_monday, time_month, time_year};
+pub use interval::{
+    time_day, time_hour, time_minute, time_monday, time_month, time_second, time_week, time_year,
+    Interval, TimeInterval,
+};
 pub use scale::TimeScale;
 
 /// Duration constants in seconds

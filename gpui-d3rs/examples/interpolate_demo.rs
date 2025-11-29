@@ -8,23 +8,30 @@
 //! - String interpolation (with embedded numbers)
 //! - Piecewise interpolation
 
+use d3rs::color::D3Color;
 use d3rs::interpolate::{
-    // Numeric
-    interpolate, interpolate_round, interpolate_clamped, interpolate_exp,
-    interpolate_basis,
-    // Color
-    interpolate_rgb, interpolate_hsl, interpolate_lab,
     cubehelix_default,
-    // Transform
-    Transform2D, interpolate_transform,
-    // Zoom
-    zoom::{ZoomView, interpolate_zoom, zoom_duration},
+    // Numeric
+    interpolate,
+    interpolate_basis,
+    interpolate_clamped,
+    interpolate_exp,
+    interpolate_hsl,
+    interpolate_lab,
+    // Color
+    interpolate_rgb,
+    interpolate_round,
     // String
     interpolate_string,
+    interpolate_transform,
     // Piecewise
-    piecewise, quantize,
+    piecewise,
+    quantize,
+    // Zoom
+    zoom::{interpolate_zoom, zoom_duration, ZoomView},
+    // Transform
+    Transform2D,
 };
-use d3rs::color::D3Color;
 
 fn main() {
     println!("=== d3-interpolate Demonstration ===\n");
@@ -130,9 +137,15 @@ fn main() {
     println!("\nTransform interpolation:");
     for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let tr = transform_interp(t);
-        println!("  t={:.2}: translate({:.1}, {:.1}), rotate={:.1} deg, scale=({:.2}, {:.2})",
-            t, tr.translate_x, tr.translate_y,
-            tr.rotate.to_degrees(), tr.scale_x, tr.scale_y);
+        println!(
+            "  t={:.2}: translate({:.1}, {:.1}), rotate={:.1} deg, scale=({:.2}, {:.2})",
+            t,
+            tr.translate_x,
+            tr.translate_y,
+            tr.rotate.to_degrees(),
+            tr.scale_x,
+            tr.scale_y
+        );
     }
 
     // Point transformation
@@ -156,20 +169,26 @@ fn main() {
     println!("\n--- Zoom Interpolation ---\n");
 
     // Zoom from wide view to zoomed-in view
-    let view_start = ZoomView::new(0.0, 0.0, 1000.0);  // Wide view at origin
-    let view_end = ZoomView::new(500.0, 300.0, 50.0);  // Zoomed in at (500, 300)
+    let view_start = ZoomView::new(0.0, 0.0, 1000.0); // Wide view at origin
+    let view_end = ZoomView::new(500.0, 300.0, 50.0); // Zoomed in at (500, 300)
 
-    println!("Zoom from: center=({}, {}), size={}",
-        view_start.cx, view_start.cy, view_start.size);
-    println!("Zoom to:   center=({}, {}), size={}",
-        view_end.cx, view_end.cy, view_end.size);
+    println!(
+        "Zoom from: center=({}, {}), size={}",
+        view_start.cx, view_start.cy, view_start.size
+    );
+    println!(
+        "Zoom to:   center=({}, {}), size={}",
+        view_end.cx, view_end.cy, view_end.size
+    );
 
     let zoom_interp = interpolate_zoom(view_start, view_end);
     println!("\nSmooth zoom trajectory (van Wijk & Nuij algorithm):");
     for t in [0.0, 0.25, 0.5, 0.75, 1.0] {
         let view = zoom_interp(t);
-        println!("  t={:.2}: center=({:6.1}, {:5.1}), size={:6.1}",
-            t, view.cx, view.cy, view.size);
+        println!(
+            "  t={:.2}: center=({:6.1}, {:5.1}), size={:6.1}",
+            t, view.cx, view.cy, view.size
+        );
     }
 
     let duration = zoom_duration(view_start, view_end);
@@ -182,7 +201,7 @@ fn main() {
 
     let string_interp = interpolate_string(
         "translate(0px, 0px) scale(1)",
-        "translate(100px, 50px) scale(2)"
+        "translate(100px, 50px) scale(2)",
     );
 
     println!("String interpolation:");

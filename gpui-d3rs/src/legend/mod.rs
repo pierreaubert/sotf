@@ -109,7 +109,11 @@ impl LegendItem {
     }
 
     /// Create a legend item with custom symbol
-    pub fn with_symbol(label: impl Into<String>, color: impl Into<D3Color>, symbol: LegendSymbol) -> Self {
+    pub fn with_symbol(
+        label: impl Into<String>,
+        color: impl Into<D3Color>,
+        symbol: LegendSymbol,
+    ) -> Self {
         Self {
             label: label.into(),
             color: color.into(),
@@ -289,20 +293,28 @@ impl LegendConfig {
 
         match self.orientation {
             LegendOrientation::Vertical => {
-                let max_label_width = self.items
+                let max_label_width = self
+                    .items
                     .iter()
                     .map(|item| item.label.len() as f64 * avg_char_width)
                     .fold(0.0, f64::max);
                 let width = self.padding * 2.0 + self.symbol_size + 8.0 + max_label_width;
-                let height = self.padding * 2.0 + title_height
+                let height = self.padding * 2.0
+                    + title_height
                     + self.items.len() as f64 * (self.symbol_size + self.item_spacing)
                     - self.item_spacing;
                 (width, height)
             }
             LegendOrientation::Horizontal => {
-                let total_width: f64 = self.items
+                let total_width: f64 = self
+                    .items
                     .iter()
-                    .map(|item| self.symbol_size + 8.0 + item.label.len() as f64 * avg_char_width + self.item_spacing)
+                    .map(|item| {
+                        self.symbol_size
+                            + 8.0
+                            + item.label.len() as f64 * avg_char_width
+                            + self.item_spacing
+                    })
                     .sum();
                 let width = self.padding * 2.0 + total_width - self.item_spacing;
                 let height = self.padding * 2.0 + title_height + self.symbol_size;
@@ -312,16 +324,32 @@ impl LegendConfig {
     }
 
     /// Calculate offset from chart corner for the legend
-    pub fn offset_from_corner(&self, chart_width: f64, chart_height: f64, legend_width: f64, legend_height: f64, margin: f64) -> (f64, f64) {
+    pub fn offset_from_corner(
+        &self,
+        chart_width: f64,
+        chart_height: f64,
+        legend_width: f64,
+        legend_height: f64,
+        margin: f64,
+    ) -> (f64, f64) {
         match self.position {
             LegendPosition::TopLeft => (margin, margin),
             LegendPosition::TopRight => (chart_width - legend_width - margin, margin),
             LegendPosition::BottomLeft => (margin, chart_height - legend_height - margin),
-            LegendPosition::BottomRight => (chart_width - legend_width - margin, chart_height - legend_height - margin),
+            LegendPosition::BottomRight => (
+                chart_width - legend_width - margin,
+                chart_height - legend_height - margin,
+            ),
             LegendPosition::Top => ((chart_width - legend_width) / 2.0, margin),
-            LegendPosition::Bottom => ((chart_width - legend_width) / 2.0, chart_height - legend_height - margin),
+            LegendPosition::Bottom => (
+                (chart_width - legend_width) / 2.0,
+                chart_height - legend_height - margin,
+            ),
             LegendPosition::Left => (margin, (chart_height - legend_height) / 2.0),
-            LegendPosition::Right => (chart_width - legend_width - margin, (chart_height - legend_height) / 2.0),
+            LegendPosition::Right => (
+                chart_width - legend_width - margin,
+                (chart_height - legend_height) / 2.0,
+            ),
         }
     }
 }
@@ -384,11 +412,10 @@ mod tests {
 
     #[test]
     fn test_legend_dimensions() {
-        let legend = LegendConfig::new()
-            .items(vec![
-                LegendItem::color("Short", D3Color::rgb(255, 0, 0)),
-                LegendItem::color("Longer label", D3Color::rgb(0, 255, 0)),
-            ]);
+        let legend = LegendConfig::new().items(vec![
+            LegendItem::color("Short", D3Color::rgb(255, 0, 0)),
+            LegendItem::color("Longer label", D3Color::rgb(0, 255, 0)),
+        ]);
 
         let (width, height) = legend.estimate_dimensions(7.0);
         assert!(width > 0.0);

@@ -20,17 +20,17 @@
 //! assert_eq!(round_lerp(0.25), 3);
 //! ```
 
-mod number;
-mod color;
 mod array;
+mod color;
+mod number;
+mod piecewise;
 mod string;
 mod transform;
-mod piecewise;
 pub mod zoom;
 
-pub use number::*;
-pub use color::*;
 pub use array::*;
+pub use color::*;
+pub use number::*;
+pub use piecewise::*;
 pub use string::*;
 pub use transform::*;
-pub use piecewise::*;

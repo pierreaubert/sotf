@@ -240,7 +240,11 @@ impl RandomBernoulli {
 
     /// Sample as 0 or 1
     pub fn sample_int(&self) -> u32 {
-        if self.sample() { 1 } else { 0 }
+        if self.sample() {
+            1
+        } else {
+            0
+        }
     }
 }
 
@@ -387,8 +391,8 @@ mod tests {
         let samples: Vec<f64> = (0..10000).map(|_| normal.sample()).collect();
 
         let mean: f64 = samples.iter().sum::<f64>() / samples.len() as f64;
-        let variance: f64 = samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
-            / (samples.len() - 1) as f64;
+        let variance: f64 =
+            samples.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (samples.len() - 1) as f64;
 
         // Mean should be close to 0, variance close to 1
         assert!(mean.abs() < 0.1);

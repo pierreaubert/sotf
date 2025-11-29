@@ -18,16 +18,16 @@
 //! assert_eq!(bisect_right_f64(&sorted, 4.0), 3);
 //! ```
 
-mod statistics;
-mod search;
-mod transform;
 mod bin;
-mod ticks;
+mod search;
 mod sets;
+mod statistics;
+mod ticks;
+mod transform;
 
-pub use statistics::*;
-pub use search::*;
-pub use transform::*;
 pub use bin::*;
-pub use ticks::*;
+pub use search::*;
 pub use sets::*;
+pub use statistics::*;
+pub use ticks::*;
+pub use transform::*;

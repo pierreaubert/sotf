@@ -63,7 +63,13 @@ impl DsvParser {
         let headers: Vec<String> = self
             .parse_line(header_line)
             .into_iter()
-            .map(|s| if self.trim_values { s.trim().to_string() } else { s })
+            .map(|s| {
+                if self.trim_values {
+                    s.trim().to_string()
+                } else {
+                    s
+                }
+            })
             .collect();
 
         // Parse data lines

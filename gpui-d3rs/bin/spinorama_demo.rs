@@ -11,15 +11,15 @@ use autoeq::read::{
 };
 use autoeq::{Curve, DirectivityData};
 use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
-use d3rs::contour::ContourGenerator;
 use d3rs::color::D3Color;
+use d3rs::contour::ContourGenerator;
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
-use d3rs::shape::contour::{render_contour, ContourConfig, viridis_color_scale};
+use d3rs::shape::contour::{render_contour, viridis_color_scale, ContourConfig};
 use d3rs::shape::LineConfig;
 use d3rs::text::{render_vector_text, VectorFontConfig};
 use gpui::prelude::*;
-use gpui::{deferred, *};
+use gpui::{actions, deferred, *};
 use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
 use urlencoding;
@@ -44,6 +44,217 @@ fn cea2034_colors() -> HashMap<&'static str, D3Color> {
     colors.insert("Early Reflections DI", D3Color::rgb(148, 103, 189)); // Purple
     colors.insert("Sound Power DI", D3Color::rgb(140, 86, 75)); // Brown
     colors
+}
+
+/// A single curve to be rendered on the frequency/SPL plot
+struct PlotCurve {
+    /// Data points as (frequency, value) pairs
+    points: Vec<LinePoint>,
+    /// Curve color
+    color: D3Color,
+    /// Stroke width
+    stroke_width: f32,
+    /// Whether this curve uses the secondary (right) Y-axis
+    use_secondary_axis: bool,
+}
+
+impl PlotCurve {
+    fn new(points: Vec<LinePoint>, color: D3Color) -> Self {
+        Self {
+            points,
+            color,
+            stroke_width: 2.0,
+            use_secondary_axis: false,
+        }
+    }
+
+    fn stroke_width(mut self, width: f32) -> Self {
+        self.stroke_width = width;
+        self
+    }
+
+    fn secondary_axis(mut self) -> Self {
+        self.use_secondary_axis = true;
+        self
+    }
+}
+
+/// Configuration for the secondary (right) Y-axis
+struct SecondaryAxisConfig {
+    /// Domain for the secondary axis (min, max)
+    domain: (f64, f64),
+    /// Title for the secondary axis
+    title: &'static str,
+    /// Tick values (only values in this list will show labels)
+    tick_values: Vec<f64>,
+}
+
+/// Renders a reusable frequency/SPL plot with optional secondary Y-axis
+///
+/// This is the common chart used for CEA2034, horizontal SPL, and vertical SPL plots.
+/// All use a log frequency X-axis (20Hz-20kHz) and linear SPL Y-axis.
+fn render_freq_spl_plot(
+    curves: Vec<PlotCurve>,
+    spl_domain: (f64, f64),
+    secondary_axis: Option<SecondaryAxisConfig>,
+    chart_width: f32,
+    chart_height: f32,
+) -> Div {
+    let theme = DefaultAxisTheme;
+
+    // Create log frequency scale (20Hz - 20kHz)
+    let freq_scale = LogScale::new()
+        .domain(20.0, 20000.0)
+        .range(0.0, chart_width as f64);
+    // Create linear SPL scale for main curves
+    let spl_scale = LinearScale::new()
+        .domain(spl_domain.0, spl_domain.1)
+        .range(0.0, chart_height as f64);
+
+    // Major frequency ticks (with labels and grid lines)
+    let major_freq_ticks = vec![
+        20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+    ];
+
+    // Minor frequency ticks (no labels, smaller marks)
+    let minor_freq_ticks: Vec<f64> = vec![
+        // 20-100 range
+        30.0, 40.0, 60.0, 70.0, 80.0, 90.0, // 100-1000 range
+        300.0, 400.0, 600.0, 700.0, 800.0, 900.0, // 1000-10000 range
+        3000.0, 4000.0, 6000.0, 7000.0, 8000.0, 9000.0,
+    ];
+
+    // Grid lines only at major frequencies
+    let grid_freq_values = vec![
+        50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+    ];
+
+    // Generate SPL tick values
+    let spl_step = 10.0;
+    let spl_ticks: Vec<f64> = {
+        let start = (spl_domain.0 / spl_step).ceil() as i32;
+        let end = (spl_domain.1 / spl_step).floor() as i32;
+        (start..=end).map(|i| i as f64 * spl_step).collect()
+    };
+
+    // Create secondary scale if needed
+    let secondary_scale = secondary_axis.as_ref().map(|cfg| {
+        LinearScale::new()
+            .domain(cfg.domain.0, cfg.domain.1)
+            .range(0.0, chart_height as f64)
+    });
+
+    // Separate curves by axis
+    let primary_curves: Vec<&PlotCurve> = curves.iter().filter(|c| !c.use_secondary_axis).collect();
+    let secondary_curves: Vec<&PlotCurve> =
+        curves.iter().filter(|c| c.use_secondary_axis).collect();
+
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .flex()
+                .items_start()
+                // Left Y-axis (SPL)
+                .child(render_axis(
+                    &spl_scale,
+                    &AxisConfig::left()
+                        .with_tick_values(spl_ticks)
+                        .with_formatter(|v| format!("{:.0}", v))
+                        .with_title("SPL (dB)"),
+                    chart_height,
+                    &theme,
+                ))
+                // Chart area
+                .child(
+                    div()
+                        .w(px(chart_width))
+                        .h(px(chart_height))
+                        .relative()
+                        .bg(rgb(0xf8f8f8))
+                        .child(render_grid(
+                            &freq_scale,
+                            &spl_scale,
+                            &GridConfig::with_lines()
+                                .with_vertical_values(grid_freq_values.clone()),
+                            chart_width,
+                            chart_height,
+                            &theme,
+                        ))
+                        // Render primary axis curves
+                        .children(primary_curves.iter().filter_map(|curve| {
+                            if curve.points.is_empty() {
+                                return None;
+                            }
+                            Some(render_line(
+                                &freq_scale,
+                                &spl_scale,
+                                &curve.points,
+                                &LineConfig::new()
+                                    .stroke_color(curve.color.clone())
+                                    .stroke_width(curve.stroke_width)
+                                    .curve(CurveType::Linear),
+                            ))
+                        }))
+                        // Render secondary axis curves
+                        .children(secondary_curves.iter().filter_map(|curve| {
+                            let sec_scale = secondary_scale.as_ref()?;
+                            if curve.points.is_empty() {
+                                return None;
+                            }
+                            Some(render_line(
+                                &freq_scale,
+                                sec_scale,
+                                &curve.points,
+                                &LineConfig::new()
+                                    .stroke_color(curve.color.clone())
+                                    .stroke_width(curve.stroke_width)
+                                    .curve(CurveType::Linear),
+                            ))
+                        })),
+                )
+                // Right Y-axis (optional, for DI curves)
+                .when_some(secondary_axis, |el, cfg| {
+                    let sec_scale = LinearScale::new()
+                        .domain(cfg.domain.0, cfg.domain.1)
+                        .range(0.0, chart_height as f64);
+                    // Note: with_formatter takes a fn pointer, so we can't capture max_label_value
+                    // For DI axis, we use the tick values directly and filter with max_label_value
+                    // by passing only tick values up to max_label_value that should have labels
+                    let axis_config = AxisConfig::right()
+                        .with_tick_values(cfg.tick_values)
+                        .with_formatter(|v| format!("{:.0}", v))
+                        .with_title(cfg.title);
+                    el.child(render_axis(&sec_scale, &axis_config, chart_height, &theme))
+                }),
+        )
+        // Bottom axis
+        .child(
+            div()
+                .flex()
+                .child(
+                    // Spacer for left axis
+                    div().w(px(80.0)),
+                )
+                .child(render_axis(
+                    &freq_scale,
+                    &AxisConfig::bottom()
+                        .with_tick_values(major_freq_ticks)
+                        .with_minor_tick_values(minor_freq_ticks)
+                        .with_minor_tick_size(3.0)
+                        .with_formatter(|f| {
+                            if f >= 1000.0 {
+                                format!("{:.0}k", f / 1000.0)
+                            } else {
+                                format!("{:.0}", f)
+                            }
+                        })
+                        .with_title("Frequency (Hz)"),
+                    chart_width,
+                    &theme,
+                )),
+        )
 }
 
 /// View sections
@@ -147,11 +358,7 @@ impl SpinoramaApp {
 
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             let result: Result<Vec<String>, String> = runtime
-                .spawn(async {
-                    fetch_available_speakers()
-                        .await
-                        .map_err(|e| e.to_string())
-                })
+                .spawn(async { fetch_available_speakers().await.map_err(|e| e.to_string()) })
                 .await
                 .map_err(|e| e.to_string())
                 .and_then(|r| r);
@@ -205,7 +412,8 @@ impl SpinoramaApp {
                         if !response.status().is_success() {
                             return Err(format!("Failed to fetch versions: {}", response.status()));
                         }
-                        let versions: Vec<String> = response.json().await.map_err(|e| e.to_string())?;
+                        let versions: Vec<String> =
+                            response.json().await.map_err(|e| e.to_string())?;
                         Ok(versions)
                     }
                 })
@@ -259,9 +467,10 @@ impl SpinoramaApp {
                     let version = version.clone();
                     let measurement = measurement.clone();
                     async move {
-                        let plot_data = fetch_measurement_plot_data(&speaker, &version, &measurement)
-                            .await
-                            .map_err(|e| e.to_string())?;
+                        let plot_data =
+                            fetch_measurement_plot_data(&speaker, &version, &measurement)
+                                .await
+                                .map_err(|e| e.to_string())?;
                         extract_cea2034_curves_original(&plot_data, &measurement)
                             .map_err(|e| e.to_string())
                     }
@@ -347,12 +556,7 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0xcccccc))
-                            .child("Speaker:"),
-                    )
+                    .child(div().text_sm().text_color(rgb(0xcccccc)).child("Speaker:"))
                     .child(if is_loading_speakers {
                         div()
                             .id("speaker-loading")
@@ -382,12 +586,7 @@ impl SpinoramaApp {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(0xcccccc))
-                                .child("Version:"),
-                        )
+                        .child(div().text_sm().text_color(rgb(0xcccccc)).child("Version:"))
                         .child(if is_loading_versions {
                             div()
                                 .id("version-loading")
@@ -417,12 +616,7 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0xcccccc))
-                            .child("Plot:"),
-                    )
+                    .child(div().text_sm().text_color(rgb(0xcccccc)).child("Plot:"))
                     .child(self.render_section_dropdown(
                         section_options,
                         current_section,
@@ -485,7 +679,11 @@ impl SpinoramaApp {
                             } else {
                                 rgb(0x666666)
                             })
-                            .child(current.clone().unwrap_or_else(|| "Select speaker...".into())),
+                            .child(
+                                current
+                                    .clone()
+                                    .unwrap_or_else(|| "Select speaker...".into()),
+                            ),
                     )
                     .child(div().text_xs().text_color(rgb(0x666666)).child("▼"))
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -494,61 +692,67 @@ impl SpinoramaApp {
                             this.speaker_dropdown_open = !this.speaker_dropdown_open;
                             this.version_dropdown_open = false;
                             this.section_dropdown_open = false;
-                            println!("Speaker dropdown open: {}, speakers count: {}", this.speaker_dropdown_open, this.speakers.len());
+                            println!(
+                                "Speaker dropdown open: {}, speakers count: {}",
+                                this.speaker_dropdown_open,
+                                this.speakers.len()
+                            );
                             cx.notify();
                         });
                     }),
             )
             .when(is_open, |el| {
-                el.child(deferred(
-                    div()
-                        .id("speaker-dropdown")
-                        .absolute()
-                        .top_full()
-                        .left_0()
-                        .mt_1()
-                        .w(px(300.0))
-                        .max_h(px(400.0))
-                        .overflow_y_scroll()
-                        .bg(rgb(0x2a2a2a))
-                        .border_1()
-                        .border_color(rgb(0x3a3a3a))
-                        .rounded_md()
-                        .shadow_lg()
-                        .py_1()
-                        .children(options.into_iter().enumerate().map(|(i, opt)| {
-                            let is_selected = current.as_ref() == Some(&opt.value.to_string());
-                            let value = opt.value.to_string();
-                            let entity = entity.clone();
+                el.child(
+                    deferred(
+                        div()
+                            .id("speaker-dropdown")
+                            .absolute()
+                            .top_full()
+                            .left_0()
+                            .mt_1()
+                            .w(px(300.0))
+                            .max_h(px(400.0))
+                            .overflow_y_scroll()
+                            .bg(rgb(0x2a2a2a))
+                            .border_1()
+                            .border_color(rgb(0x3a3a3a))
+                            .rounded_md()
+                            .shadow_lg()
+                            .py_1()
+                            .children(options.into_iter().enumerate().map(|(i, opt)| {
+                                let is_selected = current.as_ref() == Some(&opt.value.to_string());
+                                let value = opt.value.to_string();
+                                let entity = entity.clone();
 
-                            div()
-                                .id(ElementId::NamedInteger("speaker-opt".into(), i as u64))
-                                .px_3()
-                                .py(px(6.0))
-                                .cursor_pointer()
-                                .text_sm()
-                                .when(is_selected, |el| {
-                                    el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
-                                })
-                                .when(!is_selected, |el| {
-                                    el.text_color(rgb(0xcccccc))
-                                        .hover(|s| s.bg(rgb(0x3a3a3a)))
-                                })
-                                .child(opt.label)
-                                .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
-                                    entity.update(cx, |this, cx| {
-                                        this.selected_speaker = Some(value.clone());
-                                        this.speaker_dropdown_open = false;
-                                        // Clear previous data when changing speaker
-                                        this.cea2034_curves.clear();
-                                        this.directivity_data = None;
-                                        this.data_load_state = LoadState::Idle;
-                                        // Load versions for this speaker
-                                        this.load_versions(cx);
-                                    });
-                                })
-                        })),
-                ).with_priority(1))
+                                div()
+                                    .id(ElementId::NamedInteger("speaker-opt".into(), i as u64))
+                                    .px_3()
+                                    .py(px(6.0))
+                                    .cursor_pointer()
+                                    .text_sm()
+                                    .when(is_selected, |el| {
+                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                    })
+                                    .when(!is_selected, |el| {
+                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
+                                    })
+                                    .child(opt.label)
+                                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                                        entity.update(cx, |this, cx| {
+                                            this.selected_speaker = Some(value.clone());
+                                            this.speaker_dropdown_open = false;
+                                            // Clear previous data when changing speaker
+                                            this.cea2034_curves.clear();
+                                            this.directivity_data = None;
+                                            this.data_load_state = LoadState::Idle;
+                                            // Load versions for this speaker
+                                            this.load_versions(cx);
+                                        });
+                                    })
+                            })),
+                    )
+                    .with_priority(1),
+                )
             })
     }
 
@@ -588,7 +792,11 @@ impl SpinoramaApp {
                             } else {
                                 rgb(0x666666)
                             })
-                            .child(current.clone().unwrap_or_else(|| "Select version...".into())),
+                            .child(
+                                current
+                                    .clone()
+                                    .unwrap_or_else(|| "Select version...".into()),
+                            ),
                     )
                     .child(div().text_xs().text_color(rgb(0x666666)).child("▼"))
                     .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
@@ -601,51 +809,53 @@ impl SpinoramaApp {
                     }),
             )
             .when(is_open, |el| {
-                el.child(deferred(
-                    div()
-                        .id("version-dropdown")
-                        .absolute()
-                        .top_full()
-                        .left_0()
-                        .mt_1()
-                        .w(px(150.0))
-                        .max_h(px(300.0))
-                        .overflow_y_scroll()
-                        .bg(rgb(0x2a2a2a))
-                        .border_1()
-                        .border_color(rgb(0x3a3a3a))
-                        .rounded_md()
-                        .shadow_lg()
-                        .py_1()
-                        .children(options.into_iter().enumerate().map(|(i, opt)| {
-                            let is_selected = current.as_ref() == Some(&opt.value.to_string());
-                            let value = opt.value.to_string();
-                            let entity = entity.clone();
+                el.child(
+                    deferred(
+                        div()
+                            .id("version-dropdown")
+                            .absolute()
+                            .top_full()
+                            .left_0()
+                            .mt_1()
+                            .w(px(150.0))
+                            .max_h(px(300.0))
+                            .overflow_y_scroll()
+                            .bg(rgb(0x2a2a2a))
+                            .border_1()
+                            .border_color(rgb(0x3a3a3a))
+                            .rounded_md()
+                            .shadow_lg()
+                            .py_1()
+                            .children(options.into_iter().enumerate().map(|(i, opt)| {
+                                let is_selected = current.as_ref() == Some(&opt.value.to_string());
+                                let value = opt.value.to_string();
+                                let entity = entity.clone();
 
-                            div()
-                                .id(ElementId::NamedInteger("version-opt".into(), i as u64))
-                                .px_3()
-                                .py(px(6.0))
-                                .cursor_pointer()
-                                .text_sm()
-                                .when(is_selected, |el| {
-                                    el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
-                                })
-                                .when(!is_selected, |el| {
-                                    el.text_color(rgb(0xcccccc))
-                                        .hover(|s| s.bg(rgb(0x3a3a3a)))
-                                })
-                                .child(opt.label)
-                                .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
-                                    entity.update(cx, |this, cx| {
-                                        this.selected_version = Some(value.clone());
-                                        this.version_dropdown_open = false;
-                                        // Load speaker data with the selected version
-                                        this.load_speaker_data(cx);
-                                    });
-                                })
-                        })),
-                ).with_priority(1))
+                                div()
+                                    .id(ElementId::NamedInteger("version-opt".into(), i as u64))
+                                    .px_3()
+                                    .py(px(6.0))
+                                    .cursor_pointer()
+                                    .text_sm()
+                                    .when(is_selected, |el| {
+                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                    })
+                                    .when(!is_selected, |el| {
+                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
+                                    })
+                                    .child(opt.label)
+                                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                                        entity.update(cx, |this, cx| {
+                                            this.selected_version = Some(value.clone());
+                                            this.version_dropdown_open = false;
+                                            // Load speaker data with the selected version
+                                            this.load_speaker_data(cx);
+                                        });
+                                    })
+                            })),
+                    )
+                    .with_priority(1),
+                )
             })
     }
 
@@ -690,51 +900,53 @@ impl SpinoramaApp {
                     }),
             )
             .when(is_open, |el| {
-                el.child(deferred(
-                    div()
-                        .id("section-dropdown")
-                        .absolute()
-                        .top_full()
-                        .left_0()
-                        .mt_1()
-                        .w(px(200.0))
-                        .bg(rgb(0x2a2a2a))
-                        .border_1()
-                        .border_color(rgb(0x3a3a3a))
-                        .rounded_md()
-                        .shadow_lg()
-                        .py_1()
-                        .children(options.into_iter().enumerate().map(|(i, opt)| {
-                            let is_selected = current == opt.value.as_ref();
-                            let label_str = opt.label.to_string();
-                            let entity = entity.clone();
+                el.child(
+                    deferred(
+                        div()
+                            .id("section-dropdown")
+                            .absolute()
+                            .top_full()
+                            .left_0()
+                            .mt_1()
+                            .w(px(200.0))
+                            .bg(rgb(0x2a2a2a))
+                            .border_1()
+                            .border_color(rgb(0x3a3a3a))
+                            .rounded_md()
+                            .shadow_lg()
+                            .py_1()
+                            .children(options.into_iter().enumerate().map(|(i, opt)| {
+                                let is_selected = current == opt.value.as_ref();
+                                let label_str = opt.label.to_string();
+                                let entity = entity.clone();
 
-                            div()
-                                .id(ElementId::NamedInteger("section-opt".into(), i as u64))
-                                .px_3()
-                                .py(px(6.0))
-                                .cursor_pointer()
-                                .text_sm()
-                                .when(is_selected, |el| {
-                                    el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
-                                })
-                                .when(!is_selected, |el| {
-                                    el.text_color(rgb(0xcccccc))
-                                        .hover(|s| s.bg(rgb(0x3a3a3a)))
-                                })
-                                .child(opt.label)
-                                .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
-                                    let section = PlotSection::all()
-                                        .into_iter()
-                                        .find(|s| s.label() == label_str)
-                                        .unwrap_or_default();
-                                    entity.update(cx, |this, _| {
-                                        this.current_section = section;
-                                        this.section_dropdown_open = false;
-                                    });
-                                })
-                        })),
-                ).with_priority(1))
+                                div()
+                                    .id(ElementId::NamedInteger("section-opt".into(), i as u64))
+                                    .px_3()
+                                    .py(px(6.0))
+                                    .cursor_pointer()
+                                    .text_sm()
+                                    .when(is_selected, |el| {
+                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                    })
+                                    .when(!is_selected, |el| {
+                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
+                                    })
+                                    .child(opt.label)
+                                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                                        let section = PlotSection::all()
+                                            .into_iter()
+                                            .find(|s| s.label() == label_str)
+                                            .unwrap_or_default();
+                                        entity.update(cx, |this, _| {
+                                            this.current_section = section;
+                                            this.section_dropdown_open = false;
+                                        });
+                                    })
+                            })),
+                    )
+                    .with_priority(1),
+                )
             })
     }
 
@@ -834,22 +1046,74 @@ impl SpinoramaApp {
     }
 
     fn render_cea2034_plot(&self) -> Div {
-        let theme = DefaultAxisTheme;
         let colors = cea2034_colors();
-
-        // Create log frequency scale (20Hz - 20kHz)
-        let freq_scale = LogScale::new().domain(20.0, 20000.0).range(0.0, 800.0);
-        // Create linear SPL scale for main curves (-40 to +10 dB)
-        let spl_scale = LinearScale::new().domain(-40.0, 10.0).range(0.0, 400.0);
-        // Create linear DI scale for directivity index curves (-10 to +40 dB)
-        let di_scale = LinearScale::new().domain(-10.0, 40.0).range(0.0, 400.0);
 
         let chart_width = 800.0;
         let chart_height = 400.0;
 
         // Separate DI curves from SPL curves
-        let spl_curves = ["On Axis", "Listening Window", "Early Reflections", "Sound Power"];
-        let di_curves = ["Early Reflections DI", "Sound Power DI"];
+        let spl_curve_names = [
+            "On Axis",
+            "Listening Window",
+            "Early Reflections",
+            "Sound Power",
+        ];
+        let di_curve_names = ["Early Reflections DI", "Sound Power DI"];
+
+        // Build PlotCurve list for SPL curves (primary axis)
+        let mut plot_curves: Vec<PlotCurve> = spl_curve_names
+            .iter()
+            .filter_map(|&name| {
+                let curve = self.cea2034_curves.get(name)?;
+                let color = colors
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(D3Color::rgb(128, 128, 128));
+                let points: Vec<LinePoint> = curve
+                    .freq
+                    .iter()
+                    .zip(curve.spl.iter())
+                    .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
+                    .map(|(&f, &spl)| LinePoint::new(f, spl))
+                    .collect();
+                if points.is_empty() {
+                    return None;
+                }
+                Some(PlotCurve::new(points, color))
+            })
+            .collect();
+
+        // Add DI curves (secondary axis)
+        let di_curves: Vec<PlotCurve> = di_curve_names
+            .iter()
+            .filter_map(|&name| {
+                let curve = self.cea2034_curves.get(name)?;
+                let color = colors
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(D3Color::rgb(128, 128, 128));
+                let points: Vec<LinePoint> = curve
+                    .freq
+                    .iter()
+                    .zip(curve.spl.iter())
+                    .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
+                    .map(|(&f, &spl)| LinePoint::new(f, spl))
+                    .collect();
+                if points.is_empty() {
+                    return None;
+                }
+                Some(PlotCurve::new(points, color).secondary_axis())
+            })
+            .collect();
+        plot_curves.extend(di_curves);
+
+        // Configure secondary axis for DI curves
+        // Note: Only include tick values up to 20 for labels (full domain is -5 to 45)
+        let secondary_axis = Some(SecondaryAxisConfig {
+            domain: (-5.0, 45.0),
+            title: "DI (dB)",
+            tick_values: vec![-5.0, 0.0, 5.0, 10.0, 15.0, 20.0], // Only show labels up to 20
+        });
 
         div()
             .flex()
@@ -865,131 +1129,13 @@ impl SpinoramaApp {
                         self.selected_speaker.as_deref().unwrap_or("Unknown")
                     )),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    // No gap between chart and axis to ensure tight alignment
-                    .child(
-                        div()
-                            .flex()
-                            .items_start() // Align to top so axis domain line aligns with chart top
-                            // Left Y-axis (SPL) with title
-                            .child(render_axis(
-                                &spl_scale,
-                                &AxisConfig::left()
-                                    .with_ticks(10)
-                                    .with_formatter(|v| format!("{:.0}", v))
-                                    .with_title("SPL (dB)"),
-                                chart_height,
-                                &theme,
-                            ))
-                            // Chart area - no border to ensure grid aligns with axis ticks
-                            .child(
-                                div()
-                                    .w(px(chart_width as f32))
-                                    .h(px(chart_height as f32))
-                                    .relative()
-                                    .bg(rgb(0xf8f8f8))
-                                    .child(render_grid(
-                                        &freq_scale,
-                                        &spl_scale,
-                                        &GridConfig::with_lines(),
-                                        chart_width,
-                                        chart_height,
-                                        &theme,
-                                    ))
-                                    // Render SPL curves (using spl_scale)
-                                    .children(spl_curves.iter().filter_map(|&name| {
-                                        let curve = self.cea2034_curves.get(name)?;
-                                        let color = colors.get(name).cloned().unwrap_or(D3Color::rgb(128, 128, 128));
-
-                                        let points: Vec<LinePoint> = curve
-                                            .freq
-                                            .iter()
-                                            .zip(curve.spl.iter())
-                                            .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
-                                            .map(|(&f, &spl)| LinePoint::new(f, spl))
-                                            .collect();
-
-                                        if points.is_empty() {
-                                            return None;
-                                        }
-
-                                        Some(render_line(
-                                            &freq_scale,
-                                            &spl_scale,
-                                            &points,
-                                            &LineConfig::new()
-                                                .stroke_color(color)
-                                                .stroke_width(2.0)
-                                                .curve(CurveType::Linear),
-                                        ))
-                                    }))
-                                    // Render DI curves (using di_scale)
-                                    .children(di_curves.iter().filter_map(|&name| {
-                                        let curve = self.cea2034_curves.get(name)?;
-                                        let color = colors.get(name).cloned().unwrap_or(D3Color::rgb(128, 128, 128));
-
-                                        let points: Vec<LinePoint> = curve
-                                            .freq
-                                            .iter()
-                                            .zip(curve.spl.iter())
-                                            .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
-                                            .map(|(&f, &spl)| LinePoint::new(f, spl))
-                                            .collect();
-
-                                        if points.is_empty() {
-                                            return None;
-                                        }
-
-                                        Some(render_line(
-                                            &freq_scale,
-                                            &di_scale,
-                                            &points,
-                                            &LineConfig::new()
-                                                .stroke_color(color)
-                                                .stroke_width(2.0)
-                                                .curve(CurveType::Linear),
-                                        ))
-                                    })),
-                            )
-                            // Right Y-axis (DI) with title
-                            .child(render_axis(
-                                &di_scale,
-                                &AxisConfig::right()
-                                    .with_ticks(10)
-                                    .with_formatter(|v| format!("{:.0}", v))
-                                    .with_title("DI (dB)"),
-                                chart_height,
-                                &theme,
-                            )),
-                    )
-                    // Bottom axis with title
-                    .child(
-                        div()
-                            .flex()
-                            .child(
-                                // Spacer for left axis (now includes title space)
-                                div().w(px(80.0)) // axis width with title
-                            )
-                            .child(render_axis(
-                                &freq_scale,
-                                &AxisConfig::bottom()
-                                    .with_ticks(10)
-                                    .with_formatter(|f| {
-                                        if f >= 1000.0 {
-                                            format!("{:.0}k", f / 1000.0)
-                                        } else {
-                                            format!("{:.0}", f)
-                                        }
-                                    })
-                                    .with_title("Frequency (Hz)"),
-                                chart_width,
-                                &theme,
-                            )),
-                    ),
-            )
+            .child(render_freq_spl_plot(
+                plot_curves,
+                (-40.0, 10.0), // SPL domain
+                secondary_axis,
+                chart_width,
+                chart_height,
+            ))
             // Legend
             .child(self.render_legend(&colors))
     }
@@ -1003,8 +1149,15 @@ impl SpinoramaApp {
             .bg(rgb(0xf5f5f5))
             .rounded_md()
             .children(CEA2034_CURVES.iter().map(|&name| {
-                let color = colors.get(name).cloned().unwrap_or(D3Color::rgb(128, 128, 128));
-                let (r, g, b) = ((color.r * 255.0) as u32, (color.g * 255.0) as u32, (color.b * 255.0) as u32);
+                let color = colors
+                    .get(name)
+                    .cloned()
+                    .unwrap_or(D3Color::rgb(128, 128, 128));
+                let (r, g, b) = (
+                    (color.r * 255.0) as u32,
+                    (color.g * 255.0) as u32,
+                    (color.b * 255.0) as u32,
+                );
                 let font_config = VectorFontConfig::horizontal(12.0, hsla(0.0, 0.0, 0.2, 1.0));
 
                 div()
@@ -1022,8 +1175,6 @@ impl SpinoramaApp {
     }
 
     fn render_directivity_plot(&self, plane: &str) -> Div {
-        let theme = DefaultAxisTheme;
-
         // Create a viridis-like color palette for directivity
         let viridis_colors = vec![
             D3Color::from_hex(0x440154), // Dark purple
@@ -1035,17 +1186,12 @@ impl SpinoramaApp {
         ];
 
         let Some(ref directivity) = self.directivity_data else {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No directivity data available for this speaker."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No directivity data available for this speaker."),
+            );
         };
 
         let curves = if plane == "horizontal" {
@@ -1055,28 +1201,41 @@ impl SpinoramaApp {
         };
 
         if curves.is_empty() {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child(format!("No {} directivity data available.", plane)),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child(format!("No {} directivity data available.", plane)),
+            );
         }
-
-        // Create scales
-        let freq_scale = LogScale::new().domain(20.0, 20000.0).range(0.0, 800.0);
-        let spl_scale = LinearScale::new().domain(-40.0, 10.0).range(0.0, 400.0);
 
         let chart_width = 800.0;
         let chart_height = 400.0;
 
-        // Generate colors for different angles
+        // Generate colors for different angles and build PlotCurve list
         let num_curves = curves.len();
+        let plot_curves: Vec<PlotCurve> = curves
+            .iter()
+            .enumerate()
+            .map(|(i, curve)| {
+                let t = i as f32 / (num_curves.max(1) - 1).max(1) as f32;
+                let color = d3rs::color::interpolate_colors(&viridis_colors, t);
+
+                let points: Vec<LinePoint> = curve
+                    .freq
+                    .iter()
+                    .zip(curve.spl.iter())
+                    .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
+                    .map(|(&f, &spl)| LinePoint::new(f, spl))
+                    .collect();
+
+                PlotCurve::new(points, color).stroke_width(1.5)
+            })
+            .collect();
+
+        // Get angle range for legend
+        let angle_min = curves.first().map(|c| c.angle).unwrap_or(-60.0);
+        let angle_max = curves.last().map(|c| c.angle).unwrap_or(60.0);
 
         div()
             .flex()
@@ -1089,98 +1248,23 @@ impl SpinoramaApp {
                     .text_color(rgb(0x333333))
                     .child(format!(
                         "{} SPL - {}",
-                        if plane == "horizontal" { "Horizontal" } else { "Vertical" },
+                        if plane == "horizontal" {
+                            "Horizontal"
+                        } else {
+                            "Vertical"
+                        },
                         self.selected_speaker.as_deref().unwrap_or("Unknown")
                     )),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex()
-                            .child(render_axis(
-                                &spl_scale,
-                                &AxisConfig::left()
-                                    .with_ticks(10)
-                                    .with_formatter(|v| format!("{:.0} dB", v)),
-                                chart_height,
-                                &theme,
-                            ))
-                            // Chart area - no border to ensure grid aligns with axis ticks
-                            .child(
-                                div()
-                                    .w(px(chart_width as f32))
-                                    .h(px(chart_height as f32))
-                                    .relative()
-                                    .bg(rgb(0xf8f8f8))
-                                    .child(render_grid(
-                                        &freq_scale,
-                                        &spl_scale,
-                                        &GridConfig::with_lines(),
-                                        chart_width,
-                                        chart_height,
-                                        &theme,
-                                    ))
-                                    .children(curves.iter().enumerate().map(|(i, curve)| {
-                                        let t = i as f32 / (num_curves.max(1) - 1).max(1) as f32;
-                                        // Interpolate through viridis colors
-                                        let color = d3rs::color::interpolate_colors(&viridis_colors, t);
-
-                                        let points: Vec<LinePoint> = curve
-                                            .freq
-                                            .iter()
-                                            .zip(curve.spl.iter())
-                                            .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
-                                            .map(|(&f, &spl)| LinePoint::new(f, spl))
-                                            .collect();
-
-                                        render_line(
-                                            &freq_scale,
-                                            &spl_scale,
-                                            &points,
-                                            &LineConfig::new()
-                                                .stroke_color(color)
-                                                .stroke_width(1.5)
-                                                .curve(CurveType::Linear),
-                                        )
-                                    })),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &freq_scale,
-                                &AxisConfig::bottom()
-                                    .with_ticks(10)
-                                    .with_formatter(|f| {
-                                        if f >= 1000.0 {
-                                            format!("{:.0}k", f / 1000.0)
-                                        } else {
-                                            format!("{:.0}", f)
-                                        }
-                                    }),
-                                chart_width,
-                                &theme,
-                            )),
-                    )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .mt_2()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .text_center()
-                            .child("Frequency (Hz)"),
-                    ),
-            )
+            .child(render_freq_spl_plot(
+                plot_curves,
+                (-40.0, 10.0), // SPL domain
+                None,          // No secondary axis for directivity plots
+                chart_width,
+                chart_height,
+            ))
             // Angle legend
             .child({
-                let angle_min = curves.first().map(|c| c.angle).unwrap_or(-60.0);
-                let angle_max = curves.last().map(|c| c.angle).unwrap_or(60.0);
                 let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
 
                 div()
@@ -1190,17 +1274,25 @@ impl SpinoramaApp {
                     .p_4()
                     .bg(rgb(0xf5f5f5))
                     .rounded_md()
-                    .child(render_vector_text(&format!("{:.0}°", angle_min), &font_config))
+                    .child(render_vector_text(
+                        &format!("{:.0}°", angle_min),
+                        &font_config,
+                    ))
                     // Simplified gradient legend (using color strip segments)
                     .children((0..6).map(|i| {
-                        let color = d3rs::color::interpolate_colors(&viridis_colors, i as f32 / 5.0);
-                        let (r, g, b) = ((color.r * 255.0) as u32, (color.g * 255.0) as u32, (color.b * 255.0) as u32);
-                        div()
-                            .flex_1()
-                            .h(px(16.0))
-                            .bg(rgb((r << 16) | (g << 8) | b))
+                        let color =
+                            d3rs::color::interpolate_colors(&viridis_colors, i as f32 / 5.0);
+                        let (r, g, b) = (
+                            (color.r * 255.0) as u32,
+                            (color.g * 255.0) as u32,
+                            (color.b * 255.0) as u32,
+                        );
+                        div().flex_1().h(px(16.0)).bg(rgb((r << 16) | (g << 8) | b))
                     }))
-                    .child(render_vector_text(&format!("{:.0}°", angle_max), &font_config))
+                    .child(render_vector_text(
+                        &format!("{:.0}°", angle_max),
+                        &font_config,
+                    ))
             })
     }
 
@@ -1208,34 +1300,24 @@ impl SpinoramaApp {
         let theme = DefaultAxisTheme;
 
         let Some(ref directivity) = self.directivity_data else {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No directivity data available for contour plot."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No directivity data available for contour plot."),
+            );
         };
 
         // Use horizontal directivity data for contour
         let curves = &directivity.horizontal;
 
         if curves.is_empty() {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No horizontal directivity data available."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No horizontal directivity data available."),
+            );
         }
 
         // Build a 2D grid from directivity data
@@ -1252,17 +1334,12 @@ impl SpinoramaApp {
         let angle_count = angles.len();
 
         if freq_count == 0 || angle_count == 0 {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("Insufficient data for contour plot."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("Insufficient data for contour plot."),
+            );
         }
 
         // Create grid values (angle x frequency)
@@ -1273,8 +1350,12 @@ impl SpinoramaApp {
         for curve in curves.iter() {
             for &spl in &curve.spl {
                 grid_values.push(spl);
-                if spl < spl_min { spl_min = spl; }
-                if spl > spl_max { spl_max = spl; }
+                if spl < spl_min {
+                    spl_min = spl;
+                }
+                if spl > spl_max {
+                    spl_max = spl;
+                }
             }
         }
 
@@ -1297,7 +1378,9 @@ impl SpinoramaApp {
         // Y: angle (linear scale)
         let angle_min = angles[0];
         let angle_max = angles[angle_count - 1];
-        let angle_scale = LinearScale::new().domain(angle_min, angle_max).range(0.0, 400.0);
+        let angle_scale = LinearScale::new()
+            .domain(angle_min, angle_max)
+            .range(0.0, 400.0);
 
         let chart_width = 800.0;
         let chart_height = 400.0;
@@ -1366,36 +1449,29 @@ impl SpinoramaApp {
                                             &contour_config,
                                         )
                                         .value_range(spl_min, spl_max)
-                                        .height(px(chart_height as f32))
+                                        .height(px(chart_height as f32)),
                                     ),
                             ),
                     )
                     .child(
-                        div()
-                            .ml(px(60.0))
-                            .child(render_axis(
-                                &freq_scale,
-                                &AxisConfig::bottom()
-                                    .with_ticks(10)
-                                    .with_formatter(|f| {
-                                        if f >= 1000.0 {
-                                            format!("{:.0}k", f / 1000.0)
-                                        } else {
-                                            format!("{:.0}", f)
-                                        }
-                                    }),
-                                chart_width,
-                                &theme,
-                            )),
-                    )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .mt_2()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .text_center()
-                            .child("Frequency (Hz)"),
+                        div().ml(px(60.0)).child(render_axis(
+                            &freq_scale,
+                            &AxisConfig::bottom()
+                                .with_tick_values(vec![
+                                    20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0,
+                                    10000.0, 20000.0,
+                                ])
+                                .with_formatter(|f| {
+                                    if f >= 1000.0 {
+                                        format!("{:.0}k", f / 1000.0)
+                                    } else {
+                                        format!("{:.0}", f)
+                                    }
+                                })
+                                .with_title("Frequency (Hz)"),
+                            chart_width,
+                            &theme,
+                        )),
                     ),
             )
             // Color legend
@@ -1408,18 +1484,28 @@ impl SpinoramaApp {
                     .p_4()
                     .bg(rgb(0xf5f5f5))
                     .rounded_md()
-                    .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
+                    .child(render_vector_text(
+                        &format!("{:.0} dB", spl_min),
+                        &font_config,
+                    ))
                     // Gradient color bar
                     .children((0..20).map(|i| {
                         let t = i as f64 / 19.0;
                         let color = viridis_color_scale()(t);
-                        let (r, g, b) = ((color.r * 255.0) as u32, (color.g * 255.0) as u32, (color.b * 255.0) as u32);
+                        let (r, g, b) = (
+                            (color.r * 255.0) as u32,
+                            (color.g * 255.0) as u32,
+                            (color.b * 255.0) as u32,
+                        );
                         div()
                             .w(px(20.0))
                             .h(px(20.0))
                             .bg(rgb((r << 16) | (g << 8) | b))
                     }))
-                    .child(render_vector_text(&format!("{:.0} dB", spl_max), &font_config))
+                    .child(render_vector_text(
+                        &format!("{:.0} dB", spl_max),
+                        &font_config,
+                    ))
             })
     }
 }
@@ -1437,8 +1523,26 @@ impl Render for SpinoramaApp {
     }
 }
 
+// Define actions
+actions!(spinorama_demo, [Quit]);
+
 fn main() {
     Application::new().run(|cx| {
+        // Activate app and register quit action
+        cx.activate(true);
+        cx.on_action(|_: &Quit, cx| cx.quit());
+        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+
+        // Set up application menu
+        cx.set_menus(vec![Menu {
+            name: "Spinorama Viewer".into(),
+            items: vec![
+                MenuItem::os_submenu("Services", SystemMenuType::Services),
+                MenuItem::separator(),
+                MenuItem::action("Quit Spinorama Viewer", Quit),
+            ],
+        }]);
+
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds {

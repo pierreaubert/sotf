@@ -25,10 +25,10 @@
 //! let result = contour_gen.contour(&values, 0.5);
 //! ```
 
-mod marching_squares;
 mod density;
+mod marching_squares;
 mod thresholds;
 
-pub use marching_squares::{ContourGenerator, Contour, ContourRing, contours, contour};
-pub use density::{DensityEstimator, density_2d, gaussian_kernel};
-pub use thresholds::{threshold_sturges, threshold_scott, threshold_freedman_diaconis};
+pub use density::{density_2d, gaussian_kernel, DensityEstimator};
+pub use marching_squares::{contour, contours, Contour, ContourGenerator, ContourRing};
+pub use thresholds::{threshold_freedman_diaconis, threshold_scott, threshold_sturges};

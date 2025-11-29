@@ -124,7 +124,11 @@ pub fn nice(start: f64, stop: f64, count: usize) -> (f64, f64) {
 
     let step = tick_increment(start, stop, count);
     if step == 0.0 || !step.is_finite() {
-        return if reverse { (stop, start) } else { (start, stop) };
+        return if reverse {
+            (stop, start)
+        } else {
+            (start, stop)
+        };
     }
 
     let nice_start = (start / step).floor() * step;
