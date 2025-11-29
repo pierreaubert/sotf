@@ -2,9 +2,14 @@
 //!
 //! Provides various preconditioning strategies for improving
 //! convergence of CGS and BiCGSTAB solvers.
+//!
+//! Most preconditioners are portable and work in WASM mode. The HierarchicalFmmPreconditioner
+//! requires the `native` feature as it uses parallel processing (rayon).
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
+
+use crate::core::algebra;
 
 /// Preconditioner trait
 pub trait Preconditioner {
@@ -109,7 +114,9 @@ impl Preconditioner for RowScalingPreconditioner {
 
 /// Block diagonal preconditioner
 ///
-/// For FMM systems where diagonal blocks correspond to clusters
+/// For FMM systems where diagonal blocks correspond to clusters.
+/// Uses BLAS for matrix inversion when `native` feature is enabled,
+/// falls back to pure Rust implementation otherwise.
 #[derive(Debug, Clone)]
 pub struct BlockDiagonalPreconditioner {
     /// Inverse of each diagonal block
@@ -120,19 +127,12 @@ pub struct BlockDiagonalPreconditioner {
 
 impl BlockDiagonalPreconditioner {
     /// Create from diagonal blocks
+    ///
+    /// Computes the inverse of each block. Uses BLAS when available,
+    /// falls back to pure Rust LU factorization otherwise.
     pub fn from_blocks(blocks: Vec<Array2<Complex64>>) -> Self {
-        use ndarray_linalg::Inverse;
-
         let block_sizes: Vec<usize> = blocks.iter().map(|b| b.nrows()).collect();
-        let block_inv: Vec<Array2<Complex64>> = blocks
-            .into_iter()
-            .map(|b| {
-                b.inv().unwrap_or_else(|_| {
-                    let n = b.nrows();
-                    Array2::eye(n)
-                })
-            })
-            .collect();
+        let block_inv: Vec<Array2<Complex64>> = algebra::invert_blocks(&blocks);
 
         Self {
             block_inv,
@@ -143,22 +143,7 @@ impl BlockDiagonalPreconditioner {
 
 impl Preconditioner for BlockDiagonalPreconditioner {
     fn apply(&self, r: &Array1<Complex64>) -> Array1<Complex64> {
-        let mut z = Array1::zeros(r.len());
-        let mut offset = 0;
-
-        for (block_inv, &block_size) in self.block_inv.iter().zip(self.block_sizes.iter()) {
-            let r_block =
-                Array1::from_vec(r.slice(ndarray::s![offset..offset + block_size]).to_vec());
-            let z_block = block_inv.dot(&r_block);
-
-            for (i, &val) in z_block.iter().enumerate() {
-                z[offset + i] = val;
-            }
-
-            offset += block_size;
-        }
-
-        z
+        algebra::block_diagonal_solve(&self.block_inv, r, &self.block_sizes)
     }
 }
 
@@ -169,6 +154,9 @@ impl Preconditioner for BlockDiagonalPreconditioner {
 ///
 /// For each cluster's diagonal block, we store the LU factorization
 /// and apply it during the preconditioner solve.
+///
+/// Requires the `native` feature for LU factorization and parallel processing.
+#[cfg(feature = "native")]
 #[derive(Debug, Clone)]
 pub struct HierarchicalFmmPreconditioner {
     /// LU factors for each cluster's diagonal block
@@ -182,6 +170,7 @@ pub struct HierarchicalFmmPreconditioner {
     num_dofs: usize,
 }
 
+#[cfg(feature = "native")]
 impl HierarchicalFmmPreconditioner {
     /// Create from SLFMM near-field blocks
     ///
@@ -320,6 +309,7 @@ impl HierarchicalFmmPreconditioner {
     }
 }
 
+#[cfg(feature = "native")]
 impl Preconditioner for HierarchicalFmmPreconditioner {
     fn apply(&self, r: &Array1<Complex64>) -> Array1<Complex64> {
         self.apply_block_solve(r)
@@ -353,6 +343,9 @@ impl SparseNearfieldIlu {
     ///
     /// Builds a sparse ILU factorization using only the near-field structure,
     /// which is O(N) entries instead of O(N²).
+    ///
+    /// Requires the `native` feature as SLFMM assembly uses parallel processing.
+    #[cfg(feature = "native")]
     pub fn from_slfmm(
         near_blocks: &[super::super::assembly::slfmm::NearFieldBlock],
         cluster_dof_indices: &[Vec<usize>],

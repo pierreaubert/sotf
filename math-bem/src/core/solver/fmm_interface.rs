@@ -28,6 +28,7 @@ use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
 use crate::core::assembly::mlfmm::MlfmmSystem;
+#[cfg(feature = "native")]
 use crate::core::assembly::slfmm::SlfmmSystem;
 use crate::core::assembly::sparse::CsrMatrix;
 
@@ -91,10 +92,14 @@ impl LinearOperator for DenseOperator {
 }
 
 /// SLFMM linear operator
+///
+/// Requires the `native` feature as SLFMM assembly uses parallel processing.
+#[cfg(feature = "native")]
 pub struct SlfmmOperator {
     system: SlfmmSystem,
 }
 
+#[cfg(feature = "native")]
 impl SlfmmOperator {
     /// Create a new SLFMM operator
     pub fn new(system: SlfmmSystem) -> Self {
@@ -112,6 +117,7 @@ impl SlfmmOperator {
     }
 }
 
+#[cfg(feature = "native")]
 impl LinearOperator for SlfmmOperator {
     fn num_rows(&self) -> usize {
         self.system.num_dofs
@@ -725,6 +731,9 @@ pub fn gmres_solve_with_ilu_operator<O: LinearOperator>(
 /// * `fmm_system` - The SLFMM system with near-field blocks
 /// * `b` - Right-hand side vector
 /// * `config` - GMRES configuration
+///
+/// **Note**: Requires the `native` feature for LU factorization and parallel processing.
+#[cfg(feature = "native")]
 pub fn gmres_solve_with_hierarchical_precond(
     fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
     b: &Array1<Complex64>,
@@ -748,6 +757,9 @@ pub fn gmres_solve_with_hierarchical_precond(
 /// Solve using GMRES with hierarchical preconditioner (operator interface)
 ///
 /// This version takes ownership of the FMM system and provides a cleaner interface.
+///
+/// **Note**: Requires the `native` feature for LU factorization and parallel processing.
+#[cfg(feature = "native")]
 pub fn gmres_solve_fmm_hierarchical(
     fmm_operator: &SlfmmOperator,
     config: &super::gmres::GmresConfig,
@@ -768,7 +780,7 @@ pub fn gmres_solve_fmm_hierarchical(
 }
 
 // ============================================================================
-// Batched BLAS GMRES Solver
+// Batched BLAS GMRES Solver (native only - requires rayon)
 // ============================================================================
 
 /// Solve using GMRES with batched BLAS operations
@@ -785,6 +797,9 @@ pub fn gmres_solve_fmm_hierarchical(
 /// * `fmm_system` - The SLFMM system
 /// * `b` - Right-hand side vector
 /// * `config` - GMRES configuration
+///
+/// **Note**: Requires the `native` feature for parallel processing.
+#[cfg(feature = "native")]
 pub fn gmres_solve_fmm_batched(
     fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
     b: &Array1<Complex64>,
@@ -812,6 +827,9 @@ pub fn gmres_solve_fmm_batched(
 /// Solve using GMRES with batched BLAS and ILU preconditioning
 ///
 /// Combines batched matvec with ILU preconditioning for optimal performance.
+///
+/// **Note**: Requires the `native` feature for parallel processing.
+#[cfg(feature = "native")]
 pub fn gmres_solve_fmm_batched_with_ilu(
     fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
     b: &Array1<Complex64>,

@@ -1,0 +1,64 @@
+{
+  "room": {
+    "type": "lshaped",
+    "width1": 6.0,
+    "depth1": 4.0,
+    "width2": 3.0,
+    "depth2": 3.0,
+    "height": 2.5
+  },
+  "sources": [
+    {
+      "name": "Main Speaker",
+      "position": {
+        "x": 3.0,
+        "y": 0.5,
+        "z": 1.2
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "fullrange"
+      }
+    }
+  ],
+  "listening_positions": [
+    {
+      "x": 3.0,
+      "y": 2.5,
+      "z": 1.2
+    }
+  ],
+  "frequencies": {
+    "min_freq": 20.0,
+    "max_freq": 1000.0,
+    "num_points": 100,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "fmm+gmres+ilu",
+    "mesh_resolution": 3,
+    "gmres": {
+      "max_iter": 200,
+      "restart": 50,
+      "tolerance": 1e-6
+    },
+    "ilu": {
+      "method": "slfmm",
+      "scanning_degree": "fine"
+    },
+    "fmm": {
+      "fmm_type": "slfmm",
+      "expansion_order": 6,
+      "max_particles_per_leaf": 50
+    },
+    "adaptive_integration": true
+  },
+  "metadata": {
+    "description": "L-shaped room with FMM acceleration for fast solve",
+    "author": "Room Simulator",
+    "date": "2025-01-28"
+  }
+}

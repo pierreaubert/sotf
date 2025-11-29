@@ -3,6 +3,10 @@
 //! This module provides a unified, high-level interface for acoustic BEM simulations.
 //! It integrates mesh generation, system assembly, linear solving, and post-processing.
 //!
+//! The Direct solver method works in both native and WASM modes. When the `native` feature
+//! is enabled, it uses optimized BLAS/LAPACK. Otherwise, it falls back to a pure Rust
+//! LU factorization implementation.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -413,6 +417,7 @@ impl BemSolver {
     ) -> Result<Array1<Complex64>, BemError> {
         match self.solver_method {
             SolverMethod::Direct => {
+                // Uses BLAS when native feature is enabled, pure Rust fallback otherwise
                 let solution = direct_solve(matrix, rhs);
                 if solution.success {
                     Ok(solution.x)
@@ -546,6 +551,7 @@ mod tests {
         assert_eq!(solver.assembly_method, AssemblyMethod::Tbem);
     }
 
+    // Direct solver tests work in both native and WASM modes
     #[test]
     fn test_bem_solver_small_problem() {
         // Very small problem for quick test

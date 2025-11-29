@@ -1,6 +1,10 @@
 //! Direct solver (LU factorization)
 //!
-//! Uses ndarray-linalg for LU decomposition and solve.
+//! Uses ndarray-linalg for LU decomposition and solve when `native` feature is enabled,
+//! falls back to pure Rust implementation otherwise.
+//!
+//! The pure Rust fallback is slower but allows BEM code to work in WASM and other
+//! environments without native BLAS.
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
@@ -16,6 +20,8 @@ pub struct DirectSolution {
 
 /// Solve Ax = b using LU factorization
 ///
+/// Uses BLAS when `native` feature is enabled, pure Rust otherwise.
+///
 /// # Arguments
 /// * `a` - Coefficient matrix (n × n)
 /// * `b` - Right-hand side vector (n)
@@ -30,12 +36,30 @@ pub struct DirectSolution {
 ///     println!("Solution: {:?}", solution.x);
 /// }
 /// ```
+#[cfg(feature = "native")]
 pub fn direct_solve(a: &Array2<Complex64>, b: &Array1<Complex64>) -> DirectSolution {
     use ndarray_linalg::Solve;
 
     match a.solve(b) {
         Ok(x) => DirectSolution { x, success: true },
         Err(_) => DirectSolution {
+            x: Array1::zeros(b.len()),
+            success: false,
+        },
+    }
+}
+
+/// Solve Ax = b using LU factorization (pure Rust fallback)
+///
+/// This version is used when the `native` feature is disabled.
+/// Slower than BLAS but works in WASM and other restricted environments.
+#[cfg(not(feature = "native"))]
+pub fn direct_solve(a: &Array2<Complex64>, b: &Array1<Complex64>) -> DirectSolution {
+    use crate::core::algebra;
+
+    match algebra::solve(a, b) {
+        Some(x) => DirectSolution { x, success: true },
+        None => DirectSolution {
             x: Array1::zeros(b.len()),
             success: false,
         },

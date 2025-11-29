@@ -1,0 +1,7 @@
+[[bin]]
+name = "bem-runner"
+path = "bin/runner.rs"
+
+[build-dependencies]
+cc = "1.2"  # For compiling NumCalc C++ code
+which = { workspace = true }

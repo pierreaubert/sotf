@@ -4,21 +4,10 @@
 //!
 //! ## Features
 //!
-//! - FFI wrapper to NumCalc C++ BEM solver
 //! - Parallel execution with Rayon (memory-efficient, no async overhead)
 //! - Comprehensive analytical validation (1D, 2D, 3D)
 //! - JSON output for visualization
 //!
-//! ## Example
-//!
-//! ```rust,no_run
-//! use bem::{NumCalcRunner, NumCalcConfig};
-//!
-//! let runner = NumCalcRunner::new("project_dir")?;
-//! let config = NumCalcConfig::default();
-//! let output = runner.run(&config)?;
-//! # Ok::<(), anyhow::Error>(())
-//! ```
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
@@ -26,18 +15,12 @@
 
 pub mod analytical;
 pub mod testing;
-
-#[cfg(feature = "ffi")]
-pub mod ffi;
-
+pub mod room_acoustics;
 pub mod core;
 
 // Re-exports
 pub use analytical::*;
 pub use testing::*;
-
-#[cfg(feature = "ffi")]
-pub use ffi::{NumCalcConfig, NumCalcOutput, NumCalcRunner, ParallelBemRunner};
 
 /// Library version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

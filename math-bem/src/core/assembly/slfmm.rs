@@ -11,6 +11,11 @@
 //! - [T] is the T-matrix (element-to-cluster multipole expansion)
 //! - [D] is the D-matrix (cluster-to-cluster translation)
 //! - [S] is the S-matrix (cluster-to-element local expansion)
+//!
+//! **Note**: This module requires the `native` feature for parallel processing.
+//! For WASM builds, use the basic TBEM assembly instead.
+
+#![cfg(feature = "native")]
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;

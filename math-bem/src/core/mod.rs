@@ -17,7 +17,9 @@
 //! - `postprocess`: Result computation at evaluation points
 //! - `io`: Input/output (NC.inp format, JSON)
 //! - `bem_solver`: High-level API for solving BEM problems
+//! - `algebra`: Pure Rust linear algebra fallbacks for WASM portability
 
+pub mod algebra;
 pub mod types;
 pub mod constants;
 pub mod greens;

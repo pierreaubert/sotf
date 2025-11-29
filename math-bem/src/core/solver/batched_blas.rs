@@ -8,6 +8,10 @@
 //! - Batched GEMM operations when possible
 //! - Reduced memory allocations in hot paths
 //! - Contiguous memory layouts for cache efficiency
+//!
+//! **Note**: This module requires the `native` feature as it uses rayon for parallel processing.
+
+#![cfg(feature = "native")]
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
