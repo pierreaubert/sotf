@@ -4030,9 +4030,17 @@ name = "gpui-d3rs"
 version = "0.1.2"
 dependencies = [
  "approx",
+ "autoeq",
+ "autoeq-cea2034",
  "gpui",
  "gpui-ui-kit",
+ "ndarray 0.16.1",
  "regex",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]
