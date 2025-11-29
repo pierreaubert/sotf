@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use autoeq::read::{
-    extract_cea2034_curves_original, fetch_available_speakers, fetch_directivity_data,
-    fetch_measurement_plot_data,
+    extract_cea2034_curves_original, fetch_available_speakers, fetch_contour_data,
+    fetch_directivity_data, fetch_measurement_plot_data, ContourPlotData,
 };
 use autoeq::{Curve, DirectivityData};
 use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
@@ -257,6 +257,30 @@ fn render_freq_spl_plot(
         )
 }
 
+/// Contour rendering mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum ContourRenderMode {
+    #[default]
+    Isoline,
+    Surface,
+}
+
+impl ContourRenderMode {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Isoline => "Isoline",
+            Self::Surface => "Surface",
+        }
+    }
+
+    fn toggle(&self) -> Self {
+        match self {
+            Self::Isoline => Self::Surface,
+            Self::Surface => Self::Isoline,
+        }
+    }
+}
+
 /// View sections
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum PlotSection {
@@ -312,12 +336,16 @@ struct SpinoramaApp {
     // Data state
     cea2034_curves: HashMap<String, Curve>,
     directivity_data: Option<DirectivityData>,
+    contour_data: Option<ContourPlotData>,
     data_load_state: LoadState,
     // UI state
     current_section: PlotSection,
     speaker_dropdown_open: bool,
     version_dropdown_open: bool,
     section_dropdown_open: bool,
+    // Contour render mode for each plot (SPL Horizontal Contour, Directivity Contour)
+    contour_mode_spl: ContourRenderMode,
+    contour_mode_directivity: ContourRenderMode,
 }
 
 impl SpinoramaApp {
@@ -340,11 +368,14 @@ impl SpinoramaApp {
             selected_measurement: "CEA2034".to_string(),
             cea2034_curves: HashMap::new(),
             directivity_data: None,
+            contour_data: None,
             data_load_state: LoadState::Idle,
             current_section: PlotSection::default(),
             speaker_dropdown_open: false,
             version_dropdown_open: false,
             section_dropdown_open: false,
+            contour_mode_spl: ContourRenderMode::default(),
+            contour_mode_directivity: ContourRenderMode::default(),
         };
 
         // Start loading speakers list
@@ -490,11 +521,23 @@ impl SpinoramaApp {
                 .ok()
                 .flatten();
 
+            // Fetch contour data (SPL Horizontal Contour)
+            let contour_result: Option<ContourPlotData> = runtime
+                .spawn({
+                    let speaker = speaker.clone();
+                    let version = version.clone();
+                    async move { fetch_contour_data(&speaker, &version, "horizontal").await.ok() }
+                })
+                .await
+                .ok()
+                .flatten();
+
             match cea2034_result {
                 Ok(curves) => {
                     let _ = this.update(cx, |app, cx| {
                         app.cea2034_curves = curves;
                         app.directivity_data = directivity_result;
+                        app.contour_data = contour_result;
                         app.data_load_state = LoadState::Loaded;
                         cx.notify();
                     });
@@ -744,6 +787,7 @@ impl SpinoramaApp {
                                             // Clear previous data when changing speaker
                                             this.cea2034_curves.clear();
                                             this.directivity_data = None;
+                                            this.contour_data = None;
                                             this.data_load_state = LoadState::Idle;
                                             // Load versions for this speaker
                                             this.load_versions(cx);
@@ -959,7 +1003,7 @@ impl SpinoramaApp {
                 PlotSection::CEA2034 => self.render_cea2034_plot(),
                 PlotSection::HorizontalSPL => self.render_directivity_plot("horizontal"),
                 PlotSection::VerticalSPL => self.render_directivity_plot("vertical"),
-                PlotSection::Contour => self.render_contour_plot(),
+                PlotSection::Contour => self.render_contour_plot(cx),
             },
         };
 
@@ -1296,59 +1340,309 @@ impl SpinoramaApp {
             })
     }
 
-    fn render_contour_plot(&self) -> Div {
+    /// Render a toggle button for switching between isoline and surface modes
+    fn render_mode_toggle(
+        &self,
+        mode: ContourRenderMode,
+        id: &'static str,
+        on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let entity = cx.entity().clone();
+
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .child("Render:"),
+            )
+            .child(
+                div()
+                    .id(ElementId::Name(format!("{}-btn", id).into()))
+                    .flex()
+                    .items_center()
+                    .px_3()
+                    .py_1()
+                    .bg(rgb(0xe0e0e0))
+                    .border_1()
+                    .border_color(rgb(0xcccccc))
+                    .rounded_md()
+                    .cursor_pointer()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(0x333333))
+                    .hover(|s| s.bg(rgb(0xd0d0d0)))
+                    .child(mode.label())
+                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                        entity.update(cx, |this, cx| {
+                            on_click(this, cx);
+                            cx.notify();
+                        });
+                    }),
+            )
+    }
+
+    /// Render contour plot from SPL Horizontal Contour data (new format with full -180 to +180 range)
+    fn render_contour_from_contour_data(&self, title: &str, render_mode: ContourRenderMode) -> Option<Div> {
         let theme = DefaultAxisTheme;
 
-        let Some(ref directivity) = self.directivity_data else {
-            return div().flex().items_center().justify_center().h_full().child(
-                div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
-                    .child("No directivity data available for contour plot."),
-            );
-        };
+        let contour_data = self.contour_data.as_ref()?;
 
-        // Use horizontal directivity data for contour
+        let freq_count = contour_data.freq_count;
+        let angle_count = contour_data.angle_count;
+
+        if freq_count == 0 || angle_count == 0 {
+            return None;
+        }
+
+        // Get actual angle range from data
+        let angle_min = contour_data
+            .angles
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let angle_max = contour_data
+            .angles
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        // Get frequency range from data
+        let freq_min = contour_data
+            .freq
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let freq_max = contour_data
+            .freq
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        println!(
+            "Contour (SPL Horizontal Contour): {} angles x {} freqs, angle range: {:.1}° to {:.1}°, freq range: {:.1}Hz to {:.1}Hz",
+            angle_count, freq_count, angle_min, angle_max, freq_min, freq_max
+        );
+
+        // Calculate SPL range
+        let spl_min = contour_data
+            .spl
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let spl_max = contour_data
+            .spl
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        // Generate contour thresholds (every 3 dB based on actual data range)
+        let threshold_min = ((spl_min / 3.0).floor() * 3.0) as i32;
+        let threshold_max = ((spl_max / 3.0).ceil() * 3.0) as i32;
+        let thresholds: Vec<f64> = (threshold_min..=threshold_max)
+            .step_by(3)
+            .map(|v| v as f64)
+            .collect();
+
+        // For the contour generator, we pass the log-transformed frequencies
+        let log_freq_values: Vec<f64> = contour_data.freq.iter().map(|f| f.ln()).collect();
+
+        // Fixed axis ranges based on data or reasonable defaults
+        let log_freq_min = freq_min.max(20.0).ln();
+        let log_freq_max = freq_max.min(20000.0).ln();
+
+        // Create contour generator with explicit log-transformed x values
+        let generator = ContourGenerator::new(freq_count, angle_count)
+            .x_values(log_freq_values)
+            .y_values(contour_data.angles.clone());
+
+        let contours = generator.contours(&contour_data.spl, &thresholds);
+
+        let chart_width = 800.0;
+        let chart_height = 300.0;
+
+        // Create scales with data-driven ranges
+        let freq_scale = LinearScale::new()
+            .domain(log_freq_min, log_freq_max)
+            .range(0.0, chart_width as f64);
+
+        let angle_scale = LinearScale::new()
+            .domain(angle_min, angle_max)
+            .range(0.0, chart_height as f64);
+
+        // Configure rendering based on mode
+        let is_surface = render_mode == ContourRenderMode::Surface;
+        let contour_config = ContourConfig::new()
+            .stroke_width(if is_surface { 0.5 } else { 1.5 })
+            .fill(is_surface)
+            .fill_opacity(if is_surface { 0.6 } else { 0.0 })
+            .stroke_opacity(if is_surface { 0.8 } else { 1.0 })
+            .color_scale(move |t| viridis_color_scale()(t));
+
+        // Build frequency tick values in log space
+        let freq_ticks: Vec<f64> = [20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0]
+            .iter()
+            .filter(|&&f| f >= freq_min && f <= freq_max)
+            .map(|f| f.ln())
+            .collect();
+
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(0x333333))
+                        .child(title.to_string()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .flex()
+                                .child(render_axis(
+                                    &angle_scale,
+                                    &AxisConfig::left()
+                                        .with_ticks(13)
+                                        .with_formatter(|v| format!("{:.0}°", v))
+                                        .with_title("Angle"),
+                                    chart_height,
+                                    &theme,
+                                ))
+                                .child(
+                                    div()
+                                        .w(px(chart_width as f32))
+                                        .h(px(chart_height as f32))
+                                        .relative()
+                                        .bg(rgb(0xf8f8f8))
+                                        .child(render_grid(
+                                            &freq_scale,
+                                            &angle_scale,
+                                            &GridConfig::with_lines()
+                                                .with_vertical_values(freq_ticks.clone()),
+                                            chart_width,
+                                            chart_height,
+                                            &theme,
+                                        ))
+                                        .child(
+                                            render_contour(
+                                                contours,
+                                                &freq_scale,
+                                                &angle_scale,
+                                                &contour_config,
+                                            )
+                                            .value_range(spl_min, spl_max)
+                                            .height(px(chart_height as f32)),
+                                        ),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .child(div().w(px(80.0)))
+                                .child(render_axis(
+                                    &freq_scale,
+                                    &AxisConfig::bottom()
+                                        .with_tick_values(freq_ticks)
+                                        .with_formatter(|log_f| {
+                                            let f = log_f.exp();
+                                            if f >= 1000.0 {
+                                                format!("{:.0}k", f / 1000.0)
+                                            } else {
+                                                format!("{:.0}", f)
+                                            }
+                                        })
+                                        .with_title("Frequency (Hz)"),
+                                    chart_width,
+                                    &theme,
+                                )),
+                        ),
+                )
+                // Color legend
+                .child({
+                    let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_4()
+                        .p_2()
+                        .bg(rgb(0xf5f5f5))
+                        .rounded_md()
+                        .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
+                        .children((0..15).map(|i| {
+                            let t = i as f64 / 14.0;
+                            let color = viridis_color_scale()(t);
+                            let (r, g, b) = (
+                                (color.r * 255.0) as u32,
+                                (color.g * 255.0) as u32,
+                                (color.b * 255.0) as u32,
+                            );
+                            div().w(px(15.0)).h(px(15.0)).bg(rgb((r << 16) | (g << 8) | b))
+                        }))
+                        .child(render_vector_text(&format!("{:.0} dB", spl_max), &font_config))
+                }),
+        )
+    }
+
+    /// Render contour plot from directivity data (old format, typically -60 to +60 range)
+    fn render_contour_from_directivity(&self, title: &str, render_mode: ContourRenderMode) -> Option<Div> {
+        let theme = DefaultAxisTheme;
+
+        let directivity = self.directivity_data.as_ref()?;
         let curves = &directivity.horizontal;
 
         if curves.is_empty() {
-            return div().flex().items_center().justify_center().h_full().child(
-                div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
-                    .child("No horizontal directivity data available."),
-            );
+            return None;
         }
 
-        // Build a 2D grid from directivity data
-        // X-axis: frequency (log scale from 20Hz to 20kHz)
-        // Y-axis: angle (from -180 to +180 or whatever the data has)
-        // Z-value: SPL
-
         // Get frequency points from first curve (assume all curves have same freq points)
-        let freq_points = &curves[0].freq;
+        let all_freq_points = &curves[0].freq;
+
+        // Filter frequencies to >= 100Hz
+        let freq_start_idx = all_freq_points
+            .iter()
+            .position(|&f| f >= 100.0)
+            .unwrap_or(0);
+        let freq_points: Vec<f64> = all_freq_points
+            .iter()
+            .skip(freq_start_idx)
+            .copied()
+            .collect();
         let freq_count = freq_points.len();
 
         // Get angles from curves
         let angles: Vec<f64> = curves.iter().map(|c| c.angle).collect();
         let angle_count = angles.len();
 
+        let angle_min = angles.iter().cloned().fold(f64::INFINITY, f64::min);
+        let angle_max = angles.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
+        println!(
+            "Contour (Directivity): {} curves, angle range: {:.1}° to {:.1}°, {} freq points",
+            angle_count, angle_min, angle_max, freq_count
+        );
+
         if freq_count == 0 || angle_count == 0 {
-            return div().flex().items_center().justify_center().h_full().child(
-                div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
-                    .child("Insufficient data for contour plot."),
-            );
+            return None;
         }
 
-        // Create grid values (angle x frequency)
+        // Create grid values (angle x frequency), filtered to >= 100Hz
         let mut grid_values: Vec<f64> = Vec::with_capacity(angle_count * freq_count);
         let mut spl_min = f64::INFINITY;
         let mut spl_max = f64::NEG_INFINITY;
 
         for curve in curves.iter() {
-            for &spl in &curve.spl {
+            for &spl in curve.spl.iter().skip(freq_start_idx) {
                 grid_values.push(spl);
                 if spl < spl_min {
                     spl_min = spl;
@@ -1359,153 +1653,230 @@ impl SpinoramaApp {
             }
         }
 
-        // Generate contour thresholds (every 3 dB from -40 to +10)
-        let thresholds: Vec<f64> = (-40..=10).step_by(3).map(|v| v as f64).collect();
+        // Generate contour thresholds (every 3 dB)
+        let threshold_min = ((spl_min / 3.0).floor() * 3.0) as i32;
+        let threshold_max = ((spl_max / 3.0).ceil() * 3.0) as i32;
+        let thresholds: Vec<f64> = (threshold_min..=threshold_max)
+            .step_by(3)
+            .map(|v| v as f64)
+            .collect();
 
-        // Create contour generator
+        let log_freq_values: Vec<f64> = freq_points.iter().map(|f| f.ln()).collect();
+        let log_freq_min = 100.0_f64.ln();
+        let log_freq_max = 20000.0_f64.ln();
+
         let generator = ContourGenerator::new(freq_count, angle_count)
-            .x(freq_points[0], freq_points[freq_count - 1])
-            .y(angles[0], angles[angle_count - 1]);
+            .x_values(log_freq_values)
+            .y_values(angles);
 
         let contours = generator.contours(&grid_values, &thresholds);
 
-        // Create scales
-        // X: frequency (log scale)
-        let freq_min = freq_points[0].max(20.0);
-        let freq_max = freq_points[freq_count - 1].min(20000.0);
-        let freq_scale = LogScale::new().domain(freq_min, freq_max).range(0.0, 800.0);
+        let chart_width = 800.0;
+        let chart_height = 300.0;
 
-        // Y: angle (linear scale)
-        let angle_min = angles[0];
-        let angle_max = angles[angle_count - 1];
+        let freq_scale = LinearScale::new()
+            .domain(log_freq_min, log_freq_max)
+            .range(0.0, chart_width as f64);
+
         let angle_scale = LinearScale::new()
             .domain(angle_min, angle_max)
-            .range(0.0, 400.0);
+            .range(0.0, chart_height as f64);
 
-        let chart_width = 800.0;
-        let chart_height = 400.0;
-
-        // Create contour config with viridis color scale
+        // Configure rendering based on mode
+        let is_surface = render_mode == ContourRenderMode::Surface;
         let contour_config = ContourConfig::new()
-            .stroke_width(1.0)
-            .fill(true)
-            .fill_opacity(0.6)
-            .stroke_opacity(0.8)
-            .color_scale(move |t| {
-                // Map normalized value to viridis
-                viridis_color_scale()(t)
-            });
+            .stroke_width(if is_surface { 0.5 } else { 1.5 })
+            .fill(is_surface)
+            .fill_opacity(if is_surface { 0.6 } else { 0.0 })
+            .stroke_opacity(if is_surface { 0.8 } else { 1.0 })
+            .color_scale(move |t| viridis_color_scale()(t));
+
+        let freq_ticks: Vec<f64> = vec![
+            100.0_f64.ln(),
+            200.0_f64.ln(),
+            500.0_f64.ln(),
+            1000.0_f64.ln(),
+            2000.0_f64.ln(),
+            5000.0_f64.ln(),
+            10000.0_f64.ln(),
+            20000.0_f64.ln(),
+        ];
+
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(rgb(0x333333))
+                        .child(title.to_string()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .flex()
+                                .child(render_axis(
+                                    &angle_scale,
+                                    &AxisConfig::left()
+                                        .with_ticks(9)
+                                        .with_formatter(|v| format!("{:.0}°", v))
+                                        .with_title("Angle"),
+                                    chart_height,
+                                    &theme,
+                                ))
+                                .child(
+                                    div()
+                                        .w(px(chart_width as f32))
+                                        .h(px(chart_height as f32))
+                                        .relative()
+                                        .bg(rgb(0xf8f8f8))
+                                        .child(render_grid(
+                                            &freq_scale,
+                                            &angle_scale,
+                                            &GridConfig::with_lines()
+                                                .with_vertical_values(freq_ticks.clone()),
+                                            chart_width,
+                                            chart_height,
+                                            &theme,
+                                        ))
+                                        .child(
+                                            render_contour(
+                                                contours,
+                                                &freq_scale,
+                                                &angle_scale,
+                                                &contour_config,
+                                            )
+                                            .value_range(spl_min, spl_max)
+                                            .height(px(chart_height as f32)),
+                                        ),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .child(div().w(px(80.0)))
+                                .child(render_axis(
+                                    &freq_scale,
+                                    &AxisConfig::bottom()
+                                        .with_tick_values(freq_ticks)
+                                        .with_formatter(|log_f| {
+                                            let f = log_f.exp();
+                                            if f >= 1000.0 {
+                                                format!("{:.0}k", f / 1000.0)
+                                            } else {
+                                                format!("{:.0}", f)
+                                            }
+                                        })
+                                        .with_title("Frequency (Hz)"),
+                                    chart_width,
+                                    &theme,
+                                )),
+                        ),
+                )
+                // Color legend
+                .child({
+                    let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_4()
+                        .p_2()
+                        .bg(rgb(0xf5f5f5))
+                        .rounded_md()
+                        .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
+                        .children((0..15).map(|i| {
+                            let t = i as f64 / 14.0;
+                            let color = viridis_color_scale()(t);
+                            let (r, g, b) = (
+                                (color.r * 255.0) as u32,
+                                (color.g * 255.0) as u32,
+                                (color.b * 255.0) as u32,
+                            );
+                            div().w(px(15.0)).h(px(15.0)).bg(rgb((r << 16) | (g << 8) | b))
+                        }))
+                        .child(render_vector_text(&format!("{:.0} dB", spl_max), &font_config))
+                }),
+        )
+    }
+
+    fn render_contour_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let has_contour_data = self.contour_data.is_some();
+        let has_directivity_data = self.directivity_data.as_ref().map_or(false, |d| !d.horizontal.is_empty());
+
+        if !has_contour_data && !has_directivity_data {
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No contour data available for this speaker."),
+            );
+        }
+
+        let speaker_name = self.selected_speaker.as_deref().unwrap_or("Unknown");
+        let spl_mode = self.contour_mode_spl;
+        let directivity_mode = self.contour_mode_directivity;
+
+        // Render toggle buttons with the contour plots
+        let spl_toggle = self.render_mode_toggle(
+            spl_mode,
+            "spl-contour-toggle",
+            |app, _cx| {
+                app.contour_mode_spl = app.contour_mode_spl.toggle();
+            },
+            cx,
+        );
+
+        let directivity_toggle = self.render_mode_toggle(
+            directivity_mode,
+            "directivity-contour-toggle",
+            |app, _cx| {
+                app.contour_mode_directivity = app.contour_mode_directivity.toggle();
+            },
+            cx,
+        );
+
+        // Pre-render the contour plots
+        let spl_contour = self.render_contour_from_contour_data("SPL Horizontal Contour (Full 360°)", spl_mode);
+        let directivity_contour = self.render_contour_from_directivity("Directivity Contour (SPL Horizontal)", directivity_mode);
 
         div()
             .flex()
             .flex_col()
-            .gap_6()
+            .gap_8()
             .child(
                 div()
                     .text_2xl()
                     .font_weight(FontWeight::BOLD)
                     .text_color(rgb(0x333333))
-                    .child(format!(
-                        "Horizontal Contour - {}",
-                        self.selected_speaker.as_deref().unwrap_or("Unknown")
-                    )),
+                    .child(format!("Horizontal Contour Plots - {}", speaker_name)),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex()
-                            .child(render_axis(
-                                &angle_scale,
-                                &AxisConfig::left()
-                                    .with_ticks(9)
-                                    .with_formatter(|v| format!("{:.0}°", v)),
-                                chart_height,
-                                &theme,
-                            ))
-                            // Chart area - no border to ensure grid aligns with axis ticks
-                            .child(
-                                div()
-                                    .w(px(chart_width as f32))
-                                    .h(px(chart_height as f32))
-                                    .relative()
-                                    .bg(rgb(0xf8f8f8))
-                                    .child(render_grid(
-                                        &freq_scale,
-                                        &angle_scale,
-                                        &GridConfig::with_lines(),
-                                        chart_width,
-                                        chart_height,
-                                        &theme,
-                                    ))
-                                    .child(
-                                        render_contour(
-                                            contours,
-                                            &freq_scale,
-                                            &angle_scale,
-                                            &contour_config,
-                                        )
-                                        .value_range(spl_min, spl_max)
-                                        .height(px(chart_height as f32)),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        div().ml(px(60.0)).child(render_axis(
-                            &freq_scale,
-                            &AxisConfig::bottom()
-                                .with_tick_values(vec![
-                                    20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0,
-                                    10000.0, 20000.0,
-                                ])
-                                .with_formatter(|f| {
-                                    if f >= 1000.0 {
-                                        format!("{:.0}k", f / 1000.0)
-                                    } else {
-                                        format!("{:.0}", f)
-                                    }
-                                })
-                                .with_title("Frequency (Hz)"),
-                            chart_width,
-                            &theme,
-                        )),
-                    ),
-            )
-            // Color legend
-            .child({
-                let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_4()
-                    .p_4()
-                    .bg(rgb(0xf5f5f5))
-                    .rounded_md()
-                    .child(render_vector_text(
-                        &format!("{:.0} dB", spl_min),
-                        &font_config,
-                    ))
-                    // Gradient color bar
-                    .children((0..20).map(|i| {
-                        let t = i as f64 / 19.0;
-                        let color = viridis_color_scale()(t);
-                        let (r, g, b) = (
-                            (color.r * 255.0) as u32,
-                            (color.g * 255.0) as u32,
-                            (color.b * 255.0) as u32,
-                        );
-                        div()
-                            .w(px(20.0))
-                            .h(px(20.0))
-                            .bg(rgb((r << 16) | (g << 8) | b))
-                    }))
-                    .child(render_vector_text(
-                        &format!("{:.0} dB", spl_max),
-                        &font_config,
-                    ))
+            // SPL Horizontal Contour (new format, -180 to +180) with toggle
+            .when_some(spl_contour, |el, contour_div| {
+                el.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(spl_toggle)
+                        .child(contour_div)
+                )
+            })
+            // Directivity-based contour (old format, typically -60 to +60) with toggle
+            .when_some(directivity_contour, |el, contour_div| {
+                el.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(directivity_toggle)
+                        .child(contour_div)
+                )
             })
     }
 }

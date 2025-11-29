@@ -6,6 +6,7 @@
 ///
 /// Uses a simplified version of Wilkinson's algorithm to generate
 /// approximately `count` tick values that are "nice" (round numbers).
+/// Ticks are constrained to start at or after `min` and end at or before `max`.
 pub fn generate_linear_ticks(min: f64, max: f64, count: usize) -> Vec<f64> {
     if count == 0 || min == max {
         return vec![min];
@@ -15,16 +16,26 @@ pub fn generate_linear_ticks(min: f64, max: f64, count: usize) -> Vec<f64> {
     let rough_step = range / (count as f64);
     let nice_step = nice_number(rough_step, false);
 
-    let tick_min = (min / nice_step).floor() * nice_step;
-    let tick_max = (max / nice_step).ceil() * nice_step;
+    // Start at the first nice tick >= min
+    let tick_min = (min / nice_step).ceil() * nice_step;
+    // End at the last nice tick <= max
+    let tick_max = (max / nice_step).floor() * nice_step;
 
     let mut ticks = Vec::new();
     let mut tick = tick_min;
 
-    while tick <= tick_max + nice_step * 0.5 {
-        // Add small epsilon for floating point comparison
+    // Small epsilon for floating point comparison
+    let epsilon = nice_step * 1e-10;
+
+    while tick <= tick_max + epsilon {
         ticks.push(tick);
         tick += nice_step;
+    }
+
+    // Ensure we have at least the domain bounds if no ticks were generated
+    if ticks.is_empty() {
+        ticks.push(min);
+        ticks.push(max);
     }
 
     ticks
@@ -125,21 +136,23 @@ mod tests {
         let ticks = generate_linear_ticks(0.0, 100.0, 5);
 
         // Should generate nice round numbers
-        assert!(ticks.len() >= 5);
+        assert!(ticks.len() >= 3);
         assert!(ticks.len() <= 11); // Reasonable upper bound
-        assert_relative_eq!(ticks[0], 0.0);
-        assert_relative_eq!(ticks[ticks.len() - 1], 100.0);
+        // First tick should be >= min
+        assert!(ticks[0] >= 0.0 - 1e-10);
+        // Last tick should be <= max
+        assert!(ticks[ticks.len() - 1] <= 100.0 + 1e-10);
     }
 
     #[test]
     fn test_generate_linear_ticks_range() {
         let ticks = generate_linear_ticks(-24.0, 24.0, 8);
 
-        // Ticks should span the domain (may extend beyond for nice numbers)
-        // First tick should be at or below min
-        assert!(ticks[0] <= -24.0 + 1e-10);
-        // Last tick should be at or above max
-        assert!(ticks[ticks.len() - 1] >= 24.0 - 1e-10);
+        // Ticks should be within the domain bounds
+        // First tick should be at or after min
+        assert!(ticks[0] >= -24.0 - 1e-10);
+        // Last tick should be at or before max
+        assert!(ticks[ticks.len() - 1] <= 24.0 + 1e-10);
 
         // Ticks should be evenly spaced
         if ticks.len() >= 2 {
@@ -147,6 +160,23 @@ mod tests {
             for i in 1..ticks.len() {
                 assert_relative_eq!(ticks[i] - ticks[i - 1], step, epsilon = 1e-10);
             }
+        }
+    }
+
+    #[test]
+    fn test_generate_linear_ticks_symmetric() {
+        // For -180 to 180, we want ticks like -150, -100, -50, 0, 50, 100, 150
+        // or -180, -150, -120, ..., 180 depending on count
+        let ticks = generate_linear_ticks(-180.0, 180.0, 12);
+
+        // Verify ticks are within bounds
+        assert!(ticks[0] >= -180.0 - 1e-10);
+        assert!(ticks[ticks.len() - 1] <= 180.0 + 1e-10);
+
+        // Verify we don't get -200 or 200
+        for &tick in &ticks {
+            assert!(tick >= -180.0 - 1e-10, "Tick {} is below -180", tick);
+            assert!(tick <= 180.0 + 1e-10, "Tick {} is above 180", tick);
         }
     }
 

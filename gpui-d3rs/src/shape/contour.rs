@@ -267,11 +267,12 @@ where
         let width: f32 = bounds.size.width.into();
         let height: f32 = bounds.size.height.into();
 
-        // Get the domain (data coordinates) for proper normalization
-        let (x_domain_min, x_domain_max) = self.x_scale.domain();
-        let (y_domain_min, y_domain_max) = self.y_scale.domain();
-        let x_domain_range = x_domain_max - x_domain_min;
-        let y_domain_range = y_domain_max - y_domain_min;
+        // Get the range (screen coordinates) for proper normalization
+        // Use scale.scale() to properly handle log scales
+        let (x_range_min, x_range_max) = self.x_scale.range();
+        let (y_range_min, y_range_max) = self.y_scale.range();
+        let x_range_span = x_range_max - x_range_min;
+        let y_range_span = (y_range_max - y_range_min).abs();
 
         // Paint each contour (from lowest to highest value for proper layering)
         for contour in self.contours.iter() {
@@ -283,16 +284,21 @@ where
                     continue;
                 }
 
-                // Convert ring points to screen coordinates
-                // The contour points are in data coordinates (same as domain)
+                // Convert ring points to screen coordinates using the scale
+                // This properly handles log scales by using scale.scale()
                 let screen_points: Vec<Point<Pixels>> = ring
                     .points
                     .iter()
                     .map(|p| {
-                        // Normalize data point to 0-1 range
-                        let x_norm = ((p.x - x_domain_min) / x_domain_range) as f32;
+                        // Use scale.scale() to transform data coordinates to range coordinates
+                        // This properly handles log scales
+                        let x_scaled = self.x_scale.scale(p.x);
+                        let y_scaled = self.y_scale.scale(p.y);
+
+                        // Normalize to 0-1 based on range
+                        let x_norm = ((x_scaled - x_range_min) / x_range_span) as f32;
                         // Invert Y for screen coordinates (0 at top, 1 at bottom)
-                        let y_norm = 1.0 - ((p.y - y_domain_min) / y_domain_range) as f32;
+                        let y_norm = 1.0 - ((y_scaled - y_range_min) / y_range_span) as f32;
 
                         let screen_x = origin_x + x_norm * width;
                         let screen_y = origin_y + y_norm * height;
@@ -300,30 +306,92 @@ where
                     })
                     .collect();
 
-                // Paint fill using PathBuilder
-                if self.config.fill && screen_points.len() >= 3 {
-                    let mut builder = PathBuilder::fill();
-                    builder.move_to(screen_points[0]);
-                    for pt in &screen_points[1..] {
-                        builder.line_to(*pt);
-                    }
-                    builder.close();
+                // Check if this ring is closed (first and last point are the same)
+                let is_closed = if screen_points.len() >= 2 {
+                    let first = &screen_points[0];
+                    let last = &screen_points[screen_points.len() - 1];
+                    let dx: f32 = (first.x - last.x).into();
+                    let dy: f32 = (first.y - last.y).into();
+                    dx.abs() < 1.0 && dy.abs() < 1.0
+                } else {
+                    false
+                };
 
-                    if let Ok(path) = builder.build() {
-                        let mut fill_rgba = fill_color.to_rgba();
-                        fill_rgba.a *= self.config.fill_opacity;
-                        window.paint_path(path, fill_rgba);
+                // Paint fill using PathBuilder (only for closed rings without large jumps)
+                if self.config.fill && screen_points.len() >= 3 && is_closed {
+                    // Detect if this ring has any large jumps that would cause artifacts
+                    // Skip filling rings that cross the boundary
+                    let x_jump_threshold = width * 0.15;
+                    let y_jump_threshold = height * 0.15;
+                    let has_jump = screen_points.windows(2).any(|pair| {
+                        let dx: f32 = (pair[1].x - pair[0].x).abs().into();
+                        let dy: f32 = (pair[1].y - pair[0].y).abs().into();
+                        dx > x_jump_threshold || dy > y_jump_threshold
+                    });
+
+                    if !has_jump {
+                        let mut builder = PathBuilder::fill();
+                        builder.move_to(screen_points[0]);
+                        for pt in &screen_points[1..] {
+                            builder.line_to(*pt);
+                        }
+                        // Don't call close() - the path is already closed by the data
+
+                        if let Ok(path) = builder.build() {
+                            let mut fill_rgba = fill_color.to_rgba();
+                            fill_rgba.a *= self.config.fill_opacity;
+                            window.paint_path(path, fill_rgba);
+                        }
                     }
                 }
 
                 // Paint stroke using PathBuilder
+                // For open isolines, we need to draw each segment but NOT connect
+                // back to the start. For closed isolines, the data already includes the closing point.
                 if self.config.stroke_opacity > 0.0 && self.config.stroke_width > 0.0 {
+                    // Detect large jumps that indicate we should NOT draw a line
+                    // (e.g., isoline wrapping around the plot boundary)
+                    // Check both X and Y separately since log scale can compress one axis
+                    // Use a lower threshold (15%) to catch more edge cases
+                    let x_jump_threshold = width * 0.15;
+                    let y_jump_threshold = height * 0.15;
+
                     let mut builder = PathBuilder::stroke(px(self.config.stroke_width));
-                    builder.move_to(screen_points[0]);
-                    for pt in &screen_points[1..] {
-                        builder.line_to(*pt);
+
+                    // Skip the last point if it's a duplicate of the first (closing point added by marching squares)
+                    let points_to_draw = if screen_points.len() >= 2 {
+                        let first = &screen_points[0];
+                        let last = &screen_points[screen_points.len() - 1];
+                        let dx: f32 = (first.x - last.x).abs().into();
+                        let dy: f32 = (first.y - last.y).abs().into();
+                        // If last point is very close to first (duplicate closing point), skip it
+                        if dx < 2.0 && dy < 2.0 {
+                            &screen_points[..screen_points.len() - 1]
+                        } else {
+                            &screen_points[..]
+                        }
+                    } else {
+                        &screen_points[..]
+                    };
+
+                    for i in 0..points_to_draw.len() {
+                        if i == 0 {
+                            builder.move_to(points_to_draw[0]);
+                        } else {
+                            let prev = &points_to_draw[i - 1];
+                            let curr = &points_to_draw[i];
+                            let dx: f32 = (curr.x - prev.x).abs().into();
+                            let dy: f32 = (curr.y - prev.y).abs().into();
+
+                            // Jump if either axis has a large discontinuity
+                            if dx > x_jump_threshold || dy > y_jump_threshold {
+                                // Large jump detected - start a new sub-path (lift the pen)
+                                builder.move_to(*curr);
+                            } else {
+                                builder.line_to(*curr);
+                            }
+                        }
                     }
-                    builder.close();
 
                     if let Ok(path) = builder.build() {
                         let mut stroke_rgba = stroke_color.to_rgba();

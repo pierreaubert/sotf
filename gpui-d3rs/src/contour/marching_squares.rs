@@ -101,6 +101,10 @@ pub struct ContourGenerator {
     x1: f64,
     /// Y extent
     y1: f64,
+    /// Explicit x values for each column (if provided, overrides x0/x1 linear interpolation)
+    x_values: Option<Vec<f64>>,
+    /// Explicit y values for each row (if provided, overrides y0/y1 linear interpolation)
+    y_values: Option<Vec<f64>>,
 }
 
 impl ContourGenerator {
@@ -113,20 +117,44 @@ impl ContourGenerator {
             y0: 0.0,
             x1: width as f64,
             y1: height as f64,
+            x_values: None,
+            y_values: None,
         }
     }
 
-    /// Set the x range for the contour output.
+    /// Set the x range for the contour output (linear interpolation between x0 and x1).
     pub fn x(mut self, x0: f64, x1: f64) -> Self {
         self.x0 = x0;
         self.x1 = x1;
+        self.x_values = None; // Clear explicit values when using range
         self
     }
 
-    /// Set the y range for the contour output.
+    /// Set the y range for the contour output (linear interpolation between y0 and y1).
     pub fn y(mut self, y0: f64, y1: f64) -> Self {
         self.y0 = y0;
         self.y1 = y1;
+        self.y_values = None; // Clear explicit values when using range
+        self
+    }
+
+    /// Set explicit x values for each column.
+    /// This allows non-linear spacing (e.g., log-spaced frequency values).
+    /// The length must equal the grid width.
+    pub fn x_values(mut self, values: Vec<f64>) -> Self {
+        if values.len() == self.width {
+            self.x_values = Some(values);
+        }
+        self
+    }
+
+    /// Set explicit y values for each row.
+    /// This allows non-linear spacing.
+    /// The length must equal the grid height.
+    pub fn y_values(mut self, values: Vec<f64>) -> Self {
+        if values.len() == self.height {
+            self.y_values = Some(values);
+        }
         self
     }
 
@@ -364,8 +392,37 @@ impl ContourGenerator {
         let py = y0 + t * (y1 - y0);
 
         // Transform to output coordinates
-        let x = self.x0 + (px / (self.width - 1) as f64) * (self.x1 - self.x0);
-        let y = self.y0 + (py / (self.height - 1) as f64) * (self.y1 - self.y0);
+        // If explicit values are provided, interpolate between them
+        let x = if let Some(ref x_vals) = self.x_values {
+            // px is in grid coordinates (e.g., 2.3 means between column 2 and 3)
+            // Interpolate between the explicit x values
+            let idx = px.floor() as usize;
+            let frac = px - px.floor();
+            if idx + 1 < x_vals.len() {
+                x_vals[idx] + frac * (x_vals[idx + 1] - x_vals[idx])
+            } else if idx < x_vals.len() {
+                x_vals[idx]
+            } else {
+                self.x0 + (px / (self.width - 1) as f64) * (self.x1 - self.x0)
+            }
+        } else {
+            self.x0 + (px / (self.width - 1) as f64) * (self.x1 - self.x0)
+        };
+
+        let y = if let Some(ref y_vals) = self.y_values {
+            // py is in grid coordinates
+            let idx = py.floor() as usize;
+            let frac = py - py.floor();
+            if idx + 1 < y_vals.len() {
+                y_vals[idx] + frac * (y_vals[idx + 1] - y_vals[idx])
+            } else if idx < y_vals.len() {
+                y_vals[idx]
+            } else {
+                self.y0 + (py / (self.height - 1) as f64) * (self.y1 - self.y0)
+            }
+        } else {
+            self.y0 + (py / (self.height - 1) as f64) * (self.y1 - self.y0)
+        };
 
         Some(Point::new(x, y))
     }
