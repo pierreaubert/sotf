@@ -36,9 +36,6 @@ autoeq-iir = { path = "../math-iir" }
 rand = { workspace = true }
 rayon = { workspace = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-sotf_hal = { path = "../sotf-macos-hal" }
-
 # Audio decoding/encoding
 symphonia = { workspace = true, default-features = false }
 symphonia-core = { workspace = true }
@@ -57,6 +54,9 @@ hound = { workspace = true }
 rubato = { workspace = true }
 id3 = { workspace = true }
 metaflac = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+sotf_hal = { path = "../sotf-macos-hal" }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

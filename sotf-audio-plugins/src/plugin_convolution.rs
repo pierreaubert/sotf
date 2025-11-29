@@ -4,11 +4,16 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
+use rustfft::FftPlanner;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
+use symphonia::core::audio::{AudioBufferRef, Signal};
+use symphonia::core::codecs::{Decoder, DecoderOptions};
+use symphonia::core::conv::FromSample;
+use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::io::MediaSourceStream;
 
 // ============================================================================
 // Configuration
@@ -224,21 +229,19 @@ impl ConvolutionPlugin {
     /// Load a WAV file using Symphonia
     fn load_wav_file(path: &str) -> Result<Vec<Vec<f32>>, String> {
         use std::fs::File;
+        use symphonia::core::errors::Error as SymphoniaError;
 
         let file = File::open(Path::new(path))
             .map_err(|e| format!("Failed to open IR file '{}': {}", path, e))?;
 
-        let mss = symphonia::core::io::MediaSourceStream::new(Box::new(file), Default::default());
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let format_opts = FormatOptions::default();
 
-        let hint = symphonia::core::probe::Hint::new();
-        let format_opts = symphonia::core::formats::FormatOptions::default();
-        let metadata_opts = symphonia::core::meta::MetadataOptions::default();
-
-        let probe_result = symphonia::default::get_probe()
-            .format(&hint, mss, &format_opts, &metadata_opts)
+        // Use symphonia_format_riff for WAV file support
+        let probe_result = symphonia_format_riff::WavReader::try_new(mss, &format_opts)
             .map_err(|e| format!("Failed to probe IR file: {}", e))?;
 
-        let mut format = probe_result.format;
+        let mut format = probe_result;
         let track = format
             .default_track()
             .ok_or("No default track in IR file")?;
@@ -249,9 +252,14 @@ impl ConvolutionPlugin {
             .ok_or("No channel info in IR file")?
             .count();
 
-        let mut decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &Default::default())
-            .map_err(|e| format!("Failed to create decoder: {}", e))?;
+        // Create decoder - use PCM decoder for WAV files
+        let codec_params = track.codec_params.clone();
+        let decoder_opts = DecoderOptions::default();
+
+        let mut decoder: Box<dyn symphonia::core::codecs::Decoder> = Box::new(
+            symphonia_codec_pcm::PcmDecoder::try_new(&codec_params, &decoder_opts)
+                .map_err(|e| format!("Failed to create PCM decoder: {}", e))?,
+        );
 
         let mut samples: Vec<Vec<f32>> = vec![Vec::new(); channels];
 
@@ -259,9 +267,13 @@ impl ConvolutionPlugin {
         loop {
             let packet = match format.next_packet() {
                 Ok(packet) => packet,
-                Err(symphonia::core::errors::Error::IoError(e))
+                Err(SymphoniaError::IoError(e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
+                    break;
+                }
+                Err(SymphoniaError::ResetRequired) => {
+                    // End of stream
                     break;
                 }
                 Err(e) => return Err(format!("Error reading packet: {}", e)),
@@ -272,25 +284,42 @@ impl ConvolutionPlugin {
                 .map_err(|e| format!("Decode error: {}", e))?;
 
             // Convert to f32 samples
-            use symphonia::core::audio::Signal;
-            use symphonia::core::conv::FromSample;
             let duration = decoded.frames();
 
             for ch in 0..channels {
                 match &decoded {
-                    symphonia::core::audio::AudioBufferRef::F32(buf) => {
+                    AudioBufferRef::F32(buf) => {
                         for i in 0..duration {
                             samples[ch].push(buf.chan(ch)[i]);
                         }
                     }
-                    symphonia::core::audio::AudioBufferRef::S32(buf) => {
+                    AudioBufferRef::S32(buf) => {
                         for i in 0..duration {
-                            samples[ch].push(f32::from_sample(buf.chan(ch)[i]));
+                            samples[ch].push(<f32 as FromSample<i32>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
-                    symphonia::core::audio::AudioBufferRef::S16(buf) => {
+                    AudioBufferRef::S16(buf) => {
                         for i in 0..duration {
-                            samples[ch].push(f32::from_sample(buf.chan(ch)[i]));
+                            samples[ch].push(<f32 as FromSample<i16>>::from_sample(buf.chan(ch)[i]));
+                        }
+                    }
+                    AudioBufferRef::U8(buf) => {
+                        for i in 0..duration {
+                            samples[ch].push(<f32 as FromSample<u8>>::from_sample(buf.chan(ch)[i]));
+                        }
+                    }
+                    AudioBufferRef::S24(buf) => {
+                        for i in 0..duration {
+                            // S24 samples need to be converted to i32 first
+                            let sample = buf.chan(ch)[i];
+                            // Convert i24 to f32 by scaling
+                            let sample_f32 = sample.inner() as f32 / 8388608.0; // 2^23
+                            samples[ch].push(sample_f32);
+                        }
+                    }
+                    AudioBufferRef::F64(buf) => {
+                        for i in 0..duration {
+                            samples[ch].push(buf.chan(ch)[i] as f32);
                         }
                     }
                     _ => return Err("Unsupported audio format for IR".to_string()),
