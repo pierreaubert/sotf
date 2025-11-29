@@ -1,11 +1,16 @@
 //! BEM solver for room acoustics
 //!
 //! Solves the Helmholtz equation in the room interior with rigid boundary conditions.
+//!
+//! This module supports three build modes:
+//! - `native`: Uses native rayon for parallel processing (fastest)
+//! - `wasm`: Uses wasm-bindgen-rayon for Web Worker parallelism
+//! - Neither: Falls back to sequential processing
 
 use super::*;
+use crate::core::parallel::{parallel_map, parallel_map_indexed};
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
-use rayon::prelude::*;
 use std::f64::consts::PI;
 
 /// Green's function for 3D Helmholtz equation
@@ -412,46 +417,44 @@ pub fn solve_bem_system(
     gmres_solve(&matrix, &rhs, max_iter, restart, tol)
 }
 
-/// Build BEM matrix with parallel assembly using Rayon
+/// Build BEM matrix with parallel assembly
+///
+/// Uses portable parallel iteration that works with native rayon, WASM, or sequential fallback.
 pub fn build_bem_matrix_parallel(mesh: &RoomMesh, k: f64) -> Array2<Complex64> {
     let n = mesh.elements.len();
 
-    // Precompute element data in parallel
-    let element_data: Vec<_> = mesh.elements.par_iter()
-        .map(|element| {
-            let nodes: Vec<Point3D> = element.nodes.iter().map(|&i| mesh.nodes[i]).collect();
-            let (center, normal) = element_center_and_normal(&nodes);
-            let area = element_area(&nodes);
-            (center, normal, area)
-        })
-        .collect();
+    // Precompute element data (parallel when available)
+    let element_data: Vec<_> = parallel_map(&mesh.elements, |element| {
+        let nodes: Vec<Point3D> = element.nodes.iter().map(|&i| mesh.nodes[i]).collect();
+        let (center, normal) = element_center_and_normal(&nodes);
+        let area = element_area(&nodes);
+        (center, normal, area)
+    });
 
-    // Build matrix rows in parallel
-    let rows: Vec<_> = (0..n).into_par_iter()
-        .map(|i| {
-            let mut row = vec![Complex64::new(0.0, 0.0); n];
-            let (center_i, normal_i, _area_i) = &element_data[i];
+    // Build matrix rows (parallel when available)
+    let rows: Vec<_> = parallel_map_indexed(n, |i| {
+        let mut row = vec![Complex64::new(0.0, 0.0); n];
+        let (center_i, normal_i, _area_i) = &element_data[i];
 
-            for j in 0..n {
-                let (center_j, _normal_j, area_j) = &element_data[j];
-                let r = center_i.distance_to(center_j);
+        for j in 0..n {
+            let (center_j, _normal_j, area_j) = &element_data[j];
+            let r = center_i.distance_to(center_j);
 
-                if i == j {
-                    // Diagonal: self-interaction
-                    row[j] = Complex64::new(0.0, -k / (2.0 * PI)) * area_j;
-                } else {
-                    // Off-diagonal
-                    let dx = center_i.x - center_j.x;
-                    let dy = center_i.y - center_j.y;
-                    let dz = center_i.z - center_j.z;
+            if i == j {
+                // Diagonal: self-interaction
+                row[j] = Complex64::new(0.0, -k / (2.0 * PI)) * area_j;
+            } else {
+                // Off-diagonal
+                let dx = center_i.x - center_j.x;
+                let dy = center_i.y - center_j.y;
+                let dz = center_i.z - center_j.z;
 
-                    let cos_angle = (dx * normal_i.x + dy * normal_i.y + dz * normal_i.z) / r;
-                    row[j] = greens_function_derivative(r, k, cos_angle) * area_j;
-                }
+                let cos_angle = (dx * normal_i.x + dy * normal_i.y + dz * normal_i.z) / r;
+                row[j] = greens_function_derivative(r, k, cos_angle) * area_j;
             }
-            row
-        })
-        .collect();
+        }
+        row
+    });
 
     // Convert to ndarray
     let mut matrix = Array2::zeros((n, n));
@@ -492,74 +495,70 @@ pub fn build_bem_matrix_adaptive(mesh: &RoomMesh, k: f64, use_adaptive: bool) ->
         tau: -1.0,  // internal problem (room interior)
     };
 
-    // Precompute element data in parallel
-    let element_data: Vec<_> = mesh.elements.par_iter()
-        .map(|element| {
-            let nodes: Vec<Point3D> = element.nodes.iter().map(|&i| mesh.nodes[i]).collect();
-            let (center, normal) = element_center_and_normal(&nodes);
-            let area = element_area(&nodes);
-            let char_length = element_characteristic_length(&nodes);
-            (center, normal, area, char_length, nodes)
-        })
-        .collect();
+    // Precompute element data (parallel when available)
+    let element_data: Vec<_> = parallel_map(&mesh.elements, |element| {
+        let nodes: Vec<Point3D> = element.nodes.iter().map(|&i| mesh.nodes[i]).collect();
+        let (center, normal) = element_center_and_normal(&nodes);
+        let area = element_area(&nodes);
+        let char_length = element_characteristic_length(&nodes);
+        (center, normal, area, char_length, nodes)
+    });
 
-    // Build matrix rows in parallel
-    let rows: Vec<_> = (0..n).into_par_iter()
-        .map(|i| {
-            let mut row = vec![Complex64::new(0.0, 0.0); n];
-            let (center_i, normal_i, _area_i, char_length_i, _nodes_i) = &element_data[i];
+    // Build matrix rows (parallel when available)
+    let rows: Vec<_> = parallel_map_indexed(n, |i| {
+        let mut row = vec![Complex64::new(0.0, 0.0); n];
+        let (center_i, normal_i, _area_i, char_length_i, _nodes_i) = &element_data[i];
 
-            for j in 0..n {
-                let (center_j, _normal_j, area_j, char_length_j, nodes_j) = &element_data[j];
-                let r = center_i.distance_to(center_j);
+        for j in 0..n {
+            let (center_j, _normal_j, area_j, char_length_j, nodes_j) = &element_data[j];
+            let r = center_i.distance_to(center_j);
 
-                // Criterion for near-singular: distance < 2 * characteristic length
-                let near_threshold = 2.0 * (char_length_i + char_length_j);
-                let is_near = r < near_threshold || i == j;
+            // Criterion for near-singular: distance < 2 * characteristic length
+            let near_threshold = 2.0 * (char_length_i + char_length_j);
+            let is_near = r < near_threshold || i == j;
 
-                if use_adaptive && is_near {
-                    // Use adaptive singular integration for near-field
-                    let element_coords = nodes_to_array2(nodes_j);
-                    let source_point = point_to_array1(center_i);
-                    let source_normal = normal_to_array1(normal_i);
+            if use_adaptive && is_near {
+                // Use adaptive singular integration for near-field
+                let element_coords = nodes_to_array2(nodes_j);
+                let source_point = point_to_array1(center_i);
+                let source_normal = normal_to_array1(normal_i);
 
-                    // Use frequency-adaptive quadrature
-                    let ka = k * char_length_j;
-                    let quad_params = QuadratureParams::for_ka(ka);
+                // Use frequency-adaptive quadrature
+                let ka = k * char_length_j;
+                let quad_params = QuadratureParams::for_ka(ka);
 
-                    let result = crate::core::integration::singular::singular_integration_with_params(
-                        &source_point,
-                        &source_normal,
-                        &element_coords,
-                        ElementType::Tri3,
-                        &physics,
-                        None,
-                        0, // Dirichlet BC type
-                        false, // don't compute RHS
-                        &quad_params,
-                    );
+                let result = crate::core::integration::singular::singular_integration_with_params(
+                    &source_point,
+                    &source_normal,
+                    &element_coords,
+                    ElementType::Tri3,
+                    &physics,
+                    None,
+                    0, // Dirichlet BC type
+                    false, // don't compute RHS
+                    &quad_params,
+                );
 
-                    // H matrix coefficient (∂G/∂n term) - double layer potential
-                    row[j] = result.dg_dn_integral;
+                // H matrix coefficient (∂G/∂n term) - double layer potential
+                row[j] = result.dg_dn_integral;
+            } else {
+                // Use point collocation for far-field
+                if i == j {
+                    // Diagonal: self-interaction approximation
+                    row[j] = Complex64::new(0.0, -k / (2.0 * PI)) * area_j;
                 } else {
-                    // Use point collocation for far-field
-                    if i == j {
-                        // Diagonal: self-interaction approximation
-                        row[j] = Complex64::new(0.0, -k / (2.0 * PI)) * area_j;
-                    } else {
-                        // Off-diagonal: standard collocation
-                        let dx = center_i.x - center_j.x;
-                        let dy = center_i.y - center_j.y;
-                        let dz = center_i.z - center_j.z;
+                    // Off-diagonal: standard collocation
+                    let dx = center_i.x - center_j.x;
+                    let dy = center_i.y - center_j.y;
+                    let dz = center_i.z - center_j.z;
 
-                        let cos_angle = (dx * normal_i.x + dy * normal_i.y + dz * normal_i.z) / r;
-                        row[j] = greens_function_derivative(r, k, cos_angle) * area_j;
-                    }
+                    let cos_angle = (dx * normal_i.x + dy * normal_i.y + dz * normal_i.z) / r;
+                    row[j] = greens_function_derivative(r, k, cos_angle) * area_j;
                 }
             }
-            row
-        })
-        .collect();
+        }
+        row
+    });
 
     // Convert to ndarray
     let mut matrix = Array2::zeros((n, n));
@@ -617,40 +616,38 @@ pub fn calculate_incident_field_derivative_parallel(
     k: f64,
     frequency: f64,
 ) -> Array1<Complex64> {
-    let element_data: Vec<_> = mesh.elements.par_iter()
-        .map(|element| {
-            let nodes: Vec<Point3D> = element.nodes.iter().map(|&idx| mesh.nodes[idx]).collect();
-            let (center, normal) = element_center_and_normal(&nodes);
+    let element_data: Vec<_> = parallel_map(&mesh.elements, |element| {
+        let nodes: Vec<Point3D> = element.nodes.iter().map(|&idx| mesh.nodes[idx]).collect();
+        let (center, normal) = element_center_and_normal(&nodes);
 
-            // Compute incident field derivative
-            let mut dpdn_inc = Complex64::new(0.0, 0.0);
+        // Compute incident field derivative
+        let mut dpdn_inc = Complex64::new(0.0, 0.0);
 
-            for source in sources {
-                let r = center.distance_to(&source.position);
-                if r < 1e-10 {
-                    continue;
-                }
-
-                let amplitude = source.amplitude_towards(&center, frequency);
-
-                // Direction from source to point
-                let dx = center.x - source.position.x;
-                let dy = center.y - source.position.y;
-                let dz = center.z - source.position.z;
-
-                // Normal derivative: ∂G/∂n = ∇G · n
-                let cos_angle = (dx * normal.x + dy * normal.y + dz * normal.z) / r;
-
-                dpdn_inc += greens_function_derivative(r, k, cos_angle) * amplitude;
+        for source in sources {
+            let r = center.distance_to(&source.position);
+            if r < 1e-10 {
+                continue;
             }
 
-            // For rigid boundary condition: ∂p/∂n = 0
-            // The BEM formulation gives: H * q = G * p_inc
-            // where q = ∂p/∂n is the unknown (should be zero for rigid)
-            // We solve: H * q = -∂p_inc/∂n  (to get total field with zero normal derivative)
-            -dpdn_inc
-        })
-        .collect();
+            let amplitude = source.amplitude_towards(&center, frequency);
+
+            // Direction from source to point
+            let dx = center.x - source.position.x;
+            let dy = center.y - source.position.y;
+            let dz = center.z - source.position.z;
+
+            // Normal derivative: ∂G/∂n = ∇G · n
+            let cos_angle = (dx * normal.x + dy * normal.y + dz * normal.z) / r;
+
+            dpdn_inc += greens_function_derivative(r, k, cos_angle) * amplitude;
+        }
+
+        // For rigid boundary condition: ∂p/∂n = 0
+        // The BEM formulation gives: H * q = G * p_inc
+        // where q = ∂p/∂n is the unknown (should be zero for rigid)
+        // We solve: H * q = -∂p_inc/∂n  (to get total field with zero normal derivative)
+        -dpdn_inc
+    });
 
     Array1::from_vec(element_data)
 }
@@ -665,7 +662,8 @@ pub fn calculate_field_pressure_bem_parallel(
     frequency: f64,
 ) -> Array1<Complex64> {
     // Precompute element data
-    let element_data: Vec<_> = mesh.elements.iter()
+    let element_data: Vec<_> = mesh.elements
+        .iter()
         .map(|element| {
             let nodes: Vec<Point3D> = element.nodes.iter().map(|&i| mesh.nodes[i]).collect();
             let (center, _normal) = element_center_and_normal(&nodes);
@@ -674,35 +672,33 @@ pub fn calculate_field_pressure_bem_parallel(
         })
         .collect();
 
-    // Calculate pressure at each field point in parallel
-    let pressures: Vec<_> = field_points.par_iter()
-        .map(|point| {
-            // Incident field from sources
-            let mut p_incident = Complex64::new(0.0, 0.0);
-            for source in sources {
-                let r = point.distance_to(&source.position);
-                if r < 1e-10 {
-                    continue;
-                }
-                let amplitude = source.amplitude_towards(point, frequency);
-                p_incident += greens_function_3d(r, k) * amplitude;
+    // Calculate pressure at each field point (parallel when available)
+    let pressures: Vec<_> = parallel_map(field_points, |point| {
+        // Incident field from sources
+        let mut p_incident = Complex64::new(0.0, 0.0);
+        for source in sources {
+            let r = point.distance_to(&source.position);
+            if r < 1e-10 {
+                continue;
             }
+            let amplitude = source.amplitude_towards(point, frequency);
+            p_incident += greens_function_3d(r, k) * amplitude;
+        }
 
-            // Scattered field from boundary integral
-            // p_scattered = ∫∫ G(r) * (∂p/∂n) dS
-            let mut p_scattered = Complex64::new(0.0, 0.0);
-            for (j, (center_j, area_j)) in element_data.iter().enumerate() {
-                let r = point.distance_to(center_j);
-                if r < 1e-10 {
-                    continue;
-                }
-                let g = greens_function_3d(r, k);
-                p_scattered += g * surface_normal_derivative[j] * area_j;
+        // Scattered field from boundary integral
+        // p_scattered = ∫∫ G(r) * (∂p/∂n) dS
+        let mut p_scattered = Complex64::new(0.0, 0.0);
+        for (j, (center_j, area_j)) in element_data.iter().enumerate() {
+            let r = point.distance_to(center_j);
+            if r < 1e-10 {
+                continue;
             }
+            let g = greens_function_3d(r, k);
+            p_scattered += g * surface_normal_derivative[j] * area_j;
+        }
 
-            p_incident + p_scattered
-        })
-        .collect();
+        p_incident + p_scattered
+    });
 
     Array1::from_vec(pressures)
 }

@@ -358,6 +358,26 @@ pub fn invert_blocks(blocks: &[Array2<Complex64>]) -> Vec<Array2<Complex64>> {
         .collect()
 }
 
+/// Invert multiple blocks in parallel (for block diagonal preconditioner setup)
+///
+/// Uses portable parallel iteration that works with native rayon, WASM, or sequential fallback.
+///
+/// # Arguments
+/// * `blocks` - List of square matrices to invert
+///
+/// # Returns
+/// List of inverse matrices, with identity fallback for singular blocks
+pub fn invert_blocks_parallel(blocks: &[Array2<Complex64>]) -> Vec<Array2<Complex64>> {
+    use crate::core::parallel::parallel_map;
+
+    parallel_map(blocks, |b| {
+        inverse_auto(b).unwrap_or_else(|| {
+            let n = b.nrows();
+            Array2::eye(n)
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

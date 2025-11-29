@@ -63,14 +63,19 @@ pub struct NearFieldBlock {
 }
 
 /// D-matrix entry for a far cluster pair
+///
+/// The D-matrix for SLFMM is diagonal (same multipole index in source and field),
+/// so we store only the diagonal entries to save memory.
+/// This reduces storage from O(n²) to O(n) per cluster pair.
 #[derive(Debug, Clone)]
 pub struct DMatrixEntry {
     /// Source cluster index
     pub source_cluster: usize,
     /// Field cluster index
     pub field_cluster: usize,
-    /// Translation coefficients
-    pub coefficients: Array2<Complex64>,
+    /// Diagonal translation coefficients (length = num_sphere_points)
+    /// The full D-matrix would be: D[p,q] = diagonal[p] if p == q, else 0
+    pub diagonal: Array1<Complex64>,
 }
 
 impl SlfmmSystem {
@@ -207,12 +212,14 @@ impl SlfmmSystem {
 
         // Step 2: Translate multipoles between far clusters (parallelized)
         // Compute all D*multipole products in parallel
+        // D-matrix is diagonal, so D*x is just element-wise multiplication
         let d_contributions: Vec<(usize, Array1<Complex64>)> = self
             .d_matrices
             .par_iter()
             .map(|d_entry| {
                 let src_mult = &multipoles[d_entry.source_cluster];
-                let translated = d_entry.coefficients.dot(src_mult);
+                // Diagonal matrix-vector multiply: translated[i] = diagonal[i] * src_mult[i]
+                let translated = &d_entry.diagonal * src_mult;
                 (d_entry.field_cluster, translated)
             })
             .collect();
@@ -322,12 +329,14 @@ impl SlfmmSystem {
             .collect();
 
         // Step 2: D^T translation (parallelized)
+        // D-matrix is diagonal, so D^T = D (diagonal matrices are symmetric)
         let d_contributions: Vec<(usize, Array1<Complex64>)> = self
             .d_matrices
             .par_iter()
             .map(|d_entry| {
                 let fld_local = &locals[d_entry.field_cluster];
-                let translated = d_entry.coefficients.t().dot(fld_local);
+                // Diagonal matrix-vector multiply: translated[i] = diagonal[i] * fld_local[i]
+                let translated = &d_entry.diagonal * fld_local;
                 (d_entry.source_cluster, translated)
             })
             .collect();
@@ -658,15 +667,19 @@ fn build_t_matrices(
 }
 
 /// Build D-matrices (cluster to cluster translation) - parallelized
+///
+/// The D-matrix is diagonal in the single-level FMM, so we only store
+/// the diagonal entries. This reduces memory from O(P²) to O(P) per pair
+/// where P is the number of sphere integration points.
 fn build_d_matrices(
     system: &mut SlfmmSystem,
     clusters: &[Cluster],
     physics: &PhysicsParams,
-    sphere_coords: &[[f64; 3]],
+    _sphere_coords: &[[f64; 3]],
     n_terms: usize,
 ) {
     let k = physics.wave_number;
-    let num_sphere_points = sphere_coords.len();
+    let num_sphere_points = system.num_sphere_points;
 
     // Collect all far cluster pairs
     let mut far_pairs: Vec<(usize, usize)> = Vec::new();
@@ -676,7 +689,18 @@ fn build_d_matrices(
         }
     }
 
-    // Compute all D-matrices in parallel
+    // Log memory estimate
+    let num_pairs = far_pairs.len();
+    let mem_per_pair = num_sphere_points * std::mem::size_of::<Complex64>();
+    let total_mem_mb = (num_pairs * mem_per_pair) as f64 / (1024.0 * 1024.0);
+    if total_mem_mb > 100.0 {
+        eprintln!(
+            "    D-matrices: {} far pairs × {} points = {:.1} MB",
+            num_pairs, num_sphere_points, total_mem_mb
+        );
+    }
+
+    // Compute all D-matrices in parallel (diagonal storage only)
     let d_matrices: Vec<DMatrixEntry> = far_pairs
         .par_iter()
         .map(|&(i, j)| {
@@ -693,18 +717,17 @@ fn build_d_matrices(
             let kr = k * r;
 
             // Compute translation using spherical Hankel functions
-            let mut d_matrix = Array2::zeros((num_sphere_points, num_sphere_points));
-
             let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
 
-            for p in 0..num_sphere_points {
-                d_matrix[[p, p]] = h_funcs[0] * Complex64::new(0.0, k);
-            }
+            // D-matrix is diagonal: D[p,p] = h_0(kr) * ik
+            // Store only the diagonal (all entries are the same in this simplified model)
+            let d_value = h_funcs[0] * Complex64::new(0.0, k);
+            let diagonal = Array1::from_elem(num_sphere_points, d_value);
 
             DMatrixEntry {
                 source_cluster: i,
                 field_cluster: j,
-                coefficients: d_matrix,
+                diagonal,
             }
         })
         .collect();

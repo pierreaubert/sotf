@@ -62,6 +62,9 @@ pub struct NearFieldBlock {
 }
 
 /// D-matrix entry for a far cluster pair
+///
+/// The D-matrix for FMM is diagonal (same multipole index in source and field),
+/// so we store only the diagonal entries to save memory.
 #[derive(Debug, Clone)]
 pub struct DMatrixEntry {
     /// Source cluster index
@@ -70,8 +73,8 @@ pub struct DMatrixEntry {
     pub field_cluster: usize,
     /// Level in tree
     pub level: usize,
-    /// Translation coefficients
-    pub coefficients: Array2<Complex64>,
+    /// Diagonal translation coefficients (length = num_sphere_points)
+    pub diagonal: Array1<Complex64>,
 }
 
 /// Matrices at a single level of the tree
@@ -334,14 +337,14 @@ impl MlfmmSystem {
                 }
 
                 let src_mult = &multipoles[level][d_entry.source_cluster];
-                if src_mult.len() != d_entry.coefficients.ncols() {
+                if src_mult.len() != d_entry.diagonal.len() {
                     continue;
                 }
 
-                let translated = d_entry.coefficients.dot(src_mult);
-                for (i, &val) in translated.iter().enumerate() {
+                // D-matrix is diagonal, so D*x is element-wise multiplication
+                for (i, (&d, &s)) in d_entry.diagonal.iter().zip(src_mult.iter()).enumerate() {
                     if i < locals[level][d_entry.field_cluster].len() {
-                        locals[level][d_entry.field_cluster][i] += val;
+                        locals[level][d_entry.field_cluster][i] += d * s;
                     }
                 }
             }
@@ -509,15 +512,15 @@ pub fn build_mlfmm_system(
 
     // Build D-matrices at each level
     for (level_idx, level) in cluster_levels.iter().enumerate() {
-        let (sphere_coords, _sphere_weights) =
-            unit_sphere_quadrature(level.theta_points, level.phi_points);
+        let num_sphere_points = level.theta_points * level.phi_points;
 
         let d_matrices = build_d_matrices_level(
             &level.clusters,
             physics,
-            &sphere_coords,
+            &[], // sphere_coords not needed for diagonal D-matrices
             level.expansion_terms,
             level_idx,
+            num_sphere_points,
         );
 
         system.d_matrices.push(d_matrices);
@@ -788,15 +791,18 @@ fn build_t_matrices_level(
 }
 
 /// Build D-matrices at a single level
+///
+/// The D-matrix is diagonal in the FMM, so we only store the diagonal entries.
+/// This reduces memory from O(P²) to O(P) per cluster pair.
 fn build_d_matrices_level(
     clusters: &[Cluster],
     physics: &PhysicsParams,
-    sphere_coords: &[[f64; 3]],
+    _sphere_coords: &[[f64; 3]],
     n_terms: usize,
     level_idx: usize,
+    num_sphere_points: usize,
 ) -> Vec<DMatrixEntry> {
     let k = physics.wave_number;
-    let num_sphere_points = sphere_coords.len();
     let mut d_entries = Vec::new();
 
     for (i, cluster_i) in clusters.iter().enumerate() {
@@ -815,22 +821,19 @@ fn build_d_matrices_level(
 
             let kr = k * r;
 
-            let mut d_matrix = Array2::zeros((num_sphere_points, num_sphere_points));
-
             // Compute translation operator using multipole expansion
             let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
-            let _p_funcs = legendre_polynomials(n_terms.max(2), 0.0);
 
-            // Simplified diagonal approximation
-            for p in 0..num_sphere_points {
-                d_matrix[[p, p]] = h_funcs[0] * Complex64::new(0.0, k);
-            }
+            // D-matrix is diagonal: D[p,p] = h_0(kr) * ik
+            // Store only the diagonal (all entries are the same in this simplified model)
+            let d_value = h_funcs[0] * Complex64::new(0.0, k);
+            let diagonal = Array1::from_elem(num_sphere_points, d_value);
 
             d_entries.push(DMatrixEntry {
                 source_cluster: i,
                 field_cluster: j,
                 level: level_idx,
-                coefficients: d_matrix,
+                diagonal,
             });
         }
     }

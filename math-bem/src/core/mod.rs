@@ -18,8 +18,10 @@
 //! - `io`: Input/output (NC.inp format, JSON)
 //! - `bem_solver`: High-level API for solving BEM problems
 //! - `algebra`: Pure Rust linear algebra fallbacks for WASM portability
+//! - `parallel`: Portable parallel iteration (works with native, WASM, or sequential)
 
 pub mod algebra;
+pub mod parallel;
 pub mod types;
 pub mod constants;
 pub mod greens;

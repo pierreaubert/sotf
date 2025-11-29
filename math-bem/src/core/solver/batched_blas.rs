@@ -155,11 +155,18 @@ pub fn batched_d_matrix_apply(
     use rayon::prelude::*;
 
     // Parallel computation of all D-matrix translations
+    // D-matrix is diagonal, so D*x is element-wise multiplication
     let results: Vec<(usize, Array1<Complex64>)> = d_matrices
         .par_iter()
         .map(|d_entry| {
             let src_mult = multipoles.row(d_entry.source_cluster);
-            let translated = d_entry.coefficients.dot(&src_mult);
+            // Diagonal matrix-vector multiply: translated[i] = diagonal[i] * src_mult[i]
+            let translated: Array1<Complex64> = d_entry
+                .diagonal
+                .iter()
+                .zip(src_mult.iter())
+                .map(|(&d, &s)| d * s)
+                .collect();
             (d_entry.field_cluster, translated)
         })
         .collect();

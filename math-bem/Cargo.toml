@@ -34,8 +34,14 @@ ndarray-linalg = { workspace = true, optional = true }
 # Environment utilities
 autoeq-env = { version="0.2" }
 
-# Parallel processing (native only - not portable to WASM)
+# Parallel processing
+# - For native: use rayon directly
+# - For WASM: use rayon via wasm-bindgen-rayon (Web Workers)
 rayon = { workspace = true, optional = true }
+
+# WASM-specific dependencies
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-rayon = { version = "1.2", optional = true }
 
 # Error handling
 anyhow = { workspace = true }
@@ -107,6 +113,14 @@ benchmarks = ["criterion"]
 # Memory optimization features
 memory-optimized = []
 out-of-core = []  # Stream data from disk for very large problems
+
+# WASM feature: enables parallel processing via wasm-bindgen-rayon
+# This requires the browser to support SharedArrayBuffer and Web Workers
+wasm = [
+    "rayon",
+    "wasm-bindgen",
+    "wasm-bindgen-rayon",
+]
 
 # Examples that require specific features
 [[example]]
