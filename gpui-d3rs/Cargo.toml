@@ -1,0 +1,58 @@
+[package]
+name = "gpui-d3rs"
+version = "0.1.2"
+edition = "2021"
+authors = ["Pierre"]
+description = "D3.js-inspired plotting library for GPUI"
+license = "MIT OR Apache-2.0"
+keywords = ["gpui", "plotting", "visualization", "d3", "charts"]
+categories = ["visualization", "gui"]
+
+[lib]
+name = "d3rs"
+
+[features]
+default = ["gpui"]
+gpui = ["dep:gpui", "dep:gpui-ui-kit"]
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed.git", optional = true }
+gpui-ui-kit = { path = "../gpui-ui-kit", optional = true }
+regex = "1"
+
+[dev-dependencies]
+approx = "0.5"
+
+[[bin]]
+name = "d3rs-showcase"
+path = "bin/showcase.rs"
+required-features = ["gpui"]
+
+# Non-GPUI examples (can run without gpui feature)
+[[example]]
+name = "scale_demo"
+path = "examples/scale_demo.rs"
+
+[[example]]
+name = "array_demo"
+path = "examples/array_demo.rs"
+
+[[example]]
+name = "color_demo"
+path = "examples/color_demo.rs"
+
+[[example]]
+name = "contour_demo"
+path = "examples/contour_demo.rs"
+
+[[example]]
+name = "fetch_demo"
+path = "examples/fetch_demo.rs"
+
+[[example]]
+name = "interpolate_demo"
+path = "examples/interpolate_demo.rs"
+
+[[example]]
+name = "shape_demo"
+path = "examples/shape_demo.rs"
