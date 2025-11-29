@@ -12,6 +12,8 @@
 //! - `curve`: Curve interpolation algorithms
 //! - `symbol`: Symbol generators for data markers
 //! - `stack`: Stack layout for stacked charts
+//! - `link`: Link generators for tree/network diagrams
+//! - `radial`: Radial line/area generators for polar visualizations
 //! - `bar`: Bar chart rendering
 //! - `line`: Line chart rendering
 //! - `scatter`: Scatter plot rendering
@@ -47,6 +49,8 @@ pub mod area;
 pub mod curve;
 pub mod symbol;
 pub mod stack;
+pub mod link;
+pub mod radial;
 
 #[cfg(feature = "gpui")]
 mod bar;
@@ -75,3 +79,5 @@ pub use area::{Area, SimpleArea, area_points};
 pub use curve::Curve;
 pub use symbol::{Symbol, SymbolType, symbol_radius};
 pub use stack::{Stack, StackSeries, StackOrder, StackOffset, stack, stack_expand, streamgraph};
+pub use link::{Link, RadialLink, LinkDirection, link_horizontal, link_vertical, link_radial, link_step};
+pub use radial::{RadialPoint, RadialLineConfig, RadialAreaConfig, radial_line, radial_area, polar_grid_circles, polar_grid_rays};

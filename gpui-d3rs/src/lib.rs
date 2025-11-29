@@ -4,7 +4,7 @@
 //!
 //! ## Features
 //!
-//! - **Scales**: Linear and logarithmic scales with tick generation
+//! - **Scales**: Linear, log, power, symlog, quantize, quantile, threshold scales
 //! - **Axes**: Four orientations (Top, Right, Bottom, Left) with customizable formatting
 //! - **Colors**: RGB/HSL with interpolation and categorical schemes
 //! - **Shapes**: Bars, lines, areas, scatter plots, arcs, pies, symbols, stacks
@@ -15,6 +15,7 @@
 //! - **Interpolation**: Numeric, color (HSL/LAB/HCL/Cubehelix), transform, string, zoom (d3-interpolate)
 //! - **Contours**: Marching squares, density estimation (d3-contour)
 //! - **Fetch**: CSV/TSV/JSON parsing utilities (d3-fetch)
+//! - **Format**: Number formatting with SI prefixes, locales (d3-format)
 //!
 //! ## Example
 //!
@@ -34,6 +35,9 @@ pub mod array;
 pub mod interpolate;
 pub mod scale;
 pub mod color;
+pub mod format;
+pub mod ease;
+pub mod time;
 #[cfg(feature = "gpui")]
 pub mod axis;
 pub mod shape;
@@ -42,6 +46,8 @@ pub mod grid;
 pub mod legend;
 pub mod contour;
 pub mod fetch;
+pub mod polygon;
+pub mod random;
 
 /// Prelude module for convenient imports
 pub mod prelude {

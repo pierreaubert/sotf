@@ -14,14 +14,23 @@ name = "d3rs"
 [features]
 default = ["gpui"]
 gpui = ["dep:gpui", "dep:gpui-ui-kit"]
+spinorama = ["dep:autoeq", "dep:autoeq-cea2034", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed.git", optional = true }
 gpui-ui-kit = { path = "../gpui-ui-kit", optional = true }
 regex = "1"
+autoeq = { path = "../autoeq", optional = true }
+autoeq-cea2034 = { path = "../autoeq-cea2034", optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
+ndarray = { version = "0.16", optional = true }
+reqwest = { version = "0.12", features = ["json"], optional = true }
+urlencoding = { version = "2", optional = true }
 
 [dev-dependencies]
 approx = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [[bin]]
 name = "d3rs-showcase"
@@ -56,3 +65,8 @@ path = "examples/interpolate_demo.rs"
 [[example]]
 name = "shape_demo"
 path = "examples/shape_demo.rs"
+
+[[bin]]
+name = "spinorama-demo"
+path = "bin/spinorama_demo.rs"
+required-features = ["spinorama"]
