@@ -470,7 +470,7 @@ impl PlayerView {
                         }
                     },
                 )
-                .track_scroll(self.library_scroll_handle.clone())
+                .track_scroll(&self.library_scroll_handle)
                 .size_full()
                 .with_sizing_behavior(ListSizingBehavior::Infer),
             )

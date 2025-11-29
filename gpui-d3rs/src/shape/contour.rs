@@ -344,8 +344,8 @@ where
 /// use d3rs::contour::ContourGenerator;
 ///
 /// let values = vec![0.0; 16]; // 4x4 grid
-/// let generator = ContourGenerator::new(4, 4).thresholds(vec![0.5]);
-/// let contours = generator.contours(&values);
+/// let generator = ContourGenerator::new(4, 4);
+/// let contours = generator.contours(&values, &[0.5]);
 ///
 /// let x_scale = LinearScale::new().domain(0.0, 4.0).range(0.0, 400.0);
 /// let y_scale = LinearScale::new().domain(0.0, 4.0).range(0.0, 400.0);

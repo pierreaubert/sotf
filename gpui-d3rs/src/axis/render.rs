@@ -2,6 +2,7 @@
 
 use super::{AxisConfig, AxisOrientation, AxisTheme};
 use crate::scale::Scale;
+use crate::text::{render_vector_text, VectorFontConfig};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -78,10 +79,16 @@ where
             let range_value = scale.scale(tick_value);
             let x_pos = (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
+            let half_tick_width = config.domain_line_width / 2.0;
+            let font_config = VectorFontConfig::horizontal(
+                config.label_font_size,
+                theme.axis_label_color().into(),
+            );
 
             div()
                 .absolute()
                 .left(relative(x_pos as f32))
+                .ml(px(-half_tick_width)) // Center the tick mark on the position
                 .top_0()
                 .flex()
                 .flex_col()
@@ -93,15 +100,32 @@ where
                         .h(px(config.tick_size))
                         .bg(theme.axis_line_color()),
                 )
-                // Label
+                // Label (vector font)
                 .child(
                     div()
                         .mt(px(config.tick_padding))
-                        .text_size(px(config.label_font_size))
-                        .text_color(theme.axis_label_color())
-                        .child(label),
+                        .child(render_vector_text(&label, &font_config)),
                 )
         }))
+        // Title (horizontal for bottom axis)
+        .when(config.title.is_some(), |el| {
+            let title = config.title.clone().unwrap_or_default();
+            let title_top = config.tick_size + config.tick_padding + config.label_font_size + config.title_padding;
+            let font_config = VectorFontConfig::horizontal(
+                config.title_font_size,
+                theme.axis_label_color().into(),
+            );
+            el.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(title_top))
+                    .flex()
+                    .justify_center()
+                    .child(render_vector_text(&title, &font_config)),
+            )
+        })
 }
 
 /// Render a top-oriented horizontal axis
@@ -125,6 +149,24 @@ where
         .w(px(width))
         .h(px(height))
         .relative()
+        // Title (horizontal for top axis, at the top)
+        .when(config.title.is_some(), |el| {
+            let title = config.title.clone().unwrap_or_default();
+            let font_config = VectorFontConfig::horizontal(
+                config.title_font_size,
+                theme.axis_label_color().into(),
+            );
+            el.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top_0()
+                    .flex()
+                    .justify_center()
+                    .child(render_vector_text(&title, &font_config)),
+            )
+        })
         // Domain line
         .when(config.show_domain_line, |el| {
             el.child(
@@ -142,21 +184,25 @@ where
             let range_value = scale.scale(tick_value);
             let x_pos = (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
+            let half_tick_width = config.domain_line_width / 2.0;
+            let font_config = VectorFontConfig::horizontal(
+                config.label_font_size,
+                theme.axis_label_color().into(),
+            );
 
             div()
                 .absolute()
                 .left(relative(x_pos as f32))
+                .ml(px(-half_tick_width)) // Center the tick mark on the position
                 .bottom_0()
                 .flex()
                 .flex_col_reverse()
                 .items_center()
-                // Label
+                // Label (vector font)
                 .child(
                     div()
                         .mb(px(config.tick_padding))
-                        .text_size(px(config.label_font_size))
-                        .text_color(theme.axis_label_color())
-                        .child(label),
+                        .child(render_vector_text(&label, &font_config)),
                 )
                 // Tick mark
                 .child(
@@ -189,6 +235,26 @@ where
         .w(px(width))
         .h(px(height))
         .relative()
+        // Title (rotated text for left axis - reading bottom-to-top)
+        .when(config.title.is_some(), |el| {
+            let title = config.title.clone().unwrap_or_default();
+            let font_config = VectorFontConfig::vertical_bottom_to_top(
+                config.title_font_size,
+                theme.axis_label_color().into(),
+            );
+            el.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top_0()
+                    .bottom_0()
+                    .w(px(config.title_font_size + 4.0))
+                    .flex()
+                    .justify_center()
+                    .items_center()
+                    .child(render_vector_text(&title, &font_config)),
+            )
+        })
         // Domain line
         .when(config.show_domain_line, |el| {
             el.child(
@@ -207,11 +273,17 @@ where
             // Invert Y for screen coordinates (bottom-to-top becomes top-to-bottom)
             let y_pos = 1.0 - (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
+            let half_tick_height = config.domain_line_width / 2.0;
+            let font_config = VectorFontConfig::horizontal(
+                config.label_font_size,
+                theme.axis_label_color().into(),
+            );
 
             div()
                 .absolute()
                 .right_0()
                 .top(relative(y_pos as f32))
+                .mt(px(-half_tick_height)) // Center the tick mark on the position
                 .flex()
                 .flex_row_reverse()
                 .items_center()
@@ -222,13 +294,11 @@ where
                         .h(px(config.domain_line_width))
                         .bg(theme.axis_line_color()),
                 )
-                // Label
+                // Label (vector font)
                 .child(
                     div()
                         .mr(px(config.tick_padding))
-                        .text_size(px(config.label_font_size))
-                        .text_color(theme.axis_label_color())
-                        .child(label),
+                        .child(render_vector_text(&label, &font_config)),
                 )
         }))
 }
@@ -271,11 +341,17 @@ where
             // Invert Y for screen coordinates (bottom-to-top becomes top-to-bottom)
             let y_pos = 1.0 - (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
+            let half_tick_height = config.domain_line_width / 2.0;
+            let font_config = VectorFontConfig::horizontal(
+                config.label_font_size,
+                theme.axis_label_color().into(),
+            );
 
             div()
                 .absolute()
                 .left_0()
                 .top(relative(y_pos as f32))
+                .mt(px(-half_tick_height)) // Center the tick mark on the position
                 .flex()
                 .items_center()
                 // Tick mark
@@ -285,15 +361,33 @@ where
                         .h(px(config.domain_line_width))
                         .bg(theme.axis_line_color()),
                 )
-                // Label
+                // Label (vector font)
                 .child(
                     div()
                         .ml(px(config.tick_padding))
-                        .text_size(px(config.label_font_size))
-                        .text_color(theme.axis_label_color())
-                        .child(label),
+                        .child(render_vector_text(&label, &font_config)),
                 )
         }))
+        // Title (rotated text for right axis - reading bottom-to-top)
+        .when(config.title.is_some(), |el| {
+            let title = config.title.clone().unwrap_or_default();
+            let font_config = VectorFontConfig::vertical_bottom_to_top(
+                config.title_font_size,
+                theme.axis_label_color().into(),
+            );
+            el.child(
+                div()
+                    .absolute()
+                    .right_0()
+                    .top_0()
+                    .bottom_0()
+                    .w(px(config.title_font_size + 4.0))
+                    .flex()
+                    .justify_center()
+                    .items_center()
+                    .child(render_vector_text(&title, &font_config)),
+            )
+        })
 }
 
 /// Format a tick value using the optional custom formatter

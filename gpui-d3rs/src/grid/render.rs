@@ -44,6 +44,8 @@ where
     let x_range_span = x_range_max - x_range_min;
     let y_range_span = y_range_max - y_range_min;
 
+    let half_line_width = config.line_width / 2.0;
+
     div()
         .absolute()
         .inset_0()
@@ -56,6 +58,7 @@ where
                 div()
                     .absolute()
                     .left(relative(x_pos as f32))
+                    .ml(px(-half_line_width)) // Center the line on the tick position
                     .top_0()
                     .bottom_0()
                     .w(px(config.line_width))
@@ -73,6 +76,7 @@ where
                 div()
                     .absolute()
                     .top(relative(y_pos as f32))
+                    .mt(px(-half_line_width)) // Center the line on the tick position
                     .left_0()
                     .right_0()
                     .h(px(config.line_width))

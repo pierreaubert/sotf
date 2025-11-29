@@ -116,7 +116,7 @@ impl LinePoint {
     }
 }
 
-/// Render a line chart
+/// Render a line chart using GPUI's PathBuilder for proper vector line rendering
 ///
 /// # Example
 ///
@@ -154,168 +154,132 @@ where
     let (x_min, x_max) = x_scale.range();
     let (y_min, y_max) = y_scale.range();
     let x_range_span = x_max - x_min;
-    let y_range_span = y_max - y_min;
+    let y_range_span = (y_max - y_min).abs();
 
-    let stroke = config.stroke_color.to_rgba();
+    // Pre-calculate pixel positions for the line
+    let mut pixel_points: Vec<Point<Pixels>> = Vec::with_capacity(data.len());
+    for point in data {
+        let x_range = x_scale.scale(point.x);
+        let x_px = ((x_range - x_min) / x_range_span) as f32;
+        let y_range = y_scale.scale(point.y);
+        // Invert Y for screen coordinates
+        let y_px = 1.0 - ((y_range - y_min) / y_range_span) as f32;
+        pixel_points.push(gpui::point(px(x_px), px(y_px)));
+    }
 
-    // Container for line segments and points
-    let mut container = div().absolute().inset_0();
+    let stroke_color = config.stroke_color.to_rgba();
+    let stroke_width = config.stroke_width;
+    let opacity = config.opacity;
+    let curve_type = config.curve;
+    let show_points = config.show_points;
+    let point_radius = config.point_radius;
+    let point_fill = config
+        .point_fill_color
+        .as_ref()
+        .unwrap_or(&config.stroke_color)
+        .to_rgba();
 
-    // Render line segments
-    if data.len() >= 2 {
-        for i in 0..data.len() - 1 {
-            let p1 = &data[i];
-            let p2 = &data[i + 1];
+    canvas(
+        // Prepaint: calculate actual pixel positions based on bounds
+        move |bounds, _window, _cx| {
+            let width: f32 = bounds.size.width.into();
+            let height: f32 = bounds.size.height.into();
+            let origin_x: f32 = bounds.origin.x.into();
+            let origin_y: f32 = bounds.origin.y.into();
 
-            let x1_range = x_scale.scale(p1.x);
-            let x1_pos = ((x1_range - x_min) / x_range_span) as f32;
-            let y1_range = y_scale.scale(p1.y);
-            // Invert Y for screen coordinates (bottom-to-top becomes top-to-bottom)
-            let y1_pos = 1.0 - ((y1_range - y_min) / y_range_span) as f32;
+            // Convert relative positions to absolute pixel positions
+            let absolute_points: Vec<Point<Pixels>> = pixel_points
+                .iter()
+                .map(|p| {
+                    let rel_x: f32 = p.x.into();
+                    let rel_y: f32 = p.y.into();
+                    gpui::point(
+                        px(origin_x + rel_x * width),
+                        px(origin_y + rel_y * height),
+                    )
+                })
+                .collect();
 
-            let x2_range = x_scale.scale(p2.x);
-            let x2_pos = ((x2_range - x_min) / x_range_span) as f32;
-            let y2_range = y_scale.scale(p2.y);
-            // Invert Y for screen coordinates (bottom-to-top becomes top-to-bottom)
-            let y2_pos = 1.0 - ((y2_range - y_min) / y_range_span) as f32;
+            absolute_points
+        },
+        // Paint: draw the line path and optionally points
+        move |_bounds, absolute_points: Vec<Point<Pixels>>, window, _cx| {
+            if absolute_points.len() < 2 {
+                return;
+            }
 
-            // Render segment based on curve type
-            match config.curve {
+            // Build the path based on curve type
+            let mut path_builder = PathBuilder::stroke(px(stroke_width));
+
+            match curve_type {
                 CurveType::Linear => {
-                    container = container.child(render_line_segment(
-                        x1_pos,
-                        y1_pos,
-                        x2_pos,
-                        y2_pos,
-                        stroke,
-                        config.stroke_width,
-                        config.opacity,
-                    ));
+                    path_builder.move_to(absolute_points[0]);
+                    for point in &absolute_points[1..] {
+                        path_builder.line_to(*point);
+                    }
                 }
                 CurveType::Step | CurveType::StepAfter => {
-                    // Horizontal then vertical
-                    let mid_x = x2_pos;
-                    let mid_y = y1_pos;
-                    container = container
-                        .child(render_line_segment(
-                            x1_pos,
-                            y1_pos,
-                            mid_x,
-                            mid_y,
-                            stroke,
-                            config.stroke_width,
-                            config.opacity,
-                        ))
-                        .child(render_line_segment(
-                            mid_x,
-                            mid_y,
-                            x2_pos,
-                            y2_pos,
-                            stroke,
-                            config.stroke_width,
-                            config.opacity,
-                        ));
+                    path_builder.move_to(absolute_points[0]);
+                    for i in 1..absolute_points.len() {
+                        let prev = absolute_points[i - 1];
+                        let curr = absolute_points[i];
+                        // Horizontal then vertical
+                        path_builder.line_to(gpui::point(curr.x, prev.y));
+                        path_builder.line_to(curr);
+                    }
                 }
                 CurveType::StepBefore => {
-                    // Vertical then horizontal
-                    let mid_x = x1_pos;
-                    let mid_y = y2_pos;
-                    container = container
-                        .child(render_line_segment(
-                            x1_pos,
-                            y1_pos,
-                            mid_x,
-                            mid_y,
-                            stroke,
-                            config.stroke_width,
-                            config.opacity,
-                        ))
-                        .child(render_line_segment(
-                            mid_x,
-                            mid_y,
-                            x2_pos,
-                            y2_pos,
-                            stroke,
-                            config.stroke_width,
-                            config.opacity,
-                        ));
+                    path_builder.move_to(absolute_points[0]);
+                    for i in 1..absolute_points.len() {
+                        let prev = absolute_points[i - 1];
+                        let curr = absolute_points[i];
+                        // Vertical then horizontal
+                        path_builder.line_to(gpui::point(prev.x, curr.y));
+                        path_builder.line_to(curr);
+                    }
                 }
             }
-        }
-    }
 
-    // Render points if enabled
-    if config.show_points {
-        let point_fill = config
-            .point_fill_color
-            .as_ref()
-            .unwrap_or(&config.stroke_color)
-            .to_rgba();
+            // Build and paint the path
+            if let Ok(path) = path_builder.build() {
+                let color_with_opacity = Rgba {
+                    r: stroke_color.r,
+                    g: stroke_color.g,
+                    b: stroke_color.b,
+                    a: stroke_color.a * opacity,
+                };
+                window.paint_path(path, color_with_opacity);
+            }
 
-        for point in data {
-            let x_range = x_scale.scale(point.x);
-            let x_pos = ((x_range - x_min) / x_range_span) as f32;
-            let y_range = y_scale.scale(point.y);
-            // Invert Y for screen coordinates (bottom-to-top becomes top-to-bottom)
-            let y_pos = 1.0 - ((y_range - y_min) / y_range_span) as f32;
-
-            let diameter = config.point_radius * 2.0;
-
-            container = container.child(
-                div()
-                    .absolute()
-                    .left(relative(x_pos))
-                    .top(relative(y_pos))
-                    .w(px(diameter))
-                    .h(px(diameter))
-                    .ml(px(-config.point_radius))
-                    .mt(px(-config.point_radius))
-                    .rounded_full()
-                    .bg(point_fill)
-                    .opacity(config.opacity),
-            );
-        }
-    }
-
-    container
-}
-
-/// Render a single line segment using divs
-fn render_line_segment(
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
-    color: Rgba,
-    width: f32,
-    opacity: f32,
-) -> Div {
-    // Calculate line parameters
-    let dx = x2 - x1;
-    let dy = y2 - y1;
-    let length = (dx * dx + dy * dy).sqrt();
-    let angle = dy.atan2(dx);
-
-    // Position at start point, rotate and extend
-    div()
-        .absolute()
-        .left(relative(x1))
-        .top(relative(y1))
-        .w(relative(length))
-        .h(px(width))
-        .mt(px(-width / 2.0)) // Center vertically
-        .bg(color)
-        .opacity(opacity)
-        // Note: GPUI doesn't have a direct rotate method for divs
-        // This is a limitation - in a real implementation we'd use a transform
-        // For now, this works for horizontal and vertical lines
-        // A full implementation would need custom rendering or SVG
-        .when(angle.abs() < 0.01 || (angle - std::f32::consts::PI).abs() < 0.01, |el| el)
-        .when((angle - std::f32::consts::PI / 2.0).abs() < 0.01 || (angle + std::f32::consts::PI / 2.0).abs() < 0.01, |el| {
-            // Vertical line - swap width and height
-            el.w(px(width))
-                .h(relative(length))
-                .ml(px(-width / 2.0))
-                .mt(px(0.0))
-        })
+            // Paint points if enabled
+            if show_points {
+                for point in &absolute_points {
+                    let point_bounds = Bounds {
+                        origin: gpui::point(
+                            point.x - px(point_radius),
+                            point.y - px(point_radius),
+                        ),
+                        size: gpui::size(px(point_radius * 2.0), px(point_radius * 2.0)),
+                    };
+                    let color_with_opacity = Rgba {
+                        r: point_fill.r,
+                        g: point_fill.g,
+                        b: point_fill.b,
+                        a: point_fill.a * opacity,
+                    };
+                    window.paint_quad(PaintQuad {
+                        bounds: point_bounds,
+                        corner_radii: Corners::all(px(point_radius)),
+                        background: color_with_opacity.into(),
+                        border_widths: Edges::default(),
+                        border_color: transparent_black(),
+                        border_style: BorderStyle::default(),
+                    });
+                }
+            }
+        },
+    )
+    .size_full()
+    .absolute()
+    .inset_0()
 }

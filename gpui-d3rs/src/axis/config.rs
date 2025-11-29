@@ -12,7 +12,8 @@ use super::orientation::AxisOrientation;
 /// let config = AxisConfig::bottom()
 ///     .with_ticks(10)
 ///     .with_tick_size(6.0)
-///     .with_formatter(|value| format!("{:.1}Hz", value));
+///     .with_formatter(|value| format!("{:.1}Hz", value))
+///     .with_title("Frequency (Hz)");
 /// ```
 #[derive(Clone)]
 pub struct AxisConfig {
@@ -32,6 +33,12 @@ pub struct AxisConfig {
     pub show_domain_line: bool,
     /// Domain line width
     pub domain_line_width: f32,
+    /// Axis title (label)
+    pub title: Option<String>,
+    /// Title font size
+    pub title_font_size: f32,
+    /// Padding between tick labels and title
+    pub title_padding: f32,
 }
 
 impl Default for AxisConfig {
@@ -45,6 +52,9 @@ impl Default for AxisConfig {
             tick_format: None,
             show_domain_line: true,
             domain_line_width: 1.0,
+            title: None,
+            title_font_size: 12.0,
+            title_padding: 8.0,
         }
     }
 }
@@ -149,19 +159,55 @@ impl AxisConfig {
         self
     }
 
+    /// Set the axis title (label)
+    ///
+    /// For left/right axes, the title will be rendered vertically (parallel to the axis).
+    /// For top/bottom axes, the title will be rendered horizontally.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use d3rs::axis::AxisConfig;
+    ///
+    /// let axis = AxisConfig::left()
+    ///     .with_title("SPL (dB)");
+    /// ```
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    /// Set the title font size
+    pub fn with_title_font_size(mut self, size: f32) -> Self {
+        self.title_font_size = size;
+        self
+    }
+
+    /// Set the padding between tick labels and title
+    pub fn with_title_padding(mut self, padding: f32) -> Self {
+        self.title_padding = padding;
+        self
+    }
+
     /// Calculate the total size needed for this axis
     ///
     /// For horizontal axes, this is the height.
     /// For vertical axes, this is the width.
     pub fn total_size(&self) -> f32 {
+        let title_space = if self.title.is_some() {
+            self.title_padding + self.title_font_size
+        } else {
+            0.0
+        };
+
         match self.orientation {
             AxisOrientation::Top | AxisOrientation::Bottom => {
-                self.tick_size + self.tick_padding + self.label_font_size + 4.0
+                self.tick_size + self.tick_padding + self.label_font_size + 4.0 + title_space
             }
             AxisOrientation::Left | AxisOrientation::Right => {
                 // For vertical, we need enough width for labels
                 // This is an estimate - actual width depends on label content
-                60.0
+                60.0 + title_space
             }
         }
     }

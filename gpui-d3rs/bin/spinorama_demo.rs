@@ -11,10 +11,13 @@ use autoeq::read::{
 };
 use autoeq::{Curve, DirectivityData};
 use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::contour::ContourGenerator;
 use d3rs::color::D3Color;
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
+use d3rs::shape::contour::{render_contour, ContourConfig, viridis_color_scale};
 use d3rs::shape::LineConfig;
+use d3rs::text::{render_vector_text, VectorFontConfig};
 use gpui::prelude::*;
 use gpui::{deferred, *};
 use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
@@ -159,6 +162,11 @@ impl SpinoramaApp {
                     let _ = this.update(cx, |app, cx| {
                         app.speakers = speakers;
                         app.speakers_load_state = LoadState::Loaded;
+                        // Auto-select first speaker and load its versions
+                        if let Some(first_speaker) = app.speakers.first().cloned() {
+                            app.selected_speaker = Some(first_speaker);
+                            app.load_versions(cx);
+                        }
                         cx.notify();
                     });
                 }
@@ -211,6 +219,11 @@ impl SpinoramaApp {
                     let _ = this.update(cx, |app, cx| {
                         app.versions = versions;
                         app.versions_load_state = LoadState::Loaded;
+                        // Auto-select first version and load speaker data
+                        if let Some(first_version) = app.versions.first().cloned() {
+                            app.selected_version = Some(first_version);
+                            app.load_speaker_data(cx);
+                        }
                         cx.notify();
                     });
                 }
@@ -826,11 +839,17 @@ impl SpinoramaApp {
 
         // Create log frequency scale (20Hz - 20kHz)
         let freq_scale = LogScale::new().domain(20.0, 20000.0).range(0.0, 800.0);
-        // Create linear SPL scale
+        // Create linear SPL scale for main curves (-40 to +10 dB)
         let spl_scale = LinearScale::new().domain(-40.0, 10.0).range(0.0, 400.0);
+        // Create linear DI scale for directivity index curves (-10 to +40 dB)
+        let di_scale = LinearScale::new().domain(-10.0, 40.0).range(0.0, 400.0);
 
         let chart_width = 800.0;
         let chart_height = 400.0;
+
+        // Separate DI curves from SPL curves
+        let spl_curves = ["On Axis", "Listening Window", "Early Reflections", "Sound Power"];
+        let di_curves = ["Early Reflections DI", "Sound Power DI"];
 
         div()
             .flex()
@@ -850,26 +869,28 @@ impl SpinoramaApp {
                 div()
                     .flex()
                     .flex_col()
-                    .gap_2()
+                    // No gap between chart and axis to ensure tight alignment
                     .child(
                         div()
                             .flex()
+                            .items_start() // Align to top so axis domain line aligns with chart top
+                            // Left Y-axis (SPL) with title
                             .child(render_axis(
                                 &spl_scale,
                                 &AxisConfig::left()
                                     .with_ticks(10)
-                                    .with_formatter(|v| format!("{:.0} dB", v)),
+                                    .with_formatter(|v| format!("{:.0}", v))
+                                    .with_title("SPL (dB)"),
                                 chart_height,
                                 &theme,
                             ))
+                            // Chart area - no border to ensure grid aligns with axis ticks
                             .child(
                                 div()
                                     .w(px(chart_width as f32))
                                     .h(px(chart_height as f32))
                                     .relative()
                                     .bg(rgb(0xf8f8f8))
-                                    .border_1()
-                                    .border_color(rgb(0xcccccc))
                                     .child(render_grid(
                                         &freq_scale,
                                         &spl_scale,
@@ -878,11 +899,11 @@ impl SpinoramaApp {
                                         chart_height,
                                         &theme,
                                     ))
-                                    .children(CEA2034_CURVES.iter().filter_map(|&name| {
+                                    // Render SPL curves (using spl_scale)
+                                    .children(spl_curves.iter().filter_map(|&name| {
                                         let curve = self.cea2034_curves.get(name)?;
                                         let color = colors.get(name).cloned().unwrap_or(D3Color::rgb(128, 128, 128));
 
-                                        // Convert curve to line points
                                         let points: Vec<LinePoint> = curve
                                             .freq
                                             .iter()
@@ -904,12 +925,54 @@ impl SpinoramaApp {
                                                 .stroke_width(2.0)
                                                 .curve(CurveType::Linear),
                                         ))
+                                    }))
+                                    // Render DI curves (using di_scale)
+                                    .children(di_curves.iter().filter_map(|&name| {
+                                        let curve = self.cea2034_curves.get(name)?;
+                                        let color = colors.get(name).cloned().unwrap_or(D3Color::rgb(128, 128, 128));
+
+                                        let points: Vec<LinePoint> = curve
+                                            .freq
+                                            .iter()
+                                            .zip(curve.spl.iter())
+                                            .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
+                                            .map(|(&f, &spl)| LinePoint::new(f, spl))
+                                            .collect();
+
+                                        if points.is_empty() {
+                                            return None;
+                                        }
+
+                                        Some(render_line(
+                                            &freq_scale,
+                                            &di_scale,
+                                            &points,
+                                            &LineConfig::new()
+                                                .stroke_color(color)
+                                                .stroke_width(2.0)
+                                                .curve(CurveType::Linear),
+                                        ))
                                     })),
-                            ),
+                            )
+                            // Right Y-axis (DI) with title
+                            .child(render_axis(
+                                &di_scale,
+                                &AxisConfig::right()
+                                    .with_ticks(10)
+                                    .with_formatter(|v| format!("{:.0}", v))
+                                    .with_title("DI (dB)"),
+                                chart_height,
+                                &theme,
+                            )),
                     )
+                    // Bottom axis with title
                     .child(
                         div()
-                            .ml(px(60.0))
+                            .flex()
+                            .child(
+                                // Spacer for left axis (now includes title space)
+                                div().w(px(80.0)) // axis width with title
+                            )
                             .child(render_axis(
                                 &freq_scale,
                                 &AxisConfig::bottom()
@@ -920,19 +983,11 @@ impl SpinoramaApp {
                                         } else {
                                             format!("{:.0}", f)
                                         }
-                                    }),
+                                    })
+                                    .with_title("Frequency (Hz)"),
                                 chart_width,
                                 &theme,
                             )),
-                    )
-                    .child(
-                        div()
-                            .ml(px(60.0))
-                            .mt_2()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .text_center()
-                            .child("Frequency (Hz)"),
                     ),
             )
             // Legend
@@ -950,6 +1005,7 @@ impl SpinoramaApp {
             .children(CEA2034_CURVES.iter().map(|&name| {
                 let color = colors.get(name).cloned().unwrap_or(D3Color::rgb(128, 128, 128));
                 let (r, g, b) = ((color.r * 255.0) as u32, (color.g * 255.0) as u32, (color.b * 255.0) as u32);
+                let font_config = VectorFontConfig::horizontal(12.0, hsla(0.0, 0.0, 0.2, 1.0));
 
                 div()
                     .flex()
@@ -961,12 +1017,7 @@ impl SpinoramaApp {
                             .h(px(3.0))
                             .bg(rgb((r as u32) << 16 | (g as u32) << 8 | (b as u32))),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x333333))
-                            .child(name),
-                    )
+                    .child(render_vector_text(name, &font_config))
             }))
     }
 
@@ -1058,14 +1109,13 @@ impl SpinoramaApp {
                                 chart_height,
                                 &theme,
                             ))
+                            // Chart area - no border to ensure grid aligns with axis ticks
                             .child(
                                 div()
                                     .w(px(chart_width as f32))
                                     .h(px(chart_height as f32))
                                     .relative()
                                     .bg(rgb(0xf8f8f8))
-                                    .border_1()
-                                    .border_color(rgb(0xcccccc))
                                     .child(render_grid(
                                         &freq_scale,
                                         &spl_scale,
@@ -1131,6 +1181,7 @@ impl SpinoramaApp {
             .child({
                 let angle_min = curves.first().map(|c| c.angle).unwrap_or(-60.0);
                 let angle_max = curves.last().map(|c| c.angle).unwrap_or(60.0);
+                let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
 
                 div()
                     .flex()
@@ -1139,12 +1190,7 @@ impl SpinoramaApp {
                     .p_4()
                     .bg(rgb(0xf5f5f5))
                     .rounded_md()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child(format!("{:.0}°", angle_min)),
-                    )
+                    .child(render_vector_text(&format!("{:.0}°", angle_min), &font_config))
                     // Simplified gradient legend (using color strip segments)
                     .children((0..6).map(|i| {
                         let color = d3rs::color::interpolate_colors(&viridis_colors, i as f32 / 5.0);
@@ -1154,37 +1200,227 @@ impl SpinoramaApp {
                             .h(px(16.0))
                             .bg(rgb((r << 16) | (g << 8) | b))
                     }))
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child(format!("{:.0}°", angle_max)),
-                    )
+                    .child(render_vector_text(&format!("{:.0}°", angle_max), &font_config))
             })
     }
 
     fn render_contour_plot(&self) -> Div {
-        // Contour plot placeholder - will implement using d3rs contour module
+        let theme = DefaultAxisTheme;
+
+        let Some(ref directivity) = self.directivity_data else {
+            return div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h_full()
+                .child(
+                    div()
+                        .text_base()
+                        .text_color(rgb(0x666666))
+                        .child("No directivity data available for contour plot."),
+                );
+        };
+
+        // Use horizontal directivity data for contour
+        let curves = &directivity.horizontal;
+
+        if curves.is_empty() {
+            return div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h_full()
+                .child(
+                    div()
+                        .text_base()
+                        .text_color(rgb(0x666666))
+                        .child("No horizontal directivity data available."),
+                );
+        }
+
+        // Build a 2D grid from directivity data
+        // X-axis: frequency (log scale from 20Hz to 20kHz)
+        // Y-axis: angle (from -180 to +180 or whatever the data has)
+        // Z-value: SPL
+
+        // Get frequency points from first curve (assume all curves have same freq points)
+        let freq_points = &curves[0].freq;
+        let freq_count = freq_points.len();
+
+        // Get angles from curves
+        let angles: Vec<f64> = curves.iter().map(|c| c.angle).collect();
+        let angle_count = angles.len();
+
+        if freq_count == 0 || angle_count == 0 {
+            return div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h_full()
+                .child(
+                    div()
+                        .text_base()
+                        .text_color(rgb(0x666666))
+                        .child("Insufficient data for contour plot."),
+                );
+        }
+
+        // Create grid values (angle x frequency)
+        let mut grid_values: Vec<f64> = Vec::with_capacity(angle_count * freq_count);
+        let mut spl_min = f64::INFINITY;
+        let mut spl_max = f64::NEG_INFINITY;
+
+        for curve in curves.iter() {
+            for &spl in &curve.spl {
+                grid_values.push(spl);
+                if spl < spl_min { spl_min = spl; }
+                if spl > spl_max { spl_max = spl; }
+            }
+        }
+
+        // Generate contour thresholds (every 3 dB from -40 to +10)
+        let thresholds: Vec<f64> = (-40..=10).step_by(3).map(|v| v as f64).collect();
+
+        // Create contour generator
+        let generator = ContourGenerator::new(freq_count, angle_count)
+            .x(freq_points[0], freq_points[freq_count - 1])
+            .y(angles[0], angles[angle_count - 1]);
+
+        let contours = generator.contours(&grid_values, &thresholds);
+
+        // Create scales
+        // X: frequency (log scale)
+        let freq_min = freq_points[0].max(20.0);
+        let freq_max = freq_points[freq_count - 1].min(20000.0);
+        let freq_scale = LogScale::new().domain(freq_min, freq_max).range(0.0, 800.0);
+
+        // Y: angle (linear scale)
+        let angle_min = angles[0];
+        let angle_max = angles[angle_count - 1];
+        let angle_scale = LinearScale::new().domain(angle_min, angle_max).range(0.0, 400.0);
+
+        let chart_width = 800.0;
+        let chart_height = 400.0;
+
+        // Create contour config with viridis color scale
+        let contour_config = ContourConfig::new()
+            .stroke_width(1.0)
+            .fill(true)
+            .fill_opacity(0.6)
+            .stroke_opacity(0.8)
+            .color_scale(move |t| {
+                // Map normalized value to viridis
+                viridis_color_scale()(t)
+            });
+
         div()
             .flex()
             .flex_col()
-            .items_center()
-            .justify_center()
-            .h_full()
-            .gap_4()
+            .gap_6()
             .child(
                 div()
-                    .text_xl()
+                    .text_2xl()
                     .font_weight(FontWeight::BOLD)
                     .text_color(rgb(0x333333))
-                    .child("Contour Plot"),
+                    .child(format!(
+                        "Horizontal Contour - {}",
+                        self.selected_speaker.as_deref().unwrap_or("Unknown")
+                    )),
             )
             .child(
                 div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
-                    .child("Contour visualization coming soon..."),
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex()
+                            .child(render_axis(
+                                &angle_scale,
+                                &AxisConfig::left()
+                                    .with_ticks(9)
+                                    .with_formatter(|v| format!("{:.0}°", v)),
+                                chart_height,
+                                &theme,
+                            ))
+                            // Chart area - no border to ensure grid aligns with axis ticks
+                            .child(
+                                div()
+                                    .w(px(chart_width as f32))
+                                    .h(px(chart_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &freq_scale,
+                                        &angle_scale,
+                                        &GridConfig::with_lines(),
+                                        chart_width,
+                                        chart_height,
+                                        &theme,
+                                    ))
+                                    .child(
+                                        render_contour(
+                                            contours,
+                                            &freq_scale,
+                                            &angle_scale,
+                                            &contour_config,
+                                        )
+                                        .value_range(spl_min, spl_max)
+                                        .height(px(chart_height as f32))
+                                    ),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .ml(px(60.0))
+                            .child(render_axis(
+                                &freq_scale,
+                                &AxisConfig::bottom()
+                                    .with_ticks(10)
+                                    .with_formatter(|f| {
+                                        if f >= 1000.0 {
+                                            format!("{:.0}k", f / 1000.0)
+                                        } else {
+                                            format!("{:.0}", f)
+                                        }
+                                    }),
+                                chart_width,
+                                &theme,
+                            )),
+                    )
+                    .child(
+                        div()
+                            .ml(px(60.0))
+                            .mt_2()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .text_center()
+                            .child("Frequency (Hz)"),
+                    ),
             )
+            // Color legend
+            .child({
+                let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_4()
+                    .p_4()
+                    .bg(rgb(0xf5f5f5))
+                    .rounded_md()
+                    .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
+                    // Gradient color bar
+                    .children((0..20).map(|i| {
+                        let t = i as f64 / 19.0;
+                        let color = viridis_color_scale()(t);
+                        let (r, g, b) = ((color.r * 255.0) as u32, (color.g * 255.0) as u32, (color.b * 255.0) as u32);
+                        div()
+                            .w(px(20.0))
+                            .h(px(20.0))
+                            .bg(rgb((r << 16) | (g << 8) | b))
+                    }))
+                    .child(render_vector_text(&format!("{:.0} dB", spl_max), &font_config))
+            })
     }
 }
 
