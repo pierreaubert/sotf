@@ -591,6 +591,272 @@ fn points_equal(a: &Point, b: &Point) -> bool {
     (a.x - b.x).abs() < EPSILON && (a.y - b.y).abs() < EPSILON
 }
 
+/// A contour band representing the filled region between two threshold values.
+#[derive(Debug, Clone)]
+pub struct ContourBand {
+    /// The lower threshold value
+    pub lower: f64,
+    /// The upper threshold value
+    pub upper: f64,
+    /// The polygons forming this band (outer rings and holes)
+    pub polygons: Vec<ContourRing>,
+}
+
+impl ContourBand {
+    /// Create a new contour band.
+    pub fn new(lower: f64, upper: f64) -> Self {
+        Self {
+            lower,
+            upper,
+            polygons: Vec::new(),
+        }
+    }
+
+    /// Get the midpoint value of this band (for color interpolation).
+    pub fn mid_value(&self) -> f64 {
+        (self.lower + self.upper) / 2.0
+    }
+}
+
+impl ContourGenerator {
+    /// Generate filled contour bands between consecutive threshold values.
+    ///
+    /// This method generates closed polygons for each band between consecutive
+    /// threshold values. The bands are suitable for filled rendering.
+    ///
+    /// # Arguments
+    /// * `values` - The grid values
+    /// * `thresholds` - Threshold values (must be sorted in ascending order)
+    ///
+    /// # Returns
+    /// A vector of ContourBand, one for each pair of consecutive thresholds.
+    pub fn contour_bands(&self, values: &[f64], thresholds: &[f64]) -> Vec<ContourBand> {
+        if thresholds.len() < 2 || values.len() < (self.width * self.height) {
+            return Vec::new();
+        }
+
+        let mut bands = Vec::with_capacity(thresholds.len() - 1);
+
+        // For each pair of consecutive thresholds, create a band
+        for i in 0..thresholds.len() - 1 {
+            let lower = thresholds[i];
+            let upper = thresholds[i + 1];
+
+            let band = self.generate_band(values, lower, upper);
+            bands.push(band);
+        }
+
+        bands
+    }
+
+    /// Generate a single contour band between two threshold values.
+    fn generate_band(&self, values: &[f64], lower: f64, upper: f64) -> ContourBand {
+        let mut band = ContourBand::new(lower, upper);
+
+        // For each cell, determine which band case it belongs to
+        // and generate the appropriate polygon fragments
+        let mut cell_polygons: Vec<Vec<Point>> = Vec::new();
+
+        for j in 0..self.height - 1 {
+            for i in 0..self.width - 1 {
+                if let Some(poly) = self.cell_band_polygon(values, i, j, lower, upper) {
+                    cell_polygons.push(poly);
+                }
+            }
+        }
+
+        // Merge adjacent cell polygons into contiguous bands
+        // For simplicity, we'll just add each cell polygon as a separate ring
+        // A more sophisticated implementation would merge connected polygons
+        for poly in cell_polygons {
+            if poly.len() >= 3 {
+                let mut ring = poly.clone();
+                // Close the ring if not already closed
+                if !points_equal(&ring[0], &ring[ring.len() - 1]) {
+                    ring.push(ring[0]);
+                }
+                band.polygons.push(ContourRing::new(ring));
+            }
+        }
+
+        band
+    }
+
+    /// Generate the polygon fragment for a single cell in the band.
+    fn cell_band_polygon(
+        &self,
+        values: &[f64],
+        i: usize,
+        j: usize,
+        lower: f64,
+        upper: f64,
+    ) -> Option<Vec<Point>> {
+        // Get the four corner values
+        let v00 = values[j * self.width + i];
+        let v10 = values[j * self.width + i + 1];
+        let v01 = values[(j + 1) * self.width + i];
+        let v11 = values[(j + 1) * self.width + i + 1];
+
+        // Classify each corner: 0 = below lower, 1 = in band, 2 = above upper
+        let c00 = Self::classify_value(v00, lower, upper);
+        let c10 = Self::classify_value(v10, lower, upper);
+        let c01 = Self::classify_value(v01, lower, upper);
+        let c11 = Self::classify_value(v11, lower, upper);
+
+        // If all corners are outside the band (all below or all above), no polygon
+        if (c00 == 0 && c10 == 0 && c01 == 0 && c11 == 0)
+            || (c00 == 2 && c10 == 2 && c01 == 2 && c11 == 2)
+        {
+            return None;
+        }
+
+        // If all corners are in the band, return the whole cell
+        if c00 == 1 && c10 == 1 && c01 == 1 && c11 == 1 {
+            let corners = self.cell_corners(i, j);
+            return Some(corners.to_vec());
+        }
+
+        // Otherwise, build the polygon by tracing around the cell
+        let mut points = Vec::new();
+
+        // Corner positions
+        let corners = self.cell_corners(i, j);
+        let corner_values = [v00, v10, v11, v01];
+        let corner_classes = [c00, c10, c11, c01];
+
+        // Edge interpolation positions (between consecutive corners)
+        // Edge 0: corner 0 to corner 1 (bottom)
+        // Edge 1: corner 1 to corner 2 (right)
+        // Edge 2: corner 2 to corner 3 (top)
+        // Edge 3: corner 3 to corner 0 (left)
+
+        // Walk around the cell, adding points where we're in the band
+        for edge_idx in 0..4 {
+            let curr_corner = edge_idx;
+            let next_corner = (edge_idx + 1) % 4;
+            let curr_class = corner_classes[curr_corner];
+            let next_class = corner_classes[next_corner];
+            let curr_val = corner_values[curr_corner];
+            let next_val = corner_values[next_corner];
+
+            // If current corner is in band, add it
+            if curr_class == 1 {
+                points.push(corners[curr_corner]);
+            }
+
+            // Check for crossings on this edge - collect both crossings if any
+            let mut crossings: Vec<(f64, Point)> = Vec::new();
+            let val_diff = next_val - curr_val;
+
+            // Avoid division by zero for flat edges
+            if val_diff.abs() > 1e-10 {
+                // Lower threshold crossing
+                if (curr_class == 0 && next_class >= 1) || (curr_class >= 1 && next_class == 0) {
+                    let t = (lower - curr_val) / val_diff;
+                    if (0.0..=1.0).contains(&t) {
+                        let x = corners[curr_corner].x + t * (corners[next_corner].x - corners[curr_corner].x);
+                        let y = corners[curr_corner].y + t * (corners[next_corner].y - corners[curr_corner].y);
+                        crossings.push((t, Point::new(x, y)));
+                    }
+                }
+
+                // Upper threshold crossing
+                if (curr_class <= 1 && next_class == 2) || (curr_class == 2 && next_class <= 1) {
+                    let t = (upper - curr_val) / val_diff;
+                    if (0.0..=1.0).contains(&t) {
+                        let x = corners[curr_corner].x + t * (corners[next_corner].x - corners[curr_corner].x);
+                        let y = corners[curr_corner].y + t * (corners[next_corner].y - corners[curr_corner].y);
+                        crossings.push((t, Point::new(x, y)));
+                    }
+                }
+
+                // Sort crossings by t value to ensure correct order along edge
+                crossings.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+                // Add sorted crossings to points
+                for (_, pt) in crossings {
+                    points.push(pt);
+                }
+            }
+        }
+
+        // Remove duplicate consecutive points
+        let mut deduped = Vec::with_capacity(points.len());
+        for pt in points {
+            if deduped.is_empty() || !points_equal(&deduped[deduped.len() - 1], &pt) {
+                deduped.push(pt);
+            }
+        }
+
+        if deduped.len() >= 3 {
+            Some(deduped)
+        } else {
+            None
+        }
+    }
+
+    /// Classify a value relative to the band thresholds.
+    /// Returns 0 if below lower, 1 if in band, 2 if above upper.
+    fn classify_value(value: f64, lower: f64, upper: f64) -> u8 {
+        if value < lower {
+            0
+        } else if value > upper {
+            2
+        } else {
+            1
+        }
+    }
+
+    /// Get the four corners of a cell in output coordinates.
+    fn cell_corners(&self, i: usize, j: usize) -> [Point; 4] {
+        let x0 = self.transform_x(i as f64);
+        let x1 = self.transform_x((i + 1) as f64);
+        let y0 = self.transform_y(j as f64);
+        let y1 = self.transform_y((j + 1) as f64);
+
+        [
+            Point::new(x0, y0), // bottom-left
+            Point::new(x1, y0), // bottom-right
+            Point::new(x1, y1), // top-right
+            Point::new(x0, y1), // top-left
+        ]
+    }
+
+    /// Transform grid x coordinate to output coordinate.
+    fn transform_x(&self, px: f64) -> f64 {
+        if let Some(ref x_vals) = self.x_values {
+            let idx = px.floor() as usize;
+            let frac = px - px.floor();
+            if idx + 1 < x_vals.len() {
+                x_vals[idx] + frac * (x_vals[idx + 1] - x_vals[idx])
+            } else if idx < x_vals.len() {
+                x_vals[idx]
+            } else {
+                self.x0 + (px / (self.width - 1) as f64) * (self.x1 - self.x0)
+            }
+        } else {
+            self.x0 + (px / (self.width - 1) as f64) * (self.x1 - self.x0)
+        }
+    }
+
+    /// Transform grid y coordinate to output coordinate.
+    fn transform_y(&self, py: f64) -> f64 {
+        if let Some(ref y_vals) = self.y_values {
+            let idx = py.floor() as usize;
+            let frac = py - py.floor();
+            if idx + 1 < y_vals.len() {
+                y_vals[idx] + frac * (y_vals[idx + 1] - y_vals[idx])
+            } else if idx < y_vals.len() {
+                y_vals[idx]
+            } else {
+                self.y0 + (py / (self.height - 1) as f64) * (self.y1 - self.y0)
+            }
+        } else {
+            self.y0 + (py / (self.height - 1) as f64) * (self.y1 - self.y0)
+        }
+    }
+}
+
 /// Generate contours at multiple threshold values.
 ///
 /// # Example
