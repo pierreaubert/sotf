@@ -32,12 +32,14 @@
 #![cfg_attr(feature = "gpui", recursion_limit = "512")]
 
 pub mod array;
+pub mod brush;
 pub mod color;
 pub mod ease;
 pub mod format;
 pub mod interpolate;
 pub mod scale;
 pub mod time;
+pub mod zoom;
 // Note: axis, grid, and text modules are excluded from test builds due to
 // a known gpui_macros proc macro stack overflow issue in debug compilation.
 // See: https://github.com/rust-lang/rust - the proc macro crashes with SIGBUS

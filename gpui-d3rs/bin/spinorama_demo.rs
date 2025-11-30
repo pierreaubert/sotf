@@ -2,7 +2,9 @@
 //!
 //! Demonstrates fetching and plotting speaker measurement data from spinorama.org.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use autoeq::read::{
@@ -11,13 +13,17 @@ use autoeq::read::{
 };
 use autoeq::{Curve, DirectivityData};
 use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::brush::{BrushSelection, BrushState};
 use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
-use d3rs::shape::contour::{render_contour, viridis_color_scale, ContourConfig};
+use d3rs::shape::contour::{
+    render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData,
+};
 use d3rs::shape::LineConfig;
 use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
 use gpui::{actions, deferred, *};
 use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
@@ -89,45 +95,70 @@ struct SecondaryAxisConfig {
     tick_values: Vec<f64>,
 }
 
+/// Optional brush selection overlay configuration
+struct BrushOverlay {
+    /// Selection rectangle in pixels (x0, y0, x1, y1)
+    selection: BrushSelection,
+}
+
 /// Renders a reusable frequency/SPL plot with optional secondary Y-axis
 ///
 /// This is the common chart used for CEA2034, horizontal SPL, and vertical SPL plots.
-/// All use a log frequency X-axis (20Hz-20kHz) and linear SPL Y-axis.
+/// All use a log frequency X-axis and linear SPL Y-axis.
 fn render_freq_spl_plot(
     curves: Vec<PlotCurve>,
+    freq_domain: (f64, f64),
     spl_domain: (f64, f64),
     secondary_axis: Option<SecondaryAxisConfig>,
     chart_width: f32,
     chart_height: f32,
+    brush_overlay: Option<BrushOverlay>,
 ) -> Div {
     let theme = DefaultAxisTheme;
 
-    // Create log frequency scale (20Hz - 20kHz)
+    // Create log frequency scale with zoom support
     let freq_scale = LogScale::new()
-        .domain(20.0, 20000.0)
+        .domain(freq_domain.0, freq_domain.1)
         .range(0.0, chart_width as f64);
     // Create linear SPL scale for main curves
     let spl_scale = LinearScale::new()
         .domain(spl_domain.0, spl_domain.1)
         .range(0.0, chart_height as f64);
 
-    // Major frequency ticks (with labels and grid lines)
-    let major_freq_ticks = vec![
+    // All possible major frequency ticks
+    let all_major_ticks = vec![
         20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
     ];
 
-    // Minor frequency ticks (no labels, smaller marks)
-    let minor_freq_ticks: Vec<f64> = vec![
+    // Filter ticks to those within the current domain
+    let major_freq_ticks: Vec<f64> = all_major_ticks
+        .iter()
+        .copied()
+        .filter(|&f| f >= freq_domain.0 && f <= freq_domain.1)
+        .collect();
+
+    // All possible minor frequency ticks
+    let all_minor_ticks: Vec<f64> = vec![
         // 20-100 range
         30.0, 40.0, 60.0, 70.0, 80.0, 90.0, // 100-1000 range
         300.0, 400.0, 600.0, 700.0, 800.0, 900.0, // 1000-10000 range
         3000.0, 4000.0, 6000.0, 7000.0, 8000.0, 9000.0,
     ];
 
-    // Grid lines only at major frequencies
-    let grid_freq_values = vec![
+    // Filter minor ticks to those within the current domain
+    let minor_freq_ticks: Vec<f64> = all_minor_ticks
+        .iter()
+        .copied()
+        .filter(|&f| f >= freq_domain.0 && f <= freq_domain.1)
+        .collect();
+
+    // Grid lines - filter to current domain
+    let grid_freq_values: Vec<f64> = vec![
         50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
-    ];
+    ]
+    .into_iter()
+    .filter(|&f| f >= freq_domain.0 && f <= freq_domain.1)
+    .collect();
 
     // Generate SPL tick values
     let spl_step = 10.0;
@@ -212,7 +243,22 @@ fn render_freq_spl_plot(
                                     .stroke_width(curve.stroke_width)
                                     .curve(CurveType::Linear),
                             ))
-                        })),
+                        }))
+                        // Brush selection overlay (when dragging)
+                        .when_some(brush_overlay, |el, overlay| {
+                            let sel = overlay.selection;
+                            el.child(
+                                div()
+                                    .absolute()
+                                    .left(px(sel.x0 as f32))
+                                    .top(px(sel.y0 as f32))
+                                    .w(px(sel.width() as f32))
+                                    .h(px(sel.height() as f32))
+                                    .bg(rgba(0x6496c850)) // Semi-transparent blue
+                                    .border_1()
+                                    .border_color(rgb(0x4682b4)) // Steel blue
+                            )
+                        }),
                 )
                 // Right Y-axis (optional, for DI curves)
                 .when_some(secondary_axis, |el, cfg| {
@@ -263,6 +309,7 @@ enum ContourRenderMode {
     #[default]
     Isoline,
     Surface,
+    Heatmap,
 }
 
 impl ContourRenderMode {
@@ -270,15 +317,162 @@ impl ContourRenderMode {
         match self {
             Self::Isoline => "Isoline",
             Self::Surface => "Surface",
+            Self::Heatmap => "Heatmap",
         }
     }
 
-    fn toggle(&self) -> Self {
+    fn next(&self) -> Self {
         match self {
             Self::Isoline => Self::Surface,
-            Self::Surface => Self::Isoline,
+            Self::Surface => Self::Heatmap,
+            Self::Heatmap => Self::Isoline,
         }
     }
+}
+
+/// Colormap selection for contour plots
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Colormap {
+    #[default]
+    Viridis,
+    Plasma,
+    Magma,
+    Inferno,
+    Heat,
+    Coolwarm,
+}
+
+impl Colormap {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Viridis => "Viridis",
+            Self::Plasma => "Plasma",
+            Self::Magma => "Magma",
+            Self::Inferno => "Inferno",
+            Self::Heat => "Heat",
+            Self::Coolwarm => "Coolwarm",
+        }
+    }
+
+    fn next(&self) -> Self {
+        match self {
+            Self::Viridis => Self::Plasma,
+            Self::Plasma => Self::Magma,
+            Self::Magma => Self::Inferno,
+            Self::Inferno => Self::Heat,
+            Self::Heat => Self::Coolwarm,
+            Self::Coolwarm => Self::Viridis,
+        }
+    }
+
+    fn color_scale(&self) -> impl Fn(f64) -> D3Color + Send + Sync + Clone + 'static {
+        let colormap = *self;
+        move |t: f64| {
+            let t = t.clamp(0.0, 1.0);
+            match colormap {
+                Colormap::Viridis => {
+                    let colors = [
+                        D3Color::from_hex(0x440154),
+                        D3Color::from_hex(0x482878),
+                        D3Color::from_hex(0x3e4a89),
+                        D3Color::from_hex(0x31688e),
+                        D3Color::from_hex(0x26838f),
+                        D3Color::from_hex(0x1f9e89),
+                        D3Color::from_hex(0x35b779),
+                        D3Color::from_hex(0x6ece58),
+                        D3Color::from_hex(0xb5de2b),
+                        D3Color::from_hex(0xfde725),
+                    ];
+                    interpolate_colors(&colors, t)
+                }
+                Colormap::Plasma => {
+                    let colors = [
+                        D3Color::from_hex(0x0d0887),
+                        D3Color::from_hex(0x46039f),
+                        D3Color::from_hex(0x7201a8),
+                        D3Color::from_hex(0x9c179e),
+                        D3Color::from_hex(0xbd3786),
+                        D3Color::from_hex(0xd8576b),
+                        D3Color::from_hex(0xed7953),
+                        D3Color::from_hex(0xfb9f3a),
+                        D3Color::from_hex(0xfdca26),
+                        D3Color::from_hex(0xf0f921),
+                    ];
+                    interpolate_colors(&colors, t)
+                }
+                Colormap::Magma => {
+                    let colors = [
+                        D3Color::from_hex(0x000004),
+                        D3Color::from_hex(0x180f3d),
+                        D3Color::from_hex(0x440f76),
+                        D3Color::from_hex(0x721f81),
+                        D3Color::from_hex(0x9e2f7f),
+                        D3Color::from_hex(0xcd4071),
+                        D3Color::from_hex(0xf1605d),
+                        D3Color::from_hex(0xfd9668),
+                        D3Color::from_hex(0xfeca8d),
+                        D3Color::from_hex(0xfcfdbf),
+                    ];
+                    interpolate_colors(&colors, t)
+                }
+                Colormap::Inferno => {
+                    let colors = [
+                        D3Color::from_hex(0x000004),
+                        D3Color::from_hex(0x1b0c41),
+                        D3Color::from_hex(0x4a0c6b),
+                        D3Color::from_hex(0x781c6d),
+                        D3Color::from_hex(0xa52c60),
+                        D3Color::from_hex(0xcf4446),
+                        D3Color::from_hex(0xed6925),
+                        D3Color::from_hex(0xfb9b06),
+                        D3Color::from_hex(0xf7d13d),
+                        D3Color::from_hex(0xfcffa4),
+                    ];
+                    interpolate_colors(&colors, t)
+                }
+                Colormap::Heat => {
+                    // Blue -> White -> Red
+                    if t < 0.5 {
+                        let local_t = t * 2.0;
+                        D3Color::from_hex(0x0571b0).interpolate(&D3Color::from_hex(0xf7f7f7), local_t as f32)
+                    } else {
+                        let local_t = (t - 0.5) * 2.0;
+                        D3Color::from_hex(0xf7f7f7).interpolate(&D3Color::from_hex(0xca0020), local_t as f32)
+                    }
+                }
+                Colormap::Coolwarm => {
+                    let colors = [
+                        D3Color::from_hex(0x3b4cc0),
+                        D3Color::from_hex(0x6688ee),
+                        D3Color::from_hex(0x99bbff),
+                        D3Color::from_hex(0xc9d8ef),
+                        D3Color::from_hex(0xf7f7f7),
+                        D3Color::from_hex(0xf6cdc4),
+                        D3Color::from_hex(0xee9977),
+                        D3Color::from_hex(0xd6604d),
+                        D3Color::from_hex(0xb40426),
+                    ];
+                    interpolate_colors(&colors, t)
+                }
+            }
+        }
+    }
+}
+
+/// Helper function to interpolate between colors in a palette
+fn interpolate_colors(colors: &[D3Color], t: f64) -> D3Color {
+    let idx = (t * (colors.len() - 1) as f64) as usize;
+    let idx = idx.min(colors.len() - 2);
+    let local_t = (t * (colors.len() - 1) as f64) - idx as f64;
+    colors[idx].interpolate(&colors[idx + 1], local_t as f32)
+}
+
+/// Chart identifiers for tracking brush interactions
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChartId {
+    FreqSpl,
+    SplContour,
+    DirectivityContour,
 }
 
 /// View sections
@@ -346,6 +540,24 @@ struct SpinoramaApp {
     // Contour render mode for each plot (SPL Horizontal Contour, Directivity Contour)
     contour_mode_spl: ContourRenderMode,
     contour_mode_directivity: ContourRenderMode,
+    // Colormap selection for contour plots
+    contour_colormap: Colormap,
+    // Zoom state for frequency/SPL plots (CEA2034, horizontal/vertical SPL)
+    freq_spl_zoom: ZoomState,
+    freq_spl_brush: BrushState,
+    // Zoom state for SPL contour plot
+    spl_contour_zoom: ZoomState,
+    spl_contour_brush: BrushState,
+    // Zoom state for directivity contour plot
+    directivity_contour_zoom: ZoomState,
+    directivity_contour_brush: BrushState,
+    // Track which chart is currently being brushed (for event handling)
+    active_brush_chart: Option<ChartId>,
+    // Chart bounds for mouse position calculation (window-relative)
+    // These are shared via Rc<RefCell> to allow capture in closures
+    freq_spl_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    spl_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    directivity_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
 
 impl SpinoramaApp {
@@ -376,6 +588,21 @@ impl SpinoramaApp {
             section_dropdown_open: false,
             contour_mode_spl: ContourRenderMode::default(),
             contour_mode_directivity: ContourRenderMode::default(),
+            contour_colormap: Colormap::default(),
+            // Zoom for freq/SPL plots: X=20Hz-20kHz (log), Y=-40 to 10 dB (linear)
+            freq_spl_zoom: ZoomState::new(20.0, 20000.0, -40.0, 10.0).with_log_x(true),
+            freq_spl_brush: BrushState::new(),
+            // Zoom for SPL contour: X=100Hz-20kHz (log), Y=-180 to 180 deg (linear)
+            spl_contour_zoom: ZoomState::new(100.0, 20000.0, -180.0, 180.0).with_log_x(true),
+            spl_contour_brush: BrushState::new(),
+            // Zoom for directivity contour: same ranges
+            directivity_contour_zoom: ZoomState::new(100.0, 20000.0, -180.0, 180.0).with_log_x(true),
+            directivity_contour_brush: BrushState::new(),
+            active_brush_chart: None,
+            // Initialize chart bounds as None - will be captured during render
+            freq_spl_chart_bounds: Rc::new(RefCell::new(None)),
+            spl_contour_chart_bounds: Rc::new(RefCell::new(None)),
+            directivity_contour_chart_bounds: Rc::new(RefCell::new(None)),
         };
 
         // Start loading speakers list
@@ -1000,9 +1227,9 @@ impl SpinoramaApp {
             LoadState::Loading => self.render_loading(),
             LoadState::Error(ref e) => self.render_error(e),
             LoadState::Loaded => match self.current_section {
-                PlotSection::CEA2034 => self.render_cea2034_plot(),
-                PlotSection::HorizontalSPL => self.render_directivity_plot("horizontal"),
-                PlotSection::VerticalSPL => self.render_directivity_plot("vertical"),
+                PlotSection::CEA2034 => self.render_cea2034_plot(cx),
+                PlotSection::HorizontalSPL => self.render_directivity_plot("horizontal", cx),
+                PlotSection::VerticalSPL => self.render_directivity_plot("vertical", cx),
                 PlotSection::Contour => self.render_contour_plot(cx),
             },
         };
@@ -1047,6 +1274,197 @@ impl SpinoramaApp {
             )
     }
 
+    /// Wrap a chart in an interactive container with brush/zoom handlers
+    fn wrap_freq_spl_chart_interactive(
+        &self,
+        chart: Div,
+        chart_id: ChartId,
+        chart_width: f32,
+        chart_height: f32,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let entity = cx.entity().clone();
+        let entity2 = entity.clone();
+        let entity3 = entity.clone();
+        let entity4 = entity.clone();
+
+        // Get the chart bounds Rc for this chart type
+        let chart_bounds = match chart_id {
+            ChartId::FreqSpl => self.freq_spl_chart_bounds.clone(),
+            ChartId::SplContour => self.spl_contour_chart_bounds.clone(),
+            ChartId::DirectivityContour => self.directivity_contour_chart_bounds.clone(),
+        };
+        let chart_bounds_for_move = chart_bounds.clone();
+        let chart_bounds_for_up = chart_bounds.clone();
+        let chart_bounds_for_prepaint = chart_bounds.clone();
+
+        // Left axis spacer width (from render_freq_spl_plot)
+        let left_margin = 80.0_f32;
+
+        // Helper to convert window position to chart-relative coordinates
+        // using the stored chart bounds
+        fn to_chart_coords(
+            pos: Point<Pixels>,
+            bounds: &Option<Bounds<Pixels>>,
+            left_margin: f32,
+            chart_width: f32,
+            chart_height: f32,
+        ) -> (f32, f32) {
+            if let Some(b) = bounds {
+                // Subtract wrapper origin to get element-relative coordinates
+                let rel_x = f32::from(pos.x) - f32::from(b.origin.x) - left_margin;
+                let rel_y = f32::from(pos.y) - f32::from(b.origin.y);
+                (rel_x.max(0.0).min(chart_width), rel_y.max(0.0).min(chart_height))
+            } else {
+                // Fallback: no bounds captured yet, use raw position with just X margin
+                let chart_x = (f32::from(pos.x) - left_margin).max(0.0).min(chart_width);
+                let chart_y = f32::from(pos.y).max(0.0).min(chart_height);
+                (chart_x, chart_y)
+            }
+        }
+
+        // Outer wrapper that captures bounds via on_children_prepainted
+        div()
+            .on_children_prepainted(move |children_bounds, _window, _cx| {
+                // The first child is our inner interactive div - store its bounds
+                if let Some(inner_bounds) = children_bounds.first() {
+                    *chart_bounds_for_prepaint.borrow_mut() = Some(*inner_bounds);
+                }
+            })
+            .child(
+                // Inner div with mouse handlers and id
+                div()
+                    .id(match chart_id {
+                        ChartId::FreqSpl => "freq-spl-chart",
+                        ChartId::SplContour => "spl-contour-chart",
+                        ChartId::DirectivityContour => "directivity-contour-chart",
+                    })
+                    .relative()
+                    .child(chart)
+                    // Mouse down to start brush
+                    .on_mouse_down(MouseButton::Left, move |event, _window, cx| {
+                        let pos = event.position;
+                        let bounds = chart_bounds.borrow();
+                        let (chart_x, chart_y) = to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
+
+                        entity.update(cx, |this, cx| {
+                            this.active_brush_chart = Some(chart_id);
+                            match chart_id {
+                                ChartId::FreqSpl => this.freq_spl_brush.start(chart_x as f64, chart_y as f64),
+                                ChartId::SplContour => this.spl_contour_brush.start(chart_x as f64, chart_y as f64),
+                                ChartId::DirectivityContour => this.directivity_contour_brush.start(chart_x as f64, chart_y as f64),
+                            }
+                            cx.notify();
+                        });
+                    })
+                    // Mouse move to update brush during drag
+                    .on_mouse_move(move |event, _window, cx| {
+                        entity2.update(cx, |this, cx| {
+                            if this.active_brush_chart == Some(chart_id) {
+                                let pos = event.position;
+                                let bounds = chart_bounds_for_move.borrow();
+                                let (chart_x, chart_y) = to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
+
+                                match chart_id {
+                                    ChartId::FreqSpl => this.freq_spl_brush.update(chart_x as f64, chart_y as f64),
+                                    ChartId::SplContour => this.spl_contour_brush.update(chart_x as f64, chart_y as f64),
+                                    ChartId::DirectivityContour => this.directivity_contour_brush.update(chart_x as f64, chart_y as f64),
+                                }
+                                cx.notify();
+                            }
+                        });
+                    })
+                    // Mouse up to end brush and apply zoom
+                    .on_mouse_up(MouseButton::Left, move |event, _window, cx| {
+                        entity3.update(cx, |this, cx| {
+                            if this.active_brush_chart == Some(chart_id) {
+                                let pos = event.position;
+                                let bounds = chart_bounds_for_up.borrow();
+                                let (chart_x, chart_y) = to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
+
+                                // Final update
+                                match chart_id {
+                                    ChartId::FreqSpl => this.freq_spl_brush.update(chart_x as f64, chart_y as f64),
+                                    ChartId::SplContour => this.spl_contour_brush.update(chart_x as f64, chart_y as f64),
+                                    ChartId::DirectivityContour => this.directivity_contour_brush.update(chart_x as f64, chart_y as f64),
+                                }
+
+                                // Get selection and apply zoom
+                                let selection = match chart_id {
+                                    ChartId::FreqSpl => this.freq_spl_brush.end(),
+                                    ChartId::SplContour => this.spl_contour_brush.end(),
+                                    ChartId::DirectivityContour => this.directivity_contour_brush.end(),
+                                };
+
+                                if let Some(sel) = selection {
+                                    // Check if selection is large enough
+                                    if sel.width() >= 5.0 && sel.height() >= 5.0 {
+                                        // Convert pixel selection to domain coordinates
+                                        // using the current zoom state and chart dimensions
+                                        this.apply_zoom_from_selection(chart_id, sel, chart_width, chart_height);
+                                    }
+                                }
+
+                                this.active_brush_chart = None;
+                                cx.notify();
+                            }
+                        });
+                    })
+                    // Double click to reset zoom
+                    .on_click(move |event, _window, cx| {
+                        // Check for double-click (click_count >= 2)
+                        if event.click_count() >= 2 {
+                            entity4.update(cx, |this, cx| {
+                                match chart_id {
+                                    ChartId::FreqSpl => this.freq_spl_zoom.reset(),
+                                    ChartId::SplContour => this.spl_contour_zoom.reset(),
+                                    ChartId::DirectivityContour => this.directivity_contour_zoom.reset(),
+                                }
+                                cx.notify();
+                            });
+                        }
+                    })
+            )
+    }
+
+    /// Convert pixel selection to domain coordinates and apply zoom
+    fn apply_zoom_from_selection(&mut self, chart_id: ChartId, sel: BrushSelection, chart_width: f32, chart_height: f32) {
+        let (zoom_state, is_log_x) = match chart_id {
+            ChartId::FreqSpl => (&mut self.freq_spl_zoom, true),
+            ChartId::SplContour => (&mut self.spl_contour_zoom, true),
+            ChartId::DirectivityContour => (&mut self.directivity_contour_zoom, true),
+        };
+
+        // Get current domain for scale inversion
+        let x_domain = zoom_state.x_domain();
+        let y_domain = zoom_state.y_domain();
+
+        // Y-axis uses inverted range: pixel 0 = top = domain max, pixel height = bottom = domain min
+        // This matches screen coordinates where Y increases downward but domain values increase upward
+        let y_scale = LinearScale::new()
+            .domain(y_domain.0, y_domain.1)
+            .range(chart_height as f64, 0.0);
+
+        // Convert pixel coordinates to domain
+        // The brush module now does direct inversion without Y-swap
+        let (x0, x1, y0, y1) = if is_log_x {
+            let x_scale = LogScale::new().domain(x_domain.0, x_domain.1).range(0.0, chart_width as f64);
+            let domain_sel = sel.to_domain(&x_scale, &y_scale);
+            (domain_sel.x0, domain_sel.x1, domain_sel.y0, domain_sel.y1)
+        } else {
+            let x_scale = LinearScale::new().domain(x_domain.0, x_domain.1).range(0.0, chart_width as f64);
+            let domain_sel = sel.to_domain(&x_scale, &y_scale);
+            (domain_sel.x0, domain_sel.x1, domain_sel.y0, domain_sel.y1)
+        };
+
+        // Ensure x0 < x1 and y0 < y1 for zoom_to
+        let (x_min, x_max) = if x0 < x1 { (x0, x1) } else { (x1, x0) };
+        let (y_min, y_max) = if y0 < y1 { (y0, y1) } else { (y1, y0) };
+
+        // Apply zoom
+        zoom_state.zoom_to(x_min, x_max, y_min, y_max);
+    }
+
     fn render_loading(&self) -> Div {
         div()
             .flex()
@@ -1089,7 +1507,7 @@ impl SpinoramaApp {
             )
     }
 
-    fn render_cea2034_plot(&self) -> Div {
+    fn render_cea2034_plot(&mut self, cx: &mut Context<Self>) -> Div {
         let colors = cea2034_colors();
 
         let chart_width = 800.0;
@@ -1159,6 +1577,20 @@ impl SpinoramaApp {
             tick_values: vec![-5.0, 0.0, 5.0, 10.0, 15.0, 20.0], // Only show labels up to 20
         });
 
+        // Create the chart
+        let chart = render_freq_spl_plot(
+            plot_curves,
+            self.freq_spl_zoom.x_domain(), // Frequency domain (zoomed)
+            self.freq_spl_zoom.y_domain(), // SPL domain (zoomed)
+            secondary_axis,
+            chart_width,
+            chart_height,
+            self.freq_spl_brush.current_selection().map(|sel| BrushOverlay { selection: sel }),
+        );
+
+        // Wrap with interactive handlers
+        let interactive_chart = self.wrap_freq_spl_chart_interactive(chart, ChartId::FreqSpl, chart_width, chart_height, cx);
+
         div()
             .flex()
             .flex_col()
@@ -1173,13 +1605,16 @@ impl SpinoramaApp {
                         self.selected_speaker.as_deref().unwrap_or("Unknown")
                     )),
             )
-            .child(render_freq_spl_plot(
-                plot_curves,
-                (-40.0, 10.0), // SPL domain
-                secondary_axis,
-                chart_width,
-                chart_height,
-            ))
+            .child(interactive_chart)
+            // Zoom status indicator
+            .when(self.freq_spl_zoom.is_zoomed(), |el| {
+                el.child(
+                    div()
+                        .text_sm()
+                        .text_color(rgb(0x666666))
+                        .child("Zoomed (double-click to reset)")
+                )
+            })
             // Legend
             .child(self.render_legend(&colors))
     }
@@ -1218,7 +1653,7 @@ impl SpinoramaApp {
             }))
     }
 
-    fn render_directivity_plot(&self, plane: &str) -> Div {
+    fn render_directivity_plot(&mut self, plane: &str, _cx: &mut Context<Self>) -> Div {
         // Create a viridis-like color palette for directivity
         let viridis_colors = vec![
             D3Color::from_hex(0x440154), // Dark purple
@@ -1281,6 +1716,22 @@ impl SpinoramaApp {
         let angle_min = curves.first().map(|c| c.angle).unwrap_or(-60.0);
         let angle_max = curves.last().map(|c| c.angle).unwrap_or(60.0);
 
+        // Create the chart
+        let chart = render_freq_spl_plot(
+            plot_curves,
+            self.freq_spl_zoom.x_domain(),
+            self.freq_spl_zoom.y_domain(),
+            None, // No secondary axis for directivity plots
+            chart_width,
+            chart_height,
+            self.freq_spl_brush
+                .current_selection()
+                .map(|sel| BrushOverlay { selection: sel }),
+        );
+
+        // Wrap with interactive handlers
+        let interactive_chart = self.wrap_freq_spl_chart_interactive(chart, ChartId::FreqSpl, chart_width, chart_height, _cx);
+
         div()
             .flex()
             .flex_col()
@@ -1300,13 +1751,16 @@ impl SpinoramaApp {
                         self.selected_speaker.as_deref().unwrap_or("Unknown")
                     )),
             )
-            .child(render_freq_spl_plot(
-                plot_curves,
-                (-40.0, 10.0), // SPL domain
-                None,          // No secondary axis for directivity plots
-                chart_width,
-                chart_height,
-            ))
+            .child(interactive_chart)
+            // Zoom status indicator
+            .when(self.freq_spl_zoom.is_zoomed(), |el| {
+                el.child(
+                    div()
+                        .text_sm()
+                        .text_color(rgb(0x666666))
+                        .child("Zoomed (double-click to reset)")
+                )
+            })
             // Angle legend
             .child({
                 let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
@@ -1349,46 +1803,90 @@ impl SpinoramaApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let entity = cx.entity().clone();
+        let entity_for_colormap = cx.entity().clone();
+        let colormap = self.contour_colormap;
 
         div()
             .id(id)
             .flex()
             .items_center()
-            .gap_2()
+            .gap_4()
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
-                    .child("Render:"),
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Render:"),
+                    )
+                    .child(
+                        div()
+                            .id(ElementId::Name(format!("{}-btn", id).into()))
+                            .flex()
+                            .items_center()
+                            .px_3()
+                            .py_1()
+                            .bg(rgb(0xe0e0e0))
+                            .border_1()
+                            .border_color(rgb(0xcccccc))
+                            .rounded_md()
+                            .cursor_pointer()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(0x333333))
+                            .hover(|s| s.bg(rgb(0xd0d0d0)))
+                            .child(mode.label())
+                            .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                                entity.update(cx, |this, cx| {
+                                    on_click(this, cx);
+                                    cx.notify();
+                                });
+                            }),
+                    ),
             )
             .child(
                 div()
-                    .id(ElementId::Name(format!("{}-btn", id).into()))
                     .flex()
                     .items_center()
-                    .px_3()
-                    .py_1()
-                    .bg(rgb(0xe0e0e0))
-                    .border_1()
-                    .border_color(rgb(0xcccccc))
-                    .rounded_md()
-                    .cursor_pointer()
-                    .text_sm()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(rgb(0x333333))
-                    .hover(|s| s.bg(rgb(0xd0d0d0)))
-                    .child(mode.label())
-                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
-                        entity.update(cx, |this, cx| {
-                            on_click(this, cx);
-                            cx.notify();
-                        });
-                    }),
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Colormap:"),
+                    )
+                    .child(
+                        div()
+                            .id(ElementId::Name(format!("{}-colormap-btn", id).into()))
+                            .flex()
+                            .items_center()
+                            .px_3()
+                            .py_1()
+                            .bg(rgb(0xe0e0e0))
+                            .border_1()
+                            .border_color(rgb(0xcccccc))
+                            .rounded_md()
+                            .cursor_pointer()
+                            .text_sm()
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(0x333333))
+                            .hover(|s| s.bg(rgb(0xd0d0d0)))
+                            .child(colormap.label())
+                            .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                                entity_for_colormap.update(cx, |this, cx| {
+                                    this.contour_colormap = this.contour_colormap.next();
+                                    cx.notify();
+                                });
+                            }),
+                    ),
             )
     }
 
     /// Render contour plot from SPL Horizontal Contour data (new format with full -180 to +180 range)
-    fn render_contour_from_contour_data(&self, title: &str, render_mode: ContourRenderMode) -> Option<Div> {
+    fn render_contour_from_contour_data(&self, title: &str, render_mode: ContourRenderMode, colormap: Colormap) -> Option<Div> {
         let theme = DefaultAxisTheme;
 
         let contour_data = self.contour_data.as_ref()?;
@@ -1461,7 +1959,34 @@ impl SpinoramaApp {
             .x_values(log_freq_values)
             .y_values(contour_data.angles.clone());
 
-        let contours = generator.contours(&contour_data.spl, &thresholds);
+        // Generate contours and heatmap data based on render mode
+        let is_isoline = render_mode == ContourRenderMode::Isoline;
+        let is_surface = render_mode == ContourRenderMode::Surface;
+        let is_heatmap = render_mode == ContourRenderMode::Heatmap;
+        // Generate contours for Isoline mode
+        let contours = if is_isoline {
+            Some(generator.contours(&contour_data.spl, &thresholds))
+        } else {
+            None
+        };
+        // Generate contour bands for Surface mode (filled polygons between levels)
+        let contour_bands = if is_surface {
+            Some(generator.contour_bands(&contour_data.spl, &thresholds))
+        } else {
+            None
+        };
+        // For heatmap mode, use HeatmapData (renders using quads without anti-aliasing gaps)
+        let heatmap_data = if is_heatmap {
+            // Use log-transformed frequencies for the heatmap x-values
+            let log_freq_values: Vec<f64> = contour_data.freq.iter().map(|f| f.ln()).collect();
+            Some(HeatmapData::new(
+                log_freq_values,
+                contour_data.angles.clone(),
+                contour_data.spl.clone(),
+            ))
+        } else {
+            None
+        };
 
         let chart_width = 800.0;
         let chart_height = 300.0;
@@ -1476,13 +2001,13 @@ impl SpinoramaApp {
             .range(0.0, chart_height as f64);
 
         // Configure rendering based on mode
-        let is_surface = render_mode == ContourRenderMode::Surface;
+        let color_scale = colormap.color_scale();
         let contour_config = ContourConfig::new()
-            .stroke_width(if is_surface { 0.5 } else { 1.5 })
+            .stroke_width(if is_isoline { 1.5 } else { 0.5 })
             .fill(is_surface)
-            .fill_opacity(if is_surface { 0.6 } else { 0.0 })
-            .stroke_opacity(if is_surface { 0.8 } else { 1.0 })
-            .color_scale(move |t| viridis_color_scale()(t));
+            .fill_opacity(if is_surface { 0.6 } else if is_heatmap { 1.0 } else { 0.0 })
+            .stroke_opacity(if is_isoline { 1.0 } else { 0.8 })
+            .color_scale(color_scale);
 
         // Build frequency tick values in log space
         let freq_ticks: Vec<f64> = [20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0]
@@ -1525,25 +2050,69 @@ impl SpinoramaApp {
                                         .h(px(chart_height as f32))
                                         .relative()
                                         .bg(rgb(0xf8f8f8))
-                                        .child(render_grid(
-                                            &freq_scale,
-                                            &angle_scale,
-                                            &GridConfig::with_lines()
-                                                .with_vertical_values(freq_ticks.clone()),
-                                            chart_width,
-                                            chart_height,
-                                            &theme,
-                                        ))
-                                        .child(
-                                            render_contour(
-                                                contours,
+                                        // In Isoline mode, render grid first (underneath lines)
+                                        .when(is_isoline, |el| {
+                                            el.child(render_grid(
                                                 &freq_scale,
                                                 &angle_scale,
-                                                &contour_config,
+                                                &GridConfig::with_lines()
+                                                    .with_vertical_values(freq_ticks.clone()),
+                                                chart_width,
+                                                chart_height,
+                                                &theme,
+                                            ))
+                                        })
+                                        // Render contour bands (for Surface mode) - filled polygons
+                                        .when_some(contour_bands.clone(), |el, bands| {
+                                            el.child(
+                                                render_contour_bands(
+                                                    bands,
+                                                    &freq_scale,
+                                                    &angle_scale,
+                                                    &contour_config,
+                                                )
+                                                .value_range(spl_min, spl_max)
+                                                .height(px(chart_height as f32)),
                                             )
-                                            .value_range(spl_min, spl_max)
-                                            .height(px(chart_height as f32)),
-                                        ),
+                                        })
+                                        // Render heatmap (for Heatmap mode) - uses quads, no anti-aliasing gaps
+                                        .when_some(heatmap_data.clone(), |el, data| {
+                                            el.child(
+                                                render_heatmap(
+                                                    data,
+                                                    &freq_scale,
+                                                    &angle_scale,
+                                                    &contour_config,
+                                                )
+                                                .value_range(spl_min, spl_max)
+                                                .height(px(chart_height as f32)),
+                                            )
+                                        })
+                                        // In Surface/Heatmap mode, render grid on top
+                                        .when(is_surface || is_heatmap, |el| {
+                                            el.child(render_grid(
+                                                &freq_scale,
+                                                &angle_scale,
+                                                &GridConfig::with_lines()
+                                                    .with_vertical_values(freq_ticks.clone()),
+                                                chart_width,
+                                                chart_height,
+                                                &theme,
+                                            ))
+                                        })
+                                        // Render contour lines (for Isoline mode)
+                                        .when_some(contours.clone(), |el, c| {
+                                            el.child(
+                                                render_contour(
+                                                    c,
+                                                    &freq_scale,
+                                                    &angle_scale,
+                                                    &contour_config,
+                                                )
+                                                .value_range(spl_min, spl_max)
+                                                .height(px(chart_height as f32)),
+                                            )
+                                        }),
                                 ),
                         )
                         .child(
@@ -1581,7 +2150,7 @@ impl SpinoramaApp {
                         .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
                         .children((0..15).map(|i| {
                             let t = i as f64 / 14.0;
-                            let color = viridis_color_scale()(t);
+                            let color = colormap.color_scale()(t);
                             let (r, g, b) = (
                                 (color.r * 255.0) as u32,
                                 (color.g * 255.0) as u32,
@@ -1595,7 +2164,7 @@ impl SpinoramaApp {
     }
 
     /// Render contour plot from directivity data (old format, typically -60 to +60 range)
-    fn render_contour_from_directivity(&self, title: &str, render_mode: ContourRenderMode) -> Option<Div> {
+    fn render_contour_from_directivity(&self, title: &str, render_mode: ContourRenderMode, colormap: Colormap) -> Option<Div> {
         let theme = DefaultAxisTheme;
 
         let directivity = self.directivity_data.as_ref()?;
@@ -1666,13 +2235,38 @@ impl SpinoramaApp {
         let log_freq_max = 20000.0_f64.ln();
 
         let generator = ContourGenerator::new(freq_count, angle_count)
-            .x_values(log_freq_values)
-            .y_values(angles);
+            .x_values(log_freq_values.clone())
+            .y_values(angles.clone());
 
-        let contours = generator.contours(&grid_values, &thresholds);
+        // Generate contours and heatmap data based on render mode
+        let is_isoline = render_mode == ContourRenderMode::Isoline;
+        let is_surface = render_mode == ContourRenderMode::Surface;
+        let is_heatmap = render_mode == ContourRenderMode::Heatmap;
+        // Generate contours for Isoline mode
+        let contours = if is_isoline {
+            Some(generator.contours(&grid_values, &thresholds))
+        } else {
+            None
+        };
+        // Generate contour bands for Surface mode (filled polygons between levels)
+        let contour_bands = if is_surface {
+            Some(generator.contour_bands(&grid_values, &thresholds))
+        } else {
+            None
+        };
+        // For heatmap mode, use HeatmapData (renders using quads without anti-aliasing gaps)
+        let heatmap_data = if is_heatmap {
+            Some(HeatmapData::new(
+                log_freq_values.clone(),
+                angles.clone(),
+                grid_values.clone(),
+            ))
+        } else {
+            None
+        };
 
         let chart_width = 800.0;
-        let chart_height = 300.0;
+        let chart_height = 500.0;
 
         let freq_scale = LinearScale::new()
             .domain(log_freq_min, log_freq_max)
@@ -1683,13 +2277,13 @@ impl SpinoramaApp {
             .range(0.0, chart_height as f64);
 
         // Configure rendering based on mode
-        let is_surface = render_mode == ContourRenderMode::Surface;
+        let color_scale = colormap.color_scale();
         let contour_config = ContourConfig::new()
-            .stroke_width(if is_surface { 0.5 } else { 1.5 })
+            .stroke_width(if is_isoline { 1.5 } else { 0.5 })
             .fill(is_surface)
-            .fill_opacity(if is_surface { 0.6 } else { 0.0 })
-            .stroke_opacity(if is_surface { 0.8 } else { 1.0 })
-            .color_scale(move |t| viridis_color_scale()(t));
+            .fill_opacity(if is_surface { 0.6 } else if is_heatmap { 1.0 } else { 0.0 })
+            .stroke_opacity(if is_isoline { 1.0 } else { 0.8 })
+            .color_scale(color_scale);
 
         let freq_ticks: Vec<f64> = vec![
             100.0_f64.ln(),
@@ -1736,25 +2330,69 @@ impl SpinoramaApp {
                                         .h(px(chart_height as f32))
                                         .relative()
                                         .bg(rgb(0xf8f8f8))
-                                        .child(render_grid(
-                                            &freq_scale,
-                                            &angle_scale,
-                                            &GridConfig::with_lines()
-                                                .with_vertical_values(freq_ticks.clone()),
-                                            chart_width,
-                                            chart_height,
-                                            &theme,
-                                        ))
-                                        .child(
-                                            render_contour(
-                                                contours,
+                                        // In Isoline mode, render grid first (underneath lines)
+                                        .when(is_isoline, |el| {
+                                            el.child(render_grid(
                                                 &freq_scale,
                                                 &angle_scale,
-                                                &contour_config,
+                                                &GridConfig::with_lines()
+                                                    .with_vertical_values(freq_ticks.clone()),
+                                                chart_width,
+                                                chart_height,
+                                                &theme,
+                                            ))
+                                        })
+                                        // Render contour bands (for Surface mode) - filled polygons
+                                        .when_some(contour_bands.clone(), |el, bands| {
+                                            el.child(
+                                                render_contour_bands(
+                                                    bands,
+                                                    &freq_scale,
+                                                    &angle_scale,
+                                                    &contour_config,
+                                                )
+                                                .value_range(spl_min, spl_max)
+                                                .height(px(chart_height as f32)),
                                             )
-                                            .value_range(spl_min, spl_max)
-                                            .height(px(chart_height as f32)),
-                                        ),
+                                        })
+                                        // Render heatmap (for Heatmap mode) - uses quads, no anti-aliasing gaps
+                                        .when_some(heatmap_data.clone(), |el, data| {
+                                            el.child(
+                                                render_heatmap(
+                                                    data,
+                                                    &freq_scale,
+                                                    &angle_scale,
+                                                    &contour_config,
+                                                )
+                                                .value_range(spl_min, spl_max)
+                                                .height(px(chart_height as f32)),
+                                            )
+                                        })
+                                        // In Surface/Heatmap mode, render grid on top
+                                        .when(is_surface || is_heatmap, |el| {
+                                            el.child(render_grid(
+                                                &freq_scale,
+                                                &angle_scale,
+                                                &GridConfig::with_lines()
+                                                    .with_vertical_values(freq_ticks.clone()),
+                                                chart_width,
+                                                chart_height,
+                                                &theme,
+                                            ))
+                                        })
+                                        // Render contour lines (for Isoline mode)
+                                        .when_some(contours.clone(), |el, c| {
+                                            el.child(
+                                                render_contour(
+                                                    c,
+                                                    &freq_scale,
+                                                    &angle_scale,
+                                                    &contour_config,
+                                                )
+                                                .value_range(spl_min, spl_max)
+                                                .height(px(chart_height as f32)),
+                                            )
+                                        }),
                                 ),
                         )
                         .child(
@@ -1792,7 +2430,7 @@ impl SpinoramaApp {
                         .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
                         .children((0..15).map(|i| {
                             let t = i as f64 / 14.0;
-                            let color = viridis_color_scale()(t);
+                            let color = colormap.color_scale()(t);
                             let (r, g, b) = (
                                 (color.r * 255.0) as u32,
                                 (color.g * 255.0) as u32,
@@ -1827,7 +2465,7 @@ impl SpinoramaApp {
             spl_mode,
             "spl-contour-toggle",
             |app, _cx| {
-                app.contour_mode_spl = app.contour_mode_spl.toggle();
+                app.contour_mode_spl = app.contour_mode_spl.next();
             },
             cx,
         );
@@ -1836,14 +2474,15 @@ impl SpinoramaApp {
             directivity_mode,
             "directivity-contour-toggle",
             |app, _cx| {
-                app.contour_mode_directivity = app.contour_mode_directivity.toggle();
+                app.contour_mode_directivity = app.contour_mode_directivity.next();
             },
             cx,
         );
 
         // Pre-render the contour plots
-        let spl_contour = self.render_contour_from_contour_data("SPL Horizontal Contour (Full 360°)", spl_mode);
-        let directivity_contour = self.render_contour_from_directivity("Directivity Contour (SPL Horizontal)", directivity_mode);
+        let colormap = self.contour_colormap;
+        let spl_contour = self.render_contour_from_contour_data("SPL Horizontal Contour (Full 360°)", spl_mode, colormap);
+        let directivity_contour = self.render_contour_from_directivity("Directivity Contour (SPL Horizontal)", directivity_mode, colormap);
 
         div()
             .flex()

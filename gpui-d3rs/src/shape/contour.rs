@@ -481,3 +481,547 @@ pub fn heat_color_scale() -> impl Fn(f64) -> D3Color + Send + Sync {
         }
     }
 }
+
+// ============================================================================
+// Contour Band Element (for filled contours between threshold levels)
+// ============================================================================
+
+use crate::contour::ContourBand;
+
+/// A custom element for rendering filled contour bands
+pub struct ContourBandElement<XS, YS> {
+    /// The contour bands to render
+    bands: Arc<[ContourBand]>,
+    /// X scale
+    x_scale: XS,
+    /// Y scale
+    y_scale: YS,
+    /// Configuration
+    config: ContourConfig,
+    /// Value range for color normalization
+    value_range: (f64, f64),
+    /// Element height
+    height: Pixels,
+}
+
+impl<XS, YS> ContourBandElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone,
+    YS: Scale<f64, f64> + Clone,
+{
+    /// Create a new contour band element
+    pub fn new(bands: impl Into<Arc<[ContourBand]>>, x_scale: XS, y_scale: YS) -> Self {
+        let bands = bands.into();
+
+        // Calculate value range from bands
+        let value_range = if bands.is_empty() {
+            (0.0, 1.0)
+        } else {
+            let min = bands.iter().map(|b| b.lower).fold(f64::INFINITY, f64::min);
+            let max = bands.iter().map(|b| b.upper).fold(f64::NEG_INFINITY, f64::max);
+            (min, max)
+        };
+
+        Self {
+            bands,
+            x_scale,
+            y_scale,
+            config: ContourConfig::default(),
+            value_range,
+            height: px(400.0),
+        }
+    }
+
+    /// Set the configuration
+    pub fn config(mut self, config: ContourConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// Set the value range for color normalization
+    pub fn value_range(mut self, min: f64, max: f64) -> Self {
+        self.value_range = (min, max);
+        self
+    }
+
+    /// Set the element height
+    pub fn height(mut self, height: Pixels) -> Self {
+        self.height = height;
+        self
+    }
+
+    /// Normalize a value to 0.0-1.0 range
+    fn normalize_value(&self, value: f64) -> f64 {
+        let (min, max) = self.value_range;
+        if (max - min).abs() < 1e-10 {
+            0.5
+        } else {
+            (value - min) / (max - min)
+        }
+    }
+
+    /// Get fill color for a band's mid value
+    fn get_fill_color(&self, mid_value: f64) -> D3Color {
+        let t = self.normalize_value(mid_value);
+        if let Some(ref scale) = self.config.color_scale {
+            scale(t)
+        } else {
+            self.config.fill_color
+        }
+    }
+}
+
+impl<XS, YS> IntoElement for ContourBandElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone + 'static,
+    YS: Scale<f64, f64> + Clone + 'static,
+{
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl<XS, YS> Element for ContourBandElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone + 'static,
+    YS: Scale<f64, f64> + Clone + 'static,
+{
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let layout_id = window.request_layout(
+            Style {
+                size: size(relative(1.0).into(), self.height.into()),
+                min_size: size(px(100.0).into(), px(100.0).into()),
+                ..Default::default()
+            },
+            [],
+            cx,
+        );
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Self::PrepaintState {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+        let origin_x: f32 = bounds.origin.x.into();
+        let origin_y: f32 = bounds.origin.y.into();
+        let width: f32 = bounds.size.width.into();
+        let height: f32 = bounds.size.height.into();
+
+        // Get the range (screen coordinates) for proper normalization
+        let (x_range_min, x_range_max) = self.x_scale.range();
+        let (y_range_min, y_range_max) = self.y_scale.range();
+        let x_range_span = x_range_max - x_range_min;
+        let y_range_span = (y_range_max - y_range_min).abs();
+
+        // Paint each band (from lowest to highest value for proper layering)
+        for band in self.bands.iter() {
+            let fill_color = self.get_fill_color(band.mid_value());
+
+            for ring in &band.polygons {
+                if ring.points.len() < 3 {
+                    continue;
+                }
+
+                // Convert ring points to screen coordinates using the scale
+                let screen_points: Vec<Point<Pixels>> = ring
+                    .points
+                    .iter()
+                    .map(|p| {
+                        // Use scale.scale() to transform data coordinates to range coordinates
+                        let x_scaled = self.x_scale.scale(p.x);
+                        let y_scaled = self.y_scale.scale(p.y);
+
+                        // Normalize to 0-1 based on range
+                        let x_norm = ((x_scaled - x_range_min) / x_range_span) as f32;
+                        // Invert Y for screen coordinates (0 at top, 1 at bottom)
+                        let y_norm = 1.0 - ((y_scaled - y_range_min) / y_range_span) as f32;
+
+                        let screen_x = origin_x + x_norm * width;
+                        let screen_y = origin_y + y_norm * height;
+                        point(px(screen_x), px(screen_y))
+                    })
+                    .collect();
+
+                // Paint fill using PathBuilder
+                if screen_points.len() >= 3 {
+                    let mut fill_rgba = fill_color.to_rgba();
+                    fill_rgba.a *= self.config.fill_opacity;
+
+                    // Draw fill
+                    let mut builder = PathBuilder::fill();
+                    builder.move_to(screen_points[0]);
+                    for pt in &screen_points[1..] {
+                        builder.line_to(*pt);
+                    }
+
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, fill_rgba);
+                    }
+
+                    // Draw a stroke with the same color to eliminate anti-aliasing gaps
+                    // between adjacent bands. Use 2px stroke for better coverage.
+                    let stroke_color = fill_rgba;
+                    let mut stroke_builder = PathBuilder::stroke(px(2.0));
+                    stroke_builder.move_to(screen_points[0]);
+                    for pt in &screen_points[1..] {
+                        stroke_builder.line_to(*pt);
+                    }
+                    stroke_builder.line_to(screen_points[0]); // Close the path
+
+                    if let Ok(stroke_path) = stroke_builder.build() {
+                        window.paint_path(stroke_path, stroke_color);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Render filled contour bands using scales
+pub fn render_contour_bands<XS, YS>(
+    bands: impl Into<Arc<[ContourBand]>>,
+    x_scale: &XS,
+    y_scale: &YS,
+    config: &ContourConfig,
+) -> ContourBandElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone,
+    YS: Scale<f64, f64> + Clone,
+{
+    ContourBandElement::new(bands, x_scale.clone(), y_scale.clone()).config(config.clone())
+}
+
+// ============================================================================
+// Heatmap Element (for gap-free surface rendering using quads)
+// ============================================================================
+
+/// Data for a heatmap (2D grid of values)
+#[derive(Clone)]
+pub struct HeatmapData {
+    /// X coordinates (column positions)
+    pub x_values: Vec<f64>,
+    /// Y coordinates (row positions)
+    pub y_values: Vec<f64>,
+    /// Values in row-major order: values[y * width + x]
+    pub values: Vec<f64>,
+    /// Number of columns
+    pub width: usize,
+    /// Number of rows
+    pub height: usize,
+}
+
+impl HeatmapData {
+    /// Create heatmap data from a 2D grid
+    pub fn new(x_values: Vec<f64>, y_values: Vec<f64>, values: Vec<f64>) -> Self {
+        let width = x_values.len();
+        let height = y_values.len();
+        Self {
+            x_values,
+            y_values,
+            values,
+            width,
+            height,
+        }
+    }
+
+    /// Get value at grid position
+    pub fn get(&self, x: usize, y: usize) -> Option<f64> {
+        if x < self.width && y < self.height {
+            Some(self.values[y * self.width + x])
+        } else {
+            None
+        }
+    }
+}
+
+/// A custom element for rendering heatmaps as colored quads
+/// This eliminates anti-aliasing gaps between cells
+pub struct HeatmapElement<XS, YS> {
+    /// The heatmap data
+    data: HeatmapData,
+    /// X scale
+    x_scale: XS,
+    /// Y scale
+    y_scale: YS,
+    /// Configuration
+    config: ContourConfig,
+    /// Value range for color normalization
+    value_range: (f64, f64),
+    /// Element height
+    height: Pixels,
+}
+
+impl<XS, YS> HeatmapElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone,
+    YS: Scale<f64, f64> + Clone,
+{
+    /// Create a new heatmap element
+    pub fn new(data: HeatmapData, x_scale: XS, y_scale: YS) -> Self {
+        // Calculate value range from data
+        let value_range = if data.values.is_empty() {
+            (0.0, 1.0)
+        } else {
+            let min = data.values.iter().cloned().fold(f64::INFINITY, f64::min);
+            let max = data.values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            (min, max)
+        };
+
+        Self {
+            data,
+            x_scale,
+            y_scale,
+            config: ContourConfig::default(),
+            value_range,
+            height: px(400.0),
+        }
+    }
+
+    /// Set the configuration
+    pub fn config(mut self, config: ContourConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// Set the value range for color normalization
+    pub fn value_range(mut self, min: f64, max: f64) -> Self {
+        self.value_range = (min, max);
+        self
+    }
+
+    /// Set the element height
+    pub fn height(mut self, height: Pixels) -> Self {
+        self.height = height;
+        self
+    }
+
+    /// Normalize a value to 0.0-1.0 range
+    fn normalize_value(&self, value: f64) -> f64 {
+        let (min, max) = self.value_range;
+        if (max - min).abs() < 1e-10 {
+            0.5
+        } else {
+            (value - min) / (max - min)
+        }
+    }
+
+    /// Get fill color for a value
+    fn get_fill_color(&self, value: f64) -> D3Color {
+        let t = self.normalize_value(value);
+        if let Some(ref scale) = self.config.color_scale {
+            scale(t)
+        } else {
+            self.config.fill_color
+        }
+    }
+}
+
+impl<XS, YS> IntoElement for HeatmapElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone + 'static,
+    YS: Scale<f64, f64> + Clone + 'static,
+{
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl<XS, YS> Element for HeatmapElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone + 'static,
+    YS: Scale<f64, f64> + Clone + 'static,
+{
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let layout_id = window.request_layout(
+            Style {
+                size: size(relative(1.0).into(), self.height.into()),
+                min_size: size(px(100.0).into(), px(100.0).into()),
+                ..Default::default()
+            },
+            [],
+            cx,
+        );
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Self::PrepaintState {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+        let origin_x: f32 = bounds.origin.x.into();
+        let origin_y: f32 = bounds.origin.y.into();
+        let width: f32 = bounds.size.width.into();
+        let height: f32 = bounds.size.height.into();
+
+        // Get the range (screen coordinates) for proper normalization
+        let (x_range_min, x_range_max) = self.x_scale.range();
+        let (y_range_min, y_range_max) = self.y_scale.range();
+        let x_range_span = x_range_max - x_range_min;
+        let y_range_span = (y_range_max - y_range_min).abs();
+
+        // Paint each cell as a quad (rectangle)
+        for yi in 0..self.data.height {
+            for xi in 0..self.data.width {
+                let value = match self.data.get(xi, yi) {
+                    Some(v) if v.is_finite() => v,
+                    _ => continue,
+                };
+
+                // Get cell boundaries in data coordinates
+                let x0_data = self.data.x_values[xi];
+                let x1_data = if xi + 1 < self.data.width {
+                    self.data.x_values[xi + 1]
+                } else {
+                    // Extrapolate for last column
+                    if xi > 0 {
+                        x0_data + (x0_data - self.data.x_values[xi - 1])
+                    } else {
+                        x0_data * 1.1
+                    }
+                };
+
+                let y0_data = self.data.y_values[yi];
+                let y1_data = if yi + 1 < self.data.height {
+                    self.data.y_values[yi + 1]
+                } else {
+                    // Extrapolate for last row
+                    if yi > 0 {
+                        y0_data + (y0_data - self.data.y_values[yi - 1])
+                    } else {
+                        y0_data * 1.1
+                    }
+                };
+
+                // Transform to screen coordinates using the scale
+                let x0_scaled = self.x_scale.scale(x0_data);
+                let x1_scaled = self.x_scale.scale(x1_data);
+                let y0_scaled = self.y_scale.scale(y0_data);
+                let y1_scaled = self.y_scale.scale(y1_data);
+
+                // Normalize to 0-1 based on range
+                let x0_norm = ((x0_scaled - x_range_min) / x_range_span) as f32;
+                let x1_norm = ((x1_scaled - x_range_min) / x_range_span) as f32;
+                // Invert Y for screen coordinates (0 at top, 1 at bottom)
+                let y0_norm = 1.0 - ((y0_scaled - y_range_min) / y_range_span) as f32;
+                let y1_norm = 1.0 - ((y1_scaled - y_range_min) / y_range_span) as f32;
+
+                // Convert to screen pixels
+                let screen_x0 = origin_x + x0_norm.min(x1_norm) * width;
+                let screen_x1 = origin_x + x0_norm.max(x1_norm) * width;
+                let screen_y0 = origin_y + y0_norm.min(y1_norm) * height;
+                let screen_y1 = origin_y + y0_norm.max(y1_norm) * height;
+
+                // Ensure minimum cell size of 1 pixel and slight overlap to prevent gaps
+                let cell_width = (screen_x1 - screen_x0).max(1.0) + 0.5;
+                let cell_height = (screen_y1 - screen_y0).max(1.0) + 0.5;
+
+                // Get color for this cell
+                let fill_color = self.get_fill_color(value);
+                let mut fill_rgba = fill_color.to_rgba();
+                fill_rgba.a *= self.config.fill_opacity;
+
+                // Paint as a quad (rectangle) - no anti-aliasing gaps!
+                let cell_bounds = Bounds::new(
+                    point(px(screen_x0), px(screen_y0)),
+                    size(px(cell_width), px(cell_height)),
+                );
+
+                window.paint_quad(PaintQuad {
+                    bounds: cell_bounds,
+                    corner_radii: Corners::default(),
+                    background: fill_rgba.into(),
+                    border_widths: Edges::default(),
+                    border_color: gpui::transparent_black(),
+                    border_style: Default::default(),
+                });
+            }
+        }
+    }
+}
+
+/// Render a heatmap (2D grid of colored cells) using scales
+pub fn render_heatmap<XS, YS>(
+    data: HeatmapData,
+    x_scale: &XS,
+    y_scale: &YS,
+    config: &ContourConfig,
+) -> HeatmapElement<XS, YS>
+where
+    XS: Scale<f64, f64> + Clone,
+    YS: Scale<f64, f64> + Clone,
+{
+    HeatmapElement::new(data, x_scale.clone(), y_scale.clone()).config(config.clone())
+}

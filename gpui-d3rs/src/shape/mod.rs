@@ -66,7 +66,8 @@ mod scatter;
 pub use bar::{render_bars, BarConfig, BarDatum};
 #[cfg(feature = "gpui")]
 pub use contour::{
-    heat_color_scale, render_contour, viridis_color_scale, ContourConfig, ContourElement,
+    heat_color_scale, render_contour, render_contour_bands, render_heatmap, viridis_color_scale,
+    ContourBandElement, ContourConfig, ContourElement, HeatmapData, HeatmapElement,
 };
 #[cfg(feature = "gpui")]
 pub use line::{render_line, CurveType, LineConfig, LinePoint};
