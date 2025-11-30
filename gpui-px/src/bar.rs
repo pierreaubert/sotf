@@ -2,17 +2,19 @@
 
 use crate::error::ChartError;
 use crate::{
-    validate_data_array, validate_data_length, validate_dimensions, DEFAULT_COLOR, DEFAULT_HEIGHT,
-    DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
+    DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
+    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_data_length,
+    validate_dimensions,
 };
 use d3rs::color::D3Color;
 use d3rs::scale::LinearScale;
-use d3rs::shape::{render_bars, BarConfig, BarDatum};
-use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::shape::{BarConfig, BarDatum, render_bars};
+use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::*;
 
 /// Bar chart builder.
+#[derive(Debug, Clone)]
 pub struct BarChart {
     categories: Vec<String>,
     values: Vec<f64>,
@@ -32,7 +34,15 @@ impl BarChart {
         self
     }
 
-    /// Set bar color (hex value).
+    /// Set bar color as 24-bit RGB hex value (format: 0xRRGGBB).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::bar;
+    /// let chart = bar(&["A"], &[1.0])
+    ///     .color(0x2ca02c)  // Plotly green
+    ///     .build();
+    /// ```
     pub fn color(mut self, hex: u32) -> Self {
         self.color = hex;
         self
@@ -67,7 +77,9 @@ impl BarChart {
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
         // Validate inputs
         if self.categories.is_empty() {
-            return Err(ChartError::EmptyData { field: "categories" });
+            return Err(ChartError::EmptyData {
+                field: "categories",
+            });
         }
         validate_data_array(&self.values, "values")?;
         validate_data_length(
@@ -86,11 +98,13 @@ impl BarChart {
         };
         let plot_height = self.height - title_height;
 
-        // Calculate y domain with padding (always include 0 for bar charts)
-        let y_min = self.values.iter().copied().fold(f64::INFINITY, f64::min);
-        let y_max = self.values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let y_domain_min = if y_min > 0.0 { 0.0 } else { y_min * 1.05 };
-        let y_domain_max = if y_max < 0.0 { 0.0 } else { y_max * 1.05 };
+        // Calculate y domain with padding, always including 0 for bar charts
+        let (mut y_min, mut y_max) = extent_padded(&self.values, DEFAULT_PADDING_FRACTION);
+        // Bar charts should always include the zero baseline
+        y_min = y_min.min(0.0);
+        y_max = y_max.max(0.0);
+        let y_domain_min = y_min;
+        let y_domain_max = y_max;
 
         // Create scales
         let x_scale = LinearScale::new()
@@ -128,10 +142,8 @@ impl BarChart {
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config = VectorFontConfig::horizontal(
-                DEFAULT_TITLE_FONT_SIZE,
-                hsla(0.0, 0.0, 0.2, 1.0),
-            );
+            let font_config =
+                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -183,5 +195,89 @@ pub fn bar<S: AsRef<str>>(categories: &[S], values: &[f64]) -> BarChart {
         border_radius: 2.0,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bar_empty_categories() {
+        let empty_categories: Vec<&str> = vec![];
+        let result = bar(&empty_categories, &[1.0, 2.0, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::EmptyData {
+                field: "categories"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_bar_empty_values() {
+        let result = bar(&["A", "B", "C"], &[]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::EmptyData { field: "values" })
+        ));
+    }
+
+    #[test]
+    fn test_bar_data_length_mismatch() {
+        let result = bar(&["A", "B"], &[1.0, 2.0, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::DataLengthMismatch {
+                x_field: "categories",
+                y_field: "values",
+                x_len: 2,
+                y_len: 3,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_bar_invalid_value_nan() {
+        let result = bar(&["A", "B", "C"], &[1.0, f64::NAN, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "values",
+                reason: "contains NaN or Infinity"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_bar_successful_build() {
+        let categories = vec!["A", "B", "C", "D"];
+        let values = vec![10.0, 25.0, 15.0, 30.0];
+        let result = bar(&categories, &values)
+            .title("Test Bar Chart")
+            .color(0x2ca02c)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bar_negative_values() {
+        let categories = vec!["A", "B", "C"];
+        let values = vec![-5.0, 10.0, -3.0];
+        let result = bar(&categories, &values).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bar_builder_chain() {
+        let result = bar(&["X", "Y", "Z"], &[1.0, 2.0, 3.0])
+            .title("My Bar Chart")
+            .color(0xff0000)
+            .opacity(0.9)
+            .bar_gap(5.0)
+            .border_radius(4.0)
+            .size(800.0, 600.0)
+            .build();
+        assert!(result.is_ok());
     }
 }

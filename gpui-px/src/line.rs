@@ -2,18 +2,19 @@
 
 use crate::error::ChartError;
 use crate::{
-    extent_padded, validate_data_array, validate_data_length, validate_dimensions,
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
+    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_data_length,
+    validate_dimensions,
 };
 use d3rs::color::D3Color;
 use d3rs::scale::LinearScale;
-use d3rs::shape::{render_line, CurveType, LineConfig, LinePoint};
-use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::shape::{CurveType, LineConfig, LinePoint, render_line};
+use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::*;
 
 /// Line chart builder.
+#[derive(Debug, Clone)]
 pub struct LineChart {
     x: Vec<f64>,
     y: Vec<f64>,
@@ -34,7 +35,15 @@ impl LineChart {
         self
     }
 
-    /// Set line color (hex value).
+    /// Set line color as 24-bit RGB hex value (format: 0xRRGGBB).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::line;
+    /// let chart = line(&[1.0], &[1.0])
+    ///     .color(0xff7f0e)  // Plotly orange
+    ///     .build();
+    /// ```
     pub fn color(mut self, hex: u32) -> Self {
         self.color = hex;
         self
@@ -128,10 +137,8 @@ impl LineChart {
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config = VectorFontConfig::horizontal(
-                DEFAULT_TITLE_FONT_SIZE,
-                hsla(0.0, 0.0, 0.2, 1.0),
-            );
+            let font_config =
+                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -186,5 +193,82 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         show_points: false,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_line_empty_x_data() {
+        let result = line(&[], &[1.0, 2.0, 3.0]).build();
+        assert!(matches!(result, Err(ChartError::EmptyData { field: "x" })));
+    }
+
+    #[test]
+    fn test_line_empty_y_data() {
+        let result = line(&[1.0, 2.0, 3.0], &[]).build();
+        assert!(matches!(result, Err(ChartError::EmptyData { field: "y" })));
+    }
+
+    #[test]
+    fn test_line_data_length_mismatch() {
+        let result = line(&[1.0, 2.0, 3.0, 4.0], &[1.0, 2.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::DataLengthMismatch {
+                x_field: "x",
+                y_field: "y",
+                x_len: 4,
+                y_len: 2,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_line_infinity_in_x() {
+        let result = line(&[1.0, 2.0, f64::NEG_INFINITY], &[1.0, 2.0, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "contains NaN or Infinity"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_line_nan_in_y() {
+        let result = line(&[1.0, 2.0, 3.0], &[1.0, f64::NAN, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "y",
+                reason: "contains NaN or Infinity"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_line_successful_build() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![2.0, 4.0, 3.0, 5.0, 4.5];
+        let result = line(&x, &y).title("Test Line").color(0xff7f0e).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_builder_chain() {
+        let result = line(&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0])
+            .title("My Line")
+            .color(0x00ff00)
+            .stroke_width(3.0)
+            .opacity(0.8)
+            .curve(CurveType::Linear)
+            .show_points(true)
+            .size(800.0, 600.0)
+            .build();
+        assert!(result.is_ok());
     }
 }

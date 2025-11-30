@@ -13,7 +13,3 @@ gpui = { git = "https://github.com/zed-industries/zed.git" }
 thiserror.workspace = true
 
 [dev-dependencies]
-
-[[example]]
-name = "basic_charts"
-path = "examples/basic_charts.rs"

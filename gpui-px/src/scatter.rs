@@ -2,18 +2,19 @@
 
 use crate::error::ChartError;
 use crate::{
-    extent_padded, validate_data_array, validate_data_length, validate_dimensions,
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
+    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_data_length,
+    validate_dimensions,
 };
 use d3rs::color::D3Color;
 use d3rs::scale::LinearScale;
-use d3rs::shape::{render_scatter, ScatterConfig, ScatterPoint};
-use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::shape::{ScatterConfig, ScatterPoint, render_scatter};
+use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::*;
 
 /// Scatter chart builder.
+#[derive(Debug, Clone)]
 pub struct ScatterChart {
     x: Vec<f64>,
     y: Vec<f64>,
@@ -32,7 +33,15 @@ impl ScatterChart {
         self
     }
 
-    /// Set point color (hex value).
+    /// Set point color as 24-bit RGB hex value (format: 0xRRGGBB).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::scatter;
+    /// let chart = scatter(&[1.0], &[1.0])
+    ///     .color(0x1f77b4)  // Plotly blue
+    ///     .build();
+    /// ```
     pub fn color(mut self, hex: u32) -> Self {
         self.color = hex;
         self
@@ -112,10 +121,8 @@ impl ScatterChart {
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config = VectorFontConfig::horizontal(
-                DEFAULT_TITLE_FONT_SIZE,
-                hsla(0.0, 0.0, 0.2, 1.0),
-            );
+            let font_config =
+                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, hsla(0.0, 0.0, 0.2, 1.0));
             container = container.child(
                 div()
                     .w_full()
@@ -166,5 +173,108 @@ pub fn scatter(x: &[f64], y: &[f64]) -> ScatterChart {
         opacity: 0.7,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scatter_empty_x_data() {
+        let result = scatter(&[], &[1.0, 2.0, 3.0]).build();
+        assert!(matches!(result, Err(ChartError::EmptyData { field: "x" })));
+    }
+
+    #[test]
+    fn test_scatter_empty_y_data() {
+        let result = scatter(&[1.0, 2.0, 3.0], &[]).build();
+        assert!(matches!(result, Err(ChartError::EmptyData { field: "y" })));
+    }
+
+    #[test]
+    fn test_scatter_data_length_mismatch() {
+        let result = scatter(&[1.0, 2.0], &[1.0, 2.0, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::DataLengthMismatch {
+                x_field: "x",
+                y_field: "y",
+                x_len: 2,
+                y_len: 3,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_scatter_nan_in_x() {
+        let result = scatter(&[1.0, f64::NAN, 3.0], &[1.0, 2.0, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "contains NaN or Infinity"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_scatter_infinity_in_y() {
+        let result = scatter(&[1.0, 2.0, 3.0], &[1.0, f64::INFINITY, 3.0]).build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "y",
+                reason: "contains NaN or Infinity"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_scatter_zero_width() {
+        let result = scatter(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0])
+            .size(0.0, 400.0)
+            .build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidDimension {
+                field: "width",
+                value: 0.0
+            })
+        ));
+    }
+
+    #[test]
+    fn test_scatter_negative_height() {
+        let result = scatter(&[1.0, 2.0, 3.0], &[1.0, 2.0, 3.0])
+            .size(600.0, -100.0)
+            .build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidDimension {
+                field: "height",
+                value: -100.0
+            })
+        ));
+    }
+
+    #[test]
+    fn test_scatter_successful_build() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![2.0, 4.0, 3.0, 5.0, 4.5];
+        let result = scatter(&x, &y).title("Test Chart").color(0x1f77b4).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scatter_builder_chain() {
+        let result = scatter(&[1.0, 2.0], &[3.0, 4.0])
+            .title("My Plot")
+            .color(0xff0000)
+            .point_radius(10.0)
+            .opacity(0.5)
+            .size(800.0, 600.0)
+            .build();
+        assert!(result.is_ok());
     }
 }
