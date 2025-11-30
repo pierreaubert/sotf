@@ -151,8 +151,9 @@ impl ZoomState {
     }
 
     /// Get zoom level (depth of zoom history)
+    /// Returns the number of times zoom_to() has been called
     pub fn zoom_level(&self) -> usize {
-        self.history.len() + if self.is_zoomed() { 1 } else { 0 }
+        self.history.len()
     }
 
     /// Update original bounds (e.g., when data changes)

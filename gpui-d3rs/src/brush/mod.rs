@@ -285,8 +285,10 @@ mod tests {
         // sqrt(20 * 20000) = sqrt(400000) ≈ 632
         assert!((domain.x1 - 632.0).abs() < 5.0);
 
-        // Y: inverted coordinates
-        assert!((domain.y0 - (-15.0)).abs() < 0.1);
-        assert!((domain.y1 - 10.0).abs() < 0.1);
+        // Y: non-inverted linear scale
+        // pixel 0 -> domain -40, pixel 100 -> domain -15 (midpoint)
+        // DomainSelection normalizes so y0 < y1
+        assert!((domain.y0 - (-40.0)).abs() < 0.1);
+        assert!((domain.y1 - (-15.0)).abs() < 0.1);
     }
 }

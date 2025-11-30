@@ -172,6 +172,9 @@ pub enum PlotSection {
     HorizontalSPL,
     VerticalSPL,
     Contour,
+    PolarDirectivity,
+    Surface3D,
+    PolarContour,
 }
 
 impl PlotSection {
@@ -181,6 +184,9 @@ impl PlotSection {
             Self::HorizontalSPL,
             Self::VerticalSPL,
             Self::Contour,
+            Self::PolarDirectivity,
+            Self::Surface3D,
+            Self::PolarContour,
         ]
     }
 
@@ -190,6 +196,63 @@ impl PlotSection {
             Self::HorizontalSPL => "Horizontal SPL",
             Self::VerticalSPL => "Vertical SPL",
             Self::Contour => "Contour Plot",
+            Self::PolarDirectivity => "Polar Directivity",
+            Self::Surface3D => "3D Surface",
+            Self::PolarContour => "Polar Contour",
+        }
+    }
+}
+
+/// Directivity plane selection for polar plots
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DirectivityPlane {
+    #[default]
+    Horizontal,
+    Vertical,
+}
+
+impl DirectivityPlane {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Horizontal => "Horizontal",
+            Self::Vertical => "Vertical",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Horizontal => Self::Vertical,
+            Self::Vertical => Self::Horizontal,
+        }
+    }
+}
+
+/// 3D projection types for surface plots
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SurfaceProjection {
+    #[default]
+    Isometric,
+    Perspective,
+    Orthographic,
+    Oblique,
+}
+
+impl SurfaceProjection {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Isometric => "Isometric",
+            Self::Perspective => "Perspective",
+            Self::Orthographic => "Orthographic",
+            Self::Oblique => "Oblique",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Isometric => Self::Perspective,
+            Self::Perspective => Self::Orthographic,
+            Self::Orthographic => Self::Oblique,
+            Self::Oblique => Self::Isometric,
         }
     }
 }

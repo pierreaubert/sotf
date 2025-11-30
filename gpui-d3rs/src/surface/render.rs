@@ -188,6 +188,14 @@ pub struct SurfaceConfig {
     pub light_direction: (f64, f64, f64),
     /// Scale factor for the projection
     pub scale: f64,
+    /// Whether to show 3D axes
+    pub show_axes: bool,
+    /// Axis color
+    pub axis_color: D3Color,
+    /// Axis line width
+    pub axis_width: f32,
+    /// Axis labels (X, Y, Z)
+    pub axis_labels: Option<(String, String, String)>,
 }
 
 impl Default for SurfaceConfig {
@@ -207,6 +215,10 @@ impl Default for SurfaceConfig {
             diffuse: 0.6,
             light_direction: normalize_vec((-0.5, -0.5, 1.0)),
             scale: 1.0,
+            show_axes: false,
+            axis_color: D3Color::rgb(100, 100, 100),
+            axis_width: 1.5,
+            axis_labels: None,
         }
     }
 }
@@ -333,6 +345,30 @@ impl SurfaceConfig {
     /// Set projection scale
     pub fn scale(mut self, scale: f64) -> Self {
         self.scale = scale;
+        self
+    }
+
+    /// Show 3D axes
+    pub fn show_axes(mut self, show: bool) -> Self {
+        self.show_axes = show;
+        self
+    }
+
+    /// Set axis color
+    pub fn axis_color(mut self, color: D3Color) -> Self {
+        self.axis_color = color;
+        self
+    }
+
+    /// Set axis line width
+    pub fn axis_width(mut self, width: f32) -> Self {
+        self.axis_width = width;
+        self
+    }
+
+    /// Set axis labels (X, Y, Z)
+    pub fn axis_labels(mut self, x: impl Into<String>, y: impl Into<String>, z: impl Into<String>) -> Self {
+        self.axis_labels = Some((x.into(), y.into(), z.into()));
         self
     }
 
@@ -579,6 +615,91 @@ impl Element for SurfaceElement {
                     let mut wireframe_rgba = self.config.wireframe_color.to_rgba();
                     wireframe_rgba.a *= self.config.wireframe_opacity;
                     window.paint_path(stroke_path, wireframe_rgba);
+                }
+            }
+        }
+
+        // Draw 3D axes if enabled
+        if self.config.show_axes {
+            let axis_color = self.config.axis_color.to_rgba();
+
+            // Origin point (corner of the unit cube, offset to center)
+            let origin = (-0.5, -0.5, -0.5);
+
+            // Axis endpoints (extend slightly beyond the surface for visibility)
+            let x_end = (0.6, -0.5, -0.5);
+            let y_end = (-0.5, 0.6, -0.5);
+            let z_end = (-0.5, -0.5, 0.6);
+
+            // Project axis endpoints
+            let p_origin = projection.project(origin.0, origin.1, origin.2);
+            let p_x = projection.project(x_end.0, x_end.1, x_end.2);
+            let p_y = projection.project(y_end.0, y_end.1, y_end.2);
+            let p_z = projection.project(z_end.0, z_end.1, z_end.2);
+
+            // Draw X axis
+            let mut x_builder = PathBuilder::stroke(px(self.config.axis_width));
+            x_builder.move_to(point(px(p_origin.x as f32), px(p_origin.y as f32)));
+            x_builder.line_to(point(px(p_x.x as f32), px(p_x.y as f32)));
+            if let Ok(path) = x_builder.build() {
+                window.paint_path(path, axis_color);
+            }
+
+            // Draw Y axis
+            let mut y_builder = PathBuilder::stroke(px(self.config.axis_width));
+            y_builder.move_to(point(px(p_origin.x as f32), px(p_origin.y as f32)));
+            y_builder.line_to(point(px(p_y.x as f32), px(p_y.y as f32)));
+            if let Ok(path) = y_builder.build() {
+                window.paint_path(path, axis_color);
+            }
+
+            // Draw Z axis
+            let mut z_builder = PathBuilder::stroke(px(self.config.axis_width));
+            z_builder.move_to(point(px(p_origin.x as f32), px(p_origin.y as f32)));
+            z_builder.line_to(point(px(p_z.x as f32), px(p_z.y as f32)));
+            if let Ok(path) = z_builder.build() {
+                window.paint_path(path, axis_color);
+            }
+
+            // Draw tick marks on each axis (5 ticks)
+            let tick_size = 0.02;
+            for i in 0..=5 {
+                let t = i as f64 / 5.0;
+
+                // X axis ticks (perpendicular to X in YZ plane)
+                let x_tick_pos = (-0.5 + t * 1.1, -0.5, -0.5);
+                let x_tick_end = (-0.5 + t * 1.1, -0.5 - tick_size, -0.5);
+                let p1 = projection.project(x_tick_pos.0, x_tick_pos.1, x_tick_pos.2);
+                let p2 = projection.project(x_tick_end.0, x_tick_end.1, x_tick_end.2);
+                let mut tick_builder = PathBuilder::stroke(px(1.0));
+                tick_builder.move_to(point(px(p1.x as f32), px(p1.y as f32)));
+                tick_builder.line_to(point(px(p2.x as f32), px(p2.y as f32)));
+                if let Ok(path) = tick_builder.build() {
+                    window.paint_path(path, axis_color);
+                }
+
+                // Y axis ticks
+                let y_tick_pos = (-0.5, -0.5 + t * 1.1, -0.5);
+                let y_tick_end = (-0.5 - tick_size, -0.5 + t * 1.1, -0.5);
+                let p1 = projection.project(y_tick_pos.0, y_tick_pos.1, y_tick_pos.2);
+                let p2 = projection.project(y_tick_end.0, y_tick_end.1, y_tick_end.2);
+                let mut tick_builder = PathBuilder::stroke(px(1.0));
+                tick_builder.move_to(point(px(p1.x as f32), px(p1.y as f32)));
+                tick_builder.line_to(point(px(p2.x as f32), px(p2.y as f32)));
+                if let Ok(path) = tick_builder.build() {
+                    window.paint_path(path, axis_color);
+                }
+
+                // Z axis ticks
+                let z_tick_pos = (-0.5, -0.5, -0.5 + t * 1.1);
+                let z_tick_end = (-0.5 - tick_size, -0.5, -0.5 + t * 1.1);
+                let p1 = projection.project(z_tick_pos.0, z_tick_pos.1, z_tick_pos.2);
+                let p2 = projection.project(z_tick_end.0, z_tick_end.1, z_tick_end.2);
+                let mut tick_builder = PathBuilder::stroke(px(1.0));
+                tick_builder.move_to(point(px(p1.x as f32), px(p1.y as f32)));
+                tick_builder.line_to(point(px(p2.x as f32), px(p2.y as f32)));
+                if let Ok(path) = tick_builder.build() {
+                    window.paint_path(path, axis_color);
                 }
             }
         }

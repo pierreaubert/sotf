@@ -4,5 +4,8 @@ pub mod plot_curve;
 
 pub use config::{BrushOverlay, SecondaryAxisConfig};
 pub use d3rs::shape::LinePoint;
-pub use enums::{ChartId, Colormap, ContourRenderMode, LoadState, PlotSection};
+pub use enums::{
+    ChartId, Colormap, ContourRenderMode, DirectivityPlane, LoadState, PlotSection,
+    SurfaceProjection,
+};
 pub use plot_curve::PlotCurve;

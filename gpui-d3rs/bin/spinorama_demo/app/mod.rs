@@ -15,6 +15,9 @@ use d3rs::contour::ContourGenerator;
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::{LinearScale, LogScale};
 use d3rs::shape::contour::{render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData};
+// Radial shape functions could be used in future - currently using canvas-based custom rendering
+// use d3rs::shape::radial::{polar_grid_circles, polar_grid_rays, radial_line, RadialLineConfig, RadialPoint};
+use d3rs::surface::{render_surface, ColorScaleType, SurfaceConfig, SurfaceData};
 use d3rs::text::{render_vector_text, VectorFontConfig};
 use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
@@ -24,8 +27,13 @@ use tokio::runtime::Runtime;
 use urlencoding;
 
 use super::render::render_freq_spl_plot;
-use super::types::{BrushOverlay, ChartId, Colormap, ContourRenderMode, LinePoint, LoadState, PlotCurve, PlotSection, SecondaryAxisConfig};
-use super::utils::{cea2034_colors, CEA2034_CURVES};
+use super::types::{
+    BrushOverlay, ChartId, Colormap, ContourRenderMode, DirectivityPlane, LinePoint, LoadState,
+    PlotCurve, PlotSection, SecondaryAxisConfig, SurfaceProjection,
+};
+use super::utils::{
+    cea2034_colors, format_frequency, get_angle_range, interpolate_spl_at_frequency, CEA2034_CURVES,
+};
 
 /// Main application state
 pub struct SpinoramaApp {
@@ -71,6 +79,19 @@ pub struct SpinoramaApp {
     pub freq_spl_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
     pub spl_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
     pub directivity_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
+
+    // Polar directivity plot state
+    pub polar_selected_frequencies: Vec<f64>,
+    pub polar_plane: DirectivityPlane,
+
+    // 3D surface plot state
+    pub surface_projection: SurfaceProjection,
+    pub surface_rotation_azimuth: f32,
+    pub surface_rotation_elevation: f32,
+    pub surface_wireframe: bool,
+
+    // Polar contour plot state
+    pub polar_contour_freq_range: (f64, f64),
 }
 impl SpinoramaApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
@@ -115,6 +136,19 @@ impl SpinoramaApp {
             freq_spl_chart_bounds: Rc::new(RefCell::new(None)),
             spl_contour_chart_bounds: Rc::new(RefCell::new(None)),
             directivity_contour_chart_bounds: Rc::new(RefCell::new(None)),
+
+            // Polar directivity plot state - default frequencies at octaves
+            polar_selected_frequencies: vec![100.0, 1000.0, 10000.0],
+            polar_plane: DirectivityPlane::default(),
+
+            // 3D surface plot state
+            surface_projection: SurfaceProjection::default(),
+            surface_rotation_azimuth: 45.0,
+            surface_rotation_elevation: 30.0,
+            surface_wireframe: false,
+
+            // Polar contour frequency range (20Hz - 20kHz)
+            polar_contour_freq_range: (20.0, 20000.0),
         };
 
         // Start loading speakers list
@@ -743,6 +777,9 @@ impl SpinoramaApp {
                 PlotSection::HorizontalSPL => self.render_directivity_plot("horizontal", cx),
                 PlotSection::VerticalSPL => self.render_directivity_plot("vertical", cx),
                 PlotSection::Contour => self.render_contour_plot(cx),
+                PlotSection::PolarDirectivity => self.render_polar_directivity_plot(cx),
+                PlotSection::Surface3D => self.render_surface_3d_plot(cx),
+                PlotSection::PolarContour => self.render_polar_contour_plot(cx),
             },
         };
 
@@ -2029,6 +2066,1025 @@ impl SpinoramaApp {
                         .child(contour_div)
                 )
             })
+    }
+
+    /// Render polar directivity plot - SPL vs angle at selected frequencies
+    fn render_polar_directivity_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let Some(ref directivity) = self.directivity_data else {
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No directivity data available for this speaker."),
+            );
+        };
+
+        let chart_size = 500.0_f32;
+        let center_x = chart_size / 2.0;
+        let center_y = chart_size / 2.0;
+        let outer_radius = (chart_size / 2.0) - 60.0; // Leave margin for labels
+
+        // SPL range for normalization (0 dB at outer edge, -30 dB at center)
+        let spl_max = 0.0_f64;
+        let spl_min = -30.0_f64;
+        let spl_range = spl_max - spl_min;
+
+        // Get angle range from data
+        let use_horizontal = self.polar_plane == DirectivityPlane::Horizontal;
+        let (_angle_min, _angle_max) = get_angle_range(directivity, use_horizontal);
+
+        // Colors for different frequencies (use viridis-like palette)
+        let freq_colors = [
+            D3Color::from_hex(0x440154), // Dark purple
+            D3Color::from_hex(0x3b528b), // Blue-purple
+            D3Color::from_hex(0x21918c), // Teal
+            D3Color::from_hex(0x5ec962), // Green
+            D3Color::from_hex(0xfde725), // Yellow
+        ];
+
+        // Build paths for each selected frequency
+        let mut frequency_paths: Vec<(f64, Vec<(f32, f32)>, D3Color)> = Vec::new();
+
+        for (i, &freq) in self.polar_selected_frequencies.iter().take(5).enumerate() {
+            let color = freq_colors[i % freq_colors.len()];
+
+            // Get SPL at each angle for this frequency
+            let angle_spl_pairs = interpolate_spl_at_frequency(directivity, freq, use_horizontal);
+
+            if angle_spl_pairs.is_empty() {
+                continue;
+            }
+
+            // Convert to screen coordinates
+            let points: Vec<(f32, f32)> = angle_spl_pairs
+                .iter()
+                .map(|&(angle_deg, spl)| {
+                    // Convert angle: 0° at top means -PI/2 offset
+                    let angle_rad = (angle_deg - 90.0).to_radians();
+                    // Normalize SPL to radius (spl_max -> outer_radius, spl_min -> 0)
+                    let normalized_spl = ((spl - spl_min) / spl_range).clamp(0.0, 1.0);
+                    let radius = normalized_spl as f32 * outer_radius;
+                    let x = center_x + radius * angle_rad.cos() as f32;
+                    let y = center_y + radius * angle_rad.sin() as f32;
+                    (x, y)
+                })
+                .collect();
+
+            frequency_paths.push((freq, points, color));
+        }
+
+        // Generate polar grid paths as screen coordinates
+        let grid_radii: Vec<f32> = vec![0.25, 0.5, 0.75, 1.0]
+            .iter()
+            .map(|&t| t * outer_radius)
+            .collect();
+
+        let grid_angles: Vec<f64> = (0..12).map(|i| (i as f64 * 30.0).to_radians()).collect();
+
+        // Clone data for the canvas closure
+        let frequency_paths_clone = frequency_paths.clone();
+        let grid_radii_clone = grid_radii.clone();
+        let grid_angles_clone = grid_angles.clone();
+
+        // Canvas-based polar plot
+        let polar_canvas = canvas(
+            move |_bounds, _window, _cx| {
+                // Prepaint: just pass through the data
+                (frequency_paths_clone.clone(), grid_radii_clone.clone(), grid_angles_clone.clone(), center_x, center_y, outer_radius)
+            },
+            move |bounds, (freq_paths, radii, angles, cx_f, cy_f, outer_r), window, _cx| {
+                let origin_x: f32 = bounds.origin.x.into();
+                let origin_y: f32 = bounds.origin.y.into();
+
+                // Draw grid circles
+                for &r in &radii {
+                    let num_segments = 72;
+                    let mut builder = PathBuilder::stroke(px(1.0));
+                    for i in 0..=num_segments {
+                        let theta = (i as f32 / num_segments as f32) * std::f32::consts::TAU;
+                        let x = origin_x + cx_f + r * theta.cos();
+                        let y = origin_y + cy_f + r * theta.sin();
+                        if i == 0 {
+                            builder.move_to(point(px(x), px(y)));
+                        } else {
+                            builder.line_to(point(px(x), px(y)));
+                        }
+                    }
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, hsla(0.0, 0.0, 0.8, 1.0));
+                    }
+                }
+
+                // Draw grid rays
+                for &angle in &angles {
+                    let mut builder = PathBuilder::stroke(px(1.0));
+                    let x1 = origin_x + cx_f;
+                    let y1 = origin_y + cy_f;
+                    let x2 = origin_x + cx_f + outer_r * angle.cos() as f32;
+                    let y2 = origin_y + cy_f + angle.sin() as f32 * outer_r;
+                    builder.move_to(point(px(x1), px(y1)));
+                    builder.line_to(point(px(x2), px(y2)));
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, hsla(0.0, 0.0, 0.85, 1.0));
+                    }
+                }
+
+                // Draw frequency curves
+                for (_, points, color) in &freq_paths {
+                    if points.len() < 2 {
+                        continue;
+                    }
+                    let mut builder = PathBuilder::stroke(px(2.0));
+                    for (i, &(x, y)) in points.iter().enumerate() {
+                        let screen_x = origin_x + x;
+                        let screen_y = origin_y + y;
+                        if i == 0 {
+                            builder.move_to(point(px(screen_x), px(screen_y)));
+                        } else {
+                            builder.line_to(point(px(screen_x), px(screen_y)));
+                        }
+                    }
+                    // Close the path
+                    if let Some(&(x, y)) = points.first() {
+                        builder.line_to(point(px(origin_x + x), px(origin_y + y)));
+                    }
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, color.to_rgba());
+                    }
+                }
+            },
+        )
+        .w(px(chart_size))
+        .h(px(chart_size));
+
+        // Build legend
+        let legend = div()
+            .flex()
+            .flex_row()
+            .gap_4()
+            .justify_center()
+            .children(frequency_paths.iter().map(|(freq, _, color)| {
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .w(px(16.0))
+                            .h(px(3.0))
+                            .bg(color.to_rgba())
+                            .rounded(px(1.0)),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child(format!("{}", format_frequency(*freq))),
+                    )
+            }));
+
+        // Angle labels using render_vector_text
+        let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+        let angle_labels = div()
+            .absolute()
+            .inset_0()
+            .children((0..12).map(|i| {
+                let angle_deg = i as f64 * 30.0;
+                let angle_rad = (angle_deg - 90.0).to_radians();
+                let label_radius = outer_radius + 25.0;
+                let x = center_x + label_radius * angle_rad.cos() as f32;
+                let y = center_y + label_radius * angle_rad.sin() as f32;
+
+                let display_angle = if angle_deg <= 180.0 {
+                    angle_deg as i32
+                } else {
+                    (angle_deg - 360.0) as i32
+                };
+
+                div()
+                    .absolute()
+                    .left(px(x - 15.0))
+                    .top(px(y - 6.0))
+                    .child(render_vector_text(&format!("{}°", display_angle), &font_config))
+            }));
+
+        // dB labels on radial axis
+        let db_font_config = VectorFontConfig::horizontal(9.0, hsla(0.0, 0.0, 0.6, 1.0));
+        let db_labels = div()
+            .absolute()
+            .inset_0()
+            .children([0.0, -10.0, -20.0, -30.0].iter().map(|&db| {
+                let normalized = (db - spl_min) / spl_range;
+                let r = normalized as f32 * outer_radius;
+                let x = center_x;
+                let y = center_y - r - 8.0;
+
+                div()
+                    .absolute()
+                    .left(px(x - 20.0))
+                    .top(px(y))
+                    .child(render_vector_text(&format!("{} dB", db as i32), &db_font_config))
+            }));
+
+        // Frequency selection controls
+        let available_frequencies: Vec<f64> = vec![
+            100.0, 200.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 10000.0, 16000.0,
+        ];
+
+        let freq_selector = div()
+            .flex()
+            .flex_row()
+            .flex_wrap()
+            .gap_2()
+            .children(available_frequencies.iter().enumerate().map(|(i, &freq)| {
+                let is_selected = self.polar_selected_frequencies.contains(&freq);
+                let freq_clone = freq;
+                div()
+                    .id(ElementId::NamedInteger("polar-freq".into(), i as u64))
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .border_1()
+                    .when(is_selected, |el| {
+                        el.bg(rgb(0x3b82f6))
+                            .text_color(rgb(0xffffff))
+                            .border_color(rgb(0x3b82f6))
+                    })
+                    .when(!is_selected, |el| {
+                        el.bg(rgb(0xffffff))
+                            .text_color(rgb(0x666666))
+                            .border_color(rgb(0xdddddd))
+                    })
+                    .child(format_frequency(freq))
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        if this.polar_selected_frequencies.contains(&freq_clone) {
+                            this.polar_selected_frequencies.retain(|&f| f != freq_clone);
+                        } else if this.polar_selected_frequencies.len() < 5 {
+                            this.polar_selected_frequencies.push(freq_clone);
+                            this.polar_selected_frequencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        }
+                        cx.notify();
+                    }))
+            }));
+
+        // Plane toggle
+        let plane_toggle = div()
+            .flex()
+            .flex_row()
+            .gap_2()
+            .child(
+                div()
+                    .id("polar-plane-horizontal")
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .when(self.polar_plane == DirectivityPlane::Horizontal, |el| {
+                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                    })
+                    .when(self.polar_plane != DirectivityPlane::Horizontal, |el| {
+                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                    })
+                    .child("Horizontal")
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        this.polar_plane = DirectivityPlane::Horizontal;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .id("polar-plane-vertical")
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .when(self.polar_plane == DirectivityPlane::Vertical, |el| {
+                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                    })
+                    .when(self.polar_plane != DirectivityPlane::Vertical, |el| {
+                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                    })
+                    .child("Vertical")
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        this.polar_plane = DirectivityPlane::Vertical;
+                        cx.notify();
+                    })),
+            );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(
+                div()
+                    .text_2xl()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgb(0x333333))
+                    .child(format!(
+                        "Polar Directivity - {}",
+                        self.selected_speaker.as_deref().unwrap_or("Unknown")
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_4()
+                    .items_center()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Plane:"),
+                    )
+                    .child(plane_toggle)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .ml_4()
+                            .child("Frequencies:"),
+                    )
+                    .child(freq_selector),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_4()
+                    .child(
+                        div()
+                            .relative()
+                            .w(px(chart_size))
+                            .h(px(chart_size))
+                            .child(polar_canvas)
+                            .child(angle_labels)
+                            .child(db_labels),
+                    )
+                    .child(legend),
+            )
+    }
+
+    /// Render 3D surface plot - SPL as a function of frequency and angle
+    fn render_surface_3d_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let Some(ref contour_data) = self.contour_data else {
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No contour data available for this speaker."),
+            );
+        };
+
+        let chart_width = 800.0;
+        let chart_height = 500.0;
+
+        // Build surface data from contour data
+        let freq_min = contour_data.freq.first().copied().unwrap_or(20.0);
+        let freq_max = contour_data.freq.last().copied().unwrap_or(20000.0);
+        let angle_min = contour_data.angles.first().copied().unwrap_or(-180.0);
+        let angle_max = contour_data.angles.last().copied().unwrap_or(180.0);
+
+        // Create a closure that interpolates from the contour data
+        let freq_count = contour_data.freq_count;
+        let angle_count = contour_data.angle_count;
+        let freq_values = contour_data.freq.clone();
+        let angle_values = contour_data.angles.clone();
+        let spl_values = contour_data.spl.clone();
+
+        let surface_data = SurfaceData::from_z_function_logx(
+            (freq_min.max(20.0), freq_max.min(20000.0)),
+            (angle_min, angle_max),
+            80, // Resolution
+            |freq, angle| {
+                // Find nearest indices in the contour data grid
+                let freq_idx = freq_values
+                    .iter()
+                    .position(|&f| f >= freq)
+                    .unwrap_or(freq_count - 1)
+                    .min(freq_count - 1);
+                let angle_idx = angle_values
+                    .iter()
+                    .position(|&a| a >= angle)
+                    .unwrap_or(angle_count - 1)
+                    .min(angle_count - 1);
+
+                // Get SPL value (row-major: angle_idx * freq_count + freq_idx)
+                let idx = angle_idx * freq_count + freq_idx;
+                spl_values.get(idx).copied().unwrap_or(0.0)
+            },
+        );
+
+        // Map our SurfaceProjection to d3rs projection type
+        let config = match self.surface_projection {
+            SurfaceProjection::Isometric => SurfaceConfig::new().isometric(),
+            SurfaceProjection::Perspective => SurfaceConfig::new().perspective(),
+            SurfaceProjection::Orthographic => SurfaceConfig::new().orthographic(),
+            SurfaceProjection::Oblique => SurfaceConfig::new().oblique(),
+        };
+
+        let config = config
+            .rotation(self.surface_rotation_elevation as f64, self.surface_rotation_azimuth as f64)
+            .wireframe(self.surface_wireframe)
+            .color_scale(ColorScaleType::Viridis)
+            .opacity(0.85)
+            .scale(1.2)
+            .show_axes(true)
+            .axis_color(D3Color::rgb(80, 80, 80))
+            .axis_width(2.0)
+            .axis_labels("Frequency (Hz)", "Angle (°)", "SPL (dB)");
+
+        let surface_element = render_surface(&surface_data, config, chart_width, chart_height);
+
+        // Projection selector
+        let projections = [
+            (SurfaceProjection::Isometric, "Isometric"),
+            (SurfaceProjection::Perspective, "Perspective"),
+            (SurfaceProjection::Orthographic, "Orthographic"),
+            (SurfaceProjection::Oblique, "Oblique"),
+        ];
+
+        let projection_selector = div()
+            .flex()
+            .flex_row()
+            .gap_2()
+            .children(projections.iter().enumerate().map(|(i, &(proj, label))| {
+                div()
+                    .id(ElementId::NamedInteger("surface-projection".into(), i as u64))
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .when(self.surface_projection == proj, |el| {
+                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                    })
+                    .when(self.surface_projection != proj, |el| {
+                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                    })
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        this.surface_projection = proj;
+                        cx.notify();
+                    }))
+            }));
+
+        // Wireframe toggle
+        let wireframe_toggle = div()
+            .id("surface-wireframe-toggle")
+            .px_3()
+            .py_1()
+            .rounded(px(4.0))
+            .cursor_pointer()
+            .when(self.surface_wireframe, |el| {
+                el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+            })
+            .when(!self.surface_wireframe, |el| {
+                el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+            })
+            .child("Wireframe")
+            .on_click(cx.listener(|this, _, _window, cx| {
+                this.surface_wireframe = !this.surface_wireframe;
+                cx.notify();
+            }));
+
+        // Rotation controls
+        let azimuth_slider = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(div().text_sm().text_color(rgb(0x666666)).child("Azimuth:"))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x333333))
+                    .child(format!("{}°", self.surface_rotation_azimuth as i32)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id("azimuth-dec")
+                            .px_2()
+                            .py_1()
+                            .bg(rgb(0xe5e7eb))
+                            .rounded(px(4.0))
+                            .cursor_pointer()
+                            .child("-")
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.surface_rotation_azimuth = (this.surface_rotation_azimuth - 15.0).rem_euclid(360.0);
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id("azimuth-inc")
+                            .px_2()
+                            .py_1()
+                            .bg(rgb(0xe5e7eb))
+                            .rounded(px(4.0))
+                            .cursor_pointer()
+                            .child("+")
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.surface_rotation_azimuth = (this.surface_rotation_azimuth + 15.0).rem_euclid(360.0);
+                                cx.notify();
+                            })),
+                    ),
+            );
+
+        let elevation_slider = div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(div().text_sm().text_color(rgb(0x666666)).child("Elevation:"))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x333333))
+                    .child(format!("{}°", self.surface_rotation_elevation as i32)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_1()
+                    .child(
+                        div()
+                            .id("elevation-dec")
+                            .px_2()
+                            .py_1()
+                            .bg(rgb(0xe5e7eb))
+                            .rounded(px(4.0))
+                            .cursor_pointer()
+                            .child("-")
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.surface_rotation_elevation = (this.surface_rotation_elevation - 15.0).clamp(-90.0, 90.0);
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id("elevation-inc")
+                            .px_2()
+                            .py_1()
+                            .bg(rgb(0xe5e7eb))
+                            .rounded(px(4.0))
+                            .cursor_pointer()
+                            .child("+")
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.surface_rotation_elevation = (this.surface_rotation_elevation + 15.0).clamp(-90.0, 90.0);
+                                cx.notify();
+                            })),
+                    ),
+            );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(
+                div()
+                    .text_2xl()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgb(0x333333))
+                    .child(format!(
+                        "3D Surface - {}",
+                        self.selected_speaker.as_deref().unwrap_or("Unknown")
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .flex_wrap()
+                    .gap_4()
+                    .items_center()
+                    .child(div().text_sm().text_color(rgb(0x666666)).child("Projection:"))
+                    .child(projection_selector)
+                    .child(wireframe_toggle)
+                    .child(azimuth_slider)
+                    .child(elevation_slider),
+            )
+            .child(
+                div()
+                    .flex()
+                    .justify_center()
+                    .child(surface_element),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .justify_center()
+                    .gap_4()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("X: Frequency (Hz, log scale)"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Y: Angle (degrees)"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Z/Color: SPL (dB)"),
+                    ),
+            )
+    }
+
+    /// Render polar contour plot - contour in polar coordinates (r=frequency, θ=angle)
+    fn render_polar_contour_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let Some(ref contour_data) = self.contour_data else {
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No contour data available for this speaker."),
+            );
+        };
+
+        let chart_size = 600.0_f32;
+        let center_x = chart_size / 2.0;
+        let center_y = chart_size / 2.0;
+        let outer_radius = (chart_size / 2.0) - 80.0;
+
+        // Frequency range (logarithmic radial axis)
+        let freq_min = self.polar_contour_freq_range.0.max(20.0);
+        let freq_max = self.polar_contour_freq_range.1.min(20000.0);
+        let log_freq_min = freq_min.ln();
+        let log_freq_max = freq_max.ln();
+
+        // Color scale
+        let color_scale = self.contour_colormap.color_scale();
+
+        // Find SPL range for color normalization
+        let spl_min = contour_data.spl.iter().copied().fold(f64::INFINITY, f64::min);
+        let spl_max = contour_data.spl.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let spl_range = (spl_max - spl_min).max(1.0);
+
+        // Generate polar heatmap data - store wedge geometry and colors
+        let angular_resolution = 72_usize; // 5° steps
+        let radial_resolution = 50_usize;
+
+        // Build wedge data for canvas rendering
+        #[derive(Clone)]
+        struct WedgeData {
+            r_inner: f32,
+            r_outer: f32,
+            theta1: f32,
+            theta2: f32,
+            color: Rgba,
+        }
+
+        let mut wedges: Vec<WedgeData> = Vec::with_capacity(angular_resolution * radial_resolution);
+
+        let angle_min_data = contour_data.angles.first().copied().unwrap_or(-180.0);
+        let angle_max_data = contour_data.angles.last().copied().unwrap_or(180.0);
+
+        for r_idx in 0..radial_resolution {
+            for a_idx in 0..angular_resolution {
+                // Calculate frequency for this radial position (logarithmic)
+                let r_t = r_idx as f64 / radial_resolution as f64;
+                let r_t_next = (r_idx + 1) as f64 / radial_resolution as f64;
+
+                let log_freq = log_freq_min + r_t * (log_freq_max - log_freq_min);
+                let freq = log_freq.exp();
+
+                // Calculate angle (0-360)
+                let angle_t = a_idx as f64 / angular_resolution as f64;
+                let angle_t_next = (a_idx + 1) as f64 / angular_resolution as f64;
+
+                // Map to data angle range
+                let angle = angle_min_data + angle_t * (angle_max_data - angle_min_data);
+
+                // Find nearest indices in contour data
+                let freq_idx = contour_data
+                    .freq
+                    .iter()
+                    .position(|&f| f >= freq)
+                    .unwrap_or(contour_data.freq_count - 1)
+                    .min(contour_data.freq_count - 1);
+
+                let angle_idx = contour_data
+                    .angles
+                    .iter()
+                    .position(|&a| a >= angle)
+                    .unwrap_or(contour_data.angle_count - 1)
+                    .min(contour_data.angle_count - 1);
+
+                let idx = angle_idx * contour_data.freq_count + freq_idx;
+                let spl = contour_data.spl.get(idx).copied().unwrap_or(0.0);
+
+                // Normalize SPL to color
+                let color_t = ((spl - spl_min) / spl_range).clamp(0.0, 1.0);
+                let color = color_scale(color_t);
+
+                // Calculate radii (inner and outer)
+                let r_inner = (r_t * outer_radius as f64) as f32;
+                let r_outer = (r_t_next * outer_radius as f64) as f32;
+
+                // Calculate angles (convert to radians, 0° at top)
+                let theta1 = ((angle_t * 360.0 - 90.0).to_radians()) as f32;
+                let theta2 = ((angle_t_next * 360.0 - 90.0).to_radians()) as f32;
+
+                wedges.push(WedgeData {
+                    r_inner,
+                    r_outer,
+                    theta1,
+                    theta2,
+                    color: color.to_rgba(),
+                });
+            }
+        }
+
+        // Grid frequencies for overlay
+        let grid_frequencies = [100.0_f64, 1000.0, 10000.0];
+        let grid_radii: Vec<f32> = grid_frequencies
+            .iter()
+            .filter(|&&f| f >= freq_min && f <= freq_max)
+            .map(|&f| {
+                let t = (f.ln() - log_freq_min) / (log_freq_max - log_freq_min);
+                (t * outer_radius as f64) as f32
+            })
+            .collect();
+
+        let grid_angles: Vec<f32> = (0..12).map(|i| ((i as f64 * 30.0).to_radians()) as f32).collect();
+
+        // Clone data for canvas closure
+        let wedges_clone = wedges.clone();
+        let grid_radii_clone = grid_radii.clone();
+        let grid_angles_clone = grid_angles.clone();
+
+        // Canvas-based polar contour plot
+        let polar_canvas = canvas(
+            move |_bounds, _window, _cx| {
+                (wedges_clone.clone(), grid_radii_clone.clone(), grid_angles_clone.clone(), center_x, center_y, outer_radius)
+            },
+            move |bounds, (wedge_data, radii, angles, cx_f, cy_f, outer_r), window, _cx| {
+                let origin_x: f32 = bounds.origin.x.into();
+                let origin_y: f32 = bounds.origin.y.into();
+
+                // Draw wedges (filled quads approximating arcs)
+                for wedge in &wedge_data {
+                    // For small angular segments, approximate with a quad
+                    let x1_inner = origin_x + cx_f + wedge.r_inner * wedge.theta1.cos();
+                    let y1_inner = origin_y + cy_f + wedge.r_inner * wedge.theta1.sin();
+                    let x2_inner = origin_x + cx_f + wedge.r_inner * wedge.theta2.cos();
+                    let y2_inner = origin_y + cy_f + wedge.r_inner * wedge.theta2.sin();
+                    let x1_outer = origin_x + cx_f + wedge.r_outer * wedge.theta1.cos();
+                    let y1_outer = origin_y + cy_f + wedge.r_outer * wedge.theta1.sin();
+                    let x2_outer = origin_x + cx_f + wedge.r_outer * wedge.theta2.cos();
+                    let y2_outer = origin_y + cy_f + wedge.r_outer * wedge.theta2.sin();
+
+                    // Build a filled quad path
+                    let mut builder = PathBuilder::fill();
+                    builder.move_to(point(px(x1_inner), px(y1_inner)));
+                    builder.line_to(point(px(x1_outer), px(y1_outer)));
+                    builder.line_to(point(px(x2_outer), px(y2_outer)));
+                    builder.line_to(point(px(x2_inner), px(y2_inner)));
+                    builder.line_to(point(px(x1_inner), px(y1_inner))); // Close
+
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, wedge.color);
+                    }
+                }
+
+                // Draw grid circles
+                for &r in &radii {
+                    let num_segments = 72;
+                    let mut builder = PathBuilder::stroke(px(1.0));
+                    for i in 0..=num_segments {
+                        let theta = (i as f32 / num_segments as f32) * std::f32::consts::TAU;
+                        let x = origin_x + cx_f + r * theta.cos();
+                        let y = origin_y + cy_f + r * theta.sin();
+                        if i == 0 {
+                            builder.move_to(point(px(x), px(y)));
+                        } else {
+                            builder.line_to(point(px(x), px(y)));
+                        }
+                    }
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, hsla(0.0, 0.0, 1.0, 0.4));
+                    }
+                }
+
+                // Draw grid rays
+                for &angle in &angles {
+                    let mut builder = PathBuilder::stroke(px(1.0));
+                    let x1 = origin_x + cx_f;
+                    let y1 = origin_y + cy_f;
+                    let x2 = origin_x + cx_f + outer_r * angle.cos();
+                    let y2 = origin_y + cy_f + outer_r * angle.sin();
+                    builder.move_to(point(px(x1), px(y1)));
+                    builder.line_to(point(px(x2), px(y2)));
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, hsla(0.0, 0.0, 1.0, 0.25));
+                    }
+                }
+            },
+        )
+        .w(px(chart_size))
+        .h(px(chart_size));
+
+        // Frequency labels using render_vector_text
+        let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.2, 1.0));
+        let freq_labels = div()
+            .absolute()
+            .inset_0()
+            .children(grid_frequencies.iter().filter(|&&f| f >= freq_min && f <= freq_max).map(|&freq| {
+                let t = (freq.ln() - log_freq_min) / (log_freq_max - log_freq_min);
+                let r = (t * outer_radius as f64) as f32;
+                let x = center_x;
+                let y = center_y - r - 8.0;
+
+                div()
+                    .absolute()
+                    .left(px(x - 15.0))
+                    .top(px(y))
+                    .child(render_vector_text(&format_frequency(freq), &font_config))
+            }));
+
+        // Angle labels
+        let angle_font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+        let angle_labels = div()
+            .absolute()
+            .inset_0()
+            .children((0..12).map(|i| {
+                let angle_deg = i as f64 * 30.0;
+                let angle_rad = (angle_deg - 90.0).to_radians();
+                let label_radius = outer_radius + 25.0;
+                let x = center_x + label_radius * angle_rad.cos() as f32;
+                let y = center_y + label_radius * angle_rad.sin() as f32;
+
+                // Map display angle to data angle convention
+                let display_angle = angle_min_data + (angle_deg / 360.0) * (angle_max_data - angle_min_data);
+
+                div()
+                    .absolute()
+                    .left(px(x - 15.0))
+                    .top(px(y - 6.0))
+                    .child(render_vector_text(&format!("{:.0}°", display_angle), &angle_font_config))
+            }));
+
+        // Colorbar using div elements
+        let colorbar_height = 200.0_f32;
+        let colorbar_width = 20.0_f32;
+        let num_color_steps = 20;
+
+        let colorbar = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .children((0..num_color_steps).map(|i| {
+                let t = i as f64 / num_color_steps as f64;
+                let color = color_scale(1.0 - t); // Invert so high values at top
+                let h = colorbar_height / num_color_steps as f32;
+
+                div()
+                    .w(px(colorbar_width))
+                    .h(px(h))
+                    .bg(color.to_rgba())
+            }));
+
+        // Colorbar labels
+        let colorbar_label_font = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
+        let colorbar_labels = div()
+            .flex()
+            .flex_col()
+            .justify_between()
+            .h(px(colorbar_height))
+            .children([0.0, 0.5, 1.0].iter().map(|&t| {
+                let spl_val = spl_min + t * spl_range;
+                div().child(render_vector_text(&format!("{:.0} dB", spl_val), &colorbar_label_font))
+            }));
+
+        // Colormap selector
+        let colormaps = [
+            (Colormap::Viridis, "Viridis"),
+            (Colormap::Plasma, "Plasma"),
+            (Colormap::Magma, "Magma"),
+            (Colormap::Inferno, "Inferno"),
+            (Colormap::Heat, "Heat"),
+            (Colormap::Coolwarm, "Coolwarm"),
+        ];
+
+        let colormap_selector = div()
+            .flex()
+            .flex_row()
+            .gap_2()
+            .children(colormaps.iter().enumerate().map(|(i, &(cmap, label))| {
+                div()
+                    .id(ElementId::NamedInteger("polar-contour-colormap".into(), i as u64))
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .when(self.contour_colormap == cmap, |el| {
+                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                    })
+                    .when(self.contour_colormap != cmap, |el| {
+                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                    })
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        this.contour_colormap = cmap;
+                        cx.notify();
+                    }))
+            }));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(
+                div()
+                    .text_2xl()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgb(0x333333))
+                    .child(format!(
+                        "Polar Contour - {}",
+                        self.selected_speaker.as_deref().unwrap_or("Unknown")
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_4()
+                    .items_center()
+                    .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
+                    .child(colormap_selector),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .justify_center()
+                    .gap_8()
+                    .child(
+                        div()
+                            .relative()
+                            .w(px(chart_size))
+                            .h(px(chart_size))
+                            .child(polar_canvas)
+                            .child(freq_labels)
+                            .child(angle_labels),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_2()
+                            .child(div().text_sm().text_color(rgb(0x666666)).child("SPL (dB)"))
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .gap_2()
+                                    .child(colorbar)
+                                    .child(colorbar_labels),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .justify_center()
+                    .gap_4()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Radial: Frequency (log scale)"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Angular: Angle (degrees)"),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Color: SPL (dB)"),
+                    ),
+            )
     }
 }
 
