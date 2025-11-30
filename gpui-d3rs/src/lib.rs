@@ -59,6 +59,7 @@ pub mod quadtree;
 pub mod random;
 pub mod shape;
 pub mod timer;
+pub mod transition;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod text;
 

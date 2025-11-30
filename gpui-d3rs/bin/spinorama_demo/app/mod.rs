@@ -1,7 +1,3 @@
-//! Spinorama Demo - Speaker frequency response visualization
-//!
-//! Demonstrates fetching and plotting speaker measurement data from spinorama.org.
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -12,556 +8,72 @@ use autoeq::read::{
     fetch_directivity_data, fetch_measurement_plot_data, ContourPlotData,
 };
 use autoeq::{Curve, DirectivityData};
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::axis::{DefaultAxisTheme, render_axis, AxisConfig};
 use d3rs::brush::{BrushSelection, BrushState};
 use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
 use d3rs::grid::{render_grid, GridConfig};
-use d3rs::prelude::*;
-use d3rs::shape::contour::{
-    render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData,
-};
-use d3rs::shape::LineConfig;
+use d3rs::prelude::{LinearScale, LogScale};
+use d3rs::shape::contour::{render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData};
 use d3rs::text::{render_vector_text, VectorFontConfig};
 use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
-use gpui::{actions, deferred, *};
+use gpui::{deferred, *};
 use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
 use urlencoding;
 
-/// CEA2034 measurement curve names in standard order
-const CEA2034_CURVES: &[&str] = &[
-    "On Axis",
-    "Listening Window",
-    "Early Reflections",
-    "Sound Power",
-    "Early Reflections DI",
-    "Sound Power DI",
-];
-
-/// Colors for CEA2034 curves
-fn cea2034_colors() -> HashMap<&'static str, D3Color> {
-    let mut colors = HashMap::new();
-    colors.insert("On Axis", D3Color::rgb(31, 119, 180)); // Blue
-    colors.insert("Listening Window", D3Color::rgb(255, 127, 14)); // Orange
-    colors.insert("Early Reflections", D3Color::rgb(44, 160, 44)); // Green
-    colors.insert("Sound Power", D3Color::rgb(214, 39, 40)); // Red
-    colors.insert("Early Reflections DI", D3Color::rgb(148, 103, 189)); // Purple
-    colors.insert("Sound Power DI", D3Color::rgb(140, 86, 75)); // Brown
-    colors
-}
-
-/// A single curve to be rendered on the frequency/SPL plot
-struct PlotCurve {
-    /// Data points as (frequency, value) pairs
-    points: Vec<LinePoint>,
-    /// Curve color
-    color: D3Color,
-    /// Stroke width
-    stroke_width: f32,
-    /// Whether this curve uses the secondary (right) Y-axis
-    use_secondary_axis: bool,
-}
-
-impl PlotCurve {
-    fn new(points: Vec<LinePoint>, color: D3Color) -> Self {
-        Self {
-            points,
-            color,
-            stroke_width: 2.0,
-            use_secondary_axis: false,
-        }
-    }
-
-    fn stroke_width(mut self, width: f32) -> Self {
-        self.stroke_width = width;
-        self
-    }
-
-    fn secondary_axis(mut self) -> Self {
-        self.use_secondary_axis = true;
-        self
-    }
-}
-
-/// Configuration for the secondary (right) Y-axis
-struct SecondaryAxisConfig {
-    /// Domain for the secondary axis (min, max)
-    domain: (f64, f64),
-    /// Title for the secondary axis
-    title: &'static str,
-    /// Tick values (only values in this list will show labels)
-    tick_values: Vec<f64>,
-}
-
-/// Optional brush selection overlay configuration
-struct BrushOverlay {
-    /// Selection rectangle in pixels (x0, y0, x1, y1)
-    selection: BrushSelection,
-}
-
-/// Renders a reusable frequency/SPL plot with optional secondary Y-axis
-///
-/// This is the common chart used for CEA2034, horizontal SPL, and vertical SPL plots.
-/// All use a log frequency X-axis and linear SPL Y-axis.
-fn render_freq_spl_plot(
-    curves: Vec<PlotCurve>,
-    freq_domain: (f64, f64),
-    spl_domain: (f64, f64),
-    secondary_axis: Option<SecondaryAxisConfig>,
-    chart_width: f32,
-    chart_height: f32,
-    brush_overlay: Option<BrushOverlay>,
-) -> Div {
-    let theme = DefaultAxisTheme;
-
-    // Create log frequency scale with zoom support
-    let freq_scale = LogScale::new()
-        .domain(freq_domain.0, freq_domain.1)
-        .range(0.0, chart_width as f64);
-    // Create linear SPL scale for main curves
-    let spl_scale = LinearScale::new()
-        .domain(spl_domain.0, spl_domain.1)
-        .range(0.0, chart_height as f64);
-
-    // All possible major frequency ticks
-    let all_major_ticks = vec![
-        20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
-    ];
-
-    // Filter ticks to those within the current domain
-    let major_freq_ticks: Vec<f64> = all_major_ticks
-        .iter()
-        .copied()
-        .filter(|&f| f >= freq_domain.0 && f <= freq_domain.1)
-        .collect();
-
-    // All possible minor frequency ticks
-    let all_minor_ticks: Vec<f64> = vec![
-        // 20-100 range
-        30.0, 40.0, 60.0, 70.0, 80.0, 90.0, // 100-1000 range
-        300.0, 400.0, 600.0, 700.0, 800.0, 900.0, // 1000-10000 range
-        3000.0, 4000.0, 6000.0, 7000.0, 8000.0, 9000.0,
-    ];
-
-    // Filter minor ticks to those within the current domain
-    let minor_freq_ticks: Vec<f64> = all_minor_ticks
-        .iter()
-        .copied()
-        .filter(|&f| f >= freq_domain.0 && f <= freq_domain.1)
-        .collect();
-
-    // Grid lines - filter to current domain
-    let grid_freq_values: Vec<f64> = vec![
-        50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
-    ]
-    .into_iter()
-    .filter(|&f| f >= freq_domain.0 && f <= freq_domain.1)
-    .collect();
-
-    // Generate SPL tick values
-    let spl_step = 10.0;
-    let spl_ticks: Vec<f64> = {
-        let start = (spl_domain.0 / spl_step).ceil() as i32;
-        let end = (spl_domain.1 / spl_step).floor() as i32;
-        (start..=end).map(|i| i as f64 * spl_step).collect()
-    };
-
-    // Create secondary scale if needed
-    let secondary_scale = secondary_axis.as_ref().map(|cfg| {
-        LinearScale::new()
-            .domain(cfg.domain.0, cfg.domain.1)
-            .range(0.0, chart_height as f64)
-    });
-
-    // Separate curves by axis
-    let primary_curves: Vec<&PlotCurve> = curves.iter().filter(|c| !c.use_secondary_axis).collect();
-    let secondary_curves: Vec<&PlotCurve> =
-        curves.iter().filter(|c| c.use_secondary_axis).collect();
-
-    div()
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .flex()
-                .items_start()
-                // Left Y-axis (SPL)
-                .child(render_axis(
-                    &spl_scale,
-                    &AxisConfig::left()
-                        .with_tick_values(spl_ticks)
-                        .with_formatter(|v| format!("{:.0}", v))
-                        .with_title("SPL (dB)"),
-                    chart_height,
-                    &theme,
-                ))
-                // Chart area
-                .child(
-                    div()
-                        .w(px(chart_width))
-                        .h(px(chart_height))
-                        .relative()
-                        .bg(rgb(0xf8f8f8))
-                        .child(render_grid(
-                            &freq_scale,
-                            &spl_scale,
-                            &GridConfig::with_lines()
-                                .with_vertical_values(grid_freq_values.clone()),
-                            chart_width,
-                            chart_height,
-                            &theme,
-                        ))
-                        // Render primary axis curves
-                        .children(primary_curves.iter().filter_map(|curve| {
-                            if curve.points.is_empty() {
-                                return None;
-                            }
-                            Some(render_line(
-                                &freq_scale,
-                                &spl_scale,
-                                &curve.points,
-                                &LineConfig::new()
-                                    .stroke_color(curve.color.clone())
-                                    .stroke_width(curve.stroke_width)
-                                    .curve(CurveType::Linear),
-                            ))
-                        }))
-                        // Render secondary axis curves
-                        .children(secondary_curves.iter().filter_map(|curve| {
-                            let sec_scale = secondary_scale.as_ref()?;
-                            if curve.points.is_empty() {
-                                return None;
-                            }
-                            Some(render_line(
-                                &freq_scale,
-                                sec_scale,
-                                &curve.points,
-                                &LineConfig::new()
-                                    .stroke_color(curve.color.clone())
-                                    .stroke_width(curve.stroke_width)
-                                    .curve(CurveType::Linear),
-                            ))
-                        }))
-                        // Brush selection overlay (when dragging)
-                        .when_some(brush_overlay, |el, overlay| {
-                            let sel = overlay.selection;
-                            el.child(
-                                div()
-                                    .absolute()
-                                    .left(px(sel.x0 as f32))
-                                    .top(px(sel.y0 as f32))
-                                    .w(px(sel.width() as f32))
-                                    .h(px(sel.height() as f32))
-                                    .bg(rgba(0x6496c850)) // Semi-transparent blue
-                                    .border_1()
-                                    .border_color(rgb(0x4682b4)) // Steel blue
-                            )
-                        }),
-                )
-                // Right Y-axis (optional, for DI curves)
-                .when_some(secondary_axis, |el, cfg| {
-                    let sec_scale = LinearScale::new()
-                        .domain(cfg.domain.0, cfg.domain.1)
-                        .range(0.0, chart_height as f64);
-                    // Note: with_formatter takes a fn pointer, so we can't capture max_label_value
-                    // For DI axis, we use the tick values directly and filter with max_label_value
-                    // by passing only tick values up to max_label_value that should have labels
-                    let axis_config = AxisConfig::right()
-                        .with_tick_values(cfg.tick_values)
-                        .with_formatter(|v| format!("{:.0}", v))
-                        .with_title(cfg.title);
-                    el.child(render_axis(&sec_scale, &axis_config, chart_height, &theme))
-                }),
-        )
-        // Bottom axis
-        .child(
-            div()
-                .flex()
-                .child(
-                    // Spacer for left axis
-                    div().w(px(80.0)),
-                )
-                .child(render_axis(
-                    &freq_scale,
-                    &AxisConfig::bottom()
-                        .with_tick_values(major_freq_ticks)
-                        .with_minor_tick_values(minor_freq_ticks)
-                        .with_minor_tick_size(3.0)
-                        .with_formatter(|f| {
-                            if f >= 1000.0 {
-                                format!("{:.0}k", f / 1000.0)
-                            } else {
-                                format!("{:.0}", f)
-                            }
-                        })
-                        .with_title("Frequency (Hz)"),
-                    chart_width,
-                    &theme,
-                )),
-        )
-}
-
-/// Contour rendering mode
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum ContourRenderMode {
-    #[default]
-    Isoline,
-    Surface,
-    Heatmap,
-}
-
-impl ContourRenderMode {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Isoline => "Isoline",
-            Self::Surface => "Surface",
-            Self::Heatmap => "Heatmap",
-        }
-    }
-
-    fn next(&self) -> Self {
-        match self {
-            Self::Isoline => Self::Surface,
-            Self::Surface => Self::Heatmap,
-            Self::Heatmap => Self::Isoline,
-        }
-    }
-}
-
-/// Colormap selection for contour plots
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Colormap {
-    #[default]
-    Viridis,
-    Plasma,
-    Magma,
-    Inferno,
-    Heat,
-    Coolwarm,
-}
-
-impl Colormap {
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Viridis => "Viridis",
-            Self::Plasma => "Plasma",
-            Self::Magma => "Magma",
-            Self::Inferno => "Inferno",
-            Self::Heat => "Heat",
-            Self::Coolwarm => "Coolwarm",
-        }
-    }
-
-    fn next(&self) -> Self {
-        match self {
-            Self::Viridis => Self::Plasma,
-            Self::Plasma => Self::Magma,
-            Self::Magma => Self::Inferno,
-            Self::Inferno => Self::Heat,
-            Self::Heat => Self::Coolwarm,
-            Self::Coolwarm => Self::Viridis,
-        }
-    }
-
-    fn color_scale(&self) -> impl Fn(f64) -> D3Color + Send + Sync + Clone + 'static {
-        let colormap = *self;
-        move |t: f64| {
-            let t = t.clamp(0.0, 1.0);
-            match colormap {
-                Colormap::Viridis => {
-                    let colors = [
-                        D3Color::from_hex(0x440154),
-                        D3Color::from_hex(0x482878),
-                        D3Color::from_hex(0x3e4a89),
-                        D3Color::from_hex(0x31688e),
-                        D3Color::from_hex(0x26838f),
-                        D3Color::from_hex(0x1f9e89),
-                        D3Color::from_hex(0x35b779),
-                        D3Color::from_hex(0x6ece58),
-                        D3Color::from_hex(0xb5de2b),
-                        D3Color::from_hex(0xfde725),
-                    ];
-                    interpolate_colors(&colors, t)
-                }
-                Colormap::Plasma => {
-                    let colors = [
-                        D3Color::from_hex(0x0d0887),
-                        D3Color::from_hex(0x46039f),
-                        D3Color::from_hex(0x7201a8),
-                        D3Color::from_hex(0x9c179e),
-                        D3Color::from_hex(0xbd3786),
-                        D3Color::from_hex(0xd8576b),
-                        D3Color::from_hex(0xed7953),
-                        D3Color::from_hex(0xfb9f3a),
-                        D3Color::from_hex(0xfdca26),
-                        D3Color::from_hex(0xf0f921),
-                    ];
-                    interpolate_colors(&colors, t)
-                }
-                Colormap::Magma => {
-                    let colors = [
-                        D3Color::from_hex(0x000004),
-                        D3Color::from_hex(0x180f3d),
-                        D3Color::from_hex(0x440f76),
-                        D3Color::from_hex(0x721f81),
-                        D3Color::from_hex(0x9e2f7f),
-                        D3Color::from_hex(0xcd4071),
-                        D3Color::from_hex(0xf1605d),
-                        D3Color::from_hex(0xfd9668),
-                        D3Color::from_hex(0xfeca8d),
-                        D3Color::from_hex(0xfcfdbf),
-                    ];
-                    interpolate_colors(&colors, t)
-                }
-                Colormap::Inferno => {
-                    let colors = [
-                        D3Color::from_hex(0x000004),
-                        D3Color::from_hex(0x1b0c41),
-                        D3Color::from_hex(0x4a0c6b),
-                        D3Color::from_hex(0x781c6d),
-                        D3Color::from_hex(0xa52c60),
-                        D3Color::from_hex(0xcf4446),
-                        D3Color::from_hex(0xed6925),
-                        D3Color::from_hex(0xfb9b06),
-                        D3Color::from_hex(0xf7d13d),
-                        D3Color::from_hex(0xfcffa4),
-                    ];
-                    interpolate_colors(&colors, t)
-                }
-                Colormap::Heat => {
-                    // Blue -> White -> Red
-                    if t < 0.5 {
-                        let local_t = t * 2.0;
-                        D3Color::from_hex(0x0571b0).interpolate(&D3Color::from_hex(0xf7f7f7), local_t as f32)
-                    } else {
-                        let local_t = (t - 0.5) * 2.0;
-                        D3Color::from_hex(0xf7f7f7).interpolate(&D3Color::from_hex(0xca0020), local_t as f32)
-                    }
-                }
-                Colormap::Coolwarm => {
-                    let colors = [
-                        D3Color::from_hex(0x3b4cc0),
-                        D3Color::from_hex(0x6688ee),
-                        D3Color::from_hex(0x99bbff),
-                        D3Color::from_hex(0xc9d8ef),
-                        D3Color::from_hex(0xf7f7f7),
-                        D3Color::from_hex(0xf6cdc4),
-                        D3Color::from_hex(0xee9977),
-                        D3Color::from_hex(0xd6604d),
-                        D3Color::from_hex(0xb40426),
-                    ];
-                    interpolate_colors(&colors, t)
-                }
-            }
-        }
-    }
-}
-
-/// Helper function to interpolate between colors in a palette
-fn interpolate_colors(colors: &[D3Color], t: f64) -> D3Color {
-    let idx = (t * (colors.len() - 1) as f64) as usize;
-    let idx = idx.min(colors.len() - 2);
-    let local_t = (t * (colors.len() - 1) as f64) - idx as f64;
-    colors[idx].interpolate(&colors[idx + 1], local_t as f32)
-}
-
-/// Chart identifiers for tracking brush interactions
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ChartId {
-    FreqSpl,
-    SplContour,
-    DirectivityContour,
-}
-
-/// View sections
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum PlotSection {
-    #[default]
-    CEA2034,
-    HorizontalSPL,
-    VerticalSPL,
-    Contour,
-}
-
-impl PlotSection {
-    fn all() -> Vec<Self> {
-        vec![
-            Self::CEA2034,
-            Self::HorizontalSPL,
-            Self::VerticalSPL,
-            Self::Contour,
-        ]
-    }
-
-    fn label(&self) -> &'static str {
-        match self {
-            Self::CEA2034 => "CEA2034 (Spinorama)",
-            Self::HorizontalSPL => "Horizontal SPL",
-            Self::VerticalSPL => "Vertical SPL",
-            Self::Contour => "Contour Plot",
-        }
-    }
-}
-
-/// Loading state for async data
-#[derive(Debug, Clone, PartialEq)]
-enum LoadState {
-    Idle,
-    Loading,
-    Loaded,
-    Error(String),
-}
+use super::render::render_freq_spl_plot;
+use super::types::{BrushOverlay, ChartId, Colormap, ContourRenderMode, LinePoint, LoadState, PlotCurve, PlotSection, SecondaryAxisConfig};
+use super::utils::{cea2034_colors, CEA2034_CURVES};
 
 /// Main application state
-struct SpinoramaApp {
-    runtime: Arc<Runtime>,
+pub struct SpinoramaApp {
+    pub runtime: Arc<Runtime>,
     // Speaker list
-    speakers: Vec<String>,
-    speakers_load_state: LoadState,
+    pub speakers: Vec<String>,
+    pub speakers_load_state: LoadState,
     // Version list for selected speaker
-    versions: Vec<String>,
-    versions_load_state: LoadState,
+    pub versions: Vec<String>,
+    pub versions_load_state: LoadState,
     // Selection state
-    selected_speaker: Option<String>,
-    selected_version: Option<String>,
-    selected_measurement: String,
+    pub selected_speaker: Option<String>,
+    pub selected_version: Option<String>,
+    pub selected_measurement: String,
     // Data state
-    cea2034_curves: HashMap<String, Curve>,
-    directivity_data: Option<DirectivityData>,
-    contour_data: Option<ContourPlotData>,
-    data_load_state: LoadState,
+    pub cea2034_curves: HashMap<String, Curve>,
+    pub directivity_data: Option<DirectivityData>,
+    pub contour_data: Option<ContourPlotData>,
+    pub data_load_state: LoadState,
     // UI state
-    current_section: PlotSection,
-    speaker_dropdown_open: bool,
-    version_dropdown_open: bool,
-    section_dropdown_open: bool,
+    pub current_section: PlotSection,
+    pub speaker_dropdown_open: bool,
+    pub version_dropdown_open: bool,
+    pub section_dropdown_open: bool,
     // Contour render mode for each plot (SPL Horizontal Contour, Directivity Contour)
-    contour_mode_spl: ContourRenderMode,
-    contour_mode_directivity: ContourRenderMode,
+    pub contour_mode_spl: ContourRenderMode,
+    pub contour_mode_directivity: ContourRenderMode,
     // Colormap selection for contour plots
-    contour_colormap: Colormap,
+    pub contour_colormap: Colormap,
     // Zoom state for frequency/SPL plots (CEA2034, horizontal/vertical SPL)
-    freq_spl_zoom: ZoomState,
-    freq_spl_brush: BrushState,
+    pub freq_spl_zoom: ZoomState,
+    pub freq_spl_brush: BrushState,
     // Zoom state for SPL contour plot
-    spl_contour_zoom: ZoomState,
-    spl_contour_brush: BrushState,
+    pub spl_contour_zoom: ZoomState,
+    pub spl_contour_brush: BrushState,
     // Zoom state for directivity contour plot
-    directivity_contour_zoom: ZoomState,
-    directivity_contour_brush: BrushState,
+    pub directivity_contour_zoom: ZoomState,
+    pub directivity_contour_brush: BrushState,
     // Track which chart is currently being brushed (for event handling)
-    active_brush_chart: Option<ChartId>,
+    pub active_brush_chart: Option<ChartId>,
     // Chart bounds for mouse position calculation (window-relative)
     // These are shared via Rc<RefCell> to allow capture in closures
-    freq_spl_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
-    spl_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
-    directivity_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    pub freq_spl_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    pub spl_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    pub directivity_contour_chart_bounds: Rc<RefCell<Option<Bounds<Pixels>>>>,
 }
-
 impl SpinoramaApp {
-    fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(cx: &mut Context<Self>) -> Self {
         let runtime = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -780,7 +292,7 @@ impl SpinoramaApp {
         .detach();
     }
 
-    fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn render_header(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let speaker_options: Vec<SelectOption> = self
             .speakers
             .iter()
@@ -1221,7 +733,7 @@ impl SpinoramaApp {
             })
     }
 
-    fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let content: Div = match self.data_load_state {
             LoadState::Idle => self.render_welcome(),
             LoadState::Loading => self.render_loading(),
@@ -2531,42 +2043,4 @@ impl Render for SpinoramaApp {
             .child(self.render_header(cx))
             .child(self.render_content(cx))
     }
-}
-
-// Define actions
-actions!(spinorama_demo, [Quit]);
-
-fn main() {
-    Application::new().run(|cx| {
-        // Activate app and register quit action
-        cx.activate(true);
-        cx.on_action(|_: &Quit, cx| cx.quit());
-        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
-
-        // Set up application menu
-        cx.set_menus(vec![Menu {
-            name: "Spinorama Viewer".into(),
-            items: vec![
-                MenuItem::os_submenu("Services", SystemMenuType::Services),
-                MenuItem::separator(),
-                MenuItem::action("Quit Spinorama Viewer", Quit),
-            ],
-        }]);
-
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds {
-                    origin: point(px(100.0), px(100.0)),
-                    size: size(px(1200.0), px(800.0)),
-                })),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Spinorama Viewer".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |_window, cx| cx.new(SpinoramaApp::new),
-        )
-        .expect("Failed to open window");
-    });
 }

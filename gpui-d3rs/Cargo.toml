@@ -1,10 +1,10 @@
 [package]
 name = "gpui-d3rs"
-version = "0.1.2"
+version = "0.1.4"
 edition = "2021"
-authors = ["Pierre"]
+authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"
-license = "MIT OR Apache-2.0"
+license = "OSC License"
 keywords = ["gpui", "plotting", "visualization", "d3", "charts"]
 categories = ["visualization", "gui"]
 
@@ -35,7 +35,7 @@ serde_json = "1.0"
 
 [[bin]]
 name = "d3rs-showcase"
-path = "bin/showcase.rs"
+path = "bin/showcase/main.rs"
 required-features = ["gpui"]
 
 # Non-GPUI examples (can run without gpui feature)
@@ -79,7 +79,11 @@ path = "examples/timer_demo.rs"
 name = "geo_demo"
 path = "examples/geo_demo.rs"
 
+[[example]]
+name = "transition_demo"
+path = "examples/transition_demo.rs"
+
 [[bin]]
 name = "spinorama-demo"
-path = "bin/spinorama_demo.rs"
+path = "bin/spinorama_demo/main.rs"
 required-features = ["spinorama"]
