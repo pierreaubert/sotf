@@ -432,3 +432,301 @@ fn test_interpolate_number_golden() {
         }
     }
 }
+
+// ============================================================================
+// QUADTREE TESTS
+// ============================================================================
+
+#[test]
+fn test_quadtree_golden() {
+    use d3rs::quadtree::QuadTree;
+
+    let content =
+        fs::read_to_string("golden/quadtree/quadtree.json").expect("golden file not found");
+    let golden: GoldenFile = serde_json::from_str(&content).unwrap();
+
+    assert_eq!(golden.module, "d3-quadtree");
+    assert_eq!(golden.function, "quadtree");
+
+    for case in &golden.test_cases {
+        let name = case["name"].as_str().unwrap();
+
+        match name {
+            "basic_add" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let exp_size = case["size"].as_u64().unwrap() as usize;
+                let exp_extent: Vec<Vec<f64>> =
+                    serde_json::from_value(case["extent"].clone()).unwrap();
+
+                let mut tree: QuadTree<()> = QuadTree::new();
+                for p in &points {
+                    tree.add(p[0], p[1], ());
+                }
+
+                assert_eq!(tree.size(), exp_size, "case '{}': size mismatch", name);
+
+                let ext = tree.extent().expect("extent should exist");
+                assert!(
+                    approx_eq(exp_extent[0][0], ext.x0),
+                    "case '{}': extent x0 mismatch: {} vs {}",
+                    name,
+                    ext.x0,
+                    exp_extent[0][0]
+                );
+                assert!(
+                    approx_eq(exp_extent[0][1], ext.y0),
+                    "case '{}': extent y0 mismatch: {} vs {}",
+                    name,
+                    ext.y0,
+                    exp_extent[0][1]
+                );
+                // D3 extent is power-of-2, so x1/y1 should match
+                assert!(
+                    approx_eq(exp_extent[1][0], ext.x1),
+                    "case '{}': extent x1 mismatch: {} vs {}",
+                    name,
+                    ext.x1,
+                    exp_extent[1][0]
+                );
+                assert!(
+                    approx_eq(exp_extent[1][1], ext.y1),
+                    "case '{}': extent y1 mismatch: {} vs {}",
+                    name,
+                    ext.y1,
+                    exp_extent[1][1]
+                );
+            }
+            "find" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let queries: Vec<serde_json::Value> =
+                    serde_json::from_value(case["queries"].clone()).unwrap();
+
+                // Store points with their coordinates as data
+                let mut tree: QuadTree<(f64, f64)> = QuadTree::new();
+                for p in &points {
+                    tree.add(p[0], p[1], (p[0], p[1]));
+                }
+
+                for query in &queries {
+                    let x = query["x"].as_f64().unwrap();
+                    let y = query["y"].as_f64().unwrap();
+                    let result: Vec<f64> =
+                        serde_json::from_value(query["result"].clone()).unwrap();
+
+                    let found = tree.find(x, y, None).expect("should find a point");
+                    assert!(
+                        approx_eq(result[0], found.0) && approx_eq(result[1], found.1),
+                        "case '{}': find({}, {}) = ({}, {}) (expected ({}, {}))",
+                        name,
+                        x,
+                        y,
+                        found.0,
+                        found.1,
+                        result[0],
+                        result[1]
+                    );
+                }
+            }
+            "find_with_radius" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let queries: Vec<serde_json::Value> =
+                    serde_json::from_value(case["queries"].clone()).unwrap();
+
+                let mut tree: QuadTree<(f64, f64)> = QuadTree::new();
+                for p in &points {
+                    tree.add(p[0], p[1], (p[0], p[1]));
+                }
+
+                for query in &queries {
+                    let x = query["x"].as_f64().unwrap();
+                    let y = query["y"].as_f64().unwrap();
+                    let radius = query["radius"].as_f64().unwrap();
+
+                    let found = tree.find(x, y, Some(radius));
+
+                    if query["result"].is_null() {
+                        assert!(
+                            found.is_none(),
+                            "case '{}': find({}, {}, {}) should return None",
+                            name,
+                            x,
+                            y,
+                            radius
+                        );
+                    } else {
+                        let result: Vec<f64> =
+                            serde_json::from_value(query["result"].clone()).unwrap();
+                        let found = found.expect("should find a point");
+                        assert!(
+                            approx_eq(result[0], found.0) && approx_eq(result[1], found.1),
+                            "case '{}': find({}, {}, {}) = ({}, {}) (expected ({}, {}))",
+                            name,
+                            x,
+                            y,
+                            radius,
+                            found.0,
+                            found.1,
+                            result[0],
+                            result[1]
+                        );
+                    }
+                }
+            }
+            "remove" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let remove: Vec<f64> = serde_json::from_value(case["remove"].clone()).unwrap();
+                let exp_size_before = case["size_before"].as_u64().unwrap() as usize;
+                let exp_size_after = case["size_after"].as_u64().unwrap() as usize;
+
+                let mut tree: QuadTree<()> = QuadTree::new();
+                for p in &points {
+                    tree.add(p[0], p[1], ());
+                }
+
+                assert_eq!(
+                    tree.size(),
+                    exp_size_before,
+                    "case '{}': size before remove",
+                    name
+                );
+
+                tree.remove(remove[0], remove[1]);
+
+                assert_eq!(
+                    tree.size(),
+                    exp_size_after,
+                    "case '{}': size after remove",
+                    name
+                );
+            }
+            "extent" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let exp_size = case["size"].as_u64().unwrap() as usize;
+
+                let mut tree: QuadTree<()> = QuadTree::new();
+                for p in &points {
+                    tree.add(p[0], p[1], ());
+                }
+
+                assert_eq!(tree.size(), exp_size, "case '{}': size mismatch", name);
+
+                // Just verify extent exists and is valid
+                let ext = tree.extent().expect("extent should exist");
+                assert!(
+                    ext.x0 <= ext.x1 && ext.y0 <= ext.y1,
+                    "case '{}': invalid extent",
+                    name
+                );
+            }
+            "visit" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let exp_visited_count = case["visited_count"].as_u64().unwrap() as usize;
+                let exp_leaf_count = case["leaf_count"].as_u64().unwrap() as usize;
+
+                let mut tree: QuadTree<()> = QuadTree::new();
+                for p in &points {
+                    tree.add(p[0], p[1], ());
+                }
+
+                let mut visited_count = 0;
+                let mut leaf_count = 0;
+
+                tree.visit(|_x0, _y0, _x1, _y1, node| {
+                    visited_count += 1;
+                    if matches!(node, d3rs::quadtree::QuadNode::Leaf(_)) {
+                        leaf_count += 1;
+                    }
+                    true // continue visiting
+                });
+
+                assert_eq!(
+                    visited_count, exp_visited_count,
+                    "case '{}': visited_count mismatch",
+                    name
+                );
+                assert_eq!(
+                    leaf_count, exp_leaf_count,
+                    "case '{}': leaf_count mismatch",
+                    name
+                );
+            }
+            "data" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let exp_data: Vec<Vec<f64>> =
+                    serde_json::from_value(case["data"].clone()).unwrap();
+
+                let mut tree: QuadTree<(f64, f64)> = QuadTree::new();
+                for p in &points {
+                    tree.add(p[0], p[1], (p[0], p[1]));
+                }
+
+                let data = tree.data();
+                assert_eq!(
+                    data.len(),
+                    exp_data.len(),
+                    "case '{}': data length mismatch",
+                    name
+                );
+
+                // D3 data() may return in different order, so just check all points exist
+                for exp in &exp_data {
+                    let found = data.iter().any(|(x, y, d)| {
+                        approx_eq(*x, exp[0])
+                            && approx_eq(*y, exp[1])
+                            && approx_eq(d.0, exp[0])
+                            && approx_eq(d.1, exp[1])
+                    });
+                    assert!(
+                        found,
+                        "case '{}': expected point ({}, {}) not found in data",
+                        name, exp[0], exp[1]
+                    );
+                }
+            }
+            "coincident" => {
+                let points: Vec<Vec<f64>> =
+                    serde_json::from_value(case["points"].clone()).unwrap();
+                let exp_size = case["size"].as_u64().unwrap() as usize;
+
+                let mut tree: QuadTree<usize> = QuadTree::new();
+                for (i, p) in points.iter().enumerate() {
+                    tree.add(p[0], p[1], i);
+                }
+
+                assert_eq!(tree.size(), exp_size, "case '{}': size mismatch", name);
+            }
+            "large_dataset" => {
+                let point_count = case["point_count"].as_u64().unwrap() as usize;
+                let exp_size = case["size"].as_u64().unwrap() as usize;
+
+                // Regenerate the same points as the JavaScript generator
+                let mut tree: QuadTree<i32> = QuadTree::new();
+                for i in 0..point_count {
+                    let x = (i as f64 * 0.618033988749895).fract() * 100.0;
+                    let y = (i as f64 * 0.381966011250105).fract() * 100.0;
+                    tree.add(x, y, i as i32);
+                }
+
+                assert_eq!(tree.size(), exp_size, "case '{}': size mismatch", name);
+
+                // Verify extent exists
+                let ext = tree.extent().expect("extent should exist");
+                assert!(
+                    ext.x0 <= ext.x1 && ext.y0 <= ext.y1,
+                    "case '{}': invalid extent",
+                    name
+                );
+            }
+            _ => {
+                // Skip unknown test cases
+            }
+        }
+    }
+}

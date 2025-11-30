@@ -1259,6 +1259,186 @@ function generateStackTests() {
 }
 
 // ============================================================================
+// QUADTREE GENERATORS
+// ============================================================================
+
+function generateQuadtreeTests() {
+  const testCases = [];
+
+  // Basic quadtree with add
+  {
+    const tree = d3.quadtree();
+    tree.add([0, 0]);
+    tree.add([1, 0]);
+    tree.add([0, 1]);
+    tree.add([1, 1]);
+    tree.add([0.5, 0.5]);
+
+    testCases.push({
+      name: "basic_add",
+      points: [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]],
+      size: tree.size(),
+      extent: tree.extent()
+    });
+  }
+
+  // Find nearest neighbor
+  {
+    const tree = d3.quadtree()
+      .addAll([[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]]);
+
+    const queries = [
+      { x: 0.3, y: 0.3 },
+      { x: 0.9, y: 0.1 },
+      { x: 0.5, y: 0.5 },
+      { x: 2, y: 2 }
+    ];
+
+    testCases.push({
+      name: "find",
+      points: [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]],
+      queries: queries.map(q => ({
+        x: q.x,
+        y: q.y,
+        result: tree.find(q.x, q.y)
+      }))
+    });
+  }
+
+  // Find with radius
+  {
+    const tree = d3.quadtree()
+      .addAll([[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]]);
+
+    testCases.push({
+      name: "find_with_radius",
+      points: [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]],
+      queries: [
+        { x: 0.5, y: 0.5, radius: 0.1, result: tree.find(0.5, 0.5, 0.1) },
+        { x: 0.5, y: 0.5, radius: 0.5, result: tree.find(0.5, 0.5, 0.5) },
+        { x: 0.5, y: 0.5, radius: 1.0, result: tree.find(0.5, 0.5, 1.0) },
+        { x: 10, y: 10, radius: 0.5, result: tree.find(10, 10, 0.5) }
+      ]
+    });
+  }
+
+  // Remove points
+  // Note: D3.js remove() requires the exact same object reference that was added.
+  // Our Rust implementation removes by coordinates, which is more practical.
+  // This test uses find() to get the reference first, which is what users should do in D3.
+  {
+    const tree = d3.quadtree()
+      .addAll([[0, 0], [1, 0], [0, 1], [1, 1]]);
+
+    const sizeBefore = tree.size();
+    // Find the point first to get the reference
+    const pointToRemove = tree.find(1, 0, 0.001);
+    if (pointToRemove) {
+      tree.remove(pointToRemove);
+    }
+    const sizeAfter = tree.size();
+
+    testCases.push({
+      name: "remove",
+      points: [[0, 0], [1, 0], [0, 1], [1, 1]],
+      remove: [1, 0],
+      size_before: sizeBefore,
+      size_after: sizeAfter
+    });
+  }
+
+  // Extent
+  {
+    const tree = d3.quadtree()
+      .addAll([[0, 0], [3, 2], [-1, 5], [7, -3]]);
+
+    testCases.push({
+      name: "extent",
+      points: [[0, 0], [3, 2], [-1, 5], [7, -3]],
+      extent: tree.extent(),
+      size: tree.size()
+    });
+  }
+
+  // Visit traversal
+  {
+    const tree = d3.quadtree()
+      .addAll([[0, 0], [1, 0], [0, 1], [1, 1]]);
+
+    const visited = [];
+    tree.visit((node, x0, y0, x1, y1) => {
+      visited.push({
+        x0, y0, x1, y1,
+        is_leaf: !node.length
+      });
+      return false; // continue visiting
+    });
+
+    testCases.push({
+      name: "visit",
+      points: [[0, 0], [1, 0], [0, 1], [1, 1]],
+      visited_count: visited.length,
+      leaf_count: visited.filter(v => v.is_leaf).length
+    });
+  }
+
+  // Data extraction
+  {
+    const points = [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]];
+    const tree = d3.quadtree().addAll(points);
+
+    testCases.push({
+      name: "data",
+      points,
+      data: tree.data()
+    });
+  }
+
+  // Coincident points
+  {
+    const tree = d3.quadtree();
+    tree.add([5, 5]);
+    tree.add([5, 5]);
+    tree.add([5, 5]);
+
+    testCases.push({
+      name: "coincident",
+      points: [[5, 5], [5, 5], [5, 5]],
+      size: tree.size(),
+      data: tree.data()
+    });
+  }
+
+  // Large dataset for performance reference
+  {
+    const points = [];
+    for (let i = 0; i < 100; i++) {
+      // Use golden ratio for even distribution
+      const x = (i * 0.618033988749895) % 1 * 100;
+      const y = (i * 0.381966011250105) % 1 * 100;
+      points.push([x, y]);
+    }
+
+    const tree = d3.quadtree().addAll(points);
+
+    testCases.push({
+      name: "large_dataset",
+      point_count: 100,
+      size: tree.size(),
+      extent: tree.extent(),
+      // Find some specific points
+      find_50_50: tree.find(50, 50),
+      find_0_0: tree.find(0, 0),
+      find_100_100: tree.find(100, 100)
+    });
+  }
+
+  const golden = createGoldenFile("d3-quadtree", "quadtree", testCases);
+  fs.writeFileSync(path.join(__dirname, 'quadtree', 'quadtree.json'), JSON.stringify(golden, null, 2));
+  console.log('Generated: quadtree/quadtree.json');
+}
+
+// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -1295,6 +1475,10 @@ function generateAllShape() {
   generateStackTests();
 }
 
+function generateAllQuadtree() {
+  generateQuadtreeTests();
+}
+
 function generateAll() {
   console.log(`Generating golden files using D3.js v${d3.version}...\n`);
   generateAllScales();
@@ -1302,6 +1486,7 @@ function generateAll() {
   generateAllArray();
   generateAllColor();
   generateAllShape();
+  generateAllQuadtree();
   console.log('\nDone!');
 }
 
@@ -1326,6 +1511,9 @@ if (args.length === 0) {
         break;
       case 'shape':
         generateAllShape();
+        break;
+      case 'quadtree':
+        generateAllQuadtree();
         break;
       default:
         console.error(`Unknown module: ${arg}`);

@@ -25,6 +25,7 @@
     "lint": "npx eslint src-ui-frontend"
   },
   "dependencies": {
+    "@anthropic-ai/claude-code": "^2.0.55",
     "@tauri-apps/api": "^2.9.0",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-fs": "^2.4.2",
@@ -32,6 +33,7 @@
     "@types/plotly.js": "^3.0.7",
     "bulma": "^1.0.4",
     "chrome-devtools-mcp": "^0.9.0",
+    "claude": "^0.1.1",
     "jiti": "^2.6.1",
     "plotly.js-basic-dist-min": "^3.1.2"
   },

@@ -27,6 +27,24 @@
 //! - Displaying counts or aggregated metrics
 //! - Visualizing rankings or distributions by category
 //!
+//! ### Heatmaps
+//! Use [`heatmap()`] for:
+//! - Visualizing 2D scalar fields with color
+//! - Spectrograms, correlation matrices, geographic data
+//! - Supports log scale axes and multiple color scales
+//!
+//! ### Contour Charts (Filled)
+//! Use [`contour()`] for:
+//! - Filled bands between threshold values
+//! - Topographic-style visualizations
+//! - Density estimation results
+//!
+//! ### Isoline Charts (Unfilled)
+//! Use [`isoline()`] for:
+//! - Unfilled contour lines at specific levels
+//! - Elevation or pressure maps
+//! - Level curves of scalar fields
+//!
 //! ## Coordinate System
 //!
 //! All charts use standard mathematical coordinates:
@@ -35,16 +53,27 @@
 //!
 //! ## Color Format
 //!
-//! All color parameters accept 24-bit RGB hex values in format `0xRRGGBB`:
+//! For 1D charts (scatter, line, bar, isoline), color parameters accept
+//! 24-bit RGB hex values in format `0xRRGGBB`:
 //! - `0x1f77b4` - Plotly blue (default)
 //! - `0xff7f0e` - Plotly orange
 //! - `0x2ca02c` - Plotly green
 //! - `0xd62728` - Plotly red
 //!
+//! For 2D charts (heatmap, contour), use [`ColorScale`]:
+//! - `ColorScale::Viridis` - perceptually uniform (default)
+//! - `ColorScale::Plasma` - perceptually uniform
+//! - `ColorScale::Inferno` - perceptually uniform
+//! - `ColorScale::Magma` - perceptually uniform
+//! - `ColorScale::Heat` - diverging (blue → white → red)
+//! - `ColorScale::Coolwarm` - diverging
+//! - `ColorScale::Greys` - sequential grayscale
+//! - `ColorScale::custom(|t| ...)` - custom function
+//!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use gpui_px::{scatter, line, bar};
+//! use gpui_px::{scatter, line, bar, heatmap, contour, isoline, ColorScale, ScaleType};
 //!
 //! // Scatter plot in 3 lines
 //! let chart = scatter(&x_data, &y_data)
@@ -59,21 +88,64 @@
 //! // Bar chart
 //! let chart = bar(&categories, &values)
 //!     .build()?;
+//!
+//! // Heatmap with log scale x-axis
+//! let z = vec![1.0; 12]; // 3x4 grid
+//! let chart = heatmap(&z, 3, 4)
+//!     .x(&[20.0, 200.0, 2000.0])
+//!     .x_scale(ScaleType::Log)
+//!     .color_scale(ColorScale::Inferno)
+//!     .build()?;
+//!
+//! // Contour plot with custom thresholds
+//! let chart = contour(&z, 3, 4)
+//!     .thresholds(vec![0.0, 0.5, 1.0, 1.5])
+//!     .color_scale(ColorScale::Viridis)
+//!     .build()?;
+//!
+//! // Isoline plot
+//! let chart = isoline(&z, 3, 4)
+//!     .levels(vec![0.5, 1.0, 1.5])
+//!     .color(0x333333)
+//!     .stroke_width(1.5)
+//!     .build()?;
 //! ```
 
 mod bar;
+mod color_scale;
+mod contour;
 mod error;
+mod heatmap;
+mod isoline;
 mod line;
 mod scatter;
 
 pub use bar::{BarChart, bar};
+pub use color_scale::ColorScale;
+pub use contour::{ContourChart, contour};
 pub use error::ChartError;
+pub use heatmap::{HeatmapChart, heatmap};
+pub use isoline::{IsolineChart, isoline};
 pub use line::{LineChart, line};
 pub use scatter::{ScatterChart, scatter};
 
 // Re-export d3rs types users might need
 pub use d3rs::color::D3Color;
 pub use d3rs::shape::CurveType;
+
+// ============================================================================
+// Scale Types
+// ============================================================================
+
+/// Scale type for axis transformations.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum ScaleType {
+    /// Linear scale (default).
+    #[default]
+    Linear,
+    /// Logarithmic scale (base 10).
+    Log,
+}
 
 // ============================================================================
 // Shared Constants
@@ -174,6 +246,48 @@ pub(crate) fn validate_dimensions(width: f32, height: f32) -> Result<(), ChartEr
         return Err(ChartError::InvalidDimension {
             field: "height",
             value: height,
+        });
+    }
+    Ok(())
+}
+
+/// Validate that grid dimensions match the z array length.
+pub(crate) fn validate_grid_dimensions(
+    z: &[f64],
+    grid_width: usize,
+    grid_height: usize,
+) -> Result<(), ChartError> {
+    let expected = grid_width * grid_height;
+    if z.len() != expected {
+        return Err(ChartError::GridDimensionMismatch {
+            z_len: z.len(),
+            width: grid_width,
+            height: grid_height,
+            expected,
+        });
+    }
+    Ok(())
+}
+
+/// Validate that axis values are strictly monotonic (increasing).
+pub(crate) fn validate_monotonic(values: &[f64], field: &'static str) -> Result<(), ChartError> {
+    for window in values.windows(2) {
+        if window[1] <= window[0] {
+            return Err(ChartError::InvalidData {
+                field,
+                reason: "must be strictly monotonically increasing",
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Validate that all values are positive (for log scale).
+pub(crate) fn validate_positive(values: &[f64], field: &'static str) -> Result<(), ChartError> {
+    if values.iter().any(|&v| v <= 0.0) {
+        return Err(ChartError::InvalidData {
+            field,
+            reason: "log scale requires positive values",
         });
     }
     Ok(())
@@ -343,6 +457,94 @@ mod tests {
             Err(ChartError::InvalidDimension {
                 field: "height",
                 value: -50.0
+            })
+        ));
+    }
+
+    // validate_grid_dimensions tests
+    #[test]
+    fn test_validate_grid_dimensions_valid() {
+        let z = vec![1.0; 12]; // 3x4 grid
+        assert!(validate_grid_dimensions(&z, 3, 4).is_ok());
+    }
+
+    #[test]
+    fn test_validate_grid_dimensions_mismatch() {
+        let z = vec![1.0; 10];
+        let result = validate_grid_dimensions(&z, 3, 4);
+        assert!(matches!(
+            result,
+            Err(ChartError::GridDimensionMismatch {
+                z_len: 10,
+                width: 3,
+                height: 4,
+                expected: 12,
+            })
+        ));
+    }
+
+    // validate_monotonic tests
+    #[test]
+    fn test_validate_monotonic_valid() {
+        let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        assert!(validate_monotonic(&values, "x").is_ok());
+    }
+
+    #[test]
+    fn test_validate_monotonic_not_increasing() {
+        let values = vec![1.0, 2.0, 2.0, 4.0]; // 2.0 == 2.0
+        let result = validate_monotonic(&values, "x");
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "must be strictly monotonically increasing"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_monotonic_decreasing() {
+        let values = vec![1.0, 3.0, 2.0, 4.0];
+        let result = validate_monotonic(&values, "x");
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "must be strictly monotonically increasing"
+            })
+        ));
+    }
+
+    // validate_positive tests
+    #[test]
+    fn test_validate_positive_valid() {
+        let values = vec![0.1, 1.0, 10.0, 100.0];
+        assert!(validate_positive(&values, "x").is_ok());
+    }
+
+    #[test]
+    fn test_validate_positive_with_zero() {
+        let values = vec![0.0, 1.0, 2.0];
+        let result = validate_positive(&values, "x");
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "log scale requires positive values"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_validate_positive_with_negative() {
+        let values = vec![-1.0, 1.0, 2.0];
+        let result = validate_positive(&values, "x");
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "log scale requires positive values"
             })
         ));
     }

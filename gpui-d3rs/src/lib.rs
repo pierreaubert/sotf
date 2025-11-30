@@ -53,6 +53,7 @@ pub mod fetch;
 pub mod grid;
 pub mod legend;
 pub mod polygon;
+pub mod quadtree;
 pub mod random;
 pub mod shape;
 #[cfg(all(feature = "gpui", not(test)))]
