@@ -63,6 +63,10 @@ smol = "2.0"
 # Array processing
 ndarray = { workspace = true }
 
+# Asset embedding
+rust-embed = "8"
+anyhow = "1"
+
 [lib]
 name = "sotf_audio_player_gpui"
 path = "src/lib.rs"

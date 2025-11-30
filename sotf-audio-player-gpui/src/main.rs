@@ -1,13 +1,22 @@
+use anyhow::anyhow;
 use gpui::*;
+use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::actions::*;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
+use std::borrow::Cow;
 use std::fs::OpenOptions;
 use std::sync::Arc;
 
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
+
+/// Embedded assets including Lucide SVG icons
+#[derive(RustEmbed)]
+#[folder = "assets"]
+#[include = "icons/*.svg"]
+struct Assets;
 
 fn main() {
     // Initialize logging to file
@@ -35,7 +44,9 @@ fn main() {
 
     log::info!("SOTF GPUI Player starting...");
 
-    gpui::Application::new().run(move |cx| {
+    gpui::Application::new()
+        .with_assets(Assets)
+        .run(move |cx| {
         cx.activate(true);
         
         cx.set_menus(vec![
@@ -154,15 +165,26 @@ fn main() {
     });
 }
 
-struct Assets;
-
 impl gpui::AssetSource for Assets {
-    fn load(&self, path: &str) -> Result<Option<std::borrow::Cow<'static, [u8]>>> {
-        // For now, return None - no custom assets needed
-        Ok(None)
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if path.is_empty() {
+            return Ok(None);
+        }
+
+        Self::get(path)
+            .map(|file| Some(file.data))
+            .ok_or_else(|| anyhow!("Could not find asset at path \"{}\"", path))
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        Ok(Vec::new())
+        Ok(Self::iter()
+            .filter_map(|p| {
+                if p.starts_with(path) {
+                    Some(SharedString::from(p.to_string()))
+                } else {
+                    None
+                }
+            })
+            .collect())
     }
 }
