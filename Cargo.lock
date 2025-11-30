@@ -4034,6 +4034,7 @@ dependencies = [
  "approx",
  "autoeq",
  "autoeq-cea2034",
+ "delaunator",
  "gpui",
  "gpui-ui-kit",
  "ndarray 0.16.1",
