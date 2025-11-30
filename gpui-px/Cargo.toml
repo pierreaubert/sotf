@@ -12,4 +12,8 @@ d3rs = { path = "../gpui-d3rs", package = "gpui-d3rs" }
 gpui = { git = "https://github.com/zed-industries/zed.git" }
 thiserror.workspace = true
 
+[[bin]]
+name = "gpui-px-showcase"
+path = "bin/showcase.rs"
+
 [dev-dependencies]
