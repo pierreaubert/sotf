@@ -36,6 +36,7 @@ enum ChartSection {
     Scatter,
     Line,
     Bar,
+    LogScales,
     Heatmap,
     Contour,
     Isoline,
@@ -49,6 +50,7 @@ impl ChartSection {
             ChartSection::Scatter,
             ChartSection::Line,
             ChartSection::Bar,
+            ChartSection::LogScales,
             ChartSection::Heatmap,
             ChartSection::Contour,
             ChartSection::Isoline,
@@ -62,6 +64,7 @@ impl ChartSection {
             ChartSection::Scatter => "Scatter",
             ChartSection::Line => "Line",
             ChartSection::Bar => "Bar",
+            ChartSection::LogScales => "Log Scales",
             ChartSection::Heatmap => "Heatmap",
             ChartSection::Contour => "Contour",
             ChartSection::Isoline => "Isoline",
@@ -175,6 +178,7 @@ impl ShowcaseApp {
             ChartSection::Scatter => self.render_scatter_demo(),
             ChartSection::Line => self.render_line_demo(),
             ChartSection::Bar => self.render_bar_demo(),
+            ChartSection::LogScales => self.render_logscales_demo(),
             ChartSection::Heatmap => self.render_heatmap_demo(cx),
             ChartSection::Contour => self.render_contour_demo(cx),
             ChartSection::Isoline => self.render_isoline_demo(),
@@ -465,6 +469,186 @@ impl ShowcaseApp {
                     .child(div().text_sm().child("• Automatic bar width calculation"))
                     .child(div().text_sm().child("• Custom colors and opacity"))
                     .child(div().text_sm().child("• Support for negative values")),
+            )
+    }
+
+    // ========================================================================
+    // Log Scales Section
+    // ========================================================================
+
+    fn render_logscales_demo(&self) -> Div {
+        // Generate logarithmic data
+        let log_x: Vec<f64> = vec![10.0, 100.0, 1000.0, 10000.0];
+        let log_y: Vec<f64> = vec![1.0, 10.0, 100.0, 1000.0];
+
+        let freq_x: Vec<f64> = (0..50).map(|i| 20.0 * 10_f64.powf(i as f64 / 15.0)).collect();
+        let freq_y: Vec<f64> = freq_x.iter().map(|&f| {
+            // Simulated frequency response
+            if f < 100.0 {
+                -12.0 * (100.0 - f) / 80.0
+            } else if f > 5000.0 {
+                -6.0 * (f - 5000.0) / 15000.0
+            } else {
+                0.0
+            }
+        }).collect();
+
+        let bar_cats: Vec<&str> = vec!["10", "100", "1K", "10K", "100K"];
+        let bar_vals: Vec<f64> = vec![10.0, 100.0, 1000.0, 10000.0, 100000.0];
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(
+                div()
+                    .text_2xl()
+                    .font_weight(FontWeight::BOLD)
+                    .child("Logarithmic Scales"),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .max_w(px(600.0))
+                    .child("Logarithmic scales are essential for visualizing data spanning multiple orders of magnitude, such as frequency responses (20 Hz to 20 kHz), power measurements, and exponential growth."),
+            )
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Scatter Plot - Log-Log Scale"),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .child("Both X and Y axes use logarithmic scaling - ideal for power-law relationships"),
+            )
+            .child({
+                scatter(&log_x, &log_y)
+                    .title("Log-Log Scale")
+                    .color(0xe377c2)
+                    .x_scale(ScaleType::Log)
+                    .y_scale(ScaleType::Log)
+                    .point_radius(8.0)
+                    .size(600.0, 350.0)
+                    .build()
+                    .unwrap()
+            })
+            .child(self.code_block(
+                "scatter(&x, &y)\n    .x_scale(ScaleType::Log)\n    .y_scale(ScaleType::Log)\n    .build()?",
+            ))
+            .child(
+                div()
+                    .mt_6()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Line Chart - Logarithmic X-Axis"),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .child("Frequency response plot with logarithmic frequency axis - standard for audio engineering"),
+            )
+            .child({
+                line(&freq_x, &freq_y)
+                    .title("Frequency Response (20 Hz - 20 kHz)")
+                    .color(0x1f77b4)
+                    .x_scale(ScaleType::Log)
+                    .stroke_width(2.5)
+                    .size(600.0, 350.0)
+                    .build()
+                    .unwrap()
+            })
+            .child(self.code_block(
+                "line(&freq, &db)\n    .x_scale(ScaleType::Log)\n    .build()?",
+            ))
+            .child(
+                div()
+                    .mt_6()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Bar Chart - Logarithmic Y-Axis"),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .child("Bar chart with log scale for values spanning multiple magnitudes"),
+            )
+            .child({
+                bar(&bar_cats, &bar_vals)
+                    .title("Logarithmic Values")
+                    .color(0x2ca02c)
+                    .y_scale(ScaleType::Log)
+                    .size(600.0, 350.0)
+                    .build()
+                    .unwrap()
+            })
+            .child(self.code_block(
+                "bar(&categories, &values)\n    .y_scale(ScaleType::Log)\n    .build()?",
+            ))
+            .child(
+                div()
+                    .mt_6()
+                    .p_4()
+                    .bg(rgb(0xfef3c7))
+                    .border_1()
+                    .border_color(rgb(0xfbbf24))
+                    .rounded_md()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(rgb(0x92400e))
+                                    .child("Important Notes:"),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x78350f))
+                                    .child("• Logarithmic scales require all values to be positive"),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x78350f))
+                                    .child("• Zero and negative values will cause validation errors"),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x78350f))
+                                    .child("• Each decade (10x) gets equal spacing on the axis"),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Supported Chart Types"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .ml_4()
+                    .child(div().text_sm().child("• Scatter: Both X and Y axes can be logarithmic"))
+                    .child(div().text_sm().child("• Line: Both X and Y axes can be logarithmic"))
+                    .child(div().text_sm().child("• Bar: Only Y-axis (values) can be logarithmic"))
+                    .child(div().text_sm().child("• Heatmap: Both axes support logarithmic scaling"))
+                    .child(div().text_sm().child("• Contour/Isoline: Both axes support logarithmic scaling")),
             )
     }
 

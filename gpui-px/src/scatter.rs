@@ -3,11 +3,11 @@
 use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_data_length,
-    validate_dimensions,
+    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, ScaleType, extent_padded, validate_data_array,
+    validate_data_length, validate_dimensions, validate_positive,
 };
 use d3rs::color::D3Color;
-use d3rs::scale::LinearScale;
+use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ScatterConfig, ScatterPoint, render_scatter};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
@@ -24,6 +24,8 @@ pub struct ScatterChart {
     opacity: f32,
     width: f32,
     height: f32,
+    x_scale_type: ScaleType,
+    y_scale_type: ScaleType,
 }
 
 impl ScatterChart {
@@ -66,6 +68,26 @@ impl ScatterChart {
         self
     }
 
+    /// Set X-axis scale type (linear or log).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::{scatter, ScaleType};
+    /// let chart = scatter(&[10.0, 100.0, 1000.0], &[1.0, 2.0, 3.0])
+    ///     .x_scale(ScaleType::Log)
+    ///     .build();
+    /// ```
+    pub fn x_scale(mut self, scale: ScaleType) -> Self {
+        self.x_scale_type = scale;
+        self
+    }
+
+    /// Set Y-axis scale type (linear or log).
+    pub fn y_scale(mut self, scale: ScaleType) -> Self {
+        self.y_scale_type = scale;
+        self
+    }
+
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
         // Validate inputs
@@ -73,6 +95,14 @@ impl ScatterChart {
         validate_data_array(&self.y, "y")?;
         validate_data_length(self.x.len(), self.y.len(), "x", "y")?;
         validate_dimensions(self.width, self.height)?;
+
+        // Validate positive values for log scales
+        if self.x_scale_type == ScaleType::Log {
+            validate_positive(&self.x, "x")?;
+        }
+        if self.y_scale_type == ScaleType::Log {
+            validate_positive(&self.y, "y")?;
+        }
 
         // Calculate plot area (reserve space for title if present)
         let title_height = if self.title.is_some() {
@@ -85,14 +115,6 @@ impl ScatterChart {
         // Calculate domains with padding
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
         let (y_min, y_max) = extent_padded(&self.y, DEFAULT_PADDING_FRACTION);
-
-        // Create scales
-        let x_scale = LinearScale::new()
-            .domain(x_min, x_max)
-            .range(0.0, self.width as f64);
-        let y_scale = LinearScale::new()
-            .domain(y_min, y_max)
-            .range(plot_height as f64, 0.0);
 
         // Create data points
         let data: Vec<ScatterPoint> = self
@@ -108,8 +130,45 @@ impl ScatterChart {
             .point_radius(self.point_radius)
             .opacity(self.opacity);
 
-        // Build the element
-        let scatter_element = render_scatter(&x_scale, &y_scale, &data, &config);
+        // Build the element based on scale types
+        let scatter_element: AnyElement = match (self.x_scale_type, self.y_scale_type) {
+            (ScaleType::Linear, ScaleType::Linear) => {
+                let x_scale = LinearScale::new()
+                    .domain(x_min, x_max)
+                    .range(0.0, self.width as f64);
+                let y_scale = LinearScale::new()
+                    .domain(y_min, y_max)
+                    .range(plot_height as f64, 0.0);
+                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+            }
+            (ScaleType::Log, ScaleType::Linear) => {
+                let x_scale = LogScale::new()
+                    .domain(x_min.max(1e-10), x_max)
+                    .range(0.0, self.width as f64);
+                let y_scale = LinearScale::new()
+                    .domain(y_min, y_max)
+                    .range(plot_height as f64, 0.0);
+                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+            }
+            (ScaleType::Linear, ScaleType::Log) => {
+                let x_scale = LinearScale::new()
+                    .domain(x_min, x_max)
+                    .range(0.0, self.width as f64);
+                let y_scale = LogScale::new()
+                    .domain(y_min.max(1e-10), y_max)
+                    .range(plot_height as f64, 0.0);
+                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+            }
+            (ScaleType::Log, ScaleType::Log) => {
+                let x_scale = LogScale::new()
+                    .domain(x_min.max(1e-10), x_max)
+                    .range(0.0, self.width as f64);
+                let y_scale = LogScale::new()
+                    .domain(y_min.max(1e-10), y_max)
+                    .range(plot_height as f64, 0.0);
+                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+            }
+        };
 
         // Build container with optional title
         let mut container = div()
@@ -173,6 +232,8 @@ pub fn scatter(x: &[f64], y: &[f64]) -> ScatterChart {
         opacity: 0.7,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        x_scale_type: ScaleType::Linear,
+        y_scale_type: ScaleType::Linear,
     }
 }
 
@@ -274,6 +335,81 @@ mod tests {
             .point_radius(10.0)
             .opacity(0.5)
             .size(800.0, 600.0)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scatter_log_x_scale() {
+        let x = vec![10.0, 100.0, 1000.0, 10000.0];
+        let y = vec![1.0, 2.0, 3.0, 4.0];
+        let result = scatter(&x, &y)
+            .x_scale(ScaleType::Log)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scatter_log_y_scale() {
+        let x = vec![1.0, 2.0, 3.0, 4.0];
+        let y = vec![10.0, 100.0, 1000.0, 10000.0];
+        let result = scatter(&x, &y)
+            .y_scale(ScaleType::Log)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scatter_log_xy_scale() {
+        let x = vec![10.0, 100.0, 1000.0];
+        let y = vec![20.0, 200.0, 2000.0];
+        let result = scatter(&x, &y)
+            .x_scale(ScaleType::Log)
+            .y_scale(ScaleType::Log)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_scatter_log_x_negative_values() {
+        let x = vec![-10.0, -5.0, 5.0, 10.0];
+        let y = vec![1.0, 2.0, 3.0, 4.0];
+        let result = scatter(&x, &y)
+            .x_scale(ScaleType::Log)
+            .build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "x",
+                reason: "contains non-positive values for log scale"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_scatter_log_y_zero_value() {
+        let x = vec![1.0, 2.0, 3.0, 4.0];
+        let y = vec![0.0, 1.0, 2.0, 3.0];
+        let result = scatter(&x, &y)
+            .y_scale(ScaleType::Log)
+            .build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "y",
+                reason: "contains non-positive values for log scale"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_scatter_log_scale_with_title() {
+        let x = vec![10.0, 100.0, 1000.0];
+        let y = vec![1.0, 2.0, 3.0];
+        let result = scatter(&x, &y)
+            .title("Log Scale Plot")
+            .x_scale(ScaleType::Log)
+            .color(0x1f77b4)
             .build();
         assert!(result.is_ok());
     }

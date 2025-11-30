@@ -3,11 +3,11 @@
 use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_data_length,
-    validate_dimensions,
+    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, ScaleType, extent_padded, validate_data_array,
+    validate_data_length, validate_dimensions, validate_positive,
 };
 use d3rs::color::D3Color;
-use d3rs::scale::LinearScale;
+use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{BarConfig, BarDatum, render_bars};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
@@ -25,6 +25,7 @@ pub struct BarChart {
     border_radius: f32,
     width: f32,
     height: f32,
+    y_scale_type: ScaleType,
 }
 
 impl BarChart {
@@ -73,6 +74,20 @@ impl BarChart {
         self
     }
 
+    /// Set Y-axis scale type (linear or log).
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::{bar, ScaleType};
+    /// let chart = bar(&["A", "B", "C"], &[10.0, 100.0, 1000.0])
+    ///     .y_scale(ScaleType::Log)
+    ///     .build();
+    /// ```
+    pub fn y_scale(mut self, scale: ScaleType) -> Self {
+        self.y_scale_type = scale;
+        self
+    }
+
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
         // Validate inputs
@@ -90,6 +105,11 @@ impl BarChart {
         )?;
         validate_dimensions(self.width, self.height)?;
 
+        // Validate positive values for log scale
+        if self.y_scale_type == ScaleType::Log {
+            validate_positive(&self.values, "values")?;
+        }
+
         // Calculate plot area (reserve space for title if present)
         let title_height = if self.title.is_some() {
             TITLE_AREA_HEIGHT
@@ -98,21 +118,20 @@ impl BarChart {
         };
         let plot_height = self.height - title_height;
 
-        // Calculate y domain with padding, always including 0 for bar charts
+        // Calculate y domain with padding
         let (mut y_min, mut y_max) = extent_padded(&self.values, DEFAULT_PADDING_FRACTION);
-        // Bar charts should always include the zero baseline
-        y_min = y_min.min(0.0);
-        y_max = y_max.max(0.0);
-        let y_domain_min = y_min;
-        let y_domain_max = y_max;
 
-        // Create scales
+        // For linear scale, always include zero baseline for bar charts
+        // For log scale, we can't include zero
+        if self.y_scale_type == ScaleType::Linear {
+            y_min = y_min.min(0.0);
+            y_max = y_max.max(0.0);
+        }
+
+        // Create X scale (always linear for categories)
         let x_scale = LinearScale::new()
             .domain(0.0, self.categories.len() as f64)
             .range(0.0, self.width as f64);
-        let y_scale = LinearScale::new()
-            .domain(y_domain_min, y_domain_max)
-            .range(plot_height as f64, 0.0);
 
         // Create data
         let data: Vec<BarDatum> = self
@@ -129,8 +148,23 @@ impl BarChart {
             .bar_gap(self.bar_gap)
             .border_radius(self.border_radius);
 
-        // Build the element
-        let bar_element = render_bars(&x_scale, &y_scale, &data, self.width, plot_height, &config);
+        // Build the element based on Y scale type
+        let bar_element: AnyElement = match self.y_scale_type {
+            ScaleType::Linear => {
+                let y_scale = LinearScale::new()
+                    .domain(y_min, y_max)
+                    .range(plot_height as f64, 0.0);
+                render_bars(&x_scale, &y_scale, &data, self.width, plot_height, &config)
+                    .into_any_element()
+            }
+            ScaleType::Log => {
+                let y_scale = LogScale::new()
+                    .domain(y_min.max(1e-10), y_max)
+                    .range(plot_height as f64, 0.0);
+                render_bars(&x_scale, &y_scale, &data, self.width, plot_height, &config)
+                    .into_any_element()
+            }
+        };
 
         // Build container with optional title
         let mut container = div()
@@ -195,6 +229,7 @@ pub fn bar<S: AsRef<str>>(categories: &[S], values: &[f64]) -> BarChart {
         border_radius: 2.0,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        y_scale_type: ScaleType::Linear,
     }
 }
 
@@ -277,6 +312,60 @@ mod tests {
             .bar_gap(5.0)
             .border_radius(4.0)
             .size(800.0, 600.0)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bar_log_y_scale() {
+        let categories = vec!["A", "B", "C", "D"];
+        let values = vec![10.0, 100.0, 1000.0, 10000.0];
+        let result = bar(&categories, &values)
+            .y_scale(ScaleType::Log)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bar_log_y_scale_zero_value() {
+        let categories = vec!["A", "B", "C"];
+        let values = vec![0.0, 10.0, 100.0];
+        let result = bar(&categories, &values)
+            .y_scale(ScaleType::Log)
+            .build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "values",
+                reason: "contains non-positive values for log scale"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_bar_log_y_scale_negative_value() {
+        let categories = vec!["A", "B", "C"];
+        let values = vec![-5.0, 10.0, 100.0];
+        let result = bar(&categories, &values)
+            .y_scale(ScaleType::Log)
+            .build();
+        assert!(matches!(
+            result,
+            Err(ChartError::InvalidData {
+                field: "values",
+                reason: "contains non-positive values for log scale"
+            })
+        ));
+    }
+
+    #[test]
+    fn test_bar_log_scale_with_title() {
+        let categories = vec!["Low", "Medium", "High"];
+        let values = vec![10.0, 100.0, 1000.0];
+        let result = bar(&categories, &values)
+            .title("Log Scale Bar Chart")
+            .y_scale(ScaleType::Log)
+            .color(0x2ca02c)
             .build();
         assert!(result.is_ok());
     }

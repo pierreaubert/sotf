@@ -70,6 +70,32 @@
 //! - `ColorScale::Greys` - sequential grayscale
 //! - `ColorScale::custom(|t| ...)` - custom function
 //!
+//! ## Logarithmic Scales
+//!
+//! All chart types support logarithmic axis scaling via the `ScaleType` enum:
+//!
+//! ### Scatter Charts
+//! - Both X and Y axes can be logarithmic independently
+//! - Use `.x_scale(ScaleType::Log)` and `.y_scale(ScaleType::Log)`
+//! - Ideal for power-law relationships and data spanning multiple orders of magnitude
+//!
+//! ### Line Charts
+//! - Both X and Y axes can be logarithmic independently
+//! - Perfect for frequency response plots (audio engineering)
+//! - Example: frequency axis from 20 Hz to 20 kHz
+//!
+//! ### Bar Charts
+//! - Only Y-axis (values) can be logarithmic
+//! - X-axis is categorical (always linear)
+//! - Use `.y_scale(ScaleType::Log)` for values spanning magnitudes
+//!
+//! ### Heatmaps, Contours, and Isolines
+//! - Both X and Y axes support logarithmic scaling
+//! - Use `.x_scale(ScaleType::Log)` and `.y_scale(ScaleType::Log)`
+//!
+//! **Important**: Logarithmic scales require all values to be positive.
+//! Zero or negative values will cause validation errors.
+//!
 //! ## Example
 //!
 //! ```rust,no_run
@@ -80,9 +106,20 @@
 //!     .title("My Chart")
 //!     .build()?;
 //!
+//! // Scatter plot with logarithmic scales
+//! let chart = scatter(&x_data, &y_data)
+//!     .x_scale(ScaleType::Log)
+//!     .y_scale(ScaleType::Log)
+//!     .build()?;
+//!
 //! // Line chart with custom color
 //! let chart = line(&x_data, &y_data)
 //!     .color(0x1f77b4)  // Plotly blue
+//!     .build()?;
+//!
+//! // Frequency response plot with log frequency axis
+//! let chart = line(&frequency, &magnitude_db)
+//!     .x_scale(ScaleType::Log)
 //!     .build()?;
 //!
 //! // Bar chart
