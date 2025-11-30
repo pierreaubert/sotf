@@ -5,7 +5,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Dialog, DialogSize, HStack, Text, TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, Dialog, DialogSize, Divider, HStack, StackAlign, StackJustify,
+    StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -28,7 +29,7 @@ impl PlayerView {
             .size(DialogSize::Full)
             .content(
                 VStack::new()
-                    .spacing(gpui_ui_kit::StackSpacing::Sm)
+                    .spacing(StackSpacing::Sm)
                     // Global keybindings section
                     .child(
                         Text::new("GLOBAL KEYBINDINGS")
@@ -71,7 +72,7 @@ impl PlayerView {
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
         HStack::new()
-            .spacing(gpui_ui_kit::StackSpacing::Md)
+            .spacing(StackSpacing::Md)
             .child(
                 div()
                     .w(Rems(12.0))
@@ -131,8 +132,8 @@ impl PlayerView {
                 .p_3()
                 .child(
                     HStack::new()
-                        .spacing(gpui_ui_kit::StackSpacing::Md)
-                        .align(gpui_ui_kit::StackAlign::Center)
+                        .spacing(StackSpacing::Md)
+                        .align(StackAlign::Center)
                         .child(
                             Text::new(icon)
                                 .size(TextSize::Lg)
@@ -297,8 +298,8 @@ impl PlayerView {
                         )
                         .child(
                             HStack::new()
-                                .justify(gpui_ui_kit::StackJustify::SpaceBetween)
-                                .align(gpui_ui_kit::StackAlign::Center)
+                                .justify(StackJustify::SpaceBetween)
+                                .align(StackAlign::Center)
                                 .child(Text::new(label).size(TextSize::Sm))
                                 .child(Text::new(shortcut).size(TextSize::Xs).muted(true)),
                         )
@@ -317,7 +318,7 @@ impl PlayerView {
             .size(DialogSize::Lg)
             .content(
                 VStack::new()
-                    .spacing(gpui_ui_kit::StackSpacing::Md)
+                    .spacing(StackSpacing::Md)
                     .child(
                         Text::new("Enter path to APO file:")
                             .size(TextSize::Sm)
@@ -352,7 +353,7 @@ impl PlayerView {
             .size(DialogSize::Lg)
             .content(
                 VStack::new()
-                    .spacing(gpui_ui_kit::StackSpacing::Md)
+                    .spacing(StackSpacing::Md)
                     .child(
                         Text::new("Enter path to SOFA file:")
                             .size(TextSize::Sm)
@@ -390,7 +391,7 @@ impl PlayerView {
             .size(DialogSize::Xl)
             .content(
                 VStack::new()
-                    .spacing(gpui_ui_kit::StackSpacing::Md)
+                    .spacing(StackSpacing::Md)
                     .child(
                         Text::new("Enter preset name (or select existing to overwrite):")
                             .size(TextSize::Sm)
@@ -455,7 +456,7 @@ impl PlayerView {
             .size(DialogSize::Xl)
             .content(
                 VStack::new()
-                    .spacing(gpui_ui_kit::StackSpacing::Md)
+                    .spacing(StackSpacing::Md)
                     .child(
                         Text::new("Enter preset name or select from list:")
                             .size(TextSize::Sm)
@@ -531,7 +532,7 @@ impl PlayerView {
                 .size(DialogSize::Xl)
                 .content(
                     VStack::new()
-                        .spacing(gpui_ui_kit::StackSpacing::Sm)
+                        .spacing(StackSpacing::Sm)
                         .children(params.iter().enumerate().map(|(idx, (name, value))| {
                             let is_selected = idx == selected_idx;
                             let theme = theme.clone();
@@ -542,7 +543,7 @@ impl PlayerView {
                                 .when(!is_selected, |d| d.bg(theme.surface))
                                 .child(
                                     HStack::new()
-                                        .justify(gpui_ui_kit::StackJustify::SpaceBetween)
+                                        .justify(StackJustify::SpaceBetween)
                                         .child(
                                             Text::new(name.clone())
                                                 .size(TextSize::Sm)
@@ -866,7 +867,7 @@ fn render_plugin_param_list(
 }
 
 impl PlayerView {
-    /// Render a comprehensive keyboard shortcuts dialog
+    /// Render a comprehensive keyboard shortcuts dialog using Dialog component
     pub(crate) fn render_keyboard_shortcuts_dialog(
         &self,
         cx: &mut Context<Self>,
@@ -879,55 +880,58 @@ impl PlayerView {
             ("P", "Previous track"),
             ("+/-", "Volume up/down"),
             ("M", "Toggle mute"),
-            (
-                "1-5",
-                "Switch screens (Library/Queue/Plugins/Devices/Settings)",
-            ),
+            ("1-5", "Switch screens"),
             ("?", "Toggle help"),
-            ("Esc", "Close dialog / Cancel"),
+            ("Esc", "Close / Cancel"),
             ("T", "Cycle theme"),
             ("Alt-L", "Cycle language"),
             ("Cmd-Q", "Quit"),
         ];
 
         let library_shortcuts = vec![
-            ("↑/↓ or K/J", "Navigate albums"),
-            ("Enter", "Add album to queue and play"),
-            ("Q", "Add album to queue"),
+            ("↑/↓ K/J", "Navigate albums"),
+            ("Enter", "Add & play"),
+            ("Q", "Add to queue"),
             ("/", "Search"),
-            ("V", "Toggle grid/list view"),
-            ("S", "Cycle sort order"),
-            ("C", "Cycle channel filter"),
+            ("V", "Toggle view"),
+            ("S", "Cycle sort"),
+            ("C", "Channel filter"),
         ];
 
         let queue_shortcuts = vec![
-            ("↑/↓ or K/J", "Navigate queue"),
-            ("X", "Remove from queue"),
+            ("↑/↓ K/J", "Navigate queue"),
+            ("X", "Remove item"),
             ("Shift-X", "Clear queue"),
-            ("Tab", "Select meter group"),
-            ("Shift-M", "Mute selected group"),
-            ("Shift-S", "Solo selected group"),
+            ("Tab", "Select meter"),
+            ("Shift-M", "Mute group"),
+            ("Shift-S", "Solo group"),
         ];
 
         let plugin_shortcuts = vec![
-            (
-                "E/U/G/L/O/B",
-                "Add EQ/Upmixer/Gate/Limiter/Loudness/Binaural",
-            ),
-            ("Enter/e", "Edit plugin parameters"),
+            ("E/U/G/L/O/B", "Add plugins"),
+            ("Enter/e", "Edit plugin"),
             ("D/Delete", "Delete plugin"),
-            ("Space", "Toggle plugin on/off"),
-            ("Shift-U/N", "Move plugin up/down"),
-            ("Shift-S/l", "Save/Load plugin preset"),
+            ("Space", "Toggle on/off"),
+            ("Shift-U/N", "Move up/down"),
+            ("Shift-S/l", "Save/Load preset"),
         ];
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x00000099))
+        Dialog::new("shortcuts-dialog")
+            .title("Keyboard Shortcuts")
+            .size(DialogSize::Full)
+            .show_close_button(false)
+            .content(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_6()
+                    .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
+                    .child(self.render_shortcut_section("Library", &library_shortcuts, &theme))
+                    .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
+                    .child(self.render_shortcut_section("Plugins", &plugin_shortcuts, &theme)),
+            )
+            .footer(Text::new("Press ESC or ? to close").size(TextSize::Xs).muted(true))
+            .build()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseDownEvent, _window, cx| {
@@ -936,67 +940,6 @@ impl PlayerView {
                     });
                     cx.notify();
                 }),
-            )
-            .child(
-                div()
-                    .id("shortcuts-dialog")
-                    .w(px(700.0))
-                    .max_h(px(600.0))
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded_lg()
-                    .shadow_lg()
-                    .p_6()
-                    .overflow_y_scroll()
-                    // Header
-                    .child(
-                        div()
-                            .flex()
-                            .justify_between()
-                            .items_center()
-                            .mb_4()
-                            .child(
-                                div()
-                                    .text_xl()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(theme.text_primary)
-                                    .child("Keyboard Shortcuts"),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .child("Press ESC to close"),
-                            ),
-                    )
-                    // Shortcut sections
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_6()
-                            // Global
-                            .child(self.render_shortcut_section(
-                                "Global",
-                                &global_shortcuts,
-                                &theme,
-                            ))
-                            // Library
-                            .child(self.render_shortcut_section(
-                                "Library",
-                                &library_shortcuts,
-                                &theme,
-                            ))
-                            // Queue
-                            .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
-                            // Plugins
-                            .child(self.render_shortcut_section(
-                                "Plugins",
-                                &plugin_shortcuts,
-                                &theme,
-                            )),
-                    ),
             )
     }
 
@@ -1006,55 +949,81 @@ impl PlayerView {
         shortcuts: &[(&str, &str)],
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        div()
-            .flex()
-            .flex_col()
-            .min_w(px(280.0))
+        VStack::new()
+            .spacing(StackSpacing::Xs)
             .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.accent)
-                    .mb_2()
-                    .child(title.to_string()),
+                Text::new(title.to_string())
+                    .size(TextSize::Sm)
+                    .weight(TextWeight::Semibold)
+                    .color(theme.accent),
             )
             .children(shortcuts.iter().map(|(key, desc)| {
-                let theme = theme.clone();
-                div()
-                    .flex()
-                    .justify_between()
-                    .py_1()
+                HStack::new()
+                    .spacing(StackSpacing::Md)
                     .child(
                         div()
-                            .px_2()
-                            .py(px(2.0))
-                            .bg(theme.surface_hover)
-                            .rounded(px(3.0))
-                            .text_xs()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(theme.text_primary)
-                            .child(key.to_string()),
+                            .w(Rems(8.0))
+                            .child(Badge::new(key.to_string()).variant(BadgeVariant::Primary)),
                     )
                     .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_secondary)
-                            .child(desc.to_string()),
+                        Text::new(desc.to_string())
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
                     )
+                    .into_any_element()
             }))
+            .build()
+            .min_w(px(260.0))
     }
 
-    /// Render a small About dialog
+    /// Render About dialog using Dialog component
     pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.state.read(cx).app.theme.clone();
 
-        div()
-            .absolute()
-            .inset_0()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgba(0x00000099))
+        Dialog::new("about-dialog")
+            .title("About SotF")
+            .size(DialogSize::Sm)
+            .show_close_button(false)
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Md)
+                    .align(StackAlign::Center)
+                    .child(
+                        Text::new("SotF")
+                            .size(TextSize::Xxl)
+                            .weight(TextWeight::Bold)
+                            .color(theme.accent),
+                    )
+                    .child(
+                        Text::new("Sound of the Future")
+                            .size(TextSize::Lg)
+                            .color(theme.text_primary),
+                    )
+                    .child(
+                        Text::new("Audio Player & Processing Engine")
+                            .size(TextSize::Sm)
+                            .color(theme.text_secondary),
+                    )
+                    .child(Divider::new())
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .align(StackAlign::Center)
+                            .child(Text::new("Version 0.5.3").size(TextSize::Xs).muted(true))
+                            .child(
+                                Text::new("Built with Rust & GPUI")
+                                    .size(TextSize::Xs)
+                                    .muted(true),
+                            )
+                            .child(Text::new("spinorama.org").size(TextSize::Xs).muted(true)),
+                    ),
+            )
+            .footer(
+                Text::new("Click anywhere or press ESC to close")
+                    .size(TextSize::Xs)
+                    .muted(true),
+            )
+            .build()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseDownEvent, _window, cx| {
@@ -1063,70 +1032,6 @@ impl PlayerView {
                     });
                     cx.notify();
                 }),
-            )
-            .child(
-                div()
-                    .id("about-dialog")
-                    .w(px(320.0))
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded_lg()
-                    .shadow_lg()
-                    .p_6()
-                    // Logo/Title
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_3()
-                            .child(
-                                div()
-                                    .text_3xl()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(theme.accent)
-                                    .child("SotF"),
-                            )
-                            .child(
-                                div()
-                                    .text_lg()
-                                    .text_color(theme.text_primary)
-                                    .child("Sound of the Future"),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.text_secondary)
-                                    .child("Audio Player & Processing Engine"),
-                            ),
-                    )
-                    // Version info
-                    .child(
-                        div()
-                            .mt_4()
-                            .pt_4()
-                            .border_t_1()
-                            .border_color(theme.border)
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_1()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child("Version 0.5.3")
-                            .child("Built with Rust & GPUI")
-                            .child("spinorama.org"),
-                    )
-                    // Close hint
-                    .child(
-                        div()
-                            .mt_4()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .text_center()
-                            .child("Click anywhere to close"),
-                    ),
             )
     }
 }

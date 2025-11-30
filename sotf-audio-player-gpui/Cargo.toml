@@ -14,6 +14,10 @@ gpui = { git = "https://github.com/zed-industries/zed.git" }
 # GPUI UI Kit
 gpui-ui-kit = { path = "../gpui-ui-kit" }
 
+# GPUI Plotting (Plotly Express-style charts)
+gpui-px = { path = "../gpui-px" }
+gpui-d3rs = { path = "../gpui-d3rs" }
+
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-audio-player = { path = "../sotf-audio-player" }
 

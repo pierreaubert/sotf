@@ -4,7 +4,10 @@ use crate::ui::PlayerView;
 use crate::ui::components::potentiometer::render_potentiometer;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackAlign, StackJustify, StackSpacing, VStack};
+use gpui_ui_kit::{
+    HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify, StackSpacing,
+    VStack,
+};
 
 impl PlayerView {
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -171,10 +174,27 @@ impl PlayerView {
         };
 
         let text_muted = theme.text_muted;
-        let accent = theme.accent;
-        let surface_hover: gpui::Hsla = theme.surface_hover.into();
         let progress_bar_bg = theme.progress_bar_bg;
         let progress_bar_fill = theme.progress_bar_fill;
+
+        // Get icon button theme from app theme
+        let icon_button_theme = {
+            let state = self.state.read(cx);
+            state.app.theme.to_icon_button_theme()
+        };
+
+        // Create a theme for the play button with accent background
+        let play_button_theme = {
+            let state = self.state.read(cx);
+            let theme = &state.app.theme;
+            gpui_ui_kit::IconButtonTheme {
+                filled_bg: theme.accent,
+                filled_hover_bg: theme.accent_hover,
+                text: theme.text_primary,
+                text_on_accent: theme.text_primary,
+                ..icon_button_theme.clone()
+            }
+        };
 
         div()
             .flex()
@@ -190,44 +210,89 @@ impl PlayerView {
                     .items_center()
                     .gap_2()
                     // Previous track
-                    .child(self.render_transport_button("⏮", "prev", surface_hover.clone(), cx))
-                    // Seek backward
-                    .child(self.render_transport_button(
-                        "⏪",
-                        "seek-back",
-                        surface_hover.clone(),
-                        cx,
-                    ))
-                    // Play/Stop (large)
                     .child(
-                        div()
-                            .id("transport-play")
-                            .w(px(48.0))
-                            .h(px(48.0))
+                        IconButton::new("transport-prev", "⏮")
+                            .size(IconButtonSize::Lg)
                             .rounded_full()
-                            .bg(accent)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .text_xl()
+                            .theme(icon_button_theme.clone())
+                            .build()
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                                    view.toggle_playback(&crate::actions::PlayPause, window, cx);
+                                    view.prev_track(&crate::actions::PrevTrack, window, cx);
                                 }),
-                            )
-                            .child(if is_playing { "⏹" } else { "▶" }),
+                            ),
+                    )
+                    // Seek backward
+                    .child(
+                        IconButton::new("transport-seek-back", "⏪")
+                            .size(IconButtonSize::Lg)
+                            .rounded_full()
+                            .theme(icon_button_theme.clone())
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.position_secs =
+                                            (state.app.position_secs - 10.0).max(0.0);
+                                    });
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    // Play/Stop (large)
+                    .child(
+                        IconButton::new(
+                            "transport-play",
+                            if is_playing { "⏹" } else { "▶" },
+                        )
+                        .size(IconButtonSize::Xl)
+                        .variant(IconButtonVariant::Filled)
+                        .rounded_full()
+                        .theme(play_button_theme)
+                        .build()
+                        .text_xl()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                                view.toggle_playback(&crate::actions::PlayPause, window, cx);
+                            }),
+                        ),
                     )
                     // Seek forward
-                    .child(self.render_transport_button(
-                        "⏩",
-                        "seek-fwd",
-                        surface_hover.clone(),
-                        cx,
-                    ))
+                    .child(
+                        IconButton::new("transport-seek-fwd", "⏩")
+                            .size(IconButtonSize::Lg)
+                            .rounded_full()
+                            .theme(icon_button_theme.clone())
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        let max = state.app.duration_secs;
+                                        state.app.position_secs =
+                                            (state.app.position_secs + 10.0).min(max);
+                                    });
+                                    cx.notify();
+                                }),
+                            ),
+                    )
                     // Next track
-                    .child(self.render_transport_button("⏭", "next", surface_hover, cx)),
+                    .child(
+                        IconButton::new("transport-next", "⏭")
+                            .size(IconButtonSize::Lg)
+                            .rounded_full()
+                            .theme(icon_button_theme)
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                                    view.next_track(&crate::actions::NextTrack, window, cx);
+                                }),
+                            ),
+                    ),
             )
             // Waveform/progress row
             .child(
@@ -451,51 +516,6 @@ impl PlayerView {
                 }),
             )
         })
-    }
-
-    /// Render a transport button
-    fn render_transport_button(
-        &self,
-        icon: &'static str,
-        id: &'static str,
-        surface_hover: gpui::Hsla,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        div()
-            .id(SharedString::from(format!("transport-{}", id)))
-            .w(px(32.0))
-            .h(px(32.0))
-            .rounded_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .hover(|style| style.bg(surface_hover))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, window, cx| {
-                    match id {
-                        "prev" => view.prev_track(&crate::actions::PrevTrack, window, cx),
-                        "next" => view.next_track(&crate::actions::NextTrack, window, cx),
-                        "seek-back" => {
-                            // Seek backward 10 seconds
-                            view.state.update(cx, |state, _cx| {
-                                state.app.position_secs = (state.app.position_secs - 10.0).max(0.0);
-                            });
-                        }
-                        "seek-fwd" => {
-                            // Seek forward 10 seconds
-                            view.state.update(cx, |state, _cx| {
-                                let max = state.app.duration_secs;
-                                state.app.position_secs = (state.app.position_secs + 10.0).min(max);
-                            });
-                        }
-                        _ => {}
-                    }
-                    cx.notify();
-                }),
-            )
-            .child(icon)
     }
 
     /// Render a round volume button with circular progress indicator

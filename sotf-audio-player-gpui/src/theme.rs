@@ -361,4 +361,37 @@ impl Theme {
             indicator_color: self.text_muted,
         }
     }
+
+    /// Convert to SliderTheme for use with ui_kit Slider component
+    pub fn to_slider_theme(&self) -> gpui_ui_kit::SliderTheme {
+        gpui_ui_kit::SliderTheme {
+            track: self.surface_hover,
+            fill: self.accent,
+            thumb: self.text_primary,
+            label: self.text_primary,
+            value: self.text_secondary,
+        }
+    }
+
+    /// Convert to IconButtonTheme for use with ui_kit IconButton component
+    pub fn to_icon_button_theme(&self) -> gpui_ui_kit::IconButtonTheme {
+        gpui_ui_kit::IconButtonTheme {
+            ghost_bg: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            },
+            ghost_hover_bg: self.surface_hover,
+            selected_bg: self.surface_selected,
+            selected_hover_bg: self.surface_hover,
+            filled_bg: self.surface,
+            filled_hover_bg: self.surface_hover,
+            accent: self.accent,
+            accent_hover: self.accent_hover,
+            text: self.text_primary,
+            text_on_accent: self.text_primary,
+            border: self.border,
+        }
+    }
 }

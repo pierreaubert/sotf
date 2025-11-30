@@ -92,7 +92,7 @@ fn main() {
                         log::warn!("Could not load saved configuration: {}", e);
                     }
 
-                    let mut player = Player::new();
+                    let player = Player::new();
 
                     // Apply loaded volume to player
                     if let Err(e) = player.set_volume(app.volume) {
