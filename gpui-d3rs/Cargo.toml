@@ -4,7 +4,7 @@ version = "0.1.6"
 edition = "2021"
 authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"
-license = "OSC License"
+license = "ISC"
 keywords = ["gpui", "plotting", "visualization", "d3", "charts"]
 categories = ["visualization", "gui"]
 
