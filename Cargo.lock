@@ -4046,6 +4046,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-px"
+version = "0.5.3"
+dependencies = [
+ "gpui",
+ "gpui-d3rs",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "gpui-ui-kit"
 version = "0.5.3"
 dependencies = [
