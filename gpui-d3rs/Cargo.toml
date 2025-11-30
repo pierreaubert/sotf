@@ -1,6 +1,6 @@
 [package]
 name = "gpui-d3rs"
-version = "0.1.4"
+version = "0.1.6"
 edition = "2021"
 authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"
@@ -17,12 +17,12 @@ gpui = ["dep:gpui", "dep:gpui-ui-kit"]
 spinorama = ["dep:autoeq", "dep:autoeq-cea2034", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 
 [dependencies]
-gpui = { git = "https://github.com/zed-industries/zed.git", optional = true }
-gpui-ui-kit = { path = "../gpui-ui-kit", optional = true }
+gpui = { workspace=true, optional = true }
+gpui-ui-kit = { version = "0.1", path = "../gpui-ui-kit", optional = true }
 regex = "1"
 delaunator = "1.0"
-autoeq = { path = "../autoeq", optional = true }
-autoeq-cea2034 = { path = "../autoeq-cea2034", optional = true }
+autoeq = { version="0.2", path = "../autoeq", optional = true }
+autoeq-cea2034 = { version="0.2", path = "../autoeq-cea2034", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 ndarray = { version = "0.16", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }

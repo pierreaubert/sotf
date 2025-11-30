@@ -14,63 +14,63 @@ A comprehensive D3.js-inspired data visualization library for GPUI, bringing the
 
 ### Core Modules
 
-- **🎯 Scales** (`d3rs::scale`) - Map data domains to visual ranges
+- ** Scales** (`d3rs::scale`) - Map data domains to visual ranges
   - `LinearScale` - Continuous linear mapping
   - `LogScale` - Logarithmic scaling for wide-range data
   - Automatic tick generation with Wilkinson's algorithm
   - Domain/range inversion
 
-- **📊 Shapes** (`d3rs::shape`) - Visual marks for data representation
+- ** Shapes** (`d3rs::shape`) - Visual marks for data representation
   - Bar charts with customizable styling
   - Line charts with multiple curve types
   - Scatter plots with configurable points
   - Areas, arcs, pies, symbols, stacks
   - Support for negative values and multiple series
 
-- **🎨 Colors** (`d3rs::color`) - Rich color system
+- ** Colors** (`d3rs::color`) - Rich color system
   - RGB/RGBA color representation
   - HSL color space support
   - Color interpolation for gradients
   - Categorical schemes (Category10, Tableau10, Pastel, Set1-3)
   - GPUI `Rgba` conversion
 
-- **📐 Axes** (`d3rs::axis`) - Cartesian coordinate system rendering
+- ** Axes** (`d3rs::axis`) - Cartesian coordinate system rendering
   - Four orientations: Top, Right, Bottom, Left
   - Custom tick formatters
   - Configurable tick size, padding, styling
   - Domain line rendering
   - Theme integration
 
-- **⚡ Grids** (`d3rs::grid`) - Background grid overlays
+- ** Grids** (`d3rs::grid`) - Background grid overlays
   - Dot grids at tick intersections
   - Horizontal and vertical line grids
   - Configurable opacity and styling
   - Multiple preset configurations
 
-### Advanced Features
+### Classical Algorithms and Plots
 
-- **📈 Curves** (`d3rs::shape::curve`) - Line interpolation methods
+- ** Curves** (`d3rs::shape::curve`) - Line interpolation methods
   - Linear, Step, StepBefore, StepAfter
   - Basis (B-spline)
   - Cardinal, Catmull-Rom
   - Monotone (monotonic cubic interpolation)
   - Natural (natural cubic spline)
 
-- **🗺️ Geographic** (`d3rs::geo`) - Map projections and geographic computations
+- ** Geographic** (`d3rs::geo`) - Map projections and geographic computations
   - Mercator, Equirectangular, Orthographic projections
   - Great circle distance calculations
   - Point-in-polygon tests
   - Graticule generation
   - GeoPath rendering
 
-- **🔢 Arrays** (`d3rs::array`) - Data manipulation utilities (d3-array)
+- ** Arrays** (`d3rs::array`) - Data manipulation utilities (d3-array)
   - Statistics: min, max, mean, median, quantile, variance
   - Binning and histograms
   - Search: bisect, quickselect
   - Set operations: union, intersection, difference
   - Transformations: group, rollup, flatMap
 
-- **🌈 Interpolation** (`d3rs::interpolate`) - Value interpolation (d3-interpolate)
+- ** Interpolation** (`d3rs::interpolate`) - Value interpolation (d3-interpolate)
   - Numeric interpolation
   - Color interpolation (HSL, LAB, HCL, Cubehelix)
   - Transform (2D affine transformations)
@@ -78,34 +78,34 @@ A comprehensive D3.js-inspired data visualization library for GPUI, bringing the
   - Zoom interpolation for smooth scaling
   - Piecewise interpolation
 
-- **🏔️ Contours** (`d3rs::contour`) - Density and contour visualization (d3-contour)
+- **️ Contours** (`d3rs::contour`) - Density and contour visualization (d3-contour)
   - Marching squares algorithm
   - Density estimation
   - Contour generation with configurable thresholds
   - Multiple rendering modes: Isoline, Surface, Heatmap
 
-- **🌲 Spatial** - Spatial data structures
+- ** Spatial** - Spatial data structures
   - `QuadTree` - 2D spatial indexing for fast nearest-neighbor queries
   - `Delaunay` - Delaunay triangulation and Voronoi diagrams
   - `Polygon` - Polygon area, centroid, and containment tests
 
-- **⏱️ Time & Transitions** - Animation and timing
+- ** ️Time & Transitions** - Animation and timing
   - `d3rs::transition` - Smooth value transitions with easing functions
   - `d3rs::ease` - Comprehensive easing function library
   - `d3rs::timer` - High-precision timing utilities
   - Lifecycle callbacks (on_start, on_end, on_interrupt)
   - Named transition management
 
-- **🔍 Interaction** - User interaction primitives
+- ** Interaction** - User interaction primitives
   - `d3rs::brush` - 1D and 2D selection brushes
   - `d3rs::zoom` - Pan and zoom behaviors with constraints
 
-- **📂 Data** - Data loading and parsing
+- ** Data** - Data loading and parsing
   - `d3rs::fetch` - CSV/TSV/JSON utilities (d3-fetch)
   - `d3rs::format` - Number formatting with SI prefixes and locales (d3-format)
   - Auto-type detection for CSV parsing
 
-- **🎲 Utilities**
+- **  Utilities**
   - `d3rs::random` - Random number generators
   - `d3rs::text` - Text measurement and rendering utilities
 
@@ -408,12 +408,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 ## License
 
-Licensed under either of:
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
+- [ISC License](https://en.wikipedia.org/wiki/ISC_license)
 
 ## Acknowledgments
 
@@ -429,4 +424,4 @@ at your option.
 
 ---
 
-**Made with ❤️ for data visualization in Rust**
+**Made with ❤️  for data visualization in Rust**

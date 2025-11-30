@@ -58,6 +58,8 @@ pub mod polygon;
 pub mod quadtree;
 pub mod random;
 pub mod shape;
+#[cfg(all(feature = "gpui", not(test)))]
+pub mod surface;
 pub mod timer;
 pub mod transition;
 #[cfg(all(feature = "gpui", not(test)))]
@@ -75,5 +77,9 @@ pub mod prelude {
     pub use crate::shape::{
         render_bars, render_line, render_scatter, BarConfig, BarDatum, CurveType, LineConfig,
         LinePoint, ScatterConfig, ScatterPoint,
+    };
+    #[cfg(all(feature = "gpui", not(test)))]
+    pub use crate::surface::{
+        render_surface, ColorScaleType, SurfaceConfig, SurfaceData, SurfaceElement,
     };
 }

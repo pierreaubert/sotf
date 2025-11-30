@@ -2,7 +2,7 @@
   "module": "d3-array",
   "function": "bisect",
   "tolerance": 0.000001,
-  "generated_at": "2025-11-29T11:21:19.887Z",
+  "generated_at": "2025-11-30T17:15:08.644Z",
   "test_cases": [
     {
       "name": "basic",

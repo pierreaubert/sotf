@@ -1259,6 +1259,658 @@ function generateStackTests() {
 }
 
 // ============================================================================
+// EASE GENERATORS
+// ============================================================================
+
+function generateEaseTests() {
+  const testCases = [];
+  const ts = [0, 0.25, 0.5, 0.75, 1];
+
+  // Linear
+  testCases.push({
+    name: "linear",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeLinear(t))
+  });
+
+  // Quad
+  testCases.push({
+    name: "quad_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeQuadIn(t))
+  });
+  testCases.push({
+    name: "quad_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeQuadOut(t))
+  });
+  testCases.push({
+    name: "quad_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeQuadInOut(t))
+  });
+
+  // Cubic
+  testCases.push({
+    name: "cubic_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeCubicIn(t))
+  });
+  testCases.push({
+    name: "cubic_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeCubicOut(t))
+  });
+  testCases.push({
+    name: "cubic_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeCubicInOut(t))
+  });
+
+  // Sin
+  testCases.push({
+    name: "sin_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeSinIn(t))
+  });
+  testCases.push({
+    name: "sin_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeSinOut(t))
+  });
+  testCases.push({
+    name: "sin_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeSinInOut(t))
+  });
+
+  // Exp
+  testCases.push({
+    name: "exp_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeExpIn(t))
+  });
+  testCases.push({
+    name: "exp_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeExpOut(t))
+  });
+  testCases.push({
+    name: "exp_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeExpInOut(t))
+  });
+
+  // Circle
+  testCases.push({
+    name: "circle_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeCircleIn(t))
+  });
+  testCases.push({
+    name: "circle_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeCircleOut(t))
+  });
+  testCases.push({
+    name: "circle_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeCircleInOut(t))
+  });
+
+  // Elastic
+  testCases.push({
+    name: "elastic_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeElasticIn(t))
+  });
+  testCases.push({
+    name: "elastic_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeElasticOut(t))
+  });
+  testCases.push({
+    name: "elastic_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeElasticInOut(t))
+  });
+
+  // Back
+  testCases.push({
+    name: "back_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeBackIn(t))
+  });
+  testCases.push({
+    name: "back_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeBackOut(t))
+  });
+  testCases.push({
+    name: "back_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeBackInOut(t))
+  });
+
+  // Bounce
+  testCases.push({
+    name: "bounce_in",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeBounceIn(t))
+  });
+  testCases.push({
+    name: "bounce_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeBounceOut(t))
+  });
+  testCases.push({
+    name: "bounce_in_out",
+    inputs: ts,
+    outputs: ts.map(t => d3.easeBounceInOut(t))
+  });
+
+  // Poly with different exponents
+  testCases.push({
+    name: "poly_in_2",
+    exponent: 2,
+    inputs: ts,
+    outputs: ts.map(t => d3.easePolyIn.exponent(2)(t))
+  });
+  testCases.push({
+    name: "poly_in_3",
+    exponent: 3,
+    inputs: ts,
+    outputs: ts.map(t => d3.easePolyIn.exponent(3)(t))
+  });
+  testCases.push({
+    name: "poly_in_4",
+    exponent: 4,
+    inputs: ts,
+    outputs: ts.map(t => d3.easePolyIn.exponent(4)(t))
+  });
+
+  const golden = createGoldenFile("d3-ease", "ease", testCases);
+  fs.mkdirSync(path.join(__dirname, 'ease'), { recursive: true });
+  fs.writeFileSync(path.join(__dirname, 'ease', 'ease.json'), JSON.stringify(golden, null, 2));
+  console.log('Generated: ease/ease.json');
+}
+
+// ============================================================================
+// CONTOUR GENERATORS
+// ============================================================================
+
+function generateContourTests() {
+  const testCases = [];
+
+  // Basic contour density
+  {
+    const points = [
+      [0, 0], [1, 1], [2, 0], [1, 2], [0, 2], [2, 2],
+      [0.5, 0.5], [1.5, 0.5], [0.5, 1.5], [1.5, 1.5]
+    ];
+
+    const density = d3.contourDensity()
+      .x(d => d[0])
+      .y(d => d[1])
+      .size([3, 3])
+      .bandwidth(0.5)
+      .thresholds(5);
+
+    const contours = density(points);
+
+    testCases.push({
+      name: "basic_density",
+      points,
+      size: [3, 3],
+      bandwidth: 0.5,
+      threshold_count: 5,
+      contour_count: contours.length,
+      values: contours.map(c => c.value)
+    });
+  }
+
+  // Contours from grid data
+  {
+    // Simple 3x3 grid with peak in center
+    const values = [
+      0, 0, 0,
+      0, 1, 0,
+      0, 0, 0
+    ];
+
+    const contours = d3.contours()
+      .size([3, 3])
+      .thresholds([0.25, 0.5, 0.75])
+      (values);
+
+    testCases.push({
+      name: "grid_contours",
+      values,
+      size: [3, 3],
+      thresholds: [0.25, 0.5, 0.75],
+      contour_count: contours.length,
+      contours: contours.map(c => ({
+        value: c.value,
+        coordinates_count: c.coordinates.length
+      }))
+    });
+  }
+
+  // Larger grid with gradients
+  {
+    const n = 10;
+    const values = [];
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        // Distance from center creates radial gradient
+        const dx = i - n/2;
+        const dy = j - n/2;
+        values.push(Math.exp(-(dx*dx + dy*dy) / 10));
+      }
+    }
+
+    const contours = d3.contours()
+      .size([n, n])
+      .thresholds(d3.range(0.1, 1, 0.2))
+      (values);
+
+    testCases.push({
+      name: "radial_gradient",
+      size: [n, n],
+      thresholds: d3.range(0.1, 1, 0.2),
+      contour_count: contours.length,
+      values: contours.map(c => c.value)
+    });
+  }
+
+  const golden = createGoldenFile("d3-contour", "contour", testCases);
+  fs.mkdirSync(path.join(__dirname, 'contour'), { recursive: true });
+  fs.writeFileSync(path.join(__dirname, 'contour', 'contour.json'), JSON.stringify(golden, null, 2));
+  console.log('Generated: contour/contour.json');
+}
+
+// ============================================================================
+// DELAUNAY GENERATORS
+// ============================================================================
+
+function generateDelaunayTests() {
+  const testCases = [];
+
+  // Basic Delaunay triangulation
+  {
+    const points = [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]];
+    const delaunay = d3.Delaunay.from(points);
+
+    testCases.push({
+      name: "basic_triangulation",
+      points,
+      triangles: Array.from(delaunay.triangles),
+      hull: Array.from(delaunay.hull)
+    });
+  }
+
+  // Voronoi diagram
+  {
+    const points = [[0, 0], [1, 0], [0, 1], [1, 1]];
+    const delaunay = d3.Delaunay.from(points);
+    const voronoi = delaunay.voronoi([0, 0, 1, 1]);
+
+    testCases.push({
+      name: "voronoi_basic",
+      points,
+      bounds: [0, 0, 1, 1],
+      cell_polygons: points.map((_, i) => voronoi.cellPolygon(i))
+    });
+  }
+
+  // Find nearest neighbor
+  {
+    const points = [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]];
+    const delaunay = d3.Delaunay.from(points);
+
+    const queries = [
+      [0.3, 0.3],
+      [0.9, 0.1],
+      [0.5, 0.5],
+      [0.7, 0.8]
+    ];
+
+    testCases.push({
+      name: "find_nearest",
+      points,
+      queries: queries.map(q => ({
+        query: q,
+        nearest_index: delaunay.find(q[0], q[1])
+      }))
+    });
+  }
+
+  // Neighbors
+  {
+    const points = [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]];
+    const delaunay = d3.Delaunay.from(points);
+
+    testCases.push({
+      name: "neighbors",
+      points,
+      neighbors: points.map((_, i) => Array.from(delaunay.neighbors(i)))
+    });
+  }
+
+  const golden = createGoldenFile("d3-delaunay", "delaunay", testCases);
+  fs.mkdirSync(path.join(__dirname, 'delaunay'), { recursive: true });
+  fs.writeFileSync(path.join(__dirname, 'delaunay', 'delaunay.json'), JSON.stringify(golden, null, 2));
+  console.log('Generated: delaunay/delaunay.json');
+}
+
+// ============================================================================
+// AREA SHAPE GENERATORS
+// ============================================================================
+
+function generateAreaTests() {
+  const testCases = [];
+
+  // Basic area
+  {
+    const data = [[0, 0], [10, 20], [20, 10], [30, 30], [40, 15]];
+    const area = d3.area()
+      .x(d => d[0])
+      .y0(0)
+      .y1(d => d[1]);
+
+    testCases.push({
+      name: "basic",
+      data,
+      path: area(data)
+    });
+  }
+
+  // Area with baseline
+  {
+    const data = [[0, 10], [10, 30], [20, 20], [30, 40], [40, 25]];
+    const area = d3.area()
+      .x(d => d[0])
+      .y0(5)
+      .y1(d => d[1]);
+
+    testCases.push({
+      name: "with_baseline",
+      data,
+      baseline: 5,
+      path: area(data)
+    });
+  }
+
+  // Stacked area (y0 and y1 both variable)
+  {
+    const data = [
+      { x: 0, y0: 0, y1: 10 },
+      { x: 10, y0: 5, y1: 25 },
+      { x: 20, y0: 10, y1: 20 },
+      { x: 30, y0: 8, y1: 35 },
+      { x: 40, y0: 3, y1: 20 }
+    ];
+    const area = d3.area()
+      .x(d => d.x)
+      .y0(d => d.y0)
+      .y1(d => d.y1);
+
+    testCases.push({
+      name: "stacked",
+      data,
+      path: area(data)
+    });
+  }
+
+  // With step curve
+  {
+    const data = [[0, 0], [10, 20], [20, 10], [30, 30]];
+    const area = d3.area()
+      .x(d => d[0])
+      .y0(0)
+      .y1(d => d[1])
+      .curve(d3.curveStep);
+
+    testCases.push({
+      name: "step_curve",
+      data,
+      curve: "step",
+      path: area(data)
+    });
+  }
+
+  // With monotone curve
+  {
+    const data = [[0, 0], [10, 20], [20, 10], [30, 30], [40, 15]];
+    const area = d3.area()
+      .x(d => d[0])
+      .y0(0)
+      .y1(d => d[1])
+      .curve(d3.curveMonotoneX);
+
+    testCases.push({
+      name: "monotone_x",
+      data,
+      curve: "monotoneX",
+      path: area(data)
+    });
+  }
+
+  const golden = createGoldenFile("d3-shape", "area", testCases);
+  fs.writeFileSync(path.join(__dirname, 'shape', 'area.json'), JSON.stringify(golden, null, 2));
+  console.log('Generated: shape/area.json');
+}
+
+// ============================================================================
+// INTERPOLATE STRING GENERATORS
+// ============================================================================
+
+function generateInterpolateStringTests() {
+  const testCases = [];
+
+  // Basic string with numbers
+  {
+    const interp = d3.interpolateString("10px", "20px");
+    const ts = [0, 0.25, 0.5, 0.75, 1];
+    testCases.push({
+      name: "basic_px",
+      a: "10px",
+      b: "20px",
+      inputs: ts,
+      outputs: ts.map(t => interp(t))
+    });
+  }
+
+  // Multiple numbers
+  {
+    const interp = d3.interpolateString("translate(0, 0)", "translate(100, 50)");
+    const ts = [0, 0.5, 1];
+    testCases.push({
+      name: "translate",
+      a: "translate(0, 0)",
+      b: "translate(100, 50)",
+      inputs: ts,
+      outputs: ts.map(t => interp(t))
+    });
+  }
+
+  // Color in string
+  {
+    const interp = d3.interpolateString("1px solid #ff0000", "5px solid #0000ff");
+    const ts = [0, 0.5, 1];
+    testCases.push({
+      name: "border",
+      a: "1px solid #ff0000",
+      b: "5px solid #0000ff",
+      inputs: ts,
+      outputs: ts.map(t => interp(t))
+    });
+  }
+
+  // Decimal numbers
+  {
+    const interp = d3.interpolateString("0.5em", "2.5em");
+    const ts = [0, 0.25, 0.5, 0.75, 1];
+    testCases.push({
+      name: "decimal",
+      a: "0.5em",
+      b: "2.5em",
+      inputs: ts,
+      outputs: ts.map(t => interp(t))
+    });
+  }
+
+  // Transform with rotation
+  {
+    const interp = d3.interpolateString("rotate(0deg)", "rotate(180deg)");
+    const ts = [0, 0.25, 0.5, 0.75, 1];
+    testCases.push({
+      name: "rotate",
+      a: "rotate(0deg)",
+      b: "rotate(180deg)",
+      inputs: ts,
+      outputs: ts.map(t => interp(t))
+    });
+  }
+
+  const golden = createGoldenFile("d3-interpolate", "interpolateString", testCases);
+  fs.writeFileSync(path.join(__dirname, 'interpolate', 'string.json'), JSON.stringify(golden, null, 2));
+  console.log('Generated: interpolate/string.json');
+}
+
+// ============================================================================
+// ARRAY TRANSFORM GENERATORS
+// ============================================================================
+
+function generateArrayTransformTests() {
+  const testCases = [];
+
+  // shuffle (note: random, so we just test length preservation)
+  {
+    const arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const shuffled = d3.shuffle(arr.slice());
+    testCases.push({
+      name: "shuffle",
+      original: arr,
+      shuffled_length: shuffled.length,
+      shuffled_sorted: shuffled.slice().sort((a, b) => a - b)
+    });
+  }
+
+  // reverse
+  {
+    const arr = [1, 2, 3, 4, 5];
+    testCases.push({
+      name: "reverse",
+      original: arr,
+      reversed: d3.reverse(arr)
+    });
+  }
+
+  // sort
+  {
+    const arr = [5, 2, 8, 1, 9, 3];
+    testCases.push({
+      name: "sort_ascending",
+      original: arr,
+      sorted: d3.sort(arr)
+    });
+  }
+
+  // sort descending
+  {
+    const arr = [5, 2, 8, 1, 9, 3];
+    testCases.push({
+      name: "sort_descending",
+      original: arr,
+      sorted: d3.sort(arr, d3.descending)
+    });
+  }
+
+  // permute
+  {
+    const arr = ['a', 'b', 'c', 'd', 'e'];
+    const keys = [4, 0, 2];
+    testCases.push({
+      name: "permute",
+      original: arr,
+      keys,
+      permuted: d3.permute(arr, keys)
+    });
+  }
+
+  // zip
+  {
+    const a = [1, 2, 3];
+    const b = [4, 5, 6];
+    const c = [7, 8, 9];
+    testCases.push({
+      name: "zip",
+      arrays: [a, b, c],
+      zipped: d3.zip(a, b, c)
+    });
+  }
+
+  // transpose
+  {
+    const matrix = [[1, 2, 3], [4, 5, 6]];
+    testCases.push({
+      name: "transpose",
+      original: matrix,
+      transposed: d3.transpose(matrix)
+    });
+  }
+
+  // cross
+  {
+    const a = [1, 2];
+    const b = ['x', 'y', 'z'];
+    testCases.push({
+      name: "cross",
+      a,
+      b,
+      crossed: d3.cross(a, b)
+    });
+  }
+
+  // pairs
+  {
+    const arr = [1, 2, 3, 4, 5];
+    testCases.push({
+      name: "pairs",
+      original: arr,
+      pairs: d3.pairs(arr)
+    });
+  }
+
+  // range
+  {
+    testCases.push({
+      name: "range_basic",
+      stop: 5,
+      result: d3.range(5)
+    });
+    testCases.push({
+      name: "range_start_stop",
+      start: 1,
+      stop: 5,
+      result: d3.range(1, 5)
+    });
+    testCases.push({
+      name: "range_step",
+      start: 0,
+      stop: 1,
+      step: 0.2,
+      result: d3.range(0, 1, 0.2)
+    });
+  }
+
+  const golden = createGoldenFile("d3-array", "transform", testCases);
+  fs.writeFileSync(path.join(__dirname, 'array', 'transform.json'), JSON.stringify(golden, null, 2));
+  console.log('Generated: array/transform.json');
+}
+
+// ============================================================================
 // QUADTREE GENERATORS
 // ============================================================================
 
@@ -1454,6 +2106,7 @@ function generateAllScales() {
 function generateAllInterpolate() {
   generateInterpolateNumberTests();
   generateInterpolateColorTests();
+  generateInterpolateStringTests();
 }
 
 function generateAllArray() {
@@ -1461,6 +2114,7 @@ function generateAllArray() {
   generateArrayBisectTests();
   generateArrayBinTests();
   generateArrayTicksTests();
+  generateArrayTransformTests();
 }
 
 function generateAllColor() {
@@ -1473,10 +2127,23 @@ function generateAllShape() {
   generateLineTests();
   generateSymbolTests();
   generateStackTests();
+  generateAreaTests();
 }
 
 function generateAllQuadtree() {
   generateQuadtreeTests();
+}
+
+function generateAllEase() {
+  generateEaseTests();
+}
+
+function generateAllContour() {
+  generateContourTests();
+}
+
+function generateAllDelaunay() {
+  generateDelaunayTests();
 }
 
 function generateAll() {
@@ -1487,6 +2154,9 @@ function generateAll() {
   generateAllColor();
   generateAllShape();
   generateAllQuadtree();
+  generateAllEase();
+  generateAllContour();
+  generateAllDelaunay();
   console.log('\nDone!');
 }
 
@@ -1514,6 +2184,15 @@ if (args.length === 0) {
         break;
       case 'quadtree':
         generateAllQuadtree();
+        break;
+      case 'ease':
+        generateAllEase();
+        break;
+      case 'contour':
+        generateAllContour();
+        break;
+      case 'delaunay':
+        generateAllDelaunay();
         break;
       default:
         console.error(`Unknown module: ${arg}`);
