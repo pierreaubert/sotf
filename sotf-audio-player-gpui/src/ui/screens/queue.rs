@@ -295,19 +295,15 @@ impl PlayerView {
     pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
-        let window_size = cx.viewport_size();
-        let is_compact_height = window_size.height < px(600.0);
-        
-        // Calculate panel widths
-        let window_width = window_size.width;
+        // Use window_height from state (set in main render)
+        let window_height = state.app.window_height;
+        let is_compact_height = window_height < 600.0;
+
+        // Use ratios for panel widths (layout will compute actual sizes)
         let queue_ratio = state.app.queue_panel_ratio;
         // If compact height, we might need more horizontal space or layout changes
         let meters_ratio = state.app.meters_panel_ratio;
-        
-        let queue_width = window_width * queue_ratio;
-        let meters_width = window_width * meters_ratio;
-        let separator_width = px(20.0);
-        
+
         let queue_collapsed = queue_ratio < 0.05;
         let meters_collapsed = meters_ratio < 0.05;
 
@@ -320,7 +316,7 @@ impl PlayerView {
                     div()
                         .flex()
                         .flex_col()
-                        .w(queue_width)
+                        .w(relative(queue_ratio))
                         .p_4()
                         .border_r_1()
                         .border_color(theme.border)
@@ -439,7 +435,7 @@ impl PlayerView {
             // Separator 1 (Queue <-> Center)
             .child(
                 div()
-                    .w(separator_width)
+                    .w(px(20.0))
                     .h_full()
                     .bg(theme.background)
                     .flex()
@@ -470,7 +466,7 @@ impl PlayerView {
             // Separator 2 (Center <-> Right)
             .child(
                 div()
-                    .w(separator_width)
+                    .w(px(20.0))
                     .h_full()
                     .bg(theme.background)
                     .flex()
@@ -501,7 +497,7 @@ impl PlayerView {
                     d.child(self.render_lufs_panel(cx))
                      .child(
                         div()
-                            .w(separator_width)
+                            .w(px(20.0))
                             .h_full()
                             .bg(theme.background)
                             .flex()
@@ -514,7 +510,7 @@ impl PlayerView {
                     // Standard 3-column layout: Stacked
                     d.child(
                         div()
-                            .w(meters_width)
+                            .w(relative(meters_ratio))
                             .child(self.render_level_meters(cx))
                     )
                 }
@@ -599,13 +595,12 @@ impl PlayerView {
                             .child("Clear All"),
                     ),
             )
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .overflow_x_scroll()
-                    .children(groups.iter().enumerate().map(|(idx, group)| {
-                        let is_selected = idx == selected_group;
+            .child({
+                // Use a for loop to avoid FnMut closure escape issues with cx
+                let mut meter_elements = Vec::new();
+                for (idx, group) in groups.iter().enumerate() {
+                    let is_selected = idx == selected_group;
+                    meter_elements.push(
                         self.render_meter_group(
                             group,
                             idx,
@@ -614,14 +609,24 @@ impl PlayerView {
                             &theme,
                             cx,
                         )
-                    })),
-            )
+                        .into_any_element(),
+                    );
+                }
+                div()
+                    .id("meter-groups-scroll")
+                    .flex()
+                    .gap_2()
+                    .overflow_x_scroll()
+                    .children(meter_elements)
+            })
     }
 
     /// Render the now playing information panel (center)
     pub(crate) fn render_now_playing_info(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        // Clone theme for use in closures (moved into flat_map)
+        let theme_for_closure = theme.clone();
 
         // Get current queue item with all album info
         let queue_item = state
@@ -629,43 +634,35 @@ impl PlayerView {
             .current_queue_index
             .and_then(|idx| state.app.queue.get(idx));
 
-        let has_content = queue_item.is_some();
+        let content: AnyElement = if let Some(item) = queue_item {
+            let album = &item.album;
+            let current_track_idx = item.current_track_index;
+            let current_track = item.current_track();
 
-        div()
-            .flex()
-            .flex_col()
-            .flex_1()
-            .p_4()
-            .border_r_1()
-            .border_color(theme.border)
-            .bg(theme.background_secondary)
-            .when(has_content, |d| {
-                let item = queue_item.unwrap();
-                let album = &item.album;
-                let current_track_idx = item.current_track_index;
-                let current_track = item.current_track();
+            // Get replay gain from current track (or first track with it)
+            let replay_gain = current_track
+                .and_then(|t| t.replay_gain)
+                .or_else(|| album.tracks.iter().find_map(|t| t.replay_gain));
 
-                // Get replay gain from current track (or first track with it)
-                let replay_gain = current_track
-                    .and_then(|t| t.replay_gain)
-                    .or_else(|| album.tracks.iter().find_map(|t| t.replay_gain));
+            // Get channel count from current track
+            let channels = current_track.and_then(|t| t.channels).unwrap_or(2);
 
-                // Get channel count from current track
-                let channels = current_track.and_then(|t| t.channels).unwrap_or(2);
+            let album_title = album.title.clone();
+            let artist = album.artist();
+            let art_path = album.album_art_path.clone();
 
-                let album_title = album.title.clone();
-                let artist = album.artist();
-                let art_path = album.album_art_path.clone();
-                
-                // Group tracks by disc number
-                let mut disc_map: BTreeMap<u32, Vec<(usize, Track)>> = BTreeMap::new();
-                for (idx, track) in album.tracks.iter().enumerate() {
-                    let disc = track.disc_number.unwrap_or(1);
-                    disc_map.entry(disc).or_default().push((idx, track.clone()));
-                }
-                let show_disc_headers = disc_map.len() > 1;
+            // Group tracks by disc number
+            let mut disc_map: BTreeMap<u32, Vec<(usize, Track)>> = BTreeMap::new();
+            for (idx, track) in album.tracks.iter().enumerate() {
+                let disc = track.disc_number.unwrap_or(1);
+                disc_map.entry(disc).or_default().push((idx, track.clone()));
+            }
 
-                d.child(
+            div()
+                .flex()
+                .flex_col()
+                .flex_1()
+                .child(
                     div()
                         .text_lg()
                         .font_weight(FontWeight::SEMIBOLD)
@@ -720,7 +717,7 @@ impl PlayerView {
                                         .text_color(theme.text_primary)
                                         .overflow_hidden()
                                         .text_ellipsis()
-                                        .child(album_title),
+                                        .child(album_title.clone()),
                                 )
                                 // Artist
                                 .child(
@@ -782,7 +779,6 @@ impl PlayerView {
                                 ),
                         ),
                 )
-                // Track list (scrollable) with Disc Grouping
                 .child(
                     div()
                         .flex()
@@ -809,9 +805,9 @@ impl PlayerView {
                                     let disc_count = disc_map.len();
                                     disc_map.into_iter().flat_map(move |(disc_num, tracks)| {
                                         let show_header = disc_count > 1;
-                                        let theme = theme.clone();
+                                        let theme = theme_for_closure.clone();
                                         let mut elements: Vec<AnyElement> = Vec::new();
-                                        
+
                                         if show_header {
                                             elements.push(
                                                 div()
@@ -822,15 +818,19 @@ impl PlayerView {
                                                     .font_weight(FontWeight::BOLD)
                                                     .text_color(theme.text_secondary)
                                                     .child(format!("Disc {}", disc_num))
-                                                    .into_any_element()
+                                                    .into_any_element(),
                                             );
                                         }
-                                        
+
                                         elements.extend(tracks.into_iter().map(|(idx, track)| {
-                                            let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
+                                            let title = track
+                                                .title
+                                                .clone()
+                                                .unwrap_or_else(|| "Unknown".to_string());
                                             let duration = track.duration_secs.unwrap_or(0);
                                             let is_current = idx == current_track_idx;
-                                            let duration_str = format!("{}:{:02}", duration / 60, duration % 60);
+                                            let duration_str =
+                                                format!("{}:{:02}", duration / 60, duration % 60);
                                             let theme_c = theme.clone();
 
                                             div()
@@ -850,8 +850,17 @@ impl PlayerView {
                                                     div()
                                                         .w(px(24.0))
                                                         .text_xs()
-                                                        .text_color(if is_current { rgb(0xffffff) } else { theme_c.text_muted })
-                                                        .child(format!("{}", track.track_number.unwrap_or((idx + 1) as u32))),
+                                                        .text_color(if is_current {
+                                                            rgb(0xffffff)
+                                                        } else {
+                                                            theme_c.text_muted
+                                                        })
+                                                        .child(format!(
+                                                            "{}",
+                                                            track.track_number.unwrap_or(
+                                                                (idx + 1) as u32
+                                                            )
+                                                        )),
                                                 )
                                                 .child(
                                                     div()
@@ -860,36 +869,52 @@ impl PlayerView {
                                                         .overflow_hidden()
                                                         .text_ellipsis()
                                                         .whitespace_nowrap()
-                                                        .when(is_current, |d| d.font_weight(FontWeight::SEMIBOLD))
+                                                        .when(is_current, |d| {
+                                                            d.font_weight(FontWeight::SEMIBOLD)
+                                                        })
                                                         .child(title),
                                                 )
                                                 .child(
                                                     div()
                                                         .text_xs()
-                                                        .text_color(if is_current { rgb(0xffffff) } else { theme_c.text_muted })
+                                                        .text_color(if is_current {
+                                                            rgb(0xffffff)
+                                                        } else {
+                                                            theme_c.text_muted
+                                                        })
                                                         .child(duration_str),
                                                 )
                                                 .into_any_element()
                                         }));
                                         elements
                                     })
-                                })
-                        )
-            })
-            .when(!has_content, |d| {
-                d.child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .flex_col()
-                        .gap_2()
-                        .text_color(theme.text_muted)
-                        .child("No track playing")
-                        .child(div().text_sm().child("Select an album from the queue")),
+                                }),
+                        ),
                 )
-            })
+                .into_any_element()
+        } else {
+            div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .flex_col()
+                .gap_2()
+                .text_color(theme.text_muted)
+                .child("No track playing")
+                .child(div().text_sm().child("Select an album from the queue"))
+                .into_any_element()
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .p_4()
+            .border_r_1()
+            .border_color(theme.border)
+            .bg(theme.background_secondary)
+            .child(content)
     }
 
     /// Render the graphical level meters panel with LUFS display

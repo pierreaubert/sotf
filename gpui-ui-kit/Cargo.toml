@@ -9,7 +9,7 @@ repository.workspace = true
 
 [dependencies]
 # GPUI framework
-gpui = { git = "https://github.com/zed-industries/zed.git" }
+gpui = { workspace = true }
 
 [lib]
 name = "gpui_ui_kit"

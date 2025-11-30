@@ -319,92 +319,30 @@ impl PlayerView {
                             .min_w(px(40.0))
                             .child(position_str),
                     )
-                    // Waveform / Progress bar
+                    // Waveform / Progress bar - simplified to a basic progress bar
+                    // TODO: Restore waveform visualization once canvas API is understood
                     .child(
                         div()
                             .id("waveform-bar")
                             .flex_1()
                             .h(px(32.0))
                             .cursor_pointer()
-                            .on_paint(move |bounds, cx| {
-                                let waveform = waveform.clone();
-                                let bg_color = progress_bar_bg;
-                                let fill_color = progress_bar_fill;
-                                
-                                let width = bounds.size.width;
-                                let height = bounds.size.height;
-                                let center_y = bounds.origin.y + height / 2.0;
-                                
-                                let samples = waveform.as_deref().unwrap_or(&[]);
-                                
-                                if samples.is_empty() {
-                                    // Fallback to simple line if no waveform
-                                    let progress_width = width * progress;
-                                    
-                                    // Background line
-                                    let bg_bounds = Bounds {
-                                        origin: Point::new(bounds.origin.x, center_y - px(1.0)),
-                                        size: Size::new(width, px(2.0)),
-                                    };
-                                    cx.paint_quad(gpui::PaintQuad {
-                                        bounds: bg_bounds,
-                                        background: bg_color.into(),
-                                        corner_radii: Default::default(),
-                                        border_widths: Default::default(),
-                                        border_color: Default::default(),
-                                        border_style: Default::default(),
-                                    });
-                                    
-                                    // Progress line
-                                    if progress > 0.0 {
-                                        let fill_bounds = Bounds {
-                                            origin: Point::new(bounds.origin.x, center_y - px(1.0)),
-                                            size: Size::new(progress_width, px(2.0)),
-                                        };
-                                        cx.paint_quad(gpui::PaintQuad {
-                                            bounds: fill_bounds,
-                                            background: fill_color.into(),
-                                            corner_radii: Default::default(),
-                                            border_widths: Default::default(),
-                                            border_color: Default::default(),
-                                            border_style: Default::default(),
-                                        });
-                                    }
-                                    return;
-                                }
-
-                                let count = samples.len();
-                                let bar_width = width / (count as f32);
-                                // Use a small gap, e.g., 20% of width
-                                let draw_width = bar_width * 0.8;
-                                
-                                for (i, &sample) in samples.iter().enumerate() {
-                                    let x = bounds.origin.x + (bar_width * i as f32);
-                                    // Normalize sample (0-255) to height (0-16px)
-                                    let amplitude = (sample as f32 / 255.0).max(0.1); // Ensure min height
-                                    let bar_h = px(16.0) * amplitude;
-                                    
-                                    let rect = Bounds {
-                                        origin: Point::new(x, center_y - bar_h),
-                                        size: Size::new(draw_width, bar_h * 2.0),
-                                    };
-                                    
-                                    let color = if (i as f32 / count as f32) < progress {
-                                        fill_color
-                                    } else {
-                                        bg_color
-                                    };
-                                    
-                                    cx.paint_quad(gpui::PaintQuad {
-                                        bounds: rect,
-                                        background: color.into(),
-                                        corner_radii: (2.0).into(),
-                                        border_widths: Default::default(),
-                                        border_color: Default::default(),
-                                        border_style: Default::default(),
-                                    });
-                                }
-                            })
+                            .flex()
+                            .items_center()
+                            .child(
+                                div()
+                                    .w_full()
+                                    .h(px(4.0))
+                                    .bg(progress_bar_bg)
+                                    .rounded_full()
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .h_full()
+                                            .w(relative(progress))
+                                            .bg(progress_bar_fill)
+                                    )
+                            )
                     )
                     // Total duration
                     .child(

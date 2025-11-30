@@ -37,8 +37,8 @@ logs
 
 # Editor directories and files
 /.vs
-.vscode/*
-!.vscode/*.json
+/.vscode/*
+/.zed
 /.idea
 /.fleet
 .DS_Store

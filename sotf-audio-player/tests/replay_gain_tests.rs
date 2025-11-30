@@ -97,6 +97,8 @@ fn test_update_replay_gain() {
         album_art_path: None,
         album_art_thumbnail: None,
         play_count: 0,
+        edition: None,
+        dynamic_range: None,
     };
 
     let db = MusicDatabase::open(&db_path).unwrap();
@@ -154,6 +156,7 @@ fn test_replay_gain_values_persistence() {
                 isrc: None,
                 album_artist: None,
                 ensemble: None,
+                edition: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
@@ -220,12 +223,12 @@ fn test_partial_replay_gain_scanning() {
                 isrc: None,
                 album_artist: None,
                 ensemble: None,
+                edition: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
             edition: None,
-            dynamic_range: None,
         },
         sotf_audio_player::Album {
             id: None,
@@ -251,12 +254,12 @@ fn test_partial_replay_gain_scanning() {
                 isrc: None,
                 album_artist: None,
                 ensemble: None,
+                edition: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
             edition: None,
-            dynamic_range: None,
         },
         sotf_audio_player::Album {
             id: None,
@@ -282,12 +285,12 @@ fn test_partial_replay_gain_scanning() {
                 isrc: None,
                 album_artist: None,
                 ensemble: None,
+                edition: None,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
             edition: None,
-            dynamic_range: None,
         },
     ];
 
@@ -352,6 +355,8 @@ fn test_replay_gain_range_values() {
         album_art_path: None,
         album_art_thumbnail: None,
         play_count: 0,
+        edition: None,
+        dynamic_range: None,
     };
 
     let db = MusicDatabase::open(&db_path).unwrap();

@@ -158,6 +158,10 @@ tauri-plugin-devtools = "2.0.1"
 ratatui = "0.29"
 crossterm = "0.28"
 
+# GPUI framework
+gpui = { version="0.2.2", git = "https://github.com/zed-industries/zed.git" }
+
+
 [patch.crates-io]
 webdriver-downloader = { version = "0.16.4", git = "https://github.com/pierreaubert/webdriver-downloader" }
 
