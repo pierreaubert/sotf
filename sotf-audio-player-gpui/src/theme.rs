@@ -70,6 +70,10 @@ pub struct Theme {
     pub accent_hover: Rgba,
     pub accent_muted: Rgba,
 
+    // Text on accent (for contrast on accent backgrounds)
+    pub text_on_accent: Rgba,
+    pub text_on_accent_muted: Rgba,
+
     // Semantic colors
     pub success: Rgba,
     pub warning: Rgba,
@@ -95,6 +99,9 @@ pub struct Theme {
     pub toast_error_bg: Rgba,
     pub toast_info_bg: Rgba,
     pub toast_warning_bg: Rgba,
+
+    // Layout sizes
+    pub separator_size: f32,
 }
 
 impl Theme {
@@ -134,6 +141,10 @@ impl Theme {
             accent_hover: rgba(0x1c8cd9),
             accent_muted: rgba(0x264f78),
 
+            // Text on accent
+            text_on_accent: rgba(0xffffff),
+            text_on_accent_muted: rgba(0xffffffcc),
+
             // Semantic colors
             success: rgba(0x4ec9b0),
             warning: rgba(0xdcdcaa),
@@ -159,6 +170,9 @@ impl Theme {
             toast_error_bg: rgba(0x3a1e1e),
             toast_info_bg: rgba(0x1e2a3a),
             toast_warning_bg: rgba(0x3a2e1e),
+
+            // Layout sizes
+            separator_size: 20.0,
         }
     }
 
@@ -188,6 +202,10 @@ impl Theme {
             accent_hover: rgba(0x0077ee),
             accent_muted: rgba(0xb3d4fc),
 
+            // Text on accent
+            text_on_accent: rgba(0xffffff),
+            text_on_accent_muted: rgba(0xffffffcc),
+
             // Semantic colors
             success: rgba(0x28a745),
             warning: rgba(0xffc107),
@@ -213,6 +231,9 @@ impl Theme {
             toast_error_bg: rgba(0xf8d7da),
             toast_info_bg: rgba(0xd1ecf1),
             toast_warning_bg: rgba(0xfff3cd),
+
+            // Layout sizes
+            separator_size: 20.0,
         }
     }
 
@@ -242,6 +263,10 @@ impl Theme {
             accent_hover: rgba(0x79b8ff),
             accent_muted: rgba(0x1f6feb),
 
+            // Text on accent
+            text_on_accent: rgba(0xffffff),
+            text_on_accent_muted: rgba(0xffffffcc),
+
             // Semantic colors
             success: rgba(0x3fb950),
             warning: rgba(0xd29922),
@@ -267,6 +292,9 @@ impl Theme {
             toast_error_bg: rgba(0x490202),
             toast_info_bg: rgba(0x0d2140),
             toast_warning_bg: rgba(0x4a3219),
+
+            // Layout sizes
+            separator_size: 20.0,
         }
     }
 
@@ -296,6 +324,10 @@ impl Theme {
             accent_hover: rgba(0x7dd07c),
             accent_muted: rgba(0x3d5a3a),
 
+            // Text on accent
+            text_on_accent: rgba(0xffffff),
+            text_on_accent_muted: rgba(0xffffffcc),
+
             // Semantic colors
             success: rgba(0x6abf69),
             warning: rgba(0xe0c062),
@@ -321,6 +353,9 @@ impl Theme {
             toast_error_bg: rgba(0x3a1e1e),
             toast_info_bg: rgba(0x1e2a3a),
             toast_warning_bg: rgba(0x3a321e),
+
+            // Layout sizes
+            separator_size: 20.0,
         }
     }
 }

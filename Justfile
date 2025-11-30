@@ -465,11 +465,21 @@ install-ubuntu-arm64: install-ubuntu-common install-ubuntu-arm64-driver install-
 # publish
 # ----------------------------------------------------------------------
 
-publish:
-	cd src-testfunctions && cargo publish
-	cd src-de && cargo publish
-	cd src-cea2034 && cargo publish
-	cd src-autoeq && cargo publish
+publish-autoeq:
+	cd autoeq-testfunctions && cargo publish
+	cd autoeq-de && cargo publish
+	cd autoeq-cea2034 && cargo publish
+
+publish-math:
+	cd math-bem && cargo publish
+	cd math-convexhull3d && cargo publish
+
+publish-gpui:
+	cd gpui-ui-kit && cargo publish
+	cd gpui-d3rs && cargo publish
+	cd gpui-px && cargo publish
+
+publish: publish-math publish-autoeq publish-gpui
 
 # ----------------------------------------------------------------------
 # QA

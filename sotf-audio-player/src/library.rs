@@ -53,6 +53,8 @@ pub struct Track {
     pub track_number: Option<u32>,
     pub duration_secs: Option<u64>,
     pub channels: Option<u32>,
+    pub sample_rate: Option<u32>,  // Sample rate in Hz (e.g., 44100, 48000, 96000)
+    pub bit_depth: Option<u32>,    // Bits per sample (e.g., 16, 24, 32)
     pub replay_gain: Option<f64>,  // Track gain in dB
     pub replay_peak: Option<f64>,  // Track peak (0.0 - 1.0)
     pub album_gain: Option<f64>,   // Album gain in dB
@@ -760,6 +762,8 @@ impl MusicLibrary {
                             track_number: metadata.track_number,
                             duration_secs: metadata.duration_secs,
                             channels: metadata.channels,
+                            sample_rate: metadata.sample_rate,
+                            bit_depth: metadata.bit_depth,
                             replay_gain: None,
                             replay_peak: None,
                             album_gain: None,
@@ -868,6 +872,8 @@ struct TrackMetadata {
     pub year: Option<u32>,
     pub duration_secs: Option<u64>,
     pub channels: Option<u32>,
+    pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u32>,
     // Extended metadata fields
     pub genre: Option<String>,
     pub composer: Option<String>,
@@ -917,7 +923,7 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
 
     let mut metadata = TrackMetadata::default();
 
-    // Extract duration and channel count from the format
+    // Extract duration, channel count, sample rate, and bit depth from the format
     if let Some(track) = probed.format.default_track() {
         // Get duration
         if let Some(time_base) = track.codec_params.time_base
@@ -930,6 +936,16 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
         // Get channel count
         if let Some(channels) = track.codec_params.channels {
             metadata.channels = Some(channels.count() as u32);
+        }
+
+        // Get sample rate
+        if let Some(sample_rate) = track.codec_params.sample_rate {
+            metadata.sample_rate = Some(sample_rate);
+        }
+
+        // Get bit depth (bits per sample)
+        if let Some(bits_per_sample) = track.codec_params.bits_per_sample {
+            metadata.bit_depth = Some(bits_per_sample);
         }
     }
 
@@ -1349,6 +1365,8 @@ mod tests {
             track_number: Some(1),
             duration_secs: None,
             channels: None,
+            sample_rate: None,
+            bit_depth: None,
             replay_gain: None,
             replay_peak: None,
             album_gain: None,

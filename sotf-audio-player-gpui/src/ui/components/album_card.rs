@@ -4,6 +4,7 @@
 //! Used in both grid and list views.
 
 use crate::theme::Theme;
+use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::Card;
@@ -66,6 +67,83 @@ impl RenderOnce for AlbumCard {
 }
 
 impl AlbumCard {
+    /// Get the audio format (e.g., "FLAC", "MP3") from the first track
+    fn get_format(album: &Album) -> Option<String> {
+        album.tracks.first().and_then(|t| {
+            t.path.extension().and_then(|ext| {
+                ext.to_str().map(|s| s.to_uppercase())
+            })
+        })
+    }
+
+    /// Format the sample rate and bit depth for display (e.g., "24/44.1k", "16/48k")
+    fn format_sample_info(album: &Album) -> Option<String> {
+        album.tracks.first().and_then(|t| {
+            match (t.bit_depth, t.sample_rate) {
+                (Some(bits), Some(rate)) => {
+                    // Format sample rate: 44100 -> "44.1k", 48000 -> "48k", 96000 -> "96k"
+                    let rate_str = if rate % 1000 == 0 {
+                        format!("{}k", rate / 1000)
+                    } else {
+                        format!("{:.1}k", rate as f64 / 1000.0)
+                    };
+                    Some(format!("{}/{}", bits, rate_str))
+                }
+                (Some(bits), None) => Some(format!("{}bit", bits)),
+                (None, Some(rate)) => {
+                    let rate_str = if rate % 1000 == 0 {
+                        format!("{}k", rate / 1000)
+                    } else {
+                        format!("{:.1}k", rate as f64 / 1000.0)
+                    };
+                    Some(rate_str)
+                }
+                (None, None) => None,
+            }
+        })
+    }
+
+    /// Format the dynamic range for display
+    fn format_dr(dr: Option<f64>) -> Option<String> {
+        dr.map(|d| format!("{:.0}", d))
+    }
+
+    /// Build the metadata line: "FLAC 24/44.1k [DR icon]14 #20"
+    fn build_metadata_line(album: &Album, theme: &Theme) -> impl IntoElement {
+        let format = Self::get_format(album);
+        let sample_info = Self::format_sample_info(album);
+        let dr = Self::format_dr(album.dynamic_range);
+        let track_count = album.tracks.len();
+
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .text_xs()
+            .text_color(theme.text_muted)
+            // Format (e.g., FLAC)
+            .when_some(format, |d, fmt| {
+                d.child(div().child(fmt))
+            })
+            // Sample rate info (e.g., 24/44.1k)
+            .when_some(sample_info, |d, info| {
+                d.child(div().child(info))
+            })
+            // Dynamic range with icon
+            .when_some(dr, |d, dr_val| {
+                d.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_px()
+                        .child(Icon::new(IconName::AudioWaveform).xs().color(theme.text_muted))
+                        .child(dr_val)
+                )
+            })
+            // Track count
+            .child(format!("#{}", track_count))
+    }
+
     fn render_grid(self) -> AnyElement {
         let thumbnail_size = 120.0;
         let card_width = 150.0;
@@ -87,41 +165,27 @@ impl AlbumCard {
                     .border_color(theme.accent)
                     .bg(bg)
             })
-            .when(!self.is_selected, |d| d.bg(theme.surface))
+            // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
             .child(
                 Card::new()
                     .style(move |d| {
                         d.w_full()
                             .bg(gpui::rgba(0x00000000))
-                            .border_0() // Remove card border, let's stick to just using Card for layout/structure or keep border?
-                            // If we keep border on Card, it's fine. Wrapper BG shows through.
-                            // Actually, if Card has border, we don't need border on wrapper.
-                            // But if we want standard Card look, we should keep Card border.
-                            // But existing AlbumCard had border? No, it had rounded_lg and bg.
-                            // It didn't have border in the original code!
-                            // Original: .rounded_lg().bg(...). No border.
-                            // So we should remove Card border to match original look?
-                            // Or keep it for "Card" look.
-                            // I'll remove border to be safe and match original style more closely, 
-                            // using Card mainly for content layout if any.
-                            // Actually, Card layout is flex col.
+                            .border_0()
                     })
                     .content(
                         div()
                             .flex()
                             .flex_col()
                             .items_center()
-                            // Album art thumbnail or placeholder
+                            // Album art thumbnail or placeholder (no border/margin)
                             .child(
                                 div()
                                     .w(px(thumbnail_size))
                                     .h(px(thumbnail_size))
                                     .rounded_md()
                                     .overflow_hidden()
-                                    .bg(theme.background_secondary)
-                                    .border_1()
-                                    .border_color(theme.border)
                                     .flex()
                                     .items_center()
                                     .justify_center()
@@ -172,13 +236,8 @@ impl AlbumCard {
                                     .whitespace_nowrap()
                                     .child(album.artist()),
                             )
-                            // Track count
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .child(format!("{} tracks", album.tracks.len())),
-                            ),
+                            // Metadata line: FORMAT [DR icon]DR #count
+                            .child(Self::build_metadata_line(&album, &theme)),
                     ),
             )
             .into_any_element()
@@ -202,7 +261,7 @@ impl AlbumCard {
                     .border_color(theme.accent)
                     .bg(bg)
             })
-            .when(!self.is_selected, |d| d.bg(theme.surface))
+            // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
             .cursor_pointer()
             .child(
@@ -220,12 +279,8 @@ impl AlbumCard {
                             .text_color(theme.text_secondary)
                             .child(album.artist()),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child(format!("{} tracks", album.tracks.len())),
-                    ),
+                    // Metadata line: FORMAT [DR icon]DR #count
+                    .child(Self::build_metadata_line(&album, &theme)),
             )
             .into_any_element()
     }
@@ -249,7 +304,8 @@ impl AlbumCard {
                     .border_color(theme.accent)
                     .bg(bg)
             })
-            .when(!self.is_selected, |d| d.bg(theme.background_secondary))
+            // No background for unselected cards (transparent)
+            .hover(|style| style.bg(theme.surface_hover))
             .cursor_pointer()
             .child(
                 div()

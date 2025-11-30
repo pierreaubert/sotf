@@ -27,6 +27,7 @@ autoeq_*.html
 autoeq_*.png
 bugs.md
 src/unused.rs
+/plans
 
 # Logs
 logs

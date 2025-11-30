@@ -19,6 +19,6 @@ pub use crate::ui::components::host::get_param_count;
 pub use state::{App, AppState};
 pub use types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
-    InputMode, LayoutMode, LetterNode, LibrarySortOrder, LibraryViewMode, QueueItem, Screen,
-    ToastMessage, ToastType, TreeItem,
+    InputMode, LayoutMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage,
+    ToastType,
 };

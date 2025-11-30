@@ -14,8 +14,8 @@ use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
 
 use super::types::{
-    ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode, LetterNode,
-    LibrarySortOrder, LibraryViewMode, QueueItem, Screen, ToastMessage,
+    ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode,
+    LibrarySortOrder, QueueItem, Screen, ToastMessage,
 };
 
 #[derive(Debug)]
@@ -52,10 +52,7 @@ pub struct App {
     pub available_plugin_presets: Vec<String>, // List of preset filenames
     pub selected_preset_index: usize,
 
-    // Library tree view
-    pub library_view_mode: LibraryViewMode,
-    pub letter_tree: Vec<LetterNode>,
-    pub selected_tree_index: usize, // Index in flattened tree (letters + visible albums)
+    // Library sort and filter
     pub library_sort_order: LibrarySortOrder,
     pub channel_filter: ChannelFilter,
 
@@ -126,10 +123,13 @@ pub struct App {
     pub window_height: f32,
 
     // Panel layout (resizable)
-    pub queue_panel_ratio: f32,
-    pub meters_panel_ratio: f32,
+    pub queue_panel_ratio: f32,        // Height ratio for Queue section in split view (Library on top, Queue on bottom)
+    pub queue_list_ratio: f32,         // Width ratio for queue list in Queue screen
+    pub meters_panel_ratio: f32,       // Width ratio for level meters panel in Queue screen
+    pub lufs_visible: bool,            // Whether LUFS panel is visible (when separated from meters)
     pub is_dragging_queue_divider: bool,
     pub is_dragging_meters_divider: bool,
+    pub divider_click_start: Option<std::time::Instant>,
 
     // Scan progress for threaded scanning
     pub scan_total_files: usize,
@@ -183,10 +183,7 @@ impl App {
             available_plugin_presets: Vec::new(),
             selected_preset_index: 0,
             selected_album_index: 0,
-            selected_tree_index: 0,
             selected_plugin_index: 0,
-            library_view_mode: LibraryViewMode::Grid, // Default to Grid view
-            letter_tree: Vec::new(),
             library_sort_order: LibrarySortOrder::Album,
             channel_filter: ChannelFilter::All,
             library_page: 0,
@@ -231,9 +228,12 @@ impl App {
             layout_mode: LayoutMode::Compact,
             window_height: 600.0,
             queue_panel_ratio: 0.35,
+            queue_list_ratio: 0.30,
             meters_panel_ratio: 0.25,
+            lufs_visible: true,
             is_dragging_queue_divider: false,
             is_dragging_meters_divider: false,
+            divider_click_start: None,
             scan_total_files: 0,
             show_device_popup: false,
             expanded_settings_sections: vec!["library".to_string()],
@@ -248,7 +248,6 @@ impl App {
     /// Load library from database if available
     pub fn load_library_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.library.load_from_database()?;
-        self.rebuild_letter_tree();
         // Update last scan times for directories from database
         self.update_directory_scan_times();
         Ok(())

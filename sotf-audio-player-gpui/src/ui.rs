@@ -338,6 +338,7 @@ impl PlayerView {
     }
 
     /// Render a horizontal divider that can be dragged to resize panels
+    /// Click to toggle library visibility
     fn render_horizontal_divider(
         &self,
         theme: crate::theme::Theme,
@@ -355,6 +356,7 @@ impl PlayerView {
                 cx.listener(|view, _: &MouseDownEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
                         state.app.is_dragging_queue_divider = true;
+                        state.app.divider_click_start = Some(std::time::Instant::now());
                     });
                 }),
             )
@@ -362,14 +364,31 @@ impl PlayerView {
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
-                        if state.app.is_dragging_queue_divider {
-                            state.app.is_dragging_queue_divider = false;
-                            // Save the new layout
-                            if let Err(e) = state.app.save_config() {
-                                log::warn!("Failed to save panel layout: {}", e);
+                        // Check if this was a click (short duration, no significant drag)
+                        let was_click = state.app.divider_click_start
+                            .map(|start| start.elapsed().as_millis() < 200)
+                            .unwrap_or(false);
+
+                        if was_click && state.app.is_dragging_queue_divider {
+                            // Toggle library visibility by adjusting queue ratio
+                            if state.app.queue_panel_ratio < 0.9 {
+                                // Hide library (maximize queue)
+                                state.app.queue_panel_ratio = 0.95;
+                            } else {
+                                // Show library (restore default)
+                                state.app.queue_panel_ratio = 0.35;
                             }
                         }
+
+                        state.app.is_dragging_queue_divider = false;
+                        state.app.divider_click_start = None;
+
+                        // Save the new layout
+                        if let Err(e) = state.app.save_config() {
+                            log::warn!("Failed to save panel layout: {}", e);
+                        }
                     });
+                    cx.notify();
                 }),
             )
     }
@@ -378,12 +397,9 @@ impl PlayerView {
         &mut self,
         _: &ToggleLibraryView,
         _: &mut Window,
-        cx: &mut Context<Self>,
+        _cx: &mut Context<Self>,
     ) {
-        self.state.update(cx, |state, _cx| {
-            state.app.toggle_library_view_mode();
-        });
-        cx.notify();
+        // Grid view is the only view mode now, toggle is a no-op
     }
 
     fn toggle_help(&mut self, _: &ToggleHelp, _: &mut Window, cx: &mut Context<Self>) {
@@ -578,130 +594,82 @@ impl PlayerView {
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        let new_index = self
-            .state
+        self.state
             .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
-                    if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
-                        state.app.select_next_tree_item();
-                        None
-                    } else {
-                        state.app.select_next_album();
-                        Some(state.app.selected_album_index)
-                    }
+                    state.app.select_next_album();
                 }
                 Screen::Queue => {
                     state.app.select_next_queue_item();
-                    None
                 }
                 Screen::DirectoryManager => {
                     state.app.select_next_directory();
-                    None
                 }
-                _ => None,
+                _ => {}
             });
-        // Scroll to the selected item in flat list view
-        if let Some(idx) = new_index {
-            self.library_scroll_handle
-                .scroll_to_item(idx, ScrollStrategy::Nearest);
-        }
         cx.notify();
     }
 
     fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
-        let new_index = self
-            .state
+        self.state
             .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
-                    if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
-                        state.app.select_previous_tree_item();
-                        None
-                    } else {
-                        state.app.select_previous_album();
-                        Some(state.app.selected_album_index)
-                    }
+                    state.app.select_previous_album();
                 }
                 Screen::Queue => {
                     state.app.select_previous_queue_item();
-                    None
                 }
                 Screen::DirectoryManager => {
                     state.app.select_previous_directory();
-                    None
                 }
-                _ => None,
+                _ => {}
             });
-        // Scroll to the selected item in flat list view
-        if let Some(idx) = new_index {
-            self.library_scroll_handle
-                .scroll_to_item(idx, ScrollStrategy::Nearest);
-        }
         cx.notify();
     }
 
     fn select_next_page(&mut self, _: &SelectNextPage, _: &mut Window, cx: &mut Context<Self>) {
-        const PAGE_SIZE: usize = 20;
+        // Grid uses rows × columns for page size
+        const GRID_COLUMNS: usize = 7;
+        const GRID_PAGE_ROWS: usize = 3;
+        const LIST_PAGE_SIZE: usize = 20;
 
-        let new_index = self
-            .state
+        self.state
             .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
-                    if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
-                        state.app.page_down_tree(PAGE_SIZE);
-                        None
-                    } else {
-                        state.app.page_down_albums(PAGE_SIZE);
-                        Some(state.app.selected_album_index)
-                    }
+                    // Grid view: move by full rows
+                    state.app.page_down_albums(GRID_COLUMNS * GRID_PAGE_ROWS);
                 }
                 Screen::Queue => {
-                    state.app.page_down_queue(PAGE_SIZE);
-                    None
+                    state.app.page_down_queue(LIST_PAGE_SIZE);
                 }
                 Screen::DirectoryManager => {
-                    state.app.page_down_directories(PAGE_SIZE);
-                    None
+                    state.app.page_down_directories(LIST_PAGE_SIZE);
                 }
-                _ => None,
+                _ => {}
             });
-        // Scroll to the selected item in flat list view
-        if let Some(idx) = new_index {
-            self.library_scroll_handle
-                .scroll_to_item(idx, ScrollStrategy::Nearest);
-        }
         cx.notify();
     }
 
     fn select_prev_page(&mut self, _: &SelectPrevPage, _: &mut Window, cx: &mut Context<Self>) {
-        const PAGE_SIZE: usize = 20;
+        // Grid uses rows × columns for page size
+        const GRID_COLUMNS: usize = 7;
+        const GRID_PAGE_ROWS: usize = 3;
+        const LIST_PAGE_SIZE: usize = 20;
 
-        let new_index = self
-            .state
+        self.state
             .update(cx, |state, _cx| match state.app.current_screen {
                 Screen::Library => {
-                    if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
-                        state.app.page_up_tree(PAGE_SIZE);
-                        None
-                    } else {
-                        state.app.page_up_albums(PAGE_SIZE);
-                        Some(state.app.selected_album_index)
-                    }
+                    // Grid view: move by full rows
+                    state.app.page_up_albums(GRID_COLUMNS * GRID_PAGE_ROWS);
                 }
                 Screen::Queue => {
-                    state.app.page_up_queue(PAGE_SIZE);
-                    None
+                    state.app.page_up_queue(LIST_PAGE_SIZE);
                 }
                 Screen::DirectoryManager => {
-                    state.app.page_up_directories(PAGE_SIZE);
-                    None
+                    state.app.page_up_directories(LIST_PAGE_SIZE);
                 }
-                _ => None,
+                _ => {}
             });
-        // Scroll to the selected item in flat list view
-        if let Some(idx) = new_index {
-            self.library_scroll_handle
-                .scroll_to_item(idx, ScrollStrategy::Nearest);
-        }
         cx.notify();
     }
 
@@ -761,9 +729,7 @@ impl PlayerView {
 
     fn toggle_expand(&mut self, _: &ToggleExpand, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Library {
-                state.app.toggle_letter_expansion();
-            } else if state.app.current_screen == Screen::Queue {
+            if state.app.current_screen == Screen::Queue {
                 state.app.toggle_queue_item_expansion();
             } else if state.app.current_screen == Screen::DirectoryManager {
                 state.app.toggle_directory_expansion();
@@ -1418,16 +1384,9 @@ impl PlayerView {
             // Handle screen-specific actions in Normal mode
             match state.app.current_screen {
                 Screen::Library => {
-                    if state.app.library_view_mode == crate::app::LibraryViewMode::TreeView {
-                        // Add tree selection to queue
-                        if let Some(path) = state.app.add_album_to_queue() {
-                            Self::play_track(state, path);
-                        }
-                    } else {
-                        // Add album to queue
-                        if let Some(path) = state.app.add_album_to_queue() {
-                            Self::play_track(state, path);
-                        }
+                    // Add selected album to queue
+                    if let Some(path) = state.app.add_album_to_queue() {
+                        Self::play_track(state, path);
                     }
                 }
                 Screen::Queue => {

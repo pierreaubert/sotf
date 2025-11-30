@@ -300,11 +300,11 @@ impl PlayerView {
         let is_compact_height = window_height < 600.0;
 
         // Use ratios for panel widths (layout will compute actual sizes)
-        let queue_ratio = state.app.queue_panel_ratio;
-        // If compact height, we might need more horizontal space or layout changes
+        let queue_list_ratio = state.app.queue_list_ratio;
         let meters_ratio = state.app.meters_panel_ratio;
+        let lufs_visible = state.app.lufs_visible;
 
-        let queue_collapsed = queue_ratio < 0.05;
+        let queue_collapsed = queue_list_ratio < 0.05;
         let meters_collapsed = meters_ratio < 0.05;
 
         div()
@@ -316,7 +316,7 @@ impl PlayerView {
                     div()
                         .flex()
                         .flex_col()
-                        .w(relative(queue_ratio))
+                        .w(relative(queue_list_ratio))
                         .p_4()
                         .border_r_1()
                         .border_color(theme.border)
@@ -360,12 +360,21 @@ impl PlayerView {
                                 .children(state.app.queue.iter().enumerate().map(|(idx, item)| {
                                     let is_current = state.app.current_queue_index == Some(idx);
                                     let theme = theme.clone();
+                                    let theme_hover = theme.clone();
                                     div()
                                         .p_3()
                                         .rounded_md()
-                                        .when(is_current, |d| d.bg(theme.accent))
-                                        .when(!is_current, |d| d.bg(theme.surface))
-                                        .hover(|style| style.bg(theme.surface_hover))
+                                        .when(is_current, |d| {
+                                            // Current item: accent background, subtle hover
+                                            let mut hover_bg = theme.accent;
+                                            hover_bg.a = 0.8;
+                                            d.bg(theme.accent)
+                                             .hover(move |style| style.bg(hover_bg))
+                                        })
+                                        .when(!is_current, |d| {
+                                            d.bg(theme_hover.surface)
+                                             .hover(|style| style.bg(theme_hover.surface_hover))
+                                        })
                                         .cursor_pointer()
                                         .on_mouse_up(
                                             MouseButton::Left,
@@ -409,18 +418,19 @@ impl PlayerView {
                                                     div()
                                                         .font_weight(FontWeight::SEMIBOLD)
                                                         .text_sm()
+                                                        .text_color(if is_current { theme.text_on_accent } else { theme.text_primary })
                                                         .child(item.album.title.clone()),
                                                 )
                                                 .child(
                                                     div()
                                                         .text_xs()
-                                                        .text_color(theme.text_muted)
+                                                        .text_color(if is_current { theme.text_on_accent_muted } else { theme.text_muted })
                                                         .child(item.album.artist()),
                                                 )
                                                 .child(
                                                     div()
                                                         .text_xs()
-                                                        .text_color(theme.text_secondary)
+                                                        .text_color(if is_current { theme.text_on_accent_muted } else { theme.text_secondary })
                                                         .child(format!(
                                                             "Track {}/{}",
                                                             item.current_track_index + 1,
@@ -435,7 +445,7 @@ impl PlayerView {
             // Separator 1 (Queue <-> Center)
             .child(
                 div()
-                    .w(px(20.0))
+                    .w(px(theme.separator_size))
                     .h_full()
                     .bg(theme.background)
                     .flex()
@@ -450,10 +460,10 @@ impl PlayerView {
                     )
                     .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            if state.app.queue_panel_ratio > 0.05 {
-                                state.app.queue_panel_ratio = 0.0;
+                            if state.app.queue_list_ratio > 0.05 {
+                                state.app.queue_list_ratio = 0.0;
                             } else {
-                                state.app.queue_panel_ratio = 0.35; // Restore default
+                                state.app.queue_list_ratio = 0.30; // Restore default
                             }
                         });
                         cx.notify();
@@ -466,7 +476,7 @@ impl PlayerView {
             // Separator 2 (Center <-> Right)
             .child(
                 div()
-                    .w(px(20.0))
+                    .w(px(theme.separator_size))
                     .h_full()
                     .bg(theme.background)
                     .flex()
@@ -492,26 +502,58 @@ impl PlayerView {
             )
             // Right panel: Level meters / LUFS
             .when(!meters_collapsed, |d| {
+                let theme_sep = theme.clone();
                 if is_compact_height {
-                    // 4-column layout: LUFS | Sep | Meters
+                    // 4-column layout: LUFS | Sep (toggles meters) | Meters
                     d.child(self.render_lufs_panel(cx))
                      .child(
                         div()
-                            .w(px(20.0))
+                            .w(px(theme.separator_size))
                             .h_full()
                             .bg(theme.background)
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child(div().w(px(1.0)).h_full().bg(theme.border))
+                            .cursor_col_resize()
+                            .child(div().w(px(1.0)).h_full().bg(theme_sep.border))
+                            .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                                view.state.update(cx, |state, _| {
+                                    state.app.lufs_visible = !state.app.lufs_visible;
+                                });
+                                cx.notify();
+                            }))
                      )
-                     .child(self.render_meters_panel(cx))
+                     .when(lufs_visible, |d| d.child(self.render_meters_panel(cx)))
                 } else {
-                    // Standard 3-column layout: Stacked
+                    // Standard layout: LUFS on top, separator, Meters on bottom
                     d.child(
                         div()
                             .w(relative(meters_ratio))
-                            .child(self.render_level_meters(cx))
+                            .flex()
+                            .flex_col()
+                            .h_full()
+                            // LUFS section
+                            .child(self.render_lufs_panel(cx))
+                            // Separator between LUFS and Meters (click to toggle meters)
+                            .child(
+                                div()
+                                    .h(px(theme.separator_size))
+                                    .w_full()
+                                    .bg(theme.surface)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .cursor_row_resize()
+                                    .child(div().h(px(2.0)).w_full().bg(theme_sep.border))
+                                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                                        view.state.update(cx, |state, _| {
+                                            state.app.lufs_visible = !state.app.lufs_visible;
+                                        });
+                                        cx.notify();
+                                    }))
+                            )
+                            // Meters section (toggleable)
+                            .when(lufs_visible, |d| d.child(self.render_meters_panel(cx)))
                     )
                 }
             })
@@ -555,6 +597,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
+            .min_h(px(150.0))
             .p_4()
             .bg(theme.background)
             .child(
@@ -934,6 +977,8 @@ impl PlayerView {
 
         div()
             .w(px(320.0))
+            .min_h(px(150.0))
+            .h_full()
             .flex()
             .flex_col()
             .p_4()

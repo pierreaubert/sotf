@@ -11,14 +11,18 @@ pub enum IconName {
     // Playback controls
     Play,
     Pause,
+    Square, // Stop
     SkipForward,
     SkipBack,
+    FastForward,
+    Rewind,
     Shuffle,
     Repeat,
 
-    // Volume
+    // Volume & Audio
     Volume2,
     VolumeX,
+    Speaker,
 
     // Navigation
     ChevronLeft,
@@ -55,12 +59,16 @@ impl IconName {
         match self {
             IconName::Play => "icons/play.svg",
             IconName::Pause => "icons/pause.svg",
+            IconName::Square => "icons/square.svg",
             IconName::SkipForward => "icons/skip-forward.svg",
             IconName::SkipBack => "icons/skip-back.svg",
+            IconName::FastForward => "icons/fast-forward.svg",
+            IconName::Rewind => "icons/rewind.svg",
             IconName::Shuffle => "icons/shuffle.svg",
             IconName::Repeat => "icons/repeat.svg",
             IconName::Volume2 => "icons/volume-2.svg",
             IconName::VolumeX => "icons/volume-x.svg",
+            IconName::Speaker => "icons/speaker.svg",
             IconName::ChevronLeft => "icons/chevron-left.svg",
             IconName::ChevronRight => "icons/chevron-right.svg",
             IconName::ChevronUp => "icons/chevron-up.svg",

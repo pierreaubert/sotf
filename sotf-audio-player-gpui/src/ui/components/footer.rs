@@ -1,10 +1,11 @@
 //! Footer component rendering with transport controls, track info, and volume
 
 use crate::ui::PlayerView;
+use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, IconButton, IconButtonSize, IconButtonVariant, Potentiometer, StackAlign, StackJustify,
+    HStack, Potentiometer, StackAlign, StackJustify,
     StackSpacing, VStack,
 };
 
@@ -31,7 +32,7 @@ impl PlayerView {
                     // Right section: Device + Volume
                     .child(self.render_footer_right(cx))
                     .build()
-                    .h(px(80.0))
+                    .h(px(100.0))
                     .px_4(),
             )
             .build()
@@ -187,30 +188,17 @@ impl PlayerView {
         let progress_bar_bg = theme.progress_bar_bg;
         let progress_bar_fill = theme.progress_bar_fill;
 
-        // Get icon button theme from app theme
-        let icon_button_theme = {
+        let theme_clone = {
             let state = self.state.read(cx);
-            state.app.theme.to_icon_button_theme()
-        };
-
-        // Create a theme for the play button with accent background
-        let play_button_theme = {
-            let state = self.state.read(cx);
-            let theme = &state.app.theme;
-            gpui_ui_kit::IconButtonTheme {
-                filled_bg: theme.accent,
-                filled_hover_bg: theme.accent_hover,
-                text: theme.text_primary,
-                text_on_accent: theme.text_primary,
-                ..icon_button_theme.clone()
-            }
+            state.app.theme.clone()
         };
 
         div()
             .flex()
             .flex_col()
             .items_center()
-            .gap_2()
+            .gap_3() // Spacing between transport and waveform
+            .py_2() // Padding above/below
             .flex_1()
             .max_w(px(600.0))
             // Transport controls row
@@ -218,14 +206,16 @@ impl PlayerView {
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap_3()
                     // Previous track
                     .child(
-                        IconButton::new("transport-prev", "⏮")
-                            .size(IconButtonSize::Lg)
+                        div()
+                            .id("transport-prev")
+                            .p_2()
                             .rounded_full()
-                            .theme(icon_button_theme.clone())
-                            .build()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme_clone.surface_hover))
+                            .child(Icon::new(IconName::SkipBack).size(IconSize::Lg).color(theme_clone.text_primary))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, window, cx| {
@@ -235,11 +225,13 @@ impl PlayerView {
                     )
                     // Seek backward
                     .child(
-                        IconButton::new("transport-seek-back", "⏪")
-                            .size(IconButtonSize::Lg)
+                        div()
+                            .id("transport-seek-back")
+                            .p_2()
                             .rounded_full()
-                            .theme(icon_button_theme.clone())
-                            .build()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme_clone.surface_hover))
+                            .child(Icon::new(IconName::Rewind).size(IconSize::Lg).color(theme_clone.text_primary))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -251,32 +243,33 @@ impl PlayerView {
                                 }),
                             ),
                     )
-                    // Play/Stop (large)
-                    .child(
-                        IconButton::new(
-                            "transport-play",
-                            if is_playing { "⏹" } else { "▶" },
-                        )
-                        .size(IconButtonSize::Xl)
-                        .variant(IconButtonVariant::Filled)
-                        .rounded_full()
-                        .theme(play_button_theme)
-                        .build()
-                        .text_xl()
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                                view.toggle_playback(&crate::actions::PlayPause, window, cx);
-                            }),
-                        ),
-                    )
+                    // Play/Pause (large, accent background)
+                    .child({
+                        let play_icon = if is_playing { IconName::Pause } else { IconName::Play };
+                        div()
+                            .id("transport-play")
+                            .p_3()
+                            .rounded_full()
+                            .cursor_pointer()
+                            .bg(theme_clone.accent)
+                            .hover(|s| s.bg(theme_clone.accent_hover))
+                            .child(Icon::new(play_icon).size(IconSize::Xl).color(theme_clone.text_on_accent))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, window, cx| {
+                                    view.toggle_playback(&crate::actions::PlayPause, window, cx);
+                                }),
+                            )
+                    })
                     // Seek forward
                     .child(
-                        IconButton::new("transport-seek-fwd", "⏩")
-                            .size(IconButtonSize::Lg)
+                        div()
+                            .id("transport-seek-fwd")
+                            .p_2()
                             .rounded_full()
-                            .theme(icon_button_theme.clone())
-                            .build()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme_clone.surface_hover))
+                            .child(Icon::new(IconName::FastForward).size(IconSize::Lg).color(theme_clone.text_primary))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -291,11 +284,13 @@ impl PlayerView {
                     )
                     // Next track
                     .child(
-                        IconButton::new("transport-next", "⏭")
-                            .size(IconButtonSize::Lg)
+                        div()
+                            .id("transport-next")
+                            .p_2()
                             .rounded_full()
-                            .theme(icon_button_theme)
-                            .build()
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme_clone.surface_hover))
+                            .child(Icon::new(IconName::SkipForward).size(IconSize::Lg).color(theme_clone.text_primary))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, window, cx| {
@@ -319,29 +314,22 @@ impl PlayerView {
                             .min_w(px(40.0))
                             .child(position_str),
                     )
-                    // Waveform / Progress bar - simplified to a basic progress bar
-                    // TODO: Restore waveform visualization once canvas API is understood
+                    // Waveform visualization from track data
                     .child(
                         div()
                             .id("waveform-bar")
                             .flex_1()
-                            .h(px(32.0))
+                            .h(px(40.0)) // Taller waveform
                             .cursor_pointer()
                             .flex()
-                            .items_center()
-                            .child(
-                                div()
-                                    .w_full()
-                                    .h(px(4.0))
-                                    .bg(progress_bar_bg)
-                                    .rounded_full()
-                                    .overflow_hidden()
-                                    .child(
-                                        div()
-                                            .h_full()
-                                            .w(relative(progress))
-                                            .bg(progress_bar_fill)
-                                    )
+                            .items_center() // Center bars vertically for mirrored look
+                            .children(
+                                Self::render_waveform_bars(
+                                    waveform.as_ref(),
+                                    progress,
+                                    progress_bar_fill,
+                                    progress_bar_bg,
+                                )
                             )
                     )
                     // Total duration
@@ -391,15 +379,13 @@ impl PlayerView {
             .min_w(px(180.0))
             .justify_end()
             .relative()
-            // Device selection button
+            // Device selection button - icon on top, name below
             .child(
                 div()
                     .id("device-selector")
                     .px_2()
                     .py_1()
                     .rounded_md()
-                    .text_xs()
-                    .text_color(text_secondary)
                     .cursor_pointer()
                     .hover(|style| style.bg(surface_hover))
                     .on_mouse_up(
@@ -412,14 +398,25 @@ impl PlayerView {
                         }),
                     )
                     .child(
-                        div().flex().items_center().gap_1().child("🔊").child(
-                            div()
-                                .max_w(px(80.0))
-                                .overflow_hidden()
-                                .text_ellipsis()
-                                .whitespace_nowrap()
-                                .child(current_device),
-                        ),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_1()
+                            // Speaker icon
+                            .child(Icon::new(IconName::Speaker).size(IconSize::Lg).color(theme_clone.text_secondary))
+                            // Device name below
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(text_secondary)
+                                    .max_w(px(80.0))
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .whitespace_nowrap()
+                                    .text_center()
+                                    .child(current_device),
+                            ),
                     ),
             )
             // Device popup (renders above the button)
@@ -531,6 +528,79 @@ impl PlayerView {
                 }),
             )
         })
+    }
+
+    /// Render waveform bars for the progress visualization
+    /// Each bar represents one sample from the 128-sample waveform data
+    /// Creates a mirrored waveform where bars extend up and down from center
+    fn render_waveform_bars(
+        waveform: Option<&Vec<u8>>,
+        progress: f32,
+        played_color: gpui::Rgba,
+        unplayed_color: gpui::Rgba,
+    ) -> Vec<gpui::Div> {
+        const NUM_BARS: usize = 80;
+        const MAX_HEIGHT: f32 = 16.0; // Half of total height (bars go up AND down)
+        const MIN_HEIGHT: f32 = 2.0;
+        const BAR_WIDTH: f32 = 3.0;
+        const GAP: f32 = 2.0;
+
+        // If no waveform data, create flat bars
+        let default_waveform: Vec<u8> = vec![64; NUM_BARS];
+        let samples = waveform.unwrap_or(&default_waveform);
+
+        // Normalize to NUM_BARS samples if different length
+        let bar_samples: Vec<u8> = if samples.len() == NUM_BARS {
+            samples.clone()
+        } else if samples.is_empty() {
+            vec![64; NUM_BARS]
+        } else {
+            // Resample to NUM_BARS
+            (0..NUM_BARS)
+                .map(|i| {
+                    let src_idx = (i * samples.len()) / NUM_BARS;
+                    samples.get(src_idx).copied().unwrap_or(64)
+                })
+                .collect()
+        };
+
+        // Progress threshold for coloring (0.0 to 1.0 maps to bar index)
+        let progress_bar_idx = (progress * NUM_BARS as f32) as usize;
+
+        bar_samples
+            .into_iter()
+            .enumerate()
+            .map(|(idx, amplitude)| {
+                // Calculate height from amplitude (0-255 -> MIN_HEIGHT to MAX_HEIGHT)
+                let height_ratio = amplitude as f32 / 255.0;
+                let bar_height = MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * height_ratio;
+
+                // Color based on whether we've played past this bar
+                let bar_color = if idx < progress_bar_idx {
+                    played_color
+                } else {
+                    unplayed_color
+                };
+
+                // Each bar is a column with top half and bottom half (mirrored)
+                div()
+                    .w(px(BAR_WIDTH))
+                    .mr(px(GAP))
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        // Single bar that represents both halves visually
+                        div()
+                            .w(px(BAR_WIDTH))
+                            .h(px(bar_height * 2.0)) // Total height (up + down from center)
+                            .bg(bar_color)
+                            .rounded_sm(),
+                    )
+            })
+            .collect()
     }
 
     /// Render a round volume button with circular progress indicator

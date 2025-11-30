@@ -184,6 +184,7 @@ impl PlayerView {
                 .left(px(menu.position_x))
                 .w(Rems(15.0))
                 .bg(theme.surface)
+                .text_color(theme.text_primary)
                 .border_1()
                 .border_color(theme.accent)
                 .rounded_md()
@@ -194,6 +195,7 @@ impl PlayerView {
                     div()
                         .px_3()
                         .py_2()
+                        .text_color(theme.text_primary)
                         .hover(|style| style.bg(theme.surface_hover))
                         .cursor_pointer()
                         .on_mouse_up(
@@ -300,8 +302,8 @@ impl PlayerView {
                             HStack::new()
                                 .justify(StackJustify::SpaceBetween)
                                 .align(StackAlign::Center)
-                                .child(Text::new(label).size(TextSize::Sm))
-                                .child(Text::new(shortcut).size(TextSize::Xs).muted(true)),
+                                .child(Text::new(label).size(TextSize::Sm).color(theme.text_primary))
+                                .child(Text::new(shortcut).size(TextSize::Xs).color(theme.text_muted)),
                         )
                 }))
         } else {

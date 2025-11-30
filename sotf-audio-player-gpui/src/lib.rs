@@ -21,8 +21,8 @@ pub mod ui;
 // Re-export commonly used types for testing
 pub use app::{
     App, AppState, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
-    InputMode, LetterNode, LibrarySortOrder, LibraryViewMode, QueueItem, Screen, ToastMessage,
-    ToastType, TreeItem, get_param_count,
+    InputMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage, ToastType,
+    get_param_count,
 };
 pub use i18n::{Language, Translations};
 pub use keybindings::{

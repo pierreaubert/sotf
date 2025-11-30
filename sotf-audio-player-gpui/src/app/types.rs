@@ -119,14 +119,6 @@ impl ToastMessage {
     }
 }
 
-/// View mode for library display
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LibraryViewMode {
-    Flat,     // Original list view
-    TreeView, // Hierarchical artist → albums
-    Grid,     // Album grid with thumbnails
-}
-
 /// Library sort order options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibrarySortOrder {
@@ -145,23 +137,6 @@ pub enum ChannelFilter {
     Multichannel,  // Only albums with > 2 channels
     Mixed,         // Only albums with mixed channel counts
     Specific(u32), // Only albums with specific channel count
-}
-
-/// Letter node in tree view (groups albums by first letter of artist)
-#[derive(Debug, Clone)]
-pub struct LetterNode {
-    pub letter: char,
-    pub album_indices: Vec<usize>, // Indices into library.albums
-    pub expanded: bool,
-}
-
-/// Tree item type for rendering - groups by first letter of artist
-#[derive(Debug, Clone)]
-pub enum TreeItem {
-    /// First letter group header (A, B, C, etc.)
-    Letter { letter: char, expanded: bool },
-    /// Album within a letter group (index into library.albums)
-    Album { index: usize },
 }
 
 #[derive(Debug)]

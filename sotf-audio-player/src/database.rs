@@ -118,7 +118,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 12;
+        const LATEST_VERSION: i64 = 13;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -988,6 +988,41 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 13: Add sample_rate and bit_depth columns to tracks table
+        migrations.insert(
+            13,
+            Migration {
+                description: "Add sample_rate and bit_depth columns to tracks table",
+                apply: |db| {
+                    // Add sample_rate column
+                    let has_sample_rate = db
+                        .conn
+                        .prepare("SELECT sample_rate FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_sample_rate {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN sample_rate INTEGER", [])?;
+                        log::info!("Added sample_rate column to tracks table");
+                    }
+
+                    // Add bit_depth column
+                    let has_bit_depth = db
+                        .conn
+                        .prepare("SELECT bit_depth FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_bit_depth {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN bit_depth INTEGER", [])?;
+                        log::info!("Added bit_depth column to tracks table");
+                    }
+
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -1079,6 +1114,7 @@ impl MusicDatabase {
             // Load tracks for this album (now including artist)
             let mut tracks_stmt = self.conn.prepare(
                 "SELECT path, title, artist, track_number, duration_secs, channels,
+                        sample_rate, bit_depth,
                         replay_gain, replay_peak, album_gain, album_peak, waveform,
                         genre, composer, disc_number, conductor, performer,
                         isrc, album_artist, ensemble
@@ -1096,19 +1132,21 @@ impl MusicDatabase {
                         track_number: row.get::<_, Option<i64>>(3)?.map(|n| n as u32),
                         duration_secs: row.get::<_, Option<i64>>(4)?.map(|n| n as u64),
                         channels: row.get::<_, Option<i64>>(5)?.map(|n| n as u32),
-                        replay_gain: row.get::<_, Option<f64>>(6)?,
-                        replay_peak: row.get::<_, Option<f64>>(7)?,
-                        album_gain: row.get::<_, Option<f64>>(8)?,
-                        album_peak: row.get::<_, Option<f64>>(9)?,
-                        waveform: row.get::<_, Option<Vec<u8>>>(10)?,
-                        genre: row.get::<_, Option<String>>(11)?,
-                        composer: row.get::<_, Option<String>>(12)?,
-                        disc_number: row.get::<_, Option<i64>>(13)?.map(|n| n as u32),
-                        conductor: row.get::<_, Option<String>>(14)?,
-                        performer: row.get::<_, Option<String>>(15)?,
-                        isrc: row.get::<_, Option<String>>(16)?,
-                        album_artist: row.get::<_, Option<String>>(17)?,
-                        ensemble: row.get::<_, Option<String>>(18)?,
+                        sample_rate: row.get::<_, Option<i64>>(6)?.map(|n| n as u32),
+                        bit_depth: row.get::<_, Option<i64>>(7)?.map(|n| n as u32),
+                        replay_gain: row.get::<_, Option<f64>>(8)?,
+                        replay_peak: row.get::<_, Option<f64>>(9)?,
+                        album_gain: row.get::<_, Option<f64>>(10)?,
+                        album_peak: row.get::<_, Option<f64>>(11)?,
+                        waveform: row.get::<_, Option<Vec<u8>>>(12)?,
+                        genre: row.get::<_, Option<String>>(13)?,
+                        composer: row.get::<_, Option<String>>(14)?,
+                        disc_number: row.get::<_, Option<i64>>(15)?.map(|n| n as u32),
+                        conductor: row.get::<_, Option<String>>(16)?,
+                        performer: row.get::<_, Option<String>>(17)?,
+                        isrc: row.get::<_, Option<String>>(18)?,
+                        album_artist: row.get::<_, Option<String>>(19)?,
+                        ensemble: row.get::<_, Option<String>>(20)?,
                         edition: None,
                     })
                 })?
@@ -1181,10 +1219,11 @@ impl MusicDatabase {
 
                 tx.execute(
                     "INSERT INTO tracks (album_id, path, title, artist, track_number, duration_secs, channels,
+                                        sample_rate, bit_depth,
                                         file_mtime, scanned_at, created_at, updated_at, waveform,
                                         genre, composer, disc_number, conductor, performer,
                                         isrc, album_artist, ensemble)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
                      ON CONFLICT(path) DO UPDATE SET
                      album_id = excluded.album_id,
                      title = excluded.title,
@@ -1192,6 +1231,8 @@ impl MusicDatabase {
                      track_number = excluded.track_number,
                      duration_secs = excluded.duration_secs,
                      channels = excluded.channels,
+                     sample_rate = excluded.sample_rate,
+                     bit_depth = excluded.bit_depth,
                      file_mtime = excluded.file_mtime,
                      scanned_at = excluded.scanned_at,
                      updated_at = excluded.updated_at,
@@ -1212,6 +1253,8 @@ impl MusicDatabase {
                         track.track_number.map(|n| n as i64),
                         track.duration_secs.map(|n| n as i64),
                         track.channels.map(|n| n as i64),
+                        track.sample_rate.map(|n| n as i64),
+                        track.bit_depth.map(|n| n as i64),
                         file_mtime as i64,
                         now,
                         now,

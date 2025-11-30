@@ -3,37 +3,8 @@
 //! Contains methods for navigating and selecting items in various lists.
 
 use super::state::App;
-use super::types::LibraryViewMode;
 
 impl App {
-    /// Select next item in tree view
-    pub fn select_next_tree_item(&mut self) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
-            return;
-        }
-
-        let tree_items = self.get_tree_items();
-        if !tree_items.is_empty() {
-            self.selected_tree_index = (self.selected_tree_index + 1) % tree_items.len();
-        }
-    }
-
-    /// Select previous item in tree view
-    pub fn select_previous_tree_item(&mut self) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
-            return;
-        }
-
-        let tree_items = self.get_tree_items();
-        if !tree_items.is_empty() {
-            if self.selected_tree_index == 0 {
-                self.selected_tree_index = tree_items.len() - 1;
-            } else {
-                self.selected_tree_index -= 1;
-            }
-        }
-    }
-
     pub fn select_next_album(&mut self) {
         let albums = self.filtered_albums();
         if !albums.is_empty() {
@@ -65,7 +36,7 @@ impl App {
             self.selected_album_index = next_index;
         } else {
             // Need to move to next page
-            let total_pages = self.get_flat_total_pages();
+            let total_pages = self.get_total_pages();
             if self.library_page + 1 < total_pages {
                 self.library_page += 1;
                 // Wrap to first item of next page
@@ -98,29 +69,6 @@ impl App {
         } else if self.selected_album_index > 0 {
             // Stay on first page, move to first item
             self.selected_album_index = 0;
-        }
-    }
-
-    pub fn page_down_tree(&mut self, page_size: usize) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
-            return;
-        }
-
-        let tree_items = self.get_tree_items();
-        if !tree_items.is_empty() {
-            self.selected_tree_index =
-                (self.selected_tree_index + page_size).min(tree_items.len() - 1);
-        }
-    }
-
-    pub fn page_up_tree(&mut self, page_size: usize) {
-        if self.library_view_mode != LibraryViewMode::TreeView {
-            return;
-        }
-
-        let tree_items = self.get_tree_items();
-        if !tree_items.is_empty() {
-            self.selected_tree_index = self.selected_tree_index.saturating_sub(page_size);
         }
     }
 
@@ -186,12 +134,8 @@ impl App {
         }
     }
 
-    /// Navigate grid left (only for grid view with pagination)
+    /// Navigate grid left
     pub fn select_grid_left(&mut self) {
-        if self.library_view_mode != LibraryViewMode::Grid {
-            return;
-        }
-
         let albums = self.get_paginated_albums();
         if albums.is_empty() {
             return;
@@ -212,12 +156,8 @@ impl App {
         }
     }
 
-    /// Navigate grid right (only for grid view with pagination)
+    /// Navigate grid right
     pub fn select_grid_right(&mut self) {
-        if self.library_view_mode != LibraryViewMode::Grid {
-            return;
-        }
-
         let albums = self.get_paginated_albums();
         if albums.is_empty() {
             return;
@@ -237,12 +177,8 @@ impl App {
         }
     }
 
-    /// Navigate grid up (only for grid view with pagination)
+    /// Navigate grid up
     pub fn select_grid_up(&mut self) {
-        if self.library_view_mode != LibraryViewMode::Grid {
-            return;
-        }
-
         let grid_columns = 7;
 
         if self.selected_album_index >= grid_columns {
@@ -260,12 +196,8 @@ impl App {
         }
     }
 
-    /// Navigate grid down (only for grid view with pagination)
+    /// Navigate grid down
     pub fn select_grid_down(&mut self) {
-        if self.library_view_mode != LibraryViewMode::Grid {
-            return;
-        }
-
         let albums = self.get_paginated_albums();
         if albums.is_empty() {
             return;
@@ -282,7 +214,7 @@ impl App {
             self.selected_album_index = max_index;
         } else {
             // Move to next page, same column
-            let total_pages = self.get_flat_total_pages();
+            let total_pages = self.get_total_pages();
             if self.library_page + 1 < total_pages {
                 self.library_page += 1;
                 let col = self.selected_album_index % grid_columns;
