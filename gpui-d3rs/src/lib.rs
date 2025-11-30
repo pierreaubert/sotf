@@ -60,6 +60,8 @@ pub mod random;
 pub mod shape;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod surface;
+#[cfg(all(feature = "gpu-3d", not(test)))]
+pub mod surface3d;
 pub mod timer;
 pub mod transition;
 #[cfg(all(feature = "gpui", not(test)))]
