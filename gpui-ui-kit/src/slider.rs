@@ -2,6 +2,33 @@
 
 use gpui::*;
 
+/// Theme colors for slider styling
+#[derive(Debug, Clone)]
+pub struct SliderTheme {
+    /// Track background color (unfilled portion)
+    pub track: Rgba,
+    /// Fill color (active portion)
+    pub fill: Rgba,
+    /// Thumb/handle color
+    pub thumb: Rgba,
+    /// Label text color
+    pub label: Rgba,
+    /// Value text color
+    pub value: Rgba,
+}
+
+impl Default for SliderTheme {
+    fn default() -> Self {
+        Self {
+            track: rgba(0x3e3e3eff),
+            fill: rgba(0x007accff),
+            thumb: rgba(0xffffffff),
+            label: rgba(0xccccccff),
+            value: rgba(0x999999ff),
+        }
+    }
+}
+
 /// Slider size variants
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SliderSize {
@@ -46,6 +73,7 @@ pub struct Slider {
     track_color: Option<Rgba>,
     fill_color: Option<Rgba>,
     thumb_color: Option<Rgba>,
+    theme: Option<SliderTheme>,
 }
 
 impl Slider {
@@ -66,6 +94,7 @@ impl Slider {
             track_color: None,
             fill_color: None,
             thumb_color: None,
+            theme: None,
         }
     }
 
@@ -146,6 +175,12 @@ impl Slider {
         self.thumb_color = Some(color.into());
         self
     }
+
+    /// Set the slider theme (applies all colors at once)
+    pub fn theme(mut self, theme: SliderTheme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
 }
 
 impl RenderOnce for Slider {
@@ -154,9 +189,14 @@ impl RenderOnce for Slider {
         let thumb_size = self.size.thumb_size();
         let width = self.width;
 
-        let track_color = self.track_color.unwrap_or(rgba(0xe0e0e0ff));
-        let fill_color = self.fill_color.unwrap_or(rgba(0x007accff));
-        let thumb_color = self.thumb_color.unwrap_or(rgba(0xffffffff));
+        // Use theme colors if available, then individual colors, then defaults
+        let default_theme = SliderTheme::default();
+        let theme = self.theme.as_ref().unwrap_or(&default_theme);
+        let track_color = self.track_color.unwrap_or(theme.track);
+        let fill_color = self.fill_color.unwrap_or(theme.fill);
+        let thumb_color = self.thumb_color.unwrap_or(theme.thumb);
+        let label_color = theme.label;
+        let value_color = theme.value;
 
         let range = self.max - self.min;
         let progress = if range > 0.0 {
@@ -183,20 +223,16 @@ impl RenderOnce for Slider {
                 label_row = label_row.child(
                     div()
                         .text_color(if disabled {
-                            rgba(0x999999ff)
+                            rgba(0x66666699)
                         } else {
-                            rgba(0x333333ff)
+                            label_color
                         })
                         .child(label.clone()),
                 );
             }
 
             if self.show_value {
-                label_row = label_row.child(
-                    div()
-                        .text_color(rgba(0x666666ff))
-                        .child(format!("{:.1}", self.value)),
-                );
+                label_row = label_row.child(div().text_color(value_color).child(format!("{:.1}", self.value)));
             }
 
             container = container.child(label_row);

@@ -41,7 +41,7 @@ pub mod stack;
 
 // Buttons
 pub use button::{Button, ButtonSize, ButtonTheme, ButtonVariant};
-pub use icon_button::{IconButton, IconButtonSize, IconButtonVariant};
+pub use icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVariant};
 
 // Containers
 pub use card::Card;
@@ -61,7 +61,7 @@ pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use input::{Input, InputSize, InputVariant};
 pub use select::{Select, SelectOption, SelectSize};
-pub use slider::{Slider, SliderSize};
+pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize};
 
 // Data display
