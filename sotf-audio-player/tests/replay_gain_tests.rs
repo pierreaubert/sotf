@@ -92,6 +92,7 @@ fn test_update_replay_gain() {
             isrc: None,
             album_artist: None,
             ensemble: None,
+            edition: None,
         }],
         album_art_path: None,
         album_art_thumbnail: None,
@@ -157,6 +158,8 @@ fn test_replay_gain_values_persistence() {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         };
 
         let db = MusicDatabase::open(&db_path).unwrap();
@@ -221,6 +224,8 @@ fn test_partial_replay_gain_scanning() {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         },
         sotf_audio_player::Album {
             id: None,
@@ -250,6 +255,8 @@ fn test_partial_replay_gain_scanning() {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         },
         sotf_audio_player::Album {
             id: None,
@@ -279,6 +286,8 @@ fn test_partial_replay_gain_scanning() {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         },
     ];
 
@@ -338,6 +347,7 @@ fn test_replay_gain_range_values() {
             isrc: None,
             album_artist: None,
             ensemble: None,
+            edition: None,
         }],
         album_art_path: None,
         album_art_thumbnail: None,

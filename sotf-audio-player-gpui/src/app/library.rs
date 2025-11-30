@@ -38,6 +38,30 @@ impl App {
             Specific(n) => album.uniform_channel_count() == Some(n),
         });
 
+        // Group by title and artist to consolidate editions
+        // We group albums with the same title and artist, and only show the one with the best dynamic range
+        let mut groups: std::collections::HashMap<String, Vec<&Album>> = std::collections::HashMap::new();
+        for album in albums {
+            let title = album.title.trim().to_lowercase();
+            let artist = album.artist().trim().to_lowercase();
+            let key = format!("{}|{}", title, artist);
+            groups.entry(key).or_default().push(album);
+        }
+
+        // Select best edition from each group (highest dynamic range)
+        let mut deduped_albums: Vec<&Album> = Vec::new();
+        for group in groups.values() {
+            if let Some(best) = group.iter().max_by(|a, b| {
+                let dr_a = a.dynamic_range.unwrap_or(0.0);
+                let dr_b = b.dynamic_range.unwrap_or(0.0);
+                // Prefer higher dynamic range
+                dr_a.partial_cmp(&dr_b).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                deduped_albums.push(*best);
+            }
+        }
+        albums = deduped_albums;
+
         // Finally, sort
         match self.library_sort_order {
             LibrarySortOrder::Artist => {

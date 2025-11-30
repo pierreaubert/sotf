@@ -6,6 +6,7 @@
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::Card;
 use sotf_audio_player::Album;
 use std::sync::Arc;
 
@@ -75,74 +76,110 @@ impl AlbumCard {
         div()
             .id(SharedString::from(format!("album-card-{}", self.index)))
             .w(px(card_width))
-            .flex()
-            .flex_col()
-            .items_center()
-            .p_2()
             .rounded_lg()
-            .when(self.is_selected, |d| d.bg(theme.accent))
+            .cursor_pointer()
+            .when(self.is_selected, |d| {
+                // Glow effect for selected state
+                let mut bg = theme.accent;
+                bg.a = 0.1;
+                d.shadow_md()
+                    .border_1()
+                    .border_color(theme.accent)
+                    .bg(bg)
+            })
             .when(!self.is_selected, |d| d.bg(theme.surface))
             .hover(|style| style.bg(theme.surface_hover))
-            .cursor_pointer()
-            // Album art thumbnail or placeholder
             .child(
-                div()
-                    .w(px(thumbnail_size))
-                    .h(px(thumbnail_size))
-                    .rounded_md()
-                    .overflow_hidden()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .when(has_thumbnail, |d| {
-                        if let Some(ref path) = album.album_art_path {
-                            d.child(
-                                img(path.clone())
+                Card::new()
+                    .style(move |d| {
+                        d.w_full()
+                            .bg(gpui::rgba(0x00000000))
+                            .border_0() // Remove card border, let's stick to just using Card for layout/structure or keep border?
+                            // If we keep border on Card, it's fine. Wrapper BG shows through.
+                            // Actually, if Card has border, we don't need border on wrapper.
+                            // But if we want standard Card look, we should keep Card border.
+                            // But existing AlbumCard had border? No, it had rounded_lg and bg.
+                            // It didn't have border in the original code!
+                            // Original: .rounded_lg().bg(...). No border.
+                            // So we should remove Card border to match original look?
+                            // Or keep it for "Card" look.
+                            // I'll remove border to be safe and match original style more closely, 
+                            // using Card mainly for content layout if any.
+                            // Actually, Card layout is flex col.
+                    })
+                    .content(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            // Album art thumbnail or placeholder
+                            .child(
+                                div()
                                     .w(px(thumbnail_size))
                                     .h(px(thumbnail_size))
-                                    .object_fit(ObjectFit::Cover),
+                                    .rounded_md()
+                                    .overflow_hidden()
+                                    .bg(theme.background_secondary)
+                                    .border_1()
+                                    .border_color(theme.border)
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .when(has_thumbnail, |d| {
+                                        if let Some(ref path) = album.album_art_path {
+                                            d.child(
+                                                img(path.clone())
+                                                    .w(px(thumbnail_size))
+                                                    .h(px(thumbnail_size))
+                                                    .object_fit(ObjectFit::Cover),
+                                            )
+                                        } else {
+                                            d.child(
+                                                div()
+                                                    .text_3xl()
+                                                    .text_color(theme.text_muted)
+                                                    .child("♪"),
+                                            )
+                                        }
+                                    })
+                                    .when(!has_thumbnail, |d| {
+                                        d.child(
+                                            div().text_3xl().text_color(theme.text_muted).child("♪"),
+                                        )
+                                    }),
                             )
-                        } else {
-                            d.child(div().text_3xl().text_color(theme.text_muted).child("♪"))
-                        }
-                    })
-                    .when(!has_thumbnail, |d| {
-                        d.child(div().text_3xl().text_color(theme.text_muted).child("♪"))
-                    }),
-            )
-            // Album title
-            .child(
-                div()
-                    .w_full()
-                    .mt_2()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text_primary)
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .child(album.title.clone()),
-            )
-            // Artist name
-            .child(
-                div()
-                    .w_full()
-                    .text_xs()
-                    .text_color(theme.text_secondary)
-                    .overflow_hidden()
-                    .text_ellipsis()
-                    .whitespace_nowrap()
-                    .child(album.artist()),
-            )
-            // Track count
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child(format!("{} tracks", album.tracks.len())),
+                            // Album title
+                            .child(
+                                div()
+                                    .w_full()
+                                    .mt_2()
+                                    .text_sm()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .text_color(theme.text_primary)
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .whitespace_nowrap()
+                                    .child(album.title.clone()),
+                            )
+                            // Artist name
+                            .child(
+                                div()
+                                    .w_full()
+                                    .text_xs()
+                                    .text_color(theme.text_secondary)
+                                    .overflow_hidden()
+                                    .text_ellipsis()
+                                    .whitespace_nowrap()
+                                    .child(album.artist()),
+                            )
+                            // Track count
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(theme.text_muted)
+                                    .child(format!("{} tracks", album.tracks.len())),
+                            ),
+                    ),
             )
             .into_any_element()
     }
@@ -156,7 +193,15 @@ impl AlbumCard {
             .w_full()
             .p_3()
             .rounded_md()
-            .when(self.is_selected, |d| d.bg(theme.accent))
+            .when(self.is_selected, |d| {
+                // Glow effect for selected state
+                let mut bg = theme.accent;
+                bg.a = 0.1;
+                d.shadow_md()
+                    .border_1()
+                    .border_color(theme.accent)
+                    .bg(bg)
+            })
             .when(!self.is_selected, |d| d.bg(theme.surface))
             .hover(|style| style.bg(theme.surface_hover))
             .cursor_pointer()
@@ -195,7 +240,15 @@ impl AlbumCard {
             .pl_8()
             .p_2()
             .rounded_md()
-            .when(self.is_selected, |d| d.bg(theme.accent))
+            .when(self.is_selected, |d| {
+                // Glow effect for selected state
+                let mut bg = theme.accent;
+                bg.a = 0.1;
+                d.shadow_md()
+                    .border_1()
+                    .border_color(theme.accent)
+                    .bg(bg)
+            })
             .when(!self.is_selected, |d| d.bg(theme.background_secondary))
             .cursor_pointer()
             .child(

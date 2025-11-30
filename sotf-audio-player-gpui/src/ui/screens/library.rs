@@ -506,6 +506,7 @@ impl PlayerView {
             .flex_1()
             .overflow_y_scroll()
             .p_2()
+            .track_scroll(&self.tree_scroll_handle)
             .children(tree_items.iter().enumerate().map(|(idx, item)| {
                 let is_selected = selected_tree_index == idx;
                 let theme = theme.clone();
@@ -601,23 +602,14 @@ impl PlayerView {
             .p_2()
             .flex_1()
             .overflow_y_scroll()
+            .track_scroll(&self.grid_scroll_handle)
             .children(albums.iter().enumerate().map(|(idx, album)| {
                 let is_selected = selected_album_index == idx;
                 let theme = theme.clone();
                 let has_thumbnail = album.album_art_thumbnail.is_some();
 
                 div()
-                    .id(SharedString::from(format!("album-card-{}", idx)))
-                    .w(px(card_width))
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .p_2()
-                    .rounded_lg()
-                    .when(is_selected, |d| d.bg(theme.accent))
-                    .when(!is_selected, |d| d.bg(theme.surface))
-                    .hover(|style| style.bg(theme.surface_hover))
-                    .cursor_pointer()
+                    .id(SharedString::from(format!("album-card-wrapper-{}", idx)))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -642,69 +634,9 @@ impl PlayerView {
                             cx.notify();
                         }),
                     )
-                    // Album art thumbnail or placeholder
                     .child(
-                        div()
-                            .w(px(thumbnail_size))
-                            .h(px(thumbnail_size))
-                            .rounded_md()
-                            .overflow_hidden()
-                            .bg(theme.background_secondary)
-                            .border_1()
-                            .border_color(theme.border)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .when(has_thumbnail, |d| {
-                                // Use album art path if available
-                                if let Some(ref path) = album.album_art_path {
-                                    d.child(
-                                        img(path.clone())
-                                            .w(px(thumbnail_size))
-                                            .h(px(thumbnail_size))
-                                            .object_fit(gpui::ObjectFit::Cover),
-                                    )
-                                } else {
-                                    // Fallback to placeholder even if has_thumbnail is true
-                                    d.child(
-                                        div().text_3xl().text_color(theme.text_muted).child("♪"),
-                                    )
-                                }
-                            })
-                            .when(!has_thumbnail, |d| {
-                                d.child(div().text_3xl().text_color(theme.text_muted).child("♪"))
-                            }),
-                    )
-                    // Album title
-                    .child(
-                        div()
-                            .w_full()
-                            .mt_2()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(album.title.clone()),
-                    )
-                    // Artist name
-                    .child(
-                        div()
-                            .w_full()
-                            .text_xs()
-                            .text_color(theme.text_secondary)
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(album.artist()),
-                    )
-                    // Track count
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child(format!("{} tracks", album.tracks.len())),
+                        AlbumCard::new(Arc::new((*album).clone()), idx, is_selected, theme.clone())
+                            .mode(AlbumCardMode::Grid),
                     )
             }));
 

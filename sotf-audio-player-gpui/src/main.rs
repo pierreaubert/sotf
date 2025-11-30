@@ -1,5 +1,6 @@
 use gpui::*;
 use sotf_audio_player::Player;
+use sotf_audio_player_gpui::actions::*;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
@@ -35,6 +36,44 @@ fn main() {
     log::info!("SOTF GPUI Player starting...");
 
     gpui::Application::new().run(move |cx| {
+        cx.activate(true);
+        
+        cx.set_menus(vec![
+            Menu {
+                name: "SotF Player".into(),
+                items: vec![
+                    MenuItem::action("About SotF Player", ToggleHelp),
+                    MenuItem::separator(),
+                    MenuItem::action("Settings...", OpenConfig),
+                    MenuItem::separator(),
+                    MenuItem::os_submenu("Services", SystemMenuType::Services),
+                    MenuItem::separator(),
+                    MenuItem::action("Quit SotF Player", QuitApp),
+                ],
+            },
+            Menu {
+                name: "File".into(),
+                items: vec![
+                    MenuItem::action("Scan Library", ScanLibrary),
+                    MenuItem::action("Add Directory...", AddDirectory),
+                ],
+            },
+            Menu {
+                name: "View".into(),
+                items: vec![
+                    MenuItem::action("Library", SwitchToLibrary),
+                    MenuItem::action("Queue", SwitchToQueue),
+                    MenuItem::action("Plugins", SwitchToPlugins),
+                ],
+            },
+            Menu {
+                name: "Help".into(),
+                items: vec![
+                    MenuItem::action("Keyboard Shortcuts", ToggleHelp),
+                ],
+            },
+        ]);
+
         // Register keyboard shortcuts from the keybindings module
         // Default preset is used at startup; can be changed via settings
         let keymap_preset = KeymapPreset::Default;

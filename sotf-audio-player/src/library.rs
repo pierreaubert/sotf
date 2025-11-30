@@ -67,6 +67,7 @@ pub struct Track {
     pub isrc: Option<String>,
     pub album_artist: Option<String>,
     pub ensemble: Option<String>,
+    pub edition: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +80,8 @@ pub struct Album {
     /// 120x120 JPEG thumbnail of album art
     pub album_art_thumbnail: Option<Vec<u8>>,
     pub play_count: usize,
+    pub edition: Option<String>,
+    pub dynamic_range: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -599,9 +602,21 @@ impl MusicLibrary {
 
         // Sort tracks within each album and generate album art thumbnails
         for album in &mut self.albums {
+            if album.tracks.is_empty() {
+                log::warn!("Found empty album (no tracks): {}", album.title);
+            }
             album.sort_tracks();
             // Find album art and generate thumbnail if not already present
             find_and_generate_album_thumbnail(album);
+            
+            // Calculate dynamic range (average replay gain)
+            let gains: Vec<f64> = album.tracks.iter()
+                .filter_map(|t| t.replay_gain)
+                .collect();
+            if !gains.is_empty() {
+                let sum: f64 = gains.iter().sum();
+                album.dynamic_range = Some(sum / gains.len() as f64);
+            }
         }
 
         // Sort albums by artist (computed from tracks) and title
@@ -716,7 +731,10 @@ impl MusicLibrary {
 
                         // Albums are now keyed by title only - artist comes from tracks
                         let normalized_title = normalize_album_key(&album_title);
-                        let key = normalized_title;
+                        
+                        // Include edition in key to separate versions
+                        let edition_key = metadata.edition.as_ref().map(|e| normalize_album_key(e)).unwrap_or_default();
+                        let key = format!("{}|{}", normalized_title, edition_key);
 
                         let album = album_map.entry(key).or_insert_with(|| {
                             // Capitalize first letter of each word for nice display
@@ -730,6 +748,8 @@ impl MusicLibrary {
                                 album_art_path: None,
                                 album_art_thumbnail: None,
                                 play_count: 0,
+                                edition: metadata.edition.clone(),
+                                dynamic_range: None,
                             }
                         });
 
@@ -753,6 +773,7 @@ impl MusicLibrary {
                             isrc: metadata.isrc,
                             album_artist: metadata.album_artist,
                             ensemble: metadata.ensemble,
+                            edition: metadata.edition.clone(),
                         };
 
                         album.tracks.push(track);
@@ -856,6 +877,7 @@ struct TrackMetadata {
     pub isrc: Option<String>,
     pub album_artist: Option<String>,
     pub ensemble: Option<String>,
+    pub edition: Option<String>,
 }
 
 /// Create a custom probe with all supported format readers registered
@@ -973,6 +995,36 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                     metadata.ensemble = Some(tag.value.to_string());
                 }
                 _ => {}
+            }
+        }
+    }
+    
+    // Try to detect edition from directory name
+    if let Some(parent) = path.parent() {
+        if let Some(dir_name) = parent.file_name().map(|n| n.to_string_lossy()) {
+            let dir_str = dir_name.as_ref();
+            let mut edition = None;
+            
+            // Look for (...)
+            if let Some(start) = dir_str.rfind('(') {
+                if let Some(end) = dir_str.rfind(')') {
+                    if end > start {
+                        edition = Some(dir_str[start+1..end].trim().to_string());
+                    }
+                }
+            }
+            // Look for [...] - prioritizing brackets if present
+            if let Some(start) = dir_str.rfind('[') {
+                if let Some(end) = dir_str.rfind(']') {
+                    if end > start {
+                        edition = Some(dir_str[start+1..end].trim().to_string());
+                    }
+                }
+            }
+            
+            if let Some(ed) = edition {
+                // Only use if it looks like an edition info (heuristic)
+                metadata.edition = Some(ed);
             }
         }
     }
@@ -1310,6 +1362,7 @@ mod tests {
             isrc: None,
             album_artist: None,
             ensemble: None,
+            edition: None,
         }
     }
 
@@ -1326,6 +1379,8 @@ mod tests {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         });
 
         lib.albums.push(Album {
@@ -1336,6 +1391,8 @@ mod tests {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         });
 
         lib.albums.push(Album {
@@ -1346,6 +1403,8 @@ mod tests {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         });
 
         // Search by artist (case insensitive)
@@ -1384,6 +1443,8 @@ mod tests {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         });
 
         // Test various case combinations

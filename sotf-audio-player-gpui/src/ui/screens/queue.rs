@@ -288,141 +288,333 @@ fn render_gradient_meter(
         )
 }
 
+use std::collections::BTreeMap;
+use sotf_audio_player::Track;
+
 impl PlayerView {
     pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let window_size = cx.viewport_size();
+        let is_compact_height = window_size.height < px(600.0);
+        
+        // Calculate panel widths
+        let window_width = window_size.width;
+        let queue_ratio = state.app.queue_panel_ratio;
+        // If compact height, we might need more horizontal space or layout changes
+        let meters_ratio = state.app.meters_panel_ratio;
+        
+        let queue_width = window_width * queue_ratio;
+        let meters_width = window_width * meters_ratio;
+        let separator_width = px(20.0);
+        
+        let queue_collapsed = queue_ratio < 0.05;
+        let meters_collapsed = meters_ratio < 0.05;
 
         div()
             .flex()
             .size_full()
+            // Left panel: Queue list
+            .when(!queue_collapsed, |d| {
+                d.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .w(queue_width)
+                        .p_4()
+                        .border_r_1()
+                        .border_color(theme.border)
+                        .child(
+                            div()
+                                .text_lg()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .mb_4()
+                                .flex()
+                                .justify_between()
+                                .items_center()
+                                .child(format!("Queue ({} albums)", state.app.queue.len()))
+                                .child(
+                                    div()
+                                        .px_2()
+                                        .py_1()
+                                        .rounded_md()
+                                        .bg(theme.surface)
+                                        .hover(|style| style.bg(rgb(0x8e2e2e)))
+                                        .cursor_pointer()
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.clear_queue();
+                                                });
+                                                cx.notify();
+                                            }),
+                                        )
+                                        .child("Clear"),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id("queue-list")
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .flex_1()
+                                .overflow_y_scroll()
+                                .children(state.app.queue.iter().enumerate().map(|(idx, item)| {
+                                    let is_current = state.app.current_queue_index == Some(idx);
+                                    let theme = theme.clone();
+                                    div()
+                                        .p_3()
+                                        .rounded_md()
+                                        .when(is_current, |d| d.bg(theme.accent))
+                                        .when(!is_current, |d| d.bg(theme.surface))
+                                        .hover(|style| style.bg(theme.surface_hover))
+                                        .cursor_pointer()
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.current_queue_index = Some(idx);
+                                                    if let Some(path) = state.app.queue[idx]
+                                                        .current_track()
+                                                        .map(|t| t.path.clone())
+                                                    {
+                                                        Self::play_track(state, path);
+                                                    }
+                                                });
+                                                cx.notify();
+                                            }),
+                                        )
+                                        .on_mouse_up(
+                                            MouseButton::Right,
+                                            cx.listener(
+                                                move |view, event: &MouseUpEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.current_queue_index = Some(idx);
+                                                        state.app.context_menu =
+                                                        Some(crate::app::ContextMenuState {
+                                                            menu_type:
+                                                                crate::app::ContextMenuType::QueueItem,
+                                                            position_x: event.position.x.into(),
+                                                            position_y: event.position.y.into(),
+                                                            item_index: idx,
+                                                        });
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            ),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .flex_col()
+                                                .child(
+                                                    div()
+                                                        .font_weight(FontWeight::SEMIBOLD)
+                                                        .text_sm()
+                                                        .child(item.album.title.clone()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(theme.text_muted)
+                                                        .child(item.album.artist()),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(theme.text_secondary)
+                                                        .child(format!(
+                                                            "Track {}/{}",
+                                                            item.current_track_index + 1,
+                                                            item.album.tracks.len()
+                                                        )),
+                                                ),
+                                        )
+                                })),
+                        ),
+                )
+            })
+            // Separator 1 (Queue <-> Center)
             .child(
-                // Left panel: Queue list (narrower)
                 div()
+                    .w(separator_width)
+                    .h_full()
+                    .bg(theme.background)
                     .flex()
-                    .flex_col()
-                    .w(px(300.0))
-                    .p_4()
-                    .border_r_1()
-                    .border_color(theme.border)
+                    .items_center()
+                    .justify_center()
+                    .cursor_col_resize()
                     .child(
                         div()
-                            .text_lg()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .mb_4()
+                            .w(px(1.0))
+                            .h_full()
+                            .bg(theme.border)
+                    )
+                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                        view.state.update(cx, |state, _| {
+                            if state.app.queue_panel_ratio > 0.05 {
+                                state.app.queue_panel_ratio = 0.0;
+                            } else {
+                                state.app.queue_panel_ratio = 0.35; // Restore default
+                            }
+                        });
+                        cx.notify();
+                    }))
+            )
+            // Center panel: Now playing info
+            .child(
+                self.render_now_playing_info(cx)
+            )
+            // Separator 2 (Center <-> Right)
+            .child(
+                div()
+                    .w(separator_width)
+                    .h_full()
+                    .bg(theme.background)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_col_resize()
+                    .child(
+                        div()
+                            .w(px(1.0))
+                            .h_full()
+                            .bg(theme.border)
+                    )
+                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                        view.state.update(cx, |state, _| {
+                            if state.app.meters_panel_ratio > 0.05 {
+                                state.app.meters_panel_ratio = 0.0;
+                            } else {
+                                state.app.meters_panel_ratio = 0.25; // Restore default
+                            }
+                        });
+                        cx.notify();
+                    }))
+            )
+            // Right panel: Level meters / LUFS
+            .when(!meters_collapsed, |d| {
+                if is_compact_height {
+                    // 4-column layout: LUFS | Sep | Meters
+                    d.child(self.render_lufs_panel(cx))
+                     .child(
+                        div()
+                            .w(separator_width)
+                            .h_full()
+                            .bg(theme.background)
                             .flex()
-                            .justify_between()
                             .items_center()
-                            .child(format!("Queue ({} albums)", state.app.queue.len()))
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_md()
-                                    .bg(theme.surface)
-                                    .hover(|style| style.bg(rgb(0x8e2e2e)))
-                                    .cursor_pointer()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.clear_queue();
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .child("Clear"),
-                            ),
+                            .justify_center()
+                            .child(div().w(px(1.0)).h_full().bg(theme.border))
+                     )
+                     .child(self.render_meters_panel(cx))
+                } else {
+                    // Standard 3-column layout: Stacked
+                    d.child(
+                        div()
+                            .w(meters_width)
+                            .child(self.render_level_meters(cx))
+                    )
+                }
+            })
+    }
+
+    /// Render separate LUFS panel
+    fn render_lufs_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (theme, loudness) = {
+            let state = self.state.read(cx);
+            (state.app.theme.clone(), state.app.loudness_info.clone())
+        };
+        div()
+            .flex()
+            .flex_col()
+            .p_4()
+            .bg(theme.background)
+            .border_r_1()
+            .border_color(theme.border)
+            .child(self.render_lufs_with_true_peak(loudness.as_ref(), &theme))
+    }
+
+    /// Render separate Meters panel
+    fn render_meters_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.state.read(cx).app.theme.clone();
+        // This duplicates logic from render_level_meters but only the bottom part
+        // For brevity, I'll reuse render_level_meters logic but we should probably refactor properly
+        // Since render_level_meters combines them, let's just use it for now or duplicate logic
+        // I'll duplicate logic to ensure clean separation
+        let (theme, loudness, groups, selected_group) = {
+            let state = self.state.read(cx);
+            (
+                state.app.theme.clone(),
+                state.app.loudness_info.clone(),
+                state.app.level_meter_groups.clone(),
+                state.app.selected_level_meter_group,
+            )
+        };
+        
+        let theme_c = theme.clone();
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .p_4()
+            .bg(theme.background)
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .items_center()
+                    .mb_2()
+                    .child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Level Meters"),
                     )
                     .child(
                         div()
-                            .id("queue-list")
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .children(state.app.queue.iter().enumerate().map(|(idx, item)| {
-                                let is_current = state.app.current_queue_index == Some(idx);
-                                let theme = theme.clone();
-                                div()
-                                    .p_3()
-                                    .rounded_md()
-                                    .when(is_current, |d| d.bg(theme.accent))
-                                    .when(!is_current, |d| d.bg(theme.surface))
-                                    .hover(|style| style.bg(theme.surface_hover))
-                                    .cursor_pointer()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.current_queue_index = Some(idx);
-                                                if let Some(path) = state.app.queue[idx]
-                                                    .current_track()
-                                                    .map(|t| t.path.clone())
-                                                {
-                                                    Self::play_track(state, path);
-                                                }
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .on_mouse_up(
-                                        MouseButton::Right,
-                                        cx.listener(
-                                            move |view, event: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.current_queue_index = Some(idx);
-                                                    state.app.context_menu =
-                                                    Some(crate::app::ContextMenuState {
-                                                        menu_type:
-                                                            crate::app::ContextMenuType::QueueItem,
-                                                        position_x: event.position.x.into(),
-                                                        position_y: event.position.y.into(),
-                                                        item_index: idx,
-                                                    });
-                                                });
-                                                cx.notify();
-                                            },
-                                        ),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .child(
-                                                div()
-                                                    .font_weight(FontWeight::SEMIBOLD)
-                                                    .text_sm()
-                                                    .child(item.album.title.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(theme.text_muted)
-                                                    .child(item.album.artist()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(theme.text_secondary)
-                                                    .child(format!(
-                                                        "Track {}/{}",
-                                                        item.current_track_index + 1,
-                                                        item.album.tracks.len()
-                                                    )),
-                                            ),
-                                    )
-                            })),
+                            .px_2()
+                            .py(px(2.0))
+                            .rounded(px(3.0))
+                            .text_xs()
+                            .bg(theme.surface)
+                            .text_color(theme.text_secondary)
+                            .cursor_pointer()
+                            .hover(|style| style.bg(theme_c.surface_hover))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        for group in &mut state.app.level_meter_groups {
+                                            group.muted = false;
+                                            group.soloed = false;
+                                            group.dimmed = false;
+                                        }
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child("Clear All"),
                     ),
             )
             .child(
-                // Center panel: Now playing info
-                self.render_now_playing_info(cx),
-            )
-            .child(
-                // Right panel: Level meters with LUFS (no volume - it's in footer now)
-                self.render_level_meters(cx),
+                div()
+                    .flex()
+                    .gap_2()
+                    .overflow_x_scroll()
+                    .children(groups.iter().enumerate().map(|(idx, group)| {
+                        let is_selected = idx == selected_group;
+                        self.render_meter_group(
+                            group,
+                            idx,
+                            is_selected,
+                            loudness.as_ref(),
+                            &theme,
+                            cx,
+                        )
+                    })),
             )
     }
 
@@ -464,17 +656,14 @@ impl PlayerView {
                 let album_title = album.title.clone();
                 let artist = album.artist();
                 let art_path = album.album_art_path.clone();
-                let tracks: Vec<_> = album
-                    .tracks
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, track)| {
-                        let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
-                        let duration = track.duration_secs.unwrap_or(0);
-                        let is_current = idx == current_track_idx;
-                        (idx, title, duration, is_current)
-                    })
-                    .collect();
+                
+                // Group tracks by disc number
+                let mut disc_map: BTreeMap<u32, Vec<(usize, Track)>> = BTreeMap::new();
+                for (idx, track) in album.tracks.iter().enumerate() {
+                    let disc = track.disc_number.unwrap_or(1);
+                    disc_map.entry(disc).or_default().push((idx, track.clone()));
+                }
+                let show_disc_headers = disc_map.len() > 1;
 
                 d.child(
                     div()
@@ -593,7 +782,7 @@ impl PlayerView {
                                 ),
                         ),
                 )
-                // Track list (scrollable)
+                // Track list (scrollable) with Disc Grouping
                 .child(
                     div()
                         .flex()
@@ -606,7 +795,7 @@ impl PlayerView {
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.text_secondary)
                                 .mb_2()
-                                .child(format!("Tracks ({})", tracks.len())),
+                                .child(format!("Tracks ({})", album.tracks.len())),
                         )
                         .child(
                             div()
@@ -616,65 +805,76 @@ impl PlayerView {
                                 .gap(px(2.0))
                                 .flex_1()
                                 .overflow_y_scroll()
-                                .children(tracks.into_iter().map(
-                                    |(idx, title, duration, is_current)| {
-                                        let duration_str =
-                                            format!("{}:{:02}", duration / 60, duration % 60);
-                                        let theme_c = theme.clone();
+                                .children({
+                                    let disc_count = disc_map.len();
+                                    disc_map.into_iter().flat_map(move |(disc_num, tracks)| {
+                                        let show_header = disc_count > 1;
+                                        let theme = theme.clone();
+                                        let mut elements: Vec<AnyElement> = Vec::new();
+                                        
+                                        if show_header {
+                                            elements.push(
+                                                div()
+                                                    .py_1()
+                                                    .mt_2()
+                                                    .mb_1()
+                                                    .text_xs()
+                                                    .font_weight(FontWeight::BOLD)
+                                                    .text_color(theme.text_secondary)
+                                                    .child(format!("Disc {}", disc_num))
+                                                    .into_any_element()
+                                            );
+                                        }
+                                        
+                                        elements.extend(tracks.into_iter().map(|(idx, track)| {
+                                            let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
+                                            let duration = track.duration_secs.unwrap_or(0);
+                                            let is_current = idx == current_track_idx;
+                                            let duration_str = format!("{}:{:02}", duration / 60, duration % 60);
+                                            let theme_c = theme.clone();
 
-                                        div()
-                                            .flex()
-                                            .items_center()
-                                            .gap_2()
-                                            .px_2()
-                                            .py(px(4.0))
-                                            .rounded(px(4.0))
-                                            .when(is_current, |d| {
-                                                d.bg(theme_c.accent).text_color(rgb(0xffffff))
-                                            })
-                                            .when(!is_current, |d| {
-                                                d.hover(|s| s.bg(theme_c.surface_hover))
-                                            })
-                                            // Track number
-                                            .child(
-                                                div()
-                                                    .w(px(24.0))
-                                                    .text_xs()
-                                                    .text_color(if is_current {
-                                                        rgb(0xffffff)
-                                                    } else {
-                                                        theme_c.text_muted
-                                                    })
-                                                    .child(format!("{}", idx + 1)),
-                                            )
-                                            // Track title
-                                            .child(
-                                                div()
-                                                    .flex_1()
-                                                    .text_sm()
-                                                    .overflow_hidden()
-                                                    .text_ellipsis()
-                                                    .whitespace_nowrap()
-                                                    .when(is_current, |d| {
-                                                        d.font_weight(FontWeight::SEMIBOLD)
-                                                    })
-                                                    .child(title),
-                                            )
-                                            // Duration
-                                            .child(
-                                                div()
-                                                    .text_xs()
-                                                    .text_color(if is_current {
-                                                        rgb(0xffffff)
-                                                    } else {
-                                                        theme_c.text_muted
-                                                    })
-                                                    .child(duration_str),
-                                            )
-                                    },
-                                )),
-                        ),
-                )
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_2()
+                                                .px_2()
+                                                .py(px(4.0))
+                                                .rounded(px(4.0))
+                                                .when(is_current, |d| {
+                                                    d.bg(theme_c.accent).text_color(rgb(0xffffff))
+                                                })
+                                                .when(!is_current, |d| {
+                                                    d.hover(|s| s.bg(theme_c.surface_hover))
+                                                })
+                                                .child(
+                                                    div()
+                                                        .w(px(24.0))
+                                                        .text_xs()
+                                                        .text_color(if is_current { rgb(0xffffff) } else { theme_c.text_muted })
+                                                        .child(format!("{}", track.track_number.unwrap_or((idx + 1) as u32))),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .flex_1()
+                                                        .text_sm()
+                                                        .overflow_hidden()
+                                                        .text_ellipsis()
+                                                        .whitespace_nowrap()
+                                                        .when(is_current, |d| d.font_weight(FontWeight::SEMIBOLD))
+                                                        .child(title),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .text_xs()
+                                                        .text_color(if is_current { rgb(0xffffff) } else { theme_c.text_muted })
+                                                        .child(duration_str),
+                                                )
+                                                .into_any_element()
+                                        }));
+                                        elements
+                                    })
+                                })
+                        )
             })
             .when(!has_content, |d| {
                 d.child(

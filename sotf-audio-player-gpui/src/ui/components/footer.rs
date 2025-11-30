@@ -1,12 +1,11 @@
 //! Footer component rendering with transport controls, track info, and volume
 
 use crate::ui::PlayerView;
-use crate::ui::components::potentiometer::render_potentiometer;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify, StackSpacing,
-    VStack,
+    HStack, IconButton, IconButtonSize, IconButtonVariant, Potentiometer, StackAlign, StackJustify,
+    StackSpacing, VStack,
 };
 
 impl PlayerView {
@@ -173,6 +172,17 @@ impl PlayerView {
             0.0
         };
 
+        // Get waveform data
+        let waveform = if let Some(queue_idx) = state.app.current_queue_index {
+            if let Some(item) = state.app.queue.get(queue_idx) {
+                item.current_track().and_then(|t| t.waveform.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let text_muted = theme.text_muted;
         let progress_bar_bg = theme.progress_bar_bg;
         let progress_bar_fill = theme.progress_bar_fill;
@@ -309,25 +319,92 @@ impl PlayerView {
                             .min_w(px(40.0))
                             .child(position_str),
                     )
-                    // Progress bar (waveform placeholder)
+                    // Waveform / Progress bar
                     .child(
                         div()
-                            .id("progress-bar")
+                            .id("waveform-bar")
                             .flex_1()
-                            .h(px(4.0))
-                            .bg(progress_bar_bg)
-                            .rounded_full()
-                            .overflow_hidden()
+                            .h(px(32.0))
                             .cursor_pointer()
-                            .child(
-                                div()
-                                    .h_full()
-                                    .w(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                                        progress,
-                                    )))
-                                    .bg(progress_bar_fill)
-                                    .rounded_full(),
-                            ),
+                            .on_paint(move |bounds, cx| {
+                                let waveform = waveform.clone();
+                                let bg_color = progress_bar_bg;
+                                let fill_color = progress_bar_fill;
+                                
+                                let width = bounds.size.width;
+                                let height = bounds.size.height;
+                                let center_y = bounds.origin.y + height / 2.0;
+                                
+                                let samples = waveform.as_deref().unwrap_or(&[]);
+                                
+                                if samples.is_empty() {
+                                    // Fallback to simple line if no waveform
+                                    let progress_width = width * progress;
+                                    
+                                    // Background line
+                                    let bg_bounds = Bounds {
+                                        origin: Point::new(bounds.origin.x, center_y - px(1.0)),
+                                        size: Size::new(width, px(2.0)),
+                                    };
+                                    cx.paint_quad(gpui::PaintQuad {
+                                        bounds: bg_bounds,
+                                        background: bg_color.into(),
+                                        corner_radii: Default::default(),
+                                        border_widths: Default::default(),
+                                        border_color: Default::default(),
+                                        border_style: Default::default(),
+                                    });
+                                    
+                                    // Progress line
+                                    if progress > 0.0 {
+                                        let fill_bounds = Bounds {
+                                            origin: Point::new(bounds.origin.x, center_y - px(1.0)),
+                                            size: Size::new(progress_width, px(2.0)),
+                                        };
+                                        cx.paint_quad(gpui::PaintQuad {
+                                            bounds: fill_bounds,
+                                            background: fill_color.into(),
+                                            corner_radii: Default::default(),
+                                            border_widths: Default::default(),
+                                            border_color: Default::default(),
+                                            border_style: Default::default(),
+                                        });
+                                    }
+                                    return;
+                                }
+
+                                let count = samples.len();
+                                let bar_width = width / (count as f32);
+                                // Use a small gap, e.g., 20% of width
+                                let draw_width = bar_width * 0.8;
+                                
+                                for (i, &sample) in samples.iter().enumerate() {
+                                    let x = bounds.origin.x + (bar_width * i as f32);
+                                    // Normalize sample (0-255) to height (0-16px)
+                                    let amplitude = (sample as f32 / 255.0).max(0.1); // Ensure min height
+                                    let bar_h = px(16.0) * amplitude;
+                                    
+                                    let rect = Bounds {
+                                        origin: Point::new(x, center_y - bar_h),
+                                        size: Size::new(draw_width, bar_h * 2.0),
+                                    };
+                                    
+                                    let color = if (i as f32 / count as f32) < progress {
+                                        fill_color
+                                    } else {
+                                        bg_color
+                                    };
+                                    
+                                    cx.paint_quad(gpui::PaintQuad {
+                                        bounds: rect,
+                                        background: color.into(),
+                                        corner_radii: (2.0).into(),
+                                        border_widths: Default::default(),
+                                        border_color: Default::default(),
+                                        border_style: Default::default(),
+                                    });
+                                }
+                            })
                     )
                     // Total duration
                     .child(
@@ -545,15 +622,16 @@ impl PlayerView {
                     cx.notify();
                 }),
             )
-            .child(render_potentiometer(
-                volume,
-                format!("{}", volume_percent),
-                48.0,
-                muted,
-                accent_color,
-                muted_color,
-                bg_color,
-                text_color,
-            ))
+            .child(
+                Potentiometer::new()
+                    .value(volume)
+                    .label(format!("{}", volume_percent))
+                    .size(px(48.0))
+                    .muted(muted)
+                    .accent_color(accent_color)
+                    .muted_color(muted_color)
+                    .bg_color(bg_color)
+                    .text_color(text_color),
+            )
     }
 }

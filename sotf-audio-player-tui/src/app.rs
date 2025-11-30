@@ -3501,6 +3501,7 @@ mod tests {
                 isrc: None,
                 album_artist: None,
                 ensemble: None,
+                edition: None,
             });
         }
         Album {
@@ -3511,6 +3512,8 @@ mod tests {
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
+            edition: None,
+            dynamic_range: None,
         }
     }
 

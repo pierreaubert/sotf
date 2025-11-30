@@ -1109,6 +1109,7 @@ impl MusicDatabase {
                         isrc: row.get::<_, Option<String>>(16)?,
                         album_artist: row.get::<_, Option<String>>(17)?,
                         ensemble: row.get::<_, Option<String>>(18)?,
+                        edition: None,
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -1123,6 +1124,8 @@ impl MusicDatabase {
                 album_art_path: album_art_path.map(PathBuf::from),
                 album_art_thumbnail,
                 play_count,
+                edition: None,
+                dynamic_range: None,
             });
         }
 

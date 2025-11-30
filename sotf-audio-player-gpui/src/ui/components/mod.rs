@@ -7,4 +7,3 @@ pub mod host;
 pub mod image_cache;
 pub mod optimization_forms;
 pub mod plugins;
-pub mod potentiometer;

@@ -19,6 +19,10 @@ pub struct PlayerView {
     last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library flat list (uniform_list)
     library_scroll_handle: UniformListScrollHandle,
+    /// Scroll handle for library grid view
+    grid_scroll_handle: ScrollHandle,
+    /// Scroll handle for library tree view
+    tree_scroll_handle: ScrollHandle,
 }
 
 impl PlayerView {
@@ -47,6 +51,8 @@ impl PlayerView {
             focus_handle,
             last_saved_window_bounds: None,
             library_scroll_handle: UniformListScrollHandle::new(),
+            grid_scroll_handle: ScrollHandle::new(),
+            tree_scroll_handle: ScrollHandle::new(),
         }
     }
 
@@ -294,6 +300,21 @@ impl PlayerView {
                     cx.notify();
                 }
             }))
+            // Global mouse up handler to stop dragging even if mouse is outside divider
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        if state.app.is_dragging_queue_divider {
+                            state.app.is_dragging_queue_divider = false;
+                            // Save the new layout
+                            if let Err(e) = state.app.save_config() {
+                                log::warn!("Failed to save panel layout: {}", e);
+                            }
+                        }
+                    });
+                }),
+            )
             // Top section: Library (takes remaining space)
             .child(
                 div()
