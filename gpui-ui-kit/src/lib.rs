@@ -17,6 +17,7 @@ pub mod checkbox;
 pub mod input;
 pub mod select;
 pub mod slider;
+pub mod potentiometer;
 pub mod toggle;
 
 // Data display
@@ -60,6 +61,7 @@ pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 // Form
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use input::{Input, InputSize, InputVariant};
+pub use potentiometer::Potentiometer;
 pub use select::{Select, SelectOption, SelectSize};
 pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize};

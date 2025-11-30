@@ -43,6 +43,12 @@ impl Card {
         self
     }
 
+    /// Add custom styling to the card container
+    pub fn style(mut self, f: impl FnOnce(Div) -> Div + 'static) -> Self {
+        self.extra_classes.push(Box::new(f));
+        self
+    }
+
     /// Build the card into an element
     pub fn build(self) -> Div {
         let mut card = div()
