@@ -48,7 +48,9 @@ pub mod zoom;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod axis;
 pub mod contour;
+pub mod delaunay;
 pub mod fetch;
+pub mod geo;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod grid;
 pub mod legend;
@@ -56,6 +58,7 @@ pub mod polygon;
 pub mod quadtree;
 pub mod random;
 pub mod shape;
+pub mod timer;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod text;
 
