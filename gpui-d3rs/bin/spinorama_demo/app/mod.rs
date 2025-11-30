@@ -2455,6 +2455,10 @@ impl SpinoramaApp {
         let angle_values = contour_data.angles.clone();
         let spl_values = contour_data.spl.clone();
 
+        // Calculate SPL range for axis labels
+        let spl_min = spl_values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let spl_max = spl_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+
         let surface_data = SurfaceData::from_z_function_logx(
             (freq_min.max(20.0), freq_max.min(20000.0)),
             (angle_min, angle_max),
@@ -2490,12 +2494,18 @@ impl SpinoramaApp {
             .rotation(self.surface_rotation_elevation as f64, self.surface_rotation_azimuth as f64)
             .wireframe(self.surface_wireframe)
             .color_scale(ColorScaleType::Viridis)
-            .opacity(0.85)
+            .opacity(0.6)
             .scale(1.2)
             .show_axes(true)
             .axis_color(D3Color::rgb(80, 80, 80))
             .axis_width(2.0)
-            .axis_labels("Frequency (Hz)", "Angle (°)", "SPL (dB)");
+            .axis_labels("Freq", "Angle", "SPL")
+            .axis_ranges(
+                (freq_min.max(20.0), freq_max.min(20000.0)),
+                (angle_min, angle_max),
+                (spl_min, spl_max),
+            )
+            .axis_font_size(9.0);
 
         let surface_element = render_surface(&surface_data, config, chart_width, chart_height);
 

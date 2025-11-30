@@ -881,6 +881,93 @@ pub fn render_vector_text(text: &str, config: &VectorFontConfig) -> impl IntoEle
     .h(px(canvas_height))
 }
 
+/// Paint vector text directly onto a window at a given position
+/// This is useful for rendering text in custom Element paint methods
+pub fn paint_vector_text_at(
+    window: &mut gpui::Window,
+    text: &str,
+    x: f32,
+    y: f32,
+    font_size: f32,
+    stroke_width: f32,
+    color: impl Into<gpui::Rgba>,
+    rotation: f32,
+) {
+    let color: gpui::Rgba = color.into();
+    let hershey_height = 21.0;
+    let scale = font_size / hershey_height;
+
+    let cos_r = rotation.cos();
+    let sin_r = rotation.sin();
+
+    // Starting position (centered)
+    let text_width_units = calculate_text_width(text);
+    let mut cursor_x = -text_width_units * scale / 2.0;
+
+    for c in text.chars() {
+        if let Some(ch) = get_hershey_char(c) {
+            let char_width = ch.width as f32 * scale;
+
+            // Process coordinate pairs
+            let data = ch.data;
+            let mut i = 0;
+            let mut pen_down = false;
+            let mut builder = PathBuilder::stroke(px(stroke_width));
+            let mut has_path = false;
+
+            while i + 1 < data.len() {
+                let px_val_data = data[i];
+                let py_val_data = data[i + 1];
+                i += 2;
+
+                if px_val_data == -1 && py_val_data == -1 {
+                    // Pen up - draw current path and start new one
+                    if has_path {
+                        if let Ok(path) = builder.build() {
+                            window.paint_path(path, color);
+                        }
+                    }
+                    builder = PathBuilder::stroke(px(stroke_width));
+                    has_path = false;
+                    pen_down = false;
+                } else {
+                    // Convert Hershey coordinates to our coordinate system
+                    let px_local = cursor_x + px_val_data as f32 * scale;
+                    let py_local = (21.0 - py_val_data as f32 - 10.5) * scale;
+
+                    // Apply rotation around center
+                    let rx = px_local * cos_r - py_local * sin_r;
+                    let ry = px_local * sin_r + py_local * cos_r;
+
+                    // Translate to final position
+                    let final_x = x + rx;
+                    let final_y = y + ry;
+
+                    if !pen_down {
+                        builder.move_to(point(px(final_x), px(final_y)));
+                        pen_down = true;
+                        has_path = true;
+                    } else {
+                        builder.line_to(point(px(final_x), px(final_y)));
+                    }
+                }
+            }
+
+            // Draw remaining path
+            if has_path {
+                if let Ok(path) = builder.build() {
+                    window.paint_path(path, color);
+                }
+            }
+
+            cursor_x += char_width;
+        } else {
+            // Unknown character - skip with default width
+            cursor_x += 16.0 * scale;
+        }
+    }
+}
+
 // Note: Tests removed because they cause rustc to crash with SIGBUS
 // when compiling in debug mode with the gpui feature enabled.
 // The code is tested visually via the spinorama-demo example.

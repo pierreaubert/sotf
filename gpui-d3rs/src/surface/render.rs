@@ -9,8 +9,10 @@ use super::projection::{
     PerspectiveProjection, Point2D, Projection, ProjectionType,
 };
 use crate::color::D3Color;
+use crate::text::paint_vector_text_at;
 use gpui::prelude::*;
 use gpui::*;
+use std::f32::consts::PI;
 use std::panic;
 use std::sync::Arc;
 
@@ -196,6 +198,10 @@ pub struct SurfaceConfig {
     pub axis_width: f32,
     /// Axis labels (X, Y, Z)
     pub axis_labels: Option<(String, String, String)>,
+    /// Axis value ranges for tick labels (X, Y, Z) - ((min, max), (min, max), (min, max))
+    pub axis_ranges: Option<((f64, f64), (f64, f64), (f64, f64))>,
+    /// Font size for axis labels and tick values
+    pub axis_font_size: f32,
 }
 
 impl Default for SurfaceConfig {
@@ -219,6 +225,8 @@ impl Default for SurfaceConfig {
             axis_color: D3Color::rgb(100, 100, 100),
             axis_width: 1.5,
             axis_labels: None,
+            axis_ranges: None,
+            axis_font_size: 10.0,
         }
     }
 }
@@ -372,6 +380,18 @@ impl SurfaceConfig {
         self
     }
 
+    /// Set axis value ranges for tick labels (X, Y, Z)
+    pub fn axis_ranges(mut self, x_range: (f64, f64), y_range: (f64, f64), z_range: (f64, f64)) -> Self {
+        self.axis_ranges = Some((x_range, y_range, z_range));
+        self
+    }
+
+    /// Set font size for axis labels and tick values
+    pub fn axis_font_size(mut self, size: f32) -> Self {
+        self.axis_font_size = size;
+        self
+    }
+
     /// Get color for a normalized t value
     fn get_color(&self, t: f64) -> D3Color {
         if let Some(ref custom) = self.custom_color {
@@ -389,6 +409,29 @@ fn normalize_vec(v: (f64, f64, f64)) -> (f64, f64, f64) {
         (v.0 / len, v.1 / len, v.2 / len)
     } else {
         (0.0, 0.0, 1.0)
+    }
+}
+
+/// Format tick value for display based on the range
+fn format_tick_value(value: f64, min: f64, max: f64) -> String {
+    let range = (max - min).abs();
+
+    // For large numbers (like frequency), use k suffix
+    if value.abs() >= 1000.0 && range >= 1000.0 {
+        let k = value / 1000.0;
+        if k == k.floor() {
+            format!("{}k", k as i32)
+        } else {
+            format!("{:.1}k", k)
+        }
+    } else if range < 10.0 {
+        // Small range - show one decimal
+        format!("{:.1}", value)
+    } else if value == value.floor() {
+        // Integer value
+        format!("{}", value as i32)
+    } else {
+        format!("{:.0}", value)
     }
 }
 
@@ -662,13 +705,17 @@ impl Element for SurfaceElement {
             }
 
             // Draw tick marks on each axis (5 ticks)
-            let tick_size = 0.02;
-            for i in 0..=5 {
-                let t = i as f64 / 5.0;
+            let tick_size = 0.03;
+            let num_ticks = 5;
+            let tick_font_size = self.config.axis_font_size;
+            let tick_stroke = 1.0;
+
+            for i in 0..=num_ticks {
+                let t = i as f64 / num_ticks as f64;
 
                 // X axis ticks (perpendicular to X in YZ plane)
-                let x_tick_pos = (-0.5 + t * 1.1, -0.5, -0.5);
-                let x_tick_end = (-0.5 + t * 1.1, -0.5 - tick_size, -0.5);
+                let x_tick_pos = (-0.5 + t * 1.0, -0.5, -0.5);
+                let x_tick_end = (-0.5 + t * 1.0, -0.5 - tick_size, -0.5);
                 let p1 = projection.project(x_tick_pos.0, x_tick_pos.1, x_tick_pos.2);
                 let p2 = projection.project(x_tick_end.0, x_tick_end.1, x_tick_end.2);
                 let mut tick_builder = PathBuilder::stroke(px(1.0));
@@ -678,9 +725,25 @@ impl Element for SurfaceElement {
                     window.paint_path(path, axis_color);
                 }
 
+                // Draw X tick value if ranges provided
+                if let Some(((x_min, x_max), _, _)) = self.config.axis_ranges {
+                    let value = x_min + t * (x_max - x_min);
+                    let label = format_tick_value(value, x_min, x_max);
+                    paint_vector_text_at(
+                        window,
+                        &label,
+                        p2.x as f32,
+                        p2.y as f32 + 12.0,
+                        tick_font_size,
+                        tick_stroke,
+                        axis_color,
+                        0.0,
+                    );
+                }
+
                 // Y axis ticks
-                let y_tick_pos = (-0.5, -0.5 + t * 1.1, -0.5);
-                let y_tick_end = (-0.5 - tick_size, -0.5 + t * 1.1, -0.5);
+                let y_tick_pos = (-0.5, -0.5 + t * 1.0, -0.5);
+                let y_tick_end = (-0.5 - tick_size, -0.5 + t * 1.0, -0.5);
                 let p1 = projection.project(y_tick_pos.0, y_tick_pos.1, y_tick_pos.2);
                 let p2 = projection.project(y_tick_end.0, y_tick_end.1, y_tick_end.2);
                 let mut tick_builder = PathBuilder::stroke(px(1.0));
@@ -690,9 +753,25 @@ impl Element for SurfaceElement {
                     window.paint_path(path, axis_color);
                 }
 
+                // Draw Y tick value if ranges provided
+                if let Some((_, (y_min, y_max), _)) = self.config.axis_ranges {
+                    let value = y_min + t * (y_max - y_min);
+                    let label = format_tick_value(value, y_min, y_max);
+                    paint_vector_text_at(
+                        window,
+                        &label,
+                        p2.x as f32 - 18.0,
+                        p2.y as f32,
+                        tick_font_size,
+                        tick_stroke,
+                        axis_color,
+                        0.0,
+                    );
+                }
+
                 // Z axis ticks
-                let z_tick_pos = (-0.5, -0.5, -0.5 + t * 1.1);
-                let z_tick_end = (-0.5 - tick_size, -0.5, -0.5 + t * 1.1);
+                let z_tick_pos = (-0.5, -0.5, -0.5 + t * 1.0);
+                let z_tick_end = (-0.5 - tick_size, -0.5, -0.5 + t * 1.0);
                 let p1 = projection.project(z_tick_pos.0, z_tick_pos.1, z_tick_pos.2);
                 let p2 = projection.project(z_tick_end.0, z_tick_end.1, z_tick_end.2);
                 let mut tick_builder = PathBuilder::stroke(px(1.0));
@@ -701,6 +780,67 @@ impl Element for SurfaceElement {
                 if let Ok(path) = tick_builder.build() {
                     window.paint_path(path, axis_color);
                 }
+
+                // Draw Z tick value if ranges provided
+                if let Some((_, _, (z_min, z_max))) = self.config.axis_ranges {
+                    let value = z_min + t * (z_max - z_min);
+                    let label = format_tick_value(value, z_min, z_max);
+                    paint_vector_text_at(
+                        window,
+                        &label,
+                        p2.x as f32 - 20.0,
+                        p2.y as f32,
+                        tick_font_size,
+                        tick_stroke,
+                        axis_color,
+                        0.0,
+                    );
+                }
+            }
+
+            // Draw axis labels if configured
+            if let Some((x_label, y_label, z_label)) = &self.config.axis_labels {
+                let font_size = 11.0;
+                let stroke_width = 1.2;
+
+                // X axis label - positioned at the end of the X axis
+                let x_label_pos = projection.project(0.7, -0.5, -0.5);
+                paint_vector_text_at(
+                    window,
+                    x_label,
+                    x_label_pos.x as f32,
+                    x_label_pos.y as f32 + 15.0,
+                    font_size,
+                    stroke_width,
+                    axis_color,
+                    0.0,
+                );
+
+                // Y axis label - positioned at the end of the Y axis
+                let y_label_pos = projection.project(-0.5, 0.7, -0.5);
+                paint_vector_text_at(
+                    window,
+                    y_label,
+                    y_label_pos.x as f32 - 15.0,
+                    y_label_pos.y as f32,
+                    font_size,
+                    stroke_width,
+                    axis_color,
+                    -PI / 2.0, // Vertical text
+                );
+
+                // Z axis label - positioned at the end of the Z axis
+                let z_label_pos = projection.project(-0.5, -0.5, 0.7);
+                paint_vector_text_at(
+                    window,
+                    z_label,
+                    z_label_pos.x as f32 - 15.0,
+                    z_label_pos.y as f32,
+                    font_size,
+                    stroke_width,
+                    axis_color,
+                    -PI / 2.0, // Vertical text
+                );
             }
         }
     }
