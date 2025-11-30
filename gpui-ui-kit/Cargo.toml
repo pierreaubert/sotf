@@ -5,7 +5,6 @@ authors.workspace = true
 edition.workspace = true
 description = "A reusable UI component library for GPUI applications"
 license = "ISC License"
-license-file = "LICENSE"
 repository.workspace = true
 
 [dependencies]
