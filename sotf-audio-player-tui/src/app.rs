@@ -3502,6 +3502,8 @@ mod tests {
                 album_artist: None,
                 ensemble: None,
                 edition: None,
+                bit_depth: None,
+                sample_rate: None,
             });
         }
         Album {

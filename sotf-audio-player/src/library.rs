@@ -289,6 +289,23 @@ impl MusicLibrary {
         })
     }
 
+    /// Create a new library with database persistence at a custom path, bypassing security checks.
+    ///
+    /// This method is only available in test builds and allows creating a database
+    /// in any location (e.g., temp directories) for unit testing.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn with_custom_database_for_testing<P: AsRef<std::path::Path>>(
+        db_path: P,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let db = MusicDatabase::open_for_testing(db_path)?;
+
+        Ok(Self {
+            directories: Vec::new(),
+            albums: Vec::new(),
+            db: Some(db),
+        })
+    }
+
     /// Get a reference to the database
     pub fn get_database(&self) -> Option<&MusicDatabase> {
         self.db.as_ref()

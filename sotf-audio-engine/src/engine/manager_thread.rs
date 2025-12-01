@@ -294,6 +294,7 @@ impl ConfigUpdateQueue {
     }
 
     /// Get current metrics
+    #[allow(dead_code)]
     fn get_metrics(&self) -> &ConfigUpdateMetrics {
         &self.metrics
     }
@@ -813,14 +814,16 @@ fn apply_plugin_update(
     state: &Arc<Mutex<AudioEngineState>>,
     config_queue: &mut ConfigUpdateQueue,
     plugins: Vec<super::PluginConfig>,
-) -> Result<(), String> {
+) -> Result<(), ConfigError> {
     log::trace!(
         "[Manager Thread] apply_plugin_update: Starting update with {} plugins",
         plugins.len()
     );
 
     // Send update command to processing thread
-    processing.send_command(ProcessingCommand::UpdatePlugins(plugins.clone()))?;
+    processing
+        .send_command(ProcessingCommand::UpdatePlugins(plugins.clone()))
+        .map_err(|_| ConfigError::ChannelDisconnected)?;
     log::trace!(
         "[Manager Thread] apply_plugin_update: Sent UpdatePlugins command to processing thread"
     );
@@ -848,7 +851,7 @@ fn apply_plugin_update(
                     let old_channels = if let Ok(state_guard) = safe_lock(state) {
                         state_guard.num_channels
                     } else {
-                        return Err("Failed to lock state".to_string());
+                        return Err(ConfigError::StateLockError);
                     };
 
                     // Update state with new channel count
@@ -883,7 +886,9 @@ fn apply_plugin_update(
                     // We need to clear all queues to prevent channel mismatches:
 
                     // 1. Clear playback ring buffer (removes old-channel-count frames)
-                    playback.send_command(PlaybackCommand::Stop)?;
+                    playback
+                        .send_command(PlaybackCommand::Stop)
+                        .map_err(|_| ConfigError::ChannelDisconnected)?;
                     log::debug!("[Manager Thread] Cleared playback ring buffer");
 
                     // 2. Update playback thread channel configuration
@@ -891,7 +896,9 @@ fn apply_plugin_update(
                     //    - Drain all pending frames from processing→playback queue
                     //    - Update channel count
                     //    - Rebuild audio stream
-                    playback.send_command(PlaybackCommand::UpdateChannels(output_channels))?;
+                    playback
+                        .send_command(PlaybackCommand::UpdateChannels(output_channels))
+                        .map_err(|_| ConfigError::ChannelDisconnected)?;
                     log::debug!(
                         "[Manager Thread] Sent UpdateChannels({}) to playback thread",
                         output_channels
@@ -916,8 +923,7 @@ fn apply_plugin_update(
                     return Ok(());
                 }
                 super::ProcessingResponse::Error(e) => {
-                    let error_msg = format!("Plugin update error: {}", e);
-                    log::error!("[Manager Thread] {}", error_msg);
+                    log::error!("[Manager Thread] Plugin update error: {}", e);
 
                     // Record failure metrics
                     config_queue.metrics.record_failure();
@@ -930,9 +936,12 @@ fn apply_plugin_update(
                         );
 
                         // Try to restore the last working config
-                        processing.send_command(ProcessingCommand::UpdatePlugins(
+                        if let Err(_) = processing.send_command(ProcessingCommand::UpdatePlugins(
                             rollback_config.clone(),
-                        ))?;
+                        )) {
+                            log::error!("[Manager Thread] Failed to send rollback command");
+                            return Err(ConfigError::ChannelDisconnected);
+                        }
 
                         // Wait for rollback confirmation (shorter timeout)
                         let rollback_start = std::time::Instant::now();
@@ -975,8 +984,8 @@ fn apply_plugin_update(
                                 }
 
                                 // Clear playback buffer and update channel count
-                                playback.send_command(PlaybackCommand::Stop)?;
-                                playback.send_command(PlaybackCommand::UpdateChannels(ch))?;
+                                let _ = playback.send_command(PlaybackCommand::Stop);
+                                let _ = playback.send_command(PlaybackCommand::UpdateChannels(ch));
                                 log::info!(
                                     "[Manager Thread] Playback reconfigured to {} channels after rollback",
                                     ch
@@ -990,17 +999,19 @@ fn apply_plugin_update(
                         log::warn!("[Manager Thread] No rollback config available");
                     }
 
-                    return Err(error_msg);
+                    return Err(ConfigError::ProcessingError { reason: e });
                 }
                 _ => {
-                    return Err("Unexpected response from processing thread".to_string());
+                    return Err(ConfigError::UnexpectedResponse);
                 }
             }
         }
         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
     }
 
-    Err("Timeout waiting for plugin update response".to_string())
+    Err(ConfigError::TimeoutError {
+        waited_ms: timeout.as_millis() as u64,
+    })
 }
 
 /// Validate plugin configurations before applying
@@ -1259,7 +1270,7 @@ fn handle_command(
                 }
                 Err(e) => {
                     log::trace!("[Manager Thread] UpdatePluginChain: Update failed: {}", e);
-                    ManagerResponse::Error(e)
+                    ManagerResponse::Error(e.to_string())
                 }
             }
         }
@@ -1381,6 +1392,104 @@ fn handle_command(
             playback.send_command(PlaybackCommand::Shutdown).ok();
 
             ManagerResponse::Shutdown
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_error_display() {
+        // Test ParseError display
+        let err = ConfigError::ParseError {
+            path: std::path::PathBuf::from("/test/config.yaml"),
+            reason: "invalid syntax".to_string(),
+        };
+        assert!(err.to_string().contains("Failed to parse config"));
+        assert!(err.to_string().contains("invalid syntax"));
+
+        // Test ValidationError display
+        let err = ConfigError::ValidationError {
+            plugin_index: 2,
+            reason: "unknown plugin type".to_string(),
+        };
+        assert!(err.to_string().contains("Plugin 2"));
+        assert!(err.to_string().contains("unknown plugin type"));
+
+        // Test TimeoutError display
+        let err = ConfigError::TimeoutError { waited_ms: 5000 };
+        assert!(err.to_string().contains("5000ms"));
+
+        // Test ProcessingError display
+        let err = ConfigError::ProcessingError {
+            reason: "plugin init failed".to_string(),
+        };
+        assert!(err.to_string().contains("plugin init failed"));
+
+        // Test UnexpectedResponse display
+        let err = ConfigError::UnexpectedResponse;
+        assert!(err.to_string().contains("Unexpected response"));
+
+        // Test StateLockError display
+        let err = ConfigError::StateLockError;
+        assert!(err.to_string().contains("state lock"));
+
+        // Test ChannelDisconnected display
+        let err = ConfigError::ChannelDisconnected;
+        assert!(err.to_string().contains("disconnected"));
+    }
+
+    #[test]
+    fn test_config_error_is_error_trait() {
+        let err: Box<dyn std::error::Error> = Box::new(ConfigError::TimeoutError { waited_ms: 100 });
+        assert!(err.to_string().contains("100ms"));
+    }
+
+    #[test]
+    fn test_validate_plugin_configs_valid() {
+        let configs = vec![
+            super::super::PluginConfig {
+                plugin_type: "gain".to_string(),
+                parameters: serde_json::json!({"gain_db": -3.0}),
+            },
+            super::super::PluginConfig {
+                plugin_type: "EQ".to_string(),
+                parameters: serde_json::json!({"filters": []}),
+            },
+        ];
+        assert!(validate_plugin_configs(&configs).is_ok());
+    }
+
+    #[test]
+    fn test_validate_plugin_configs_unknown_type() {
+        let configs = vec![super::super::PluginConfig {
+            plugin_type: "unknown_plugin".to_string(),
+            parameters: serde_json::json!({}),
+        }];
+        let result = validate_plugin_configs(&configs);
+        assert!(result.is_err());
+        if let Err(ConfigError::ValidationError { plugin_index, reason }) = result {
+            assert_eq!(plugin_index, 0);
+            assert!(reason.contains("Unknown plugin type"));
+        } else {
+            panic!("Expected ValidationError");
+        }
+    }
+
+    #[test]
+    fn test_validate_plugin_configs_missing_gain_db() {
+        let configs = vec![super::super::PluginConfig {
+            plugin_type: "gain".to_string(),
+            parameters: serde_json::json!({"other": 1.0}),
+        }];
+        let result = validate_plugin_configs(&configs);
+        assert!(result.is_err());
+        if let Err(ConfigError::ValidationError { reason, .. }) = result {
+            assert!(reason.contains("gain_db"));
+        } else {
+            panic!("Expected ValidationError");
         }
     }
 }

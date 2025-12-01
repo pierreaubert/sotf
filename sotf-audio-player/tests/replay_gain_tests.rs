@@ -10,7 +10,7 @@ fn test_replay_gain_scanner_creation() {
     use sotf_audio_player::ReplayGainScanner;
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let _db = Arc::new(MusicDatabase::open(&db_path).expect("Failed to open database"));
+    let _db = Arc::new(MusicDatabase::open_for_testing(&db_path).expect("Failed to open database"));
 
     // Create scanner (new API: num_threads, db_path)
     let scanner = ReplayGainScanner::new(2, db_path.clone());
@@ -22,7 +22,7 @@ fn test_replay_gain_scanner_creation() {
 #[test]
 fn test_get_tracks_without_replay_gain_empty() {
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let db = MusicDatabase::open(&db_path).unwrap();
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
 
     let tracks = db
         .get_tracks_without_replay_gain()
@@ -36,7 +36,7 @@ fn test_get_tracks_without_replay_gain_after_scan() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
 
     // Scan demo files
     let demo_dir = fixtures::demo_audio_dir();
@@ -45,7 +45,7 @@ fn test_get_tracks_without_replay_gain_after_scan() {
     // Saving happens automatically during scan
 
     // All tracks should need ReplayGain
-    let db = MusicDatabase::open(&db_path).unwrap();
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
     let tracks = db
         .get_tracks_without_replay_gain()
         .expect("Failed to get tracks");
@@ -64,7 +64,7 @@ fn test_update_replay_gain() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
 
     // Add a single track
     let classical_file = fixtures::get_demo_file("classical.wav");
@@ -79,6 +79,8 @@ fn test_update_replay_gain() {
             track_number: Some(1),
             duration_secs: Some(5),
             channels: Some(2),
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
             replay_gain: None,
             replay_peak: None,
             album_gain: None,
@@ -101,7 +103,7 @@ fn test_update_replay_gain() {
         dynamic_range: None,
     };
 
-    let db = MusicDatabase::open(&db_path).unwrap();
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
     let mut db_mut = db;
     db_mut.save_albums(&[album]).expect("Failed to save album");
 
@@ -143,6 +145,8 @@ fn test_replay_gain_values_persistence() {
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
+                sample_rate: Some(44100),
+                bit_depth: Some(16),
                 replay_gain: None,
                 replay_peak: None,
                 album_gain: None,
@@ -165,7 +169,7 @@ fn test_replay_gain_values_persistence() {
             dynamic_range: None,
         };
 
-        let db = MusicDatabase::open(&db_path).unwrap();
+        let db = MusicDatabase::open_for_testing(&db_path).unwrap();
         let mut db_mut = db;
         db_mut.save_albums(&[album]).expect("Failed to save album");
 
@@ -176,7 +180,7 @@ fn test_replay_gain_values_persistence() {
 
     // Reload database and verify persistence
     {
-        let db = MusicDatabase::open(&db_path).unwrap();
+        let db = MusicDatabase::open_for_testing(&db_path).unwrap();
         let tracks = db
             .get_tracks_without_replay_gain()
             .expect("Failed to get tracks");
@@ -210,6 +214,8 @@ fn test_partial_replay_gain_scanning() {
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
+                sample_rate: Some(44100),
+                bit_depth: Some(16),
                 replay_gain: None,
                 replay_peak: None,
                 album_gain: None,
@@ -229,6 +235,7 @@ fn test_partial_replay_gain_scanning() {
             album_art_thumbnail: None,
             play_count: 0,
             edition: None,
+            dynamic_range: None,
         },
         sotf_audio_player::Album {
             id: None,
@@ -241,6 +248,8 @@ fn test_partial_replay_gain_scanning() {
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
+                sample_rate: Some(44100),
+                bit_depth: Some(16),
                 replay_gain: None,
                 replay_peak: None,
                 album_gain: None,
@@ -260,6 +269,7 @@ fn test_partial_replay_gain_scanning() {
             album_art_thumbnail: None,
             play_count: 0,
             edition: None,
+            dynamic_range: None,
         },
         sotf_audio_player::Album {
             id: None,
@@ -272,6 +282,8 @@ fn test_partial_replay_gain_scanning() {
                 track_number: Some(1),
                 duration_secs: Some(5),
                 channels: Some(2),
+                sample_rate: Some(44100),
+                bit_depth: Some(16),
                 replay_gain: None,
                 replay_peak: None,
                 album_gain: None,
@@ -291,10 +303,11 @@ fn test_partial_replay_gain_scanning() {
             album_art_thumbnail: None,
             play_count: 0,
             edition: None,
+            dynamic_range: None,
         },
     ];
 
-    let db = MusicDatabase::open(&db_path).unwrap();
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
     let mut db_mut = db;
     db_mut.save_albums(&albums).expect("Failed to save albums");
 
@@ -337,6 +350,8 @@ fn test_replay_gain_range_values() {
             track_number: None,
             duration_secs: None,
             channels: Some(2),
+            sample_rate: Some(44100),
+            bit_depth: Some(16),
             replay_gain: None,
             replay_peak: None,
             album_gain: None,
@@ -359,7 +374,7 @@ fn test_replay_gain_range_values() {
         dynamic_range: None,
     };
 
-    let db = MusicDatabase::open(&db_path).unwrap();
+    let db = MusicDatabase::open_for_testing(&db_path).unwrap();
     let mut db_mut = db;
     db_mut.save_albums(&[album]).expect("Failed to save album");
 
@@ -397,7 +412,7 @@ fn test_real_replay_gain_scanning() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_custom_database(&db_path).unwrap();
+    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
 
     // Scan only a few files to keep test fast
     let demo_dir = fixtures::demo_audio_dir();
@@ -405,7 +420,7 @@ fn test_real_replay_gain_scanning() {
     library.scan().expect("Failed to scan directory");
     // Saving happens automatically during scan
 
-    let db = Arc::new(MusicDatabase::open(&db_path).unwrap());
+    let db = Arc::new(MusicDatabase::open_for_testing(&db_path).unwrap());
 
     // Get tracks that need replay gain
     let tracks_to_scan = db
