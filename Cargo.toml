@@ -159,7 +159,7 @@ ratatui = "0.29"
 crossterm = "0.28"
 
 # GPUI framework
-gpui = { version="0.2.2", git = "https://github.com/zed-industries/zed.git" }
+gpui = { git = "https://github.com/zed-industries/zed.git" }
 
 
 [patch.crates-io]

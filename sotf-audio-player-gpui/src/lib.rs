@@ -5,15 +5,18 @@
 // This library module exposes internal types and functions for testing.
 // The main application binary is in main.rs.
 
-#![recursion_limit = "512"]
+#![recursion_limit = "1024"]
 
 pub mod actions;
+pub mod autoeq;
 pub mod config;
 pub mod i18n;
 pub mod keybindings;
-pub mod optimization_params;
 pub mod state;
 pub mod theme;
+
+// Re-export autoeq as optimization_params for backward compatibility
+pub use autoeq as optimization_params;
 // Note: ui must be loaded before app because app re-exports from ui::components::host
 pub mod app;
 pub mod ui;

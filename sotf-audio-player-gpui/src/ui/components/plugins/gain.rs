@@ -22,9 +22,9 @@ pub fn render_gain_plugin(
 
     // Color based on gain direction
     let gain_color = if is_boost {
-        rgb(0x22c55e) // Green for boost
+        theme.success // Green for boost
     } else if is_cut {
-        rgb(0xef4444) // Red for cut
+        theme.error // Red for cut
     } else {
         theme.text_primary // Neutral
     };
@@ -192,7 +192,7 @@ pub fn render_gain_plugin(
                                         .top_0()
                                         .bottom_0()
                                         .w(relative(width))
-                                        .bg(rgb(0x22c55e))
+                                        .bg(theme.success)
                                 } else {
                                     // Cut - bar goes left from center
                                     let width = (-gain_db / 24.0).clamp(0.0, 1.0) as f32 * 0.5;
@@ -202,7 +202,7 @@ pub fn render_gain_plugin(
                                         .top_0()
                                         .bottom_0()
                                         .w(relative(width))
-                                        .bg(rgb(0xef4444))
+                                        .bg(theme.error)
                                 }),
                         )
                         .child(

@@ -197,16 +197,16 @@ impl PlayerView {
             .flex()
             .flex_col()
             .items_center()
-            .gap_3() // Spacing between transport and waveform
-            .py_2() // Padding above/below
+            .gap_0() // No gap - we use explicit margins
+            .py_0() // Padding above/below
             .flex_1()
             .max_w(px(600.0))
-            // Transport controls row
+            // Transport controls row (moved down 20px)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .gap_1()
                     // Previous track
                     .child(
                         div()
@@ -253,7 +253,7 @@ impl PlayerView {
                             .cursor_pointer()
                             .bg(theme_clone.accent)
                             .hover(|s| s.bg(theme_clone.accent_hover))
-                            .child(Icon::new(play_icon).size(IconSize::Xl).color(theme_clone.text_on_accent))
+                            .child(Icon::new(play_icon).size(IconSize::Lg).color(theme_clone.text_on_accent))
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, window, cx| {
@@ -299,13 +299,14 @@ impl PlayerView {
                             ),
                     ),
             )
-            // Waveform/progress row
+            // Waveform/progress row (moved up 20px relative to transport)
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap_0()
                     .w_full()
+                    .mt(px(2.0)) // Move waveform up (closer to transport)
                     // Current position
                     .child(
                         div()
@@ -319,7 +320,7 @@ impl PlayerView {
                         div()
                             .id("waveform-bar")
                             .flex_1()
-                            .h(px(40.0)) // Taller waveform
+                            .h(px(36.0)) // Taller waveform
                             .cursor_pointer()
                             .flex()
                             .items_center() // Center bars vertically for mirrored look
@@ -429,11 +430,12 @@ impl PlayerView {
 
     /// Render the device selection popup
     fn render_device_popup(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (devices, selected_index) = {
+        let (devices, selected_index, theme) = {
             let state = self.state.read(cx);
             (
                 state.app.output_devices.clone(),
                 state.app.selected_output_device_index,
+                state.app.theme.clone(),
             )
         };
 
@@ -444,9 +446,9 @@ impl PlayerView {
             .right_0()
             .w(px(250.0))
             .max_h(px(300.0))
-            .bg(rgb(0x2a2a2a))
+            .bg(theme.surface)
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(theme.border)
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
@@ -458,9 +460,9 @@ impl PlayerView {
                     .py_2()
                     .text_xs()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(0x888888))
+                    .text_color(theme.text_muted)
                     .border_b_1()
-                    .border_color(rgb(0x3a3a3a))
+                    .border_color(theme.border)
                     .child("Output Devices"),
             )
             // Device list
@@ -472,6 +474,7 @@ impl PlayerView {
                 } else {
                     device_name.clone()
                 };
+                let theme = theme.clone();
 
                 div()
                     .id(SharedString::from(format!("device-{}", idx)))
@@ -483,13 +486,13 @@ impl PlayerView {
                     .cursor_pointer()
                     .text_sm()
                     .when(is_selected, |d| {
-                        d.bg(rgb(0x3a3a3a))
-                            .text_color(rgb(0xffffff))
+                        d.bg(theme.surface_hover)
+                            .text_color(theme.text_primary)
                             .font_weight(FontWeight::MEDIUM)
                     })
                     .when(!is_selected, |d| {
-                        d.text_color(rgb(0xcccccc))
-                            .hover(|style| style.bg(rgb(0x333333)).text_color(rgb(0xffffff)))
+                        d.text_color(theme.text_secondary)
+                            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
                     })
                     .on_mouse_up(
                         MouseButton::Left,
@@ -539,11 +542,11 @@ impl PlayerView {
         played_color: gpui::Rgba,
         unplayed_color: gpui::Rgba,
     ) -> Vec<gpui::Div> {
-        const NUM_BARS: usize = 80;
+        const NUM_BARS: usize = 128;
         const MAX_HEIGHT: f32 = 16.0; // Half of total height (bars go up AND down)
         const MIN_HEIGHT: f32 = 2.0;
-        const BAR_WIDTH: f32 = 3.0;
-        const GAP: f32 = 2.0;
+        const BAR_WIDTH: f32 = 4.0;
+        const GAP: f32 = 0.0;
 
         // If no waveform data, create flat bars
         let default_waveform: Vec<u8> = vec![64; NUM_BARS];
@@ -604,6 +607,7 @@ impl PlayerView {
     }
 
     /// Render a round volume button with circular progress indicator
+    /// Supports mouse scroll to change volume
     fn render_volume_button(
         &self,
         volume: f32,
@@ -620,21 +624,40 @@ impl PlayerView {
 
         div()
             .id("volume-button")
-            .on_mouse_up(
+            .cursor_pointer()
+            .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                    // Toggle mute on click
+                cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                    // Start volume drag
                     view.state.update(cx, |state, _cx| {
-                        state.app.muted = !state.app.muted;
+                        state.app.is_dragging_volume = true;
+                        state.app.volume_drag_start_y = Some(event.position.y.into());
+                        state.app.volume_drag_start_value = state.app.volume;
                     });
-                    cx.notify();
                 }),
             )
+            .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _window, cx| {
+                // Scroll up = increase volume, scroll down = decrease
+                let delta: f32 = match event.delta {
+                    gpui::ScrollDelta::Lines(lines) => lines.y * 0.05, // 5% per scroll line
+                    gpui::ScrollDelta::Pixels(pixels) => {
+                        let y_px: f32 = pixels.y.into();
+                        y_px / 200.0 // Normalize pixel scroll
+                    }
+                };
+                view.state.update(cx, |state, _cx| {
+                    let new_volume = (state.app.volume + delta).clamp(0.0, 1.0);
+                    state.app.volume = new_volume;
+                    // Apply volume change to player
+                    let _ = state.player.lock().set_volume(new_volume);
+                });
+                cx.notify();
+            }))
             .child(
                 Potentiometer::new()
                     .value(volume)
                     .label(format!("{}", volume_percent))
-                    .size(px(48.0))
+                    .size(px(72.0)) // 50% bigger (48 * 1.5 = 72)
                     .muted(muted)
                     .accent_color(accent_color)
                     .muted_color(muted_color)

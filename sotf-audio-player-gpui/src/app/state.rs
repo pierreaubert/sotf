@@ -137,6 +137,11 @@ pub struct App {
     // Device popup state
     pub show_device_popup: bool,
 
+    // Volume drag state
+    pub is_dragging_volume: bool,
+    pub volume_drag_start_y: Option<f32>,
+    pub volume_drag_start_value: f32,
+
     // Settings accordion expanded sections
     pub expanded_settings_sections: Vec<String>,
 }
@@ -236,6 +241,9 @@ impl App {
             divider_click_start: None,
             scan_total_files: 0,
             show_device_popup: false,
+            is_dragging_volume: false,
+            volume_drag_start_y: None,
+            volume_drag_start_value: 0.0,
             expanded_settings_sections: vec!["library".to_string()],
         };
 
@@ -324,7 +332,7 @@ impl App {
         &self,
         window_geometry: Option<crate::config::WindowGeometry>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        use crate::config::{Config, PanelLayout, WindowGeometry};
+        use crate::config::{Config, PanelLayout};
         let config = Config {
             directories: self.library.directories.clone(),
             last_loaded_plugin_preset: self.last_loaded_preset.clone(),

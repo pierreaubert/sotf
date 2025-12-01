@@ -2,7 +2,7 @@
 //!
 //! Tests the helper functions and data structures for level meters, spectrum, and EQ curve elements.
 
-use sotf_audio_player_gpui::ui::elements::{
+use sotf_audio_player_gpui::ui::components::{
     CompactEQCurve, EQCurveColors, EQCurveElement, LevelMeterElement, SpectrumElement,
 };
 use std::sync::Arc;
@@ -23,7 +23,7 @@ fn test_level_meter_with_peak() {
 
 #[test]
 fn test_level_meter_colors() {
-    use sotf_audio_player_gpui::ui::elements::level_meter::MeterColors;
+    use sotf_audio_player_gpui::ui::components::level_meter::MeterColors;
 
     let colors = MeterColors::default();
     // Verify default colors are set
@@ -59,7 +59,7 @@ fn test_spectrum_element_with_previous() {
 
 #[test]
 fn test_meter_data_creation() {
-    use sotf_audio_player_gpui::ui::elements::spectrum::MeterData;
+    use sotf_audio_player_gpui::ui::components::spectrum::MeterData;
 
     let data = MeterData::new(6);
     assert_eq!(data.levels.len(), 6);
@@ -69,7 +69,7 @@ fn test_meter_data_creation() {
 
 #[test]
 fn test_meter_data_update() {
-    use sotf_audio_player_gpui::ui::elements::spectrum::MeterData;
+    use sotf_audio_player_gpui::ui::components::spectrum::MeterData;
 
     let mut data = MeterData::new(2);
     data.update(&[0.5, 0.7], 0.3);
@@ -86,7 +86,7 @@ fn test_meter_data_update() {
 
 #[test]
 fn test_meter_data_peak_decay() {
-    use sotf_audio_player_gpui::ui::elements::spectrum::MeterData;
+    use sotf_audio_player_gpui::ui::components::spectrum::MeterData;
 
     let mut data = MeterData::new(1);
     // Set initial peak high

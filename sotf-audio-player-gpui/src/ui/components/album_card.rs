@@ -4,7 +4,7 @@
 //! Used in both grid and list views.
 
 use crate::theme::Theme;
-use crate::ui::components::icon::{Icon, IconName, IconSize};
+use crate::ui::components::icon::{Icon, IconName};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::Card;

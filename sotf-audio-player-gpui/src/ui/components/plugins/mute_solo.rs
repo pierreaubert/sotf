@@ -60,9 +60,9 @@ pub fn render_mute_solo_plugin(
                             .bg(theme.surface)
                             .border_1()
                             .border_color(if is_soloed {
-                                rgb(0xeab308)
+                                theme.warning
                             } else if is_muted {
-                                rgb(0xef4444)
+                                theme.error
                             } else {
                                 theme.border
                             })
@@ -90,7 +90,7 @@ pub fn render_mute_solo_plugin(
                                             .w_full()
                                             .h(relative(if is_active { 0.6 } else { 0.0 }))
                                             .bg(if is_active {
-                                                rgb(0x22c55e)
+                                                theme.success
                                             } else {
                                                 theme.surface
                                             }),
@@ -103,13 +103,13 @@ pub fn render_mute_solo_plugin(
                                     .h(px(20.0))
                                     .rounded_sm()
                                     .bg(if is_muted {
-                                        rgb(0xef4444)
+                                        theme.error
                                     } else {
                                         theme.background
                                     })
                                     .border_1()
                                     .border_color(if is_muted {
-                                        rgb(0xef4444)
+                                        theme.error
                                     } else {
                                         theme.border
                                     })
@@ -119,7 +119,7 @@ pub fn render_mute_solo_plugin(
                                     .text_xs()
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(if is_muted {
-                                        rgb(0xffffff)
+                                        theme.text_on_accent
                                     } else {
                                         theme.text_muted
                                     })
@@ -132,13 +132,13 @@ pub fn render_mute_solo_plugin(
                                     .h(px(20.0))
                                     .rounded_sm()
                                     .bg(if is_soloed {
-                                        rgb(0xeab308)
+                                        theme.warning
                                     } else {
                                         theme.background
                                     })
                                     .border_1()
                                     .border_color(if is_soloed {
-                                        rgb(0xeab308)
+                                        theme.warning
                                     } else {
                                         theme.border
                                     })
@@ -148,7 +148,7 @@ pub fn render_mute_solo_plugin(
                                     .text_xs()
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(if is_soloed {
-                                        rgb(0x000000)
+                                        theme.background
                                     } else {
                                         theme.text_muted
                                     })
@@ -173,9 +173,9 @@ pub fn render_mute_solo_plugin(
                     .border_1()
                     .border_color(theme.border)
                     .child(div().w(px(12.0)).h(px(12.0)).rounded_full().bg(if enabled {
-                        rgb(0x22c55e)
+                        theme.success
                     } else {
-                        rgb(0xef4444)
+                        theme.error
                     }))
                     .child(
                         div()
@@ -199,7 +199,7 @@ pub fn render_mute_solo_plugin(
                         div()
                             .text_lg()
                             .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0xef4444))
+                            .text_color(theme.error)
                             .child(format!(
                                 "{}",
                                 channel_states.iter().filter(|s| s.muted).count()
@@ -221,7 +221,7 @@ pub fn render_mute_solo_plugin(
                         div()
                             .text_lg()
                             .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0xeab308))
+                            .text_color(theme.warning)
                             .child(format!(
                                 "{}",
                                 channel_states.iter().filter(|s| s.soloed).count()

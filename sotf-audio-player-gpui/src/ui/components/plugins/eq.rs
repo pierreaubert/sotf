@@ -5,9 +5,8 @@
 //! - Band controls with color coding
 //! - Interactive editing
 
-use super::common::render_edit_hints;
 use crate::theme::Theme;
-use crate::ui::components::eq_graph::{
+use crate::ui::components::graphs::{
     render_db_labels, render_eq_band_controls, render_eq_visualization, render_freq_labels,
 };
 use gpui::prelude::*;

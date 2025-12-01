@@ -156,7 +156,7 @@ pub fn render_limiter_plugin(
                             div()
                                 .text_3xl()
                                 .font_weight(FontWeight::BOLD)
-                                .text_color(rgb(0xea580c))
+                                .text_color(theme.warning)
                                 .child(format!("{:.2} dB", threshold_db)),
                         ),
                 )
@@ -177,9 +177,9 @@ pub fn render_limiter_plugin(
                                 .text_xl()
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(if simulated_peak > threshold_db {
-                                    rgb(0xef4444)
+                                    theme.error
                                 } else {
-                                    rgb(0x22c55e)
+                                    theme.success
                                 })
                                 .child(format!("{:.1} dB", simulated_peak)),
                         ),

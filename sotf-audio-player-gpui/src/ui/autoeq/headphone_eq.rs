@@ -1,10 +1,8 @@
 //! Headphone EQ optimization and management
 
-use crate::app::AppState;
 use crate::ui::PlayerView;
 use gpui::*;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 impl PlayerView {
     /// Open file dialog to select headphone measurement file
@@ -105,7 +103,7 @@ impl PlayerView {
     /// Load EQ from file and apply to plugin chain
     pub fn load_headphone_eq(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         match std::fs::read_to_string(&path) {
-            Ok(json) => {
+            Ok(_json) => {
                 // Parse the EQ file (format TBD - could be array of biquad filters)
                 // For now, just show success
                 self.state.update(cx, |state, _cx| {

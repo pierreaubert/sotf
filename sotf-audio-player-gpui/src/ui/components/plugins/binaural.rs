@@ -48,7 +48,7 @@ pub fn render_binaural_plugin(
                                 .h(px(48.0))
                                 .rounded_full()
                                 .bg(if has_sofa {
-                                    rgb(0x22c55e)
+                                    theme.success
                                 } else {
                                     theme.surface
                                 })
@@ -56,7 +56,7 @@ pub fn render_binaural_plugin(
                                 .items_center()
                                 .justify_center()
                                 .text_xl()
-                                .text_color(rgb(0xffffff))
+                                .text_color(theme.text_on_accent)
                                 .child(if has_sofa { "◎" } else { "○" }),
                         )
                         .child(
@@ -113,12 +113,12 @@ pub fn render_binaural_plugin(
                                         .w(px(30.0))
                                         .h(px(30.0))
                                         .rounded_full()
-                                        .bg(rgb(0xdb2777))
+                                        .bg(theme.accent)
                                         .flex()
                                         .items_center()
                                         .justify_center()
                                         .text_sm()
-                                        .text_color(rgb(0xffffff))
+                                        .text_color(theme.text_on_accent)
                                         .font_weight(FontWeight::BOLD)
                                         .child("L"),
                                 )
@@ -156,12 +156,12 @@ pub fn render_binaural_plugin(
                                         .w(px(30.0))
                                         .h(px(30.0))
                                         .rounded_full()
-                                        .bg(rgb(0xdb2777))
+                                        .bg(theme.accent)
                                         .flex()
                                         .items_center()
                                         .justify_center()
                                         .text_sm()
-                                        .text_color(rgb(0xffffff))
+                                        .text_color(theme.text_on_accent)
                                         .font_weight(FontWeight::BOLD)
                                         .child("R"),
                                 )

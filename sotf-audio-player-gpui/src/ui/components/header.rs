@@ -66,9 +66,9 @@ impl PlayerView {
             .build()
             .px_4()
             .py_1()
-            .bg(rgb(0x2a2a2a))
+            .bg(theme.background_secondary)
             .border_b_1()
-            .border_color(rgb(0x3a3a3a))
+            .border_color(theme.border)
     }
 
     /// Render the dropdown menus overlay (called separately for z-ordering)
@@ -134,6 +134,8 @@ impl PlayerView {
 
     /// Render File menu dropdown
     fn render_file_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let bg = theme.surface;
+        let border = theme.border;
         VStack::new()
             .spacing(StackSpacing::None)
             .child(self.render_menu_item_simple(
@@ -150,9 +152,9 @@ impl PlayerView {
             .top(px(28.0))
             .left(px(16.0))
             .min_w(px(180.0))
-            .bg(rgb(0x2a2a2a))
+            .bg(bg)
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(border)
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
@@ -206,9 +208,9 @@ impl PlayerView {
             .top(px(28.0))
             .left(px(52.0))
             .min_w(px(180.0))
-            .bg(rgb(0x2a2a2a))
+            .bg(theme.surface)
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(theme.border)
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
@@ -216,6 +218,8 @@ impl PlayerView {
 
     /// Render Help menu dropdown
     fn render_help_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        let bg = theme.surface;
+        let border = theme.border;
         VStack::new()
             .spacing(StackSpacing::None)
             .child(self.render_help_item(theme.clone(), cx))
@@ -226,9 +230,9 @@ impl PlayerView {
             .top(px(28.0))
             .left(px(96.0))
             .min_w(px(180.0))
-            .bg(rgb(0x2a2a2a))
+            .bg(bg)
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(border)
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
@@ -239,7 +243,7 @@ impl PlayerView {
         &self,
         label: &'static str,
         shortcut: Option<&'static str>,
-        _theme: Theme,
+        theme: Theme,
         screen: Screen,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -253,8 +257,8 @@ impl PlayerView {
             .justify_between()
             .items_center()
             .cursor_pointer()
-            .text_color(rgb(0xcccccc))
-            .hover(|style| style.bg(rgb(0x3a3a3a)).text_color(rgb(0xffffff)))
+            .text_color(theme.text_secondary)
+            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -265,18 +269,18 @@ impl PlayerView {
                 }),
             )
             .child(div().text_sm().child(label))
-            .when(shortcut.is_some(), |el| {
+            .when_some(shortcut, |el, shortcut| {
                 el.child(
                     gpui::div()
                         .text_xs()
-                        .text_color(rgb(0x777777))
-                        .child(shortcut.unwrap_or("")),
+                        .text_color(theme.text_muted)
+                        .child(shortcut),
                 )
             })
     }
 
     /// Render help menu item (Keyboard Shortcuts)
-    fn render_help_item(&self, _theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_help_item(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("menu-item-shortcuts")
             .px_3()
@@ -287,8 +291,8 @@ impl PlayerView {
             .justify_between()
             .items_center()
             .cursor_pointer()
-            .text_color(rgb(0xcccccc))
-            .hover(|style| style.bg(rgb(0x3a3a3a)).text_color(rgb(0xffffff)))
+            .text_color(theme.text_secondary)
+            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -300,11 +304,11 @@ impl PlayerView {
                 }),
             )
             .child(div().text_sm().child("Keyboard Shortcuts"))
-            .child(div().text_xs().text_color(rgb(0x777777)).child("?"))
+            .child(div().text_xs().text_color(theme.text_muted).child("?"))
     }
 
     /// Render about menu item
-    fn render_about_item(&self, _theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_about_item(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .id("menu-item-about")
             .px_3()
@@ -315,8 +319,8 @@ impl PlayerView {
             .justify_between()
             .items_center()
             .cursor_pointer()
-            .text_color(rgb(0xcccccc))
-            .hover(|style| style.bg(rgb(0x3a3a3a)).text_color(rgb(0xffffff)))
+            .text_color(theme.text_secondary)
+            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -331,7 +335,7 @@ impl PlayerView {
     }
 
     /// Render quit menu item
-    fn render_quit_item(&self, _theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_quit_item(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .px_3()
             .py(px(6.0))
@@ -341,8 +345,8 @@ impl PlayerView {
             .justify_between()
             .items_center()
             .cursor_pointer()
-            .text_color(rgb(0xcccccc))
-            .hover(|style| style.bg(rgb(0x5a2a2a)).text_color(rgb(0xffffff)))
+            .text_color(theme.text_secondary)
+            .hover(|style| style.bg(theme.error).text_color(theme.text_on_accent))
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, window, cx| {
@@ -350,7 +354,7 @@ impl PlayerView {
                 }),
             )
             .child(div().text_sm().child("Quit"))
-            .child(div().text_xs().text_color(rgb(0x777777)).child("⌘Q"))
+            .child(div().text_xs().text_color(theme.text_muted).child("⌘Q"))
     }
 
     /// Render a menu separator line (kept for backward compatibility)
@@ -443,6 +447,7 @@ impl PlayerView {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn render_tab_button(
         &self,
         label: &str,

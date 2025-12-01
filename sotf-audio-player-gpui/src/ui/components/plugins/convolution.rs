@@ -44,12 +44,12 @@ pub fn render_convolution_plugin(
                                 .w(px(48.0))
                                 .h(px(48.0))
                                 .rounded_lg()
-                                .bg(if has_ir { rgb(0x4f46e5) } else { theme.surface })
+                                .bg(if has_ir { theme.accent } else { theme.surface })
                                 .flex()
                                 .items_center()
                                 .justify_center()
                                 .text_xl()
-                                .text_color(rgb(0xffffff))
+                                .text_color(theme.text_on_accent)
                                 .child("∿"),
                         )
                         .child(
@@ -129,7 +129,7 @@ pub fn render_convolution_plugin(
                                 .bg(theme.surface)
                                 .rounded_full()
                                 .overflow_hidden()
-                                .child(div().h_full().w(relative(mix as f32)).bg(rgb(0x4f46e5))),
+                                .child(div().h_full().w(relative(mix as f32)).bg(theme.accent)),
                         )
                         .child(div().text_xs().text_color(theme.text_muted).child("WET")),
                 )

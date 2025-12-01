@@ -51,6 +51,8 @@ pub enum IconName {
     Heart,
     Plug,
     SlidersHorizontal,
+    User,
+    PenTool,
 }
 
 impl IconName {
@@ -89,6 +91,8 @@ impl IconName {
             IconName::Heart => "icons/heart.svg",
             IconName::Plug => "icons/plug.svg",
             IconName::SlidersHorizontal => "icons/sliders-horizontal.svg",
+            IconName::User => "icons/user.svg",
+            IconName::PenTool => "icons/pen-tool.svg",
         }
     }
 }

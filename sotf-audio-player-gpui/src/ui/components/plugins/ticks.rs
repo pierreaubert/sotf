@@ -108,6 +108,8 @@ pub struct TickConfig {
 
 impl Default for TickConfig {
     fn default() -> Self {
+        use crate::theme::Theme;
+        let theme = Theme::dark();
         Self {
             scale: ScaleType::Quadratic,
             min: -60.0,
@@ -116,7 +118,7 @@ impl Default for TickConfig {
             minor_count: 4,
             major_height: 8.0,
             minor_height: 3.0,
-            tick_color: rgb(0x666666),
+            tick_color: theme.text_muted,
         }
     }
 }

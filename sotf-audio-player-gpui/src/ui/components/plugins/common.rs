@@ -392,7 +392,7 @@ pub fn render_toggle_switch(enabled: bool, theme: &Theme) -> impl IntoElement {
                     theme.background
                 })
                 .text_color(if enabled {
-                    rgb(0xffffff)
+                    theme.text_on_accent
                 } else {
                     theme.text_muted
                 })
@@ -426,9 +426,9 @@ pub fn render_colored_value(
 ) -> impl IntoElement {
     let color = if zero_is_neutral {
         if value > 0.5 {
-            rgb(0x22c55e) // Green for positive
+            theme.success // Green for positive
         } else if value < -0.5 {
-            rgb(0xef4444) // Red for negative
+            theme.error // Red for negative
         } else {
             theme.text_muted
         }
@@ -537,7 +537,7 @@ pub fn render_vertical_slider(
                 .text_xs()
                 .font_weight(FontWeight::BOLD)
                 .text_color(if is_selected {
-                    rgb(0xffffff)
+                    theme.text_on_accent
                 } else {
                     theme.text_primary
                 })
@@ -565,7 +565,7 @@ pub fn render_vertical_slider(
                         .bg(if is_selected {
                             theme.accent
                         } else {
-                            rgb(0x4f46e5)
+                            theme.accent_muted
                         })
                         .rounded_b_lg(),
                 )
@@ -577,11 +577,7 @@ pub fn render_vertical_slider(
                         .right_0()
                         .bottom(relative(normalized))
                         .h(px(4.0))
-                        .bg(if is_selected {
-                            theme.accent
-                        } else {
-                            rgb(0x818cf8)
-                        })
+                        .bg(theme.accent)
                         .rounded_sm(),
                 ),
         )
@@ -609,7 +605,7 @@ pub fn render_gr_meter(
     let tick_config = TickConfig::gain_reduction(max_db);
 
     // Color gradient: green -> yellow -> orange -> red based on amount
-    let color = gr_color(gr_abs);
+    let color = gr_color(gr_abs, theme);
 
     let meter_config = HorizontalMeterConfig {
         label_width: 0.0, // No label column for GR meter
@@ -686,15 +682,13 @@ pub fn render_gr_meter(
 }
 
 /// Get color for gain reduction amount
-fn gr_color(gr_abs: f64) -> Rgba {
+fn gr_color(gr_abs: f64, theme: &Theme) -> Rgba {
     if gr_abs < 3.0 {
-        rgb(0x22c55e) // Green
+        theme.meter_normal // Green
     } else if gr_abs < 10.0 {
-        rgb(0xeab308) // Yellow
-    } else if gr_abs < 20.0 {
-        rgb(0xf59e0b) // Orange
+        theme.meter_warning // Yellow/Orange
     } else {
-        rgb(0xef4444) // Red
+        theme.meter_clip // Red
     }
 }
 
@@ -734,9 +728,9 @@ pub fn render_transfer_curve(
         let height = ((output_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
         let is_compressed = output_db < input_db - 0.5;
         let color = if is_compressed {
-            rgb(0xef4444) // Red for compressed region
+            theme.meter_clip // Red for compressed region
         } else {
-            rgb(0x4f46e5) // Blue for linear region
+            theme.accent // Blue for linear region
         };
         bars.push((height, color));
     }
@@ -792,13 +786,13 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
 
     // Color based on level
     let color = if peak_db > ceiling_db {
-        rgb(0xef4444) // Red - clipping
+        theme.meter_clip // Red - clipping
     } else if peak_db > ceiling_db - 3.0 {
-        rgb(0xf59e0b) // Orange - near ceiling
+        theme.meter_clip // Near ceiling
     } else if peak_db > -12.0 {
-        rgb(0xeab308) // Yellow - moderate
+        theme.meter_warning // Yellow - moderate
     } else {
-        rgb(0x22c55e) // Green - safe
+        theme.meter_normal // Green - safe
     };
 
     div()
@@ -843,7 +837,7 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
                         .right_0()
                         .bottom(relative(ceiling_normalized))
                         .h(px(2.0))
-                        .bg(rgb(0xef4444)),
+                        .bg(theme.meter_clip),
                 ),
         )
         // Value

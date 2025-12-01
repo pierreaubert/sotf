@@ -157,18 +157,18 @@ pub fn render_gate_plugin(
                                 })
                                 .border_4()
                                 .border_color(if gate_open {
-                                    rgb(0x22c55e)
+                                    theme.success
                                 } else {
-                                    rgb(0xef4444)
+                                    theme.error
                                 })
                                 .child(
                                     div()
                                         .text_sm()
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(if gate_open {
-                                            rgb(0x22c55e)
+                                            theme.success
                                         } else {
-                                            rgb(0xef4444)
+                                            theme.error
                                         })
                                         .child(if gate_open { "OPEN" } else { "CLOSED" }),
                                 ),
@@ -198,9 +198,9 @@ pub fn render_gate_plugin(
                                         // Input level bar
                                         .child(div().h_full().w(relative(input_normalized)).bg(
                                             if gate_open {
-                                                rgb(0x22c55e)
+                                                theme.success
                                             } else {
-                                                rgb(0xef4444)
+                                                theme.error
                                             },
                                         ))
                                         // Threshold marker
@@ -211,7 +211,7 @@ pub fn render_gate_plugin(
                                                 .top_0()
                                                 .bottom_0()
                                                 .w(px(2.0))
-                                                .bg(rgb(0xca8a04)),
+                                                .bg(theme.warning),
                                         ),
                                 )
                                 .child(
@@ -254,7 +254,7 @@ pub fn render_gate_plugin(
                             div()
                                 .text_3xl()
                                 .font_weight(FontWeight::BOLD)
-                                .text_color(rgb(0xca8a04))
+                                .text_color(theme.warning)
                                 .child(format!("{:.1} dB", threshold_db)),
                         ),
                 )
@@ -275,9 +275,9 @@ pub fn render_gate_plugin(
                                 .text_xl()
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(if simulated_gr.abs() > 1.0 {
-                                    rgb(0xef4444)
+                                    theme.error
                                 } else {
-                                    rgb(0x22c55e)
+                                    theme.success
                                 })
                                 .child(format!("{:.1} dB", simulated_gr)),
                         ),

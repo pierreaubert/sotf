@@ -3,7 +3,6 @@
 //! Contains the library-specific state: albums, filtering, sorting.
 //! This can be used as an independent Entity in GPUI for better separation.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use sotf_audio_player::{Album, MusicLibrary};

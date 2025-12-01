@@ -345,12 +345,12 @@ fn render_filter_points(
                 .rounded_full()
                 .bg(color)
                 .border_2()
-                .border_color(if is_selected { rgb(0xffffff) } else { color })
+                .border_color(if is_selected { theme.text_primary } else { color })
                 .flex()
                 .items_center()
                 .justify_center()
                 .text_xs()
-                .text_color(rgb(0xffffff))
+                .text_color(theme.text_on_accent)
                 .font_weight(FontWeight::BOLD)
                 .child(format!("{}", i + 1))
         }))
@@ -419,9 +419,9 @@ pub fn render_eq_band_controls(
                         .text_sm()
                         .font_weight(FontWeight::BOLD)
                         .text_color(if f.gain_db > 0.5 {
-                            rgb(0x22c55e)
+                            theme.success
                         } else if f.gain_db < -0.5 {
-                            rgb(0xef4444)
+                            theme.error
                         } else {
                             theme.text_muted
                         })

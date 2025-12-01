@@ -10,6 +10,8 @@ pub struct MeterTheme {
     pub color_warning: Rgba,
     /// Critical/clipping color (red)
     pub color_critical: Rgba,
+    /// Info color (cyan/teal for stereo width, LUFS, etc.)
+    pub color_info: Rgba,
     /// Background color for empty portion of meter
     pub color_background: Rgba,
     /// Border color
@@ -39,14 +41,17 @@ pub struct MeterTheme {
 impl MeterTheme {
     /// Create default meter theme with green/yellow/red colors
     pub fn default() -> Self {
+        use crate::theme::Theme;
+        let theme = Theme::dark();
         Self {
-            color_normal: rgb(0x22c55e),     // Green
-            color_warning: rgb(0xeab308),    // Yellow
-            color_critical: rgb(0xef4444),   // Red
-            color_background: rgb(0x2a2a2a), // Dark gray
-            color_border: rgb(0x444444),     // Border gray
-            color_text: rgb(0xcccccc),       // Light gray text
-            color_text_muted: rgb(0x888888), // Muted gray
+            color_normal: theme.meter_normal,
+            color_warning: theme.meter_warning,
+            color_critical: theme.meter_clip,
+            color_info: theme.info,
+            color_background: theme.surface,
+            color_border: theme.border,
+            color_text: theme.text_secondary,
+            color_text_muted: theme.text_muted,
             bar_height: 20.0,
             border_radius: 4.0,
             border_width: 1.0,

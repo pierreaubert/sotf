@@ -5,7 +5,6 @@
 
 use gpui::*;
 
-use crate::app::AppState;
 use crate::optimization_params::*;
 use crate::theme::Theme;
 use crate::ui::PlayerView;

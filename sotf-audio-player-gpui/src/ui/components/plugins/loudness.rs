@@ -41,7 +41,7 @@ pub fn render_loudness_compensation_plugin(
                         div()
                             .text_size(px(36.0))
                             .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0x0891b2))
+                            .text_color(theme.info)
                             .child(format!("{:.1} LUFS", target_lufs)),
                     ),
                 )
@@ -57,7 +57,7 @@ pub fn render_loudness_compensation_plugin(
                             div()
                                 .h_full()
                                 .w(relative(lufs_tick_config.value_to_position(target_lufs)))
-                                .bg(rgb(0x0891b2)),
+                                .bg(theme.info),
                         ),
                 )
                 // Tick marks
@@ -106,7 +106,7 @@ pub fn render_loudness_compensation_plugin(
                                     div()
                                         .text_lg()
                                         .font_weight(FontWeight::BOLD)
-                                        .text_color(rgb(0xef4444))
+                                        .text_color(theme.error)
                                         .child(format!("{:.1}", min_gain_db)),
                                 )
                                 .child(div().text_xs().text_color(theme.text_muted).child("dB")),
@@ -126,7 +126,7 @@ pub fn render_loudness_compensation_plugin(
                                         .bottom_0()
                                         .left(relative(0.25))
                                         .right(relative(0.25))
-                                        .bg(rgb(0x0891b2)),
+                                        .bg(theme.info),
                                 ),
                         )
                         // Max gain
@@ -140,7 +140,7 @@ pub fn render_loudness_compensation_plugin(
                                     div()
                                         .text_lg()
                                         .font_weight(FontWeight::BOLD)
-                                        .text_color(rgb(0x22c55e))
+                                        .text_color(theme.success)
                                         .child(format!("{:+.1}", max_gain_db)),
                                 )
                                 .child(div().text_xs().text_color(theme.text_muted).child("dB")),
@@ -223,7 +223,7 @@ pub fn render_loudness_monitor_plugin(_is_editing: bool, theme: &Theme) -> impl 
                             div()
                                 .text_2xl()
                                 .font_weight(FontWeight::BOLD)
-                                .text_color(rgb(0x14b8a6))
+                                .text_color(theme.info)
                                 .child("--- LUFS"),
                         ),
                 )

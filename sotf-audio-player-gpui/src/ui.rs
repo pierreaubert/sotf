@@ -1,9 +1,7 @@
+mod autoeq;
 pub mod components;
-pub mod elements;
-mod headphone_eq;
 mod screens;
 
-use crate::actions::*;
 use crate::app::{AppState, Screen};
 use gpui::prelude::*;
 use gpui::*;
@@ -17,12 +15,8 @@ pub struct PlayerView {
     state: Entity<AppState>,
     focus_handle: FocusHandle,
     last_saved_window_bounds: Option<Bounds<Pixels>>,
-    /// Scroll handle for library flat list (uniform_list)
-    library_scroll_handle: UniformListScrollHandle,
     /// Scroll handle for library grid view
     grid_scroll_handle: ScrollHandle,
-    /// Scroll handle for library tree view
-    tree_scroll_handle: ScrollHandle,
 }
 
 impl PlayerView {
@@ -50,9 +44,7 @@ impl PlayerView {
             state,
             focus_handle,
             last_saved_window_bounds: None,
-            library_scroll_handle: UniformListScrollHandle::new(),
             grid_scroll_handle: ScrollHandle::new(),
-            tree_scroll_handle: ScrollHandle::new(),
         }
     }
 
@@ -79,7 +71,7 @@ impl PlayerView {
     }
 
     fn next_track(&mut self, _: &NextTrack, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, cx| {
+        self.state.update(cx, |state, _cx| {
             if let Some(path) = state.app.next_track() {
                 let sample_rate = 48000.0;
                 let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
@@ -102,7 +94,7 @@ impl PlayerView {
     }
 
     fn prev_track(&mut self, _: &PrevTrack, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, cx| {
+        self.state.update(cx, |state, _cx| {
             if let Some(path) = state.app.previous_track() {
                 let sample_rate = 48000.0;
                 let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
@@ -285,10 +277,19 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            // Global mouse move handler for divider dragging
+            // Global mouse move handler for divider and volume dragging
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
-                let is_dragging = view.state.read(cx).app.is_dragging_queue_divider;
-                if is_dragging {
+                let (is_dragging_divider, is_dragging_volume, volume_start_y, volume_start_value) = {
+                    let state = view.state.read(cx);
+                    (
+                        state.app.is_dragging_queue_divider,
+                        state.app.is_dragging_volume,
+                        state.app.volume_drag_start_y,
+                        state.app.volume_drag_start_value,
+                    )
+                };
+
+                if is_dragging_divider {
                     let window_height = window.bounds().size.height;
                     let mouse_y: f32 = event.position.y.into();
                     let window_h: f32 = window_height.into();
@@ -298,6 +299,22 @@ impl PlayerView {
                         state.app.queue_panel_ratio = new_ratio;
                     });
                     cx.notify();
+                }
+
+                // Handle volume dragging (drag up = increase, drag down = decrease)
+                if is_dragging_volume {
+                    if let Some(start_y) = volume_start_y {
+                        let mouse_y: f32 = event.position.y.into();
+                        let delta_y = start_y - mouse_y; // Inverted: up = positive
+                        // Scale: 100px drag = full volume range
+                        let volume_delta = delta_y / 100.0;
+                        let new_volume = (volume_start_value + volume_delta).clamp(0.0, 1.0);
+                        view.state.update(cx, |state, _cx| {
+                            state.app.volume = new_volume;
+                            let _ = state.player.lock().set_volume(new_volume);
+                        });
+                        cx.notify();
+                    }
                 }
             }))
             // Global mouse up handler to stop dragging even if mouse is outside divider
@@ -311,6 +328,10 @@ impl PlayerView {
                             if let Err(e) = state.app.save_config() {
                                 log::warn!("Failed to save panel layout: {}", e);
                             }
+                        }
+                        if state.app.is_dragging_volume {
+                            state.app.is_dragging_volume = false;
+                            state.app.volume_drag_start_y = None;
                         }
                     });
                 }),
@@ -783,36 +804,6 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn play_album_at_index(&mut self, index: usize, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, cx| {
-            // Add album to queue and start playing
-            let albums = state.app.filtered_albums();
-            if let Some(album) = albums.get(index).cloned() {
-                state
-                    .app
-                    .queue
-                    .push(crate::app::QueueItem::new(album.clone()));
-                state.app.expanded_queue_items.push(false);
-
-                if let Some(path) = state.app.start_queue() {
-                    let sample_rate = 48000.0;
-                    let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
-                    let output_channels = state.app.plugin_chain.output_channels();
-
-                    if let Err(e) = state.player.lock().load_and_play(
-                        path,
-                        plugins,
-                        output_channels,
-                        state.app.current_output_device_name.clone(),
-                    ) {
-                        log::error!("Failed to play album: {}", e);
-                        state.app.is_playing = false;
-                    }
-                }
-            }
-        });
-        cx.notify();
-    }
     fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
         self.state
             .update(cx, |state, _cx| match state.app.current_screen {
@@ -1365,7 +1356,7 @@ impl PlayerView {
     }
 
     fn handle_enter(&mut self, _: &Enter, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, cx| {
+        self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
 
             // Handle input modes first

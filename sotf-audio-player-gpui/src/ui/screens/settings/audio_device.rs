@@ -1,23 +1,28 @@
-//! Devices screen rendering functions
+//! Audio device settings content
 
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    Badge, BadgeVariant, HStack, Heading, StackSpacing, Text, TextSize, TextWeight, VStack,
-};
+use gpui_ui_kit::{Badge, BadgeVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack};
 
 impl PlayerView {
-    pub(crate) fn render_devices_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_audio_device_settings_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
 
         VStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(Heading::h2("Audio Output Devices"))
+            .spacing(StackSpacing::Md)
+            .child(
+                Text::new("Audio Output Devices")
+                    .size(TextSize::Sm)
+                    .weight(TextWeight::Semibold),
+            )
             .child(
                 // Grid layout with 2 columns
-                div().grid().grid_cols(2).gap_3().flex_1().children(
+                div().grid().grid_cols(2).gap_3().children(
                     state
                         .app
                         .output_devices
@@ -35,24 +40,60 @@ impl PlayerView {
                                 .as_ref()
                                 .map(|c| c.channels)
                                 .unwrap_or(0);
-                            let is_default = device.is_default;
-                            let device_name = device.name.clone();
                             let theme = theme.clone();
+                            let device_name = device.name.clone();
+                            let is_default = device.is_default;
 
                             div()
-                                .id(ElementId::Name(format!("device-{}", idx).into()))
                                 .p_3()
-                                .rounded_lg()
+                                .rounded_md()
+                                .cursor_pointer()
                                 .border_1()
                                 .when(is_selected, |d| {
-                                    d.bg(theme.accent_muted).border_color(theme.accent)
+                                    d.bg(theme.accent)
+                                        .border_color(theme.accent)
                                 })
                                 .when(!is_selected, |d| {
                                     d.bg(theme.surface)
                                         .border_color(theme.border)
                                         .hover(|s| s.bg(theme.surface_hover))
                                 })
-                                .cursor_pointer()
+                                .child(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .child(
+                                            Text::new(device_name)
+                                                .size(TextSize::Sm)
+                                                .weight(TextWeight::Semibold)
+                                                .color(if is_selected {
+                                                    theme.text_on_accent
+                                                } else {
+                                                    theme.text_primary
+                                                }),
+                                        )
+                                        .child(
+                                            HStack::new()
+                                                .spacing(StackSpacing::Md)
+                                                .child(
+                                                    Badge::new(format!("{} ch", channels))
+                                                        .variant(BadgeVariant::Info),
+                                                )
+                                                .child(
+                                                    Badge::new(if sample_rate >= 1000 {
+                                                        format!("{} kHz", sample_rate / 1000)
+                                                    } else {
+                                                        format!("{} Hz", sample_rate)
+                                                    })
+                                                    .variant(BadgeVariant::Info),
+                                                ),
+                                        )
+                                        .when(is_default, |stack| {
+                                            stack.child(
+                                                Badge::new("✓ Default")
+                                                    .variant(BadgeVariant::Success),
+                                            )
+                                        }),
+                                )
                                 .on_mouse_up(
                                     MouseButton::Left,
                                     cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -84,38 +125,6 @@ impl PlayerView {
                                         });
                                         cx.notify();
                                     }),
-                                )
-                                .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Sm)
-                                        .child(
-                                            Text::new(device_name)
-                                                .size(TextSize::Sm)
-                                                .weight(TextWeight::Semibold)
-                                                .color(theme.text_primary),
-                                        )
-                                        .child(
-                                            HStack::new()
-                                                .spacing(StackSpacing::Md)
-                                                .child(
-                                                    Badge::new(format!("{} ch", channels))
-                                                        .variant(BadgeVariant::Default),
-                                                )
-                                                .child(
-                                                    Badge::new(if sample_rate >= 1000 {
-                                                        format!("{} kHz", sample_rate / 1000)
-                                                    } else {
-                                                        format!("{} Hz", sample_rate)
-                                                    })
-                                                    .variant(BadgeVariant::Default),
-                                                ),
-                                        )
-                                        .when(is_default, |v| {
-                                            v.child(
-                                                Badge::new("Default")
-                                                    .variant(BadgeVariant::Success),
-                                            )
-                                        }),
                                 )
                         }),
                 ),

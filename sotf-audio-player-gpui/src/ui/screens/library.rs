@@ -2,6 +2,7 @@
 
 use crate::ui::PlayerView;
 use crate::ui::components::album_card::{AlbumCard, AlbumCardMode};
+use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
@@ -11,22 +12,47 @@ impl PlayerView {
     pub(crate) fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (
             albums_count,
+            artists_count,
+            tracks_count,
+            composers_count,
             search_query,
             input_mode,
             sort_order,
             channel_filter,
-            filtered_count,
             theme,
         ) = {
             let state = self.state.read(cx);
-            let filtered_count = state.app.filtered_albums().len();
+
+            // Count unique artists, tracks, and composers
+            let mut artists: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut composers: std::collections::HashSet<String> = std::collections::HashSet::new();
+            let mut total_tracks = 0usize;
+
+            for album in &state.app.library.albums {
+                for track in &album.tracks {
+                    total_tracks += 1;
+                    if let Some(artist) = &track.artist {
+                        if !artist.is_empty() {
+                            artists.insert(artist.to_lowercase());
+                        }
+                    }
+                    if let Some(composer) = &track.composer {
+                        if !composer.is_empty() {
+                            composers.insert(composer.to_lowercase());
+                        }
+                    }
+                }
+            }
+
             (
                 state.app.library.albums.len(),
+                artists.len(),
+                total_tracks,
+                composers.len(),
                 state.app.search_query.clone(),
                 state.app.input_mode,
                 state.app.library_sort_order,
                 state.app.channel_filter,
-                filtered_count,
                 state.app.theme.clone(),
             )
         };
@@ -38,6 +64,19 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .p_4()
+            // Stats row with 4 centered boxes
+            .child(
+                div()
+                    .flex()
+                    .justify_center()
+                    .gap_4()
+                    .mb_4()
+                    .child(self.render_stat_box("Albums", albums_count, IconName::Album, &theme))
+                    .child(self.render_stat_box("Artists", artists_count, IconName::User, &theme))
+                    .child(self.render_stat_box("Tracks", tracks_count, IconName::Music, &theme))
+                    .child(self.render_stat_box("Composers", composers_count, IconName::PenTool, &theme)),
+            )
+            // Search and filter row
             .child(
                 div()
                     .flex()
@@ -46,79 +85,69 @@ impl PlayerView {
                     .mb_4()
                     .child(
                         div()
-                            .text_lg()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(if filtered_count == albums_count {
-                                format!("Library ({} albums)", albums_count)
-                            } else {
-                                format!("Library ({}/{} albums)", filtered_count, albums_count)
-                            }),
+                            .flex()
+                            .items_center()
+                            .bg(theme.surface)
+                            .rounded_md()
+                            .border_1()
+                            .when(is_search_mode, |div| div.border_color(theme.accent))
+                            .when(!is_search_mode, |div| div.border_color(theme.border))
+                            .px_2()
+                            .py_1()
+                            .w_64()
+                            .cursor_pointer()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        if state.app.input_mode != crate::app::InputMode::Search {
+                                            state.app.input_mode = crate::app::InputMode::Search;
+                                        }
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .mr_2()
+                                    .text_color(if is_search_mode {
+                                        theme.accent
+                                    } else {
+                                        theme.text_secondary
+                                    })
+                                    .child("🔍"),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(if search_query.is_empty() {
+                                        if is_search_mode {
+                                            theme.text_secondary
+                                        } else {
+                                            theme.text_muted
+                                        }
+                                    } else {
+                                        theme.text_primary
+                                    })
+                                    .child(if search_query.is_empty() {
+                                        if is_search_mode {
+                                            "Type to search...".to_string()
+                                        } else {
+                                            "Click to search".to_string()
+                                        }
+                                    } else {
+                                        format!(
+                                            "{}{}",
+                                            search_query,
+                                            if is_search_mode { "|" } else { "" }
+                                        )
+                                    }),
+                            ),
                     )
                     .child(
                         div()
                             .flex()
                             .gap_4()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .bg(theme.surface)
-                                    .rounded_md()
-                                    .border_1()
-                                    .when(is_search_mode, |div| div.border_color(theme.accent))
-                                    .when(!is_search_mode, |div| div.border_color(theme.border))
-                                    .px_2()
-                                    .py_1()
-                                    .w_64()
-                                    .cursor_pointer()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                if state.app.input_mode != crate::app::InputMode::Search {
-                                                    state.app.input_mode = crate::app::InputMode::Search;
-                                                }
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .child(
-                                        div()
-                                            .mr_2()
-                                            .text_color(if is_search_mode {
-                                                theme.accent
-                                            } else {
-                                                theme.text_secondary
-                                            })
-                                            .child("🔍"),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(if search_query.is_empty() {
-                                                if is_search_mode {
-                                                    theme.text_secondary
-                                                } else {
-                                                    theme.text_muted
-                                                }
-                                            } else {
-                                                theme.text_primary
-                                            })
-                                            .child(if search_query.is_empty() {
-                                                if is_search_mode {
-                                                    "Type to search...".to_string()
-                                                } else {
-                                                    "Click to search".to_string()
-                                                }
-                                            } else {
-                                                format!(
-                                                    "{}{}",
-                                                    search_query,
-                                                    if is_search_mode { "|" } else { "" }
-                                                )
-                                            }),
-                                    ),
-                            )
                             // Sort buttons
                             .child(
                                 div()
@@ -418,6 +447,58 @@ impl PlayerView {
                     });
                     cx.notify();
                 }),
+            )
+    }
+
+    /// Render a large stat box for the library header
+    fn render_stat_box(
+        &self,
+        label: &str,
+        count: usize,
+        icon: IconName,
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
+        div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .px_4()
+            .py_3()
+            .bg(theme.surface)
+            .rounded_lg()
+            .border_1()
+            .border_color(theme.border)
+            .min_w(px(160.0))
+            // Icon on the left
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(theme.accent)
+                    .child(Icon::new(icon).size(IconSize::Xl)),
+            )
+            // Text content on the right
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .gap(px(0.0))
+                    .child(
+                        div()
+                            .text_2xl()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(format!("{}", count)),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.text_secondary)
+                            .mt(px(-2.0)) // Reduce vertical space
+                            .child(label.to_string()),
+                    ),
             )
     }
 }

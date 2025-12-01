@@ -85,6 +85,7 @@ impl PlayerView {
             )
     }
 
+    #[allow(dead_code)]
     pub(crate) fn render_keybinding(&self, key: &str, description: &str) -> impl IntoElement {
         div()
             .flex()
