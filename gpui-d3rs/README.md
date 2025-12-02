@@ -8,7 +8,7 @@ A comprehensive D3.js-inspired data visualization library for GPUI, bringing the
 
 ## Overview
 
-**gpui-d3rs**(pronounced "gooey-d3-rust") is a modern data visualization library that translates D3.js concepts into idiomatic Rust for the GPUI framework. Instead of D3's functional chaining style, gpui-d3rs uses Rust's builder patterns and type system to provide a safe, performant, and ergonomic API for creating interactive visualizations.
+**d3rs** is a modern data visualization library that translates D3.js concepts into idiomatic Rust for the GPUI framework. Instead of D3's functional chaining style, gpui-d3rs uses Rust's builder patterns and type system to provide a safe, performant, and ergonomic API for creating interactive visualizations.
 
 ## Features
 
