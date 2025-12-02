@@ -6,6 +6,10 @@ use std::collections::BTreeMap;
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, HStack, Heading, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
+};
 use sotf_audio_player::Track;
 
 use crate::ui::PlayerView;
@@ -31,6 +35,7 @@ impl PlayerView {
             .size_full()
             // Left panel: Queue list
             .when(!queue_collapsed, |d| {
+                let button_theme = theme.to_button_theme();
                 d.child(
                     div()
                         .flex()
@@ -40,22 +45,17 @@ impl PlayerView {
                         .border_r_1()
                         .border_color(theme.border)
                         .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .mb_4()
-                                .flex()
-                                .justify_between()
-                                .items_center()
-                                .child(format!("Queue ({} albums)", state.app.queue.len()))
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
                                 .child(
-                                    div()
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(theme.surface)
-                                        .hover(|style| style.bg(theme.error))
-                                        .cursor_pointer()
+                                    Heading::h3(format!("Queue ({} albums)", state.app.queue.len())),
+                                )
+                                .child(
+                                    Button::new("clear-queue-btn", "Clear")
+                                        .variant(ButtonVariant::Destructive)
+                                        .size(ButtonSize::Xs)
+                                        .theme(button_theme)
+                                        .build()
                                         .on_mouse_up(
                                             MouseButton::Left,
                                             cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -64,9 +64,12 @@ impl PlayerView {
                                                 });
                                                 cx.notify();
                                             }),
-                                        )
-                                        .child("Clear"),
-                                ),
+                                        ),
+                                )
+                                .build()
+                                .mb_4()
+                                .flex_1()
+                                .justify_between(),
                         )
                         .child(
                             div()
@@ -322,13 +325,7 @@ impl PlayerView {
                 .flex()
                 .flex_col()
                 .flex_1()
-                .child(
-                    div()
-                        .text_lg()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .mb_3()
-                        .child("Now Playing"),
-                )
+                .child(Heading::h3("Now Playing").build().mb_3())
                 // Top row: Album art (left) + Album info (right)
                 .child(
                     div()
@@ -449,16 +446,23 @@ impl PlayerView {
                 )
                 .into_any_element()
         } else {
-            div()
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new("No track playing")
+                        .size(TextSize::Lg)
+                        .color(theme.text_muted),
+                )
+                .child(
+                    Text::new("Select an album from the queue")
+                        .size(TextSize::Sm)
+                        .color(theme.text_muted),
+                )
+                .build()
                 .flex_1()
                 .flex()
                 .items_center()
                 .justify_center()
-                .flex_col()
-                .gap_2()
-                .text_color(theme.text_muted)
-                .child("No track playing")
-                .child(div().text_sm().child("Select an album from the queue"))
                 .into_any_element()
         };
 
@@ -588,15 +592,15 @@ impl PlayerView {
             .flex_1()
             .overflow_hidden()
             .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text_secondary)
-                    .mb_2()
-                    .child(format!(
-                        "Tracks ({})",
-                        disc_map.values().map(|v| v.len()).sum::<usize>()
-                    )),
+                Text::new(format!(
+                    "Tracks ({})",
+                    disc_map.values().map(|v| v.len()).sum::<usize>()
+                ))
+                .size(TextSize::Sm)
+                .weight(TextWeight::Semibold)
+                .color(theme.text_secondary)
+                .build()
+                .mb_2(),
             )
             .child(
                 div()

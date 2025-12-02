@@ -5,7 +5,10 @@ use crate::ui::components::album_card::{AlbumCard, AlbumCardMode};
 use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, Card, HStack, Input, InputSize, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
+};
 use std::sync::Arc;
 
 impl PlayerView {
@@ -85,17 +88,7 @@ impl PlayerView {
                     .mb_4()
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .bg(theme.surface)
-                            .rounded_md()
-                            .border_1()
-                            .when(is_search_mode, |div| div.border_color(theme.accent))
-                            .when(!is_search_mode, |div| div.border_color(theme.border))
-                            .px_2()
-                            .py_1()
                             .w_64()
-                            .cursor_pointer()
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -108,32 +101,12 @@ impl PlayerView {
                                 }),
                             )
                             .child(
-                                div()
-                                    .mr_2()
-                                    .text_color(if is_search_mode {
-                                        theme.accent
-                                    } else {
-                                        theme.text_secondary
-                                    })
-                                    .child("🔍"),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(if search_query.is_empty() {
-                                        if is_search_mode {
-                                            theme.text_secondary
-                                        } else {
-                                            theme.text_muted
-                                        }
-                                    } else {
-                                        theme.text_primary
-                                    })
-                                    .child(if search_query.is_empty() {
+                                Input::new("search-input")
+                                    .value(SharedString::from(if search_query.is_empty() {
                                         if is_search_mode {
                                             "Type to search...".to_string()
                                         } else {
-                                            "Click to search".to_string()
+                                            "".to_string()
                                         }
                                     } else {
                                         format!(
@@ -141,24 +114,24 @@ impl PlayerView {
                                             search_query,
                                             if is_search_mode { "|" } else { "" }
                                         )
-                                    }),
+                                    }))
+                                    .placeholder("Click to search")
+                                    .icon_left("🔍")
+                                    .size(InputSize::Sm)
+                                    .readonly(true),
                             ),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .gap_4()
+                        HStack::new()
+                            .spacing(StackSpacing::Lg)
                             // Sort buttons
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
+                                HStack::new()
+                                    .spacing(StackSpacing::Xs)
                                     .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(theme.text_secondary)
-                                            .child("Sort:"),
+                                        Text::new("Sort:")
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_secondary),
                                     )
                                     .child(self.render_sort_button(
                                         "Artist",
@@ -187,19 +160,17 @@ impl PlayerView {
                                         sort_order,
                                         theme.clone(),
                                         cx,
-                                    )),
+                                    ))
+                                    .build(),
                             )
                             // Filter buttons
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
+                                HStack::new()
+                                    .spacing(StackSpacing::Xs)
                                     .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(theme.text_secondary)
-                                            .child("Filter:"),
+                                        Text::new("Filter:")
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_secondary),
                                     )
                                     .child(self.render_filter_button(
                                         "All",
@@ -228,8 +199,10 @@ impl PlayerView {
                                         channel_filter,
                                         theme.clone(),
                                         cx,
-                                    )),
-                            ),
+                                    ))
+                                    .build(),
+                            )
+                            .build(),
                     ),
             )
             .child(
@@ -256,6 +229,10 @@ impl PlayerView {
             )
         };
 
+        let button_theme = theme.to_button_theme();
+        let can_prev = current_page > 1;
+        let can_next = current_page < total_pages;
+
         div()
             .flex()
             .justify_between()
@@ -265,32 +242,25 @@ impl PlayerView {
             .border_t_1()
             .border_color(theme.border)
             .child(
-                div()
-                    .text_sm()
-                    .text_color(theme.text_secondary)
-                    .child(format!(
-                        "Page {} of {} ({} items/page)",
-                        current_page, total_pages, items_per_page
-                    )),
+                Text::new(format!(
+                    "Page {} of {} ({} items/page)",
+                    current_page, total_pages, items_per_page
+                ))
+                .size(TextSize::Sm)
+                .color(theme.text_secondary),
             )
             .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .when(current_page > 1, |div| {
-                                div.bg(theme.surface)
-                                    .hover(|style| style.bg(theme.surface_hover))
-                                    .cursor_pointer()
-                            })
-                            .when(current_page == 1, |div| {
-                                div.bg(theme.background).text_color(theme.text_muted)
-                            })
-                            .on_mouse_up(
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child({
+                        let btn = Button::new("prev-page-btn", "← Prev")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .disabled(!can_prev)
+                            .theme(button_theme.clone())
+                            .build();
+                        if can_prev {
+                            btn.on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
@@ -299,22 +269,19 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child("← Prev"),
-                    )
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .when(current_page < total_pages, |div| {
-                                div.bg(theme.surface)
-                                    .hover(|style| style.bg(theme.surface_hover))
-                                    .cursor_pointer()
-                            })
-                            .when(current_page == total_pages, |div| {
-                                div.bg(theme.background).text_color(theme.text_muted)
-                            })
-                            .on_mouse_up(
+                        } else {
+                            btn
+                        }
+                    })
+                    .child({
+                        let btn = Button::new("next-page-btn", "Next →")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Sm)
+                            .disabled(!can_next)
+                            .theme(button_theme)
+                            .build();
+                        if can_next {
+                            btn.on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
@@ -323,8 +290,11 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child("Next →"),
-                    ),
+                        } else {
+                            btn
+                        }
+                    })
+                    .build(),
             )
     }
 
@@ -450,7 +420,7 @@ impl PlayerView {
             )
     }
 
-    /// Render a large stat box for the library header
+    /// Render a large stat box for the library header using Card component
     fn render_stat_box(
         &self,
         label: &str,
@@ -458,47 +428,48 @@ impl PlayerView {
         icon: IconName,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        div()
-            .flex()
-            .items_center()
-            .gap_3()
-            .px_4()
-            .py_3()
-            .bg(theme.surface)
-            .rounded_lg()
-            .border_1()
-            .border_color(theme.border)
-            .min_w(px(160.0))
-            // Icon on the left
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_color(theme.accent)
-                    .child(Icon::new(icon).size(IconSize::Xl)),
-            )
-            // Text content on the right
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_start()
-                    .gap(px(0.0))
+        // Clone values to avoid lifetime issues with closures
+        let label_owned = label.to_string();
+        let surface = theme.surface;
+        let border = theme.border;
+        let accent = theme.accent;
+        let text_primary = theme.text_primary;
+        let text_secondary = theme.text_secondary;
+
+        Card::new()
+            .content(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
                     .child(
                         div()
-                            .text_2xl()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(format!("{}", count)),
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_color(accent)
+                            .child(Icon::new(icon).size(IconSize::Xl)),
                     )
                     .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.text_secondary)
-                            .mt(px(-2.0)) // Reduce vertical space
-                            .child(label.to_string()),
-                    ),
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new(format!("{}", count))
+                                    .size(TextSize::Xxl)
+                                    .weight(TextWeight::Bold)
+                                    .color(text_primary),
+                            )
+                            .child(
+                                Text::new(label_owned)
+                                    .size(TextSize::Sm)
+                                    .color(text_secondary),
+                            )
+                            .build(),
+                    )
+                    .build(),
             )
+            .style(move |card| {
+                card.min_w(px(160.0))
+                    .bg(surface)
+                    .border_color(border)
+            })
     }
 }
