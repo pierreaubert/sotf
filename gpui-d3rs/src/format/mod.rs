@@ -34,7 +34,7 @@ mod locale;
 mod prefix;
 mod specifier;
 
-pub use locale::{DEFAULT_LOCALE, Locale};
+pub use locale::{Locale, DEFAULT_LOCALE};
 pub use prefix::{format_prefix, prefix_exponent};
 pub use specifier::{Align, FormatSpecifier, FormatType, Sign};
 

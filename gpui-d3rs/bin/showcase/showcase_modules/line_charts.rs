@@ -1,6 +1,6 @@
-use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
-use d3rs::color::{ColorScheme, D3Color};
-use d3rs::grid::{GridConfig, render_grid};
+use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::color::ColorScheme;
+use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
 use gpui::*;
 
@@ -50,11 +50,11 @@ pub fn render(app: &ShowcaseApp) -> Div {
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
                 .child(
                     div()
                         .text_sm()
                         .font_weight(FontWeight::SEMIBOLD)
+                        .mb_2()
                         .child("Linear with Points"),
                 )
                 .child(
@@ -68,50 +68,54 @@ pub fn render(app: &ShowcaseApp) -> Div {
                         ))
                         .child(
                             div()
-                                .w(px(500.0))
-                                .h(px(250.0))
-                                .relative()
-                                .bg(rgb(0xf8f8f8))
-                                .border_1()
-                                .border_color(rgb(0xcccccc))
-                                .child(render_grid(
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .w(px(500.0))
+                                        .h(px(250.0))
+                                        .relative()
+                                        .bg(rgb(0xf8f8f8))
+                                        .border_1()
+                                        .border_color(rgb(0xcccccc))
+                                        .child(render_grid(
+                                            &x_scale,
+                                            &y_scale,
+                                            &GridConfig::dots_only(),
+                                            500.0,
+                                            250.0,
+                                            &theme,
+                                        ))
+                                        .child(render_line(
+                                            &x_scale,
+                                            &y_scale,
+                                            &data,
+                                            &LineConfig::new()
+                                                .stroke_color(scheme.color(1))
+                                                .curve(CurveType::Linear)
+                                                .show_points(true)
+                                                .point_radius(4.0),
+                                        )),
+                                )
+                                .child(render_axis(
                                     &x_scale,
-                                    &y_scale,
-                                    &GridConfig::dots_only(),
+                                    &AxisConfig::bottom().with_ticks(5),
                                     500.0,
-                                    250.0,
                                     &theme,
-                                ))
-                                .child(render_line(
-                                    &x_scale,
-                                    &y_scale,
-                                    &data,
-                                    &LineConfig::new()
-                                        .stroke_color(scheme.color(1))
-                                        .curve(CurveType::Linear)
-                                        .show_points(true)
-                                        .point_radius(4.0)
-                                        .point_fill_color(D3Color::from_hex(0xffffff)),
                                 )),
                         ),
-                )
-                .child(div().ml(px(60.0)).child(render_axis(
-                    &x_scale,
-                    &AxisConfig::bottom().with_ticks(5),
-                    500.0,
-                    &theme,
-                ))),
+                ),
         )
         // Multiple series
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
                 .child(
                     div()
                         .text_sm()
                         .font_weight(FontWeight::SEMIBOLD)
+                        .mb_2()
                         .child("Multiple Series"),
                 )
                 .child(
@@ -125,48 +129,53 @@ pub fn render(app: &ShowcaseApp) -> Div {
                         ))
                         .child(
                             div()
-                                .w(px(500.0))
-                                .h(px(250.0))
-                                .relative()
-                                .bg(rgb(0xf8f8f8))
-                                .border_1()
-                                .border_color(rgb(0xcccccc))
-                                .child(render_grid(
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .w(px(500.0))
+                                        .h(px(250.0))
+                                        .relative()
+                                        .bg(rgb(0xf8f8f8))
+                                        .border_1()
+                                        .border_color(rgb(0xcccccc))
+                                        .child(render_grid(
+                                            &x_scale,
+                                            &y_scale,
+                                            &GridConfig::lines_only().with_line_opacity(0.2),
+                                            500.0,
+                                            250.0,
+                                            &theme,
+                                        ))
+                                        .child(render_line(
+                                            &x_scale,
+                                            &y_scale,
+                                            &series1,
+                                            &LineConfig::new()
+                                                .stroke_color(scheme.color(4))
+                                                .curve(CurveType::Linear)
+                                                .show_points(true)
+                                                .point_radius(4.0),
+                                        ))
+                                        .child(render_line(
+                                            &x_scale,
+                                            &y_scale,
+                                            &series2,
+                                            &LineConfig::new()
+                                                .stroke_color(scheme.color(6))
+                                                .curve(CurveType::Linear)
+                                                .show_points(true)
+                                                .point_radius(4.0),
+                                        )),
+                                )
+                                .child(render_axis(
                                     &x_scale,
-                                    &y_scale,
-                                    &GridConfig::lines_only().with_line_opacity(0.2),
+                                    &AxisConfig::bottom().with_ticks(5),
                                     500.0,
-                                    250.0,
                                     &theme,
-                                ))
-                                .child(render_line(
-                                    &x_scale,
-                                    &y_scale,
-                                    &series1,
-                                    &LineConfig::new()
-                                        .stroke_color(scheme.color(4))
-                                        .curve(CurveType::Linear)
-                                        .show_points(true)
-                                        .point_radius(4.0),
-                                ))
-                                .child(render_line(
-                                    &x_scale,
-                                    &y_scale,
-                                    &series2,
-                                    &LineConfig::new()
-                                        .stroke_color(scheme.color(6))
-                                        .curve(CurveType::Linear)
-                                        .show_points(true)
-                                        .point_radius(4.0),
                                 )),
                         ),
-                )
-                .child(div().ml(px(60.0)).child(render_axis(
-                    &x_scale,
-                    &AxisConfig::bottom().with_ticks(5),
-                    500.0,
-                    &theme,
-                ))),
+                ),
         )
 }
 

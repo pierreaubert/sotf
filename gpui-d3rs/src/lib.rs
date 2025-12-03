@@ -70,18 +70,18 @@ pub mod transition;
 /// Prelude module for convenient imports
 pub mod prelude {
     #[cfg(all(feature = "gpui", not(test)))]
-    pub use crate::axis::{AxisConfig, AxisOrientation, AxisTheme, DefaultAxisTheme, render_axis};
+    pub use crate::axis::{render_axis, AxisConfig, AxisOrientation, AxisTheme, DefaultAxisTheme};
     pub use crate::color::{ColorScheme, D3Color};
     #[cfg(all(feature = "gpui", not(test)))]
-    pub use crate::grid::{GridConfig, render_grid};
+    pub use crate::grid::{render_grid, GridConfig};
     pub use crate::scale::{LinearScale, LogScale, Scale};
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::shape::{
-        BarConfig, BarDatum, CurveType, LineConfig, LinePoint, ScatterConfig, ScatterPoint,
-        render_bars, render_line, render_scatter,
+        render_bars, render_line, render_scatter, BarConfig, BarDatum, CurveType, LineConfig,
+        LinePoint, ScatterConfig, ScatterPoint,
     };
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::surface::{
-        ColorScaleType, SurfaceConfig, SurfaceData, SurfaceElement, render_surface,
+        render_surface, ColorScaleType, SurfaceConfig, SurfaceData, SurfaceElement,
     };
 }

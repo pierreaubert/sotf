@@ -1,4 +1,4 @@
-use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
+use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
 use d3rs::prelude::*;
 use gpui::*;
 

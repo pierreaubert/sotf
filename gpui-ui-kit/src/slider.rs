@@ -297,28 +297,33 @@ impl RenderOnce for Slider {
         }
 
         // Add click handling if not disabled and has callback
+        // Use Rc to share handler between potential multiple calls
         if !disabled {
             if let Some(handler) = on_change {
-                let handler_ptr: *const dyn Fn(f32, &mut Window, &mut App) = handler.as_ref();
-                track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                    // Get relative x position within the slider
-                    // Note: event.position is in window coordinates, we need to calculate ratio differently
-                    // For now, we'll use a simpler approach with the bounds
-                    let click_x = event.position.x;
-                    // We need to get the element bounds, but for simplicity we'll estimate
-                    // This is a simplified version - a more complete implementation would track bounds
-                    let ratio = ((click_x - px(0.0)) / px(width)).clamp(0.0, 1.0);
-                    let new_value = min + ratio * (max - min);
-                    let snapped = if let Some(step) = step {
+                let handler = std::rc::Rc::new(handler);
+
+                // Store current value in closure
+                let current_value = self.value;
+
+                track = track.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                    // Since we can't reliably get element bounds in GPUI's on_mouse_down,
+                    // we implement a simple step-based behavior:
+                    // - Each click steps through values in the step direction
+                    // - The step size is determined by the step parameter or a default
+                    let step_amount = step.unwrap_or((max - min) / 10.0);
+
+                    // Cycle through: increment by step, wrap at max
+                    let new_value = current_value + step_amount;
+                    let snapped = if new_value > max {
+                        min // Wrap around to min when exceeding max
+                    } else if let Some(step) = step {
                         let steps = ((new_value - min) / step).round();
                         (min + steps * step).clamp(min, max)
                     } else {
-                        new_value
+                        new_value.clamp(min, max)
                     };
-                    // SAFETY: handler lives as long as the closure
-                    unsafe { (*handler_ptr)(snapped, window, cx) };
+                    handler(snapped, window, cx);
                 });
-                std::mem::forget(handler);
             }
         }
 

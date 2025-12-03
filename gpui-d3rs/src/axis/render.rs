@@ -2,7 +2,7 @@
 
 use super::{AxisConfig, AxisOrientation, AxisTheme};
 use crate::scale::Scale;
-use crate::text::{VectorFontConfig, measure_text_width, render_vector_text};
+use crate::text::{measure_text_width, render_vector_text, VectorFontConfig};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -188,12 +188,91 @@ where
     let (range_min, range_max) = scale.range();
     let range_span = range_max - range_min;
     let domain_line_y = height - config.domain_line_width;
+    let tick_bottom = domain_line_y; // Bottom of tick area (above domain line)
 
     div()
         .w(px(width))
         .h(px(height))
         .relative()
-        // Title (horizontal for top axis, at the top)
+        // Domain line (at the bottom of the axis area)
+        .when(config.show_domain_line, |el| {
+            el.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h(px(config.domain_line_width))
+                    .bg(theme.axis_line_color()),
+            )
+        })
+        // Ticks and labels - position each independently (ticks point UP, labels ABOVE)
+        .children(ticks.iter().flat_map(|&tick_value| {
+            let range_value = scale.scale(tick_value);
+            let x_pos = (range_value - range_min) / range_span;
+            let label = format_tick(tick_value, &config.tick_format);
+            let half_tick_width = config.domain_line_width / 2.0;
+            let font_config = VectorFontConfig::horizontal(
+                config.label_font_size,
+                theme.axis_label_color().into(),
+            );
+
+            // Tick mark - positioned absolutely, pointing upward from domain line
+            let tick_mark = div()
+                .absolute()
+                .left(relative(x_pos as f32))
+                .ml(px(-half_tick_width))
+                .top(px(tick_bottom - config.tick_size))
+                .w(px(config.domain_line_width))
+                .h(px(config.tick_size))
+                .bg(theme.axis_line_color());
+
+            // Label - positioned absolutely, above the tick
+            let label_bottom = tick_bottom - config.tick_size - config.tick_padding;
+            let half_label_width = measure_text_width(&label, config.label_font_size) / 2.0;
+            let label_div = div()
+                .absolute()
+                .left(relative(x_pos as f32))
+                .ml(px(-half_label_width))
+                .top(px(label_bottom - config.label_font_size))
+                .child(render_vector_text(&label, &font_config));
+
+            [tick_mark.into_any_element(), label_div.into_any_element()]
+        }))
+        // Minor ticks (no labels, shorter)
+        .children(
+            config
+                .minor_tick_values
+                .as_ref()
+                .map(|minor_ticks| {
+                    minor_ticks
+                        .iter()
+                        .filter_map(|&tick_value| {
+                            let range_value = scale.scale(tick_value);
+                            let x_pos = (range_value - range_min) / range_span;
+                            // Only render if within visible range
+                            if x_pos < 0.0 || x_pos > 1.0 {
+                                return None;
+                            }
+                            let half_tick_width = config.domain_line_width / 2.0;
+
+                            Some(
+                                div()
+                                    .absolute()
+                                    .left(relative(x_pos as f32))
+                                    .ml(px(-half_tick_width))
+                                    .top(px(tick_bottom - config.minor_tick_size))
+                                    .w(px(config.domain_line_width))
+                                    .h(px(config.minor_tick_size))
+                                    .bg(theme.axis_line_color())
+                                    .into_any_element(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+        )
+        // Title (horizontal for top axis, at the very top)
         .when(config.title.is_some(), |el| {
             let title = config.title.clone().unwrap_or_default();
             let font_config = VectorFontConfig::horizontal(
@@ -211,51 +290,6 @@ where
                     .child(render_vector_text(&title, &font_config)),
             )
         })
-        // Domain line
-        .when(config.show_domain_line, |el| {
-            el.child(
-                div()
-                    .absolute()
-                    .left_0()
-                    .right_0()
-                    .top(px(domain_line_y))
-                    .h(px(config.domain_line_width))
-                    .bg(theme.axis_line_color()),
-            )
-        })
-        // Ticks and labels
-        .children(ticks.iter().map(|&tick_value| {
-            let range_value = scale.scale(tick_value);
-            let x_pos = (range_value - range_min) / range_span;
-            let label = format_tick(tick_value, &config.tick_format);
-            let half_tick_width = config.domain_line_width / 2.0;
-            let font_config = VectorFontConfig::horizontal(
-                config.label_font_size,
-                theme.axis_label_color().into(),
-            );
-
-            div()
-                .absolute()
-                .left(relative(x_pos as f32))
-                .ml(px(-half_tick_width)) // Center the tick mark on the position
-                .bottom_0()
-                .flex()
-                .flex_col_reverse()
-                .items_center()
-                // Label (vector font)
-                .child(
-                    div()
-                        .mb(px(config.tick_padding))
-                        .child(render_vector_text(&label, &font_config)),
-                )
-                // Tick mark
-                .child(
-                    div()
-                        .w(px(config.domain_line_width))
-                        .h(px(config.tick_size))
-                        .bg(theme.axis_line_color()),
-                )
-        }))
 }
 
 /// Render a left-oriented vertical axis

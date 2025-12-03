@@ -152,7 +152,11 @@ impl Locale {
                 // Use shorter of exponential or fixed
                 let exp = format!("{:.prec$e}", value, prec = precision);
                 let fixed = format!("{:.prec$}", value, prec = precision);
-                if exp.len() < fixed.len() { exp } else { fixed }
+                if exp.len() < fixed.len() {
+                    exp
+                } else {
+                    fixed
+                }
             }
             FormatType::Round => {
                 // Round to significant digits

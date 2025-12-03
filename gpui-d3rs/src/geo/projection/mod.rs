@@ -3,7 +3,7 @@
 //! This module provides various map projections for transforming
 //! spherical coordinates (longitude, latitude) to planar coordinates (x, y).
 
-use super::{EPSILON, HALF_PI, TAU, degrees, radians};
+use super::{degrees, radians, EPSILON, HALF_PI, TAU};
 use std::f64::consts::PI;
 
 /// Trait for geographic projections.

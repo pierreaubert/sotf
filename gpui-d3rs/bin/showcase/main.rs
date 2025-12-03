@@ -102,8 +102,45 @@ impl ContourRenderMode {
     }
 }
 
+/// Geographic projection type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GeoProjectionType {
+    #[default]
+    Mercator,
+    Equirectangular,
+    Orthographic,
+    Stereographic,
+    ConicEqualArea,
+}
+
+impl GeoProjectionType {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Mercator => "Mercator",
+            Self::Equirectangular => "Equirectangular",
+            Self::Orthographic => "Orthographic",
+            Self::Stereographic => "Stereographic",
+            Self::ConicEqualArea => "Conic Equal-Area",
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![
+            Self::Mercator,
+            Self::Equirectangular,
+            Self::Orthographic,
+            Self::Stereographic,
+            Self::ConicEqualArea,
+        ]
+    }
+}
+
 pub struct ShowcaseApp {
     pub current_section: DemoSection,
+    // Geo demo parameters
+    pub geo_projection_type: GeoProjectionType,
+    pub geo_rotation_lon: f64,
+    pub geo_rotation_lat: f64,
     // Contour demo parameters
     pub contour_grid_size: usize,
     pub contour_num_levels: usize,
@@ -142,6 +179,10 @@ impl ShowcaseApp {
     fn new(_cx: &mut Context<Self>) -> Self {
         Self {
             current_section: DemoSection::default(),
+            // Geo demo defaults
+            geo_projection_type: GeoProjectionType::default(),
+            geo_rotation_lon: 0.0,
+            geo_rotation_lat: 0.0,
             contour_grid_size: 50,
             contour_num_levels: 5,
             contour_peak1_x: 0.3,
@@ -238,7 +279,7 @@ impl ShowcaseApp {
             DemoSection::QuadTree => showcase_modules::quadtree::render(self, cx),
             DemoSection::Contours => showcase_modules::contours::render(self, cx),
             DemoSection::Transitions => showcase_modules::transitions::render(self),
-            DemoSection::Geo => showcase_modules::geo::render(self),
+            DemoSection::Geo => showcase_modules::geo::render(self, cx),
             DemoSection::Colors => showcase_modules::colors::render(self),
             // D3 Observable Examples
             DemoSection::D3VolcanoContours => showcase_modules::d3_examples::render(self, cx),

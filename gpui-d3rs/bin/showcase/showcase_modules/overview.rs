@@ -1,6 +1,6 @@
 use gpui::*;
 
-pub fn render(app: &ShowcaseApp) -> Div {
+pub fn render(_app: &ShowcaseApp) -> Div {
     div()
         .flex()
         .flex_col()
@@ -23,7 +23,7 @@ pub fn render(app: &ShowcaseApp) -> Div {
                 .mt_4()
                 .text_lg()
                 .font_weight(FontWeight::SEMIBOLD)
-                .child("Features"),
+                .child("Demos"),
         )
         .child(
             div()
@@ -33,10 +33,33 @@ pub fn render(app: &ShowcaseApp) -> Div {
                 .ml_4()
                 .child(feature_item("Scales", "Linear, logarithmic, ordinal, and band scales"))
                 .child(feature_item("Axes", "Customizable axes with tick formatting"))
-                .child(feature_item("Charts", "Bar charts, line charts, scatter plots"))
-                .child(feature_item("Colors", "Color schemes and interpolation"))
-                .child(feature_item("Shapes", "Arcs, pies, symbols, curves, and more"))
-                .child(feature_item("Data", "Statistics, binning, and transformations")),
+                .child(feature_item("Bar Charts", "Simple and grouped bar charts"))
+                .child(feature_item("Line Charts", "Line charts with points and curves"))
+                .child(feature_item("Scatter Plots", "Scatter plots with symbols"))
+                .child(feature_item("Surface Plots", "2D surface and heatmap visualizations"))
+                .child(feature_item("QuadTree", "Spatial indexing and nearest neighbor search"))
+                .child(feature_item("Contours", "Contour lines and density estimation"))
+                .child(feature_item("Transitions", "Animated transitions and easing"))
+                .child(feature_item("Geo", "Geographic projections and maps"))
+                .child(feature_item("Colors", "Color schemes and interpolation")),
+        )
+        .child(
+            div()
+                .mt_4()
+                .text_lg()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child("D3 Observable Examples"),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .ml_4()
+                .child(feature_item("Volcano", "Volcano contour visualization"))
+                .child(feature_item("KDE", "Kernel density estimation"))
+                .child(feature_item("Treemap", "Hierarchical treemap layout"))
+                .child(feature_item("Stacked Bars", "Stacked and grouped bar charts")),
         )
         .child(
             div()

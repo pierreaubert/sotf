@@ -3,7 +3,7 @@
 //! A symmetric log scale is like a log scale but handles negative values
 //! and values close to zero by using a linear region around zero.
 
-use super::{Scale, nice_number};
+use super::{nice_number, Scale};
 
 /// A symmetric log scale handles negative values and zero
 ///

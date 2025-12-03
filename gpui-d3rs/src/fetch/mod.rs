@@ -21,9 +21,9 @@ mod auto_type;
 mod csv;
 mod dsv;
 
-pub use auto_type::{AutoTyped, auto_type, auto_type_row, auto_type_rows};
+pub use auto_type::{auto_type, auto_type_row, auto_type_rows, AutoTyped};
 pub use csv::{
-    CsvOptions, format_csv, format_tsv, parse_csv, parse_csv_with_options, parse_tsv,
-    parse_tsv_with_options,
+    format_csv, format_tsv, parse_csv, parse_csv_with_options, parse_tsv, parse_tsv_with_options,
+    CsvOptions,
 };
-pub use dsv::{DsvParser, DsvRow, parse_dsv};
+pub use dsv::{parse_dsv, DsvParser, DsvRow};

@@ -1,6 +1,6 @@
-use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
+use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
 use d3rs::color::ColorScheme;
-use d3rs::grid::{GridConfig, render_grid};
+use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
 use gpui::*;
 
@@ -44,11 +44,11 @@ pub fn render(app: &ShowcaseApp) -> Div {
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
                 .child(
                     div()
                         .text_sm()
                         .font_weight(FontWeight::SEMIBOLD)
+                        .mb_2()
                         .child("Simple Bar Chart"),
                 )
                 .child(
@@ -62,47 +62,54 @@ pub fn render(app: &ShowcaseApp) -> Div {
                         ))
                         .child(
                             div()
-                                .w(px(500.0))
-                                .h(px(250.0))
-                                .relative()
-                                .bg(rgb(0xf8f8f8))
-                                .border_1()
-                                .border_color(rgb(0xcccccc))
-                                .child(render_grid(
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .w(px(500.0))
+                                        .h(px(250.0))
+                                        .relative()
+                                        .bg(rgb(0xf8f8f8))
+                                        .border_1()
+                                        .border_color(rgb(0xcccccc))
+                                        .child(render_grid(
+                                            &x_scale,
+                                            &y_scale,
+                                            &GridConfig::lines_only().with_line_opacity(0.2),
+                                            500.0,
+                                            250.0,
+                                            &theme,
+                                        ))
+                                        .child(render_bars(
+                                            &x_scale,
+                                            &y_scale,
+                                            &data,
+                                            500.0,
+                                            250.0,
+                                            &BarConfig::new()
+                                                .fill_color(scheme.color(0))
+                                                .opacity(0.85),
+                                        )),
+                                )
+                                .child(render_axis(
                                     &x_scale,
-                                    &y_scale,
-                                    &GridConfig::lines_only().with_line_opacity(0.2),
+                                    &AxisConfig::bottom().with_ticks(6),
                                     500.0,
-                                    250.0,
                                     &theme,
-                                ))
-                                .child(render_bars(
-                                    &x_scale,
-                                    &y_scale,
-                                    &data,
-                                    500.0,
-                                    250.0,
-                                    &BarConfig::new().fill_color(scheme.color(0)).opacity(0.85),
                                 )),
                         ),
-                )
-                .child(div().ml(px(60.0)).child(render_axis(
-                    &x_scale,
-                    &AxisConfig::bottom().with_ticks(6),
-                    500.0,
-                    &theme,
-                ))),
+                ),
         )
         // Mixed positive/negative
         .child(
             div()
                 .flex()
                 .flex_col()
-                .gap_2()
                 .child(
                     div()
                         .text_sm()
                         .font_weight(FontWeight::SEMIBOLD)
+                        .mb_2()
                         .child("Mixed Positive/Negative Values"),
                 )
                 .child(
@@ -122,36 +129,43 @@ pub fn render(app: &ShowcaseApp) -> Div {
                         ))
                         .child(
                             div()
-                                .w(px(500.0))
-                                .h(px(250.0))
-                                .relative()
-                                .bg(rgb(0xf8f8f8))
-                                .border_1()
-                                .border_color(rgb(0xcccccc))
-                                .child(render_grid(
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .w(px(500.0))
+                                        .h(px(250.0))
+                                        .relative()
+                                        .bg(rgb(0xf8f8f8))
+                                        .border_1()
+                                        .border_color(rgb(0xcccccc))
+                                        .child(render_grid(
+                                            &mixed_x_scale,
+                                            &mixed_y_scale,
+                                            &GridConfig::with_lines(),
+                                            500.0,
+                                            250.0,
+                                            &theme,
+                                        ))
+                                        .child(render_bars(
+                                            &mixed_x_scale,
+                                            &mixed_y_scale,
+                                            &mixed_data,
+                                            500.0,
+                                            250.0,
+                                            &BarConfig::new()
+                                                .fill_color(scheme.color(2))
+                                                .bar_gap(4.0),
+                                        )),
+                                )
+                                .child(render_axis(
                                     &mixed_x_scale,
-                                    &mixed_y_scale,
-                                    &GridConfig::with_lines(),
+                                    &AxisConfig::bottom().with_ticks(5),
                                     500.0,
-                                    250.0,
                                     &theme,
-                                ))
-                                .child(render_bars(
-                                    &mixed_x_scale,
-                                    &mixed_y_scale,
-                                    &mixed_data,
-                                    500.0,
-                                    250.0,
-                                    &BarConfig::new().fill_color(scheme.color(2)).bar_gap(4.0),
                                 )),
                         ),
-                )
-                .child(div().ml(px(60.0)).child(render_axis(
-                    &mixed_x_scale,
-                    &AxisConfig::bottom().with_ticks(5),
-                    500.0,
-                    &theme,
-                ))),
+                ),
         )
 }
 

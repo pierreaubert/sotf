@@ -122,7 +122,7 @@ pub fn render_bars<XS, YS>(
     y_scale: &YS,
     data: &[BarDatum],
     width: f32,
-    _height: f32,
+    height: f32,
     config: &BarConfig,
 ) -> impl IntoElement
 where
@@ -164,22 +164,24 @@ where
             // Invert Y for screen coordinates (bottom-to-top becomes top-to-bottom)
             let y_pos = 1.0 - ((y_range - y_min) / y_range_span) as f32;
 
-            // Calculate bar height (from baseline to value)
-            let bar_height = (baseline_pos - y_pos).abs();
+            // Calculate bar height (from baseline to value) - convert from relative to pixels
+            let bar_height_rel = (baseline_pos - y_pos).abs();
+            let bar_height_px = bar_height_rel * height;
             let bar_top = if datum.value >= 0.0 {
                 y_pos
             } else {
                 baseline_pos
             };
+            let bar_top_px = bar_top * height;
 
             let fill = config.fill_color.to_rgba();
 
             let mut bar = div()
                 .absolute()
                 .left(relative(x_pos))
-                .top(relative(bar_top))
+                .top(px(bar_top_px))
                 .w(px(bar_width))
-                .h(px(bar_height))
+                .h(px(bar_height_px))
                 .ml(px(-bar_width / 2.0)) // Center the bar
                 .bg(fill)
                 .opacity(config.opacity);

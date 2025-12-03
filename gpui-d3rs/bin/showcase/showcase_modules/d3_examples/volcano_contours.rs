@@ -7,13 +7,13 @@
 //! 1. **Low-level API**: Direct use of ContourGenerator, scales, and manual rendering
 //! 2. **High-level API**: Using render_contour() and render_heatmap() helper functions
 
-use super::volcano_data::{VOLCANO_HEIGHT, VOLCANO_WIDTH, generate_volcano_data};
+use super::volcano_data::{generate_volcano_data, VOLCANO_HEIGHT, VOLCANO_WIDTH};
 use crate::ShowcaseApp;
 use d3rs::contour::ContourGenerator;
 use d3rs::prelude::*;
 use d3rs::shape::contour::{
-    ContourConfig, HeatmapData, render_contour, render_heatmap, turbo_color_scale,
-    viridis_color_scale,
+    render_contour, render_heatmap, turbo_color_scale, viridis_color_scale, ContourConfig,
+    HeatmapData,
 };
 use gpui::*;
 use gpui_ui_kit::Slider;

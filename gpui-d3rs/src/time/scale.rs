@@ -2,7 +2,7 @@
 
 use super::duration;
 use super::interval::{Interval, TimeInterval};
-use crate::scale::{Scale, nice_number};
+use crate::scale::{nice_number, Scale};
 
 /// A time scale maps temporal domain to continuous range
 ///

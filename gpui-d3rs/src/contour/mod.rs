@@ -29,8 +29,8 @@ mod density;
 mod marching_squares;
 mod thresholds;
 
-pub use density::{DensityEstimator, density_2d, gaussian_kernel};
+pub use density::{density_2d, gaussian_kernel, DensityEstimator};
 pub use marching_squares::{
-    Contour, ContourBand, ContourGenerator, ContourRing, contour, contours,
+    contour, contours, Contour, ContourBand, ContourGenerator, ContourRing,
 };
 pub use thresholds::{threshold_freedman_diaconis, threshold_scott, threshold_sturges};

@@ -1,6 +1,6 @@
 //! Linear scale implementation
 
-use super::{Scale, generate_linear_ticks, nice_number};
+use super::{generate_linear_ticks, nice_number, Scale};
 
 /// A linear scale maps a continuous domain to a continuous range using linear interpolation
 ///

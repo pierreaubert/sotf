@@ -19,8 +19,8 @@ mod interval;
 mod scale;
 
 pub use interval::{
-    Interval, TimeInterval, time_day, time_hour, time_minute, time_monday, time_month, time_second,
-    time_week, time_year,
+    time_day, time_hour, time_minute, time_monday, time_month, time_second, time_week, time_year,
+    Interval, TimeInterval,
 };
 pub use scale::TimeScale;
 

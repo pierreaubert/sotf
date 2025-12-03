@@ -7,7 +7,7 @@
 //! 1. **High-level API**: Using d3rs shape primitives
 //! 2. **Low-level API**: Direct computation of KDE with custom kernels
 
-use super::faithful_data::{FAITHFUL_WAITING, faithful_stats};
+use super::faithful_data::{faithful_stats, FAITHFUL_WAITING};
 use crate::ShowcaseApp;
 use d3rs::color::D3Color;
 use d3rs::prelude::*;
@@ -71,7 +71,11 @@ fn gaussian_kernel(bandwidth: f64) -> impl Fn(f64) -> f64 {
 fn uniform_kernel(bandwidth: f64) -> impl Fn(f64) -> f64 {
     move |x: f64| {
         let u = x / bandwidth;
-        if u.abs() <= 1.0 { 0.5 / bandwidth } else { 0.0 }
+        if u.abs() <= 1.0 {
+            0.5 / bandwidth
+        } else {
+            0.0
+        }
     }
 }
 

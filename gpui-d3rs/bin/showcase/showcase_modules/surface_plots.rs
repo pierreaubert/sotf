@@ -1,5 +1,5 @@
 use d3rs::prelude::*;
-use d3rs::surface::{ColorScaleType, SurfaceConfig, SurfaceData, render_surface};
+use d3rs::surface::{render_surface, ColorScaleType, SurfaceConfig, SurfaceData};
 use gpui::*;
 
 pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {

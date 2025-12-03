@@ -83,4 +83,4 @@ pub use projection::{
     PerspectiveProjection, Projection, ProjectionType,
 };
 #[cfg(feature = "gpui")]
-pub use render::{ColorScaleType, SurfaceConfig, SurfaceElement, render_surface};
+pub use render::{render_surface, ColorScaleType, SurfaceConfig, SurfaceElement};
