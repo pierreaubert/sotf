@@ -3,6 +3,10 @@
 //! Inspired by adabraka-ui patterns but compatible with zed's gpui version.
 //! Provides reusable, composable UI components with consistent styling.
 
+// Application templates
+#[path = "../src-app/mod.rs"]
+pub mod app;
+
 // Core components
 pub mod button;
 pub mod card;
@@ -78,3 +82,6 @@ pub use tooltip::{Tooltip, TooltipPlacement, WithTooltip};
 
 // Layout
 pub use stack::{Divider, HStack, Spacer, StackAlign, StackJustify, StackSpacing, VStack};
+
+// Application templates
+pub use app::{MiniApp, MiniAppConfig};
