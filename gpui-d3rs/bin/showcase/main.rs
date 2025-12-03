@@ -2,7 +2,8 @@
 //!
 //! Demonstrates all d3rs functionality in a single application with tabbed navigation.
 
-use gpui::{Menu, MenuItem, *};
+use gpui::*;
+use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 mod showcase_modules;
 
@@ -313,39 +314,9 @@ impl Render for ShowcaseApp {
     }
 }
 
-// Menu actions
-actions!(showcase_main, [Quit]);
-
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        // Register quit action
-        cx.on_action::<Quit>(|_action, cx| {
-            cx.quit();
-        });
-
-        // Set up menu bar
-        cx.set_menus(vec![Menu {
-            name: "d3rs Showcase".into(),
-            items: vec![MenuItem::action("Quit d3rs Showcase", Quit)],
-        }]);
-
-        // Bind Cmd+Q to quit
-        cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
-
-        let bounds = Bounds::centered(None, size(px(1000.0), px(800.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("d3rs Showcase".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |_, cx| cx.new(ShowcaseApp::new),
-        )
-        .unwrap();
-
-        cx.activate(true);
-    });
+    MiniApp::run(
+        MiniAppConfig::new("d3rs Showcase").size(1000.0, 800.0),
+        |cx| cx.new(ShowcaseApp::new),
+    );
 }

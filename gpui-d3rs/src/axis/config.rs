@@ -45,6 +45,9 @@ pub struct AxisConfig {
     pub title_font_size: f32,
     /// Padding between tick labels and title
     pub title_padding: f32,
+    /// Label rotation angle in degrees (0 = horizontal, -45 = angled down-left)
+    /// Useful for long labels on bottom axis
+    pub label_angle: f32,
 }
 
 impl Default for AxisConfig {
@@ -64,6 +67,7 @@ impl Default for AxisConfig {
             title: None,
             title_font_size: 12.0,
             title_padding: 8.0,
+            label_angle: 0.0,
         }
     }
 }
@@ -235,6 +239,23 @@ impl AxisConfig {
         self
     }
 
+    /// Set the label rotation angle in degrees
+    ///
+    /// Useful for long labels on bottom axis. Negative angles rotate counter-clockwise.
+    /// Common values: -45 for diagonal, -90 for vertical.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use d3rs::axis::AxisConfig;
+    ///
+    /// let axis = AxisConfig::bottom().with_label_angle(-45.0);
+    /// ```
+    pub fn with_label_angle(mut self, angle_degrees: f32) -> Self {
+        self.label_angle = angle_degrees;
+        self
+    }
+
     /// Calculate the total size needed for this axis
     ///
     /// For horizontal axes, this is the height.
@@ -248,7 +269,17 @@ impl AxisConfig {
 
         match self.orientation {
             AxisOrientation::Top | AxisOrientation::Bottom => {
-                self.tick_size + self.tick_padding + self.label_font_size + 4.0 + title_space
+                // For angled labels, we need more vertical space
+                let label_height = if self.label_angle.abs() > 0.1 {
+                    // Approximate height for angled text: font_size * sin(angle) + some width component
+                    let angle_rad = self.label_angle.abs() * std::f32::consts::PI / 180.0;
+                    // Assume average label width of ~40px for frequency labels
+                    let estimated_label_width = 40.0_f32;
+                    estimated_label_width * angle_rad.sin() + self.label_font_size * angle_rad.cos()
+                } else {
+                    self.label_font_size
+                };
+                self.tick_size + self.tick_padding + label_height + 4.0 + title_space
             }
             AxisOrientation::Left | AxisOrientation::Right => {
                 // For vertical, we need enough width for labels

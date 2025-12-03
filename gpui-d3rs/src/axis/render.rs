@@ -88,10 +88,16 @@ where
             let x_pos = (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
             let half_tick_width = config.domain_line_width / 2.0;
-            let font_config = VectorFontConfig::horizontal(
-                config.label_font_size,
-                theme.axis_label_color().into(),
-            );
+            
+            // Convert angle from degrees to radians
+            let angle_rad = config.label_angle * std::f32::consts::PI / 180.0;
+            let font_config = VectorFontConfig {
+                font_size: config.label_font_size,
+                stroke_width: 1.2,
+                color: theme.axis_label_color().into(),
+                rotation: angle_rad,
+                letter_spacing: 0.1,
+            };
 
             // Tick mark - positioned absolutely and centered on the x position
             let tick_mark = div()
@@ -103,14 +109,26 @@ where
                 .h(px(config.tick_size))
                 .bg(theme.axis_line_color());
 
-            // Label - positioned absolutely, horizontally centered on the x position
+            // Label - positioned absolutely
             let label_top = tick_top + config.tick_size + config.tick_padding;
-            let half_label_width = measure_text_width(&label, config.label_font_size) / 2.0;
+            let label_width = measure_text_width(&label, config.label_font_size);
+            
+            // For angled labels, adjust positioning
+            // Negative angle rotates counter-clockwise, so text goes down-left
+            let (ml_offset, mt_offset) = if config.label_angle.abs() > 0.1 {
+                // For angled text, anchor at the right end of the text
+                // so it appears to hang from the tick mark
+                (-label_width * angle_rad.cos().abs() * 0.1, 0.0)
+            } else {
+                // For horizontal text, center it
+                (-label_width / 2.0, 0.0)
+            };
+            
             let label_div = div()
                 .absolute()
                 .left(relative(x_pos as f32))
-                .ml(px(-half_label_width))
-                .top(px(label_top))
+                .ml(px(ml_offset))
+                .top(px(label_top + mt_offset))
                 .child(render_vector_text(&label, &font_config));
 
             [tick_mark.into_any_element(), label_div.into_any_element()]

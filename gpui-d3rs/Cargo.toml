@@ -16,6 +16,7 @@ default = ["gpui"]
 gpui = ["dep:gpui", "dep:gpui-ui-kit"]
 spinorama = ["dep:autoeq", "dep:autoeq-cea2034", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]
+gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "dep:fontdue", "gpui"]
 
 [dependencies]
 gpui = { workspace=true, optional = true }
@@ -34,6 +35,7 @@ bytemuck = { version = "1.14", features = ["derive"], optional = true }
 glam = { version = "0.29", optional = true }
 pollster = { version = "0.4", optional = true }
 image = { version = "0.25", optional = true }
+fontdue = { version = "0.9", optional = true }
 
 [dev-dependencies]
 approx = "0.5"
@@ -94,6 +96,21 @@ path = "examples/transition_demo.rs"
 name = "surface3d_demo"
 path = "examples/surface3d_demo.rs"
 required-features = ["gpu-3d"]
+
+[[example]]
+name = "gpu2d_demo"
+path = "examples/gpu2d_demo.rs"
+required-features = ["gpu-2d"]
+
+[[example]]
+name = "gpu2d_shapes_demo"
+path = "examples/gpu2d_shapes_demo.rs"
+required-features = ["gpu-2d"]
+
+[[example]]
+name = "gpu2d_contour_demo"
+path = "examples/gpu2d_contour_demo.rs"
+required-features = ["gpu-2d"]
 
 [[bin]]
 name = "spinorama-demo"
