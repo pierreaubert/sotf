@@ -466,9 +466,12 @@ impl ShowcaseApp {
     // ========================================================================
 
     fn render_logscales_demo(&self) -> Div {
-        // Generate logarithmic data
-        let log_x: Vec<f64> = vec![10.0, 100.0, 1000.0, 10000.0];
-        let log_y: Vec<f64> = vec![1.0, 10.0, 100.0, 1000.0];
+        // Generate logarithmic data - power law relationship y = x^0.8
+        // More data points spanning 4 decades (10 to 100,000)
+        let log_x: Vec<f64> = (0..50)
+            .map(|i| 10.0 * 10_f64.powf(i as f64 / 12.5)) // 10 to ~100,000
+            .collect();
+        let log_y: Vec<f64> = log_x.iter().map(|&x| x.powf(0.8)).collect();
 
         let freq_x: Vec<f64> = (0..50).map(|i| 20.0 * 10_f64.powf(i as f64 / 15.0)).collect();
         let freq_y: Vec<f64> = freq_x.iter().map(|&f| {
@@ -513,15 +516,15 @@ impl ShowcaseApp {
                 div()
                     .text_sm()
                     .text_color(rgb(0x666666))
-                    .child("Both X and Y axes use logarithmic scaling - ideal for power-law relationships"),
+                    .child("Power-law relationship y = x^0.8 - appears as a straight line on log-log axes"),
             )
             .child({
                 scatter(&log_x, &log_y)
-                    .title("Log-Log Scale")
+                    .title("Power Law: y = x^0.8")
                     .color(0xe377c2)
                     .x_scale(ScaleType::Log)
                     .y_scale(ScaleType::Log)
-                    .point_radius(8.0)
+                    .point_radius(4.0)
                     .size(600.0, 350.0)
                     .build()
                     .unwrap()

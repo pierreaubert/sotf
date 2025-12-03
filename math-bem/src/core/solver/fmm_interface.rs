@@ -906,7 +906,7 @@ pub fn recommended_mesh_resolution(
 ///
 /// Uses the highest frequency to determine minimum element size.
 pub fn mesh_resolution_for_frequency_range(
-    min_freq: f64,
+    _min_freq: f64,
     max_freq: f64,
     speed_of_sound: f64,
     elements_per_wavelength: usize,

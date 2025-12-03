@@ -14,14 +14,10 @@ members = [
     "math-de",
     "sotf-audio-engine",
     "sotf-audio-player",
-    "sotf-audio-player-gpui",
-    "sotf-audio-player-midi",
-    "sotf-audio-player-tui",
+    "sotf-audio-midi",
     "sotf-audio-plugins",
-    "sotf-audio-plugins-ffi",
     "sotf-macos-hal",
     "sotf-head-scanner",
-    "sotf-tauri",
 ]
 # Default members excludes
 #   - macOS-only sotf-hal, sotf-configbar
@@ -37,9 +33,7 @@ default-members = [
     "sotf-audio-engine",
     "sotf-audio-plugins",
     "sotf-audio-player",
-    "sotf-audio-player-midi",
-    "sotf-audio-player-tui",
-    "sotf-audio-player-gpui",
+    "sotf-audio-midi",
     "gpui-d3rs",
     "gpui-px",
     "gpui-ui-kit",
@@ -52,7 +46,6 @@ default-members = [
     "math-de",
     "math-iir",
     "math-testfunctions",
-    "sotf-tauri",
 ]
 resolver = "3"
 

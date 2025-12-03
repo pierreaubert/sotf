@@ -15,7 +15,7 @@ mod state;
 pub mod types;
 
 // Re-export everything publicly
-pub use crate::ui::components::host::get_param_count;
+pub use crate::plugins::get_param_count;
 pub use state::{App, AppState};
 pub use types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,

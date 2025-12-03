@@ -77,7 +77,7 @@ pub fn cube_vertices(size: f64) -> Vec<Vertex> {
 /// Generate vertices for a more complex shape (cube with interior points)
 pub fn cube_with_interior_points(size: f64, n_interior: usize) -> Vec<Vertex> {
     let mut vertices = cube_vertices(size);
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let s = size / 2.0;
 
     for _ in 0..n_interior {

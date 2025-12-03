@@ -9,9 +9,12 @@
 
 pub mod actions;
 pub mod autoeq;
+pub mod components;
 pub mod config;
 pub mod i18n;
 pub mod keybindings;
+pub mod plugins;
+pub mod screens;
 pub mod state;
 pub mod theme;
 

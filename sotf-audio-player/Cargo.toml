@@ -16,21 +16,39 @@ testing = []
 name = "sotf_audio_player"
 path = "src/lib.rs"
 
+[[bin]]
+name = "sotf-tui"
+path = "app-tui/main.rs"
+
 [dependencies]
 # Audio engine
 sotf-audio-plugins = { path = "../sotf-audio-plugins" }
 sotf-audio-engine = { path = "../sotf-audio-engine" }
 autoeq-iir = { path = "../math-iir" }
 
-# Serialization
+# common stuff
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# File system and utilities
 walkdir = "2"
+thiserror = { workspace = true }
+log = "0.4"
+env_logger = "0.11"
+directories = "5.0"
+chrono = { workspace = true }
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokio = { workspace = true }
+parking_lot = { workspace = true }
+clap = { workspace = true }
+
+# TUI
+ratatui = { workspace = true }
+ratatui-image = { version = "1.0", features = ["serde"] }
+crossterm = { workspace = true }
 
 # Image processing for album art thumbnails
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+
+# audio
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-metadata = { workspace = true }
@@ -40,33 +58,8 @@ symphonia-codec-aac = { workspace = true }
 symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
-
-# Error handling
-thiserror = { workspace = true }
-
-# Logging
-log = "0.4"
-
-# Path and config
-directories = "5.0"
-
-# Date/time
-chrono = { workspace = true }
-
-# Database
-rusqlite = { version = "0.32", features = ["bundled"] }
-
-# Async runtime for background tasks
-tokio = { workspace = true }
-
-# Synchronous mutex
-parking_lot = { workspace = true }
-
-# EBU R128 loudness measurement for ReplayGain
 ebur128 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
 
-# Enable testing feature for integration tests to access open_for_testing
-sotf-audio-player = { path = ".", features = ["testing"] }

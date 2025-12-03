@@ -21,6 +21,8 @@ mod spectrum;
 pub mod theme;
 mod ticks;
 mod upmixer;
+mod plugin_editing;
+mod rack;
 
 pub use binaural::render_binaural_plugin;
 pub use common::*;
@@ -37,6 +39,9 @@ pub use spectrum::{MeterData, SpectrumColors, SpectrumElement, render_spectrum_a
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 pub use upmixer::render_upmixer_plugin;
+pub use plugin_editing::get_param_count;
+pub use rack::PluginDragInfo;
+
 
 use crate::theme::Theme;
 use gpui::*;

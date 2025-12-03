@@ -193,7 +193,7 @@ impl InlineAlert {
 
     /// Build into element
     pub fn build(self) -> Div {
-        let (_, border, icon_color) = self.variant.colors();
+        let (_, _border, icon_color) = self.variant.colors();
         let icon = self.variant.icon();
 
         div()

@@ -229,9 +229,13 @@ where
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        // Use the scale's range for width to ensure alignment with other chart elements
+        let (x_range_min, x_range_max) = self.x_scale.range();
+        let computed_width = px((x_range_max - x_range_min).abs() as f32);
+
         let layout_id = window.request_layout(
             Style {
-                size: size(relative(1.0).into(), self.height.into()),
+                size: size(computed_width.into(), self.height.into()),
                 min_size: size(px(100.0).into(), px(100.0).into()),
                 ..Default::default()
             },
@@ -271,7 +275,7 @@ where
         // Use scale.scale() to properly handle log scales
         let (x_range_min, x_range_max) = self.x_scale.range();
         let (y_range_min, y_range_max) = self.y_scale.range();
-        let x_range_span = x_range_max - x_range_min;
+        let x_range_span = (x_range_max - x_range_min).abs();
         let y_range_span = (y_range_max - y_range_min).abs();
 
         // Paint each contour (from lowest to highest value for proper layering)
@@ -718,9 +722,13 @@ where
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        // Use the scale's range for width to ensure alignment with other chart elements
+        let (x_range_min, x_range_max) = self.x_scale.range();
+        let computed_width = px((x_range_max - x_range_min).abs() as f32);
+
         let layout_id = window.request_layout(
             Style {
-                size: size(relative(1.0).into(), self.height.into()),
+                size: size(computed_width.into(), self.height.into()),
                 min_size: size(px(100.0).into(), px(100.0).into()),
                 ..Default::default()
             },
@@ -759,7 +767,7 @@ where
         // Get the range (screen coordinates) for proper normalization
         let (x_range_min, x_range_max) = self.x_scale.range();
         let (y_range_min, y_range_max) = self.y_scale.range();
-        let x_range_span = x_range_max - x_range_min;
+        let x_range_span = (x_range_max - x_range_min).abs();
         let y_range_span = (y_range_max - y_range_min).abs();
 
         // Paint each band (from lowest to highest value for proper layering)
@@ -1004,9 +1012,13 @@ where
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        // Use the scale's range for width to ensure alignment with other chart elements
+        let (x_range_min, x_range_max) = self.x_scale.range();
+        let computed_width = px((x_range_max - x_range_min).abs() as f32);
+
         let layout_id = window.request_layout(
             Style {
-                size: size(relative(1.0).into(), self.height.into()),
+                size: size(computed_width.into(), self.height.into()),
                 min_size: size(px(100.0).into(), px(100.0).into()),
                 ..Default::default()
             },
@@ -1045,7 +1057,7 @@ where
         // Get the range (screen coordinates) for proper normalization
         let (x_range_min, x_range_max) = self.x_scale.range();
         let (y_range_min, y_range_max) = self.y_scale.range();
-        let x_range_span = x_range_max - x_range_min;
+        let x_range_span = (x_range_max - x_range_min).abs();
         let y_range_span = (y_range_max - y_range_min).abs();
 
         // Paint each cell as a quad (rectangle)

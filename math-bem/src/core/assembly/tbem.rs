@@ -8,7 +8,7 @@ use num_complex::Complex64;
 
 use crate::core::integration::{regular_integration, singular_integration};
 use crate::core::types::{
-    BoundaryCondition, Element, ElementType, IntegrationResult, PhysicsParams,
+    BoundaryCondition, Element, IntegrationResult, PhysicsParams,
 };
 
 /// Result of TBEM assembly

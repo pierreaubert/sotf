@@ -20,3 +20,8 @@ thiserror.workspace = true
 [[bin]]
 name = "gpui-px-showcase"
 path = "bin/showcase.rs"
+
+[[example]]
+name = "logscale_demo"
+path = "examples/logscale_demo.rs"
+required-features = ["gpui"]

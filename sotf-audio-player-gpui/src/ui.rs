@@ -1,8 +1,9 @@
-mod autoeq;
-pub mod components;
-mod screens;
-
 use crate::app::{AppState, Screen};
+
+// Re-export modules for backward compatibility with crate::ui::components, etc.
+pub use crate::components;
+pub use crate::plugins;
+pub use crate::screens;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::Divider;
@@ -12,11 +13,11 @@ use std::time::Duration;
 pub use crate::actions::*;
 
 pub struct PlayerView {
-    state: Entity<AppState>,
-    focus_handle: FocusHandle,
+    pub(crate) state: Entity<AppState>,
+    pub(crate) focus_handle: FocusHandle,
     last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
-    grid_scroll_handle: ScrollHandle,
+    pub(crate) grid_scroll_handle: ScrollHandle,
 }
 
 impl PlayerView {
@@ -48,7 +49,7 @@ impl PlayerView {
         }
     }
 
-    fn toggle_playback(&mut self, _: &PlayPause, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_playback(&mut self, _: &PlayPause, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             if state.app.is_playing {
                 let _ = state.player.lock().pause();
@@ -70,7 +71,7 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn next_track(&mut self, _: &NextTrack, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn next_track(&mut self, _: &NextTrack, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             if let Some(path) = state.app.next_track() {
                 let sample_rate = 48000.0;
@@ -93,7 +94,7 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn prev_track(&mut self, _: &PrevTrack, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn prev_track(&mut self, _: &PrevTrack, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             if let Some(path) = state.app.previous_track() {
                 let sample_rate = 48000.0;
@@ -132,7 +133,7 @@ impl PlayerView {
         self.adjust_volume(-0.05, cx);
     }
 
-    fn switch_screen(&mut self, screen: Screen, cx: &mut Context<Self>) {
+    pub(crate) fn switch_screen(&mut self, screen: Screen, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = screen;
         });
@@ -200,7 +201,7 @@ impl PlayerView {
         self.switch_screen(Screen::Settings, cx);
     }
 
-    fn quit_app(&mut self, _: &QuitApp, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn quit_app(&mut self, _: &QuitApp, window: &mut Window, cx: &mut Context<Self>) {
         // Save window geometry before quitting
         let window_bounds = window.bounds();
         let geometry = crate::config::WindowGeometry {
@@ -1400,7 +1401,7 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn play_track(state: &mut AppState, path: std::path::PathBuf) {
+    pub(crate) fn play_track(state: &mut AppState, path: std::path::PathBuf) {
         let sample_rate = 48000.0;
         let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
         let output_channels = state.app.plugin_chain.output_channels();

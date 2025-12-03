@@ -59,4 +59,4 @@ impl fmt::Display for BinauralError {
 
 impl std::error::Error for BinauralError {}
 
-pub type BinauralResult<T> = Result<T, BinauralError>;
+// pub type BinauralResult<T> = Result<T, BinauralError>;

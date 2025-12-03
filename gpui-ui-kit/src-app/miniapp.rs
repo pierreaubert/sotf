@@ -37,6 +37,8 @@ pub struct MiniAppConfig {
     pub height: f32,
     /// Application name shown in menu bar
     pub app_name: SharedString,
+    /// Enable vertical scrollbar for content
+    pub scrollable: bool,
 }
 
 impl MiniAppConfig {
@@ -50,6 +52,7 @@ impl MiniAppConfig {
             width: 900.0,
             height: 700.0,
             app_name: title,
+            scrollable: true,
         }
     }
 
@@ -67,6 +70,14 @@ impl MiniAppConfig {
         self.app_name = name.into();
         self
     }
+
+    /// Enable or disable vertical scrollbar for content
+    ///
+    /// By default, scrolling is enabled.
+    pub fn scrollable(mut self, scrollable: bool) -> Self {
+        self.scrollable = scrollable;
+        self
+    }
 }
 
 impl Default for MiniAppConfig {
@@ -77,6 +88,21 @@ impl Default for MiniAppConfig {
 
 // Define the Quit action for the menu
 actions!(miniapp, [Quit]);
+
+/// A wrapper view that adds vertical scrolling to its content
+struct ScrollableWrapper {
+    inner: AnyView,
+}
+
+impl Render for ScrollableWrapper {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .id("miniapp-scroll-container")
+            .size_full()
+            .overflow_y_scroll()
+            .child(self.inner.clone())
+    }
+}
 
 /// MiniApp provides a minimal application shell for GPUI examples and showcases
 ///
@@ -138,18 +164,38 @@ impl MiniApp {
                 cx,
             );
 
-            cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some(config_clone.title.clone()),
+            if config_clone.scrollable {
+                cx.open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        titlebar: Some(TitlebarOptions {
+                            title: Some(config_clone.title.clone()),
+                            ..Default::default()
+                        }),
                         ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                |_, cx| build_view(cx),
-            )
-            .unwrap();
+                    },
+                    move |_, cx| {
+                        let inner_view = build_view(cx);
+                        cx.new(|_| ScrollableWrapper {
+                            inner: inner_view.into(),
+                        })
+                    },
+                )
+                .unwrap();
+            } else {
+                cx.open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        titlebar: Some(TitlebarOptions {
+                            title: Some(config_clone.title.clone()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                    |_, cx| build_view(cx),
+                )
+                .unwrap();
+            }
 
             cx.activate(true);
         });

@@ -20,7 +20,6 @@
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
-use crate::core::greens::legendre::legendre_polynomials;
 use crate::core::greens::spherical::spherical_hankel_first_kind;
 use crate::core::integration::{regular_integration, singular_integration, unit_sphere_quadrature};
 use crate::core::types::{Cluster, ClusterLevel, Element, PhysicsParams};

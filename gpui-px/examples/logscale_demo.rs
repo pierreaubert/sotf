@@ -47,7 +47,6 @@ impl Render for LogScaleDemo {
             .size_full()
             .flex()
             .flex_col()
-            .overflow_y_scroll()
             .bg(rgb(0xffffff))
             .p_8()
             .gap_8()

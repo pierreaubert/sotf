@@ -127,7 +127,7 @@ impl Select {
 
     /// Build into element
     pub fn build(self) -> Div {
-        let (py, text_size_class) = match self.size {
+        let (py, _text_size_class) = match self.size {
             SelectSize::Sm => (px(4.0), "sm"),
             SelectSize::Md => (px(8.0), "md"),
             SelectSize::Lg => (px(12.0), "lg"),
@@ -216,7 +216,7 @@ impl Select {
 
             for option in self.options {
                 let is_selected = self.selected.as_ref() == Some(&option.value);
-                let option_value = option.value.clone();
+                let _option_value = option.value.clone();
 
                 let mut option_el = div().px_3().py(px(6.0)).cursor_pointer();
 

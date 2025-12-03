@@ -50,6 +50,9 @@ symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 
+# Testing utilities
+tempfile = "3"
+
 # CLI
 clap = { workspace = true }
 
@@ -72,12 +75,6 @@ name = "sotf_audio_player_gpui"
 path = "src/lib.rs"
 
 [[bin]]
-name = "sotf_player_gpui"
+name = "sotf_gpui"
 path = "src/main.rs"
 
-[dev-dependencies]
-# TUI player for state equivalence testing
-sotf-audio-player-tui = { path = "../sotf-audio-player-tui" }
-
-# Testing utilities
-tempfile = "3"

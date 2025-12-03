@@ -97,7 +97,7 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
     let initial_simplex = find_initial_simplex(vertices)?;
 
     // Compute the centroid of the initial simplex - this is guaranteed to be inside the hull
-    let simplex_centroid = Vertex {
+    let simplexcentroid = Vertex {
         x: (vertices[initial_simplex[0]].x
             + vertices[initial_simplex[1]].x
             + vertices[initial_simplex[2]].x
@@ -220,7 +220,7 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
 
             // Check which orientation has normal pointing away from interior
             let v0 = &vertices[face1.vertices[0]];
-            let to_interior1 = simplex_centroid.sub(v0);
+            let to_interior1 = simplexcentroid.sub(v0);
             let dot1 = face1.normal.dot(&to_interior1);
 
             // If dot product is negative, normal points away from interior (correct)
@@ -382,10 +382,10 @@ fn create_initial_hull(simplex: &[usize; 4], vertices: &[Vertex]) -> Vec<HullFac
 
     for face in &mut faces {
         let v0 = &vertices[face.vertices[0]];
-        let to_centroid = centroid.sub(v0);
+        let tocentroid = centroid.sub(v0);
 
         // If normal points inward, flip the face
-        if face.normal.dot(&to_centroid) > 0.0 {
+        if face.normal.dot(&tocentroid) > 0.0 {
             face.vertices.swap(1, 2);
             face.normal = face.normal.scale(-1.0);
         }
