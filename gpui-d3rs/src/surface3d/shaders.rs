@@ -164,6 +164,9 @@ fn fs_wireframe(in: VertexOutput) -> @location(0) vec4<f32> {
 pub fn combined_shader() -> String {
     format!(
         "{}\n{}\n{}\n{}",
-        COMMON_DEFINITIONS, SURFACE_VERTEX_SHADER, SURFACE_FRAGMENT_SHADER, WIREFRAME_FRAGMENT_SHADER
+        COMMON_DEFINITIONS,
+        SURFACE_VERTEX_SHADER,
+        SURFACE_FRAGMENT_SHADER,
+        WIREFRAME_FRAGMENT_SHADER
     )
 }

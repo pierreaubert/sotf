@@ -3,9 +3,9 @@
 //! Run with: cargo run --example geo_demo --no-default-features
 
 use d3rs::geo::{
-    geo_bounds, geo_centroid, geo_contains, geo_distance, geo_interpolate, geo_length,
     Albers, ConicEqualArea, Equirectangular, GeoJsonGeometry, GeoPath, Graticule, Mercator,
-    Orthographic, Projection, Rotation, Stereographic, TransverseMercator,
+    Orthographic, Projection, Rotation, Stereographic, TransverseMercator, geo_bounds,
+    geo_centroid, geo_contains, geo_distance, geo_interpolate, geo_length,
 };
 
 fn main() {
@@ -34,10 +34,7 @@ fn main() {
 
     // Spherical interpolation
     let (mid_lon, mid_lat) = geo_interpolate(-74.0, 40.7, 0.0, 51.5, 0.5);
-    println!(
-        "Midpoint NYC-London: ({:.2}, {:.2})",
-        mid_lon, mid_lat
-    );
+    println!("Midpoint NYC-London: ({:.2}, {:.2})", mid_lon, mid_lat);
 
     // Bounds
     let coords = vec![(0.0, 0.0), (10.0, 10.0), (20.0, 5.0)];
@@ -52,15 +49,15 @@ fn main() {
     println!("Centroid: ({:.2}, {:.2})", cx, cy);
 
     // Point-in-polygon
-    let polygon = vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0)];
-    println!(
-        "Contains (5, 5): {}",
-        geo_contains(&polygon, 5.0, 5.0)
-    );
-    println!(
-        "Contains (15, 5): {}",
-        geo_contains(&polygon, 15.0, 5.0)
-    );
+    let polygon = vec![
+        (0.0, 0.0),
+        (10.0, 0.0),
+        (10.0, 10.0),
+        (0.0, 10.0),
+        (0.0, 0.0),
+    ];
+    println!("Contains (5, 5): {}", geo_contains(&polygon, 5.0, 5.0));
+    println!("Contains (15, 5): {}", geo_contains(&polygon, 15.0, 5.0));
 
     // Rotation
     let rot = Rotation::new().angles(90.0, 0.0, 0.0);
@@ -150,7 +147,10 @@ fn main() {
         .extent([[-90.0, -45.0], [90.0, 45.0]])
         .step([10.0, 10.0]);
     let lines = custom.lines();
-    println!("Custom graticule (10-degree, +-90/45): {} lines", lines.len());
+    println!(
+        "Custom graticule (10-degree, +-90/45): {} lines",
+        lines.len()
+    );
 
     println!();
 
@@ -170,30 +170,24 @@ fn main() {
     println!("  {}", &svg[..svg.len().min(80)]);
 
     // LineString
-    let line = GeoJsonGeometry::LineString(vec![
-        (-74.0, 40.7),
-        (-73.5, 41.0),
-        (-73.0, 41.5),
-    ]);
+    let line = GeoJsonGeometry::LineString(vec![(-74.0, 40.7), (-73.5, 41.0), (-73.0, 41.5)]);
     let svg = path.render(&line);
     println!("LineString SVG: {} chars", svg.len());
     println!("  {}", &svg[..svg.len().min(80)]);
 
     // Polygon (simple triangle)
-    let poly = GeoJsonGeometry::Polygon(vec![vec![
-        (0.0, 0.0),
-        (10.0, 0.0),
-        (5.0, 10.0),
-        (0.0, 0.0),
-    ]]);
+    let poly =
+        GeoJsonGeometry::Polygon(vec![vec![(0.0, 0.0), (10.0, 0.0), (5.0, 10.0), (0.0, 0.0)]]);
     let svg = path.render(&poly);
     println!("Polygon SVG: {} chars", svg.len());
     println!("  {}", svg);
 
     // Bounds and centroid
     let bbox = path.bounds(&line);
-    println!("LineString bounds: ({:.2}, {:.2}) to ({:.2}, {:.2})",
-             bbox.0.0, bbox.0.1, bbox.1.0, bbox.1.1);
+    println!(
+        "LineString bounds: ({:.2}, {:.2}) to ({:.2}, {:.2})",
+        bbox.0.0, bbox.0.1, bbox.1.0, bbox.1.1
+    );
 
     let (cx, cy) = path.centroid(&line);
     println!("LineString centroid: ({:.2}, {:.2})", cx, cy);
@@ -207,9 +201,7 @@ fn main() {
     println!("--- World Map Grid Example ---\n");
 
     // Create a projection for a world map
-    let world_proj = Equirectangular::new()
-        .scale(150.0)
-        .translate(500.0, 300.0);
+    let world_proj = Equirectangular::new().scale(150.0).translate(500.0, 300.0);
 
     let world_path = GeoPath::new(world_proj.clone());
 
@@ -224,7 +216,11 @@ fn main() {
         let svg = world_path.render(&geom);
         total_svg_len += svg.len();
     }
-    println!("World graticule: {} lines, {} SVG chars total", lines.len(), total_svg_len);
+    println!(
+        "World graticule: {} lines, {} SVG chars total",
+        lines.len(),
+        total_svg_len
+    );
 
     // Project some major cities
     let cities = [

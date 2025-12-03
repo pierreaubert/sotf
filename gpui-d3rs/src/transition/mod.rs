@@ -301,8 +301,12 @@ impl TransitionManager {
         }
 
         // Remove completed transitions
-        self.transitions
-            .retain(|(_, t)| !matches!(t.state(), TransitionState::Ended | TransitionState::Interrupted));
+        self.transitions.retain(|(_, t)| {
+            !matches!(
+                t.state(),
+                TransitionState::Ended | TransitionState::Interrupted
+            )
+        });
 
         results
     }

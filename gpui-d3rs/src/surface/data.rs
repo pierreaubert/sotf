@@ -588,7 +588,8 @@ mod tests {
     #[test]
     fn test_from_function_logx() {
         // Create surface with log X-axis (frequency-like)
-        let data = SurfaceData::from_function_logx((10.0, 1000.0), (0.0, 1.0), 5, |x, y| (x.ln(), x + y));
+        let data =
+            SurfaceData::from_function_logx((10.0, 1000.0), (0.0, 1.0), 5, |x, y| (x.ln(), x + y));
 
         assert_eq!(data.rows(), 5);
         assert_eq!(data.cols(), 5);
@@ -601,10 +602,7 @@ mod tests {
         assert!((x_values[4] - 1000.0).abs() < 1e-6);
 
         // Check logarithmic spacing: log(x[i+1]) - log(x[i]) should be constant
-        let log_diffs: Vec<f64> = x_values
-            .windows(2)
-            .map(|w| w[1].ln() - w[0].ln())
-            .collect();
+        let log_diffs: Vec<f64> = x_values.windows(2).map(|w| w[1].ln() - w[0].ln()).collect();
 
         let expected_log_diff = log_diffs[0];
         for diff in &log_diffs {
@@ -615,7 +613,8 @@ mod tests {
     #[test]
     fn test_from_function_logy() {
         // Create surface with log Y-axis
-        let data = SurfaceData::from_function_logy((0.0, 1.0), (10.0, 1000.0), 5, |x, y| (y.ln(), x + y));
+        let data =
+            SurfaceData::from_function_logy((0.0, 1.0), (10.0, 1000.0), 5, |x, y| (y.ln(), x + y));
 
         assert_eq!(data.rows(), 5);
         assert_eq!(data.cols(), 5);
@@ -627,10 +626,7 @@ mod tests {
         assert!((y_values[4] - 1000.0).abs() < 1e-6);
 
         // Check logarithmic spacing
-        let log_diffs: Vec<f64> = y_values
-            .windows(2)
-            .map(|w| w[1].ln() - w[0].ln())
-            .collect();
+        let log_diffs: Vec<f64> = y_values.windows(2).map(|w| w[1].ln() - w[0].ln()).collect();
 
         let expected_log_diff = log_diffs[0];
         for diff in &log_diffs {
@@ -641,12 +637,9 @@ mod tests {
     #[test]
     fn test_from_function_logxy() {
         // Create surface with both axes logarithmic
-        let data = SurfaceData::from_function_logxy(
-            (20.0, 20000.0),
-            (10.0, 1000.0),
-            5,
-            |x, y| ((x * y).ln(), x + y),
-        );
+        let data = SurfaceData::from_function_logxy((20.0, 20000.0), (10.0, 1000.0), 5, |x, y| {
+            ((x * y).ln(), x + y)
+        });
 
         assert_eq!(data.rows(), 5);
         assert_eq!(data.cols(), 5);
@@ -700,12 +693,9 @@ mod tests {
 
     #[test]
     fn test_from_z_function_logxy() {
-        let data = SurfaceData::from_z_function_logxy(
-            (10.0, 100.0),
-            (10.0, 100.0),
-            5,
-            |x, y| (x * y).ln(),
-        );
+        let data = SurfaceData::from_z_function_logxy((10.0, 100.0), (10.0, 100.0), 5, |x, y| {
+            (x * y).ln()
+        });
 
         // Check that z equals t
         for row in 0..data.rows() {

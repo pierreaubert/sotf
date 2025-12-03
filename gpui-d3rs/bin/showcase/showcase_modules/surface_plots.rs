@@ -1,21 +1,21 @@
 use d3rs::prelude::*;
-use d3rs::surface::{render_surface, ColorScaleType, SurfaceConfig, SurfaceData};
+use d3rs::surface::{ColorScaleType, SurfaceConfig, SurfaceData, render_surface};
 use gpui::*;
 
 pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     // Logarithmic frequency response surface (20 Hz to 20 kHz)
     let freq_response = SurfaceData::from_z_function_logx(
-        (20.0, 20000.0),  // X: Frequency (logarithmic)
-        (0.0, 1.0),       // Y: Time/Channel (linear)
-        80,               // Resolution
+        (20.0, 20000.0), // X: Frequency (logarithmic)
+        (0.0, 1.0),      // Y: Time/Channel (linear)
+        80,              // Resolution
         |freq, time| {
             // Simulated frequency response with rolloffs and time variation
             let base_response = if freq < 100.0 {
-                -12.0 * (100.0 - freq) / 80.0  // Low frequency rolloff
+                -12.0 * (100.0 - freq) / 80.0 // Low frequency rolloff
             } else if freq > 10000.0 {
-                -6.0 * (freq - 10000.0) / 10000.0  // High frequency rolloff
+                -6.0 * (freq - 10000.0) / 10000.0 // High frequency rolloff
             } else {
-                0.0  // Flat response
+                0.0 // Flat response
             };
 
             // Add time-varying component (simulated transient response)
@@ -27,8 +27,8 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
 
     // 2D frequency domain surface (both axes logarithmic)
     let freq_2d = SurfaceData::from_z_function_logxy(
-        (100.0, 10000.0),  // X: Frequency 1 (log)
-        (100.0, 10000.0),  // Y: Frequency 2 (log)
+        (100.0, 10000.0), // X: Frequency 1 (log)
+        (100.0, 10000.0), // Y: Frequency 2 (log)
         40,
         |fx, fy| {
             // Interaction between two frequency components
@@ -48,12 +48,12 @@ pub fn render(_app: &mut ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
 
     // Spectral analysis surface (log frequency Y-axis)
     let spectral = SurfaceData::from_z_function_logy(
-        (0.0, 1.0),        // X: Time (linear)
-        (20.0, 20000.0),   // Y: Frequency (log)
+        (0.0, 1.0),      // X: Time (linear)
+        (20.0, 20000.0), // Y: Frequency (log)
         60,
         |time, freq| {
             // Simulated spectrogram data
-            let fundamental = 440.0;  // A4 note
+            let fundamental = 440.0; // A4 note
             let harmonic1 = (freq - fundamental).abs();
             let harmonic2 = (freq - fundamental * 2.0).abs();
             let harmonic3 = (freq - fundamental * 3.0).abs();

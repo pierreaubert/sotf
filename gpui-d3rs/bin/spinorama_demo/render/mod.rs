@@ -1,7 +1,7 @@
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::prelude::*;
-use d3rs::shape::{render_line, CurveType, LineConfig};
+use d3rs::shape::{CurveType, LineConfig, render_line};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 
@@ -162,7 +162,7 @@ pub fn render_freq_spl_plot(
                                     .h(px(sel.height() as f32))
                                     .bg(rgba(0x6496c850)) // Semi-transparent blue
                                     .border_1()
-                                    .border_color(rgb(0x4682b4)) // Steel blue
+                                    .border_color(rgb(0x4682b4)), // Steel blue
                             )
                         }),
                 )

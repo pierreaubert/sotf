@@ -1,6 +1,8 @@
 # gpui-d3rs
 
-A comprehensive D3.js-inspired data visualization library for GPUI, bringing the power of D3's API to Rust with idiomatic patterns and native GPUI rendering.
+A comprehensive D3.js-inspired data visualization library for GPUI,
+bringing the power of D3's API to Rust with idiomatic patterns and
+native GPUI rendering.
 
 [![Crates.io](https://img.shields.io/crates/v/gpui-d3rs)](https://crates.io/crates/gpui-d3rs)
 [![Documentation](https://docs.rs/gpui-d3rs/badge.svg)](https://docs.rs/gpui-d3rs)
@@ -8,7 +10,11 @@ A comprehensive D3.js-inspired data visualization library for GPUI, bringing the
 
 ## Overview
 
-**d3rs** is a modern data visualization library that translates D3.js concepts into idiomatic Rust for the GPUI framework. Instead of D3's functional chaining style, gpui-d3rs uses Rust's builder patterns and type system to provide a safe, performant, and ergonomic API for creating interactive visualizations.
+**d3rs** is a modern data visualization library that translates D3.js
+concepts into idiomatic Rust for the GPUI framework. Instead of D3's
+functional chaining style, gpui-d3rs uses Rust's builder patterns
+and type system to provide a safe, performant, and ergonomic API
+for creating interactive visualizations.
 
 ## Features
 
@@ -105,7 +111,7 @@ A comprehensive D3.js-inspired data visualization library for GPUI, bringing the
   - `d3rs::format` - Number formatting with SI prefixes and locales (d3-format)
   - Auto-type detection for CSV parsing
 
-- ** Utilities**
+- **Utilities**
   - `d3rs::random` - Random number generators
   - `d3rs::text` - Text measurement and rendering utilities
 
@@ -233,7 +239,8 @@ let nearby = tree.find_all(12.0, 22.0, 10.0);  // Within radius 10
 
 ## Examples
 
-The library includes comprehensive examples demonstrating all features. Run them with:
+The library includes comprehensive examples demonstrating all features.
+Run them with:
 
 ```bash
 # Showcase application (all features in one interactive demo)
@@ -260,6 +267,7 @@ cargo run --features spinorama --bin spinorama-demo --release
 ## API Philosophy: D3.js vs gpui-d3rs
 
 ### Functional Chaining (D3.js)
+
 ```javascript
 const scale = d3.scaleLinear()
   .domain([0, 100])
@@ -267,6 +275,7 @@ const scale = d3.scaleLinear()
 ```
 
 ### Builder Pattern (gpui-d3rs)
+
 ```rust
 let scale = LinearScale::new()
     .domain(0.0, 100.0)
@@ -277,7 +286,7 @@ let scale = LinearScale::new()
 
 | Aspect | D3.js | gpui-d3rs |
 |--------|-------|-----------|
-| **Method Chaining** | Functional `.domain().range()` | Builder pattern `.domain().range()` |
+| **Chaining** | Functional `.domain().range()` | Builder pattern |
 | **Type Safety** | Runtime checks | Compile-time guarantees |
 | **Rendering** | SVG/Canvas DOM manipulation | GPUI div-based rendering |
 | **Performance** | JavaScript runtime | Native Rust performance |
@@ -296,7 +305,7 @@ gpui-d3rs is built on these principles:
 
 ### Module Organization
 
-```
+```text
 d3rs/
 ├── array/         # d3-array: Data manipulation and statistics
 ├── axis/          # d3-axis: Cartesian axes rendering
@@ -422,6 +431,34 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 - [GPUI Repository](https://github.com/zed-industries/zed)
 - [Observable Plot](https://observablehq.com/plot/)
 
+## Data Sources and Licenses
+
+The showcase application includes example datasets from various sources:
+
+### Old Faithful Geyser Dataset
+
+- **Source**: R datasets package (originally from Härdle, W. (1991)
+"Smoothing Techniques with Implementation in S")
+- **Reference**: [R Documentation](https://stat.ethz.ch/R-manual/R-devel/library/datasets/html/faithful.html)
+- **JSON version**: [GitHub Gist (curran)](https://gist.github.com/curran/4b59d1046d9e66f2787780ad51a1cd87)
+- **License**: Public domain - factual measurements of a natural phenomenon
+at a U.S. National Park
+- **Used in**: Kernel Density Estimation example
+
+### Volcano Terrain Data
+
+- **Source**: Synthetic data generated to match the structure of Maunga Whau volcano
+- **License**: Generated data, no license restrictions
+- **Used in**: Volcano Contours example
+
+### Flare.js Package Hierarchy
+
+- **Source**: Flare visualization toolkit package structure
+- **Reference**: [D3 Hierarchy Test Data](https://github.com/d3/d3-hierarchy/blob/main/test/data/flare.json)
+- **Original**: [Flare Visualization Toolkit](http://flare.prefuse.org/) (BSD License)
+- **License**: Package structure/file sizes are factual data, non-copyrightable
+- **Used in**: Treemap example
+
 ---
 
-**Made with ❤️  for data visualization in Rust**
+Made with love for data visualization in Rust.

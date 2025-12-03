@@ -473,7 +473,10 @@ mod tests {
 
     #[test]
     fn test_camera_controls() {
-        let camera = Camera2D::new().rotation(45.0, 30.0).zoom(2.0).pan(10.0, 20.0);
+        let camera = Camera2D::new()
+            .rotation(45.0, 30.0)
+            .zoom(2.0)
+            .pan(10.0, 20.0);
 
         assert_eq!(camera.rotation_x, 45.0);
         assert_eq!(camera.rotation_z, 30.0);

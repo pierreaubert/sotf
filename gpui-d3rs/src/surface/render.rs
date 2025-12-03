@@ -375,13 +375,23 @@ impl SurfaceConfig {
     }
 
     /// Set axis labels (X, Y, Z)
-    pub fn axis_labels(mut self, x: impl Into<String>, y: impl Into<String>, z: impl Into<String>) -> Self {
+    pub fn axis_labels(
+        mut self,
+        x: impl Into<String>,
+        y: impl Into<String>,
+        z: impl Into<String>,
+    ) -> Self {
         self.axis_labels = Some((x.into(), y.into(), z.into()));
         self
     }
 
     /// Set axis value ranges for tick labels (X, Y, Z)
-    pub fn axis_ranges(mut self, x_range: (f64, f64), y_range: (f64, f64), z_range: (f64, f64)) -> Self {
+    pub fn axis_ranges(
+        mut self,
+        x_range: (f64, f64),
+        y_range: (f64, f64),
+        z_range: (f64, f64),
+    ) -> Self {
         self.axis_ranges = Some((x_range, y_range, z_range));
         self
     }
@@ -645,14 +655,10 @@ impl Element for SurfaceElement {
             // Draw wireframe if enabled
             if self.config.wireframe {
                 let mut stroke_builder = PathBuilder::stroke(px(self.config.wireframe_width));
-                stroke_builder
-                    .move_to(point(px(projected[0].x as f32), px(projected[0].y as f32)));
-                stroke_builder
-                    .line_to(point(px(projected[1].x as f32), px(projected[1].y as f32)));
-                stroke_builder
-                    .line_to(point(px(projected[2].x as f32), px(projected[2].y as f32)));
-                stroke_builder
-                    .line_to(point(px(projected[0].x as f32), px(projected[0].y as f32)));
+                stroke_builder.move_to(point(px(projected[0].x as f32), px(projected[0].y as f32)));
+                stroke_builder.line_to(point(px(projected[1].x as f32), px(projected[1].y as f32)));
+                stroke_builder.line_to(point(px(projected[2].x as f32), px(projected[2].y as f32)));
+                stroke_builder.line_to(point(px(projected[0].x as f32), px(projected[0].y as f32)));
 
                 if let Ok(stroke_path) = stroke_builder.build() {
                     let mut wireframe_rgba = self.config.wireframe_color.to_rgba();

@@ -8,9 +8,9 @@
 //! - timeout() - one-shot delayed callback
 //! - interval() - repeating callback at fixed intervals
 
-use d3rs::timer::{interval, now, timeout, timer, timer_flush, Interval, Timer, Timeout};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use d3rs::timer::{Interval, Timeout, Timer, interval, now, timeout, timer, timer_flush};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -139,18 +139,14 @@ fn main() {
 
     thread::sleep(Duration::from_millis(100));
     let fire_count = fired.load(Ordering::SeqCst);
-    println!(
-        "Fire count after stop: {} (should be 0)\n",
-        fire_count
-    );
+    println!("Fire count after stop: {} (should be 0)\n", fire_count);
 
     // Interval demo
     println!("--- Interval Demo ---");
     println!("Creating an interval that fires every 50ms, 5 times...");
 
     let start = now();
-    let tick_times: Arc<std::sync::Mutex<Vec<f64>>> =
-        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let tick_times: Arc<std::sync::Mutex<Vec<f64>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
     let tick_times_clone = tick_times.clone();
 
     let t = interval(
@@ -169,7 +165,12 @@ fn main() {
     println!("Interval ticks at:");
     for (i, time) in times.iter().enumerate() {
         let expected = (i + 1) as f64 * 50.0;
-        println!("  Tick {}: {:.1}ms (expected ~{:.0}ms)", i + 1, time, expected);
+        println!(
+            "  Tick {}: {:.1}ms (expected ~{:.0}ms)",
+            i + 1,
+            time,
+            expected
+        );
     }
     println!("Total runtime: {:.1}ms\n", total);
 

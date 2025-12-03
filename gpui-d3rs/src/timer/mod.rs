@@ -160,7 +160,9 @@ impl Timer {
         let delay = delay.unwrap_or(0.0);
         let start_time = time.unwrap_or_else(now);
         let stopped = Arc::new(AtomicBool::new(false));
-        let callback = Arc::new(Mutex::new(Box::new(callback) as Box<dyn FnMut(f64) -> bool + Send>));
+        let callback = Arc::new(Mutex::new(
+            Box::new(callback) as Box<dyn FnMut(f64) -> bool + Send>
+        ));
 
         let timer = Timer {
             id,
@@ -438,7 +440,9 @@ impl Interval {
         let id = TIMER_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
         let start_time = time.unwrap_or_else(now);
         let stopped = Arc::new(AtomicBool::new(false));
-        let callback = Arc::new(Mutex::new(Box::new(callback) as Box<dyn FnMut(f64) -> bool + Send>));
+        let callback = Arc::new(Mutex::new(
+            Box::new(callback) as Box<dyn FnMut(f64) -> bool + Send>
+        ));
         let handle = Arc::new(Mutex::new(None));
 
         let stopped_clone = stopped.clone();
@@ -641,7 +645,11 @@ mod tests {
         let elapsed = now() - start;
 
         // The callback should have fired after the delay
-        assert!(elapsed >= 45.0, "Total time should be at least 45ms, got {}", elapsed);
+        assert!(
+            elapsed >= 45.0,
+            "Total time should be at least 45ms, got {}",
+            elapsed
+        );
         assert!(fired >= 0.0, "Fired elapsed should be >= 0");
     }
 
@@ -772,7 +780,10 @@ mod tests {
 
         t.join();
 
-        assert!(counter2.load(Ordering::SeqCst) >= 2, "Restarted timer should have run");
+        assert!(
+            counter2.load(Ordering::SeqCst) >= 2,
+            "Restarted timer should have run"
+        );
     }
 
     #[test]

@@ -160,7 +160,10 @@ fn main() {
         .collect();
 
     let large_delaunay = Delaunay::new(&large_points);
-    println!("  Created triangulation with {} points", large_delaunay.len());
+    println!(
+        "  Created triangulation with {} points",
+        large_delaunay.len()
+    );
     println!("  Number of triangles: {}", large_delaunay.triangle_count());
     println!("  Hull size: {}", large_delaunay.hull().len());
 

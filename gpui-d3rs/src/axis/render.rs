@@ -2,7 +2,7 @@
 
 use super::{AxisConfig, AxisOrientation, AxisTheme};
 use crate::scale::Scale;
-use crate::text::{measure_text_width, render_vector_text, VectorFontConfig};
+use crate::text::{VectorFontConfig, measure_text_width, render_vector_text};
 use gpui::prelude::*;
 use gpui::*;
 

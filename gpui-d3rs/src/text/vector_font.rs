@@ -5,7 +5,7 @@
 //! Public domain - no usage restrictions.
 
 use gpui::prelude::*;
-use gpui::{canvas, hsla, point, px, Hsla, PathBuilder};
+use gpui::{Hsla, PathBuilder, canvas, hsla, point, px};
 use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::sync::LazyLock;

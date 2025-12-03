@@ -60,7 +60,9 @@ impl Colormap {
         }
     }
 
-    pub fn color_scale(&self) -> impl Fn(f64) -> d3rs::color::D3Color + Send + Sync + Clone + 'static {
+    pub fn color_scale(
+        &self,
+    ) -> impl Fn(f64) -> d3rs::color::D3Color + Send + Sync + Clone + 'static {
         let colormap = *self;
         move |t: f64| {
             let t = t.clamp(0.0, 1.0);

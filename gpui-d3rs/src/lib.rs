@@ -62,26 +62,26 @@ pub mod shape;
 pub mod surface;
 #[cfg(all(feature = "gpu-3d", not(test)))]
 pub mod surface3d;
-pub mod timer;
-pub mod transition;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod text;
+pub mod timer;
+pub mod transition;
 
 /// Prelude module for convenient imports
 pub mod prelude {
     #[cfg(all(feature = "gpui", not(test)))]
-    pub use crate::axis::{render_axis, AxisConfig, AxisOrientation, AxisTheme, DefaultAxisTheme};
+    pub use crate::axis::{AxisConfig, AxisOrientation, AxisTheme, DefaultAxisTheme, render_axis};
     pub use crate::color::{ColorScheme, D3Color};
     #[cfg(all(feature = "gpui", not(test)))]
-    pub use crate::grid::{render_grid, GridConfig};
+    pub use crate::grid::{GridConfig, render_grid};
     pub use crate::scale::{LinearScale, LogScale, Scale};
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::shape::{
-        render_bars, render_line, render_scatter, BarConfig, BarDatum, CurveType, LineConfig,
-        LinePoint, ScatterConfig, ScatterPoint,
+        BarConfig, BarDatum, CurveType, LineConfig, LinePoint, ScatterConfig, ScatterPoint,
+        render_bars, render_line, render_scatter,
     };
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::surface::{
-        render_surface, ColorScaleType, SurfaceConfig, SurfaceData, SurfaceElement,
+        ColorScaleType, SurfaceConfig, SurfaceData, SurfaceElement, render_surface,
     };
 }

@@ -63,29 +63,29 @@ mod scatter;
 
 // Re-export existing chart rendering functions (GPUI only)
 #[cfg(feature = "gpui")]
-pub use bar::{render_bars, BarConfig, BarDatum};
+pub use bar::{BarConfig, BarDatum, render_bars};
 #[cfg(feature = "gpui")]
 pub use contour::{
-    heat_color_scale, render_contour, render_contour_bands, render_heatmap, viridis_color_scale,
     ContourBandElement, ContourConfig, ContourElement, HeatmapData, HeatmapElement,
+    heat_color_scale, render_contour, render_contour_bands, render_heatmap, viridis_color_scale,
 };
 #[cfg(feature = "gpui")]
-pub use line::{render_line, CurveType, LineConfig, LinePoint};
+pub use line::{CurveType, LineConfig, LinePoint, render_line};
 #[cfg(feature = "gpui")]
-pub use scatter::{render_scatter, ScatterConfig, ScatterPoint};
+pub use scatter::{ScatterConfig, ScatterPoint, render_scatter};
 
 // Re-export new shape utilities (no GPUI dependency)
-pub use arc::{arc_points, Arc, ArcDatum};
-pub use area::{area_points, Area, SimpleArea};
+pub use arc::{Arc, ArcDatum, arc_points};
+pub use area::{Area, SimpleArea, area_points};
 pub use curve::Curve;
 pub use link::{
-    link_horizontal, link_radial, link_step, link_vertical, Link, LinkDirection, RadialLink,
+    Link, LinkDirection, RadialLink, link_horizontal, link_radial, link_step, link_vertical,
 };
 pub use path::{Path, PathBuilder, PathCommand, Point};
-pub use pie::{donut, half_pie, pie, Pie, PieSlice};
+pub use pie::{Pie, PieSlice, donut, half_pie, pie};
 pub use radial::{
-    polar_grid_circles, polar_grid_rays, radial_area, radial_line, RadialAreaConfig,
-    RadialLineConfig, RadialPoint,
+    RadialAreaConfig, RadialLineConfig, RadialPoint, polar_grid_circles, polar_grid_rays,
+    radial_area, radial_line,
 };
-pub use stack::{stack, stack_expand, streamgraph, Stack, StackOffset, StackOrder, StackSeries};
-pub use symbol::{symbol_radius, Symbol, SymbolType};
+pub use stack::{Stack, StackOffset, StackOrder, StackSeries, stack, stack_expand, streamgraph};
+pub use symbol::{Symbol, SymbolType, symbol_radius};

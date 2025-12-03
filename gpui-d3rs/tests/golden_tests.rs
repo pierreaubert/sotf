@@ -303,8 +303,8 @@ fn test_array_statistics_golden() {
                 );
 
                 let ext = extent(&ord_data).unwrap();
-                assert!(approx_eq(exp_extent[0], ext.0 .0), "extent min mismatch");
-                assert!(approx_eq(exp_extent[1], ext.1 .0), "extent max mismatch");
+                assert!(approx_eq(exp_extent[0], ext.0.0), "extent min mismatch");
+                assert!(approx_eq(exp_extent[1], ext.1.0), "extent max mismatch");
             }
             "sum_mean_median" => {
                 let mut data: Vec<f64> = serde_json::from_value(case["data"].clone()).unwrap();
@@ -453,8 +453,7 @@ fn test_quadtree_golden() {
 
         match name {
             "basic_add" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let exp_size = case["size"].as_u64().unwrap() as usize;
                 let exp_extent: Vec<Vec<f64>> =
                     serde_json::from_value(case["extent"].clone()).unwrap();
@@ -498,8 +497,7 @@ fn test_quadtree_golden() {
                 );
             }
             "find" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let queries: Vec<serde_json::Value> =
                     serde_json::from_value(case["queries"].clone()).unwrap();
 
@@ -512,8 +510,7 @@ fn test_quadtree_golden() {
                 for query in &queries {
                     let x = query["x"].as_f64().unwrap();
                     let y = query["y"].as_f64().unwrap();
-                    let result: Vec<f64> =
-                        serde_json::from_value(query["result"].clone()).unwrap();
+                    let result: Vec<f64> = serde_json::from_value(query["result"].clone()).unwrap();
 
                     let found = tree.find(x, y, None).expect("should find a point");
                     assert!(
@@ -530,8 +527,7 @@ fn test_quadtree_golden() {
                 }
             }
             "find_with_radius" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let queries: Vec<serde_json::Value> =
                     serde_json::from_value(case["queries"].clone()).unwrap();
 
@@ -576,8 +572,7 @@ fn test_quadtree_golden() {
                 }
             }
             "remove" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let remove: Vec<f64> = serde_json::from_value(case["remove"].clone()).unwrap();
                 let exp_size_before = case["size_before"].as_u64().unwrap() as usize;
                 let exp_size_after = case["size_after"].as_u64().unwrap() as usize;
@@ -604,8 +599,7 @@ fn test_quadtree_golden() {
                 );
             }
             "extent" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let exp_size = case["size"].as_u64().unwrap() as usize;
 
                 let mut tree: QuadTree<()> = QuadTree::new();
@@ -624,8 +618,7 @@ fn test_quadtree_golden() {
                 );
             }
             "visit" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let exp_visited_count = case["visited_count"].as_u64().unwrap() as usize;
                 let exp_leaf_count = case["leaf_count"].as_u64().unwrap() as usize;
 
@@ -657,10 +650,8 @@ fn test_quadtree_golden() {
                 );
             }
             "data" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
-                let exp_data: Vec<Vec<f64>> =
-                    serde_json::from_value(case["data"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
+                let exp_data: Vec<Vec<f64>> = serde_json::from_value(case["data"].clone()).unwrap();
 
                 let mut tree: QuadTree<(f64, f64)> = QuadTree::new();
                 for p in &points {
@@ -691,8 +682,7 @@ fn test_quadtree_golden() {
                 }
             }
             "coincident" => {
-                let points: Vec<Vec<f64>> =
-                    serde_json::from_value(case["points"].clone()).unwrap();
+                let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let exp_size = case["size"].as_u64().unwrap() as usize;
 
                 let mut tree: QuadTree<usize> = QuadTree::new();
@@ -873,7 +863,10 @@ fn test_pie_shape_golden() {
                 exp_value,
                 exp_start,
                 exp_end,
-                slices.iter().map(|s| (s.value, s.arc.start_angle, s.arc.end_angle)).collect::<Vec<_>>()
+                slices
+                    .iter()
+                    .map(|s| (s.value, s.arc.start_angle, s.arc.end_angle))
+                    .collect::<Vec<_>>()
             );
         }
     }
@@ -887,8 +880,7 @@ fn test_pie_shape_golden() {
 fn test_quantize_scale_golden() {
     use d3rs::scale::QuantizeScale;
 
-    let content =
-        fs::read_to_string("golden/scales/quantize.json").expect("golden file not found");
+    let content = fs::read_to_string("golden/scales/quantize.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
 
     assert_eq!(golden.module, "d3-scale");
@@ -904,7 +896,8 @@ fn test_quantize_scale_golden() {
 
         let config = &case["config"];
         let domain: Vec<f64> = serde_json::from_value(config["domain"].clone()).unwrap();
-        let range: Vec<serde_json::Value> = serde_json::from_value(config["range"].clone()).unwrap();
+        let range: Vec<serde_json::Value> =
+            serde_json::from_value(config["range"].clone()).unwrap();
 
         // Handle numeric range case
         if name == "numeric_range" {
@@ -928,14 +921,18 @@ fn test_quantize_scale_golden() {
         }
         // For string range, we use indices to verify correct binning
         else if name == "basic" {
-            let range_strs: Vec<String> = range.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+            let range_strs: Vec<String> = range
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
             let num_bins = range_strs.len();
             // Use index-based range for testing
             let range_indices: Vec<f64> = (0..num_bins).map(|i| i as f64).collect();
             let scale = QuantizeScale::with_range(range_indices).domain(domain[0], domain[1]);
 
             let inputs: Vec<f64> = serde_json::from_value(case["inputs"].clone()).unwrap();
-            let expected_strs: Vec<String> = serde_json::from_value(case["outputs"].clone()).unwrap();
+            let expected_strs: Vec<String> =
+                serde_json::from_value(case["outputs"].clone()).unwrap();
 
             // Map expected strings to indices
             let str_to_idx: std::collections::HashMap<&str, usize> = range_strs
@@ -987,8 +984,7 @@ fn test_quantize_scale_golden() {
 fn test_quantile_scale_golden() {
     use d3rs::scale::QuantileScale;
 
-    let content =
-        fs::read_to_string("golden/scales/quantile.json").expect("golden file not found");
+    let content = fs::read_to_string("golden/scales/quantile.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
 
     assert_eq!(golden.module, "d3-scale");
@@ -998,7 +994,8 @@ fn test_quantile_scale_golden() {
         let name = case["name"].as_str().unwrap();
         let config = &case["config"];
         let domain: Vec<f64> = serde_json::from_value(config["domain"].clone()).unwrap();
-        let range: Vec<serde_json::Value> = serde_json::from_value(config["range"].clone()).unwrap();
+        let range: Vec<serde_json::Value> =
+            serde_json::from_value(config["range"].clone()).unwrap();
 
         // Use numeric indices for range
         let range_indices: Vec<f64> = (0..range.len()).map(|i| i as f64).collect();
@@ -1028,8 +1025,12 @@ fn test_quantile_scale_golden() {
         // Test scale outputs if provided
         if let Some(inputs) = case.get("inputs") {
             let inputs: Vec<f64> = serde_json::from_value(inputs.clone()).unwrap();
-            let expected_strs: Vec<String> = serde_json::from_value(case["outputs"].clone()).unwrap();
-            let range_strs: Vec<String> = range.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+            let expected_strs: Vec<String> =
+                serde_json::from_value(case["outputs"].clone()).unwrap();
+            let range_strs: Vec<String> = range
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
             let str_to_idx: std::collections::HashMap<&str, usize> = range_strs
                 .iter()
                 .enumerate()
@@ -1068,7 +1069,8 @@ fn test_threshold_scale_golden() {
         let name = case["name"].as_str().unwrap();
         let config = &case["config"];
         let domain: Vec<f64> = serde_json::from_value(config["domain"].clone()).unwrap();
-        let range: Vec<serde_json::Value> = serde_json::from_value(config["range"].clone()).unwrap();
+        let range: Vec<serde_json::Value> =
+            serde_json::from_value(config["range"].clone()).unwrap();
 
         // Use numeric indices for range
         let range_indices: Vec<f64> = (0..range.len()).map(|i| i as f64).collect();
@@ -1076,7 +1078,10 @@ fn test_threshold_scale_golden() {
 
         let inputs: Vec<f64> = serde_json::from_value(case["inputs"].clone()).unwrap();
         let expected_strs: Vec<String> = serde_json::from_value(case["outputs"].clone()).unwrap();
-        let range_strs: Vec<String> = range.iter().map(|v| v.as_str().unwrap().to_string()).collect();
+        let range_strs: Vec<String> = range
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
         let str_to_idx: std::collections::HashMap<&str, usize> = range_strs
             .iter()
             .enumerate()
@@ -1117,7 +1122,10 @@ fn test_arc_shape_golden() {
         let outer_radius = config["outerRadius"].as_f64().unwrap();
         let start_angle = config["startAngle"].as_f64().unwrap();
         let end_angle = config["endAngle"].as_f64().unwrap();
-        let corner_radius = config.get("cornerRadius").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let corner_radius = config
+            .get("cornerRadius")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
 
         // Skip corner radius tests - our implementation doesn't support corner radius yet
         if corner_radius > 0.0 {
@@ -1167,7 +1175,7 @@ fn test_arc_shape_golden() {
 
 #[test]
 fn test_line_shape_golden() {
-    use d3rs::shape::{path::Point, Curve};
+    use d3rs::shape::{Curve, path::Point};
 
     let content = fs::read_to_string("golden/shape/line.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
@@ -1321,7 +1329,10 @@ fn test_stack_shape_golden() {
         let name = case["name"].as_str().unwrap();
         let data: Vec<serde_json::Value> = serde_json::from_value(case["data"].clone()).unwrap();
         let keys: Vec<String> = serde_json::from_value(case["keys"].clone()).unwrap();
-        let offset_name = case.get("offset").and_then(|v| v.as_str()).unwrap_or("none");
+        let offset_name = case
+            .get("offset")
+            .and_then(|v| v.as_str())
+            .unwrap_or("none");
 
         let offset = match offset_name {
             "none" => StackOffset::None,
@@ -1335,11 +1346,7 @@ fn test_stack_shape_golden() {
         // Convert data to Vec<Vec<f64>>
         let values: Vec<Vec<f64>> = data
             .iter()
-            .map(|row| {
-                keys.iter()
-                    .map(|k| row[k].as_f64().unwrap())
-                    .collect()
-            })
+            .map(|row| keys.iter().map(|k| row[k].as_f64().unwrap()).collect())
             .collect();
 
         let stack = Stack::new().keys(keys.clone()).offset(offset);
@@ -1572,7 +1579,7 @@ fn test_array_bin_golden() {
 
 #[test]
 fn test_array_ticks_golden() {
-    use d3rs::array::{ticks, tick_step};
+    use d3rs::array::{tick_step, ticks};
 
     let content = fs::read_to_string("golden/array/ticks.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();

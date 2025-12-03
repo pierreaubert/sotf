@@ -207,7 +207,8 @@ mod tests {
 
     #[test]
     fn test_mesh_generation() {
-        let data = SurfaceData::from_function((-1.0, 1.0), (-1.0, 1.0), 10, 10, |x, y| x * x + y * y);
+        let data =
+            SurfaceData::from_function((-1.0, 1.0), (-1.0, 1.0), 10, 10, |x, y| x * x + y * y);
         let mesh = SurfaceMesh::from_data(&data);
 
         assert_eq!(mesh.vertex_count, 100); // 10 * 10
@@ -222,7 +223,10 @@ mod tests {
 
         for vertex in &mesh.vertices {
             // Normal should be approximately (0, 1, 0) for flat surface
-            assert!(vertex.normal[1] > 0.9, "Normal Y component should be high for flat surface");
+            assert!(
+                vertex.normal[1] > 0.9,
+                "Normal Y component should be high for flat surface"
+            );
         }
     }
 

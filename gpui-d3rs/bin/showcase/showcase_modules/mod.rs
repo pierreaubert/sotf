@@ -2,6 +2,7 @@ pub mod axes;
 pub mod bar_charts;
 pub mod colors;
 pub mod contours;
+pub mod d3_examples;
 pub mod geo;
 pub mod line_charts;
 pub mod overview;

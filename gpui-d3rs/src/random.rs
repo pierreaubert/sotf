@@ -240,11 +240,7 @@ impl RandomBernoulli {
 
     /// Sample as 0 or 1
     pub fn sample_int(&self) -> u32 {
-        if self.sample() {
-            1
-        } else {
-            0
-        }
+        if self.sample() { 1 } else { 0 }
     }
 }
 

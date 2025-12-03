@@ -262,12 +262,9 @@ impl<P: Projection> GeoPath<P> {
             GeoJsonGeometry::LineString(coords) => coords.clone(),
             GeoJsonGeometry::MultiLineString(lines) => lines.iter().flatten().copied().collect(),
             GeoJsonGeometry::Polygon(rings) => rings.iter().flatten().copied().collect(),
-            GeoJsonGeometry::MultiPolygon(polygons) => polygons
-                .iter()
-                .flatten()
-                .flatten()
-                .copied()
-                .collect(),
+            GeoJsonGeometry::MultiPolygon(polygons) => {
+                polygons.iter().flatten().flatten().copied().collect()
+            }
         }
     }
 }

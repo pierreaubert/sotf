@@ -3,7 +3,7 @@
 //! This module provides various map projections for transforming
 //! spherical coordinates (longitude, latitude) to planar coordinates (x, y).
 
-use super::{degrees, radians, EPSILON, HALF_PI, TAU};
+use super::{EPSILON, HALF_PI, TAU, degrees, radians};
 use std::f64::consts::PI;
 
 /// Trait for geographic projections.
@@ -1013,9 +1013,7 @@ mod tests {
 
     #[test]
     fn test_equirectangular_invert() {
-        let proj = Equirectangular::new()
-            .scale(100.0)
-            .translate(200.0, 200.0);
+        let proj = Equirectangular::new().scale(100.0).translate(200.0, 200.0);
         let (x, y) = proj.project(45.0, 30.0);
         let (lon, lat) = proj.invert(x, y).unwrap();
         assert!((lon - 45.0).abs() < 1e-6);
@@ -1061,9 +1059,7 @@ mod tests {
 
     #[test]
     fn test_transverse_mercator_project() {
-        let proj = TransverseMercator::new()
-            .scale(100.0)
-            .translate(0.0, 0.0);
+        let proj = TransverseMercator::new().scale(100.0).translate(0.0, 0.0);
         let (x, y) = proj.project(0.0, 0.0);
         // At origin, transverse mercator gives (0, 0)
         assert!(x.abs() < 1e-3);

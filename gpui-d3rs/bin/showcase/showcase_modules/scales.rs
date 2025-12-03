@@ -43,11 +43,9 @@ pub fn render(app: &ShowcaseApp) -> Div {
                         .font_weight(FontWeight::SEMIBOLD)
                         .child("Logarithmic Scale (20Hz-20kHz -> 0-1)"),
                 )
-                .child(
-                    scale_table(&[20.0, 100.0, 1000.0, 10000.0, 20000.0], |v| {
-                        format!("{:.3}", log_scale.scale(v))
-                    }),
-                ),
+                .child(scale_table(&[20.0, 100.0, 1000.0, 10000.0, 20000.0], |v| {
+                    format!("{:.3}", log_scale.scale(v))
+                })),
         )
         // Ticks
         .child(

@@ -18,7 +18,11 @@ pub fn interpolate_spl_at_frequency(
     curves
         .iter()
         .map(|curve| {
-            let spl = interpolate_frequency_value(curve.freq.as_slice().unwrap(), curve.spl.as_slice().unwrap(), target_freq);
+            let spl = interpolate_frequency_value(
+                curve.freq.as_slice().unwrap(),
+                curve.spl.as_slice().unwrap(),
+                target_freq,
+            );
             (curve.angle, spl)
         })
         .collect()
@@ -99,7 +103,10 @@ pub fn get_frequency_range(directivity_data: &DirectivityData, use_horizontal: b
     }
 
     let first_curve = &curves[0];
-    (first_curve.freq[0], first_curve.freq[first_curve.freq.len() - 1])
+    (
+        first_curve.freq[0],
+        first_curve.freq[first_curve.freq.len() - 1],
+    )
 }
 
 /// Format frequency for display (e.g., 1000 -> "1k", 100 -> "100")

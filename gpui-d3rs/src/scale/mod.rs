@@ -36,7 +36,7 @@ mod traits;
 pub use linear::LinearScale;
 pub use log::LogScale;
 pub use ordinal::{BandScale, OrdinalScale, PointScale};
-pub use pow::{sqrt_scale, PowScale, SqrtScale};
+pub use pow::{PowScale, SqrtScale, sqrt_scale};
 pub use quantile::QuantileScale;
 pub use quantize::QuantizeScale;
 pub use symlog::SymlogScale;

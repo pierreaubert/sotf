@@ -49,7 +49,12 @@ impl<'a> Voronoi<'a> {
                 let margin_x = (x_max - x_min).max(1.0) * 0.1;
                 let margin_y = (y_max - y_min).max(1.0) * 0.1;
 
-                [x_min - margin_x, y_min - margin_y, x_max + margin_x, y_max + margin_y]
+                [
+                    x_min - margin_x,
+                    y_min - margin_y,
+                    x_max + margin_x,
+                    y_max + margin_y,
+                ]
             }
         });
 
@@ -290,11 +295,7 @@ impl<'a> Voronoi<'a> {
         let dx = x1 - x0;
         let dy = y1 - y0;
 
-        let (nx, ny) = if outward {
-            (-dy, dx)
-        } else {
-            (dy, -dx)
-        };
+        let (nx, ny) = if outward { (-dy, dx) } else { (dy, -dx) };
 
         let len = (nx * nx + ny * ny).sqrt();
         if len > 1e-10 {
@@ -325,18 +326,26 @@ impl<'a> Voronoi<'a> {
         let mut result = polygon.to_vec();
 
         // Clip against each edge of the bounding box
-        result = clip_against_edge(&result, |&(x, _)| x >= x_min, |p1, p2| {
-            intersect_vertical(p1, p2, x_min)
-        });
-        result = clip_against_edge(&result, |&(x, _)| x <= x_max, |p1, p2| {
-            intersect_vertical(p1, p2, x_max)
-        });
-        result = clip_against_edge(&result, |&(_, y)| y >= y_min, |p1, p2| {
-            intersect_horizontal(p1, p2, y_min)
-        });
-        result = clip_against_edge(&result, |&(_, y)| y <= y_max, |p1, p2| {
-            intersect_horizontal(p1, p2, y_max)
-        });
+        result = clip_against_edge(
+            &result,
+            |&(x, _)| x >= x_min,
+            |p1, p2| intersect_vertical(p1, p2, x_min),
+        );
+        result = clip_against_edge(
+            &result,
+            |&(x, _)| x <= x_max,
+            |p1, p2| intersect_vertical(p1, p2, x_max),
+        );
+        result = clip_against_edge(
+            &result,
+            |&(_, y)| y >= y_min,
+            |p1, p2| intersect_horizontal(p1, p2, y_min),
+        );
+        result = clip_against_edge(
+            &result,
+            |&(_, y)| y <= y_max,
+            |p1, p2| intersect_horizontal(p1, p2, y_max),
+        );
 
         result
     }

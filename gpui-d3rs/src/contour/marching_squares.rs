@@ -550,11 +550,7 @@ impl ContourGenerator {
         match exit_edge {
             0 => {
                 // Exit through bottom -> enter cell below through its top
-                if j > 0 {
-                    Some((i, j - 1, 2))
-                } else {
-                    None
-                }
+                if j > 0 { Some((i, j - 1, 2)) } else { None }
             }
             1 => {
                 // Exit through right -> enter cell to the right through its left
@@ -574,11 +570,7 @@ impl ContourGenerator {
             }
             3 => {
                 // Exit through left -> enter cell to the left through its right
-                if i > 0 {
-                    Some((i - 1, j, 1))
-                } else {
-                    None
-                }
+                if i > 0 { Some((i - 1, j, 1)) } else { None }
             }
             _ => None,
         }
@@ -754,8 +746,10 @@ impl ContourGenerator {
                 if (curr_class == 0 && next_class >= 1) || (curr_class >= 1 && next_class == 0) {
                     let t = (lower - curr_val) / val_diff;
                     if (0.0..=1.0).contains(&t) {
-                        let x = corners[curr_corner].x + t * (corners[next_corner].x - corners[curr_corner].x);
-                        let y = corners[curr_corner].y + t * (corners[next_corner].y - corners[curr_corner].y);
+                        let x = corners[curr_corner].x
+                            + t * (corners[next_corner].x - corners[curr_corner].x);
+                        let y = corners[curr_corner].y
+                            + t * (corners[next_corner].y - corners[curr_corner].y);
                         crossings.push((t, Point::new(x, y)));
                     }
                 }
@@ -764,14 +758,17 @@ impl ContourGenerator {
                 if (curr_class <= 1 && next_class == 2) || (curr_class == 2 && next_class <= 1) {
                     let t = (upper - curr_val) / val_diff;
                     if (0.0..=1.0).contains(&t) {
-                        let x = corners[curr_corner].x + t * (corners[next_corner].x - corners[curr_corner].x);
-                        let y = corners[curr_corner].y + t * (corners[next_corner].y - corners[curr_corner].y);
+                        let x = corners[curr_corner].x
+                            + t * (corners[next_corner].x - corners[curr_corner].x);
+                        let y = corners[curr_corner].y
+                            + t * (corners[next_corner].y - corners[curr_corner].y);
                         crossings.push((t, Point::new(x, y)));
                     }
                 }
 
                 // Sort crossings by t value to ensure correct order along edge
-                crossings.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+                crossings
+                    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
                 // Add sorted crossings to points
                 for (_, pt) in crossings {

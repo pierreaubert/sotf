@@ -22,6 +22,11 @@ pub enum DemoSection {
     Transitions,
     Geo,
     Colors,
+    // D3 Observable Examples
+    D3VolcanoContours,
+    D3KDE,
+    D3Treemap,
+    D3StackedBars,
 }
 
 impl DemoSection {
@@ -39,6 +44,11 @@ impl DemoSection {
             Self::Transitions,
             Self::Geo,
             Self::Colors,
+            // D3 Observable Examples
+            Self::D3VolcanoContours,
+            Self::D3KDE,
+            Self::D3Treemap,
+            Self::D3StackedBars,
         ]
     }
 
@@ -56,6 +66,11 @@ impl DemoSection {
             Self::Transitions => "Transitions",
             Self::Geo => "Geo",
             Self::Colors => "Colors",
+            // D3 Observable Examples
+            Self::D3VolcanoContours => "D3: Volcano",
+            Self::D3KDE => "D3: KDE",
+            Self::D3Treemap => "D3: Treemap",
+            Self::D3StackedBars => "D3: Stacked Bars",
         }
     }
 }
@@ -103,6 +118,24 @@ pub struct ShowcaseApp {
     pub quadtree_query_x: f32,
     pub quadtree_query_y: f32,
     pub quadtree_search_radius: f32,
+    // D3 Volcano Contours example parameters
+    pub volcano_num_thresholds: usize,
+    pub volcano_color_scale: showcase_modules::d3_examples::volcano_contours::VolcanoColorScale,
+    pub volcano_show_stroke: bool,
+    // D3 KDE example parameters
+    pub kde_bandwidth: f64,
+    pub kde_kernel_type: showcase_modules::d3_examples::KernelType,
+    pub kde_show_histogram: bool,
+    pub kde_bin_count: usize,
+    // D3 Treemap example parameters
+    pub treemap_tiling: showcase_modules::d3_examples::TilingMethod,
+    pub treemap_padding: f32,
+    // D3 Stacked/Grouped Bars example parameters
+    pub stacked_bars_layout: showcase_modules::d3_examples::BarLayout,
+    pub stacked_bars_n_series: usize,
+    pub stacked_bars_m_samples: usize,
+    pub stacked_bars_animation_progress: f64,
+    pub stacked_bars_animating: bool,
 }
 
 impl ShowcaseApp {
@@ -121,6 +154,25 @@ impl ShowcaseApp {
             quadtree_query_x: 50.0,
             quadtree_query_y: 50.0,
             quadtree_search_radius: 15.0,
+            // D3 Volcano Contours defaults
+            volcano_num_thresholds: 20,
+            volcano_color_scale:
+                showcase_modules::d3_examples::volcano_contours::VolcanoColorScale::default(),
+            volcano_show_stroke: false,
+            // D3 KDE defaults
+            kde_bandwidth: 7.0,
+            kde_kernel_type: showcase_modules::d3_examples::KernelType::default(),
+            kde_show_histogram: true,
+            kde_bin_count: 20,
+            // D3 Treemap defaults
+            treemap_tiling: showcase_modules::d3_examples::TilingMethod::default(),
+            treemap_padding: 1.0,
+            // D3 Stacked/Grouped Bars defaults
+            stacked_bars_layout: showcase_modules::d3_examples::BarLayout::default(),
+            stacked_bars_n_series: 5,
+            stacked_bars_m_samples: 40,
+            stacked_bars_animation_progress: 0.0,
+            stacked_bars_animating: false,
         }
     }
 
@@ -188,6 +240,15 @@ impl ShowcaseApp {
             DemoSection::Transitions => showcase_modules::transitions::render(self),
             DemoSection::Geo => showcase_modules::geo::render(self),
             DemoSection::Colors => showcase_modules::colors::render(self),
+            // D3 Observable Examples
+            DemoSection::D3VolcanoContours => showcase_modules::d3_examples::render(self, cx),
+            DemoSection::D3KDE => {
+                showcase_modules::d3_examples::kernel_density_estimation::render(self, cx)
+            }
+            DemoSection::D3Treemap => showcase_modules::d3_examples::treemap::render(self, cx),
+            DemoSection::D3StackedBars => {
+                showcase_modules::d3_examples::stacked_grouped_bars::render(self, cx)
+            }
         };
 
         div()

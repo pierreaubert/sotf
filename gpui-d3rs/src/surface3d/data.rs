@@ -235,7 +235,8 @@ mod tests {
 
     #[test]
     fn test_surface_data_from_function() {
-        let data = SurfaceData::from_function((-1.0, 1.0), (-1.0, 1.0), 10, 10, |x, y| x * x + y * y);
+        let data =
+            SurfaceData::from_function((-1.0, 1.0), (-1.0, 1.0), 10, 10, |x, y| x * x + y * y);
 
         assert_eq!(data.x_count(), 10);
         assert_eq!(data.y_count(), 10);
@@ -264,8 +265,8 @@ mod tests {
 
     #[test]
     fn test_normalize_x_log() {
-        let data =
-            SurfaceData::from_function((10.0, 1000.0), (0.0, 1.0), 3, 2, |_, _| 0.0).with_log_x(true);
+        let data = SurfaceData::from_function((10.0, 1000.0), (0.0, 1.0), 3, 2, |_, _| 0.0)
+            .with_log_x(true);
 
         // For log scale: 10 -> -1, 1000 -> 1, 100 (geometric mean) -> 0
         assert!((data.normalize_x(10.0) - (-1.0)).abs() < 0.01);

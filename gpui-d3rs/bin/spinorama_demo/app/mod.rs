@@ -4,21 +4,23 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use autoeq::read::{
-    extract_cea2034_curves_original, fetch_available_speakers, fetch_contour_data,
-    fetch_directivity_data, fetch_measurement_plot_data, ContourPlotData,
+    ContourPlotData, extract_cea2034_curves_original, fetch_available_speakers, fetch_contour_data,
+    fetch_directivity_data, fetch_measurement_plot_data,
 };
 use autoeq::{Curve, DirectivityData};
-use d3rs::axis::{DefaultAxisTheme, render_axis, AxisConfig};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::brush::{BrushSelection, BrushState};
 use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::prelude::{LinearScale, LogScale};
-use d3rs::shape::contour::{render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData};
+use d3rs::shape::contour::{
+    ContourConfig, HeatmapData, render_contour, render_contour_bands, render_heatmap,
+};
 // Radial shape functions could be used in future - currently using canvas-based custom rendering
 // use d3rs::shape::radial::{polar_grid_circles, polar_grid_rays, radial_line, RadialLineConfig, RadialPoint};
-use d3rs::surface::{render_surface, ColorScaleType, SurfaceConfig, SurfaceData};
-use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::surface::{ColorScaleType, SurfaceConfig, SurfaceData, render_surface};
+use d3rs::text::{VectorFontConfig, render_vector_text};
 use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
 use gpui::{deferred, *};
@@ -32,7 +34,7 @@ use super::types::{
     PlotCurve, PlotSection, SecondaryAxisConfig, SurfaceProjection,
 };
 use super::utils::{
-    cea2034_colors, format_frequency, get_angle_range, interpolate_spl_at_frequency, CEA2034_CURVES,
+    CEA2034_CURVES, cea2034_colors, format_frequency, get_angle_range, interpolate_spl_at_frequency,
 };
 
 /// Main application state
@@ -129,7 +131,8 @@ impl SpinoramaApp {
             spl_contour_zoom: ZoomState::new(100.0, 20000.0, -180.0, 180.0).with_log_x(true),
             spl_contour_brush: BrushState::new(),
             // Zoom for directivity contour: same ranges
-            directivity_contour_zoom: ZoomState::new(100.0, 20000.0, -180.0, 180.0).with_log_x(true),
+            directivity_contour_zoom: ZoomState::new(100.0, 20000.0, -180.0, 180.0)
+                .with_log_x(true),
             directivity_contour_brush: BrushState::new(),
             active_brush_chart: None,
             // Initialize chart bounds as None - will be captured during render
@@ -299,7 +302,11 @@ impl SpinoramaApp {
                 .spawn({
                     let speaker = speaker.clone();
                     let version = version.clone();
-                    async move { fetch_contour_data(&speaker, &version, "horizontal").await.ok() }
+                    async move {
+                        fetch_contour_data(&speaker, &version, "horizontal")
+                            .await
+                            .ok()
+                    }
                 })
                 .await
                 .ok()
@@ -863,7 +870,10 @@ impl SpinoramaApp {
                 // Subtract wrapper origin to get element-relative coordinates
                 let rel_x = f32::from(pos.x) - f32::from(b.origin.x) - left_margin;
                 let rel_y = f32::from(pos.y) - f32::from(b.origin.y);
-                (rel_x.max(0.0).min(chart_width), rel_y.max(0.0).min(chart_height))
+                (
+                    rel_x.max(0.0).min(chart_width),
+                    rel_y.max(0.0).min(chart_height),
+                )
             } else {
                 // Fallback: no bounds captured yet, use raw position with just X margin
                 let chart_x = (f32::from(pos.x) - left_margin).max(0.0).min(chart_width);
@@ -894,14 +904,21 @@ impl SpinoramaApp {
                     .on_mouse_down(MouseButton::Left, move |event, _window, cx| {
                         let pos = event.position;
                         let bounds = chart_bounds.borrow();
-                        let (chart_x, chart_y) = to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
+                        let (chart_x, chart_y) =
+                            to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
 
                         entity.update(cx, |this, cx| {
                             this.active_brush_chart = Some(chart_id);
                             match chart_id {
-                                ChartId::FreqSpl => this.freq_spl_brush.start(chart_x as f64, chart_y as f64),
-                                ChartId::SplContour => this.spl_contour_brush.start(chart_x as f64, chart_y as f64),
-                                ChartId::DirectivityContour => this.directivity_contour_brush.start(chart_x as f64, chart_y as f64),
+                                ChartId::FreqSpl => {
+                                    this.freq_spl_brush.start(chart_x as f64, chart_y as f64)
+                                }
+                                ChartId::SplContour => {
+                                    this.spl_contour_brush.start(chart_x as f64, chart_y as f64)
+                                }
+                                ChartId::DirectivityContour => this
+                                    .directivity_contour_brush
+                                    .start(chart_x as f64, chart_y as f64),
                             }
                             cx.notify();
                         });
@@ -912,12 +929,24 @@ impl SpinoramaApp {
                             if this.active_brush_chart == Some(chart_id) {
                                 let pos = event.position;
                                 let bounds = chart_bounds_for_move.borrow();
-                                let (chart_x, chart_y) = to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
+                                let (chart_x, chart_y) = to_chart_coords(
+                                    pos,
+                                    &bounds,
+                                    left_margin,
+                                    chart_width,
+                                    chart_height,
+                                );
 
                                 match chart_id {
-                                    ChartId::FreqSpl => this.freq_spl_brush.update(chart_x as f64, chart_y as f64),
-                                    ChartId::SplContour => this.spl_contour_brush.update(chart_x as f64, chart_y as f64),
-                                    ChartId::DirectivityContour => this.directivity_contour_brush.update(chart_x as f64, chart_y as f64),
+                                    ChartId::FreqSpl => {
+                                        this.freq_spl_brush.update(chart_x as f64, chart_y as f64)
+                                    }
+                                    ChartId::SplContour => this
+                                        .spl_contour_brush
+                                        .update(chart_x as f64, chart_y as f64),
+                                    ChartId::DirectivityContour => this
+                                        .directivity_contour_brush
+                                        .update(chart_x as f64, chart_y as f64),
                                 }
                                 cx.notify();
                             }
@@ -929,20 +958,34 @@ impl SpinoramaApp {
                             if this.active_brush_chart == Some(chart_id) {
                                 let pos = event.position;
                                 let bounds = chart_bounds_for_up.borrow();
-                                let (chart_x, chart_y) = to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
+                                let (chart_x, chart_y) = to_chart_coords(
+                                    pos,
+                                    &bounds,
+                                    left_margin,
+                                    chart_width,
+                                    chart_height,
+                                );
 
                                 // Final update
                                 match chart_id {
-                                    ChartId::FreqSpl => this.freq_spl_brush.update(chart_x as f64, chart_y as f64),
-                                    ChartId::SplContour => this.spl_contour_brush.update(chart_x as f64, chart_y as f64),
-                                    ChartId::DirectivityContour => this.directivity_contour_brush.update(chart_x as f64, chart_y as f64),
+                                    ChartId::FreqSpl => {
+                                        this.freq_spl_brush.update(chart_x as f64, chart_y as f64)
+                                    }
+                                    ChartId::SplContour => this
+                                        .spl_contour_brush
+                                        .update(chart_x as f64, chart_y as f64),
+                                    ChartId::DirectivityContour => this
+                                        .directivity_contour_brush
+                                        .update(chart_x as f64, chart_y as f64),
                                 }
 
                                 // Get selection and apply zoom
                                 let selection = match chart_id {
                                     ChartId::FreqSpl => this.freq_spl_brush.end(),
                                     ChartId::SplContour => this.spl_contour_brush.end(),
-                                    ChartId::DirectivityContour => this.directivity_contour_brush.end(),
+                                    ChartId::DirectivityContour => {
+                                        this.directivity_contour_brush.end()
+                                    }
                                 };
 
                                 if let Some(sel) = selection {
@@ -950,7 +993,12 @@ impl SpinoramaApp {
                                     if sel.width() >= 5.0 && sel.height() >= 5.0 {
                                         // Convert pixel selection to domain coordinates
                                         // using the current zoom state and chart dimensions
-                                        this.apply_zoom_from_selection(chart_id, sel, chart_width, chart_height);
+                                        this.apply_zoom_from_selection(
+                                            chart_id,
+                                            sel,
+                                            chart_width,
+                                            chart_height,
+                                        );
                                     }
                                 }
 
@@ -967,17 +1015,25 @@ impl SpinoramaApp {
                                 match chart_id {
                                     ChartId::FreqSpl => this.freq_spl_zoom.reset(),
                                     ChartId::SplContour => this.spl_contour_zoom.reset(),
-                                    ChartId::DirectivityContour => this.directivity_contour_zoom.reset(),
+                                    ChartId::DirectivityContour => {
+                                        this.directivity_contour_zoom.reset()
+                                    }
                                 }
                                 cx.notify();
                             });
                         }
-                    })
+                    }),
             )
     }
 
     /// Convert pixel selection to domain coordinates and apply zoom
-    fn apply_zoom_from_selection(&mut self, chart_id: ChartId, sel: BrushSelection, chart_width: f32, chart_height: f32) {
+    fn apply_zoom_from_selection(
+        &mut self,
+        chart_id: ChartId,
+        sel: BrushSelection,
+        chart_width: f32,
+        chart_height: f32,
+    ) {
         let (zoom_state, is_log_x) = match chart_id {
             ChartId::FreqSpl => (&mut self.freq_spl_zoom, true),
             ChartId::SplContour => (&mut self.spl_contour_zoom, true),
@@ -997,11 +1053,15 @@ impl SpinoramaApp {
         // Convert pixel coordinates to domain
         // The brush module now does direct inversion without Y-swap
         let (x0, x1, y0, y1) = if is_log_x {
-            let x_scale = LogScale::new().domain(x_domain.0, x_domain.1).range(0.0, chart_width as f64);
+            let x_scale = LogScale::new()
+                .domain(x_domain.0, x_domain.1)
+                .range(0.0, chart_width as f64);
             let domain_sel = sel.to_domain(&x_scale, &y_scale);
             (domain_sel.x0, domain_sel.x1, domain_sel.y0, domain_sel.y1)
         } else {
-            let x_scale = LinearScale::new().domain(x_domain.0, x_domain.1).range(0.0, chart_width as f64);
+            let x_scale = LinearScale::new()
+                .domain(x_domain.0, x_domain.1)
+                .range(0.0, chart_width as f64);
             let domain_sel = sel.to_domain(&x_scale, &y_scale);
             (domain_sel.x0, domain_sel.x1, domain_sel.y0, domain_sel.y1)
         };
@@ -1134,11 +1194,19 @@ impl SpinoramaApp {
             secondary_axis,
             chart_width,
             chart_height,
-            self.freq_spl_brush.current_selection().map(|sel| BrushOverlay { selection: sel }),
+            self.freq_spl_brush
+                .current_selection()
+                .map(|sel| BrushOverlay { selection: sel }),
         );
 
         // Wrap with interactive handlers
-        let interactive_chart = self.wrap_freq_spl_chart_interactive(chart, ChartId::FreqSpl, chart_width, chart_height, cx);
+        let interactive_chart = self.wrap_freq_spl_chart_interactive(
+            chart,
+            ChartId::FreqSpl,
+            chart_width,
+            chart_height,
+            cx,
+        );
 
         div()
             .flex()
@@ -1161,7 +1229,7 @@ impl SpinoramaApp {
                     div()
                         .text_sm()
                         .text_color(rgb(0x666666))
-                        .child("Zoomed (double-click to reset)")
+                        .child("Zoomed (double-click to reset)"),
                 )
             })
             // Legend
@@ -1279,7 +1347,13 @@ impl SpinoramaApp {
         );
 
         // Wrap with interactive handlers
-        let interactive_chart = self.wrap_freq_spl_chart_interactive(chart, ChartId::FreqSpl, chart_width, chart_height, _cx);
+        let interactive_chart = self.wrap_freq_spl_chart_interactive(
+            chart,
+            ChartId::FreqSpl,
+            chart_width,
+            chart_height,
+            _cx,
+        );
 
         div()
             .flex()
@@ -1307,7 +1381,7 @@ impl SpinoramaApp {
                     div()
                         .text_sm()
                         .text_color(rgb(0x666666))
-                        .child("Zoomed (double-click to reset)")
+                        .child("Zoomed (double-click to reset)"),
                 )
             })
             // Angle legend
@@ -1365,12 +1439,7 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child("Render:"),
-                    )
+                    .child(div().text_sm().text_color(rgb(0x666666)).child("Render:"))
                     .child(
                         div()
                             .id(ElementId::Name(format!("{}-btn", id).into()))
@@ -1401,12 +1470,7 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child("Colormap:"),
-                    )
+                    .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
                     .child(
                         div()
                             .id(ElementId::Name(format!("{}-colormap-btn", id).into()))
@@ -1435,7 +1499,12 @@ impl SpinoramaApp {
     }
 
     /// Render contour plot from SPL Horizontal Contour data (new format with full -180 to +180 range)
-    fn render_contour_from_contour_data(&self, title: &str, render_mode: ContourRenderMode, colormap: Colormap) -> Option<Div> {
+    fn render_contour_from_contour_data(
+        &self,
+        title: &str,
+        render_mode: ContourRenderMode,
+        colormap: Colormap,
+    ) -> Option<Div> {
         let theme = DefaultAxisTheme;
 
         let contour_data = self.contour_data.as_ref()?;
@@ -1554,16 +1623,24 @@ impl SpinoramaApp {
         let contour_config = ContourConfig::new()
             .stroke_width(if is_isoline { 1.5 } else { 0.5 })
             .fill(is_surface)
-            .fill_opacity(if is_surface { 0.6 } else if is_heatmap { 1.0 } else { 0.0 })
+            .fill_opacity(if is_surface {
+                0.6
+            } else if is_heatmap {
+                1.0
+            } else {
+                0.0
+            })
             .stroke_opacity(if is_isoline { 1.0 } else { 0.8 })
             .color_scale(color_scale);
 
         // Build frequency tick values in log space
-        let freq_ticks: Vec<f64> = [20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0]
-            .iter()
-            .filter(|&&f| f >= freq_min && f <= freq_max)
-            .map(|f| f.ln())
-            .collect();
+        let freq_ticks: Vec<f64> = [
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ]
+        .iter()
+        .filter(|&&f| f >= freq_min && f <= freq_max)
+        .map(|f| f.ln())
+        .collect();
 
         Some(
             div()
@@ -1665,25 +1742,22 @@ impl SpinoramaApp {
                                 ),
                         )
                         .child(
-                            div()
-                                .flex()
-                                .child(div().w(px(80.0)))
-                                .child(render_axis(
-                                    &freq_scale,
-                                    &AxisConfig::bottom()
-                                        .with_tick_values(freq_ticks)
-                                        .with_formatter(|log_f| {
-                                            let f = log_f.exp();
-                                            if f >= 1000.0 {
-                                                format!("{:.0}k", f / 1000.0)
-                                            } else {
-                                                format!("{:.0}", f)
-                                            }
-                                        })
-                                        .with_title("Frequency (Hz)"),
-                                    chart_width,
-                                    &theme,
-                                )),
+                            div().flex().child(div().w(px(80.0))).child(render_axis(
+                                &freq_scale,
+                                &AxisConfig::bottom()
+                                    .with_tick_values(freq_ticks)
+                                    .with_formatter(|log_f| {
+                                        let f = log_f.exp();
+                                        if f >= 1000.0 {
+                                            format!("{:.0}k", f / 1000.0)
+                                        } else {
+                                            format!("{:.0}", f)
+                                        }
+                                    })
+                                    .with_title("Frequency (Hz)"),
+                                chart_width,
+                                &theme,
+                            )),
                         ),
                 )
                 // Color legend
@@ -1696,7 +1770,10 @@ impl SpinoramaApp {
                         .p_2()
                         .bg(rgb(0xf5f5f5))
                         .rounded_md()
-                        .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
+                        .child(render_vector_text(
+                            &format!("{:.0} dB", spl_min),
+                            &font_config,
+                        ))
                         .children((0..15).map(|i| {
                             let t = i as f64 / 14.0;
                             let color = colormap.color_scale()(t);
@@ -1705,15 +1782,26 @@ impl SpinoramaApp {
                                 (color.g * 255.0) as u32,
                                 (color.b * 255.0) as u32,
                             );
-                            div().w(px(15.0)).h(px(15.0)).bg(rgb((r << 16) | (g << 8) | b))
+                            div()
+                                .w(px(15.0))
+                                .h(px(15.0))
+                                .bg(rgb((r << 16) | (g << 8) | b))
                         }))
-                        .child(render_vector_text(&format!("{:.0} dB", spl_max), &font_config))
+                        .child(render_vector_text(
+                            &format!("{:.0} dB", spl_max),
+                            &font_config,
+                        ))
                 }),
         )
     }
 
     /// Render contour plot from directivity data (old format, typically -60 to +60 range)
-    fn render_contour_from_directivity(&self, title: &str, render_mode: ContourRenderMode, colormap: Colormap) -> Option<Div> {
+    fn render_contour_from_directivity(
+        &self,
+        title: &str,
+        render_mode: ContourRenderMode,
+        colormap: Colormap,
+    ) -> Option<Div> {
         let theme = DefaultAxisTheme;
 
         let directivity = self.directivity_data.as_ref()?;
@@ -1830,7 +1918,13 @@ impl SpinoramaApp {
         let contour_config = ContourConfig::new()
             .stroke_width(if is_isoline { 1.5 } else { 0.5 })
             .fill(is_surface)
-            .fill_opacity(if is_surface { 0.6 } else if is_heatmap { 1.0 } else { 0.0 })
+            .fill_opacity(if is_surface {
+                0.6
+            } else if is_heatmap {
+                1.0
+            } else {
+                0.0
+            })
             .stroke_opacity(if is_isoline { 1.0 } else { 0.8 })
             .color_scale(color_scale);
 
@@ -1945,25 +2039,22 @@ impl SpinoramaApp {
                                 ),
                         )
                         .child(
-                            div()
-                                .flex()
-                                .child(div().w(px(80.0)))
-                                .child(render_axis(
-                                    &freq_scale,
-                                    &AxisConfig::bottom()
-                                        .with_tick_values(freq_ticks)
-                                        .with_formatter(|log_f| {
-                                            let f = log_f.exp();
-                                            if f >= 1000.0 {
-                                                format!("{:.0}k", f / 1000.0)
-                                            } else {
-                                                format!("{:.0}", f)
-                                            }
-                                        })
-                                        .with_title("Frequency (Hz)"),
-                                    chart_width,
-                                    &theme,
-                                )),
+                            div().flex().child(div().w(px(80.0))).child(render_axis(
+                                &freq_scale,
+                                &AxisConfig::bottom()
+                                    .with_tick_values(freq_ticks)
+                                    .with_formatter(|log_f| {
+                                        let f = log_f.exp();
+                                        if f >= 1000.0 {
+                                            format!("{:.0}k", f / 1000.0)
+                                        } else {
+                                            format!("{:.0}", f)
+                                        }
+                                    })
+                                    .with_title("Frequency (Hz)"),
+                                chart_width,
+                                &theme,
+                            )),
                         ),
                 )
                 // Color legend
@@ -1976,7 +2067,10 @@ impl SpinoramaApp {
                         .p_2()
                         .bg(rgb(0xf5f5f5))
                         .rounded_md()
-                        .child(render_vector_text(&format!("{:.0} dB", spl_min), &font_config))
+                        .child(render_vector_text(
+                            &format!("{:.0} dB", spl_min),
+                            &font_config,
+                        ))
                         .children((0..15).map(|i| {
                             let t = i as f64 / 14.0;
                             let color = colormap.color_scale()(t);
@@ -1985,16 +2079,25 @@ impl SpinoramaApp {
                                 (color.g * 255.0) as u32,
                                 (color.b * 255.0) as u32,
                             );
-                            div().w(px(15.0)).h(px(15.0)).bg(rgb((r << 16) | (g << 8) | b))
+                            div()
+                                .w(px(15.0))
+                                .h(px(15.0))
+                                .bg(rgb((r << 16) | (g << 8) | b))
                         }))
-                        .child(render_vector_text(&format!("{:.0} dB", spl_max), &font_config))
+                        .child(render_vector_text(
+                            &format!("{:.0} dB", spl_max),
+                            &font_config,
+                        ))
                 }),
         )
     }
 
     fn render_contour_plot(&mut self, cx: &mut Context<Self>) -> Div {
         let has_contour_data = self.contour_data.is_some();
-        let has_directivity_data = self.directivity_data.as_ref().map_or(false, |d| !d.horizontal.is_empty());
+        let has_directivity_data = self
+            .directivity_data
+            .as_ref()
+            .map_or(false, |d| !d.horizontal.is_empty());
 
         if !has_contour_data && !has_directivity_data {
             return div().flex().items_center().justify_center().h_full().child(
@@ -2030,8 +2133,16 @@ impl SpinoramaApp {
 
         // Pre-render the contour plots
         let colormap = self.contour_colormap;
-        let spl_contour = self.render_contour_from_contour_data("SPL Horizontal Contour (Full 360°)", spl_mode, colormap);
-        let directivity_contour = self.render_contour_from_directivity("Directivity Contour (SPL Horizontal)", directivity_mode, colormap);
+        let spl_contour = self.render_contour_from_contour_data(
+            "SPL Horizontal Contour (Full 360°)",
+            spl_mode,
+            colormap,
+        );
+        let directivity_contour = self.render_contour_from_directivity(
+            "Directivity Contour (SPL Horizontal)",
+            directivity_mode,
+            colormap,
+        );
 
         div()
             .flex()
@@ -2052,7 +2163,7 @@ impl SpinoramaApp {
                         .flex_col()
                         .gap_2()
                         .child(spl_toggle)
-                        .child(contour_div)
+                        .child(contour_div),
                 )
             })
             // Directivity-based contour (old format, typically -60 to +60) with toggle
@@ -2063,7 +2174,7 @@ impl SpinoramaApp {
                         .flex_col()
                         .gap_2()
                         .child(directivity_toggle)
-                        .child(contour_div)
+                        .child(contour_div),
                 )
             })
     }
@@ -2150,7 +2261,14 @@ impl SpinoramaApp {
         let polar_canvas = canvas(
             move |_bounds, _window, _cx| {
                 // Prepaint: just pass through the data
-                (frequency_paths_clone.clone(), grid_radii_clone.clone(), grid_angles_clone.clone(), center_x, center_y, outer_radius)
+                (
+                    frequency_paths_clone.clone(),
+                    grid_radii_clone.clone(),
+                    grid_angles_clone.clone(),
+                    center_x,
+                    center_y,
+                    outer_radius,
+                )
             },
             move |bounds, (freq_paths, radii, angles, cx_f, cy_f, outer_r), window, _cx| {
                 let origin_x: f32 = bounds.origin.x.into();
@@ -2218,56 +2336,57 @@ impl SpinoramaApp {
         .h(px(chart_size));
 
         // Build legend
-        let legend = div()
-            .flex()
-            .flex_row()
-            .gap_4()
-            .justify_center()
-            .children(frequency_paths.iter().map(|(freq, _, color)| {
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .h(px(3.0))
-                            .bg(color.to_rgba())
-                            .rounded(px(1.0)),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child(format!("{}", format_frequency(*freq))),
-                    )
-            }));
+        let legend =
+            div()
+                .flex()
+                .flex_row()
+                .gap_4()
+                .justify_center()
+                .children(frequency_paths.iter().map(|(freq, _, color)| {
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .w(px(16.0))
+                                .h(px(3.0))
+                                .bg(color.to_rgba())
+                                .rounded(px(1.0)),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(0x666666))
+                                .child(format!("{}", format_frequency(*freq))),
+                        )
+                }));
 
         // Angle labels using render_vector_text
         let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
-        let angle_labels = div()
-            .absolute()
-            .inset_0()
-            .children((0..12).map(|i| {
-                let angle_deg = i as f64 * 30.0;
-                let angle_rad = (angle_deg - 90.0).to_radians();
-                let label_radius = outer_radius + 25.0;
-                let x = center_x + label_radius * angle_rad.cos() as f32;
-                let y = center_y + label_radius * angle_rad.sin() as f32;
+        let angle_labels = div().absolute().inset_0().children((0..12).map(|i| {
+            let angle_deg = i as f64 * 30.0;
+            let angle_rad = (angle_deg - 90.0).to_radians();
+            let label_radius = outer_radius + 25.0;
+            let x = center_x + label_radius * angle_rad.cos() as f32;
+            let y = center_y + label_radius * angle_rad.sin() as f32;
 
-                let display_angle = if angle_deg <= 180.0 {
-                    angle_deg as i32
-                } else {
-                    (angle_deg - 360.0) as i32
-                };
+            let display_angle = if angle_deg <= 180.0 {
+                angle_deg as i32
+            } else {
+                (angle_deg - 360.0) as i32
+            };
 
-                div()
-                    .absolute()
-                    .left(px(x - 15.0))
-                    .top(px(y - 6.0))
-                    .child(render_vector_text(&format!("{}°", display_angle), &font_config))
-            }));
+            div()
+                .absolute()
+                .left(px(x - 15.0))
+                .top(px(y - 6.0))
+                .child(render_vector_text(
+                    &format!("{}°", display_angle),
+                    &font_config,
+                ))
+        }));
 
         // dB labels on radial axis
         let db_font_config = VectorFontConfig::horizontal(9.0, hsla(0.0, 0.0, 0.6, 1.0));
@@ -2284,7 +2403,10 @@ impl SpinoramaApp {
                     .absolute()
                     .left(px(x - 20.0))
                     .top(px(y))
-                    .child(render_vector_text(&format!("{} dB", db as i32), &db_font_config))
+                    .child(render_vector_text(
+                        &format!("{} dB", db as i32),
+                        &db_font_config,
+                    ))
             }));
 
         // Frequency selection controls
@@ -2292,12 +2414,8 @@ impl SpinoramaApp {
             100.0, 200.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 10000.0, 16000.0,
         ];
 
-        let freq_selector = div()
-            .flex()
-            .flex_row()
-            .flex_wrap()
-            .gap_2()
-            .children(available_frequencies.iter().enumerate().map(|(i, &freq)| {
+        let freq_selector = div().flex().flex_row().flex_wrap().gap_2().children(
+            available_frequencies.iter().enumerate().map(|(i, &freq)| {
                 let is_selected = self.polar_selected_frequencies.contains(&freq);
                 let freq_clone = freq;
                 div()
@@ -2323,11 +2441,13 @@ impl SpinoramaApp {
                             this.polar_selected_frequencies.retain(|&f| f != freq_clone);
                         } else if this.polar_selected_frequencies.len() < 5 {
                             this.polar_selected_frequencies.push(freq_clone);
-                            this.polar_selected_frequencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                            this.polar_selected_frequencies
+                                .sort_by(|a, b| a.partial_cmp(b).unwrap());
                         }
                         cx.notify();
                     }))
-            }));
+            }),
+        );
 
         // Plane toggle
         let plane_toggle = div()
@@ -2393,12 +2513,7 @@ impl SpinoramaApp {
                     .flex_row()
                     .gap_4()
                     .items_center()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child("Plane:"),
-                    )
+                    .child(div().text_sm().text_color(rgb(0x666666)).child("Plane:"))
                     .child(plane_toggle)
                     .child(
                         div()
@@ -2491,7 +2606,10 @@ impl SpinoramaApp {
         };
 
         let config = config
-            .rotation(self.surface_rotation_elevation as f64, self.surface_rotation_azimuth as f64)
+            .rotation(
+                self.surface_rotation_elevation as f64,
+                self.surface_rotation_azimuth as f64,
+            )
             .wireframe(self.surface_wireframe)
             .color_scale(ColorScaleType::Viridis)
             .opacity(0.6)
@@ -2517,29 +2635,33 @@ impl SpinoramaApp {
             (SurfaceProjection::Oblique, "Oblique"),
         ];
 
-        let projection_selector = div()
-            .flex()
-            .flex_row()
-            .gap_2()
-            .children(projections.iter().enumerate().map(|(i, &(proj, label))| {
-                div()
-                    .id(ElementId::NamedInteger("surface-projection".into(), i as u64))
-                    .px_3()
-                    .py_1()
-                    .rounded(px(4.0))
-                    .cursor_pointer()
-                    .when(self.surface_projection == proj, |el| {
-                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
-                    })
-                    .when(self.surface_projection != proj, |el| {
-                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
-                    })
-                    .child(label)
-                    .on_click(cx.listener(move |this, _, _window, cx| {
-                        this.surface_projection = proj;
-                        cx.notify();
-                    }))
-            }));
+        let projection_selector =
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .children(projections.iter().enumerate().map(|(i, &(proj, label))| {
+                    div()
+                        .id(ElementId::NamedInteger(
+                            "surface-projection".into(),
+                            i as u64,
+                        ))
+                        .px_3()
+                        .py_1()
+                        .rounded(px(4.0))
+                        .cursor_pointer()
+                        .when(self.surface_projection == proj, |el| {
+                            el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                        })
+                        .when(self.surface_projection != proj, |el| {
+                            el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                        })
+                        .child(label)
+                        .on_click(cx.listener(move |this, _, _window, cx| {
+                            this.surface_projection = proj;
+                            cx.notify();
+                        }))
+                }));
 
         // Wireframe toggle
         let wireframe_toggle = div()
@@ -2588,7 +2710,8 @@ impl SpinoramaApp {
                             .cursor_pointer()
                             .child("-")
                             .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_azimuth = (this.surface_rotation_azimuth - 15.0).rem_euclid(360.0);
+                                this.surface_rotation_azimuth =
+                                    (this.surface_rotation_azimuth - 15.0).rem_euclid(360.0);
                                 cx.notify();
                             })),
                     )
@@ -2602,7 +2725,8 @@ impl SpinoramaApp {
                             .cursor_pointer()
                             .child("+")
                             .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_azimuth = (this.surface_rotation_azimuth + 15.0).rem_euclid(360.0);
+                                this.surface_rotation_azimuth =
+                                    (this.surface_rotation_azimuth + 15.0).rem_euclid(360.0);
                                 cx.notify();
                             })),
                     ),
@@ -2613,7 +2737,12 @@ impl SpinoramaApp {
             .flex_row()
             .items_center()
             .gap_2()
-            .child(div().text_sm().text_color(rgb(0x666666)).child("Elevation:"))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .child("Elevation:"),
+            )
             .child(
                 div()
                     .text_sm()
@@ -2635,7 +2764,8 @@ impl SpinoramaApp {
                             .cursor_pointer()
                             .child("-")
                             .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_elevation = (this.surface_rotation_elevation - 15.0).clamp(-90.0, 90.0);
+                                this.surface_rotation_elevation =
+                                    (this.surface_rotation_elevation - 15.0).clamp(-90.0, 90.0);
                                 cx.notify();
                             })),
                     )
@@ -2649,7 +2779,8 @@ impl SpinoramaApp {
                             .cursor_pointer()
                             .child("+")
                             .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_elevation = (this.surface_rotation_elevation + 15.0).clamp(-90.0, 90.0);
+                                this.surface_rotation_elevation =
+                                    (this.surface_rotation_elevation + 15.0).clamp(-90.0, 90.0);
                                 cx.notify();
                             })),
                     ),
@@ -2676,18 +2807,18 @@ impl SpinoramaApp {
                     .flex_wrap()
                     .gap_4()
                     .items_center()
-                    .child(div().text_sm().text_color(rgb(0x666666)).child("Projection:"))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child("Projection:"),
+                    )
                     .child(projection_selector)
                     .child(wireframe_toggle)
                     .child(azimuth_slider)
                     .child(elevation_slider),
             )
-            .child(
-                div()
-                    .flex()
-                    .justify_center()
-                    .child(surface_element),
-            )
+            .child(div().flex().justify_center().child(surface_element))
             .child(
                 div()
                     .flex()
@@ -2741,8 +2872,16 @@ impl SpinoramaApp {
         let color_scale = self.contour_colormap.color_scale();
 
         // Find SPL range for color normalization
-        let spl_min = contour_data.spl.iter().copied().fold(f64::INFINITY, f64::min);
-        let spl_max = contour_data.spl.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let spl_min = contour_data
+            .spl
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
+        let spl_max = contour_data
+            .spl
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
         let spl_range = (spl_max - spl_min).max(1.0);
 
         // Generate polar heatmap data - store wedge geometry and colors
@@ -2831,7 +2970,9 @@ impl SpinoramaApp {
             })
             .collect();
 
-        let grid_angles: Vec<f32> = (0..12).map(|i| ((i as f64 * 30.0).to_radians()) as f32).collect();
+        let grid_angles: Vec<f32> = (0..12)
+            .map(|i| ((i as f64 * 30.0).to_radians()) as f32)
+            .collect();
 
         // Clone data for canvas closure
         let wedges_clone = wedges.clone();
@@ -2841,7 +2982,14 @@ impl SpinoramaApp {
         // Canvas-based polar contour plot
         let polar_canvas = canvas(
             move |_bounds, _window, _cx| {
-                (wedges_clone.clone(), grid_radii_clone.clone(), grid_angles_clone.clone(), center_x, center_y, outer_radius)
+                (
+                    wedges_clone.clone(),
+                    grid_radii_clone.clone(),
+                    grid_angles_clone.clone(),
+                    center_x,
+                    center_y,
+                    outer_radius,
+                )
             },
             move |bounds, (wedge_data, radii, angles, cx_f, cy_f, outer_r), window, _cx| {
                 let origin_x: f32 = bounds.origin.x.into();
@@ -2911,43 +3059,46 @@ impl SpinoramaApp {
 
         // Frequency labels using render_vector_text
         let font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.2, 1.0));
-        let freq_labels = div()
-            .absolute()
-            .inset_0()
-            .children(grid_frequencies.iter().filter(|&&f| f >= freq_min && f <= freq_max).map(|&freq| {
-                let t = (freq.ln() - log_freq_min) / (log_freq_max - log_freq_min);
-                let r = (t * outer_radius as f64) as f32;
-                let x = center_x;
-                let y = center_y - r - 8.0;
+        let freq_labels = div().absolute().inset_0().children(
+            grid_frequencies
+                .iter()
+                .filter(|&&f| f >= freq_min && f <= freq_max)
+                .map(|&freq| {
+                    let t = (freq.ln() - log_freq_min) / (log_freq_max - log_freq_min);
+                    let r = (t * outer_radius as f64) as f32;
+                    let x = center_x;
+                    let y = center_y - r - 8.0;
 
-                div()
-                    .absolute()
-                    .left(px(x - 15.0))
-                    .top(px(y))
-                    .child(render_vector_text(&format_frequency(freq), &font_config))
-            }));
+                    div()
+                        .absolute()
+                        .left(px(x - 15.0))
+                        .top(px(y))
+                        .child(render_vector_text(&format_frequency(freq), &font_config))
+                }),
+        );
 
         // Angle labels
         let angle_font_config = VectorFontConfig::horizontal(10.0, hsla(0.0, 0.0, 0.4, 1.0));
-        let angle_labels = div()
-            .absolute()
-            .inset_0()
-            .children((0..12).map(|i| {
-                let angle_deg = i as f64 * 30.0;
-                let angle_rad = (angle_deg - 90.0).to_radians();
-                let label_radius = outer_radius + 25.0;
-                let x = center_x + label_radius * angle_rad.cos() as f32;
-                let y = center_y + label_radius * angle_rad.sin() as f32;
+        let angle_labels = div().absolute().inset_0().children((0..12).map(|i| {
+            let angle_deg = i as f64 * 30.0;
+            let angle_rad = (angle_deg - 90.0).to_radians();
+            let label_radius = outer_radius + 25.0;
+            let x = center_x + label_radius * angle_rad.cos() as f32;
+            let y = center_y + label_radius * angle_rad.sin() as f32;
 
-                // Map display angle to data angle convention
-                let display_angle = angle_min_data + (angle_deg / 360.0) * (angle_max_data - angle_min_data);
+            // Map display angle to data angle convention
+            let display_angle =
+                angle_min_data + (angle_deg / 360.0) * (angle_max_data - angle_min_data);
 
-                div()
-                    .absolute()
-                    .left(px(x - 15.0))
-                    .top(px(y - 6.0))
-                    .child(render_vector_text(&format!("{:.0}°", display_angle), &angle_font_config))
-            }));
+            div()
+                .absolute()
+                .left(px(x - 15.0))
+                .top(px(y - 6.0))
+                .child(render_vector_text(
+                    &format!("{:.0}°", display_angle),
+                    &angle_font_config,
+                ))
+        }));
 
         // Colorbar using div elements
         let colorbar_height = 200.0_f32;
@@ -2963,10 +3114,7 @@ impl SpinoramaApp {
                 let color = color_scale(1.0 - t); // Invert so high values at top
                 let h = colorbar_height / num_color_steps as f32;
 
-                div()
-                    .w(px(colorbar_width))
-                    .h(px(h))
-                    .bg(color.to_rgba())
+                div().w(px(colorbar_width)).h(px(h)).bg(color.to_rgba())
             }));
 
         // Colorbar labels
@@ -2978,7 +3126,10 @@ impl SpinoramaApp {
             .h(px(colorbar_height))
             .children([0.0, 0.5, 1.0].iter().map(|&t| {
                 let spl_val = spl_min + t * spl_range;
-                div().child(render_vector_text(&format!("{:.0} dB", spl_val), &colorbar_label_font))
+                div().child(render_vector_text(
+                    &format!("{:.0} dB", spl_val),
+                    &colorbar_label_font,
+                ))
             }));
 
         // Colormap selector
@@ -2991,29 +3142,33 @@ impl SpinoramaApp {
             (Colormap::Coolwarm, "Coolwarm"),
         ];
 
-        let colormap_selector = div()
-            .flex()
-            .flex_row()
-            .gap_2()
-            .children(colormaps.iter().enumerate().map(|(i, &(cmap, label))| {
-                div()
-                    .id(ElementId::NamedInteger("polar-contour-colormap".into(), i as u64))
-                    .px_3()
-                    .py_1()
-                    .rounded(px(4.0))
-                    .cursor_pointer()
-                    .when(self.contour_colormap == cmap, |el| {
-                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
-                    })
-                    .when(self.contour_colormap != cmap, |el| {
-                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
-                    })
-                    .child(label)
-                    .on_click(cx.listener(move |this, _, _window, cx| {
-                        this.contour_colormap = cmap;
-                        cx.notify();
-                    }))
-            }));
+        let colormap_selector =
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .children(colormaps.iter().enumerate().map(|(i, &(cmap, label))| {
+                    div()
+                        .id(ElementId::NamedInteger(
+                            "polar-contour-colormap".into(),
+                            i as u64,
+                        ))
+                        .px_3()
+                        .py_1()
+                        .rounded(px(4.0))
+                        .cursor_pointer()
+                        .when(self.contour_colormap == cmap, |el| {
+                            el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                        })
+                        .when(self.contour_colormap != cmap, |el| {
+                            el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                        })
+                        .child(label)
+                        .on_click(cx.listener(move |this, _, _window, cx| {
+                            this.contour_colormap = cmap;
+                            cx.notify();
+                        }))
+                }));
 
         div()
             .flex()

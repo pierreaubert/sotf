@@ -201,7 +201,7 @@ impl Default for BrushConfig {
     fn default() -> Self {
         Self {
             fill_color: (100, 150, 200, 80), // Semi-transparent blue
-            stroke_color: (70, 130, 180),     // Steel blue
+            stroke_color: (70, 130, 180),    // Steel blue
             stroke_width: 1.0,
             min_size: 5.0,
         }

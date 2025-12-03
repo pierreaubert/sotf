@@ -439,8 +439,15 @@ impl<T: Clone> QuadTree<T> {
             return false;
         }
 
-        let (new_root, removed) =
-            Self::remove_from_node(self.root.take().unwrap(), x, y, ext.x0, ext.y0, ext.x1, ext.y1);
+        let (new_root, removed) = Self::remove_from_node(
+            self.root.take().unwrap(),
+            x,
+            y,
+            ext.x0,
+            ext.y0,
+            ext.x1,
+            ext.y1,
+        );
 
         self.root = new_root;
 
@@ -493,7 +500,8 @@ impl<T: Clone> QuadTree<T> {
 
                 if let Some(child) = children[i].take() {
                     let (nx0, ny0, nx1, ny1) = Self::child_extent(i, x0, y0, x1, y1, xm, ym);
-                    let (new_child, removed) = Self::remove_from_node(child, x, y, nx0, ny0, nx1, ny1);
+                    let (new_child, removed) =
+                        Self::remove_from_node(child, x, y, nx0, ny0, nx1, ny1);
                     children[i] = new_child;
 
                     // Check if we can collapse the node

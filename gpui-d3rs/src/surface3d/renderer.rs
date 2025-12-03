@@ -245,53 +245,60 @@ impl Surface3DRenderer {
 
         // Create wireframe pipeline if enabled
         let wireframe_pipeline = if config.wireframe {
-            Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Wireframe Pipeline"),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"),
-                    buffers: &[vertex_layout],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_wireframe"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::LineList,
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::LessEqual,
-                    stencil: Default::default(),
-                    bias: wgpu::DepthBiasState {
-                        constant: -1,
-                        slope_scale: 0.0,
-                        clamp: 0.0,
+            Some(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Wireframe Pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some("vs_main"),
+                        buffers: &[vertex_layout],
+                        compilation_options: Default::default(),
                     },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some("fs_wireframe"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            blend: Some(wgpu::BlendState::REPLACE),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::LineList,
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::LessEqual,
+                        stencil: Default::default(),
+                        bias: wgpu::DepthBiasState {
+                            constant: -1,
+                            slope_scale: 0.0,
+                            clamp: 0.0,
+                        },
+                    }),
+                    multisample: wgpu::MultisampleState {
+                        count: config.msaa_samples,
+                        mask: !0,
+                        alpha_to_coverage_enabled: false,
+                    },
+                    multiview: None,
+                    cache: None,
                 }),
-                multisample: wgpu::MultisampleState {
-                    count: config.msaa_samples,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
-                cache: None,
-            }))
+            )
         } else {
             None
         };
 
-        (surface_pipeline, wireframe_pipeline, uniform_buffer, bind_group)
+        (
+            surface_pipeline,
+            wireframe_pipeline,
+            uniform_buffer,
+            bind_group,
+        )
     }
 
     /// Upload mesh data to GPU
@@ -303,23 +310,21 @@ impl Surface3DRenderer {
             return;
         }
 
-        self.vertex_buffer = Some(
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Vertex Buffer"),
-                    contents: mesh.vertex_bytes(),
-                    usage: wgpu::BufferUsages::VERTEX,
-                }),
-        );
+        self.vertex_buffer = Some(self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: mesh.vertex_bytes(),
+                usage: wgpu::BufferUsages::VERTEX,
+            },
+        ));
 
-        self.index_buffer = Some(
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Index Buffer"),
-                    contents: mesh.index_bytes(),
-                    usage: wgpu::BufferUsages::INDEX,
-                }),
-        );
+        self.index_buffer = Some(self.device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: mesh.index_bytes(),
+                usage: wgpu::BufferUsages::INDEX,
+            },
+        ));
 
         self.index_count = mesh.index_count as u32;
 
@@ -329,14 +334,13 @@ impl Surface3DRenderer {
             let y_count = mesh.vertex_count / x_count;
             let wireframe_indices = super::mesh::generate_wireframe_indices(x_count, y_count);
 
-            self.wireframe_index_buffer = Some(
-                self.device
-                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Wireframe Index Buffer"),
-                        contents: bytemuck::cast_slice(&wireframe_indices),
-                        usage: wgpu::BufferUsages::INDEX,
-                    }),
-            );
+            self.wireframe_index_buffer = Some(self.device.create_buffer_init(
+                &wgpu::util::BufferInitDescriptor {
+                    label: Some("Wireframe Index Buffer"),
+                    contents: bytemuck::cast_slice(&wireframe_indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                },
+            ));
             self.wireframe_index_count = wireframe_indices.len() as u32;
         }
     }
@@ -476,8 +480,10 @@ impl Surface3DRenderer {
             render_pass.set_pipeline(&self.surface_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.as_ref()?.slice(..));
-            render_pass
-                .set_index_buffer(self.index_buffer.as_ref()?.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.set_index_buffer(
+                self.index_buffer.as_ref()?.slice(..),
+                wgpu::IndexFormat::Uint32,
+            );
             render_pass.draw_indexed(0..self.index_count, 0, 0..1);
 
             // Draw wireframe if enabled

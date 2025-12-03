@@ -3,7 +3,7 @@
 //! Power scales are similar to linear scales, but apply an exponential
 //! transform to the input domain before computing the output range.
 
-use super::{nice_number, Scale};
+use super::{Scale, nice_number};
 
 /// A power scale applies an exponential transform before linear interpolation
 ///

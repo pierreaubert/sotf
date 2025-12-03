@@ -4,9 +4,7 @@
 //! Note: This is a non-GUI demo that shows how to create surface data
 //! and mesh structures. For visual output, use the showcase binary.
 
-use d3rs::surface::{
-    Camera2D, IsometricProjection, Projection, SurfaceData, SurfaceMesh,
-};
+use d3rs::surface::{Camera2D, IsometricProjection, Projection, SurfaceData, SurfaceMesh};
 
 fn main() {
     println!("=== d3rs Surface Plot Demo ===\n");
@@ -70,12 +68,16 @@ fn main() {
     // Saddle surface
     println!("Saddle surface: z = x^2 - y^2");
     let saddle = SurfaceData::from_z_function((-2.0, 2.0), (-2.0, 2.0), 10, |x, y| x * x - y * y);
-    println!("  Z range: ({:.3}, {:.3})", saddle.z_range.0, saddle.z_range.1);
+    println!(
+        "  Z range: ({:.3}, {:.3})",
+        saddle.z_range.0, saddle.z_range.1
+    );
 
     // Gaussian
     println!("\nGaussian: z = exp(-(x^2 + y^2))");
-    let gaussian =
-        SurfaceData::from_z_function((-2.0, 2.0), (-2.0, 2.0), 10, |x, y| (-(x * x + y * y)).exp());
+    let gaussian = SurfaceData::from_z_function((-2.0, 2.0), (-2.0, 2.0), 10, |x, y| {
+        (-(x * x + y * y)).exp()
+    });
     println!(
         "  Z range: ({:.3}, {:.3})",
         gaussian.z_range.0, gaussian.z_range.1
@@ -83,7 +85,8 @@ fn main() {
 
     // Plane
     println!("\nPlane: z = 0.5*x + 0.3*y");
-    let plane = SurfaceData::from_z_function((-2.0, 2.0), (-2.0, 2.0), 10, |x, y| 0.5 * x + 0.3 * y);
+    let plane =
+        SurfaceData::from_z_function((-2.0, 2.0), (-2.0, 2.0), 10, |x, y| 0.5 * x + 0.3 * y);
     println!(
         "  Z range: ({:.3}, {:.3})",
         plane.z_range.0, plane.z_range.1

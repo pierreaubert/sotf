@@ -264,9 +264,7 @@ mod tests {
         });
 
         let mut mesh = SurfaceMesh::from_surface_data(&data);
-        mesh.apply_color_scale(data.t_range, |t| {
-            D3Color::rgb((t * 255.0) as u8, 0, 0)
-        });
+        mesh.apply_color_scale(data.t_range, |t| D3Color::rgb((t * 255.0) as u8, 0, 0));
 
         // All triangles should now have colors
         for tri in &mesh.triangles {

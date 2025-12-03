@@ -482,6 +482,115 @@ pub fn heat_color_scale() -> impl Fn(f64) -> D3Color + Send + Sync {
     }
 }
 
+/// Create a turbo color scale (Google's improved rainbow colormap)
+///
+/// Turbo is designed to be perceptually uniform while covering a wide
+/// range of hues. It's an improvement over jet/rainbow colormaps.
+/// Reference: https://ai.googleblog.com/2019/08/turbo-improved-rainbow-colormap-for.html
+pub fn turbo_color_scale() -> impl Fn(f64) -> D3Color + Send + Sync {
+    move |t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        // Turbo colormap keypoints (simplified 16-color approximation)
+        let colors = [
+            D3Color::from_hex(0x30123b), // Dark blue
+            D3Color::from_hex(0x4145ab), // Blue
+            D3Color::from_hex(0x4675ed), // Light blue
+            D3Color::from_hex(0x39a2fc), // Cyan-blue
+            D3Color::from_hex(0x1bd0d5), // Cyan
+            D3Color::from_hex(0x24f0a0), // Cyan-green
+            D3Color::from_hex(0x5dfc69), // Green
+            D3Color::from_hex(0xa4fc3c), // Yellow-green
+            D3Color::from_hex(0xd9ec37), // Yellow
+            D3Color::from_hex(0xfece2f), // Yellow-orange
+            D3Color::from_hex(0xfda629), // Orange
+            D3Color::from_hex(0xf67828), // Red-orange
+            D3Color::from_hex(0xe74a24), // Red
+            D3Color::from_hex(0xcd2220), // Dark red
+            D3Color::from_hex(0xa91c1c), // Darker red
+            D3Color::from_hex(0x7a0403), // Very dark red
+        ];
+
+        let idx = (t * (colors.len() - 1) as f64) as usize;
+        let idx = idx.min(colors.len() - 2);
+        let local_t = (t * (colors.len() - 1) as f64) - idx as f64;
+
+        colors[idx].interpolate(&colors[idx + 1], local_t as f32)
+    }
+}
+
+/// Create a magma color scale (perceptually uniform, dark to bright)
+pub fn magma_color_scale() -> impl Fn(f64) -> D3Color + Send + Sync {
+    move |t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        let colors = [
+            D3Color::from_hex(0x000004), // Black
+            D3Color::from_hex(0x1c1044), // Dark purple
+            D3Color::from_hex(0x4f127b), // Purple
+            D3Color::from_hex(0x812581), // Magenta-purple
+            D3Color::from_hex(0xb5367a), // Magenta
+            D3Color::from_hex(0xe55964), // Pink-red
+            D3Color::from_hex(0xfb8761), // Orange
+            D3Color::from_hex(0xfec287), // Light orange
+            D3Color::from_hex(0xfcfdbf), // Light yellow
+        ];
+
+        let idx = (t * (colors.len() - 1) as f64) as usize;
+        let idx = idx.min(colors.len() - 2);
+        let local_t = (t * (colors.len() - 1) as f64) - idx as f64;
+
+        colors[idx].interpolate(&colors[idx + 1], local_t as f32)
+    }
+}
+
+/// Create a plasma color scale (perceptually uniform, purple to yellow)
+pub fn plasma_color_scale() -> impl Fn(f64) -> D3Color + Send + Sync {
+    move |t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        let colors = [
+            D3Color::from_hex(0x0d0887), // Dark blue
+            D3Color::from_hex(0x46039f), // Purple
+            D3Color::from_hex(0x7201a8), // Violet
+            D3Color::from_hex(0x9c179e), // Magenta
+            D3Color::from_hex(0xbd3786), // Pink
+            D3Color::from_hex(0xd8576b), // Red-pink
+            D3Color::from_hex(0xed7953), // Orange
+            D3Color::from_hex(0xfb9f3a), // Yellow-orange
+            D3Color::from_hex(0xfdca26), // Yellow
+            D3Color::from_hex(0xf0f921), // Bright yellow
+        ];
+
+        let idx = (t * (colors.len() - 1) as f64) as usize;
+        let idx = idx.min(colors.len() - 2);
+        let local_t = (t * (colors.len() - 1) as f64) - idx as f64;
+
+        colors[idx].interpolate(&colors[idx + 1], local_t as f32)
+    }
+}
+
+/// Create an inferno color scale (perceptually uniform, black to yellow)
+pub fn inferno_color_scale() -> impl Fn(f64) -> D3Color + Send + Sync {
+    move |t: f64| {
+        let t = t.clamp(0.0, 1.0);
+        let colors = [
+            D3Color::from_hex(0x000004), // Black
+            D3Color::from_hex(0x1f0c48), // Dark purple
+            D3Color::from_hex(0x550f6d), // Purple
+            D3Color::from_hex(0x88226a), // Magenta
+            D3Color::from_hex(0xba3655), // Red
+            D3Color::from_hex(0xe35933), // Orange-red
+            D3Color::from_hex(0xf98c09), // Orange
+            D3Color::from_hex(0xf9c932), // Yellow-orange
+            D3Color::from_hex(0xfcffa4), // Light yellow
+        ];
+
+        let idx = (t * (colors.len() - 1) as f64) as usize;
+        let idx = idx.min(colors.len() - 2);
+        let local_t = (t * (colors.len() - 1) as f64) - idx as f64;
+
+        colors[idx].interpolate(&colors[idx + 1], local_t as f32)
+    }
+}
+
 // ============================================================================
 // Contour Band Element (for filled contours between threshold levels)
 // ============================================================================
@@ -518,7 +627,10 @@ where
             (0.0, 1.0)
         } else {
             let min = bands.iter().map(|b| b.lower).fold(f64::INFINITY, f64::min);
-            let max = bands.iter().map(|b| b.upper).fold(f64::NEG_INFINITY, f64::max);
+            let max = bands
+                .iter()
+                .map(|b| b.upper)
+                .fold(f64::NEG_INFINITY, f64::max);
             (min, max)
         };
 
@@ -800,7 +912,11 @@ where
             (0.0, 1.0)
         } else {
             let min = data.values.iter().cloned().fold(f64::INFINITY, f64::min);
-            let max = data.values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let max = data
+                .values
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, f64::max);
             (min, max)
         };
 

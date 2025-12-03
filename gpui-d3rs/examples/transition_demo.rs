@@ -3,7 +3,7 @@
 //! Run with: cargo run --example transition_demo --no-default-features
 
 use d3rs::ease::{
-    ease_cubic_in_out, ease_elastic_out, ease_bounce_out, ease_back_in_out, ease_linear,
+    ease_back_in_out, ease_bounce_out, ease_cubic_in_out, ease_elastic_out, ease_linear,
 };
 use d3rs::transition::{Transition, TransitionManager, TransitionState};
 
@@ -255,7 +255,10 @@ fn main() {
         manager.tick(frame_time);
     }
 
-    println!("Final position: {:.2}\n", manager.get("position").unwrap_or(0.0));
+    println!(
+        "Final position: {:.2}\n",
+        manager.get("position").unwrap_or(0.0)
+    );
 
     // =========================================================================
     // Chained Transitions (sequential)

@@ -39,7 +39,7 @@ mod voronoi;
 
 pub use voronoi::Voronoi;
 
-use delaunator::{triangulate, Point, Triangulation, EMPTY};
+use delaunator::{EMPTY, Point, Triangulation, triangulate};
 
 /// Delaunay triangulation of a set of 2D points.
 ///
@@ -63,10 +63,7 @@ impl Delaunay {
     /// let delaunay = Delaunay::new(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)]);
     /// ```
     pub fn new(points: &[(f64, f64)]) -> Self {
-        let delaunator_points: Vec<Point> = points
-            .iter()
-            .map(|&(x, y)| Point { x, y })
-            .collect();
+        let delaunator_points: Vec<Point> = points.iter().map(|&(x, y)| Point { x, y }).collect();
 
         let triangulation = triangulate(&delaunator_points);
         let hull = triangulation.hull.clone();
@@ -350,7 +347,6 @@ impl Delaunay {
 
         (ux, uy)
     }
-
 }
 
 impl std::fmt::Debug for Delaunay {
@@ -490,12 +486,7 @@ mod tests {
 
     #[test]
     fn test_find() {
-        let delaunay = Delaunay::new(&[
-            (0.0, 0.0),
-            (1.0, 0.0),
-            (0.5, 1.0),
-            (0.5, 0.5),
-        ]);
+        let delaunay = Delaunay::new(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0), (0.5, 0.5)]);
 
         // Find nearest to origin
         assert_eq!(delaunay.find(0.0, 0.0, None), Some(0));
@@ -510,11 +501,7 @@ mod tests {
 
     #[test]
     fn test_find_with_radius() {
-        let delaunay = Delaunay::new(&[
-            (0.0, 0.0),
-            (1.0, 0.0),
-            (0.5, 1.0),
-        ]);
+        let delaunay = Delaunay::new(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)]);
 
         // Point within radius
         assert_eq!(delaunay.find_within_radius(0.1, 0.1, 0.2), Some(0));
@@ -525,12 +512,7 @@ mod tests {
 
     #[test]
     fn test_neighbors() {
-        let delaunay = Delaunay::new(&[
-            (0.0, 0.0),
-            (1.0, 0.0),
-            (0.5, 1.0),
-            (0.5, 0.5),
-        ]);
+        let delaunay = Delaunay::new(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0), (0.5, 0.5)]);
 
         // Central point should have all others as neighbors
         let neighbors: Vec<_> = delaunay.neighbors(3).collect();

@@ -2,13 +2,9 @@ use d3rs::geo::{Equirectangular, Mercator, Projection};
 use gpui::*;
 
 pub fn render(app: &ShowcaseApp) -> Div {
-    let mercator = Mercator::new()
-        .scale(200.0)
-        .translate(400.0, 300.0);
+    let mercator = Mercator::new().scale(200.0).translate(400.0, 300.0);
 
-    let equirect = Equirectangular::new()
-        .scale(200.0)
-        .translate(400.0, 300.0);
+    let equirect = Equirectangular::new().scale(200.0).translate(400.0, 300.0);
 
     div()
         .flex()

@@ -100,7 +100,8 @@ impl Surface3DDemo {
                         let beaming = (log_freq - 2.0).max(0.0) * 0.5;
 
                         // Gaussian-like falloff from on-axis
-                        let angle_factor = (-angle_rad.powi(2) / (2.0 * (1.5 - beaming).max(0.3).powi(2))).exp();
+                        let angle_factor =
+                            (-angle_rad.powi(2) / (2.0 * (1.5 - beaming).max(0.3).powi(2))).exp();
 
                         // Base response with some ripple
                         let base = 85.0 + (log_freq * 2.0).sin() * 2.0;
@@ -144,10 +145,11 @@ impl Surface3DDemo {
 
     /// Create saddle surface (hyperbolic paraboloid)
     fn saddle_demo() -> Self {
-        let data = SurfaceData::from_function((-2.0, 2.0), (-2.0, 2.0), 80, 80, |x, y| x * x - y * y)
-            .with_x_label("X")
-            .with_y_label("Y")
-            .with_z_label("Z = X² - Y²");
+        let data =
+            SurfaceData::from_function((-2.0, 2.0), (-2.0, 2.0), 80, 80, |x, y| x * x - y * y)
+                .with_x_label("X")
+                .with_y_label("Y")
+                .with_z_label("Z = X² - Y²");
 
         let config = Surface3DConfig::new()
             .colormap(Colormap::CoolWarm)
@@ -268,7 +270,10 @@ fn main() {
                     },
                 })),
                 titlebar: Some(TitlebarOptions {
-                    title: Some(SharedString::from(format!("3D Surface Demo - {}", &demo_type))),
+                    title: Some(SharedString::from(format!(
+                        "3D Surface Demo - {}",
+                        &demo_type
+                    ))),
                     ..Default::default()
                 }),
                 ..Default::default()

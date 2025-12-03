@@ -1,8 +1,8 @@
 use d3rs::contour::{ContourGenerator, DensityEstimator};
 use d3rs::prelude::*;
 use d3rs::shape::contour::{
-    heat_color_scale, render_contour, render_heatmap, viridis_color_scale, ContourConfig,
-    HeatmapData,
+    ContourConfig, HeatmapData, heat_color_scale, render_contour, render_heatmap,
+    viridis_color_scale,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::*;
@@ -77,11 +77,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     // Generate heatmap data for the Gaussian surface
     let heatmap_x_values: Vec<f64> = (0..grid_size).map(|i| i as f64).collect();
     let heatmap_y_values: Vec<f64> = (0..grid_size).map(|i| i as f64).collect();
-    let gaussian_heatmap = HeatmapData::new(
-        heatmap_x_values,
-        heatmap_y_values,
-        values.clone(),
-    );
+    let gaussian_heatmap = HeatmapData::new(heatmap_x_values, heatmap_y_values, values.clone());
 
     // Generate density estimation from points
     let points: Vec<(f64, f64)> = (0..num_points)
@@ -104,8 +100,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
 
     let density_generator = ContourGenerator::new(density_grid_size, density_grid_size);
 
-    let density_thresholds: Vec<f64> =
-        (1..=5).map(|i| density_max * (i as f64 / 6.0)).collect();
+    let density_thresholds: Vec<f64> = (1..=5).map(|i| density_max * (i as f64 / 6.0)).collect();
     let density_contours = density_generator.contours(&density_grid, &density_thresholds);
 
     // Scales for the density plot
@@ -150,10 +145,9 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                 .items_center()
                                 .gap_4()
                                 .child(
-                                    div()
-                                        .text_lg()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .child(format!("Gaussian Surface ({})", render_mode.label())),
+                                    div().text_lg().font_weight(FontWeight::SEMIBOLD).child(
+                                        format!("Gaussian Surface ({})", render_mode.label()),
+                                    ),
                                 )
                                 .child({
                                     let entity = entity.clone();
@@ -170,7 +164,8 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         .child("Toggle Mode")
                                         .on_click(move |_, _window, cx| {
                                             entity.update(cx, |this, _| {
-                                                this.contour_render_mode = this.contour_render_mode.next();
+                                                this.contour_render_mode =
+                                                    this.contour_render_mode.next();
                                             });
                                         })
                                 }),
@@ -205,8 +200,8 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     )
                                 })
                                 .when(render_mode == ContourRenderMode::Heatmap, |this| {
-                                    let heatmap_config = ContourConfig::new()
-                                        .color_scale(viridis_color_scale());
+                                    let heatmap_config =
+                                        ContourConfig::new().color_scale(viridis_color_scale());
                                     this.child(
                                         render_heatmap(
                                             gaussian_heatmap.clone(),
