@@ -9,11 +9,12 @@ description = "High-level Plotly Express-style charting API built on d3rs and GP
 
 [features]
 default = ["gpui"]
-gpui = ["dep:gpui"]
+gpui = ["dep:gpui", "dep:gpui-ui-kit"]
 
 [dependencies]
-d3rs = { version="0.1", path = "../gpui-d3rs", package = "gpui-d3rs" }
+d3rs = { version="0.1", path = "../gpui-d3rs", package = "gpui-d3rs", features = ["gpu-3d"] }
 gpui = { workspace=true, optional = true }
+gpui-ui-kit = { version = "0.1", path = "../gpui-ui-kit", optional = true }
 thiserror.workspace = true
 
 [[bin]]

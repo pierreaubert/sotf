@@ -5,24 +5,13 @@
 
 use gpui::*;
 use gpui_px::*;
+use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(1200.0), px(800.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("gpui-px Showcase".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |_, cx| cx.new(ShowcaseApp::new),
-        )
-        .unwrap();
-        cx.activate(true);
-    });
+    MiniApp::run(
+        MiniAppConfig::new("gpui-px Showcase").size(1200.0, 800.0),
+        |cx| cx.new(ShowcaseApp::new),
+    );
 }
 
 // ============================================================================

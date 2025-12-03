@@ -6,7 +6,9 @@ use crate::{
     DEFAULT_WIDTH, TITLE_AREA_HEIGHT, ScaleType, extent_padded, validate_data_array,
     validate_data_length, validate_dimensions, validate_positive,
 };
+use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
 use d3rs::color::D3Color;
+use d3rs::grid::{render_grid, GridConfig};
 use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ScatterConfig, ScatterPoint, render_scatter};
 use d3rs::text::{VectorFontConfig, render_vector_text};
@@ -104,13 +106,21 @@ impl ScatterChart {
             validate_positive(&self.y, "y")?;
         }
 
+        // Define margins (TODO: Make configurable?)
+        let margin_left = 50.0;
+        let margin_bottom = 30.0;
+        let margin_top = 10.0;
+        let margin_right = 20.0;
+
         // Calculate plot area (reserve space for title if present)
         let title_height = if self.title.is_some() {
             TITLE_AREA_HEIGHT
         } else {
             0.0
         };
-        let plot_height = self.height - title_height;
+        
+        let plot_width = (self.width as f64 - margin_left - margin_right).max(0.0);
+        let plot_height = (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
         // Calculate domains with padding
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
@@ -130,43 +140,189 @@ impl ScatterChart {
             .point_radius(self.point_radius)
             .opacity(self.opacity);
 
+        let theme = DefaultAxisTheme;
+
         // Build the element based on scale types
-        let scatter_element: AnyElement = match (self.x_scale_type, self.y_scale_type) {
+        let chart_content: AnyElement = match (self.x_scale_type, self.y_scale_type) {
             (ScaleType::Linear, ScaleType::Linear) => {
                 let x_scale = LinearScale::new()
                     .domain(x_min, x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
-                    .range(plot_height as f64, 0.0);
-                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8)) // Light gray background
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
             (ScaleType::Log, ScaleType::Linear) => {
                 let x_scale = LogScale::new()
                     .domain(x_min.max(1e-10), x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
-                    .range(plot_height as f64, 0.0);
-                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
             (ScaleType::Linear, ScaleType::Log) => {
                 let x_scale = LinearScale::new()
                     .domain(x_min, x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
-                    .range(plot_height as f64, 0.0);
-                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
             (ScaleType::Log, ScaleType::Log) => {
                 let x_scale = LogScale::new()
                     .domain(x_min.max(1e-10), x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
-                    .range(plot_height as f64, 0.0);
-                render_scatter(&x_scale, &y_scale, &data, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
         };
 
@@ -193,13 +349,11 @@ impl ScatterChart {
             );
         }
 
-        // Add plot area
+        // Add chart content
         container = container.child(
             div()
-                .w(px(self.width))
-                .h(px(plot_height))
                 .relative()
-                .child(scatter_element),
+                .child(chart_content),
         );
 
         Ok(container)

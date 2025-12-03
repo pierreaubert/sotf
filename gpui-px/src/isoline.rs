@@ -6,8 +6,10 @@ use crate::{
     TITLE_AREA_HEIGHT, extent_padded, validate_data_array, validate_dimensions,
     validate_grid_dimensions, validate_monotonic, validate_positive,
 };
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ContourConfig, render_contour};
 use d3rs::text::{VectorFontConfig, render_vector_text};
@@ -153,13 +155,20 @@ impl IsolineChart {
             None => (0..self.grid_height).map(|i| i as f64).collect(),
         };
 
-        // Calculate plot area (reserve space for title if present)
+        // Calculate plot area (reserve space for title and axes)
         let title_height = if self.title.is_some() {
             TITLE_AREA_HEIGHT
         } else {
             0.0
         };
-        let plot_height = self.height - title_height;
+        
+        // Reserve space for axes
+        let left_margin = 60.0_f64;
+        let bottom_margin = 40.0_f64;
+        let plot_width = (self.width as f64) - left_margin;
+        let plot_height = (self.height as f64) - title_height as f64 - bottom_margin;
+        
+        let theme = DefaultAxisTheme;
 
         // Calculate domains with padding
         let (x_min, x_max) = extent_padded(&x_values, 0.0);
@@ -198,38 +207,182 @@ impl IsolineChart {
             (ScaleType::Linear, ScaleType::Linear) => {
                 let x_scale = LinearScale::new()
                     .domain(x_min, x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
-                    .range(plot_height as f64, 0.0);
-                render_contour(contours, &x_scale, &y_scale, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
             (ScaleType::Log, ScaleType::Linear) => {
                 let x_scale = LogScale::new()
                     .domain(x_min.max(1e-10), x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
-                    .range(plot_height as f64, 0.0);
-                render_contour(contours, &x_scale, &y_scale, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
             (ScaleType::Linear, ScaleType::Log) => {
                 let x_scale = LinearScale::new()
                     .domain(x_min, x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
-                    .range(plot_height as f64, 0.0);
-                render_contour(contours, &x_scale, &y_scale, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
             (ScaleType::Log, ScaleType::Log) => {
                 let x_scale = LogScale::new()
                     .domain(x_min.max(1e-10), x_max)
-                    .range(0.0, self.width as f64);
+                    .range(0.0, plot_width);
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
-                    .range(plot_height as f64, 0.0);
-                render_contour(contours, &x_scale, &y_scale, &config).into_any_element()
+                    .range(plot_height, 0.0);
+                
+                div()
+                    .flex()
+                    .child(render_axis(
+                        &y_scale,
+                        &AxisConfig::left(),
+                        plot_height as f32,
+                        &theme,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .w(px(plot_width as f32))
+                                    .h(px(plot_height as f32))
+                                    .relative()
+                                    .bg(rgb(0xf8f8f8))
+                                    .child(render_grid(
+                                        &x_scale,
+                                        &y_scale,
+                                        &GridConfig::default(),
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &theme,
+                                    ))
+                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                            )
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom(),
+                                plot_width as f32,
+                                &theme,
+                            ))
+                    )
+                    .into_any_element()
             }
         };
 
@@ -256,14 +409,8 @@ impl IsolineChart {
             );
         }
 
-        // Add plot area
-        container = container.child(
-            div()
-                .w(px(self.width))
-                .h(px(plot_height))
-                .relative()
-                .child(isoline_element),
-        );
+        // Add plot area with axes
+        container = container.child(isoline_element);
 
         Ok(container)
     }
