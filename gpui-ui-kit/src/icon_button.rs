@@ -1,6 +1,7 @@
 //! IconButton component
 //!
 //! A button that displays only an icon, with optional tooltip.
+//! Supports both text/emoji icons and custom child elements (like SVG icons).
 
 use gpui::prelude::*;
 use gpui::*;
@@ -64,16 +65,20 @@ pub enum IconButtonSize {
     Lg,
     /// Extra large (48px)
     Xl,
+    /// Custom size in pixels
+    Custom(u32),
 }
 
 impl IconButtonSize {
-    fn size(&self) -> Pixels {
+    /// Get the size in pixels
+    pub fn size(&self) -> Pixels {
         match self {
             IconButtonSize::Xs => px(16.0),
             IconButtonSize::Sm => px(20.0),
             IconButtonSize::Md => px(24.0),
             IconButtonSize::Lg => px(32.0),
             IconButtonSize::Xl => px(48.0),
+            IconButtonSize::Custom(size) => px(*size as f32),
         }
     }
 }
@@ -90,30 +95,69 @@ pub enum IconButtonVariant {
     Outline,
 }
 
+/// Icon content - either text/emoji or a custom element
+enum IconContent {
+    Text(SharedString),
+    Element(AnyElement),
+}
+
 /// An icon-only button component
+///
+/// # Examples
+///
+/// ```ignore
+/// // With text/emoji icon
+/// IconButton::new("btn", "🔊")
+///     .variant(IconButtonVariant::Ghost)
+///     .on_click(|window, cx| { /* handle click */ })
+///
+/// // With custom element (e.g., SVG icon)
+/// IconButton::with_child("btn", my_svg_icon)
+///     .size(IconButtonSize::Lg)
+///     .rounded_full()
+///     .theme(my_theme)
+/// ```
 pub struct IconButton {
     id: ElementId,
-    icon: SharedString,
+    content: IconContent,
     size: IconButtonSize,
     variant: IconButtonVariant,
     disabled: bool,
     selected: bool,
     rounded_full: bool,
+    padding: Option<Pixels>,
     theme: Option<IconButtonTheme>,
     on_click: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
 }
 
 impl IconButton {
-    /// Create a new icon button
+    /// Create a new icon button with a text/emoji icon
     pub fn new(id: impl Into<ElementId>, icon: impl Into<SharedString>) -> Self {
         Self {
             id: id.into(),
-            icon: icon.into(),
+            content: IconContent::Text(icon.into()),
             size: IconButtonSize::default(),
             variant: IconButtonVariant::default(),
             disabled: false,
             selected: false,
             rounded_full: false,
+            padding: None,
+            theme: None,
+            on_click: None,
+        }
+    }
+
+    /// Create a new icon button with a custom child element (e.g., SVG icon)
+    pub fn with_child(id: impl Into<ElementId>, child: impl IntoElement) -> Self {
+        Self {
+            id: id.into(),
+            content: IconContent::Element(child.into_any_element()),
+            size: IconButtonSize::default(),
+            variant: IconButtonVariant::default(),
+            disabled: false,
+            selected: false,
+            rounded_full: false,
+            padding: None,
             theme: None,
             on_click: None,
         }
@@ -155,62 +199,72 @@ impl IconButton {
         self
     }
 
+    /// Set custom padding (overrides default size-based padding)
+    pub fn padding(mut self, padding: Pixels) -> Self {
+        self.padding = Some(padding);
+        self
+    }
+
     /// Set the button theme
     pub fn theme(mut self, theme: IconButtonTheme) -> Self {
         self.theme = Some(theme);
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Stateful<Div> {
-        let size = self.size.size();
+    /// Get the computed colors based on variant and state
+    pub fn compute_colors(&self) -> (Rgba, Rgba, Rgba, Option<Rgba>) {
         let default_theme = IconButtonTheme::default();
         let theme = self.theme.as_ref().unwrap_or(&default_theme);
 
-        let (bg, bg_hover, text_color, border): (Rgba, Rgba, Rgba, Option<Rgba>) =
-            match self.variant {
-                IconButtonVariant::Ghost => {
-                    if self.selected {
-                        (
-                            theme.selected_bg,
-                            theme.selected_hover_bg,
-                            theme.text_on_accent,
-                            None,
-                        )
-                    } else {
-                        (theme.ghost_bg, theme.ghost_hover_bg, theme.text, None)
-                    }
+        match self.variant {
+            IconButtonVariant::Ghost => {
+                if self.selected {
+                    (
+                        theme.selected_bg,
+                        theme.selected_hover_bg,
+                        theme.text_on_accent,
+                        None,
+                    )
+                } else {
+                    (theme.ghost_bg, theme.ghost_hover_bg, theme.text, None)
                 }
-                IconButtonVariant::Filled => {
-                    if self.selected {
-                        (
-                            theme.accent,
-                            theme.accent_hover,
-                            theme.text_on_accent,
-                            None,
-                        )
-                    } else {
-                        (theme.filled_bg, theme.filled_hover_bg, theme.text, None)
-                    }
+            }
+            IconButtonVariant::Filled => {
+                if self.selected {
+                    (
+                        theme.accent,
+                        theme.accent_hover,
+                        theme.text_on_accent,
+                        None,
+                    )
+                } else {
+                    (theme.filled_bg, theme.filled_hover_bg, theme.text, None)
                 }
-                IconButtonVariant::Outline => {
-                    if self.selected {
-                        (
-                            theme.selected_bg,
-                            theme.selected_hover_bg,
-                            theme.text_on_accent,
-                            Some(theme.accent),
-                        )
-                    } else {
-                        (
-                            theme.ghost_bg,
-                            theme.ghost_hover_bg,
-                            theme.text,
-                            Some(theme.border),
-                        )
-                    }
+            }
+            IconButtonVariant::Outline => {
+                if self.selected {
+                    (
+                        theme.selected_bg,
+                        theme.selected_hover_bg,
+                        theme.text_on_accent,
+                        Some(theme.accent),
+                    )
+                } else {
+                    (
+                        theme.ghost_bg,
+                        theme.ghost_hover_bg,
+                        theme.text,
+                        Some(theme.border),
+                    )
                 }
-            };
+            }
+        }
+    }
+
+    /// Build into element
+    pub fn build(self) -> Stateful<Div> {
+        let size = self.size.size();
+        let (bg, bg_hover, text_color, border) = self.compute_colors();
 
         let mut el = div()
             .id(self.id)
@@ -222,6 +276,11 @@ impl IconButton {
             .bg(bg)
             .text_color(text_color)
             .cursor_pointer();
+
+        // Apply padding if specified
+        if let Some(padding) = self.padding {
+            el = el.p(padding);
+        }
 
         // Apply rounding
         if self.rounded_full {
@@ -246,7 +305,11 @@ impl IconButton {
             }
         }
 
-        el.child(self.icon)
+        // Add content
+        match self.content {
+            IconContent::Text(text) => el.child(text),
+            IconContent::Element(element) => el.child(element),
+        }
     }
 }
 

@@ -56,7 +56,7 @@ pub use dialog::{Dialog, DialogSize};
 pub use accordion::{Accordion, AccordionItem, AccordionMode, AccordionTheme};
 pub use breadcrumbs::{BreadcrumbItem, BreadcrumbSeparator, Breadcrumbs};
 pub use menu::{Menu, MenuBar, MenuBarItem, MenuItem, menu_bar_button};
-pub use tabs::{TabItem, TabVariant, Tabs};
+pub use tabs::{TabItem, TabVariant, Tabs, TabsTheme};
 
 // Notifications
 pub use alert::{Alert, AlertVariant, InlineAlert};
@@ -66,7 +66,7 @@ pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use input::{Input, InputSize, InputVariant};
 pub use potentiometer::Potentiometer;
-pub use select::{Select, SelectOption, SelectSize};
+pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize};
 
