@@ -225,16 +225,25 @@ where
     let (x_min, x_max) = x_scale.range();
     let (y_min, y_max) = y_scale.range();
     let x_range_span = x_max - x_min;
-    let y_range_span = (y_max - y_min).abs();
 
     // Pre-calculate relative positions for the line (in 0..1 range)
+    // The scale maps domain values to range values (screen coordinates)
+    // We need to normalize to 0..1 where 0 is the top of the plot area
     let mut relative_points: Vec<(f32, f32)> = Vec::with_capacity(data.len());
     for point in data {
         let x_range = x_scale.scale(point.x);
         let x_rel = ((x_range - x_min) / x_range_span) as f32;
         let y_range = y_scale.scale(point.y);
-        // Invert Y for screen coordinates
-        let y_rel = 1.0 - ((y_range - y_min) / y_range_span) as f32;
+        // y_range is in screen coordinates
+        // For inverted range (typical: range(height, 0)), y_min > y_max
+        // y_range=0 (top) should map to y_rel=0, y_range=y_min (bottom) should map to y_rel=1
+        let y_rel = if y_min > y_max {
+            // Inverted range: y_min is at bottom, y_max (0) is at top
+            (y_range / y_min) as f32
+        } else {
+            // Normal range: y_min is at top (0), y_max is at bottom
+            ((y_range - y_min) / (y_max - y_min)) as f32
+        };
         relative_points.push((x_rel, y_rel));
     }
 

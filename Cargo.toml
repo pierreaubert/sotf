@@ -14,14 +14,12 @@ members = [
     "math-de",
     "sotf-audio-engine",
     "sotf-audio-player",
-    "sotf-audio-player-gpui",
-    "sotf-audio-player-midi",
-    "sotf-audio-player-tui",
+    "sotf-audio-player/app-tui",
+    "sotf-audio-player/app-gpui",
+    "sotf-audio-midi",
     "sotf-audio-plugins",
-    "sotf-audio-plugins-ffi",
     "sotf-macos-hal",
     "sotf-head-scanner",
-    "sotf-tauri",
 ]
 # Default members excludes
 #   - macOS-only sotf-hal, sotf-configbar
@@ -37,9 +35,9 @@ default-members = [
     "sotf-audio-engine",
     "sotf-audio-plugins",
     "sotf-audio-player",
-    "sotf-audio-player-midi",
-    "sotf-audio-player-tui",
-    "sotf-audio-player-gpui",
+    "sotf-audio-player/app-tui",
+    "sotf-audio-player/app-gpui",
+    "sotf-audio-midi",
     "gpui-d3rs",
     "gpui-px",
     "gpui-ui-kit",
@@ -52,7 +50,6 @@ default-members = [
     "math-de",
     "math-iir",
     "math-testfunctions",
-    "sotf-tauri",
 ]
 resolver = "3"
 
@@ -71,8 +68,6 @@ repository = "https://github.com/pierreaubert/sotf"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
-csv = "1.4"
-regex = "1.12"
 
 # Async and networking
 # ideally we would use only threads or only tokio
@@ -88,21 +83,28 @@ futures-util = "0.3"
 parking_lot = { version = "0.12.5", features = ["deadlock_detection"] }
 
 # CLI and system
-clap = { version = "4.5", features = ["derive"] }
-ctrlc = "3.5"
-notify = { version = "6.1", default-features = false, features = ["macos_kqueue"] }
-num_cpus = "1.17"
-thiserror = "2.0.17"
-strsim = "0.11"
-chrono = "0.4"
-tempfile = "3.23"
 base64 = "0.22"
 byteorder = "1.5"
-libc = "0.2"
-log = "0.4"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+csv = "1.4"
+ctrlc = "3.5"
+directories = "5"
 env = "1"
 env_logger = "0.11"
+libc = "0.2"
+log = "0.4"
+notify = { version = "6.1", default-features = false, features = ["macos_kqueue"] }
+num_cpus = "1.17"
+regex = "1.12"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rust-embed = "8"
+smol = "2.0"
+strsim = "0.11"
+tempfile = "3.23"
+thiserror = "2.0.17"
 which = "8"
+walkdir = "2"
 
 # Optimization and math
 ndarray = { version = "0.17", features = ["rayon", "blas", "serde"] }
@@ -124,7 +126,7 @@ autoeq = { path = "autoeq" }
 # Plotting and visualization
 plotly = { version = "0.13.5" }
 # plotly_static will be specified per-crate as needed
-# patched currently locally
+# patched currently locally see down the patch section
 webdriver-downloader = "0.16.0"
 build_html = "2.7.0"
 
@@ -160,7 +162,6 @@ crossterm = "0.28"
 
 # GPUI framework
 gpui = { git = "https://github.com/zed-industries/zed.git" }
-
 
 [patch.crates-io]
 webdriver-downloader = { version = "0.16.4", git = "https://github.com/pierreaubert/webdriver-downloader" }

@@ -443,9 +443,9 @@ impl SparseNearfieldIlu {
         let mut l_values = Vec::new();
         let mut l_col_indices = Vec::new();
         let mut l_row_ptr = vec![0usize; n + 1];
-        let mut u_values = Vec::new();
-        let mut u_row_indices = Vec::new();
-        let mut u_col_ptr = vec![0usize; n + 1];
+        let u_values = Vec::new();
+        let u_row_indices = Vec::new();
+        let u_col_ptr = vec![0usize; n + 1];
 
         // For now, use a simple diagonal preconditioner as fallback
         // A proper sparse ILU implementation would go here

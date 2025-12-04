@@ -124,7 +124,7 @@ impl Input {
 
     /// Build into element
     pub fn build(self) -> Div {
-        let (py, text_size) = match self.size {
+        let (py, _text_size) = match self.size {
             InputSize::Sm => (px(4.0), "text_xs"),
             InputSize::Md => (px(8.0), "text_sm"),
             InputSize::Lg => (px(12.0), "text_base"),

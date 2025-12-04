@@ -148,6 +148,7 @@
 //!     .build()?;
 //! ```
 
+mod area;
 mod bar;
 mod color_scale;
 mod contour;
@@ -155,8 +156,11 @@ mod error;
 mod heatmap;
 mod isoline;
 mod line;
+mod pie;
 mod scatter;
+mod surface3d;
 
+pub use area::{AreaChart, area};
 pub use bar::{BarChart, bar};
 pub use color_scale::ColorScale;
 pub use contour::{ContourChart, contour};
@@ -164,7 +168,9 @@ pub use error::ChartError;
 pub use heatmap::{HeatmapChart, heatmap};
 pub use isoline::{IsolineChart, isoline};
 pub use line::{LineChart, line};
+pub use pie::{PieChart, pie, donut};
 pub use scatter::{ScatterChart, scatter};
+pub use surface3d::{Surface3DChart, surface3d};
 
 // Re-export d3rs types users might need
 pub use d3rs::color::D3Color;

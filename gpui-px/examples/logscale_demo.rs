@@ -4,24 +4,13 @@
 
 use gpui::*;
 use gpui_px::*;
+use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(900.0), px(1200.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("gpui-px Logarithmic Scale Demo".into()),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |_, cx| cx.new(|_| LogScaleDemo),
-        )
-        .unwrap();
-        cx.activate(true);
-    });
+    MiniApp::run(
+        MiniAppConfig::new("gpui-px Logarithmic Scale Demo").size(900.0, 1200.0),
+        |cx| cx.new(|_| LogScaleDemo),
+    );
 }
 
 struct LogScaleDemo;
@@ -58,7 +47,6 @@ impl Render for LogScaleDemo {
             .size_full()
             .flex()
             .flex_col()
-            .overflow_y_scroll()
             .bg(rgb(0xffffff))
             .p_8()
             .gap_8()

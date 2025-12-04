@@ -52,7 +52,7 @@ pub trait Host {
     fn output_channels(&self) -> usize;
 
     /// Get data from a plugin at the given index
-    fn get_plugin_data(&self, index: usize) -> Option<Arc<dyn Any + Send + Sync>> {
+    fn get_plugin_data(&self, _index: usize) -> Option<Arc<dyn Any + Send + Sync>> {
         None
     }
 
