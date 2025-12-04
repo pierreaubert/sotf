@@ -221,7 +221,12 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,
@@ -266,7 +271,12 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,
@@ -311,7 +321,12 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,
@@ -356,7 +371,12 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,

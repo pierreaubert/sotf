@@ -25,6 +25,7 @@ enum ChartSection {
     Scatter,
     Line,
     Bar,
+    BoxPlot,
     LogScales,
     Heatmap,
     Contour,
@@ -39,6 +40,7 @@ impl ChartSection {
             ChartSection::Scatter,
             ChartSection::Line,
             ChartSection::Bar,
+            ChartSection::BoxPlot,
             ChartSection::LogScales,
             ChartSection::Heatmap,
             ChartSection::Contour,
@@ -53,6 +55,7 @@ impl ChartSection {
             ChartSection::Scatter => "Scatter",
             ChartSection::Line => "Line",
             ChartSection::Bar => "Bar",
+            ChartSection::BoxPlot => "Box Plot",
             ChartSection::LogScales => "Log Scales",
             ChartSection::Heatmap => "Heatmap",
             ChartSection::Contour => "Contour",
@@ -75,6 +78,8 @@ struct ShowcaseApp {
     line_y: Vec<f64>,
     bar_categories: Vec<String>,
     bar_values: Vec<f64>,
+    boxplot_x: Vec<f64>,
+    boxplot_y: Vec<f64>,
     heatmap_z: Vec<f64>,
     heatmap_size: usize,
     contour_z: Vec<f64>,
@@ -89,6 +94,7 @@ impl ShowcaseApp {
         let (scatter_x, scatter_y) = generate_scatter_data();
         let (line_x, line_y) = generate_line_data();
         let (bar_categories, bar_values) = generate_bar_data();
+        let (boxplot_x, boxplot_y) = generate_boxplot_data();
         let heatmap_size = 30;
         let heatmap_z = generate_grid_data(heatmap_size);
         let contour_size = 50;
@@ -102,6 +108,8 @@ impl ShowcaseApp {
             line_y,
             bar_categories,
             bar_values,
+            boxplot_x,
+            boxplot_y,
             heatmap_z,
             heatmap_size,
             contour_z,
@@ -167,6 +175,7 @@ impl ShowcaseApp {
             ChartSection::Scatter => self.render_scatter_demo(),
             ChartSection::Line => self.render_line_demo(),
             ChartSection::Bar => self.render_bar_demo(),
+            ChartSection::BoxPlot => self.render_boxplot_demo(),
             ChartSection::LogScales => self.render_logscales_demo(),
             ChartSection::Heatmap => self.render_heatmap_demo(cx),
             ChartSection::Contour => self.render_contour_demo(cx),
@@ -458,6 +467,71 @@ impl ShowcaseApp {
                     .child(div().text_sm().child("• Automatic bar width calculation"))
                     .child(div().text_sm().child("• Custom colors and opacity"))
                     .child(div().text_sm().child("• Support for negative values")),
+            )
+    }
+
+    // ========================================================================
+    // Box Plot Section
+    // ========================================================================
+
+    fn render_boxplot_demo(&self) -> Div {
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(
+                div()
+                    .text_2xl()
+                    .font_weight(FontWeight::BOLD)
+                    .child("Box Plot"),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .max_w(px(600.0))
+                    .child("Displays distribution of data based on quartiles. Shows median, interquartile range (IQR), whiskers extending to 1.5×IQR, and outliers as individual points."),
+            )
+            .child({
+                boxplot(&self.boxplot_x, &self.boxplot_y)
+                    .title("Morley Speed of Light Experiment")
+                    .box_color(0xdddddd)
+                    .median_color(0x000000)
+                    .whisker_color(0x333333)
+                    .outlier_color(0xd62728)
+                    .box_width(30.0)
+                    .size(600.0, 400.0)
+                    .build()
+                    .unwrap()
+            })
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Code"),
+            )
+            .child(self.code_block(
+                "boxplot(&x, &y)\n    .title(\"Distribution\")\n    .box_color(0xdddddd)\n    .median_color(0x000000)\n    .size(600.0, 400.0)\n    .build()?",
+            ))
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Features"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .ml_4()
+                    .child(div().text_sm().child("• Automatic quartile calculation (Q1, Q2, Q3)"))
+                    .child(div().text_sm().child("• Whiskers extend to 1.5×IQR from box"))
+                    .child(div().text_sm().child("• Outliers displayed as individual points"))
+                    .child(div().text_sm().child("• Customizable colors for box, median, whiskers, outliers"))
+                    .child(div().text_sm().child("• Support for log scale axes")),
             )
     }
 
@@ -970,11 +1044,20 @@ impl ShowcaseApp {
                             .unwrap()
                     }),
             )
-            // Row 2: Heatmap, Contour, Isoline
+            // Row 2: Box Plot, Heatmap, Contour
             .child(
                 div()
                     .flex()
                     .gap_4()
+                    .child({
+                        boxplot(&self.boxplot_x, &self.boxplot_y)
+                            .title("Box Plot")
+                            .box_color(0xdddddd)
+                            .median_color(0x000000)
+                            .size(small_w, small_h)
+                            .build()
+                            .unwrap()
+                    })
                     .child({
                         heatmap(&self.heatmap_z, self.heatmap_size, self.heatmap_size)
                             .title("Heatmap")
@@ -990,7 +1073,13 @@ impl ShowcaseApp {
                             .size(small_w, small_h)
                             .build()
                             .unwrap()
-                    })
+                    }),
+            )
+            // Row 3: Isoline
+            .child(
+                div()
+                    .flex()
+                    .gap_4()
                     .child({
                         isoline(&self.contour_z, self.contour_size, self.contour_size)
                             .title("Isoline")
@@ -1085,6 +1174,36 @@ fn generate_bar_data() -> (Vec<String>, Vec<f64>) {
         .collect();
     let values = vec![45.0, 62.0, 55.0, 78.0, 68.0, 35.0, 28.0];
     (categories, values)
+}
+
+/// Generate box plot data (simulated Morley speed of light experiment)
+///
+/// This generates data similar to the classic Morley experiment dataset,
+/// with 5 experiments each containing 20 measurements.
+fn generate_boxplot_data() -> (Vec<f64>, Vec<f64>) {
+    // Morley experiment: 5 runs, each with 20 measurements
+    // Values are speed of light measurements (deviations from 299,000 km/s)
+    // Based on the original D3 example data patterns
+    let experiment_data: Vec<Vec<f64>> = vec![
+        vec![850., 740., 900., 1070., 930., 850., 950., 980., 980., 880., 1000., 980., 930., 650., 760., 810., 1000., 1000., 960., 960.],
+        vec![960., 940., 960., 940., 880., 800., 850., 880., 900., 840., 830., 790., 810., 880., 880., 830., 800., 790., 760., 800.],
+        vec![880., 880., 880., 860., 720., 720., 620., 860., 970., 950., 880., 910., 850., 870., 840., 840., 850., 840., 840., 840.],
+        vec![890., 810., 810., 820., 800., 770., 760., 740., 750., 760., 910., 920., 890., 860., 880., 720., 840., 850., 850., 780.],
+        vec![890., 840., 780., 810., 760., 810., 790., 810., 820., 850., 870., 870., 810., 740., 810., 940., 950., 800., 810., 870.],
+    ];
+
+    let mut x = Vec::new();
+    let mut y = Vec::new();
+
+    for (exp_idx, measurements) in experiment_data.iter().enumerate() {
+        let exp_num = (exp_idx + 1) as f64;
+        for &value in measurements {
+            x.push(exp_num);
+            y.push(value);
+        }
+    }
+
+    (x, y)
 }
 
 /// Generate 2D grid data with Gaussian peaks

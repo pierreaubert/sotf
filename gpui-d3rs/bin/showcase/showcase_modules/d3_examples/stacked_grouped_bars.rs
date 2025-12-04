@@ -201,6 +201,38 @@ fn interpolate_layouts(
         .collect()
 }
 
+fn start_animation_loop(entity: Entity<ShowcaseApp>, cx: &mut Context<ShowcaseApp>) {
+    let animation_entity = entity.clone();
+    cx.spawn(async move |_this: WeakEntity<ShowcaseApp>, mut cx| {
+        loop {
+            Timer::after(Duration::from_millis(16)).await;
+            let should_continue = cx
+                .update(|cx| {
+                    animation_entity.update(cx, |this, cx| {
+                        if !this.stacked_bars_animating {
+                            return false;
+                        }
+                        this.stacked_bars_animation_progress += 0.04; // ~25 frames for full animation
+                        if this.stacked_bars_animation_progress >= 1.0 {
+                            this.stacked_bars_animation_progress = 1.0;
+                            this.stacked_bars_animating = false;
+                            cx.notify();
+                            return false;
+                        }
+                        cx.notify();
+                        true
+                    })
+                })
+                .unwrap_or(false);
+
+            if !should_continue {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
 pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let entity = cx.entity().clone();
 
@@ -237,25 +269,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
         }
     };
 
-    // Start or continue animation if needed
-    if animating && animation_progress < 1.0 {
-        let animation_entity = entity.clone();
-        cx.spawn(async move |_this: WeakEntity<ShowcaseApp>, cx| {
-            Timer::after(Duration::from_millis(16)).await;
-            let _ = cx.update(|cx| {
-                animation_entity.update(cx, |this, _| {
-                    if this.stacked_bars_animating {
-                        this.stacked_bars_animation_progress += 0.04; // ~25 frames for full animation
-                        if this.stacked_bars_animation_progress >= 1.0 {
-                            this.stacked_bars_animation_progress = 1.0;
-                            this.stacked_bars_animating = false;
-                        }
-                    }
-                });
-            });
-        })
-        .detach();
-    }
+    // Animation loop is now handled by start_animation_loop triggered by actions
 
     div()
         .flex()
@@ -423,12 +437,14 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         ))
                                         .when(!disabled, |this| {
                                             this.on_click(move |_, _window, cx| {
-                                                entity.update(cx, |this, _| {
+                                                let entity_clone = entity.clone();
+                                                entity.update(cx, |this, cx| {
                                                     if !this.stacked_bars_animating {
                                                         this.stacked_bars_layout =
                                                             this.stacked_bars_layout.toggle();
                                                         this.stacked_bars_animating = true;
                                                         this.stacked_bars_animation_progress = 0.0;
+                                                        start_animation_loop(entity_clone, cx);
                                                     }
                                                 });
                                             })
@@ -472,7 +488,8 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                         .text_center()
                                                         .child(l.label())
                                                         .on_click(move |_, _window, cx| {
-                                                            entity.update(cx, |this, _| {
+                                                            let entity_clone = entity.clone();
+                                                            entity.update(cx, |this, cx| {
                                                                 if !this.stacked_bars_animating
                                                                     && this.stacked_bars_layout != l
                                                                 {
@@ -481,6 +498,7 @@ pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                                         true;
                                                                     this
                                                                         .stacked_bars_animation_progress = 0.0;
+                                                                    start_animation_loop(entity_clone, cx);
                                                                 }
                                                             });
                                                         })

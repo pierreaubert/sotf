@@ -29,7 +29,7 @@ pub fn render_freq_spl_plot(
     // Create linear SPL scale for main curves
     let spl_scale = LinearScale::new()
         .domain(spl_domain.0, spl_domain.1)
-        .range(0.0, chart_height as f64);
+        .range(chart_height as f64, 0.0);
 
     // All possible major frequency ticks
     let all_major_ticks = vec![
@@ -78,7 +78,7 @@ pub fn render_freq_spl_plot(
     let secondary_scale = secondary_axis.as_ref().map(|cfg| {
         LinearScale::new()
             .domain(cfg.domain.0, cfg.domain.1)
-            .range(0.0, chart_height as f64)
+            .range(chart_height as f64, 0.0)
     });
 
     // Separate curves by axis
@@ -170,7 +170,7 @@ pub fn render_freq_spl_plot(
                 .when_some(secondary_axis, |el, cfg| {
                     let sec_scale = LinearScale::new()
                         .domain(cfg.domain.0, cfg.domain.1)
-                        .range(0.0, chart_height as f64);
+                        .range(chart_height as f64, 0.0);
                     // Note: with_formatter takes a fn pointer, so we can't capture max_label_value
                     // For DI axis, we use the tick values directly and filter with max_label_value
                     // by passing only tick values up to max_label_value that should have labels

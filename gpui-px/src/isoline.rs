@@ -238,7 +238,12 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,
@@ -283,7 +288,12 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,
@@ -328,7 +338,12 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,
@@ -373,7 +388,12 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .inset_0()
+                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
+                                    )
                             )
                             .child(render_axis(
                                 &x_scale,

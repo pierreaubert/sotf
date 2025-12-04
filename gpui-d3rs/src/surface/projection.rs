@@ -150,7 +150,6 @@ impl Projection for IsometricProjection {
 
         // Rotate around X axis (pitch) - affects Y and Z
         let y2 = y1 * rx.cos() - z * rx.sin();
-        let z2 = y1 * rx.sin() + z * rx.cos();
 
         // Project to 2D (drop the depth coordinate after rotation)
         // For isometric, we use x1 for screen X and a combination for screen Y

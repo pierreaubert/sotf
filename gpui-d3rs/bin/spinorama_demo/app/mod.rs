@@ -2012,7 +2012,7 @@ impl SpinoramaApp {
                                             )
                                         })
                                         // In Surface/Heatmap mode, render grid on top
-                                        .when(is_surface || is_heatmap, |el| {
+                                        .when(is_heatmap, |el| {
                                             el.child(render_grid(
                                                 &freq_scale,
                                                 &angle_scale,

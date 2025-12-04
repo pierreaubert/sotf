@@ -150,6 +150,7 @@
 
 mod area;
 mod bar;
+mod boxplot;
 mod color_scale;
 mod contour;
 mod error;
@@ -162,6 +163,7 @@ mod surface3d;
 
 pub use area::{AreaChart, area};
 pub use bar::{BarChart, bar};
+pub use boxplot::{BoxPlotChart, boxplot};
 pub use color_scale::ColorScale;
 pub use contour::{ContourChart, contour};
 pub use error::ChartError;
