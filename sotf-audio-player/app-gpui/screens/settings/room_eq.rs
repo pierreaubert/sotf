@@ -5,7 +5,10 @@ use gpui::prelude::*;
 use gpui::*;
 
 impl PlayerView {
-    pub(crate) fn render_roomeq_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_roomeq_settings_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
 

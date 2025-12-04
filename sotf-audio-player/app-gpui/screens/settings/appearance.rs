@@ -8,7 +8,10 @@ use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 
 impl PlayerView {
-    pub(crate) fn render_appearance_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_appearance_settings_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme_id = state.app.theme_id;
         let language = state.app.language;

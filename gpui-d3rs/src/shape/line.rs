@@ -366,7 +366,7 @@ where
             if show_points {
                 for &(x_rel, y_rel) in &rel_points {
                     // Only draw points inside the chart area
-                    if x_rel >= 0.0 && x_rel <= 1.0 && y_rel >= 0.0 && y_rel <= 1.0 {
+                    if (0.0..=1.0).contains(&x_rel) && (0.0..=1.0).contains(&y_rel) {
                         let px_x = origin_x + x_rel * width;
                         let px_y = origin_y + y_rel * height;
                         let point_bounds = Bounds {

@@ -38,6 +38,12 @@ pub struct PanelLayout {
     /// Level meters width ratio (0.0-1.0), default 0.25
     #[serde(default = "default_meters_ratio")]
     pub meters_ratio: f32,
+    /// Queue list width ratio (0.0-1.0), default 0.30
+    #[serde(default = "default_queue_list_ratio")]
+    pub queue_list_ratio: f32,
+    /// LUFS panel width ratio (0.0-1.0), default 0.25
+    #[serde(default = "default_lufs_ratio")]
+    pub lufs_ratio: f32,
 }
 
 fn default_queue_ratio() -> f32 {
@@ -48,11 +54,21 @@ fn default_meters_ratio() -> f32 {
     0.25
 }
 
+fn default_lufs_ratio() -> f32 {
+    0.25
+}
+
+fn default_queue_list_ratio() -> f32 {
+    0.30
+}
+
 impl Default for PanelLayout {
     fn default() -> Self {
         Self {
             queue_ratio: default_queue_ratio(),
             meters_ratio: default_meters_ratio(),
+            queue_list_ratio: default_queue_list_ratio(),
+            lufs_ratio: default_lufs_ratio(),
         }
     }
 }

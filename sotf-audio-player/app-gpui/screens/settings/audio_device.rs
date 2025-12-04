@@ -50,8 +50,7 @@ impl PlayerView {
                                 .cursor_pointer()
                                 .border_1()
                                 .when(is_selected, |d| {
-                                    d.bg(theme.accent)
-                                        .border_color(theme.accent)
+                                    d.bg(theme.accent).border_color(theme.accent)
                                 })
                                 .when(!is_selected, |d| {
                                     d.bg(theme.surface)

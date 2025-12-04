@@ -11,12 +11,17 @@ use gpui::*;
 use std::sync::Arc;
 
 // Re-export existing types from shape module
-pub use crate::shape::{BarConfig, BarDatum, CurveType, LineConfig, LinePoint, ScatterConfig, ScatterPoint};
 pub use crate::axis::{AxisConfig, AxisOrientation};
+pub use crate::shape::{
+    BarConfig, BarDatum, CurveType, LineConfig, LinePoint, ScatterConfig, ScatterPoint,
+};
 // Re-export contour types
-pub use crate::shape::contour::{ContourConfig, HeatmapData};
-pub use crate::shape::contour::{viridis_color_scale, heat_color_scale, turbo_color_scale, magma_color_scale, plasma_color_scale, inferno_color_scale};
 pub use crate::contour::{Contour, ContourBand};
+pub use crate::shape::contour::{
+    heat_color_scale, inferno_color_scale, magma_color_scale, plasma_color_scale,
+    turbo_color_scale, viridis_color_scale,
+};
+pub use crate::shape::contour::{ContourConfig, HeatmapData};
 
 /// Convert D3Color + opacity to Color4
 fn to_color4(color: &D3Color, opacity: f32) -> Color4 {
@@ -133,7 +138,11 @@ where
             let y_pos = 1.0 - ((y_range - y_min) / y_range_span) as f32;
 
             let bar_height_rel = (baseline_pos - y_pos).abs();
-            let bar_top = if datum.value >= 0.0 { y_pos } else { baseline_pos };
+            let bar_top = if datum.value >= 0.0 {
+                y_pos
+            } else {
+                baseline_pos
+            };
 
             (x_pos, bar_top, bar_height_rel, bar_width)
         })
@@ -441,11 +450,7 @@ impl GpuGridConfig {
 }
 
 /// Render a grid overlay using GPU acceleration
-pub fn render_grid<XS, YS>(
-    x_scale: &XS,
-    y_scale: &YS,
-    config: &GpuGridConfig,
-) -> impl IntoElement
+pub fn render_grid<XS, YS>(x_scale: &XS, y_scale: &YS, config: &GpuGridConfig) -> impl IntoElement
 where
     XS: Scale<f64, f64>,
     YS: Scale<f64, f64>,
@@ -556,7 +561,10 @@ impl Default for GpuAxisTheme {
 impl GpuAxisTheme {
     /// Create with custom colors
     pub fn new(line_color: Color4, label_color: Color4) -> Self {
-        Self { line_color, label_color }
+        Self {
+            line_color,
+            label_color,
+        }
     }
 
     /// Light theme (dark text on light background)
@@ -668,7 +676,13 @@ where
                     // Label (centered below tick)
                     let label_y = tick_size + tick_padding + label_font_size * 0.8;
                     let label_width = label.len() as f32 * label_font_size * 0.6;
-                    renderer.draw_text(label, x - label_width / 2.0, label_y, label_font_size, label_color);
+                    renderer.draw_text(
+                        label,
+                        x - label_width / 2.0,
+                        label_y,
+                        label_font_size,
+                        label_color,
+                    );
                 }
 
                 // Minor ticks
@@ -679,9 +693,19 @@ where
 
                 // Title
                 if let Some(ref title_text) = title {
-                    let title_y = tick_size + tick_padding + label_font_size + tick_padding + title_font_size * 0.8;
+                    let title_y = tick_size
+                        + tick_padding
+                        + label_font_size
+                        + tick_padding
+                        + title_font_size * 0.8;
                     let title_width = title_text.len() as f32 * title_font_size * 0.6;
-                    renderer.draw_text(title_text, width / 2.0 - title_width / 2.0, title_y, title_font_size, label_color);
+                    renderer.draw_text(
+                        title_text,
+                        width / 2.0 - title_width / 2.0,
+                        title_y,
+                        title_font_size,
+                        label_color,
+                    );
                 }
             }
             AxisOrientation::Top => {
@@ -702,13 +726,26 @@ where
                     // Label (centered above tick)
                     let label_y = base_y - tick_size - tick_padding;
                     let label_width = label.len() as f32 * label_font_size * 0.6;
-                    renderer.draw_text(label, x - label_width / 2.0, label_y, label_font_size, label_color);
+                    renderer.draw_text(
+                        label,
+                        x - label_width / 2.0,
+                        label_y,
+                        label_font_size,
+                        label_color,
+                    );
                 }
 
                 // Minor ticks
                 for &rel_pos in &minor_ticks {
                     let x = rel_pos * width;
-                    renderer.draw_line(x, base_y - minor_tick_size, x, base_y, domain_width, line_color);
+                    renderer.draw_line(
+                        x,
+                        base_y - minor_tick_size,
+                        x,
+                        base_y,
+                        domain_width,
+                        line_color,
+                    );
                 }
             }
             AxisOrientation::Left => {
@@ -729,19 +766,38 @@ where
                     // Label (right-aligned to the left of tick)
                     let label_width = label.len() as f32 * label_font_size * 0.6;
                     let label_x = base_x - tick_size - tick_padding - label_width;
-                    renderer.draw_text(label, label_x, y + label_font_size * 0.3, label_font_size, label_color);
+                    renderer.draw_text(
+                        label,
+                        label_x,
+                        y + label_font_size * 0.3,
+                        label_font_size,
+                        label_color,
+                    );
                 }
 
                 // Minor ticks
                 for &rel_pos in &minor_ticks {
                     let y = (1.0 - rel_pos) * height;
-                    renderer.draw_line(base_x - minor_tick_size, y, base_x, y, domain_width, line_color);
+                    renderer.draw_line(
+                        base_x - minor_tick_size,
+                        y,
+                        base_x,
+                        y,
+                        domain_width,
+                        line_color,
+                    );
                 }
 
                 // Title (note: rotation not yet supported, using horizontal for now)
                 if let Some(ref title_text) = title {
                     let title_width = title_text.len() as f32 * title_font_size * 0.6;
-                    renderer.draw_text(title_text, 2.0, height / 2.0 + title_width / 2.0, title_font_size, label_color);
+                    renderer.draw_text(
+                        title_text,
+                        2.0,
+                        height / 2.0 + title_width / 2.0,
+                        title_font_size,
+                        label_color,
+                    );
                 }
             }
             AxisOrientation::Right => {
@@ -759,7 +815,13 @@ where
 
                     // Label (left-aligned to the right of tick)
                     let label_x = tick_size + tick_padding;
-                    renderer.draw_text(label, label_x, y + label_font_size * 0.3, label_font_size, label_color);
+                    renderer.draw_text(
+                        label,
+                        label_x,
+                        y + label_font_size * 0.3,
+                        label_font_size,
+                        label_color,
+                    );
                 }
 
                 // Minor ticks
@@ -797,8 +859,14 @@ where
     let value_range = if contours.is_empty() {
         (0.0, 1.0)
     } else {
-        let min = contours.iter().map(|c| c.value).fold(f64::INFINITY, f64::min);
-        let max = contours.iter().map(|c| c.value).fold(f64::NEG_INFINITY, f64::max);
+        let min = contours
+            .iter()
+            .map(|c| c.value)
+            .fold(f64::INFINITY, f64::min);
+        let max = contours
+            .iter()
+            .map(|c| c.value)
+            .fold(f64::NEG_INFINITY, f64::max);
         (min, max)
     };
 
@@ -812,8 +880,18 @@ where
         .iter()
         .map(|contour| {
             let t = normalize_value(contour.value, value_range.0, value_range.1);
-            let stroke_color = get_contour_color(t, &config.color_scale, &config.stroke_color, config.stroke_opacity);
-            let fill_color = get_contour_color(t, &config.color_scale, &config.fill_color, config.fill_opacity);
+            let stroke_color = get_contour_color(
+                t,
+                &config.color_scale,
+                &config.stroke_color,
+                config.stroke_opacity,
+            );
+            let fill_color = get_contour_color(
+                t,
+                &config.color_scale,
+                &config.fill_color,
+                config.fill_opacity,
+            );
 
             let rings: Vec<Vec<(f32, f32)>> = contour
                 .coordinates
@@ -870,10 +948,8 @@ where
 
                 // Draw fill (only for closed rings without jumps)
                 if do_fill && is_closed && !has_jump {
-                    let polygon: Vec<[f32; 2]> = ring
-                        .iter()
-                        .map(|(x, y)| [x * width, y * height])
-                        .collect();
+                    let polygon: Vec<[f32; 2]> =
+                        ring.iter().map(|(x, y)| [x * width, y * height]).collect();
                     renderer.draw_polygon(&polygon, data.fill_color);
                 }
 
@@ -885,7 +961,8 @@ where
                         let (x1, y1) = ring[i + 1];
 
                         // Skip if jump
-                        if (x1 - x0).abs() > x_jump_threshold || (y1 - y0).abs() > y_jump_threshold {
+                        if (x1 - x0).abs() > x_jump_threshold || (y1 - y0).abs() > y_jump_threshold
+                        {
                             i += 1;
                             continue;
                         }
@@ -931,7 +1008,10 @@ where
         (0.0, 1.0)
     } else {
         let min = bands.iter().map(|b| b.lower).fold(f64::INFINITY, f64::min);
-        let max = bands.iter().map(|b| b.upper).fold(f64::NEG_INFINITY, f64::max);
+        let max = bands
+            .iter()
+            .map(|b| b.upper)
+            .fold(f64::NEG_INFINITY, f64::max);
         (min, max)
     };
 
@@ -945,7 +1025,12 @@ where
         .iter()
         .map(|band| {
             let t = normalize_value(band.mid_value(), value_range.0, value_range.1);
-            let fill_color = get_contour_color(t, &config.color_scale, &config.fill_color, config.fill_opacity);
+            let fill_color = get_contour_color(
+                t,
+                &config.color_scale,
+                &config.fill_color,
+                config.fill_opacity,
+            );
 
             let polygons: Vec<Vec<(f32, f32)>> = band
                 .polygons
@@ -965,7 +1050,10 @@ where
                 })
                 .collect();
 
-            BandDrawData { polygons, fill_color }
+            BandDrawData {
+                polygons,
+                fill_color,
+            }
         })
         .collect();
 
@@ -1026,7 +1114,11 @@ where
         (0.0, 1.0)
     } else {
         let min = data.values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max = data.values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let max = data
+            .values
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
         (min, max)
     };
 
@@ -1046,7 +1138,12 @@ where
             };
 
             let t = normalize_value(value, value_range.0, value_range.1);
-            let fill_color = get_contour_color(t, &config.color_scale, &config.fill_color, config.fill_opacity);
+            let fill_color = get_contour_color(
+                t,
+                &config.color_scale,
+                &config.fill_color,
+                config.fill_opacity,
+            );
 
             // Cell boundaries in data coordinates
             let x0_data = data.x_values[xi];

@@ -19,9 +19,9 @@ pub mod toast;
 // Form components
 pub mod checkbox;
 pub mod input;
+pub mod potentiometer;
 pub mod select;
 pub mod slider;
-pub mod potentiometer;
 pub mod toggle;
 
 // Data display
@@ -55,7 +55,7 @@ pub use dialog::{Dialog, DialogSize};
 // Navigation
 pub use accordion::{Accordion, AccordionItem, AccordionMode, AccordionTheme};
 pub use breadcrumbs::{BreadcrumbItem, BreadcrumbSeparator, Breadcrumbs};
-pub use menu::{Menu, MenuBar, MenuBarItem, MenuItem, menu_bar_button};
+pub use menu::{Menu, MenuBar, MenuBarItem, MenuItem, MenuTheme, menu_bar_button};
 pub use tabs::{TabItem, TabVariant, Tabs, TabsTheme};
 
 // Notifications

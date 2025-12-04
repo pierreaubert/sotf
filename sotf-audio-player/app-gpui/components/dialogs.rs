@@ -303,8 +303,16 @@ impl PlayerView {
                             HStack::new()
                                 .justify(StackJustify::SpaceBetween)
                                 .align(StackAlign::Center)
-                                .child(Text::new(label).size(TextSize::Sm).color(theme.text_primary))
-                                .child(Text::new(shortcut).size(TextSize::Xs).color(theme.text_muted)),
+                                .child(
+                                    Text::new(label)
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_primary),
+                                )
+                                .child(
+                                    Text::new(shortcut)
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_muted),
+                                ),
                         )
                 }))
         } else {
@@ -533,41 +541,39 @@ impl PlayerView {
             Dialog::new("plugin-edit-modal")
                 .title(format!("Edit Plugin: {}", plugin_name))
                 .size(DialogSize::Xl)
-                .content(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .children(params.iter().enumerate().map(|(idx, (name, value))| {
-                            let is_selected = idx == selected_idx;
-                            let theme = theme.clone();
-                            div()
-                                .p_2()
-                                .rounded_md()
-                                .when(is_selected, |d| d.bg(theme.accent_muted))
-                                .when(!is_selected, |d| d.bg(theme.surface))
-                                .child(
-                                    HStack::new()
-                                        .justify(StackJustify::SpaceBetween)
-                                        .child(
-                                            Text::new(name.clone())
-                                                .size(TextSize::Sm)
-                                                .weight(TextWeight::Semibold)
-                                                .color(if is_selected {
-                                                    theme.text_primary
-                                                } else {
-                                                    theme.accent
-                                                }),
-                                        )
-                                        .child(Text::new(value.clone()).size(TextSize::Sm).color(
-                                            if is_selected {
+                .content(VStack::new().spacing(StackSpacing::Sm).children(
+                    params.iter().enumerate().map(|(idx, (name, value))| {
+                        let is_selected = idx == selected_idx;
+                        let theme = theme.clone();
+                        div()
+                            .p_2()
+                            .rounded_md()
+                            .when(is_selected, |d| d.bg(theme.accent_muted))
+                            .when(!is_selected, |d| d.bg(theme.surface))
+                            .child(
+                                HStack::new()
+                                    .justify(StackJustify::SpaceBetween)
+                                    .child(
+                                        Text::new(name.clone())
+                                            .size(TextSize::Sm)
+                                            .weight(TextWeight::Semibold)
+                                            .color(if is_selected {
                                                 theme.text_primary
                                             } else {
-                                                theme.text_secondary
-                                            },
-                                        )),
-                                )
-                                .into_any_element()
-                        })),
-                )
+                                                theme.accent
+                                            }),
+                                    )
+                                    .child(Text::new(value.clone()).size(TextSize::Sm).color(
+                                        if is_selected {
+                                            theme.text_primary
+                                        } else {
+                                            theme.text_secondary
+                                        },
+                                    )),
+                            )
+                            .into_any_element()
+                    }),
+                ))
                 .footer(
                     Text::new("↑/↓: Navigate params | ←/→: Adjust value | ESC: Exit")
                         .size(TextSize::Xs)
@@ -933,7 +939,11 @@ impl PlayerView {
                     .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
                     .child(self.render_shortcut_section("Plugins", &plugin_shortcuts, &theme)),
             )
-            .footer(Text::new("Press ESC or ? to close").size(TextSize::Xs).muted(true))
+            .footer(
+                Text::new("Press ESC or ? to close")
+                    .size(TextSize::Xs)
+                    .muted(true),
+            )
             .build()
             .on_mouse_down(
                 MouseButton::Left,

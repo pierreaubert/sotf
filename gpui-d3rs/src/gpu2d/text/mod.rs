@@ -26,7 +26,11 @@ pub struct TextVertex {
 
 impl TextVertex {
     pub fn new(position: [f32; 2], tex_coord: [f32; 2], color: Color4) -> Self {
-        Self { position, tex_coord, color }
+        Self {
+            position,
+            tex_coord,
+            color,
+        }
     }
 }
 

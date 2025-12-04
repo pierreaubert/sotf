@@ -5,7 +5,7 @@ use super::config::Surface3DConfig;
 use super::mesh::{GpuVertex, SurfaceMesh};
 use super::shaders;
 use bytemuck::{Pod, Zeroable};
-use glam::{Mat4, Vec3};
+use glam::Mat4;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
@@ -16,11 +16,11 @@ struct Uniforms {
     view_proj: [[f32; 4]; 4],
     model: [[f32; 4]; 4],
     light_dir: [f32; 3],
-    _pad1: f32,
+    colormap: f32,
     ambient: f32,
     diffuse: f32,
+    opacity: f32,
     z_min: f32,
-    z_max: f32,
 }
 
 impl Uniforms {
@@ -33,11 +33,11 @@ impl Uniforms {
             view_proj: view_proj.to_cols_array_2d(),
             model: model.to_cols_array_2d(),
             light_dir: light_dir.to_array(),
-            _pad1: 0.0,
+            colormap: config.colormap.shader_index() as f32,
             ambient: config.ambient,
             diffuse: config.diffuse,
+            opacity: config.opacity,
             z_min: 0.0,
-            z_max: 1.0,
         }
     }
 }
@@ -48,13 +48,18 @@ pub struct Surface3DRenderer {
     queue: Arc<wgpu::Queue>,
     surface_pipeline: wgpu::RenderPipeline,
     wireframe_pipeline: Option<wgpu::RenderPipeline>,
+    isoline_pipeline: Option<wgpu::RenderPipeline>,
+    grid_pipeline: wgpu::RenderPipeline,
     uniform_buffer: wgpu::Buffer,
     uniform_bind_group: wgpu::BindGroup,
     vertex_buffer: Option<wgpu::Buffer>,
     index_buffer: Option<wgpu::Buffer>,
     wireframe_index_buffer: Option<wgpu::Buffer>,
+    grid_vertex_buffer: wgpu::Buffer,
+    grid_index_buffer: wgpu::Buffer,
     index_count: u32,
     wireframe_index_count: u32,
+    grid_index_count: u32,
     depth_texture: Option<wgpu::TextureView>,
     render_texture: Option<wgpu::Texture>,
     render_texture_view: Option<wgpu::TextureView>,
@@ -70,21 +75,46 @@ impl Surface3DRenderer {
         let device = Arc::new(device);
         let queue = Arc::new(queue);
 
-        let (surface_pipeline, wireframe_pipeline, uniform_buffer, uniform_bind_group) =
-            Self::create_pipelines(&device, &config);
+        let (
+            surface_pipeline,
+            wireframe_pipeline,
+            isoline_pipeline,
+            grid_pipeline,
+            uniform_buffer,
+            uniform_bind_group,
+        ) = Self::create_pipelines(&device, &config);
+
+        // Create grid mesh buffers
+        let grid_mesh = super::mesh::generate_bounding_box_mesh();
+        let grid_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Grid Vertex Buffer"),
+            contents: grid_mesh.vertex_bytes(),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let grid_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Grid Index Buffer"),
+            contents: grid_mesh.index_bytes(),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let grid_index_count = grid_mesh.index_count as u32;
 
         Self {
             device,
             queue,
             surface_pipeline,
             wireframe_pipeline,
+            isoline_pipeline,
+            grid_pipeline,
             uniform_buffer,
             uniform_bind_group,
             vertex_buffer: None,
             index_buffer: None,
             wireframe_index_buffer: None,
+            grid_vertex_buffer,
+            grid_index_buffer,
             index_count: 0,
             wireframe_index_count: 0,
+            grid_index_count,
             depth_texture: None,
             render_texture: None,
             render_texture_view: None,
@@ -129,6 +159,8 @@ impl Surface3DRenderer {
     ) -> (
         wgpu::RenderPipeline,
         Option<wgpu::RenderPipeline>,
+        Option<wgpu::RenderPipeline>,
+        wgpu::RenderPipeline,
         wgpu::Buffer,
         wgpu::BindGroup,
     ) {
@@ -216,7 +248,7 @@ impl Surface3DRenderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),
@@ -252,7 +284,7 @@ impl Surface3DRenderer {
                     vertex: wgpu::VertexState {
                         module: &shader,
                         entry_point: Some("vs_main"),
-                        buffers: &[vertex_layout],
+                        buffers: &[vertex_layout.clone()],
                         compilation_options: Default::default(),
                     },
                     fragment: Some(wgpu::FragmentState {
@@ -260,7 +292,7 @@ impl Surface3DRenderer {
                         entry_point: Some("fs_wireframe"),
                         targets: &[Some(wgpu::ColorTargetState {
                             format: wgpu::TextureFormat::Rgba8Unorm,
-                            blend: Some(wgpu::BlendState::REPLACE),
+                            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                             write_mask: wgpu::ColorWrites::ALL,
                         })],
                         compilation_options: Default::default(),
@@ -275,8 +307,8 @@ impl Surface3DRenderer {
                         depth_compare: wgpu::CompareFunction::LessEqual,
                         stencil: Default::default(),
                         bias: wgpu::DepthBiasState {
-                            constant: -1,
-                            slope_scale: 0.0,
+                            constant: -4,      // Stronger bias to pull lines forward
+                            slope_scale: -2.0, // Slope-scaled bias for angled surfaces
                             clamp: 0.0,
                         },
                     }),
@@ -293,9 +325,113 @@ impl Surface3DRenderer {
             None
         };
 
+        // Create isoline pipeline if enabled
+        let isoline_pipeline = if config.isolines {
+            Some(
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Isoline Pipeline"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some("vs_projection"),
+                        buffers: &[vertex_layout.clone()],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some("fs_projection"),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format: wgpu::TextureFormat::Rgba8Unorm,
+                            blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: wgpu::PrimitiveState {
+                        topology: wgpu::PrimitiveTopology::TriangleList,
+                        front_face: wgpu::FrontFace::Ccw,
+                        cull_mode: Some(wgpu::Face::Back), // Cull back faces to avoid seeing wireframe through transparent surface
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: true,
+                        depth_compare: wgpu::CompareFunction::Less,
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: wgpu::MultisampleState {
+                        count: config.msaa_samples,
+                        mask: !0,
+                        alpha_to_coverage_enabled: false,
+                    },
+                    multiview: None,
+                    cache: None,
+                }),
+            )
+        } else {
+            None
+        };
+
+        // Create grid pipeline
+        let grid_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Grid Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[vertex_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_grid"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Front), // Cull front faces to see inside back faces
+                // Wait, we want to see INSIDE faces.
+                // If we use standard box, normals point OUT.
+                // If we view from outside, we see front faces.
+                // We want to see the BACK faces (inside).
+                // So CullMode::Front will cull front faces and show back faces.
+                // BUT, I generated indices for standard box.
+                // So I should use CullMode::Front.
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true, // Write depth so surface is occluded by grid if behind?
+                // No, grid is "behind" surface.
+                // If we render grid first, we write depth.
+                // Then surface renders. If surface is in front, it overdraws.
+                // If surface is behind (impossible if inside box), it would be occluded.
+                // So yes, depth write enabled.
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: config.msaa_samples,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
         (
             surface_pipeline,
             wireframe_pipeline,
+            isoline_pipeline,
+            grid_pipeline,
             uniform_buffer,
             bind_group,
         )
@@ -476,6 +612,28 @@ impl Surface3DRenderer {
                 ..Default::default()
             });
 
+            // Draw grid box first (background)
+            // Use CullMode::Front to render back faces (inside of box)
+            // But wgpu pipeline state is immutable.
+            // I set CullMode::Front in pipeline creation?
+            // Wait, I set CullMode::None in surface pipeline.
+            // For grid pipeline, I should set CullMode::Front.
+            // Let's check my pipeline creation above.
+            // I set CullMode::Some(Back) which is default.
+            // I need CullMode::Front to see inside.
+            // Actually, let's just use CullMode::None and rely on depth test?
+            // If I use CullMode::None, I see both sides.
+            // But front faces will block view.
+            // So I MUST use CullMode::Front (cull front, show back).
+            // I'll update the pipeline creation in step 2.
+
+            render_pass.set_pipeline(&self.grid_pipeline);
+            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
+            render_pass
+                .set_index_buffer(self.grid_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..self.grid_index_count, 0, 0..1);
+
             // Draw surface
             render_pass.set_pipeline(&self.surface_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
@@ -485,6 +643,12 @@ impl Surface3DRenderer {
                 wgpu::IndexFormat::Uint32,
             );
             render_pass.draw_indexed(0..self.index_count, 0, 0..1);
+
+            // Draw isolines if enabled (before wireframe)
+            if let Some(pipeline) = &self.isoline_pipeline {
+                render_pass.set_pipeline(pipeline);
+                render_pass.draw_indexed(0..self.index_count, 0, 0..1);
+            }
 
             // Draw wireframe if enabled
             if let (Some(pipeline), Some(index_buffer)) =

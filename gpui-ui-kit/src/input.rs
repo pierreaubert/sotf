@@ -42,6 +42,10 @@ pub struct Input {
     error: Option<SharedString>,
     icon_left: Option<SharedString>,
     icon_right: Option<SharedString>,
+    bg_color: Option<Rgba>,
+    text_color: Option<Rgba>,
+    border_color: Option<Rgba>,
+    placeholder_color: Option<Rgba>,
 }
 
 impl Input {
@@ -59,6 +63,10 @@ impl Input {
             error: None,
             icon_left: None,
             icon_right: None,
+            bg_color: None,
+            text_color: None,
+            border_color: None,
+            placeholder_color: None,
         }
     }
 
@@ -122,6 +130,30 @@ impl Input {
         self
     }
 
+    /// Set background color
+    pub fn bg_color(mut self, color: impl Into<Rgba>) -> Self {
+        self.bg_color = Some(color.into());
+        self
+    }
+
+    /// Set text color
+    pub fn text_color(mut self, color: impl Into<Rgba>) -> Self {
+        self.text_color = Some(color.into());
+        self
+    }
+
+    /// Set border color
+    pub fn border_color(mut self, color: impl Into<Rgba>) -> Self {
+        self.border_color = Some(color.into());
+        self
+    }
+
+    /// Set placeholder color
+    pub fn placeholder_color(mut self, color: impl Into<Rgba>) -> Self {
+        self.placeholder_color = Some(color.into());
+        self
+    }
+
     /// Build into element
     pub fn build(self) -> Div {
         let (py, _text_size) = match self.size {
@@ -131,10 +163,11 @@ impl Input {
         };
 
         let has_error = self.error.is_some();
+        let default_border = rgb(0x3a3a3a);
         let border_color = if has_error {
             rgb(0xcc3333)
         } else {
-            rgb(0x3a3a3a)
+            self.border_color.unwrap_or(default_border)
         };
 
         let mut container = div().flex().flex_col().gap_1();
@@ -165,11 +198,11 @@ impl Input {
         // Apply variant styling
         match self.variant {
             InputVariant::Default => {
-                input_wrapper = input_wrapper.bg(rgb(0x1e1e1e));
+                input_wrapper = input_wrapper.bg(self.bg_color.unwrap_or(rgb(0x1e1e1e)));
             }
             InputVariant::Filled => {
                 input_wrapper = input_wrapper
-                    .bg(rgb(0x2a2a2a))
+                    .bg(self.bg_color.unwrap_or(rgb(0x2a2a2a)))
                     .border_color(rgba(0x00000000));
             }
             InputVariant::Flushed => {
@@ -188,20 +221,26 @@ impl Input {
             input_wrapper = input_wrapper.hover(|s| s.border_color(rgb(0x007acc)));
         }
 
+        let placeholder_color = self.placeholder_color.unwrap_or(rgb(0x666666));
+        let text_color = self.text_color.unwrap_or(rgb(0xffffff));
+
         // Left icon
         if let Some(icon) = self.icon_left {
-            input_wrapper = input_wrapper.child(div().text_color(rgb(0x666666)).child(icon));
+            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon));
         }
 
         // Input text/placeholder
         let text_el = if self.value.is_empty() {
             if let Some(placeholder) = self.placeholder {
-                div().flex_1().text_color(rgb(0x666666)).child(placeholder)
+                div()
+                    .flex_1()
+                    .text_color(placeholder_color)
+                    .child(placeholder)
             } else {
                 div().flex_1()
             }
         } else {
-            div().flex_1().text_color(rgb(0xffffff)).child(self.value)
+            div().flex_1().text_color(text_color).child(self.value)
         };
 
         // Apply text size

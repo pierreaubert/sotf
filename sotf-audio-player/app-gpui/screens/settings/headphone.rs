@@ -5,7 +5,10 @@ use gpui::prelude::*;
 use gpui::*;
 
 impl PlayerView {
-    pub(crate) fn render_headphone_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_headphone_settings_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (
             theme,
             headphone_curve_path,

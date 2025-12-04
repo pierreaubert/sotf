@@ -170,7 +170,7 @@ pub use error::ChartError;
 pub use heatmap::{HeatmapChart, heatmap};
 pub use isoline::{IsolineChart, isoline};
 pub use line::{LineChart, line};
-pub use pie::{PieChart, pie, donut};
+pub use pie::{PieChart, donut, pie};
 pub use scatter::{ScatterChart, scatter};
 pub use surface3d::{Surface3DChart, surface3d};
 

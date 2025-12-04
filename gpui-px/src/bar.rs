@@ -3,12 +3,12 @@
 use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, ScaleType, extent_padded, validate_data_array,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
     validate_data_length, validate_dimensions, validate_positive,
 };
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{BarConfig, BarDatum, render_bars};
 use d3rs::text::{VectorFontConfig, render_vector_text};
@@ -124,9 +124,10 @@ impl BarChart {
         } else {
             0.0
         };
-        
+
         let plot_width = (self.width as f64 - margin_left - margin_right).max(0.0);
-        let plot_height = (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
+        let plot_height =
+            (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
         // Calculate y domain with padding
         let (mut y_min, mut y_max) = extent_padded(&self.values, DEFAULT_PADDING_FRACTION);
@@ -166,7 +167,7 @@ impl BarChart {
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -193,14 +194,21 @@ impl BarChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_bars(&x_scale, &y_scale, &data, plot_width as f32, plot_height as f32, &config))
+                                    .child(render_bars(
+                                        &x_scale,
+                                        &y_scale,
+                                        &data,
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &config,
+                                    )),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -208,7 +216,7 @@ impl BarChart {
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -235,14 +243,21 @@ impl BarChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_bars(&x_scale, &y_scale, &data, plot_width as f32, plot_height as f32, &config))
+                                    .child(render_bars(
+                                        &x_scale,
+                                        &y_scale,
+                                        &data,
+                                        plot_width as f32,
+                                        plot_height as f32,
+                                        &config,
+                                    )),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -272,11 +287,7 @@ impl BarChart {
         }
 
         // Add chart content
-        container = container.child(
-            div()
-                .relative()
-                .child(chart_content),
-        );
+        container = container.child(div().relative().child(chart_content));
 
         Ok(container)
     }
@@ -400,9 +411,7 @@ mod tests {
     fn test_bar_log_y_scale() {
         let categories = vec!["A", "B", "C", "D"];
         let values = vec![10.0, 100.0, 1000.0, 10000.0];
-        let result = bar(&categories, &values)
-            .y_scale(ScaleType::Log)
-            .build();
+        let result = bar(&categories, &values).y_scale(ScaleType::Log).build();
         assert!(result.is_ok());
     }
 
@@ -410,9 +419,7 @@ mod tests {
     fn test_bar_log_y_scale_zero_value() {
         let categories = vec!["A", "B", "C"];
         let values = vec![0.0, 10.0, 100.0];
-        let result = bar(&categories, &values)
-            .y_scale(ScaleType::Log)
-            .build();
+        let result = bar(&categories, &values).y_scale(ScaleType::Log).build();
         assert!(matches!(
             result,
             Err(ChartError::InvalidData {
@@ -426,9 +433,7 @@ mod tests {
     fn test_bar_log_y_scale_negative_value() {
         let categories = vec!["A", "B", "C"];
         let values = vec![-5.0, 10.0, 100.0];
-        let result = bar(&categories, &values)
-            .y_scale(ScaleType::Log)
-            .build();
+        let result = bar(&categories, &values).y_scale(ScaleType::Log).build();
         assert!(matches!(
             result,
             Err(ChartError::InvalidData {

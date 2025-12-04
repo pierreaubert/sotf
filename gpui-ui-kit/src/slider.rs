@@ -232,7 +232,11 @@ impl RenderOnce for Slider {
             }
 
             if self.show_value {
-                label_row = label_row.child(div().text_color(value_color).child(format!("{:.1}", self.value)));
+                label_row = label_row.child(
+                    div()
+                        .text_color(value_color)
+                        .child(format!("{:.1}", self.value)),
+                );
             }
 
             container = container.child(label_row);

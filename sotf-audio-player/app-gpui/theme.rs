@@ -429,4 +429,37 @@ impl Theme {
             border: self.border,
         }
     }
+
+    /// Convert to TabsTheme for use with ui_kit Tabs component
+    pub fn to_tabs_theme(&self) -> gpui_ui_kit::TabsTheme {
+        gpui_ui_kit::TabsTheme {
+            container_bg: self.surface,
+            container_border: self.border,
+            selected_bg: self.surface_selected,
+            selected_hover_bg: self.surface_hover,
+            hover_bg: self.surface_hover,
+            accent: self.accent,
+            text_selected: self.text_primary,
+            text_unselected: self.text_secondary,
+            text_hover: self.text_primary,
+            badge_bg: self.surface_hover,
+            close_color: self.text_muted,
+            close_hover_color: self.text_primary,
+        }
+    }
+
+    /// Convert to MenuTheme for use with ui_kit Menu component
+    pub fn to_menu_theme(&self) -> gpui_ui_kit::MenuTheme {
+        gpui_ui_kit::MenuTheme {
+            background: self.surface,
+            border: self.border,
+            separator: self.border,
+            text: self.text_secondary,
+            text_hover: self.text_primary,
+            text_disabled: self.text_disabled,
+            text_shortcut: self.text_muted,
+            hover_bg: self.surface_hover,
+            danger_hover_bg: self.error,
+        }
+    }
 }

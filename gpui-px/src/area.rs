@@ -3,7 +3,7 @@
 use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, ScaleType, extent_padded, validate_data_array,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
     validate_data_length, validate_dimensions, validate_positive,
 };
 use d3rs::color::D3Color;
@@ -114,7 +114,7 @@ impl AreaChart {
 
         // Calculate domains with padding
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
-        
+
         // Calculate Y domain considering y and y0
         let y_iter = self.y.iter();
         let (y_min, y_max) = if let Some(ref y0) = self.y0 {
@@ -132,7 +132,7 @@ impl AreaChart {
             y0: f64,
             y1: f64,
         }
-        
+
         let data: Vec<AreaDatum> = match &self.y0 {
             Some(y0) => self
                 .x
@@ -155,11 +155,12 @@ impl AreaChart {
         let curve = self.curve;
 
         // Create render function
-        let render_element = move |x_scale: Arc<dyn Scale<f64, f64>>, y_scale: Arc<dyn Scale<f64, f64>>| {
-             let x_scale_prepaint = x_scale.clone();
-             let y_scale_prepaint = y_scale.clone();
-             
-             canvas(
+        let render_element = move |x_scale: Arc<dyn Scale<f64, f64>>,
+                                   y_scale: Arc<dyn Scale<f64, f64>>| {
+            let x_scale_prepaint = x_scale.clone();
+            let y_scale_prepaint = y_scale.clone();
+
+            canvas(
                 move |bounds, _, _| (x_scale_prepaint.clone(), y_scale_prepaint.clone(), bounds),
                 move |_, (x_scale, y_scale, bounds), window, _| {
                     let x_scale_x = x_scale.clone();
@@ -174,34 +175,43 @@ impl AreaChart {
 
                     let path = area.generate(&data);
                     let points = path.flatten(0.5);
-                    
+
                     let origin_x: f32 = bounds.origin.x.into();
                     let origin_y: f32 = bounds.origin.y.into();
 
                     if points.is_empty() {
                         return;
                     }
-                    
+
                     let mut path_builder = PathBuilder::fill();
-                    
+
                     let first = points[0];
-                    path_builder.move_to(gpui::point(px(origin_x + first.x as f32), px(origin_y + first.y as f32)));
+                    path_builder.move_to(gpui::point(
+                        px(origin_x + first.x as f32),
+                        px(origin_y + first.y as f32),
+                    ));
 
                     for p in points.iter().skip(1) {
-                        path_builder.line_to(gpui::point(px(origin_x + p.x as f32), px(origin_y + p.y as f32)));
+                        path_builder.line_to(gpui::point(
+                            px(origin_x + p.x as f32),
+                            px(origin_y + p.y as f32),
+                        ));
                     }
-                    
+
                     path_builder.close();
-                    
+
                     if let Ok(gpui_path) = path_builder.build() {
-                        window.paint_path(gpui_path, Rgba {
-                            r: fill_color.r,
-                            g: fill_color.g,
-                            b: fill_color.b,
-                            a: fill_color.a * opacity,
-                        });
+                        window.paint_path(
+                            gpui_path,
+                            Rgba {
+                                r: fill_color.r,
+                                g: fill_color.g,
+                                b: fill_color.b,
+                                a: fill_color.a * opacity,
+                            },
+                        );
                     }
-                }
+                },
             )
         };
 

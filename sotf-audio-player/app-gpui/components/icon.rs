@@ -191,9 +191,7 @@ impl RenderOnce for Icon {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let size = self.size.px();
 
-        let mut el = svg()
-            .path(self.name.path())
-            .size(size);
+        let mut el = svg().path(self.name.path()).size(size);
 
         if let Some(color) = self.color {
             el = el.text_color(color);

@@ -32,6 +32,23 @@ impl PlayerView {
                     .await;
                 let result = this.update(cx, |view, cx| {
                     view.update_playback_state(cx);
+
+                    // Infinite scroll check
+                    if view.state.read(cx).app.current_screen == Screen::Library {
+                        let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
+                        let state = view.state.read(cx);
+                        let item_count = state.app.library_items_per_page;
+                        let columns = state.app.library_columns.max(1);
+                        let rows = (item_count + columns - 1) / columns;
+                        let estimated_height = rows as f32 * 260.0; // Approx card height + gap
+                        let window_height = state.app.window_height;
+
+                        // If we are within 1000px of the bottom, load more
+                        if scroll_y.abs() + window_height > estimated_height - 1000.0 {
+                            view.state
+                                .update(cx, |state, _| state.app.load_more_albums());
+                        }
+                    }
                 });
                 // Exit the loop if the view is no longer valid
                 if result.is_err() {
@@ -49,7 +66,12 @@ impl PlayerView {
         }
     }
 
-    pub(crate) fn toggle_playback(&mut self, _: &PlayPause, _: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_playback(
+        &mut self,
+        _: &PlayPause,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.state.update(cx, |state, _cx| {
             if state.app.is_playing {
                 let _ = state.player.lock().pause();
@@ -280,19 +302,38 @@ impl PlayerView {
             .size_full()
             // Global mouse move handler for divider and volume dragging
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, window, cx| {
-                let (is_dragging_divider, is_dragging_volume, volume_start_y, volume_start_value) = {
+                let (
+                    is_dragging_divider,
+                    is_dragging_queue_list,
+                    is_dragging_meters,
+                    is_dragging_lufs,
+                    is_dragging_volume,
+                    volume_start_y,
+                    volume_start_value,
+                    window_height,
+                    meters_ratio,
+                ) = {
                     let state = view.state.read(cx);
                     (
                         state.app.is_dragging_queue_divider,
+                        state.app.is_dragging_queue_list_divider,
+                        state.app.is_dragging_meters_divider,
+                        state.app.is_dragging_lufs_divider,
                         state.app.is_dragging_volume,
                         state.app.volume_drag_start_y,
                         state.app.volume_drag_start_value,
+                        state.app.window_height,
+                        state.app.meters_panel_ratio,
                     )
                 };
 
+                let window_size = window.bounds().size;
+                let mouse_pos = event.position;
+                let is_compact_height = window_height < 600.0;
+
                 if is_dragging_divider {
-                    let window_height = window.bounds().size.height;
-                    let mouse_y: f32 = event.position.y.into();
+                    let window_height = window_size.height;
+                    let mouse_y: f32 = mouse_pos.y.into();
                     let window_h: f32 = window_height.into();
                     // Calculate new ratio (inverted because queue is at bottom)
                     let new_ratio = (1.0 - (mouse_y / window_h)).clamp(0.15, 0.6);
@@ -302,10 +343,51 @@ impl PlayerView {
                     cx.notify();
                 }
 
+                if is_dragging_queue_list {
+                    let window_width: f32 = window_size.width.into();
+                    let mouse_x: f32 = mouse_pos.x.into();
+                    let new_ratio = (mouse_x / window_width).clamp(0.1, 0.5);
+                    view.state.update(cx, |state, _cx| {
+                        state.app.queue_list_ratio = new_ratio;
+                    });
+                    cx.notify();
+                }
+
+                if is_dragging_meters {
+                    let window_width: f32 = window_size.width.into();
+                    let mouse_x: f32 = mouse_pos.x.into();
+                    // Meters are on the right, so ratio is from the right edge
+                    let right_edge_ratio = (1.0 - (mouse_x / window_width)).clamp(0.1, 0.8);
+
+                    view.state.update(cx, |state, _cx| {
+                        if is_compact_height {
+                            // In 4-col mode, Divider 2 controls total right width (LUFS + Meters)
+                            // lufs_ratio = total - meters_ratio
+                            let new_lufs = (right_edge_ratio - meters_ratio).max(0.05);
+                            state.app.lufs_panel_ratio = new_lufs;
+                        } else {
+                            // Standard mode: controls combined panel width
+                            state.app.meters_panel_ratio = right_edge_ratio.clamp(0.1, 0.5);
+                        }
+                    });
+                    cx.notify();
+                }
+
+                if is_dragging_lufs {
+                    let window_width: f32 = window_size.width.into();
+                    let mouse_x: f32 = mouse_pos.x.into();
+                    // Divider 3 (LUFS <-> Meters) controls meters_panel_ratio
+                    let new_meters = (1.0 - (mouse_x / window_width)).clamp(0.05, 0.5);
+                    view.state.update(cx, |state, _cx| {
+                        state.app.meters_panel_ratio = new_meters;
+                    });
+                    cx.notify();
+                }
+
                 // Handle volume dragging (drag up = increase, drag down = decrease)
                 if is_dragging_volume {
                     if let Some(start_y) = volume_start_y {
-                        let mouse_y: f32 = event.position.y.into();
+                        let mouse_y: f32 = mouse_pos.y.into();
                         let delta_y = start_y - mouse_y; // Inverted: up = positive
                         // Scale: 100px drag = full volume range
                         let volume_delta = delta_y / 100.0;
@@ -326,6 +408,54 @@ impl PlayerView {
                         if state.app.is_dragging_queue_divider {
                             state.app.is_dragging_queue_divider = false;
                             // Save the new layout
+                            if let Err(e) = state.app.save_config() {
+                                log::warn!("Failed to save panel layout: {}", e);
+                            }
+                        }
+                        if state.app.is_dragging_queue_list_divider {
+                            // Check for click vs drag
+                            let was_click = state
+                                .app
+                                .divider_click_start
+                                .map(|start| start.elapsed().as_millis() < 200)
+                                .unwrap_or(false);
+
+                            if was_click {
+                                if state.app.queue_list_ratio > 0.05 {
+                                    state.app.queue_list_ratio = 0.0;
+                                } else {
+                                    state.app.queue_list_ratio = 0.30; // Restore default
+                                }
+                            }
+
+                            state.app.is_dragging_queue_list_divider = false;
+                            if let Err(e) = state.app.save_config() {
+                                log::warn!("Failed to save panel layout: {}", e);
+                            }
+                        }
+                        if state.app.is_dragging_meters_divider {
+                            // Check for click vs drag
+                            let was_click = state
+                                .app
+                                .divider_click_start
+                                .map(|start| start.elapsed().as_millis() < 200)
+                                .unwrap_or(false);
+
+                            if was_click {
+                                if state.app.meters_panel_ratio > 0.05 {
+                                    state.app.meters_panel_ratio = 0.0;
+                                } else {
+                                    state.app.meters_panel_ratio = 0.25; // Restore default
+                                }
+                            }
+
+                            state.app.is_dragging_meters_divider = false;
+                            if let Err(e) = state.app.save_config() {
+                                log::warn!("Failed to save panel layout: {}", e);
+                            }
+                        }
+                        if state.app.is_dragging_lufs_divider {
+                            state.app.is_dragging_lufs_divider = false;
                             if let Err(e) = state.app.save_config() {
                                 log::warn!("Failed to save panel layout: {}", e);
                             }
@@ -387,7 +517,9 @@ impl PlayerView {
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
                         // Check if this was a click (short duration, no significant drag)
-                        let was_click = state.app.divider_click_start
+                        let was_click = state
+                            .app
+                            .divider_click_start
                             .map(|start| start.elapsed().as_millis() < 200)
                             .unwrap_or(false);
 
@@ -692,24 +824,6 @@ impl PlayerView {
                 }
                 _ => {}
             });
-        cx.notify();
-    }
-
-    fn next_page(&mut self, _: &NextPage, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Library {
-                state.app.next_page();
-            }
-        });
-        cx.notify();
-    }
-
-    fn prev_page(&mut self, _: &PrevPage, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Library {
-                state.app.prev_page();
-            }
-        });
         cx.notify();
     }
 
@@ -1423,13 +1537,18 @@ impl Render for PlayerView {
         // Update layout mode based on window height
         let window_bounds = window.bounds();
         let window_height: f32 = window_bounds.size.height.into();
+        let window_width: f32 = window_bounds.size.width.into();
         self.state.update(cx, |state, _cx| {
             state.app.window_height = window_height;
+            state.app.window_width = window_width;
             state.app.layout_mode = if window_height >= 800.0 {
                 crate::app::LayoutMode::Expanded
             } else {
                 crate::app::LayoutMode::Compact
             };
+
+            // Recalculate pagination based on new window size
+            state.app.recalculate_pagination(false);
         });
 
         // Save window geometry if it has changed (debounced by checking if different)
@@ -1510,8 +1629,6 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::select_prev))
             .on_action(cx.listener(Self::select_next_page))
             .on_action(cx.listener(Self::select_prev_page))
-            .on_action(cx.listener(Self::next_page))
-            .on_action(cx.listener(Self::prev_page))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
             .on_action(cx.listener(Self::select_up))
@@ -1609,7 +1726,9 @@ impl Render for PlayerView {
             .size_full()
             .bg(theme.background)
             .text_color(theme.text_primary)
-            .child(self.render_menu_bar(cx))
+            .when(!cfg!(target_os = "macos"), |div| {
+                div.child(self.render_menu_bar(cx))
+            })
             .child(self.render_header(cx))
             .child(
                 div()

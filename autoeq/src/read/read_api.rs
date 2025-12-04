@@ -713,7 +713,9 @@ pub async fn fetch_contour_data(
     let measurement = match plane.to_lowercase().as_str() {
         "horizontal" | "h" => "SPL Horizontal Contour",
         "vertical" | "v" => "SPL Vertical Contour",
-        _ => return Err(format!("Invalid plane: {}. Use 'horizontal' or 'vertical'", plane).into()),
+        _ => {
+            return Err(format!("Invalid plane: {}. Use 'horizontal' or 'vertical'", plane).into());
+        }
     };
 
     let plot_data = fetch_measurement_plot_data(speaker, version, measurement).await?;
@@ -726,11 +728,9 @@ fn extract_contour_data(plot_data: &Value) -> Result<ContourPlotData, Box<dyn Er
     if let Some(data) = plot_data.get("data").and_then(|d| d.as_array()) {
         for trace in data {
             // Look for z data (2D grid), x (frequencies), and y (angles)
-            if let (Some(x_data), Some(y_data), Some(z_data)) = (
-                trace.get("x"),
-                trace.get("y"),
-                trace.get("z"),
-            ) {
+            if let (Some(x_data), Some(y_data), Some(z_data)) =
+                (trace.get("x"), trace.get("y"), trace.get("z"))
+            {
                 let mut freq = Vec::new();
                 let mut angles = Vec::new();
                 let mut spl = Vec::new();
@@ -781,7 +781,8 @@ fn extract_contour_data(plot_data: &Value) -> Result<ContourPlotData, Box<dyn Er
                                 spl.extend(row_data);
                             }
                         } else if let Some(row_arr) = row.as_array() {
-                            let row_data: Vec<f64> = row_arr.iter().filter_map(|v| v.as_f64()).collect();
+                            let row_data: Vec<f64> =
+                                row_arr.iter().filter_map(|v| v.as_f64()).collect();
                             spl.extend(row_data);
                         }
                     }
@@ -796,7 +797,10 @@ fn extract_contour_data(plot_data: &Value) -> Result<ContourPlotData, Box<dyn Er
                     if spl.len() != expected_size {
                         eprintln!(
                             "Warning: SPL grid size {} doesn't match expected {} ({}×{})",
-                            spl.len(), expected_size, angle_count, freq_count
+                            spl.len(),
+                            expected_size,
+                            angle_count,
+                            freq_count
                         );
                     }
 

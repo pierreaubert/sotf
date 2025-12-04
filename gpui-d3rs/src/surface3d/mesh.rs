@@ -1,5 +1,6 @@
 //! Mesh generation for 3D surfaces
 
+use super::config::SurfacePlotType;
 use super::data::SurfaceData;
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
@@ -40,7 +41,7 @@ pub struct SurfaceMesh {
 
 impl SurfaceMesh {
     /// Generate a surface mesh from surface data
-    pub fn from_data(data: &SurfaceData) -> Self {
+    pub fn from_data(data: &SurfaceData, plot_type: SurfacePlotType) -> Self {
         let x_count = data.x_count();
         let y_count = data.y_count();
 
@@ -62,10 +63,34 @@ impl SurfaceMesh {
                 let ny = data.normalize_y(y);
                 let nz = data.normalize_z(z);
 
-                // Map normalized z [0,1] to height [-0.5, 0.5] for better visualization
-                let height = nz - 0.5;
+                let position = match plot_type {
+                    SurfacePlotType::Cartesian => {
+                        // Map normalized z [0,1] to height [-0.5, 0.5]
+                        let height = nz - 0.5;
+                        Vec3::new(nx, height, ny)
+                    }
+                    SurfacePlotType::Spherical => {
+                        // Map X (Freq) to Latitude (Phi): [-1, 1] -> [-PI/2, PI/2]
+                        // Map Y (Angle) to Longitude (Theta): [-1, 1] -> [-PI, PI]
+                        // Map Z (SPL) to Radius? Or just color.
+                        // Let's use Radius = 1.0 + nz * 0.2 (slight extrusion)
 
-                let position = Vec3::new(nx, height, ny);
+                        let phi = nx * std::f32::consts::FRAC_PI_2; // -90 to 90 deg
+                        let theta = ny * std::f32::consts::PI; // -180 to 180 deg
+                        let radius = 1.0; // Unit sphere
+
+                        // Spherical to Cartesian
+                        // y is up (sin phi)
+                        // x, z are horizontal plane
+                        let y_pos = radius * phi.sin();
+                        let r_xz = radius * phi.cos();
+                        let x_pos = r_xz * theta.sin();
+                        let z_pos = r_xz * theta.cos();
+
+                        Vec3::new(x_pos, y_pos, z_pos)
+                    }
+                };
+
                 let value = nz;
 
                 // Placeholder normal - will be computed after
@@ -199,6 +224,59 @@ pub fn generate_wireframe_indices(x_count: usize, y_count: usize) -> Vec<u32> {
     }
 
     indices
+}
+
+/// Generate a bounding box mesh for the surface (for grid rendering)
+pub fn generate_bounding_box_mesh() -> SurfaceMesh {
+    let mut vertices = Vec::with_capacity(8);
+    let mut indices = Vec::with_capacity(36);
+
+    // Box corners: [-1, 1] x [-0.5, 0.5] x [-1, 1]
+    // Matches the normalized surface coordinates
+    let min = Vec3::new(-1.0, -0.5, -1.0);
+    let max = Vec3::new(1.0, 0.5, 1.0);
+
+    // 8 corners
+    let corners = [
+        Vec3::new(min.x, min.y, min.z), // 0: 000
+        Vec3::new(max.x, min.y, min.z), // 1: 100
+        Vec3::new(min.x, max.y, min.z), // 2: 010
+        Vec3::new(max.x, max.y, min.z), // 3: 110
+        Vec3::new(min.x, min.y, max.z), // 4: 001
+        Vec3::new(max.x, min.y, max.z), // 5: 101
+        Vec3::new(min.x, max.y, max.z), // 6: 011
+        Vec3::new(max.x, max.y, max.z), // 7: 111
+    ];
+
+    for pos in corners {
+        vertices.push(GpuVertex::new(pos, Vec3::ZERO, 0.0));
+    }
+
+    // Indices for 12 triangles (6 faces)
+    // We want to see INSIDE faces, so winding order matters.
+    // Standard CCW winding for outside faces.
+    // If we use FrontFace::Ccw and CullMode::Front, we render back faces.
+    // So we generate standard box indices.
+
+    // Front (Z=0)
+    indices.extend_from_slice(&[0, 2, 1, 1, 2, 3]);
+    // Back (Z=1)
+    indices.extend_from_slice(&[5, 7, 4, 4, 7, 6]);
+    // Left (X=0)
+    indices.extend_from_slice(&[4, 6, 0, 0, 6, 2]);
+    // Right (X=1)
+    indices.extend_from_slice(&[1, 3, 5, 5, 3, 7]);
+    // Bottom (Y=-0.5)
+    indices.extend_from_slice(&[4, 0, 5, 5, 0, 1]);
+    // Top (Y=0.5)
+    indices.extend_from_slice(&[2, 6, 3, 3, 6, 7]);
+
+    SurfaceMesh {
+        vertices,
+        indices,
+        vertex_count: 8,
+        index_count: 36,
+    }
 }
 
 #[cfg(test)]

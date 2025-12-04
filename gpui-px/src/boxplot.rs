@@ -9,12 +9,12 @@
 use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, ScaleType, extent_padded, validate_data_array,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
     validate_data_length, validate_dimensions, validate_positive,
 };
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale, Scale};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
@@ -253,28 +253,24 @@ impl BoxPlotChart {
         };
 
         let plot_width = (self.width as f64 - margin_left - margin_right).max(0.0);
-        let plot_height = (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
+        let plot_height =
+            (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
         // Calculate domains
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
         let (y_min, y_max) = extent_padded(&self.y, DEFAULT_PADDING_FRACTION);
 
         // Calculate number of bins
-        let num_bins = self.num_bins.unwrap_or_else(|| {
-            (plot_width / 40.0).max(3.0) as usize
-        });
+        let num_bins = self
+            .num_bins
+            .unwrap_or_else(|| (plot_width / 40.0).max(3.0) as usize);
 
         // Bin the data
         let boxes = self.calculate_boxes(x_min, x_max, num_bins);
 
         // Build based on scale types
-        let chart_content = self.render_chart(
-            &boxes,
-            x_min, x_max,
-            y_min, y_max,
-            plot_width,
-            plot_height,
-        );
+        let chart_content =
+            self.render_chart(&boxes, x_min, x_max, y_min, y_max, plot_width, plot_height);
 
         // Build container with optional title
         let mut container = div()
@@ -300,11 +296,7 @@ impl BoxPlotChart {
         }
 
         // Add chart content
-        container = container.child(
-            div()
-                .relative()
-                .child(chart_content),
-        );
+        container = container.child(div().relative().child(chart_content));
 
         Ok(container)
     }
@@ -721,9 +713,7 @@ mod tests {
         let x = vec![-1.0, 2.0, 3.0];
         let y = vec![1.0, 2.0, 3.0];
 
-        let result = boxplot(&x, &y)
-            .x_scale(ScaleType::Log)
-            .build();
+        let result = boxplot(&x, &y).x_scale(ScaleType::Log).build();
         assert!(matches!(result, Err(ChartError::InvalidData { .. })));
     }
 }

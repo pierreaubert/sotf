@@ -11,14 +11,17 @@ pub mod legend;
 
 use crate::theme::Theme;
 use autoeq_iir::Biquad;
+use d3rs::axis::{AxisConfig, AxisTheme, render_axis};
+use d3rs::color::D3Color;
+use d3rs::grid::{GridConfig as D3GridConfig, render_grid};
+use d3rs::scale::{LinearScale, LogScale, Scale};
+use d3rs::shape::{LineConfig, LinePoint, render_line};
 use gpui::prelude::*;
 use gpui::*;
-use d3rs::axis::{render_axis, AxisConfig, AxisTheme};
-use d3rs::color::D3Color;
-use d3rs::grid::{render_grid, GridConfig as D3GridConfig};
-use d3rs::scale::{LinearScale, LogScale, Scale};
-use d3rs::shape::{render_line, LineConfig, LinePoint};
-use legend::{LegendConfig, LegendEntry, LegendPosition, legend_dimensions, render_legend_below, render_legend_right};
+use legend::{
+    LegendConfig, LegendEntry, LegendPosition, legend_dimensions, render_legend_below,
+    render_legend_right,
+};
 use sotf_audio_player::EQFilter;
 
 /// Default sample rate for filter calculations
@@ -28,7 +31,9 @@ const SAMPLE_RATE: f64 = 48000.0;
 const DEFAULT_ASPECT_RATIO: f32 = 1.4;
 
 /// Standard frequency ticks for audio graphs (logarithmic spacing)
-const FREQ_TICKS: [f64; 10] = [20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+const FREQ_TICKS: [f64; 10] = [
+    20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+];
 
 /// Theme adapter for gpui-d3rs axis rendering
 struct EqAxisTheme {
@@ -325,12 +330,12 @@ pub fn render_freq_response_graph(
                 .flex()
                 .h(px(graph_area_height))
                 // Left: dB axis
-                .child(
-                    div()
-                        .w(px(left_axis_width))
-                        .h_full()
-                        .child(render_axis(&db_scale, &left_axis_config, graph_area_height, &axis_theme)),
-                )
+                .child(div().w(px(left_axis_width)).h_full().child(render_axis(
+                    &db_scale,
+                    &left_axis_config,
+                    graph_area_height,
+                    &axis_theme,
+                )))
                 // Center: Graph area
                 .child(
                     div()
@@ -396,7 +401,12 @@ pub fn render_freq_response_graph(
                 .w_full()
                 .h(px(bottom_axis_height))
                 .ml(px(left_axis_width))
-                .child(render_axis(&freq_scale, &bottom_axis_config, graph_area_width, &axis_theme)),
+                .child(render_axis(
+                    &freq_scale,
+                    &bottom_axis_config,
+                    graph_area_width,
+                    &axis_theme,
+                )),
         )
         // Bottom: Legend (if position is Below)
         .when(config.legend.position == LegendPosition::Below, |el| {
@@ -444,7 +454,11 @@ fn render_filter_points(
                 .rounded_full()
                 .bg(color)
                 .border_2()
-                .border_color(if is_selected { theme.text_primary } else { color })
+                .border_color(if is_selected {
+                    theme.text_primary
+                } else {
+                    color
+                })
                 .flex()
                 .items_center()
                 .justify_center()

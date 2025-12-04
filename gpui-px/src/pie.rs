@@ -2,8 +2,8 @@
 
 use crate::error::ChartError;
 use crate::{
-    DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
-    validate_data_array, validate_data_length, validate_dimensions,
+    DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT, validate_data_array,
+    validate_data_length, validate_dimensions,
 };
 use d3rs::color::D3Color;
 use d3rs::shape::{Arc, Pie};
@@ -113,12 +113,7 @@ impl PieChart {
 
         // Determine colors
         let colors: Vec<u32> = match self.colors {
-            Some(c) => c
-                .iter()
-                .cycle()
-                .take(slices.len())
-                .copied()
-                .collect(),
+            Some(c) => c.iter().cycle().take(slices.len()).copied().collect(),
             None => DEFAULT_PALETTE
                 .iter()
                 .cycle()
@@ -132,9 +127,7 @@ impl PieChart {
 
         // Render function
         let render_element = canvas(
-            move |bounds, _, _| {
-                (slices, colors, arc_gen, bounds, plot_width, plot_height)
-            },
+            move |bounds, _, _| (slices, colors, arc_gen, bounds, plot_width, plot_height),
             move |_, (slices, colors, arc_gen, bounds, plot_width, plot_height), window, _| {
                 let origin_x: f32 = bounds.origin.x.into();
                 let origin_y: f32 = bounds.origin.y.into();
@@ -146,25 +139,25 @@ impl PieChart {
                 for (i, slice) in slices.iter().enumerate() {
                     let color = D3Color::from_hex(colors[i % colors.len()]);
                     let fill_color = color.to_rgba();
-                    
+
                     let path = arc_gen.generate(&slice.arc);
                     let points = path.flatten(0.5);
-                    
+
                     if points.is_empty() {
                         continue;
                     }
 
                     let mut builder = PathBuilder::fill();
-                    
+
                     builder.move_to(point(px(points[0].x as f32), px(points[0].y as f32)));
                     for p in points.iter().skip(1) {
                         builder.line_to(point(px(p.x as f32), px(p.y as f32)));
                     }
-                    
+
                     builder.close();
-                    
+
                     if let Ok(gpui_path) = builder.build() {
-                         window.paint_path(gpui_path, fill_color);
+                        window.paint_path(gpui_path, fill_color);
                     }
                 }
             },

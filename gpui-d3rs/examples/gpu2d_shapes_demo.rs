@@ -184,7 +184,12 @@ impl Render for DemoView {
                                     .overflow_hidden()
                                     .relative()
                                     .child(render_grid(&x_scale, &y_scale, &inner_grid))
-                                    .child(render_line(&x_scale, &y_scale, &line_data, &line_config))
+                                    .child(render_line(
+                                        &x_scale,
+                                        &y_scale,
+                                        &line_data,
+                                        &line_config,
+                                    ))
                             }),
                     )
                     .child(
@@ -200,7 +205,12 @@ impl Render for DemoView {
                             )
                             .child({
                                 let step_data: Vec<LinePoint> = (0..12)
-                                    .map(|i| LinePoint::new(i as f64 * 9.0, 20.0 + (i as f64 * 7.0) % 60.0))
+                                    .map(|i| {
+                                        LinePoint::new(
+                                            i as f64 * 9.0,
+                                            20.0 + (i as f64 * 7.0) % 60.0,
+                                        )
+                                    })
                                     .collect();
 
                                 let step_config = LineConfig::new()
@@ -221,7 +231,12 @@ impl Render for DemoView {
                                     .overflow_hidden()
                                     .relative()
                                     .child(render_grid(&x_scale, &y_scale, &inner_grid))
-                                    .child(render_line(&x_scale, &y_scale, &step_data, &step_config))
+                                    .child(render_line(
+                                        &x_scale,
+                                        &y_scale,
+                                        &step_data,
+                                        &step_config,
+                                    ))
                             }),
                     ),
             )
@@ -268,8 +283,8 @@ impl Render for DemoView {
                                     .child("Dots Only (GPU)"),
                             )
                             .child({
-                                let dots_only = GpuGridConfig::with_dots()
-                                    .line_color([1.0, 0.6, 0.2, 1.0]);
+                                let dots_only =
+                                    GpuGridConfig::with_dots().line_color([1.0, 0.6, 0.2, 1.0]);
 
                                 div()
                                     .h(px(150.0))
@@ -298,7 +313,8 @@ impl Render for DemoView {
                                     .child("Bottom Axis (GPU)"),
                             )
                             .child({
-                                let axis_x_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, 500.0);
+                                let axis_x_scale =
+                                    LinearScale::new().domain(0.0, 100.0).range(0.0, 500.0);
                                 let axis_config = AxisConfig::bottom()
                                     .with_ticks(5)
                                     .with_title("Frequency (Hz)");
@@ -325,9 +341,9 @@ impl Render for DemoView {
                                     .child("Left Axis (GPU)"),
                             )
                             .child({
-                                let axis_y_scale = LinearScale::new().domain(0.0, 100.0).range(150.0, 0.0);
-                                let axis_config = AxisConfig::left()
-                                    .with_ticks(5);
+                                let axis_y_scale =
+                                    LinearScale::new().domain(0.0, 100.0).range(150.0, 0.0);
+                                let axis_config = AxisConfig::left().with_ticks(5);
                                 let theme = GpuAxisTheme::dark();
 
                                 div()

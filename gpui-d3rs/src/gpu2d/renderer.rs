@@ -1,7 +1,10 @@
 //! Core 2D chart renderer
 
 use super::device::Gpu2DContext;
-use super::primitives::{CircleBatch, CircleVertex, Color4, LineBatch, LineVertex, Rect, RectBatch, RectVertex, TriangleBatch, TriangleVertex};
+use super::primitives::{
+    CircleBatch, CircleVertex, Color4, LineBatch, LineVertex, Rect, RectBatch, RectVertex,
+    TriangleBatch, TriangleVertex,
+};
 use super::shaders;
 use super::text::{TextAtlas, TextBatch, TextVertex};
 use bytemuck::{Pod, Zeroable};
@@ -105,9 +108,9 @@ impl Chart2DRenderer {
 
         // Initialize text atlas with embedded font
         let text_atlas = TextAtlas::new(device.clone(), queue.clone(), DEFAULT_FONT, 1024);
-        let text_pipeline = text_atlas.bind_group_layout().map(|layout| {
-            Self::create_text_pipeline(&device, &uniform_bind_group_layout, layout)
-        });
+        let text_pipeline = text_atlas
+            .bind_group_layout()
+            .map(|layout| Self::create_text_pipeline(&device, &uniform_bind_group_layout, layout));
 
         Self {
             device,
@@ -585,8 +588,12 @@ impl Chart2DRenderer {
                     // Two triangles
                     let bi = base_idx + idx_offset;
                     self.text_batch.indices.extend_from_slice(&[
-                        bi, bi + 2, bi + 1,
-                        bi + 1, bi + 2, bi + 3,
+                        bi,
+                        bi + 2,
+                        bi + 1,
+                        bi + 1,
+                        bi + 2,
+                        bi + 3,
                     ]);
                     idx_offset += 4;
                 }
@@ -640,16 +647,20 @@ impl Chart2DRenderer {
 
             // Draw triangles (filled polygons, background layer)
             if !self.triangle_batch.is_empty() {
-                let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Triangle Vertex Buffer"),
-                    contents: self.triangle_batch.vertex_bytes(),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Triangle Index Buffer"),
-                    contents: self.triangle_batch.index_bytes(),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
+                let vertex_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Triangle Vertex Buffer"),
+                            contents: self.triangle_batch.vertex_bytes(),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                let index_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Triangle Index Buffer"),
+                            contents: self.triangle_batch.index_bytes(),
+                            usage: wgpu::BufferUsages::INDEX,
+                        });
 
                 render_pass.set_pipeline(&self.triangle_pipeline);
                 render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
@@ -660,16 +671,20 @@ impl Chart2DRenderer {
 
             // Draw rectangles
             if !self.rect_batch.is_empty() {
-                let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Rect Vertex Buffer"),
-                    contents: self.rect_batch.vertex_bytes(),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Rect Index Buffer"),
-                    contents: self.rect_batch.index_bytes(),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
+                let vertex_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Rect Vertex Buffer"),
+                            contents: self.rect_batch.vertex_bytes(),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                let index_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Rect Index Buffer"),
+                            contents: self.rect_batch.index_bytes(),
+                            usage: wgpu::BufferUsages::INDEX,
+                        });
 
                 render_pass.set_pipeline(&self.rect_pipeline);
                 render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
@@ -680,16 +695,20 @@ impl Chart2DRenderer {
 
             // Draw lines
             if !self.line_batch.is_empty() {
-                let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Line Vertex Buffer"),
-                    contents: self.line_batch.vertex_bytes(),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Line Index Buffer"),
-                    contents: self.line_batch.index_bytes(),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
+                let vertex_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Line Vertex Buffer"),
+                            contents: self.line_batch.vertex_bytes(),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                let index_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Line Index Buffer"),
+                            contents: self.line_batch.index_bytes(),
+                            usage: wgpu::BufferUsages::INDEX,
+                        });
 
                 render_pass.set_pipeline(&self.line_pipeline);
                 render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
@@ -700,16 +719,20 @@ impl Chart2DRenderer {
 
             // Draw circles
             if !self.circle_batch.is_empty() {
-                let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Circle Vertex Buffer"),
-                    contents: self.circle_batch.vertex_bytes(),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Circle Index Buffer"),
-                    contents: self.circle_batch.index_bytes(),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
+                let vertex_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Circle Vertex Buffer"),
+                            contents: self.circle_batch.vertex_bytes(),
+                            usage: wgpu::BufferUsages::VERTEX,
+                        });
+                let index_buffer =
+                    self.device
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Circle Index Buffer"),
+                            contents: self.circle_batch.index_bytes(),
+                            usage: wgpu::BufferUsages::INDEX,
+                        });
 
                 render_pass.set_pipeline(&self.circle_pipeline);
                 render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
@@ -722,22 +745,27 @@ impl Chart2DRenderer {
             if !self.text_batch.is_empty() {
                 if let (Some(pipeline), Some(atlas)) = (&self.text_pipeline, &self.text_atlas) {
                     if let Some(bind_group) = atlas.bind_group() {
-                        let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Text Vertex Buffer"),
-                            contents: self.text_batch.vertex_bytes(),
-                            usage: wgpu::BufferUsages::VERTEX,
-                        });
-                        let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Text Index Buffer"),
-                            contents: self.text_batch.index_bytes(),
-                            usage: wgpu::BufferUsages::INDEX,
-                        });
+                        let vertex_buffer =
+                            self.device
+                                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                    label: Some("Text Vertex Buffer"),
+                                    contents: self.text_batch.vertex_bytes(),
+                                    usage: wgpu::BufferUsages::VERTEX,
+                                });
+                        let index_buffer =
+                            self.device
+                                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                    label: Some("Text Index Buffer"),
+                                    contents: self.text_batch.index_bytes(),
+                                    usage: wgpu::BufferUsages::INDEX,
+                                });
 
                         render_pass.set_pipeline(pipeline);
                         render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                         render_pass.set_bind_group(1, bind_group, &[]);
                         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                        render_pass
+                            .set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                         render_pass.draw_indexed(0..self.text_batch.indices.len() as u32, 0, 0..1);
                     }
                 }

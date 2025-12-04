@@ -19,19 +19,21 @@ use d3rs::shape::contour::{
 };
 // Radial shape functions could be used in future - currently using canvas-based custom rendering
 // use d3rs::shape::radial::{polar_grid_circles, polar_grid_rays, radial_line, RadialLineConfig, RadialPoint};
-use d3rs::surface::{render_surface, ColorScaleType, SurfaceConfig, SurfaceData};
+use d3rs::surface3d::{
+    Colormap as Surface3DColormap, Surface3DConfig, Surface3DElement, Surface3DState,
+    SurfaceData as Surface3DData, SurfacePlotType,
+};
 use d3rs::text::{render_vector_text, VectorFontConfig};
 use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
 use gpui::{deferred, *};
 use gpui_ui_kit::{SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
-use urlencoding;
 
 use super::render::render_freq_spl_plot;
 use super::types::{
     BrushOverlay, ChartId, Colormap, ContourRenderMode, DirectivityPlane, LinePoint, LoadState,
-    PlotCurve, PlotSection, SecondaryAxisConfig, SurfaceProjection,
+    PlotCurve, PlotSection, SecondaryAxisConfig,
 };
 use super::utils::{
     cea2034_colors, format_frequency, get_angle_range, interpolate_spl_at_frequency, CEA2034_CURVES,
@@ -87,10 +89,11 @@ pub struct SpinoramaApp {
     pub polar_plane: DirectivityPlane,
 
     // 3D surface plot state
-    pub surface_projection: SurfaceProjection,
     pub surface_rotation_azimuth: f32,
     pub surface_rotation_elevation: f32,
+    pub surface_state: Rc<RefCell<Surface3DState>>,
     pub surface_wireframe: bool,
+    pub surface_plot_type: SurfacePlotType,
 
     // Polar contour plot state
     pub polar_contour_freq_range: (f64, f64),
@@ -145,12 +148,13 @@ impl SpinoramaApp {
             polar_plane: DirectivityPlane::default(),
 
             // 3D surface plot state
-            surface_projection: SurfaceProjection::default(),
             surface_rotation_azimuth: 45.0,
             surface_rotation_elevation: 30.0,
+            surface_state: Rc::new(RefCell::new(Surface3DState::new(3.5, 45.0, 30.0))),
             surface_wireframe: false,
 
             // Polar contour frequency range (20Hz - 20kHz)
+            surface_plot_type: SurfacePlotType::Cartesian,
             polar_contour_freq_range: (20.0, 20000.0),
         };
 
@@ -1144,7 +1148,7 @@ impl SpinoramaApp {
                     .freq
                     .iter()
                     .zip(curve.spl.iter())
-                    .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
+                    .filter(|(&f, _)| (20.0..=20000.0).contains(&f))
                     .map(|(&f, &spl)| LinePoint::new(f, spl))
                     .collect();
                 if points.is_empty() {
@@ -1167,7 +1171,7 @@ impl SpinoramaApp {
                     .freq
                     .iter()
                     .zip(curve.spl.iter())
-                    .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
+                    .filter(|(&f, _)| (20.0..=20000.0).contains(&f))
                     .map(|(&f, &spl)| LinePoint::new(f, spl))
                     .collect();
                 if points.is_empty() {
@@ -1260,12 +1264,7 @@ impl SpinoramaApp {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .h(px(3.0))
-                            .bg(rgb((r as u32) << 16 | (g as u32) << 8 | (b as u32))),
-                    )
+                    .child(div().w(px(16.0)).h(px(3.0)).bg(rgb(r << 16 | g << 8 | b)))
                     .child(render_vector_text(name, &font_config))
             }))
     }
@@ -1321,7 +1320,7 @@ impl SpinoramaApp {
                     .freq
                     .iter()
                     .zip(curve.spl.iter())
-                    .filter(|(&f, _)| f >= 20.0 && f <= 20000.0)
+                    .filter(|(&f, _)| (20.0..=20000.0).contains(&f))
                     .map(|(&f, &spl)| LinePoint::new(f, spl))
                     .collect();
 
@@ -1672,8 +1671,8 @@ impl SpinoramaApp {
                                 ))
                                 .child(
                                     div()
-                                        .w(px(chart_width as f32))
-                                        .h(px(chart_height as f32))
+                                        .w(px(chart_width))
+                                        .h(px(chart_height))
                                         .relative()
                                         .bg(rgb(0xf8f8f8))
                                         // In Isoline mode, render grid first (underneath lines)
@@ -1698,7 +1697,7 @@ impl SpinoramaApp {
                                                     &contour_config,
                                                 )
                                                 .value_range(spl_min, spl_max)
-                                                .height(px(chart_height as f32)),
+                                                .height(px(chart_height)),
                                             )
                                         })
                                         // Render heatmap (for Heatmap mode) - uses quads, no anti-aliasing gaps
@@ -1711,7 +1710,7 @@ impl SpinoramaApp {
                                                     &contour_config,
                                                 )
                                                 .value_range(spl_min, spl_max)
-                                                .height(px(chart_height as f32)),
+                                                .height(px(chart_height)),
                                             )
                                         })
                                         // In Surface/Heatmap mode, render grid on top
@@ -1736,7 +1735,7 @@ impl SpinoramaApp {
                                                     &contour_config,
                                                 )
                                                 .value_range(spl_min, spl_max)
-                                                .height(px(chart_height as f32)),
+                                                .height(px(chart_height)),
                                             )
                                         }),
                                 ),
@@ -1969,8 +1968,8 @@ impl SpinoramaApp {
                                 ))
                                 .child(
                                     div()
-                                        .w(px(chart_width as f32))
-                                        .h(px(chart_height as f32))
+                                        .w(px(chart_width))
+                                        .h(px(chart_height))
                                         .relative()
                                         .bg(rgb(0xf8f8f8))
                                         // In Isoline mode, render grid first (underneath lines)
@@ -1995,7 +1994,7 @@ impl SpinoramaApp {
                                                     &contour_config,
                                                 )
                                                 .value_range(spl_min, spl_max)
-                                                .height(px(chart_height as f32)),
+                                                .height(px(chart_height)),
                                             )
                                         })
                                         // Render heatmap (for Heatmap mode) - uses quads, no anti-aliasing gaps
@@ -2008,7 +2007,7 @@ impl SpinoramaApp {
                                                     &contour_config,
                                                 )
                                                 .value_range(spl_min, spl_max)
-                                                .height(px(chart_height as f32)),
+                                                .height(px(chart_height)),
                                             )
                                         })
                                         // In Surface/Heatmap mode, render grid on top
@@ -2033,7 +2032,7 @@ impl SpinoramaApp {
                                                     &contour_config,
                                                 )
                                                 .value_range(spl_min, spl_max)
-                                                .height(px(chart_height as f32)),
+                                                .height(px(chart_height)),
                                             )
                                         }),
                                 ),
@@ -2097,7 +2096,7 @@ impl SpinoramaApp {
         let has_directivity_data = self
             .directivity_data
             .as_ref()
-            .map_or(false, |d| !d.horizontal.is_empty());
+            .is_some_and(|d| !d.horizontal.is_empty());
 
         if !has_contour_data && !has_directivity_data {
             return div().flex().items_center().justify_center().h_full().child(
@@ -2214,7 +2213,8 @@ impl SpinoramaApp {
         ];
 
         // Build paths for each selected frequency
-        let mut frequency_paths: Vec<(f64, Vec<(f32, f32)>, D3Color)> = Vec::new();
+        type PolarPathData = (f64, Vec<(f32, f32)>, D3Color);
+        let mut frequency_paths: Vec<PolarPathData> = Vec::new();
 
         for (i, &freq) in self.polar_selected_frequencies.iter().take(5).enumerate() {
             let color = freq_colors[i % freq_colors.len()];
@@ -2245,7 +2245,7 @@ impl SpinoramaApp {
         }
 
         // Generate polar grid paths as screen coordinates
-        let grid_radii: Vec<f32> = vec![0.25, 0.5, 0.75, 1.0]
+        let grid_radii: Vec<f32> = [0.25, 0.5, 0.75, 1.0]
             .iter()
             .map(|&t| t * outer_radius)
             .collect();
@@ -2359,7 +2359,7 @@ impl SpinoramaApp {
                             div()
                                 .text_sm()
                                 .text_color(rgb(0x666666))
-                                .child(format!("{}", format_frequency(*freq))),
+                                .child(format_frequency(*freq).to_string()),
                         )
                 }));
 
@@ -2554,114 +2554,91 @@ impl SpinoramaApp {
             );
         };
 
-        let chart_width = 800.0;
-        let chart_height = 500.0;
-
         // Build surface data from contour data
-        let freq_min = contour_data.freq.first().copied().unwrap_or(20.0);
-        let freq_max = contour_data.freq.last().copied().unwrap_or(20000.0);
-        let angle_min = contour_data.angles.first().copied().unwrap_or(-180.0);
-        let angle_max = contour_data.angles.last().copied().unwrap_or(180.0);
-
-        // Create a closure that interpolates from the contour data
-        let freq_count = contour_data.freq_count;
-        let angle_count = contour_data.angle_count;
         let freq_values = contour_data.freq.clone();
         let angle_values = contour_data.angles.clone();
         let spl_values = contour_data.spl.clone();
+        let freq_count = contour_data.freq_count;
+        let angle_count = contour_data.angle_count;
 
-        // Calculate SPL range for axis labels
-        let spl_min = spl_values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let spl_max = spl_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        // Reshape SPL values into 2D grid [angle][freq]
+        let mut z_values = Vec::with_capacity(angle_count);
+        for i in 0..angle_count {
+            let start = i * freq_count;
+            let end = start + freq_count;
+            if end <= spl_values.len() {
+                z_values.push(spl_values[start..end].to_vec());
+            } else {
+                // Should not happen if data is consistent, but handle gracefully
+                z_values.push(vec![0.0; freq_count]);
+            }
+        }
 
-        let surface_data = SurfaceData::from_z_function_logx(
-            (freq_min.max(20.0), freq_max.min(20000.0)),
-            (angle_min, angle_max),
-            80, // Resolution
-            |freq, angle| {
-                // Find nearest indices in the contour data grid
-                let freq_idx = freq_values
-                    .iter()
-                    .position(|&f| f >= freq)
-                    .unwrap_or(freq_count - 1)
-                    .min(freq_count - 1);
-                let angle_idx = angle_values
-                    .iter()
-                    .position(|&a| a >= angle)
-                    .unwrap_or(angle_count - 1)
-                    .min(angle_count - 1);
+        let surface_data = Surface3DData::from_grid(freq_values, angle_values, z_values)
+            .with_log_x(true)
+            .with_x_label("Frequency (Hz)")
+            .with_y_label("Angle (deg)")
+            .with_z_label("SPL (dB)")
+            .with_z_range(-40.0, 10.0); // Explicit Z range as requested
 
-                // Get SPL value (row-major: angle_idx * freq_count + freq_idx)
-                let idx = angle_idx * freq_count + freq_idx;
-                spl_values.get(idx).copied().unwrap_or(0.0)
-            },
-        );
-
-        // Map our SurfaceProjection to d3rs projection type
-        let config = match self.surface_projection {
-            SurfaceProjection::Isometric => SurfaceConfig::new().isometric(),
-            SurfaceProjection::Perspective => SurfaceConfig::new().perspective(),
-            SurfaceProjection::Orthographic => SurfaceConfig::new().orthographic(),
-            SurfaceProjection::Oblique => SurfaceConfig::new().oblique(),
+        // Map colormap
+        let colormap = match self.contour_colormap {
+            Colormap::Viridis => Surface3DColormap::Viridis,
+            Colormap::Plasma => Surface3DColormap::Plasma,
+            Colormap::Magma => Surface3DColormap::Inferno,
+            Colormap::Inferno => Surface3DColormap::Inferno,
+            Colormap::Heat => Surface3DColormap::Inferno,
+            Colormap::Coolwarm => Surface3DColormap::CoolWarm,
         };
 
-        let config = config
-            .rotation(
-                self.surface_rotation_elevation as f64,
-                self.surface_rotation_azimuth as f64,
-            )
+        let config = Surface3DConfig::new()
+            .colormap(colormap)
             .wireframe(self.surface_wireframe)
-            .color_scale(ColorScaleType::Viridis)
-            .opacity(0.6)
-            .scale(1.2)
-            .show_axes(true)
-            .axis_color(D3Color::rgb(80, 80, 80))
-            .axis_width(2.0)
-            .axis_labels("Freq", "Angle", "SPL")
-            .axis_ranges(
-                (freq_min.max(20.0), freq_max.min(20000.0)),
-                (angle_min, angle_max),
-                (spl_min, spl_max),
-            )
-            .axis_font_size(9.0);
+            .background_color(1.0, 1.0, 1.0) // White background
+            .opacity(0.8) // Slightly transparent
+            .isolines(true) // Enable isolines
+            .plot_type(self.surface_plot_type) // Set plot type
+            .camera_position(
+                3.5,
+                self.surface_rotation_azimuth,
+                self.surface_rotation_elevation,
+            );
 
-        let surface_element = render_surface(&surface_data, config, chart_width, chart_height);
+        // Create element with shared state
+        let surface_element =
+            Surface3DElement::new(surface_data, config).with_state(self.surface_state.clone());
 
-        // Projection selector
-        let projections = [
-            (SurfaceProjection::Isometric, "Isometric"),
-            (SurfaceProjection::Perspective, "Perspective"),
-            (SurfaceProjection::Orthographic, "Orthographic"),
-            (SurfaceProjection::Oblique, "Oblique"),
+        // Colormap selector
+        let colormaps = [
+            (Colormap::Viridis, "Viridis"),
+            (Colormap::Plasma, "Plasma"),
+            (Colormap::Inferno, "Inferno"),
+            (Colormap::Coolwarm, "Coolwarm"),
         ];
 
-        let projection_selector =
-            div()
-                .flex()
-                .flex_row()
-                .gap_2()
-                .children(projections.iter().enumerate().map(|(i, &(proj, label))| {
-                    div()
-                        .id(ElementId::NamedInteger(
-                            "surface-projection".into(),
-                            i as u64,
-                        ))
-                        .px_3()
-                        .py_1()
-                        .rounded(px(4.0))
-                        .cursor_pointer()
-                        .when(self.surface_projection == proj, |el| {
-                            el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
-                        })
-                        .when(self.surface_projection != proj, |el| {
-                            el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
-                        })
-                        .child(label)
-                        .on_click(cx.listener(move |this, _, _window, cx| {
-                            this.surface_projection = proj;
-                            cx.notify();
-                        }))
-                }));
+        let colormap_selector = div()
+            .flex()
+            .flex_row()
+            .gap_2()
+            .children(colormaps.iter().map(|&(cm, label)| {
+                div()
+                    .id(ElementId::Name(format!("cmap-{}", label).into()))
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .when(self.contour_colormap == cm, |el| {
+                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                    })
+                    .when(self.contour_colormap != cm, |el| {
+                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                    })
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, _window, cx| {
+                        this.contour_colormap = cm;
+                        cx.notify();
+                    }))
+            }));
 
         // Wireframe toggle
         let wireframe_toggle = div()
@@ -2682,109 +2659,107 @@ impl SpinoramaApp {
                 cx.notify();
             }));
 
-        // Rotation controls
-        let azimuth_slider = div()
+        // Plot type toggle
+        let plot_type_toggle = div()
             .flex()
-            .flex_row()
-            .items_center()
             .gap_2()
-            .child(div().text_sm().text_color(rgb(0x666666)).child("Azimuth:"))
             .child(
                 div()
-                    .text_sm()
-                    .text_color(rgb(0x333333))
-                    .child(format!("{}°", self.surface_rotation_azimuth as i32)),
+                    .id("plot-type-plane")
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .when(self.surface_plot_type == SurfacePlotType::Cartesian, |el| {
+                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                    })
+                    .when(self.surface_plot_type != SurfacePlotType::Cartesian, |el| {
+                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                    })
+                    .child("Plane")
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        this.surface_plot_type = SurfacePlotType::Cartesian;
+                        cx.notify();
+                    })),
             )
             .child(
                 div()
-                    .flex()
-                    .flex_row()
-                    .gap_1()
-                    .child(
-                        div()
-                            .id("azimuth-dec")
-                            .px_2()
-                            .py_1()
-                            .bg(rgb(0xe5e7eb))
-                            .rounded(px(4.0))
-                            .cursor_pointer()
-                            .child("-")
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_azimuth =
-                                    (this.surface_rotation_azimuth - 15.0).rem_euclid(360.0);
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id("azimuth-inc")
-                            .px_2()
-                            .py_1()
-                            .bg(rgb(0xe5e7eb))
-                            .rounded(px(4.0))
-                            .cursor_pointer()
-                            .child("+")
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_azimuth =
-                                    (this.surface_rotation_azimuth + 15.0).rem_euclid(360.0);
-                                cx.notify();
-                            })),
-                    ),
+                    .id("plot-type-sphere")
+                    .px_3()
+                    .py_1()
+                    .rounded(px(4.0))
+                    .cursor_pointer()
+                    .when(self.surface_plot_type == SurfacePlotType::Spherical, |el| {
+                        el.bg(rgb(0x3b82f6)).text_color(rgb(0xffffff))
+                    })
+                    .when(self.surface_plot_type != SurfacePlotType::Spherical, |el| {
+                        el.bg(rgb(0xe5e7eb)).text_color(rgb(0x666666))
+                    })
+                    .child("Sphere")
+                    .on_click(cx.listener(|this, _, _window, cx| {
+                        this.surface_plot_type = SurfacePlotType::Spherical;
+                        cx.notify();
+                    })),
             );
 
-        let elevation_slider = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap_2()
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(0x666666))
-                    .child("Elevation:"),
+        // Interactive container for the 3D view
+        let _surface_state = self.surface_state.clone();
+        let surface_view = div()
+            .id("surface-3d-view")
+            .w(px(600.0)) // Square view
+            .h(px(600.0))
+            .bg(rgb(0x1a1a1a)) // Dark background to match 3D scene default
+            .child(surface_element)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, _, cx| {
+                    let mut state = this.surface_state.borrow_mut();
+                    state.dragging = true;
+                    state.last_mouse = Some(event.position);
+                    cx.notify();
+                }),
             )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(0x333333))
-                    .child(format!("{}°", self.surface_rotation_elevation as i32)),
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                    let mut state = this.surface_state.borrow_mut();
+                    state.dragging = false;
+                    cx.notify();
+                }),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap_1()
-                    .child(
-                        div()
-                            .id("elevation-dec")
-                            .px_2()
-                            .py_1()
-                            .bg(rgb(0xe5e7eb))
-                            .rounded(px(4.0))
-                            .cursor_pointer()
-                            .child("-")
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_elevation =
-                                    (this.surface_rotation_elevation - 15.0).clamp(-90.0, 90.0);
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        div()
-                            .id("elevation-inc")
-                            .px_2()
-                            .py_1()
-                            .bg(rgb(0xe5e7eb))
-                            .rounded(px(4.0))
-                            .cursor_pointer()
-                            .child("+")
-                            .on_click(cx.listener(|this, _, _window, cx| {
-                                this.surface_rotation_elevation =
-                                    (this.surface_rotation_elevation + 15.0).clamp(-90.0, 90.0);
-                                cx.notify();
-                            })),
-                    ),
-            );
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                let mut state = this.surface_state.borrow_mut();
+                if let Some(last) = state.last_mouse {
+                    let delta_x: f32 = event.position.x.into();
+                    let delta_y: f32 = event.position.y.into();
+                    let last_x: f32 = last.x.into();
+                    let last_y: f32 = last.y.into();
+                    let dx = delta_x - last_x;
+                    let dy = delta_y - last_y;
+
+                    if state.dragging {
+                        state.controls.rotate(dx, dy);
+                        state.update_camera();
+                        cx.notify();
+                    }
+                }
+                if state.dragging {
+                    state.last_mouse = Some(event.position);
+                }
+            }))
+            .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _, cx| {
+                let mut state = this.surface_state.borrow_mut();
+                let delta = match event.delta {
+                    ScrollDelta::Lines(lines) => lines.y * 0.5,
+                    ScrollDelta::Pixels(pixels) => {
+                        let py: f32 = pixels.y.into();
+                        py * 0.01
+                    }
+                };
+                state.controls.zoom(delta);
+                state.update_camera();
+                cx.notify();
+            }));
 
         div()
             .flex()
@@ -2807,18 +2782,12 @@ impl SpinoramaApp {
                     .flex_wrap()
                     .gap_4()
                     .items_center()
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child("Projection:"),
-                    )
-                    .child(projection_selector)
+                    .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
+                    .child(colormap_selector)
                     .child(wireframe_toggle)
-                    .child(azimuth_slider)
-                    .child(elevation_slider),
+                    .child(plot_type_toggle),
             )
-            .child(div().flex().justify_center().child(surface_element))
+            .child(div().flex().justify_center().child(surface_view))
             .child(
                 div()
                     .flex()
@@ -2829,19 +2798,19 @@ impl SpinoramaApp {
                         div()
                             .text_sm()
                             .text_color(rgb(0x666666))
-                            .child("X: Frequency (Hz, log scale)"),
+                            .child("X: Frequency (20Hz - 20kHz)"),
                     )
                     .child(
                         div()
                             .text_sm()
                             .text_color(rgb(0x666666))
-                            .child("Y: Angle (degrees)"),
+                            .child("Y: Angle (-180° - 180°)"),
                     )
                     .child(
                         div()
                             .text_sm()
                             .text_color(rgb(0x666666))
-                            .child("Z/Color: SPL (dB)"),
+                            .child("Z: SPL (-40dB - 10dB)"),
                     ),
             )
     }

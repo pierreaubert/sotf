@@ -53,12 +53,12 @@ pub struct Track {
     pub track_number: Option<u32>,
     pub duration_secs: Option<u64>,
     pub channels: Option<u32>,
-    pub sample_rate: Option<u32>,  // Sample rate in Hz (e.g., 44100, 48000, 96000)
-    pub bit_depth: Option<u32>,    // Bits per sample (e.g., 16, 24, 32)
-    pub replay_gain: Option<f64>,  // Track gain in dB
-    pub replay_peak: Option<f64>,  // Track peak (0.0 - 1.0)
-    pub album_gain: Option<f64>,   // Album gain in dB
-    pub album_peak: Option<f64>,   // Album peak (0.0 - 1.0)
+    pub sample_rate: Option<u32>, // Sample rate in Hz (e.g., 44100, 48000, 96000)
+    pub bit_depth: Option<u32>,   // Bits per sample (e.g., 16, 24, 32)
+    pub replay_gain: Option<f64>, // Track gain in dB
+    pub replay_peak: Option<f64>, // Track peak (0.0 - 1.0)
+    pub album_gain: Option<f64>,  // Album gain in dB
+    pub album_peak: Option<f64>,  // Album peak (0.0 - 1.0)
     pub waveform: Option<Vec<u8>>, // 128 amplitude samples (0-255) for waveform visualization
     // Extended metadata fields (from audio file tags)
     pub genre: Option<String>,
@@ -627,11 +627,9 @@ impl MusicLibrary {
             album.sort_tracks();
             // Find album art and generate thumbnail if not already present
             find_and_generate_album_thumbnail(album);
-            
+
             // Calculate dynamic range (average replay gain)
-            let gains: Vec<f64> = album.tracks.iter()
-                .filter_map(|t| t.replay_gain)
-                .collect();
+            let gains: Vec<f64> = album.tracks.iter().filter_map(|t| t.replay_gain).collect();
             if !gains.is_empty() {
                 let sum: f64 = gains.iter().sum();
                 album.dynamic_range = Some(sum / gains.len() as f64);
@@ -750,9 +748,13 @@ impl MusicLibrary {
 
                         // Albums are now keyed by title only - artist comes from tracks
                         let normalized_title = normalize_album_key(&album_title);
-                        
+
                         // Include edition in key to separate versions
-                        let edition_key = metadata.edition.as_ref().map(|e| normalize_album_key(e)).unwrap_or_default();
+                        let edition_key = metadata
+                            .edition
+                            .as_ref()
+                            .map(|e| normalize_album_key(e))
+                            .unwrap_or_default();
                         let key = format!("{}|{}", normalized_title, edition_key);
 
                         let album = album_map.entry(key).or_insert_with(|| {
@@ -1031,18 +1033,18 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
             }
         }
     }
-    
+
     // Try to detect edition from directory name
     if let Some(parent) = path.parent() {
         if let Some(dir_name) = parent.file_name().map(|n| n.to_string_lossy()) {
             let dir_str = dir_name.as_ref();
             let mut edition = None;
-            
+
             // Look for (...)
             if let Some(start) = dir_str.rfind('(') {
                 if let Some(end) = dir_str.rfind(')') {
                     if end > start {
-                        edition = Some(dir_str[start+1..end].trim().to_string());
+                        edition = Some(dir_str[start + 1..end].trim().to_string());
                     }
                 }
             }
@@ -1050,11 +1052,11 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
             if let Some(start) = dir_str.rfind('[') {
                 if let Some(end) = dir_str.rfind(']') {
                     if end > start {
-                        edition = Some(dir_str[start+1..end].trim().to_string());
+                        edition = Some(dir_str[start + 1..end].trim().to_string());
                     }
                 }
             }
-            
+
             if let Some(ed) = edition {
                 // Only use if it looks like an edition info (heuristic)
                 metadata.edition = Some(ed);

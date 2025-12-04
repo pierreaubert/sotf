@@ -239,7 +239,7 @@ impl Locale {
         let len = chars.len();
 
         for (i, c) in chars.iter().enumerate() {
-            if i > 0 && (len - i) % 3 == 0 {
+            if i > 0 && (len - i).is_multiple_of(3) {
                 grouped.push_str(self.thousands);
             }
             grouped.push(*c);
@@ -269,7 +269,7 @@ impl Locale {
         }
 
         let padding_len = width - content_len;
-        let padding: String = std::iter::repeat(spec.fill).take(padding_len).collect();
+        let padding: String = std::iter::repeat_n(spec.fill, padding_len).collect();
 
         match spec.align {
             Align::Left => format!("{}{}", content, padding),
@@ -277,8 +277,8 @@ impl Locale {
             Align::Center => {
                 let left = padding_len / 2;
                 let right = padding_len - left;
-                let left_pad: String = std::iter::repeat(spec.fill).take(left).collect();
-                let right_pad: String = std::iter::repeat(spec.fill).take(right).collect();
+                let left_pad: String = std::iter::repeat_n(spec.fill, left).collect();
+                let right_pad: String = std::iter::repeat_n(spec.fill, right).collect();
                 format!("{}{}{}", left_pad, content, right_pad)
             }
             Align::AfterSign => {

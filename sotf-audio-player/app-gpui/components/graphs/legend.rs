@@ -122,7 +122,9 @@ fn render_legend_entry(
                 .h(px(config.indicator_size))
                 .rounded(px(2.0))
                 .bg(entry.color)
-                .when(entry.active, |el| el.border_1().border_color(theme.text_primary)),
+                .when(entry.active, |el| {
+                    el.border_1().border_color(theme.text_primary)
+                }),
         )
         // Label
         .child(

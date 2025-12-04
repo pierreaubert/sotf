@@ -12,10 +12,10 @@ use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
 use std::panic;
 
+use super::{MeterTheme, TickConfig, render_tick_row};
 use crate::app::{App as AppState, ChannelGroup, ChannelInfo};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
-use super::{MeterTheme, TickConfig, render_tick_row};
 
 // ============================================================================
 // dB Scale Utilities
@@ -358,7 +358,7 @@ pub fn render_gradient_meter(
         // Meter bar container
         .child(
             div()
-                .w(px(16.0))
+                .w(px(8.0))
                 .flex_1()
                 .bg(theme_c.background)
                 .rounded(px(2.0))
@@ -424,6 +424,62 @@ pub fn render_gradient_meter(
 // ============================================================================
 
 impl PlayerView {
+    /// Render vertical dB legend
+    pub fn render_vertical_legend(&self, theme: &Theme, align_right: bool) -> impl IntoElement {
+        let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
+        let theme = theme.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .h_full()
+            // Ticks area (matches meters flex_1)
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .w(px(24.0))
+                    .children(ticks.into_iter().map(move |db| {
+                        let pos = db_to_position(db as f64);
+                        let label = div()
+                            .text_size(px(9.0))
+                            .text_color(theme.text_muted)
+                            .child(format!("{}", db));
+
+                        let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
+
+                        let container = div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(pos)))
+                            .flex()
+                            .items_center()
+                            .justify_between();
+
+                        if align_right {
+                            container.child(label).child(tick)
+                        } else {
+                            container.child(tick).child(label)
+                        }
+                    })),
+            )
+            // Spacer (matches MSD buttons height and margin)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(1.0))
+                    .mt_1()
+                    .items_center()
+                    .justify_center()
+                    .opacity(0.0) // Invisible, just for spacing
+                    .child(div().px(px(2.0)).py(px(2.0)).text_xs().child("M"))
+                    .child(div().px(px(2.0)).py(px(2.0)).text_xs().child("S"))
+                    .child(div().px(px(2.0)).py(px(2.0)).text_xs().child("D")),
+            )
+    }
+
     /// Render a single meter group with M/S/D buttons below the channels
     pub fn render_meter_group(
         &self,
@@ -472,21 +528,12 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .p_2()
+            .p(px(2.0))
             .rounded_md()
             .when(is_selected, |d| d.bg(theme_c.surface_selected))
             .when(!is_selected, |d| d.bg(theme_c.background_secondary))
-            // Group header (just the name)
-            .child(
-                div()
-                    .text_xs()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.text_secondary)
-                    .mb_1()
-                    .child(group.name.clone()),
-            )
-            // Channel meters (3x taller for better visibility)
-            .child(div().flex().gap_1().flex_1().min_h(px(240.0)).children(
+            // Channel meters
+            .child(div().flex().gap(px(1.0)).flex_1().h_full().children(
                 channel_data.into_iter().map(
                     |(fill_ratio, yellow_threshold, red_threshold, name)| {
                         render_gradient_meter(
@@ -499,12 +546,14 @@ impl PlayerView {
                     },
                 ),
             ))
-            // M/S/D buttons below channels (spans all channels in group)
+            // M/S/D buttons vertical column below meters, centered
             .child(
                 div()
                     .flex()
-                    .gap(px(2.0))
+                    .flex_col()
+                    .gap(px(1.0))
                     .mt_1()
+                    .items_center()
                     .justify_center()
                     .child(self.render_msd_button(
                         "M",
@@ -553,7 +602,7 @@ impl PlayerView {
                 "msd-{}-{}",
                 button_type, group_idx
             )))
-            .px_2()
+            .px(px(2.0))
             .py(px(2.0))
             .rounded(px(2.0))
             .text_xs()
@@ -655,6 +704,13 @@ impl PlayerView {
             .child({
                 // Use a for loop to avoid FnMut closure escape issues with cx
                 let mut meter_elements = Vec::new();
+
+                // Left Legend
+                meter_elements.push(
+                    self.render_vertical_legend(&theme, false)
+                        .into_any_element(),
+                );
+
                 for (idx, group) in groups.iter().enumerate() {
                     let is_selected = idx == selected_group;
                     meter_elements.push(
@@ -669,11 +725,16 @@ impl PlayerView {
                         .into_any_element(),
                     );
                 }
+
+                // Right Legend
+                meter_elements.push(self.render_vertical_legend(&theme, true).into_any_element());
+
                 div()
                     .id("meter-groups-scroll")
                     .flex()
-                    .gap_2()
+                    .gap(px(0.0))
                     .overflow_x_scroll()
+                    .h_full()
                     .children(meter_elements)
             })
     }

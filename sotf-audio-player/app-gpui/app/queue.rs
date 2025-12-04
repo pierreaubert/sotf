@@ -14,7 +14,7 @@ impl App {
 
         // Get the selected album from the grid view
         let albums = self.filtered_albums();
-        let selected_album = albums.get(self.selected_album_index).copied();
+        let selected_album = albums.get(self.selected_album_index).cloned();
 
         if let Some(album) = selected_album {
             self.queue.push(QueueItem::new(album.clone()));

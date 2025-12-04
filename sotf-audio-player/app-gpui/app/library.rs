@@ -10,7 +10,7 @@ use super::state::App;
 use super::types::{ChannelFilter, LibrarySortOrder, ToastMessage, ToastType};
 
 impl App {
-    pub fn filtered_albums(&self) -> Vec<&Album> {
+    pub fn filtered_albums(&self) -> Vec<Album> {
         use ChannelFilter::*;
 
         // First filter by search query
@@ -37,34 +37,79 @@ impl App {
         });
 
         // Group by title and artist to consolidate editions
-        // We group albums with the same title and artist, and only show the one with the best dynamic range
         let mut groups: std::collections::HashMap<String, Vec<&Album>> =
             std::collections::HashMap::new();
+
         for album in albums {
-            let title = album.title.trim().to_lowercase();
+            let title = album.title.trim();
+            let lower_title = title.to_lowercase();
+            // Simple heuristic to remove disc/cd suffix
+            let normalized_title = if let Some(idx) = lower_title.find(" disc ") {
+                &title[..idx]
+            } else if let Some(idx) = lower_title.find(" (disc ") {
+                &title[..idx]
+            } else if let Some(idx) = lower_title.find(" cd ") {
+                &title[..idx]
+            } else if let Some(idx) = lower_title.find(" (cd ") {
+                &title[..idx]
+            } else {
+                title
+            };
+
             let artist = album.artist().trim().to_lowercase();
-            let key = format!("{}|{}", title, artist);
+            let key = format!("{}|{}", normalized_title.trim().to_lowercase(), artist);
             groups.entry(key).or_default().push(album);
         }
 
-        // Select best edition from each group (highest dynamic range)
-        let mut deduped_albums: Vec<&Album> = Vec::new();
+        // Merge albums
+        let mut merged_albums: Vec<Album> = Vec::new();
         for group in groups.values() {
-            if let Some(best) = group.iter().max_by(|a, b| {
-                let dr_a = a.dynamic_range.unwrap_or(0.0);
-                let dr_b = b.dynamic_range.unwrap_or(0.0);
-                // Prefer higher dynamic range
-                dr_a.partial_cmp(&dr_b).unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                deduped_albums.push(*best);
+            if group.is_empty() {
+                continue;
             }
+
+            // Clone the first album as base
+            let mut base_album = (*group[0]).clone();
+
+            if group.len() > 1 {
+                let title = base_album.title.clone();
+                let lower_title = title.to_lowercase();
+                if let Some(idx) = lower_title.find(" disc ") {
+                    base_album.title = title[..idx].trim().to_string();
+                } else if let Some(idx) = lower_title.find(" (disc ") {
+                    base_album.title = title[..idx].trim().to_string();
+                } else if let Some(idx) = lower_title.find(" cd ") {
+                    base_album.title = title[..idx].trim().to_string();
+                } else if let Some(idx) = lower_title.find(" (cd ") {
+                    base_album.title = title[..idx].trim().to_string();
+                }
+
+                let mut all_tracks = Vec::new();
+                for album in group {
+                    all_tracks.extend(album.tracks.clone());
+                }
+
+                all_tracks.sort_by(|a, b| {
+                    a.disc_number
+                        .unwrap_or(1)
+                        .cmp(&b.disc_number.unwrap_or(1))
+                        .then_with(|| {
+                            a.track_number
+                                .unwrap_or(0)
+                                .cmp(&b.track_number.unwrap_or(0))
+                        })
+                });
+
+                base_album.tracks = all_tracks;
+            }
+
+            merged_albums.push(base_album);
         }
-        albums = deduped_albums;
 
         // Finally, sort
         match self.library_sort_order {
             LibrarySortOrder::Artist => {
-                albums.sort_by(|a, b| {
+                merged_albums.sort_by(|a, b| {
                     a.artist()
                         .cmp(&b.artist())
                         .then_with(|| a.year.cmp(&b.year).reverse())
@@ -72,13 +117,13 @@ impl App {
                 });
             }
             LibrarySortOrder::Album => {
-                albums.sort_by(|a, b| a.title.cmp(&b.title));
+                merged_albums.sort_by(|a, b| a.title.cmp(&b.title));
             }
             LibrarySortOrder::Title => {
-                albums.sort_by(|a, b| a.title.cmp(&b.title));
+                merged_albums.sort_by(|a, b| a.title.cmp(&b.title));
             }
             LibrarySortOrder::Year => {
-                albums.sort_by(|a, b| {
+                merged_albums.sort_by(|a, b| {
                     b.year
                         .cmp(&a.year)
                         .then_with(|| a.artist().cmp(&b.artist()))
@@ -87,7 +132,7 @@ impl App {
             }
         }
 
-        albums
+        merged_albums
     }
 
     /// Set library sort order
@@ -95,7 +140,7 @@ impl App {
         self.library_sort_order = order;
         // Reset selection and page to top when changing sort order
         self.selected_album_index = 0;
-        self.library_page = 0;
+        self.reset_page();
     }
 
     /// Set channel filter
@@ -103,7 +148,7 @@ impl App {
         self.channel_filter = filter;
         // Reset selection and page to top when changing filter
         self.selected_album_index = 0;
-        self.library_page = 0;
+        self.reset_page();
     }
 
     /// Cycle to next channel filter
@@ -118,51 +163,57 @@ impl App {
         };
         // Reset selection and page
         self.selected_album_index = 0;
-        self.library_page = 0;
+        self.reset_page();
     }
 
     /// Get paginated albums for grid view
-    pub fn get_paginated_albums(&self) -> Vec<&Album> {
+    pub fn get_paginated_albums(&self) -> Vec<Album> {
         let all_albums = self.filtered_albums();
         if all_albums.is_empty() {
             return Vec::new();
         }
-        let start = (self.library_page * self.library_items_per_page).min(all_albums.len());
-        let end = (start + self.library_items_per_page).min(all_albums.len());
-
-        all_albums[start..end].to_vec()
-    }
-
-    /// Get total number of pages
-    pub fn get_total_pages(&self) -> usize {
-        let total_items = self.filtered_albums().len();
-        if total_items == 0 {
-            1
-        } else {
-            (total_items + self.library_items_per_page - 1) / self.library_items_per_page
-        }
-    }
-
-    /// Go to next page
-    pub fn next_page(&mut self) {
-        let total_pages = self.get_total_pages();
-        if self.library_page + 1 < total_pages {
-            self.library_page += 1;
-            self.selected_album_index = 0;
-        }
-    }
-
-    /// Go to previous page
-    pub fn prev_page(&mut self) {
-        if self.library_page > 0 {
-            self.library_page -= 1;
-            self.selected_album_index = 0;
-        }
+        let end = self.library_items_per_page.min(all_albums.len());
+        all_albums[0..end].to_vec()
     }
 
     /// Reset to first page
     pub fn reset_page(&mut self) {
-        self.library_page = 0;
+        self.recalculate_pagination(true);
+    }
+
+    /// Recalculate items per page based on window size
+    pub fn recalculate_pagination(&mut self, force_reset: bool) {
+        // Estimate grid dimensions
+        // Card min width is 160px + 16px gap = 176px
+        // Card height is approx 240px + 16px gap = 256px
+        // Sidebar is approx 0 in compact, or split in expanded
+
+        let available_width = self.window_width - 32.0; // Minus padding
+        let columns = (available_width / 176.0).floor().max(1.0) as usize;
+        self.library_columns = columns;
+
+        // Estimate available height for grid
+        // Header (40) + Stats (100) + Filter (40) + Pagination (50) + Footer (60) = ~290px
+        let available_height = (self.window_height - 290.0).max(256.0);
+        let rows = (available_height / 256.0).floor().max(1.0) as usize;
+
+        // Initial load: 3 screens worth of items
+        let new_items_per_page = columns * rows * 3;
+
+        // Only update if we are initializing, resizing significantly, or forcing reset
+        if force_reset || self.library_items_per_page < new_items_per_page {
+            self.library_items_per_page = new_items_per_page;
+        }
+    }
+
+    /// Load more albums (infinite scroll)
+    pub fn load_more_albums(&mut self) {
+        let total = self.filtered_albums().len();
+        if self.library_items_per_page < total {
+            // Add 5 rows worth of items
+            let more = self.library_columns * 5;
+            self.library_items_per_page = (self.library_items_per_page + more).min(total);
+        }
     }
 
     /// Add a directory to the library (interactive version with UI feedback)

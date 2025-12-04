@@ -57,8 +57,8 @@ pub struct App {
     pub channel_filter: ChannelFilter,
 
     // Pagination for library
-    pub library_page: usize,           // Current page (0-indexed)
     pub library_items_per_page: usize, // Items per page
+    pub library_columns: usize,        // Number of columns in grid
 
     // Plugin system
     pub plugin_chain: PluginChain,
@@ -121,14 +121,18 @@ pub struct App {
     // Layout state
     pub layout_mode: LayoutMode,
     pub window_height: f32,
+    pub window_width: f32,
 
     // Panel layout (resizable)
-    pub queue_panel_ratio: f32,        // Height ratio for Queue section in split view (Library on top, Queue on bottom)
-    pub queue_list_ratio: f32,         // Width ratio for queue list in Queue screen
-    pub meters_panel_ratio: f32,       // Width ratio for level meters panel in Queue screen
-    pub lufs_visible: bool,            // Whether LUFS panel is visible (when separated from meters)
+    pub queue_panel_ratio: f32, // Height ratio for Queue section in split view (Library on top, Queue on bottom)
+    pub queue_list_ratio: f32,  // Width ratio for queue list in Queue screen
+    pub meters_panel_ratio: f32, // Width ratio for level meters panel in Queue screen
+    pub lufs_panel_ratio: f32,  // Width ratio for LUFS panel in Queue screen (4-col mode)
+    pub lufs_visible: bool,     // Whether LUFS panel is visible (when separated from meters)
     pub is_dragging_queue_divider: bool,
+    pub is_dragging_queue_list_divider: bool,
     pub is_dragging_meters_divider: bool,
+    pub is_dragging_lufs_divider: bool,
     pub divider_click_start: Option<std::time::Instant>,
 
     // Scan progress for threaded scanning
@@ -191,8 +195,8 @@ impl App {
             selected_plugin_index: 0,
             library_sort_order: LibrarySortOrder::Album,
             channel_filter: ChannelFilter::All,
-            library_page: 0,
             library_items_per_page: 50, // Show 50 items per page
+            library_columns: 4,
             plugin_chain: {
                 let mut chain = PluginChain::new();
                 // Add default analyzer plugins for LUFS and level meters
@@ -232,12 +236,16 @@ impl App {
             active_menu: ActiveMenu::None,
             layout_mode: LayoutMode::Compact,
             window_height: 600.0,
+            window_width: 800.0,
             queue_panel_ratio: 0.35,
             queue_list_ratio: 0.30,
             meters_panel_ratio: 0.25,
+            lufs_panel_ratio: 0.25,
             lufs_visible: true,
             is_dragging_queue_divider: false,
+            is_dragging_queue_list_divider: false,
             is_dragging_meters_divider: false,
+            is_dragging_lufs_divider: false,
             divider_click_start: None,
             scan_total_files: 0,
             show_device_popup: false,
@@ -300,6 +308,8 @@ impl App {
         // Restore panel layout
         self.queue_panel_ratio = config.panel_layout.queue_ratio;
         self.meters_panel_ratio = config.panel_layout.meters_ratio;
+        self.queue_list_ratio = config.panel_layout.queue_list_ratio;
+        self.lufs_panel_ratio = config.panel_layout.lufs_ratio;
 
         // Restore volume and muted state
         self.volume = config.volume;
@@ -342,6 +352,8 @@ impl App {
             panel_layout: PanelLayout {
                 queue_ratio: self.queue_panel_ratio,
                 meters_ratio: self.meters_panel_ratio,
+                queue_list_ratio: self.queue_list_ratio,
+                lufs_ratio: self.lufs_panel_ratio,
             },
             window_geometry: window_geometry.unwrap_or_else(|| {
                 // If no geometry provided, use current saved value or default

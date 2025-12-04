@@ -6,7 +6,10 @@ use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, HStack, StackSpacing};
 
 impl PlayerView {
-    pub(crate) fn render_library_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_library_settings_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let scan_in_progress = state.app.scan_in_progress;

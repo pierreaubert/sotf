@@ -90,25 +90,6 @@ pub fn get_angle_range(directivity_data: &DirectivityData, use_horizontal: bool)
     (min_angle, max_angle)
 }
 
-/// Get the available frequency range from directivity data
-pub fn get_frequency_range(directivity_data: &DirectivityData, use_horizontal: bool) -> (f64, f64) {
-    let curves = if use_horizontal {
-        &directivity_data.horizontal
-    } else {
-        &directivity_data.vertical
-    };
-
-    if curves.is_empty() || curves[0].freq.is_empty() {
-        return (20.0, 20000.0);
-    }
-
-    let first_curve = &curves[0];
-    (
-        first_curve.freq[0],
-        first_curve.freq[first_curve.freq.len() - 1],
-    )
-}
-
 /// Format frequency for display (e.g., 1000 -> "1k", 100 -> "100")
 pub fn format_frequency(freq: f64) -> String {
     if freq >= 1000.0 {

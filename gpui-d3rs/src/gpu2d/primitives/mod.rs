@@ -1,14 +1,14 @@
 //! Primitive types for GPU 2D rendering
 
+mod circle;
 mod line;
 mod rect;
-mod circle;
 mod triangle;
 
-pub use line::{LineVertex, LineBatch};
-pub use rect::{RectVertex, RectBatch};
-pub use circle::{CircleVertex, CircleBatch};
-pub use triangle::{TriangleVertex, TriangleBatch};
+pub use circle::{CircleBatch, CircleVertex};
+pub use line::{LineBatch, LineVertex};
+pub use rect::{RectBatch, RectVertex};
+pub use triangle::{TriangleBatch, TriangleVertex};
 
 /// A color represented as RGBA floats [0.0, 1.0]
 pub type Color4 = [f32; 4];
@@ -24,7 +24,12 @@ pub struct Rect {
 
 impl Rect {
     pub fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn min(&self) -> [f32; 2] {

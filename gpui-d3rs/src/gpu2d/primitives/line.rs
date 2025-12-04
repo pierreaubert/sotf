@@ -20,7 +20,11 @@ pub struct LineVertex {
 
 impl LineVertex {
     pub fn new(position: [f32; 2], normal: [f32; 2], color: Color4) -> Self {
-        Self { position, normal, color }
+        Self {
+            position,
+            normal,
+            color,
+        }
     }
 }
 
@@ -75,15 +79,23 @@ impl LineBatch {
         // |  \    |
         // |   \   |
         // v2 --- v3
-        self.vertices.push(LineVertex::new([x0, y0], normal_pos, color));  // v0: start + normal
-        self.vertices.push(LineVertex::new([x1, y1], normal_pos, color));  // v1: end + normal
-        self.vertices.push(LineVertex::new([x0, y0], normal_neg, color));  // v2: start - normal
-        self.vertices.push(LineVertex::new([x1, y1], normal_neg, color));  // v3: end - normal
+        self.vertices
+            .push(LineVertex::new([x0, y0], normal_pos, color)); // v0: start + normal
+        self.vertices
+            .push(LineVertex::new([x1, y1], normal_pos, color)); // v1: end + normal
+        self.vertices
+            .push(LineVertex::new([x0, y0], normal_neg, color)); // v2: start - normal
+        self.vertices
+            .push(LineVertex::new([x1, y1], normal_neg, color)); // v3: end - normal
 
         // Two triangles: (0, 2, 1) and (1, 2, 3)
         self.indices.extend_from_slice(&[
-            base_idx, base_idx + 2, base_idx + 1,
-            base_idx + 1, base_idx + 2, base_idx + 3,
+            base_idx,
+            base_idx + 2,
+            base_idx + 1,
+            base_idx + 1,
+            base_idx + 2,
+            base_idx + 3,
         ]);
     }
 

@@ -249,7 +249,11 @@ impl<'a> Voronoi<'a> {
             iterations = 0;
 
             loop {
-                let prev_edge = if edge % 3 == 0 { edge + 2 } else { edge - 1 };
+                let prev_edge = if edge.is_multiple_of(3) {
+                    edge + 2
+                } else {
+                    edge - 1
+                };
                 let opposite = halfedges[prev_edge];
 
                 if opposite == EMPTY {

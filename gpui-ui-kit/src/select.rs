@@ -263,9 +263,7 @@ impl Select {
         } else if let Some(placeholder) = self.placeholder {
             div().text_color(theme.placeholder_color).child(placeholder)
         } else {
-            div()
-                .text_color(theme.placeholder_color)
-                .child("Select...")
+            div().text_color(theme.placeholder_color).child("Select...")
         };
 
         trigger = trigger.child(display_text);

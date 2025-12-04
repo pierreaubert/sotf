@@ -1,7 +1,7 @@
 //! Plugin screen rendering functions - Professional DAW-style interface
 
-use crate::ui::PlayerView;
 use super::render_plugin_content;
+use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::PluginType;

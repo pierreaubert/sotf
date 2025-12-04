@@ -231,12 +231,7 @@ impl IconButton {
             }
             IconButtonVariant::Filled => {
                 if self.selected {
-                    (
-                        theme.accent,
-                        theme.accent_hover,
-                        theme.text_on_accent,
-                        None,
-                    )
+                    (theme.accent, theme.accent_hover, theme.text_on_accent, None)
                 } else {
                     (theme.filled_bg, theme.filled_hover_bg, theme.text, None)
                 }

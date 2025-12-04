@@ -1,7 +1,7 @@
 //! Triangle primitive for filled polygon rendering
 
-use bytemuck::{Pod, Zeroable};
 use super::Color4;
+use bytemuck::{Pod, Zeroable};
 
 /// Vertex for a triangle (simple position + color)
 #[repr(C)]

@@ -4,9 +4,9 @@ use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::actions::*;
 use sotf_audio_player_gpui::app::{App, AppState};
+use sotf_audio_player_gpui::config::Config;
 use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
-use sotf_audio_player_gpui::config::Config;
 use std::borrow::Cow;
 use std::fs::OpenOptions;
 use std::sync::Arc;
@@ -45,11 +45,9 @@ fn main() {
 
     log::info!("SOTF GPUI Player starting...");
 
-    gpui::Application::new()
-        .with_assets(Assets)
-        .run(move |cx| {
+    gpui::Application::new().with_assets(Assets).run(move |cx| {
         cx.activate(true);
-        
+
         cx.set_menus(vec![
             Menu {
                 name: "SotF Player".into(),
@@ -68,6 +66,9 @@ fn main() {
                 items: vec![
                     MenuItem::action("Scan Library", ScanLibrary),
                     MenuItem::action("Add Directory...", AddDirectory),
+                    MenuItem::separator(),
+                    MenuItem::action("Settings...", OpenConfig),
+                    MenuItem::action("Quit", QuitApp),
                 ],
             },
             Menu {
@@ -80,9 +81,7 @@ fn main() {
             },
             Menu {
                 name: "Help".into(),
-                items: vec![
-                    MenuItem::action("Keyboard Shortcuts", ToggleHelp),
-                ],
+                items: vec![MenuItem::action("Keyboard Shortcuts", ToggleHelp)],
             },
         ]);
 

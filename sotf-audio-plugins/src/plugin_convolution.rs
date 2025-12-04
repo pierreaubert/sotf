@@ -4,8 +4,8 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -295,12 +295,14 @@ impl ConvolutionPlugin {
                     }
                     AudioBufferRef::S32(buf) => {
                         for i in 0..duration {
-                            samples[ch].push(<f32 as FromSample<i32>>::from_sample(buf.chan(ch)[i]));
+                            samples[ch]
+                                .push(<f32 as FromSample<i32>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
                     AudioBufferRef::S16(buf) => {
                         for i in 0..duration {
-                            samples[ch].push(<f32 as FromSample<i16>>::from_sample(buf.chan(ch)[i]));
+                            samples[ch]
+                                .push(<f32 as FromSample<i16>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
                     AudioBufferRef::U8(buf) => {

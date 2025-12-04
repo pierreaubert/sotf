@@ -5,7 +5,7 @@ use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, Potentiometer, StackAlign, StackJustify,
+    HStack, IconButton, IconButtonSize, IconButtonVariant, Potentiometer, StackAlign, StackJustify,
     StackSpacing, VStack,
 };
 
@@ -201,7 +201,7 @@ impl PlayerView {
             .py_0() // Padding above/below
             .flex_1()
             .max_w(px(600.0))
-            // Transport controls row (moved down 20px)
+            // Transport controls row
             .child(
                 div()
                     .flex()
@@ -210,92 +210,116 @@ impl PlayerView {
                     // Previous track
                     .child(
                         div()
-                            .id("transport-prev")
-                            .p_2()
-                            .rounded_full()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme_clone.surface_hover))
-                            .child(Icon::new(IconName::SkipBack).size(IconSize::Lg).color(theme_clone.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                                    view.prev_track(&crate::actions::PrevTrack, window, cx);
-                                }),
+                            .id("transport-prev-wrapper")
+                            .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
+                                view.prev_track(&crate::actions::PrevTrack, window, cx);
+                            }))
+                            .child(
+                                IconButton::with_child(
+                                    "transport-prev",
+                                    Icon::new(IconName::SkipBack)
+                                        .size(IconSize::Lg)
+                                        .color(theme_clone.text_primary),
+                                )
+                                .variant(IconButtonVariant::Ghost)
+                                .size(IconButtonSize::Lg)
+                                .rounded_full()
+                                .theme(theme_clone.to_icon_button_theme()),
                             ),
                     )
                     // Seek backward
                     .child(
                         div()
-                            .id("transport-seek-back")
-                            .p_2()
-                            .rounded_full()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme_clone.surface_hover))
-                            .child(Icon::new(IconName::Rewind).size(IconSize::Lg).color(theme_clone.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.position_secs =
-                                            (state.app.position_secs - 10.0).max(0.0);
-                                    });
-                                    cx.notify();
-                                }),
+                            .id("transport-seek-back-wrapper")
+                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.position_secs =
+                                        (state.app.position_secs - 10.0).max(0.0);
+                                });
+                                cx.notify();
+                            }))
+                            .child(
+                                IconButton::with_child(
+                                    "transport-seek-back",
+                                    Icon::new(IconName::Rewind)
+                                        .size(IconSize::Lg)
+                                        .color(theme_clone.text_primary),
+                                )
+                                .variant(IconButtonVariant::Ghost)
+                                .size(IconButtonSize::Lg)
+                                .rounded_full()
+                                .theme(theme_clone.to_icon_button_theme()),
                             ),
                     )
                     // Play/Pause (large, accent background)
                     .child({
-                        let play_icon = if is_playing { IconName::Pause } else { IconName::Play };
+                        let play_icon = if is_playing {
+                            IconName::Pause
+                        } else {
+                            IconName::Play
+                        };
                         div()
-                            .id("transport-play")
-                            .p_3()
-                            .rounded_full()
-                            .cursor_pointer()
-                            .bg(theme_clone.accent)
-                            .hover(|s| s.bg(theme_clone.accent_hover))
-                            .child(Icon::new(play_icon).size(IconSize::Lg).color(theme_clone.text_on_accent))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                                    view.toggle_playback(&crate::actions::PlayPause, window, cx);
-                                }),
+                            .id("transport-play-wrapper")
+                            .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
+                                view.toggle_playback(&crate::actions::PlayPause, window, cx);
+                            }))
+                            .child(
+                                IconButton::with_child(
+                                    "transport-play",
+                                    Icon::new(play_icon)
+                                        .size(IconSize::Lg)
+                                        .color(theme_clone.text_on_accent),
+                                )
+                                .variant(IconButtonVariant::Filled)
+                                .size(IconButtonSize::Xl)
+                                .rounded_full()
+                                .selected(true) // Use selected state for accent background
+                                .theme(theme_clone.to_icon_button_theme()),
                             )
                     })
                     // Seek forward
                     .child(
                         div()
-                            .id("transport-seek-fwd")
-                            .p_2()
-                            .rounded_full()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme_clone.surface_hover))
-                            .child(Icon::new(IconName::FastForward).size(IconSize::Lg).color(theme_clone.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        let max = state.app.duration_secs;
-                                        state.app.position_secs =
-                                            (state.app.position_secs + 10.0).min(max);
-                                    });
-                                    cx.notify();
-                                }),
+                            .id("transport-seek-fwd-wrapper")
+                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    let max = state.app.duration_secs;
+                                    state.app.position_secs =
+                                        (state.app.position_secs + 10.0).min(max);
+                                });
+                                cx.notify();
+                            }))
+                            .child(
+                                IconButton::with_child(
+                                    "transport-seek-fwd",
+                                    Icon::new(IconName::FastForward)
+                                        .size(IconSize::Lg)
+                                        .color(theme_clone.text_primary),
+                                )
+                                .variant(IconButtonVariant::Ghost)
+                                .size(IconButtonSize::Lg)
+                                .rounded_full()
+                                .theme(theme_clone.to_icon_button_theme()),
                             ),
                     )
                     // Next track
                     .child(
                         div()
-                            .id("transport-next")
-                            .p_2()
-                            .rounded_full()
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme_clone.surface_hover))
-                            .child(Icon::new(IconName::SkipForward).size(IconSize::Lg).color(theme_clone.text_primary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                                    view.next_track(&crate::actions::NextTrack, window, cx);
-                                }),
+                            .id("transport-next-wrapper")
+                            .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
+                                view.next_track(&crate::actions::NextTrack, window, cx);
+                            }))
+                            .child(
+                                IconButton::with_child(
+                                    "transport-next",
+                                    Icon::new(IconName::SkipForward)
+                                        .size(IconSize::Lg)
+                                        .color(theme_clone.text_primary),
+                                )
+                                .variant(IconButtonVariant::Ghost)
+                                .size(IconButtonSize::Lg)
+                                .rounded_full()
+                                .theme(theme_clone.to_icon_button_theme()),
                             ),
                     ),
             )
@@ -324,14 +348,12 @@ impl PlayerView {
                             .cursor_pointer()
                             .flex()
                             .items_center() // Center bars vertically for mirrored look
-                            .children(
-                                Self::render_waveform_bars(
-                                    waveform.as_ref(),
-                                    progress,
-                                    progress_bar_fill,
-                                    progress_bar_bg,
-                                )
-                            )
+                            .children(Self::render_waveform_bars(
+                                waveform.as_ref(),
+                                progress,
+                                progress_bar_fill,
+                                progress_bar_bg,
+                            )),
                     )
                     // Total duration
                     .child(
@@ -405,7 +427,11 @@ impl PlayerView {
                             .items_center()
                             .gap_1()
                             // Speaker icon
-                            .child(Icon::new(IconName::Speaker).size(IconSize::Lg).color(theme_clone.text_secondary))
+                            .child(
+                                Icon::new(IconName::Speaker)
+                                    .size(IconSize::Lg)
+                                    .color(theme_clone.text_secondary),
+                            )
                             // Device name below
                             .child(
                                 div()
@@ -491,8 +517,9 @@ impl PlayerView {
                             .font_weight(FontWeight::MEDIUM)
                     })
                     .when(!is_selected, |d| {
-                        d.text_color(theme.text_secondary)
-                            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
+                        d.text_color(theme.text_secondary).hover(|style| {
+                            style.bg(theme.surface_hover).text_color(theme.text_primary)
+                        })
                     })
                     .on_mouse_up(
                         MouseButton::Left,

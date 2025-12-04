@@ -6,9 +6,9 @@ use std::collections::BTreeMap;
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui::{InteractiveElement, Styled};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, Heading, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 use sotf_audio_player::Track;
 
@@ -18,14 +18,11 @@ impl PlayerView {
     pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
-        // Use window_height from state (set in main render)
-        let window_height = state.app.window_height;
-        let is_compact_height = window_height < 600.0;
 
         // Use ratios for panel widths (layout will compute actual sizes)
         let queue_list_ratio = state.app.queue_list_ratio;
         let meters_ratio = state.app.meters_panel_ratio;
-        let lufs_visible = state.app.lufs_visible;
+        let lufs_ratio = state.app.lufs_panel_ratio;
 
         let queue_collapsed = queue_list_ratio < 0.05;
         let meters_collapsed = meters_ratio < 0.05;
@@ -41,18 +38,22 @@ impl PlayerView {
                         .flex()
                         .flex_col()
                         .w(relative(queue_list_ratio))
-                        .p_4()
+                        .px_2()
+                        .pt_2()
                         .border_r_1()
                         .border_color(theme.border)
                         .child(
                             HStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(
-                                    Heading::h3(format!("Queue ({} albums)", state.app.queue.len())),
+                                    Text::new(format!("Queue ({} albums)", state.app.queue.len()))
+                                        .size(TextSize::Lg)
+                                        .weight(TextWeight::Bold)
+                                        .color(theme.text_primary),
                                 )
                                 .child(
                                     Button::new("clear-queue-btn", "Clear")
-                                        .variant(ButtonVariant::Destructive)
+                                        .variant(ButtonVariant::Ghost)
                                         .size(ButtonSize::Xs)
                                         .theme(button_theme)
                                         .build()
@@ -67,7 +68,7 @@ impl PlayerView {
                                         ),
                                 )
                                 .build()
-                                .mb_4()
+                                .mb_2()
                                 .flex_1()
                                 .justify_between(),
                         )
@@ -84,7 +85,7 @@ impl PlayerView {
                                     let theme = theme.clone();
                                     let theme_hover = theme.clone();
                                     div()
-                                        .p_3()
+                                        .p_2()
                                         .rounded_md()
                                         .when(is_current, |d| {
                                             // Current item: accent background, subtle hover
@@ -167,7 +168,7 @@ impl PlayerView {
             // Separator 1 (Queue <-> Center)
             .child(
                 div()
-                    .w(px(theme.separator_size))
+                    .w(px(6.0))
                     .h_full()
                     .bg(theme.background)
                     .flex()
@@ -180,15 +181,11 @@ impl PlayerView {
                             .h_full()
                             .bg(theme.border)
                     )
-                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                    .on_mouse_down(MouseButton::Left, cx.listener(move |view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            if state.app.queue_list_ratio > 0.05 {
-                                state.app.queue_list_ratio = 0.0;
-                            } else {
-                                state.app.queue_list_ratio = 0.30; // Restore default
-                            }
+                            state.app.is_dragging_queue_list_divider = true;
+                            state.app.divider_click_start = Some(std::time::Instant::now());
                         });
-                        cx.notify();
                     }))
             )
             // Center panel: Now playing info
@@ -198,7 +195,7 @@ impl PlayerView {
             // Separator 2 (Center <-> Right)
             .child(
                 div()
-                    .w(px(theme.separator_size))
+                    .w(px(6.0))
                     .h_full()
                     .bg(theme.background)
                     .flex()
@@ -211,73 +208,49 @@ impl PlayerView {
                             .h_full()
                             .bg(theme.border)
                     )
-                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                    .on_mouse_down(MouseButton::Left, cx.listener(move |view, _, _, cx| {
                         view.state.update(cx, |state, _| {
-                            if state.app.meters_panel_ratio > 0.05 {
-                                state.app.meters_panel_ratio = 0.0;
-                            } else {
-                                state.app.meters_panel_ratio = 0.25; // Restore default
-                            }
+                            state.app.is_dragging_meters_divider = true;
+                            state.app.divider_click_start = Some(std::time::Instant::now());
                         });
-                        cx.notify();
                     }))
             )
-            // Right panel: Level meters / LUFS
+            // Right panels: LUFS and Level meters as separate columns
             .when(!meters_collapsed, |d| {
                 let theme_sep = theme.clone();
-                if is_compact_height {
-                    // 4-column layout: LUFS | Sep (toggles meters) | Meters
-                    d.child(self.render_lufs_panel(cx))
-                     .child(
-                        div()
-                            .w(px(theme.separator_size))
-                            .h_full()
-                            .bg(theme.background)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_col_resize()
-                            .child(div().w(px(1.0)).h_full().bg(theme_sep.border))
-                            .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
-                                view.state.update(cx, |state, _| {
-                                    state.app.lufs_visible = !state.app.lufs_visible;
-                                });
-                                cx.notify();
-                            }))
-                     )
-                     .when(lufs_visible, |d| d.child(self.render_meters_panel(cx)))
-                } else {
-                    // Standard layout: LUFS on top, separator, Meters on bottom
-                    d.child(
-                        div()
-                            .w(relative(meters_ratio))
-                            .flex()
-                            .flex_col()
-                            .h_full()
-                            // LUFS section
-                            .child(self.render_lufs_panel(cx))
-                            // Separator between LUFS and Meters (click to toggle meters)
-                            .child(
-                                div()
-                                    .h(px(theme.separator_size))
-                                    .w_full()
-                                    .bg(theme.surface)
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .cursor_row_resize()
-                                    .child(div().h(px(2.0)).w_full().bg(theme_sep.border))
-                                    .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
-                                        view.state.update(cx, |state, _| {
-                                            state.app.lufs_visible = !state.app.lufs_visible;
-                                        });
-                                        cx.notify();
-                                    }))
-                            )
-                            // Meters section (toggleable)
-                            .when(lufs_visible, |d| d.child(self.render_meters_panel(cx)))
-                    )
-                }
+                d.child(
+                    div()
+                        .w(relative(lufs_ratio))
+                        .flex()
+                        .flex_col()
+                        .h_full()
+                        .child(self.render_lufs_panel(cx)),
+                )
+                .child(
+                    div()
+                        .w(px(6.0))
+                        .h_full()
+                        .bg(theme.background)
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .cursor_col_resize()
+                        .child(div().w(px(1.0)).h_full().bg(theme_sep.border))
+                        .on_mouse_down(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                            view.state.update(cx, |state, _| {
+                                state.app.is_dragging_lufs_divider = true;
+                                state.app.divider_click_start = Some(std::time::Instant::now());
+                            });
+                        }))
+                )
+                .child(
+                    div()
+                        .w(relative(meters_ratio))
+                        .flex()
+                        .flex_col()
+                        .h_full()
+                        .child(self.render_meters_panel(cx)),
+                )
             })
     }
 
@@ -325,7 +298,14 @@ impl PlayerView {
                 .flex()
                 .flex_col()
                 .flex_1()
-                .child(Heading::h3("Now Playing").build().mb_3())
+                .child(
+                    div().mb_3().child(
+                        Text::new("Now Playing")
+                            .size(TextSize::Lg)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    ),
+                )
                 // Top row: Album art (left) + Album info (right)
                 .child(
                     div()
@@ -436,14 +416,7 @@ impl PlayerView {
                                 ),
                         ),
                 )
-                .child(
-                    self.render_track_list(
-                        &disc_map,
-                        current_track_idx,
-                        &theme_for_closure,
-                        cx,
-                    ),
-                )
+                .child(self.render_track_list(&disc_map, current_track_idx, &theme_for_closure, cx))
                 .into_any_element()
         } else {
             VStack::new()
@@ -470,11 +443,17 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .p_4()
+            .p_2()
             .border_r_1()
             .border_color(theme.border)
             .bg(theme.background_secondary)
-            .child(content)
+            .child(
+                div()
+                    .size_full()
+                    .id("now-playing-scroll")
+                    .overflow_y_scroll()
+                    .child(content),
+            )
     }
 
     /// Render the track list with clickable items
@@ -507,10 +486,7 @@ impl PlayerView {
 
             for (idx, track) in tracks.iter() {
                 let idx = *idx;
-                let title = track
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| "Unknown".to_string());
+                let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
                 let duration = track.duration_secs.unwrap_or(0);
                 let is_current = idx == current_track_idx;
                 let duration_str = format!("{}:{:02}", duration / 60, duration % 60);

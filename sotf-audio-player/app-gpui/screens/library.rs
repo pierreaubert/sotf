@@ -66,18 +66,23 @@ impl PlayerView {
             .flex()
             .flex_col()
             .size_full()
-            .p_4()
+            .p_2()
             // Stats row with 4 centered boxes
             .child(
                 div()
                     .flex()
                     .justify_center()
-                    .gap_4()
-                    .mb_4()
+                    .gap_2()
+                    .mb_2()
                     .child(self.render_stat_box("Albums", albums_count, IconName::Album, &theme))
                     .child(self.render_stat_box("Artists", artists_count, IconName::User, &theme))
                     .child(self.render_stat_box("Tracks", tracks_count, IconName::Music, &theme))
-                    .child(self.render_stat_box("Composers", composers_count, IconName::PenTool, &theme)),
+                    .child(self.render_stat_box(
+                        "Composers",
+                        composers_count,
+                        IconName::PenTool,
+                        &theme,
+                    )),
             )
             // Search and filter row
             .child(
@@ -118,7 +123,11 @@ impl PlayerView {
                                     .placeholder("Click to search")
                                     .icon_left("🔍")
                                     .size(InputSize::Sm)
-                                    .readonly(true),
+                                    .readonly(true)
+                                    .bg_color(theme.surface)
+                                    .text_color(theme.text_primary)
+                                    .placeholder_color(theme.text_muted)
+                                    .border_color(theme.border),
                             ),
                     )
                     .child(
@@ -212,89 +221,6 @@ impl PlayerView {
                     .min_h_0() // Allow flex item to shrink below content size for scroll
                     .overflow_hidden()
                     .child(self.render_library_grid(cx)),
-            )
-            .child(self.render_pagination_controls(cx))
-    }
-
-    pub(crate) fn render_pagination_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (current_page, total_pages, items_per_page, theme) = {
-            let state = self.state.read(cx);
-            let current_page = state.app.library_page + 1;
-            let total_pages = state.app.get_total_pages();
-            (
-                current_page,
-                total_pages,
-                state.app.library_items_per_page,
-                state.app.theme.clone(),
-            )
-        };
-
-        let button_theme = theme.to_button_theme();
-        let can_prev = current_page > 1;
-        let can_next = current_page < total_pages;
-
-        div()
-            .flex()
-            .justify_between()
-            .items_center()
-            .p_3()
-            .bg(theme.background)
-            .border_t_1()
-            .border_color(theme.border)
-            .child(
-                Text::new(format!(
-                    "Page {} of {} ({} items/page)",
-                    current_page, total_pages, items_per_page
-                ))
-                .size(TextSize::Sm)
-                .color(theme.text_secondary),
-            )
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .child({
-                        let btn = Button::new("prev-page-btn", "← Prev")
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
-                            .disabled(!can_prev)
-                            .theme(button_theme.clone())
-                            .build();
-                        if can_prev {
-                            btn.on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.prev_page();
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                        } else {
-                            btn
-                        }
-                    })
-                    .child({
-                        let btn = Button::new("next-page-btn", "Next →")
-                            .variant(ButtonVariant::Secondary)
-                            .size(ButtonSize::Sm)
-                            .disabled(!can_next)
-                            .theme(button_theme)
-                            .build();
-                        if can_next {
-                            btn.on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.next_page();
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                        } else {
-                            btn
-                        }
-                    })
-                    .build(),
             )
     }
 
@@ -439,27 +365,27 @@ impl PlayerView {
         Card::new()
             .content(
                 HStack::new()
-                    .spacing(StackSpacing::Md)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .justify_center()
                             .text_color(accent)
-                            .child(Icon::new(icon).size(IconSize::Xl)),
+                            .child(Icon::new(icon).size(IconSize::Lg).color(accent)),
                     )
                     .child(
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
                                 Text::new(format!("{}", count))
-                                    .size(TextSize::Xxl)
+                                    .size(TextSize::Lg)
                                     .weight(TextWeight::Bold)
                                     .color(text_primary),
                             )
                             .child(
                                 Text::new(label_owned)
-                                    .size(TextSize::Sm)
+                                    .size(TextSize::Xs)
                                     .color(text_secondary),
                             )
                             .build(),
@@ -467,9 +393,11 @@ impl PlayerView {
                     .build(),
             )
             .style(move |card| {
-                card.min_w(px(160.0))
+                card.min_w(px(120.0))
                     .bg(surface)
                     .border_color(border)
+                    .py_1()
+                    .px_2()
             })
     }
 }

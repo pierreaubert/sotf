@@ -274,18 +274,14 @@ impl ShowcaseApp {
     }
 
     fn code_block(&self, code: &str) -> Div {
-        div()
-            .p_4()
-            .bg(rgb(0x2d2d2d))
-            .rounded_md()
-            .child(
-                div()
-                    .text_sm()
-                    .font_family("Monaco")
-                    .text_color(rgb(0x9cdcfe))
-                    .whitespace_nowrap()
-                    .child(code.to_string()),
-            )
+        div().p_4().bg(rgb(0x2d2d2d)).rounded_md().child(
+            div()
+                .text_sm()
+                .font_family("Monaco")
+                .text_color(rgb(0x9cdcfe))
+                .whitespace_nowrap()
+                .child(code.to_string()),
+        )
     }
 
     // ========================================================================
@@ -547,17 +543,22 @@ impl ShowcaseApp {
             .collect();
         let log_y: Vec<f64> = log_x.iter().map(|&x| x.powf(0.8)).collect();
 
-        let freq_x: Vec<f64> = (0..50).map(|i| 20.0 * 10_f64.powf(i as f64 / 15.0)).collect();
-        let freq_y: Vec<f64> = freq_x.iter().map(|&f| {
-            // Simulated frequency response
-            if f < 100.0 {
-                -12.0 * (100.0 - f) / 80.0
-            } else if f > 5000.0 {
-                -6.0 * (f - 5000.0) / 15000.0
-            } else {
-                0.0
-            }
-        }).collect();
+        let freq_x: Vec<f64> = (0..50)
+            .map(|i| 20.0 * 10_f64.powf(i as f64 / 15.0))
+            .collect();
+        let freq_y: Vec<f64> = freq_x
+            .iter()
+            .map(|&f| {
+                // Simulated frequency response
+                if f < 100.0 {
+                    -12.0 * (100.0 - f) / 80.0
+                } else if f > 5000.0 {
+                    -6.0 * (f - 5000.0) / 15000.0
+                } else {
+                    0.0
+                }
+            })
+            .collect();
 
         let bar_cats: Vec<&str> = vec!["10", "100", "1K", "10K", "100K"];
         let bar_vals: Vec<f64> = vec![10.0, 100.0, 1000.0, 10000.0, 100000.0];
@@ -1076,19 +1077,14 @@ impl ShowcaseApp {
                     }),
             )
             // Row 3: Isoline
-            .child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .child({
-                        isoline(&self.contour_z, self.contour_size, self.contour_size)
-                            .title("Isoline")
-                            .color(0x333333)
-                            .size(small_w, small_h)
-                            .build()
-                            .unwrap()
-                    }),
-            )
+            .child(div().flex().gap_4().child({
+                isoline(&self.contour_z, self.contour_size, self.contour_size)
+                    .title("Isoline")
+                    .color(0x333333)
+                    .size(small_w, small_h)
+                    .build()
+                    .unwrap()
+            }))
     }
 }
 
@@ -1185,11 +1181,26 @@ fn generate_boxplot_data() -> (Vec<f64>, Vec<f64>) {
     // Values are speed of light measurements (deviations from 299,000 km/s)
     // Based on the original D3 example data patterns
     let experiment_data: Vec<Vec<f64>> = vec![
-        vec![850., 740., 900., 1070., 930., 850., 950., 980., 980., 880., 1000., 980., 930., 650., 760., 810., 1000., 1000., 960., 960.],
-        vec![960., 940., 960., 940., 880., 800., 850., 880., 900., 840., 830., 790., 810., 880., 880., 830., 800., 790., 760., 800.],
-        vec![880., 880., 880., 860., 720., 720., 620., 860., 970., 950., 880., 910., 850., 870., 840., 840., 850., 840., 840., 840.],
-        vec![890., 810., 810., 820., 800., 770., 760., 740., 750., 760., 910., 920., 890., 860., 880., 720., 840., 850., 850., 780.],
-        vec![890., 840., 780., 810., 760., 810., 790., 810., 820., 850., 870., 870., 810., 740., 810., 940., 950., 800., 810., 870.],
+        vec![
+            850., 740., 900., 1070., 930., 850., 950., 980., 980., 880., 1000., 980., 930., 650.,
+            760., 810., 1000., 1000., 960., 960.,
+        ],
+        vec![
+            960., 940., 960., 940., 880., 800., 850., 880., 900., 840., 830., 790., 810., 880.,
+            880., 830., 800., 790., 760., 800.,
+        ],
+        vec![
+            880., 880., 880., 860., 720., 720., 620., 860., 970., 950., 880., 910., 850., 870.,
+            840., 840., 850., 840., 840., 840.,
+        ],
+        vec![
+            890., 810., 810., 820., 800., 770., 760., 740., 750., 760., 910., 920., 890., 860.,
+            880., 720., 840., 850., 850., 780.,
+        ],
+        vec![
+            890., 840., 780., 810., 760., 810., 790., 810., 820., 850., 870., 870., 810., 740.,
+            810., 940., 950., 800., 810., 870.,
+        ],
     ];
 
     let mut x = Vec::new();

@@ -90,6 +90,35 @@ impl Camera3D {
     pub fn right(&self) -> Vec3 {
         self.forward().cross(self.up).normalize()
     }
+
+    /// Project a world point to screen coordinates (0..width, 0..height)
+    /// Returns None if the point is behind the camera
+    pub fn project_to_screen(&self, world_pos: Vec3, width: f32, height: f32) -> Option<Vec3> {
+        let view_proj = self.view_projection_matrix();
+        let clip_pos = view_proj.project_point3(world_pos);
+
+        // Check if point is in front of camera (z < 1.0 in NDC for wgpu/glam perspective?)
+        // glam::Mat4::project_point3 returns normalized device coordinates.
+        // For standard perspective, z should be in [0, 1] or [-1, 1] depending on API.
+        // glam uses OpenGL convention [-1, 1] by default or 0..1?
+        // Mat4::perspective_rh creates a matrix for 0..1 depth range (wgpu default).
+        // So valid z is 0..1.
+
+        // However, we also need to check w component if we did manual multiplication.
+        // project_point3 does the division by w.
+        // If w was negative (behind camera), the point might be projected incorrectly?
+        // glam handles this?
+        // Let's assume it works for points in front.
+
+        // Map NDC [-1, 1] x [-1, 1] to screen [0, width] x [0, height]
+        // Y is flipped in screen coords (0 is top) vs NDC (1 is top).
+
+        let x = (clip_pos.x + 1.0) * 0.5 * width;
+        let y = (1.0 - clip_pos.y) * 0.5 * height;
+        let z = clip_pos.z;
+
+        Some(Vec3::new(x, y, z))
+    }
 }
 
 /// Orbit controls for interactive camera manipulation

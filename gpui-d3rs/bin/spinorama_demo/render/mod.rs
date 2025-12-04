@@ -32,7 +32,7 @@ pub fn render_freq_spl_plot(
         .range(chart_height as f64, 0.0);
 
     // All possible major frequency ticks
-    let all_major_ticks = vec![
+    let all_major_ticks = [
         20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
     ];
 
@@ -129,7 +129,7 @@ pub fn render_freq_spl_plot(
                                 &spl_scale,
                                 &curve.points,
                                 &LineConfig::new()
-                                    .stroke_color(curve.color.clone())
+                                    .stroke_color(curve.color)
                                     .stroke_width(curve.stroke_width)
                                     .curve(CurveType::Linear),
                             ))
@@ -145,7 +145,7 @@ pub fn render_freq_spl_plot(
                                 sec_scale,
                                 &curve.points,
                                 &LineConfig::new()
-                                    .stroke_color(curve.color.clone())
+                                    .stroke_color(curve.color)
                                     .stroke_width(curve.stroke_width)
                                     .curve(CurveType::Linear),
                             ))

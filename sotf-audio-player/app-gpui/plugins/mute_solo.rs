@@ -108,11 +108,7 @@ pub fn render_mute_solo_plugin(
                                         theme.background
                                     })
                                     .border_1()
-                                    .border_color(if is_muted {
-                                        theme.error
-                                    } else {
-                                        theme.border
-                                    })
+                                    .border_color(if is_muted { theme.error } else { theme.border })
                                     .flex()
                                     .items_center()
                                     .justify_center()

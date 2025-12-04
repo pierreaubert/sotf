@@ -3,12 +3,12 @@
 use crate::error::ChartError;
 use crate::{
     DEFAULT_COLOR, DEFAULT_HEIGHT, DEFAULT_PADDING_FRACTION, DEFAULT_TITLE_FONT_SIZE,
-    DEFAULT_WIDTH, TITLE_AREA_HEIGHT, ScaleType, extent_padded, validate_data_array,
+    DEFAULT_WIDTH, ScaleType, TITLE_AREA_HEIGHT, extent_padded, validate_data_array,
     validate_data_length, validate_dimensions, validate_positive,
 };
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ScatterConfig, ScatterPoint, render_scatter};
 use d3rs::text::{VectorFontConfig, render_vector_text};
@@ -118,9 +118,10 @@ impl ScatterChart {
         } else {
             0.0
         };
-        
+
         let plot_width = (self.width as f64 - margin_left - margin_right).max(0.0);
-        let plot_height = (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
+        let plot_height =
+            (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
         // Calculate domains with padding
         let (x_min, x_max) = extent_padded(&self.x, DEFAULT_PADDING_FRACTION);
@@ -151,7 +152,7 @@ impl ScatterChart {
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -178,14 +179,14 @@ impl ScatterChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config)),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -196,7 +197,7 @@ impl ScatterChart {
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -223,14 +224,14 @@ impl ScatterChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config)),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -241,7 +242,7 @@ impl ScatterChart {
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -268,14 +269,14 @@ impl ScatterChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config)),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -286,7 +287,7 @@ impl ScatterChart {
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -313,14 +314,14 @@ impl ScatterChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(render_scatter(&x_scale, &y_scale, &data, &config))
+                                    .child(render_scatter(&x_scale, &y_scale, &data, &config)),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -350,11 +351,7 @@ impl ScatterChart {
         }
 
         // Add chart content
-        container = container.child(
-            div()
-                .relative()
-                .child(chart_content),
-        );
+        container = container.child(div().relative().child(chart_content));
 
         Ok(container)
     }
@@ -497,9 +494,7 @@ mod tests {
     fn test_scatter_log_x_scale() {
         let x = vec![10.0, 100.0, 1000.0, 10000.0];
         let y = vec![1.0, 2.0, 3.0, 4.0];
-        let result = scatter(&x, &y)
-            .x_scale(ScaleType::Log)
-            .build();
+        let result = scatter(&x, &y).x_scale(ScaleType::Log).build();
         assert!(result.is_ok());
     }
 
@@ -507,9 +502,7 @@ mod tests {
     fn test_scatter_log_y_scale() {
         let x = vec![1.0, 2.0, 3.0, 4.0];
         let y = vec![10.0, 100.0, 1000.0, 10000.0];
-        let result = scatter(&x, &y)
-            .y_scale(ScaleType::Log)
-            .build();
+        let result = scatter(&x, &y).y_scale(ScaleType::Log).build();
         assert!(result.is_ok());
     }
 
@@ -528,9 +521,7 @@ mod tests {
     fn test_scatter_log_x_negative_values() {
         let x = vec![-10.0, -5.0, 5.0, 10.0];
         let y = vec![1.0, 2.0, 3.0, 4.0];
-        let result = scatter(&x, &y)
-            .x_scale(ScaleType::Log)
-            .build();
+        let result = scatter(&x, &y).x_scale(ScaleType::Log).build();
         assert!(matches!(
             result,
             Err(ChartError::InvalidData {
@@ -544,9 +535,7 @@ mod tests {
     fn test_scatter_log_y_zero_value() {
         let x = vec![1.0, 2.0, 3.0, 4.0];
         let y = vec![0.0, 1.0, 2.0, 3.0];
-        let result = scatter(&x, &y)
-            .y_scale(ScaleType::Log)
-            .build();
+        let result = scatter(&x, &y).y_scale(ScaleType::Log).build();
         assert!(matches!(
             result,
             Err(ChartError::InvalidData {

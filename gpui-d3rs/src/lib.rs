@@ -51,6 +51,8 @@ pub mod contour;
 pub mod delaunay;
 pub mod fetch;
 pub mod geo;
+#[cfg(all(feature = "gpu-2d", not(test)))]
+pub mod gpu2d;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod grid;
 pub mod legend;
@@ -62,8 +64,6 @@ pub mod shape;
 pub mod surface;
 #[cfg(all(feature = "gpu-3d", not(test)))]
 pub mod surface3d;
-#[cfg(all(feature = "gpu-2d", not(test)))]
-pub mod gpu2d;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod text;
 pub mod timer;

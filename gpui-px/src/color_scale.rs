@@ -40,7 +40,6 @@ impl std::fmt::Debug for ColorScale {
     }
 }
 
-
 impl ColorScale {
     /// Create a custom color scale from a function.
     ///

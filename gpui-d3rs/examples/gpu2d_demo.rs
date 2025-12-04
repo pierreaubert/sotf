@@ -53,7 +53,7 @@ impl Render for DemoView {
                             renderer.draw_rect(
                                 Rect::new(50.0, 100.0, 100.0, 60.0),
                                 [0.2, 0.6, 0.9, 1.0], // Blue
-                                8.0, // corner radius
+                                8.0,                  // corner radius
                             );
                             renderer.draw_rect(
                                 Rect::new(200.0, 80.0, 80.0, 100.0),
@@ -63,7 +63,7 @@ impl Render for DemoView {
                             renderer.draw_rect(
                                 Rect::new(330.0, 120.0, 120.0, 50.0),
                                 [0.3, 0.8, 0.3, 1.0], // Green
-                                0.0, // sharp corners
+                                0.0,                  // sharp corners
                             );
 
                             // Draw some lines
@@ -96,13 +96,15 @@ impl Render for DemoView {
 
                             // Draw scatter points
                             for (x, y) in &points {
-                                renderer.draw_circle(*x, *y, 5.0, [1.0, 0.5, 0.0, 1.0]); // Orange
+                                renderer.draw_circle(*x, *y, 5.0, [1.0, 0.5, 0.0, 1.0]);
+                                // Orange
                             }
 
                             // Draw some standalone circles
                             renderer.draw_circle(500.0, 150.0, 30.0, [0.8, 0.2, 0.8, 1.0]); // Purple
                             renderer.draw_circle(580.0, 150.0, 20.0, [0.2, 0.8, 0.8, 1.0]); // Teal
-                            renderer.draw_circle(640.0, 150.0, 40.0, [0.8, 0.8, 0.2, 0.7]); // Semi-transparent yellow
+                            renderer.draw_circle(640.0, 150.0, 40.0, [0.8, 0.8, 0.2, 0.7]);
+                            // Semi-transparent yellow
                         })
                         .background_color([0.12, 0.12, 0.12, 1.0]),
                     ),

@@ -6,7 +6,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Divider, HStack, StackSpacing, VStack, menu_bar_button,
+    HStack, LoadingDots, Menu, MenuItem, StackSpacing, TabItem, TabVariant, Tabs, menu_bar_button,
 };
 
 impl PlayerView {
@@ -52,7 +52,7 @@ impl PlayerView {
                     )),
             )
             .child(
-                // Right side: Quick status
+                // Right side: Quick status with loading indicator
                 div()
                     .flex()
                     .items_center()
@@ -60,7 +60,8 @@ impl PlayerView {
                     .text_xs()
                     .text_color(theme.text_muted)
                     .when(scan_in_progress, |el| {
-                        el.child(format!("Scanning: {} files", scan_progress_tracks))
+                        el.child(LoadingDots::new().color(theme.accent))
+                            .child(format!("Scanning: {} files", scan_progress_tracks))
                     }),
             )
             .build()
@@ -133,234 +134,105 @@ impl PlayerView {
     }
 
     /// Render File menu dropdown
-    fn render_file_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let bg = theme.surface;
-        let border = theme.border;
-        VStack::new()
-            .spacing(StackSpacing::None)
-            .child(self.render_menu_item_simple(
-                "Settings",
-                Some("⌘,"),
-                theme.clone(),
-                Screen::Settings,
-                cx,
-            ))
-            .child(Divider::new())
-            .child(self.render_quit_item(theme, cx))
-            .build()
-            .absolute()
-            .top(px(28.0))
-            .left(px(16.0))
-            .min_w(px(180.0))
-            .bg(bg)
-            .border_1()
-            .border_color(border)
-            .rounded(px(4.0))
-            .shadow_lg()
-            .py_1()
+    fn render_file_dropdown(&self, theme: Theme, _cx: &mut Context<Self>) -> impl IntoElement {
+        // Create a weak reference to self for the callback
+        let state = self.state.clone();
+
+        Menu::new(vec![
+            MenuItem::new("settings", "Settings").with_shortcut("⌘,"),
+            MenuItem::separator(),
+            MenuItem::new("quit", "Quit").with_shortcut("⌘Q").danger(),
+        ])
+        .theme(theme.to_menu_theme())
+        .on_select(move |id, window, cx| {
+            state.update(cx, |state, _cx| {
+                state.app.active_menu = ActiveMenu::None;
+            });
+            match id.as_ref() {
+                "settings" => {
+                    state.update(cx, |state, _cx| {
+                        state.app.current_screen = Screen::Settings;
+                    });
+                }
+                "quit" => {
+                    window.remove_window();
+                }
+                _ => {}
+            }
+        })
+        .build()
+        .absolute()
+        .top(px(28.0))
+        .left(px(16.0))
     }
 
     /// Render View menu dropdown
     fn render_view_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let layout_mode = self.state.read(cx).app.layout_mode;
+        let state = self.state.clone();
 
-        VStack::new()
-            .spacing(StackSpacing::None)
-            .child(self.render_menu_item_simple(
-                "Library",
-                Some("1"),
-                theme.clone(),
-                Screen::Library,
-                cx,
-            ))
-            .child(self.render_menu_item_simple(
-                "Queue",
-                Some("2"),
-                theme.clone(),
-                Screen::Queue,
-                cx,
-            ))
-            .child(Divider::new())
-            .child(self.render_menu_item_simple(
-                "Settings",
-                Some("3"),
-                theme.clone(),
-                Screen::Settings,
-                cx,
-            ))
-            .child(Divider::new())
-            .child(
-                div()
-                    .px_3()
-                    .py_2()
-                    .text_sm()
-                    .text_color(theme.text_muted)
-                    .child(format!(
-                        "Layout: {}",
-                        match layout_mode {
-                            LayoutMode::Compact => "Compact",
-                            LayoutMode::Expanded => "Expanded",
-                        }
-                    )),
-            )
-            .build()
-            .absolute()
-            .top(px(28.0))
-            .left(px(52.0))
-            .min_w(px(180.0))
-            .bg(theme.surface)
-            .border_1()
-            .border_color(theme.border)
-            .rounded(px(4.0))
-            .shadow_lg()
-            .py_1()
+        let layout_label = format!(
+            "Layout: {}",
+            match layout_mode {
+                LayoutMode::Compact => "Compact",
+                LayoutMode::Expanded => "Expanded",
+            }
+        );
+
+        Menu::new(vec![
+            MenuItem::new("library", "Library").with_shortcut("1"),
+            MenuItem::new("queue", "Queue").with_shortcut("2"),
+            MenuItem::separator(),
+            MenuItem::new("settings", "Settings").with_shortcut("3"),
+            MenuItem::separator(),
+            MenuItem::new("layout-info", layout_label).disabled(true),
+        ])
+        .theme(theme.to_menu_theme())
+        .on_select(move |id, _window, cx| {
+            state.update(cx, |state, _cx| {
+                state.app.active_menu = ActiveMenu::None;
+                match id.as_ref() {
+                    "library" => state.app.current_screen = Screen::Library,
+                    "queue" => state.app.current_screen = Screen::Queue,
+                    "settings" => state.app.current_screen = Screen::Settings,
+                    _ => {}
+                }
+            });
+        })
+        .build()
+        .absolute()
+        .top(px(28.0))
+        .left(px(52.0))
     }
 
     /// Render Help menu dropdown
-    fn render_help_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let bg = theme.surface;
-        let border = theme.border;
-        VStack::new()
-            .spacing(StackSpacing::None)
-            .child(self.render_help_item(theme.clone(), cx))
-            .child(Divider::new())
-            .child(self.render_about_item(theme, cx))
-            .build()
-            .absolute()
-            .top(px(28.0))
-            .left(px(96.0))
-            .min_w(px(180.0))
-            .bg(bg)
-            .border_1()
-            .border_color(border)
-            .rounded(px(4.0))
-            .shadow_lg()
-            .py_1()
-    }
+    fn render_help_dropdown(&self, theme: Theme, _cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.clone();
 
-    /// Render a simple menu item that navigates to a screen
-    fn render_menu_item_simple(
-        &self,
-        label: &'static str,
-        shortcut: Option<&'static str>,
-        theme: Theme,
-        screen: Screen,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        div()
-            .id(SharedString::from(format!("menu-item-{}", label)))
-            .px_3()
-            .py(px(6.0))
-            .mx_1()
-            .rounded(px(3.0))
-            .flex()
-            .justify_between()
-            .items_center()
-            .cursor_pointer()
-            .text_color(theme.text_secondary)
-            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.switch_screen(screen, cx);
-                    view.state.update(cx, |state, _cx| {
-                        state.app.active_menu = ActiveMenu::None;
-                    });
-                }),
-            )
-            .child(div().text_sm().child(label))
-            .when_some(shortcut, |el, shortcut| {
-                el.child(
-                    gpui::div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child(shortcut),
-                )
-            })
-    }
-
-    /// Render help menu item (Keyboard Shortcuts)
-    fn render_help_item(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .id("menu-item-shortcuts")
-            .px_3()
-            .py(px(6.0))
-            .mx_1()
-            .rounded(px(3.0))
-            .flex()
-            .justify_between()
-            .items_center()
-            .cursor_pointer()
-            .text_color(theme.text_secondary)
-            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
+        Menu::new(vec![
+            MenuItem::new("shortcuts", "Keyboard Shortcuts").with_shortcut("?"),
+            MenuItem::separator(),
+            MenuItem::new("about", "About"),
+        ])
+        .theme(theme.to_menu_theme())
+        .on_select(move |id, _window, cx| {
+            state.update(cx, |state, _cx| {
+                state.app.active_menu = ActiveMenu::None;
+                match id.as_ref() {
+                    "shortcuts" => {
                         state.app.input_mode = crate::app::InputMode::KeyboardShortcuts;
-                        state.app.active_menu = ActiveMenu::None;
-                    });
-                    cx.notify();
-                }),
-            )
-            .child(div().text_sm().child("Keyboard Shortcuts"))
-            .child(div().text_xs().text_color(theme.text_muted).child("?"))
-    }
-
-    /// Render about menu item
-    fn render_about_item(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .id("menu-item-about")
-            .px_3()
-            .py(px(6.0))
-            .mx_1()
-            .rounded(px(3.0))
-            .flex()
-            .justify_between()
-            .items_center()
-            .cursor_pointer()
-            .text_color(theme.text_secondary)
-            .hover(|style| style.bg(theme.surface_hover).text_color(theme.text_primary))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
+                    }
+                    "about" => {
                         state.app.input_mode = crate::app::InputMode::About;
-                        state.app.active_menu = ActiveMenu::None;
-                    });
-                    cx.notify();
-                }),
-            )
-            .child(div().text_sm().child("About"))
-    }
-
-    /// Render quit menu item
-    fn render_quit_item(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px_3()
-            .py(px(6.0))
-            .mx_1()
-            .rounded(px(3.0))
-            .flex()
-            .justify_between()
-            .items_center()
-            .cursor_pointer()
-            .text_color(theme.text_secondary)
-            .hover(|style| style.bg(theme.error).text_color(theme.text_on_accent))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                    view.quit_app(&crate::actions::QuitApp, window, cx);
-                }),
-            )
-            .child(div().text_sm().child("Quit"))
-            .child(div().text_xs().text_color(theme.text_muted).child("⌘Q"))
-    }
-
-    /// Render a menu separator line (kept for backward compatibility)
-    #[allow(dead_code)]
-    fn render_menu_separator(&self, _theme: Theme) -> impl IntoElement {
-        Divider::new().build().mx_2()
+                    }
+                    _ => {}
+                }
+            });
+        })
+        .build()
+        .absolute()
+        .top(px(28.0))
+        .left(px(96.0))
     }
 
     /// Render the tab bar header (for compact mode)
@@ -379,6 +251,16 @@ impl PlayerView {
             return div().into_any_element();
         }
 
+        // Map screen to tab index
+        let selected_index = match current_screen {
+            Screen::Library => 0,
+            Screen::Queue => 1,
+            Screen::Settings | Screen::DirectoryManager | Screen::Spectrum => 0, // Default to library for other screens
+        };
+
+        // Get a weak handle for the state to use in the callback
+        let state_handle = self.state.downgrade();
+
         div()
             .flex()
             .items_center()
@@ -394,68 +276,27 @@ impl PlayerView {
                     .child("SOTF Audio Player"),
             )
             .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(self.render_tab_button_inner(
-                        "Library",
-                        Screen::Library,
-                        current_screen == Screen::Library,
-                        theme.clone(),
-                        cx,
-                    ))
-                    .child(self.render_tab_button_inner(
-                        "Queue",
-                        Screen::Queue,
-                        current_screen == Screen::Queue,
-                        theme,
-                        cx,
-                    )),
+                Tabs::new()
+                    .tabs(vec![
+                        TabItem::new("library", "Library"),
+                        TabItem::new("queue", "Queue"),
+                    ])
+                    .selected_index(selected_index)
+                    .variant(TabVariant::Pills)
+                    .theme(theme.to_tabs_theme())
+                    .on_change(move |index, _window, cx| {
+                        let screen = match index {
+                            0 => Screen::Library,
+                            1 => Screen::Queue,
+                            _ => Screen::Library,
+                        };
+                        if let Some(state) = state_handle.upgrade() {
+                            state.update(cx, |state, _cx| {
+                                state.app.current_screen = screen;
+                            });
+                        }
+                    }),
             )
             .into_any_element()
-    }
-
-    fn render_tab_button_inner(
-        &self,
-        label: &str,
-        screen: Screen,
-        is_active: bool,
-        theme: Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let label_string = SharedString::from(label.to_string());
-        let btn = Button::new(SharedString::from(format!("tab-{}", label)), label_string)
-            .variant(if is_active {
-                ButtonVariant::Primary
-            } else {
-                ButtonVariant::Secondary
-            })
-            .size(ButtonSize::Md)
-            .selected(is_active)
-            .theme(theme.to_button_theme())
-            .build();
-
-        if is_active {
-            btn
-        } else {
-            btn.on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.switch_screen(screen, cx);
-                }),
-            )
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn render_tab_button(
-        &self,
-        label: &str,
-        screen: Screen,
-        theme: Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let is_active = self.state.read(cx).app.current_screen == screen;
-        self.render_tab_button_inner(label, screen, is_active, theme, cx)
     }
 }

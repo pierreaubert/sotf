@@ -110,8 +110,12 @@ impl RectBatch {
 
         // Two triangles: (0, 2, 1) and (1, 2, 3)
         self.indices.extend_from_slice(&[
-            base_idx, base_idx + 2, base_idx + 1,
-            base_idx + 1, base_idx + 2, base_idx + 3,
+            base_idx,
+            base_idx + 2,
+            base_idx + 1,
+            base_idx + 1,
+            base_idx + 2,
+            base_idx + 3,
         ]);
     }
 

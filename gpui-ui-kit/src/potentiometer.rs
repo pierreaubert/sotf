@@ -69,10 +69,7 @@ impl Potentiometer {
         self
     }
 
-    pub fn on_change(
-        mut self,
-        handler: impl Fn(f32, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_change(mut self, handler: impl Fn(f32, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
         self
     }
@@ -80,9 +77,21 @@ impl Potentiometer {
 
 impl RenderOnce for Potentiometer {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let display_value = if self.muted { 0.0 } else { self.value.clamp(0.0, 1.0) };
-        let ring_color = if self.muted { self.muted_color } else { self.accent_color };
-        let text_color_final = if self.muted { self.muted_color } else { self.text_color };
+        let display_value = if self.muted {
+            0.0
+        } else {
+            self.value.clamp(0.0, 1.0)
+        };
+        let ring_color = if self.muted {
+            self.muted_color
+        } else {
+            self.accent_color
+        };
+        let text_color_final = if self.muted {
+            self.muted_color
+        } else {
+            self.text_color
+        };
 
         // Make fill color slightly lighter than the background
         let fill_color = if self.muted {
@@ -147,10 +156,10 @@ impl RenderOnce for Potentiometer {
                     .text_color(text_color_final)
                     .child(self.label),
             )
-            // TODO: Add drag interaction logic if needed, currently this is just visual migration
-            // The original component didn't seem to handle drag logic inside the render function 
-            // but rather relied on the parent or was just a display?
-            // Looking at the original code, it returned a `div` which could have event handlers attached.
-            // We will need to see how it's used.
+        // TODO: Add drag interaction logic if needed, currently this is just visual migration
+        // The original component didn't seem to handle drag logic inside the render function
+        // but rather relied on the parent or was just a display?
+        // Looking at the original code, it returned a `div` which could have event handlers attached.
+        // We will need to see how it's used.
     }
 }

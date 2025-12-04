@@ -139,6 +139,7 @@ impl Accordion {
     /// Build into element
     pub fn build(self) -> Div {
         let theme = self.theme.unwrap_or_default();
+        let on_change = self.on_change.map(|h| std::rc::Rc::new(h));
 
         let mut container = div()
             .flex()
@@ -175,15 +176,12 @@ impl Accordion {
                 header = header.hover(move |s| s.bg(hover_bg));
 
                 // Click handler
-                if let Some(ref handler) = self.on_change {
-                    let handler_ptr: *const dyn Fn(&SharedString, bool, &mut Window, &mut App) =
-                        handler.as_ref();
+                if let Some(handler) = on_change.clone() {
                     let id = item_id.clone();
                     let new_state = !is_expanded;
-                    header =
-                        header.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
-                            (*handler_ptr)(&id, new_state, window, cx);
-                        });
+                    header = header.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                        (handler)(&id, new_state, window, cx);
+                    });
                 }
             }
 

@@ -204,11 +204,7 @@ impl Tabs {
                 container = container.gap_1();
             }
             TabVariant::Pills => {
-                container = container
-                    .gap_2()
-                    .p_1()
-                    .bg(theme.container_bg)
-                    .rounded_lg();
+                container = container.gap_2().p_1().bg(theme.container_bg).rounded_lg();
             }
         }
 

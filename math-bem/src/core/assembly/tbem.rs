@@ -7,9 +7,7 @@ use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
 use crate::core::integration::{regular_integration, singular_integration};
-use crate::core::types::{
-    BoundaryCondition, Element, IntegrationResult, PhysicsParams,
-};
+use crate::core::types::{BoundaryCondition, Element, IntegrationResult, PhysicsParams};
 
 /// Result of TBEM assembly
 pub struct TbemSystem {
@@ -499,7 +497,7 @@ pub fn build_tbem_system_corrected(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::{ElementType, ElementProperty};
+    use crate::core::types::{ElementProperty, ElementType};
     use ndarray::array;
 
     fn make_simple_mesh() -> (Vec<Element>, Array2<f64>) {

@@ -88,7 +88,7 @@ where
             let x_pos = (range_value - range_min) / range_span;
             let label = format_tick(tick_value, &config.tick_format);
             let half_tick_width = config.domain_line_width / 2.0;
-            
+
             // Convert angle from degrees to radians
             let angle_rad = config.label_angle * std::f32::consts::PI / 180.0;
             let font_config = VectorFontConfig {
@@ -112,7 +112,7 @@ where
             // Label - positioned absolutely
             let label_top = tick_top + config.tick_size + config.tick_padding;
             let label_width = measure_text_width(&label, config.label_font_size);
-            
+
             // For angled labels, adjust positioning
             // Negative angle rotates counter-clockwise, so text goes down-left
             let (ml_offset, mt_offset) = if config.label_angle.abs() > 0.1 {
@@ -123,7 +123,7 @@ where
                 // For horizontal text, center it
                 (-label_width / 2.0, 0.0)
             };
-            
+
             let label_div = div()
                 .absolute()
                 .left(relative(x_pos as f32))
@@ -145,7 +145,7 @@ where
                             let range_value = scale.scale(tick_value);
                             let x_pos = (range_value - range_min) / range_span;
                             // Only render if within visible range
-                            if x_pos < 0.0 || x_pos > 1.0 {
+                            if !(0.0..=1.0).contains(&x_pos) {
                                 return None;
                             }
                             let half_tick_width = config.domain_line_width / 2.0;
@@ -269,7 +269,7 @@ where
                             let range_value = scale.scale(tick_value);
                             let x_pos = (range_value - range_min) / range_span;
                             // Only render if within visible range
-                            if x_pos < 0.0 || x_pos > 1.0 {
+                            if !(0.0..=1.0).contains(&x_pos) {
                                 return None;
                             }
                             let half_tick_width = config.domain_line_width / 2.0;
@@ -410,7 +410,7 @@ where
                             let range_value = scale.scale(tick_value);
                             let y_pos = 1.0 - (range_value - range_min) / range_span;
                             // Only render if within visible range
-                            if y_pos < 0.0 || y_pos > 1.0 {
+                            if !(0.0..=1.0).contains(&y_pos) {
                                 return None;
                             }
                             let half_tick_height = config.domain_line_width / 2.0;

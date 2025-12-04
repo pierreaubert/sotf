@@ -936,9 +936,9 @@ fn apply_plugin_update(
                         );
 
                         // Try to restore the last working config
-                        if let Err(_) = processing.send_command(ProcessingCommand::UpdatePlugins(
-                            rollback_config.clone(),
-                        )) {
+                        if let Err(_) = processing
+                            .send_command(ProcessingCommand::UpdatePlugins(rollback_config.clone()))
+                        {
                             log::error!("[Manager Thread] Failed to send rollback command");
                             return Err(ConfigError::ChannelDisconnected);
                         }
@@ -1443,7 +1443,8 @@ mod tests {
 
     #[test]
     fn test_config_error_is_error_trait() {
-        let err: Box<dyn std::error::Error> = Box::new(ConfigError::TimeoutError { waited_ms: 100 });
+        let err: Box<dyn std::error::Error> =
+            Box::new(ConfigError::TimeoutError { waited_ms: 100 });
         assert!(err.to_string().contains("100ms"));
     }
 
@@ -1470,7 +1471,11 @@ mod tests {
         }];
         let result = validate_plugin_configs(&configs);
         assert!(result.is_err());
-        if let Err(ConfigError::ValidationError { plugin_index, reason }) = result {
+        if let Err(ConfigError::ValidationError {
+            plugin_index,
+            reason,
+        }) = result
+        {
             assert_eq!(plugin_index, 0);
             assert!(reason.contains("Unknown plugin type"));
         } else {

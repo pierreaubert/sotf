@@ -19,7 +19,10 @@ impl PlayerView {
         let expanded = state.app.expanded_settings_sections.clone();
 
         // Convert expanded sections to SharedString for the Accordion
-        let expanded_ids: Vec<SharedString> = expanded.iter().map(|s| SharedString::from(s.clone())).collect();
+        let expanded_ids: Vec<SharedString> = expanded
+            .iter()
+            .map(|s| SharedString::from(s.clone()))
+            .collect();
 
         // Pre-render all content sections (convert to AnyElement to release borrow)
         let library_content = self.render_library_settings_content(cx).into_any_element();
@@ -81,7 +84,10 @@ impl PlayerView {
                                         state.app.expanded_settings_sections.push(id_str);
                                     }
                                 } else {
-                                    state.app.expanded_settings_sections.retain(|s| s != &id_str);
+                                    state
+                                        .app
+                                        .expanded_settings_sections
+                                        .retain(|s| s != &id_str);
                                 }
                             });
                             cx.notify(entity_id);

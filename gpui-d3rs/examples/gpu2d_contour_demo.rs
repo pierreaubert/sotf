@@ -4,8 +4,8 @@
 
 use d3rs::contour::ContourGenerator;
 use d3rs::gpu2d::{
-    render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData,
-    turbo_color_scale, viridis_color_scale, magma_color_scale,
+    magma_color_scale, render_contour, render_contour_bands, render_heatmap, turbo_color_scale,
+    viridis_color_scale, ContourConfig, HeatmapData,
 };
 use d3rs::scale::LinearScale;
 use gpui::*;
@@ -36,8 +36,12 @@ impl Render for DemoView {
         }
 
         // Create scales
-        let x_scale = LinearScale::new().domain(0.0, width as f64).range(0.0, 400.0);
-        let y_scale = LinearScale::new().domain(0.0, height as f64).range(400.0, 0.0);
+        let x_scale = LinearScale::new()
+            .domain(0.0, width as f64)
+            .range(0.0, 400.0);
+        let y_scale = LinearScale::new()
+            .domain(0.0, height as f64)
+            .range(400.0, 0.0);
 
         // Generate contours
         let generator = ContourGenerator::new(width, height);

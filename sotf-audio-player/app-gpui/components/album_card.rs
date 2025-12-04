@@ -7,7 +7,7 @@ use crate::theme::Theme;
 use crate::ui::components::icon::{Icon, IconName};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::Card;
+
 use sotf_audio_player::Album;
 use std::sync::Arc;
 
@@ -70,9 +70,9 @@ impl AlbumCard {
     /// Get the audio format (e.g., "FLAC", "MP3") from the first track
     fn get_format(album: &Album) -> Option<String> {
         album.tracks.first().and_then(|t| {
-            t.path.extension().and_then(|ext| {
-                ext.to_str().map(|s| s.to_uppercase())
-            })
+            t.path
+                .extension()
+                .and_then(|ext| ext.to_str().map(|s| s.to_uppercase()))
         })
     }
 
@@ -122,13 +122,9 @@ impl AlbumCard {
             .text_xs()
             .text_color(theme.text_muted)
             // Format (e.g., FLAC)
-            .when_some(format, |d, fmt| {
-                d.child(div().child(fmt))
-            })
+            .when_some(format, |d, fmt| d.child(div().child(fmt)))
             // Sample rate info (e.g., 24/44.1k)
-            .when_some(sample_info, |d, info| {
-                d.child(div().child(info))
-            })
+            .when_some(sample_info, |d, info| d.child(div().child(info)))
             // Dynamic range with icon
             .when_some(dr, |d, dr_val| {
                 d.child(
@@ -136,8 +132,12 @@ impl AlbumCard {
                         .flex()
                         .items_center()
                         .gap_px()
-                        .child(Icon::new(IconName::AudioWaveform).xs().color(theme.text_muted))
-                        .child(dr_val)
+                        .child(
+                            Icon::new(IconName::AudioWaveform)
+                                .xs()
+                                .color(theme.text_muted),
+                        )
+                        .child(dr_val),
                 )
             })
             // Track count
@@ -145,11 +145,17 @@ impl AlbumCard {
     }
 
     fn render_grid(self) -> AnyElement {
-        let thumbnail_size = 120.0;
-        let card_width = 150.0;
+        let thumbnail_size = 140.0;
+        let card_width = 140.0;
         let theme = self.theme;
         let album = self.album;
         let has_thumbnail = album.album_art_thumbnail.is_some();
+
+        // Metadata for grid view (smaller font)
+        let format = Self::get_format(&album);
+        let sample_info = Self::format_sample_info(&album);
+        let dr = Self::format_dr(album.dynamic_range);
+        let track_count = album.tracks.len();
 
         div()
             .id(SharedString::from(format!("album-card-{}", self.index)))
@@ -160,84 +166,96 @@ impl AlbumCard {
                 // Glow effect for selected state
                 let mut bg = theme.accent;
                 bg.a = 0.1;
-                d.shadow_md()
-                    .border_1()
-                    .border_color(theme.accent)
-                    .bg(bg)
+                d.shadow_md().border_1().border_color(theme.accent).bg(bg)
             })
             // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
             .child(
-                Card::new()
-                    .style(move |d| {
-                        d.w_full()
-                            .bg(gpui::rgba(0x00000000))
-                            .border_0()
-                    })
-                    .content(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    // Album art thumbnail or placeholder (no border/margin)
+                    .child(
+                        div()
+                            .w(px(thumbnail_size))
+                            .h(px(thumbnail_size))
+                            .rounded_md()
+                            .overflow_hidden()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .when(has_thumbnail, |d| {
+                                if let Some(ref path) = album.album_art_path {
+                                    d.child(
+                                        img(path.clone())
+                                            .w(px(thumbnail_size))
+                                            .h(px(thumbnail_size))
+                                            .object_fit(ObjectFit::Cover),
+                                    )
+                                } else {
+                                    d.child(
+                                        div().text_3xl().text_color(theme.text_muted).child("♪"),
+                                    )
+                                }
+                            })
+                            .when(!has_thumbnail, |d| {
+                                d.child(div().text_3xl().text_color(theme.text_muted).child("♪"))
+                            }),
+                    )
+                    // Album title
+                    .child(
+                        div()
+                            .w_full()
+                            .mt_1()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_primary)
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .child(album.title.clone()),
+                    )
+                    // Artist name
+                    .child(
+                        div()
+                            .w_full()
+                            .text_size(px(10.0))
+                            .text_color(theme.text_secondary)
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .whitespace_nowrap()
+                            .child(album.artist()),
+                    )
+                    // Metadata line: FORMAT [DR icon]DR #count
+                    .child(
                         div()
                             .flex()
-                            .flex_col()
                             .items_center()
-                            // Album art thumbnail or placeholder (no border/margin)
-                            .child(
-                                div()
-                                    .w(px(thumbnail_size))
-                                    .h(px(thumbnail_size))
-                                    .rounded_md()
-                                    .overflow_hidden()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .when(has_thumbnail, |d| {
-                                        if let Some(ref path) = album.album_art_path {
-                                            d.child(
-                                                img(path.clone())
-                                                    .w(px(thumbnail_size))
-                                                    .h(px(thumbnail_size))
-                                                    .object_fit(ObjectFit::Cover),
-                                            )
-                                        } else {
-                                            d.child(
-                                                div()
-                                                    .text_3xl()
-                                                    .text_color(theme.text_muted)
-                                                    .child("♪"),
-                                            )
-                                        }
-                                    })
-                                    .when(!has_thumbnail, |d| {
-                                        d.child(
-                                            div().text_3xl().text_color(theme.text_muted).child("♪"),
+                            .gap_1()
+                            .text_size(px(9.0))
+                            .text_color(theme.text_muted)
+                            // Format (e.g., FLAC)
+                            .when_some(format, |d, fmt| d.child(div().child(fmt)))
+                            // Sample rate info (e.g., 24/44.1k)
+                            .when_some(sample_info, |d, info| d.child(div().child(info)))
+                            // Dynamic range with icon
+                            .when_some(dr, |d, dr_val| {
+                                d.child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_px()
+                                        .child(
+                                            Icon::new(IconName::AudioWaveform)
+                                                .xs()
+                                                .color(theme.text_muted),
                                         )
-                                    }),
-                            )
-                            // Album title
-                            .child(
-                                div()
-                                    .w_full()
-                                    .mt_2()
-                                    .text_sm()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(theme.text_primary)
-                                    .overflow_hidden()
-                                    .text_ellipsis()
-                                    .whitespace_nowrap()
-                                    .child(album.title.clone()),
-                            )
-                            // Artist name
-                            .child(
-                                div()
-                                    .w_full()
-                                    .text_xs()
-                                    .text_color(theme.text_secondary)
-                                    .overflow_hidden()
-                                    .text_ellipsis()
-                                    .whitespace_nowrap()
-                                    .child(album.artist()),
-                            )
-                            // Metadata line: FORMAT [DR icon]DR #count
-                            .child(Self::build_metadata_line(&album, &theme)),
+                                        .child(dr_val),
+                                )
+                            })
+                            // Track count
+                            .child(format!("#{}", track_count)),
                     ),
             )
             .into_any_element()
@@ -256,10 +274,7 @@ impl AlbumCard {
                 // Glow effect for selected state
                 let mut bg = theme.accent;
                 bg.a = 0.1;
-                d.shadow_md()
-                    .border_1()
-                    .border_color(theme.accent)
-                    .bg(bg)
+                d.shadow_md().border_1().border_color(theme.accent).bg(bg)
             })
             // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
@@ -299,10 +314,7 @@ impl AlbumCard {
                 // Glow effect for selected state
                 let mut bg = theme.accent;
                 bg.a = 0.1;
-                d.shadow_md()
-                    .border_1()
-                    .border_color(theme.accent)
-                    .bg(bg)
+                d.shadow_md().border_1().border_color(theme.accent).bg(bg)
             })
             // No background for unselected cards (transparent)
             .hover(|style| style.bg(theme.surface_hover))
@@ -334,7 +346,7 @@ impl AlbumCard {
 /// Render height in pixels for a given album card mode
 pub fn album_card_height(mode: AlbumCardMode) -> f32 {
     match mode {
-        AlbumCardMode::Grid => 200.0,   // thumbnail + text
+        AlbumCardMode::Grid => 180.0,   // thumbnail + text
         AlbumCardMode::List => 80.0,    // full row
         AlbumCardMode::Compact => 56.0, // compact row
     }

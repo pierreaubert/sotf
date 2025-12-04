@@ -7,8 +7,8 @@ use crate::{
     extent_padded, validate_data_array, validate_dimensions, validate_grid_dimensions,
     validate_monotonic, validate_positive,
 };
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ContourConfig, HeatmapData, render_heatmap};
 use d3rs::text::{VectorFontConfig, render_vector_text};
@@ -165,9 +165,10 @@ impl HeatmapChart {
         } else {
             0.0
         };
-        
+
         let plot_width = (self.width as f64 - margin_left - margin_right).max(0.0);
-        let plot_height = (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
+        let plot_height =
+            (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
         // Calculate domains with padding
         let (x_min, x_max) = extent_padded(&x_values, 0.0);
@@ -194,7 +195,7 @@ impl HeatmapChart {
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -221,19 +222,19 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_heatmap(
+                                        heatmap_data,
+                                        &x_scale,
+                                        &y_scale,
+                                        &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -244,7 +245,7 @@ impl HeatmapChart {
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -271,19 +272,19 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_heatmap(
+                                        heatmap_data,
+                                        &x_scale,
+                                        &y_scale,
+                                        &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -294,7 +295,7 @@ impl HeatmapChart {
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -321,19 +322,19 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_heatmap(
+                                        heatmap_data,
+                                        &x_scale,
+                                        &y_scale,
+                                        &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -344,7 +345,7 @@ impl HeatmapChart {
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -371,19 +372,19 @@ impl HeatmapChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_heatmap(heatmap_data, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_heatmap(
+                                        heatmap_data,
+                                        &x_scale,
+                                        &y_scale,
+                                        &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -413,11 +414,7 @@ impl HeatmapChart {
         }
 
         // Add chart content
-        container = container.child(
-            div()
-                .relative()
-                .child(chart_content),
-        );
+        container = container.child(div().relative().child(chart_content));
 
         Ok(container)
     }

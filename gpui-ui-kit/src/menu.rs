@@ -5,6 +5,45 @@
 use gpui::prelude::*;
 use gpui::*;
 
+/// Theme colors for menu styling
+#[derive(Debug, Clone)]
+pub struct MenuTheme {
+    /// Menu background color
+    pub background: Rgba,
+    /// Menu border color
+    pub border: Rgba,
+    /// Separator color
+    pub separator: Rgba,
+    /// Normal item text color
+    pub text: Rgba,
+    /// Hovered item text color
+    pub text_hover: Rgba,
+    /// Disabled item text color
+    pub text_disabled: Rgba,
+    /// Shortcut text color
+    pub text_shortcut: Rgba,
+    /// Item hover background color
+    pub hover_bg: Rgba,
+    /// Danger item hover background (for destructive actions like Quit)
+    pub danger_hover_bg: Rgba,
+}
+
+impl Default for MenuTheme {
+    fn default() -> Self {
+        Self {
+            background: rgba(0x2a2a2aff),
+            border: rgba(0x444444ff),
+            separator: rgba(0x3a3a3aff),
+            text: rgba(0xccccccff),
+            text_hover: rgba(0xffffffff),
+            text_disabled: rgba(0x666666ff),
+            text_shortcut: rgba(0x777777ff),
+            hover_bg: rgba(0x3a3a3aff),
+            danger_hover_bg: rgba(0xdc2626ff),
+        }
+    }
+}
+
 /// A single menu item
 #[derive(Clone)]
 pub struct MenuItem {
@@ -16,6 +55,7 @@ pub struct MenuItem {
     is_separator: bool,
     is_checkbox: bool,
     checked: bool,
+    is_danger: bool,
     children: Vec<MenuItem>,
 }
 
@@ -31,6 +71,7 @@ impl MenuItem {
             is_separator: false,
             is_checkbox: false,
             checked: false,
+            is_danger: false,
             children: Vec::new(),
         }
     }
@@ -46,6 +87,7 @@ impl MenuItem {
             is_separator: true,
             is_checkbox: false,
             checked: false,
+            is_danger: false,
             children: Vec::new(),
         }
     }
@@ -65,6 +107,7 @@ impl MenuItem {
             is_separator: false,
             is_checkbox: true,
             checked,
+            is_danger: false,
             children: Vec::new(),
         }
     }
@@ -102,12 +145,24 @@ impl MenuItem {
     pub fn is_separator(&self) -> bool {
         self.is_separator
     }
+
+    /// Mark as a danger/destructive action (e.g., Quit, Delete)
+    pub fn danger(mut self) -> Self {
+        self.is_danger = true;
+        self
+    }
+
+    /// Check if this is a danger item
+    pub fn is_danger(&self) -> bool {
+        self.is_danger
+    }
 }
 
 /// A dropdown menu containing menu items
 pub struct Menu {
     items: Vec<MenuItem>,
     min_width: Pixels,
+    theme: Option<MenuTheme>,
     on_select: Option<Box<dyn Fn(&SharedString, &mut Window, &mut App) + 'static>>,
 }
 
@@ -117,6 +172,7 @@ impl Menu {
         Self {
             items,
             min_width: px(180.0),
+            theme: None,
             on_select: None,
         }
     }
@@ -124,6 +180,12 @@ impl Menu {
     /// Set minimum width
     pub fn min_width(mut self, width: Pixels) -> Self {
         self.min_width = width;
+        self
+    }
+
+    /// Set theme
+    pub fn theme(mut self, theme: MenuTheme) -> Self {
+        self.theme = Some(theme);
         self
     }
 
@@ -139,14 +201,16 @@ impl Menu {
     /// Build into element
     pub fn build(self) -> Stateful<Div> {
         let min_width = self.min_width;
+        let default_theme = MenuTheme::default();
+        let theme = self.theme.as_ref().unwrap_or(&default_theme);
 
         let mut menu = div()
             .id("menu-container")
             .min_w(min_width)
             .max_h(px(400.0))
-            .bg(rgb(0x2a2a2a))
+            .bg(theme.background)
             .border_1()
-            .border_color(rgb(0x444444))
+            .border_color(theme.border)
             .rounded(px(4.0))
             .shadow_lg()
             .py_1()
@@ -154,7 +218,7 @@ impl Menu {
 
         for item in self.items {
             if item.is_separator {
-                menu = menu.child(div().my_1().h(px(1.0)).bg(rgb(0x3a3a3a)).mx_2());
+                menu = menu.child(div().my_1().h(px(1.0)).bg(theme.separator).mx_2());
             } else {
                 let item_id = item.id.clone();
                 let label = item.label.clone();
@@ -163,6 +227,7 @@ impl Menu {
                 let disabled = item.disabled;
                 let is_checkbox = item.is_checkbox;
                 let checked = item.checked;
+                let is_danger = item.is_danger;
 
                 let on_select: Option<*const dyn Fn(&SharedString, &mut Window, &mut App)> =
                     self.on_select.as_ref().map(|f| f.as_ref() as *const _);
@@ -179,12 +244,20 @@ impl Menu {
                     .text_sm();
 
                 if disabled {
-                    row = row.text_color(rgb(0x666666)).cursor_not_allowed();
+                    row = row.text_color(theme.text_disabled).cursor_not_allowed();
                 } else {
+                    let text_color = theme.text;
+                    let text_hover = theme.text_hover;
+                    let hover_bg = if is_danger {
+                        theme.danger_hover_bg
+                    } else {
+                        theme.hover_bg
+                    };
+
                     row = row
-                        .text_color(rgb(0xcccccc))
+                        .text_color(text_color)
                         .cursor_pointer()
-                        .hover(|s| s.bg(rgb(0x3a3a3a)).text_color(rgb(0xffffff)));
+                        .hover(move |s| s.bg(hover_bg).text_color(text_hover));
 
                     if let Some(handler_ptr) = on_select {
                         let id = item_id.clone();
@@ -214,7 +287,8 @@ impl Menu {
 
                 // Shortcut
                 if let Some(shortcut) = shortcut {
-                    row = row.child(div().text_xs().text_color(rgb(0x777777)).child(shortcut));
+                    let shortcut_color = theme.text_shortcut;
+                    row = row.child(div().text_xs().text_color(shortcut_color).child(shortcut));
                 }
 
                 menu = menu.child(row);

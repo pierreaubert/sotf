@@ -31,6 +31,16 @@ impl Colormap {
     }
 }
 
+/// Type of 3D surface plot
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SurfacePlotType {
+    /// Standard Cartesian plot (X, Y, Z)
+    #[default]
+    Cartesian,
+    /// Spherical plot (Globe/Balloon)
+    Spherical,
+}
+
 /// Configuration for 3D surface rendering
 #[derive(Debug, Clone)]
 pub struct Surface3DConfig {
@@ -60,6 +70,14 @@ pub struct Surface3DConfig {
     pub show_axes: bool,
     /// Show colorbar legend
     pub show_colorbar: bool,
+    /// Surface opacity (0.0 - 1.0)
+    pub opacity: f32,
+    /// Show isolines projection
+    pub isolines: bool,
+    /// Isoline step size (normalized 0-1)
+    pub isoline_step: f32,
+    /// Plot type (Cartesian or Spherical)
+    pub plot_type: SurfacePlotType,
 }
 
 impl Default for Surface3DConfig {
@@ -78,6 +96,10 @@ impl Default for Surface3DConfig {
             camera_elevation: 30.0,
             show_axes: true,
             show_colorbar: true,
+            opacity: 1.0,
+            isolines: false,
+            isoline_step: 0.05,
+            plot_type: SurfacePlotType::Cartesian,
         }
     }
 }
@@ -153,9 +175,33 @@ impl Surface3DConfig {
         self
     }
 
-    /// Enable or disable colorbar legend
+    /// Show colorbar legend
     pub fn show_colorbar(mut self, enabled: bool) -> Self {
         self.show_colorbar = enabled;
+        self
+    }
+
+    /// Set surface opacity (0.0 - 1.0)
+    pub fn opacity(mut self, opacity: f32) -> Self {
+        self.opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Enable or disable isolines
+    pub fn isolines(mut self, enabled: bool) -> Self {
+        self.isolines = enabled;
+        self
+    }
+
+    /// Set isoline step size (in normalized 0-1 range)
+    pub fn isoline_step(mut self, step: f32) -> Self {
+        self.isoline_step = step.clamp(0.001, 1.0);
+        self
+    }
+
+    /// Set plot type
+    pub fn plot_type(mut self, plot_type: SurfacePlotType) -> Self {
+        self.plot_type = plot_type;
         self
     }
 

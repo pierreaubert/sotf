@@ -29,22 +29,15 @@ impl App {
             return;
         }
 
-        // Try to move selection within current page
+        // Move selection down by page size
         let next_index = self.selected_album_index + page_size;
         if next_index < current_page_albums.len() {
-            // Selection stays on current page
             self.selected_album_index = next_index;
         } else {
-            // Need to move to next page
-            let total_pages = self.get_total_pages();
-            if self.library_page + 1 < total_pages {
-                self.library_page += 1;
-                // Wrap to first item of next page
-                self.selected_album_index = 0;
-            } else if self.selected_album_index < current_page_albums.len() - 1 {
-                // Stay on last page, move to last item
-                self.selected_album_index = current_page_albums.len() - 1;
-            }
+            // Move to last item
+            self.selected_album_index = current_page_albums.len() - 1;
+            // Trigger load more if at end
+            self.load_more_albums();
         }
     }
 
@@ -54,20 +47,11 @@ impl App {
             return;
         }
 
-        // Try to move selection within current page
+        // Move selection up by page size
         if self.selected_album_index >= page_size {
-            // Selection stays on current page
             self.selected_album_index -= page_size;
-        } else if self.library_page > 0 {
-            // Need to move to previous page
-            self.library_page -= 1;
-            // Move to last item of previous page
-            let new_page_albums = self.get_paginated_albums();
-            if !new_page_albums.is_empty() {
-                self.selected_album_index = new_page_albums.len() - 1;
-            }
-        } else if self.selected_album_index > 0 {
-            // Stay on first page, move to first item
+        } else {
+            // Move to first item
             self.selected_album_index = 0;
         }
     }
@@ -141,18 +125,8 @@ impl App {
             return;
         }
 
-        // Calculate grid dimensions (150px cards + 16px gap = 166px per item)
-        // Assuming standard window width of ~1200px gives us ~7 columns
-        let grid_columns = 7;
-
-        if self.selected_album_index % grid_columns > 0 {
+        if self.selected_album_index > 0 {
             self.selected_album_index -= 1;
-        } else if self.library_page > 0 {
-            // Move to end of previous page
-            self.library_page -= 1;
-            self.selected_album_index = (self.library_items_per_page / grid_columns) * grid_columns
-                - grid_columns
-                + (grid_columns - 1);
         }
     }
 
@@ -163,36 +137,20 @@ impl App {
             return;
         }
 
-        let grid_columns = 7;
-        let max_index = albums.len() - 1;
-
-        if self.selected_album_index % grid_columns < grid_columns - 1
-            && self.selected_album_index < max_index
-        {
+        if self.selected_album_index < albums.len() - 1 {
             self.selected_album_index += 1;
-        } else if self.selected_album_index < max_index {
-            // Move to start of next page
-            self.library_page += 1;
-            self.selected_album_index = 0;
+        } else {
+            // Trigger load more
+            self.load_more_albums();
         }
     }
 
     /// Navigate grid up
     pub fn select_grid_up(&mut self) {
-        let grid_columns = 7;
+        let grid_columns = self.library_columns.max(1);
 
         if self.selected_album_index >= grid_columns {
             self.selected_album_index -= grid_columns;
-        } else if self.library_page > 0 {
-            // Move to end of previous page
-            self.library_page -= 1;
-            let albums = self.get_paginated_albums();
-            if !albums.is_empty() {
-                let last_row_start = ((albums.len() - 1) / grid_columns) * grid_columns;
-                self.selected_album_index = (self.selected_album_index % grid_columns)
-                    .min(albums.len() - 1 - last_row_start)
-                    + last_row_start;
-            }
         }
     }
 
@@ -203,22 +161,21 @@ impl App {
             return;
         }
 
-        let grid_columns = 7;
+        let grid_columns = self.library_columns.max(1);
         let next_row_index = self.selected_album_index + grid_columns;
         let max_index = albums.len() - 1;
 
         if next_row_index <= max_index {
             self.selected_album_index = next_row_index;
-        } else if self.selected_album_index < max_index {
-            // Stay on current position if not at end of page
-            self.selected_album_index = max_index;
         } else {
-            // Move to next page, same column
-            let total_pages = self.get_total_pages();
-            if self.library_page + 1 < total_pages {
-                self.library_page += 1;
-                let col = self.selected_album_index % grid_columns;
-                self.selected_album_index = col.min(self.get_paginated_albums().len() - 1);
+            // Trigger load more
+            self.load_more_albums();
+            // If we loaded more, try to move down again
+            let albums = self.get_paginated_albums();
+            if self.selected_album_index + grid_columns < albums.len() {
+                self.selected_album_index += grid_columns;
+            } else {
+                self.selected_album_index = albums.len() - 1;
             }
         }
     }

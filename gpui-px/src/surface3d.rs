@@ -2,9 +2,8 @@
 
 use crate::error::ChartError;
 use crate::{
-    DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
-    validate_data_array, validate_dimensions, validate_grid_dimensions, validate_monotonic,
-    validate_positive,
+    DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT, validate_data_array,
+    validate_dimensions, validate_grid_dimensions, validate_monotonic, validate_positive,
 };
 use d3rs::surface3d::{Colormap, Surface3DConfig, Surface3DElement, SurfaceData};
 use d3rs::text::{VectorFontConfig, render_vector_text};

@@ -17,12 +17,12 @@ mod level_meters;
 mod limiter;
 mod loudness;
 mod mute_solo;
+mod plugin_editing;
+mod rack;
 mod spectrum;
 pub mod theme;
 mod ticks;
 mod upmixer;
-mod plugin_editing;
-mod rack;
 
 pub use binaural::render_binaural_plugin;
 pub use common::*;
@@ -35,13 +35,12 @@ pub use level_meters::{LevelMeterElement, MeterColors, db_to_position, render_gr
 pub use limiter::render_limiter_plugin;
 pub use loudness::{render_loudness_compensation_plugin, render_loudness_monitor_plugin};
 pub use mute_solo::render_mute_solo_plugin;
+pub use plugin_editing::get_param_count;
+pub use rack::PluginDragInfo;
 pub use spectrum::{MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin};
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 pub use upmixer::render_upmixer_plugin;
-pub use plugin_editing::get_param_count;
-pub use rack::PluginDragInfo;
-
 
 use crate::theme::Theme;
 use gpui::*;

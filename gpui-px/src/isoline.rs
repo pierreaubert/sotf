@@ -161,13 +161,13 @@ impl IsolineChart {
         } else {
             0.0
         };
-        
+
         // Reserve space for axes
         let left_margin = 60.0_f64;
         let bottom_margin = 40.0_f64;
         let plot_width = (self.width as f64) - left_margin;
         let plot_height = (self.height as f64) - title_height as f64 - bottom_margin;
-        
+
         let theme = DefaultAxisTheme;
 
         // Calculate domains with padding
@@ -211,7 +211,7 @@ impl IsolineChart {
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -238,19 +238,16 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_contour(
+                                        contours, &x_scale, &y_scale, &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -261,7 +258,7 @@ impl IsolineChart {
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -288,19 +285,16 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_contour(
+                                        contours, &x_scale, &y_scale, &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -311,7 +305,7 @@ impl IsolineChart {
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -338,19 +332,16 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_contour(
+                                        contours, &x_scale, &y_scale, &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
@@ -361,7 +352,7 @@ impl IsolineChart {
                 let y_scale = LogScale::new()
                     .domain(y_min.max(1e-10), y_max)
                     .range(plot_height, 0.0);
-                
+
                 div()
                     .flex()
                     .child(render_axis(
@@ -388,19 +379,16 @@ impl IsolineChart {
                                         plot_height as f32,
                                         &theme,
                                     ))
-                                    .child(
-                                        div()
-                                            .absolute()
-                                            .inset_0()
-                                            .child(render_contour(contours, &x_scale, &y_scale, &config))
-                                    )
+                                    .child(div().absolute().inset_0().child(render_contour(
+                                        contours, &x_scale, &y_scale, &config,
+                                    ))),
                             )
                             .child(render_axis(
                                 &x_scale,
                                 &AxisConfig::bottom(),
                                 plot_width as f32,
                                 &theme,
-                            ))
+                            )),
                     )
                     .into_any_element()
             }
