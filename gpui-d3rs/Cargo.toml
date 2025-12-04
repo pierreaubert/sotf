@@ -1,6 +1,6 @@
 [package]
 name = "gpui-d3rs"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"
@@ -113,6 +113,6 @@ path = "examples/gpu2d_contour_demo.rs"
 required-features = ["gpu-2d"]
 
 [[bin]]
-name = "spinorama-demo"
+name = "d3rs-spinorama"
 path = "bin/spinorama_demo/main.rs"
 required-features = ["spinorama"]

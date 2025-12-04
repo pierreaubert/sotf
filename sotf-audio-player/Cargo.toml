@@ -16,10 +16,6 @@ testing = []
 name = "sotf_audio_player"
 path = "src/lib.rs"
 
-[[bin]]
-name = "sotf-tui"
-path = "app-tui/main.rs"
-
 [dependencies]
 # Audio engine
 sotf-audio-plugins = { path = "../sotf-audio-plugins" }
@@ -27,23 +23,18 @@ sotf-audio-engine = { path = "../sotf-audio-engine" }
 autoeq-iir = { path = "../math-iir" }
 
 # common stuff
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+directories = { workspace = true }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-walkdir = "2"
 thiserror = { workspace = true }
-log = "0.4"
-env_logger = "0.11"
-directories = "5.0"
-chrono = { workspace = true }
-rusqlite = { version = "0.32", features = ["bundled"] }
+walkdir = { workspace = true }
+rusqlite = { workspace = true }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
-clap = { workspace = true }
-
-# TUI
-ratatui = { workspace = true }
-ratatui-image = { version = "1.0", features = ["serde"] }
-crossterm = { workspace = true }
 
 # Image processing for album art thumbnails
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }

@@ -1,5 +1,5 @@
 [package]
-name = "sotf-audio-player-gpui"
+name = "sotf-gpui"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
@@ -12,31 +12,31 @@ repository.workspace = true
 gpui = { git = "https://github.com/zed-industries/zed.git" }
 
 # GPUI UI Kit
-gpui-ui-kit = { path = "../gpui-ui-kit" }
+gpui-ui-kit = { path = "../../gpui-ui-kit" }
 
 # GPUI Plotting (Plotly Express-style charts)
-gpui-px = { path = "../gpui-px" }
-gpui-d3rs = { path = "../gpui-d3rs" }
+gpui-px = { path = "../../gpui-px" }
+gpui-d3rs = { path = "../../gpui-d3rs" }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
-sotf-audio-player = { path = "../sotf-audio-player" }
+sotf-audio-player = { path = ".." }
 
 # Audio engine
-sotf-audio-plugins = { path = "../sotf-audio-plugins" }
-sotf-audio-engine = { path = "../sotf-audio-engine" }
-autoeq-iir = { path = "../math-iir" }
-autoeq = { path = "../autoeq" }
-autoeq-de = { path = "../math-de" }
+sotf-audio-plugins = { path = "../../sotf-audio-plugins" }
+sotf-audio-engine = { path = "../../sotf-audio-engine" }
+autoeq-iir = { path = "../../math-iir" }
+autoeq = { path = "../../autoeq" }
+autoeq-de = { path = "../../math-de" }
 
 # Synchronous mutex (faster than std::sync::Mutex)
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 # File system and utilities
-walkdir = "2"
+walkdir = { workspace = true }
 id3 = "1.16"
 metaflac = "0.2"
 rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
@@ -51,30 +51,29 @@ symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 
 # Testing utilities
-tempfile = "3"
+tempfile = { workspace = true }
 
 # CLI
 clap = { workspace = true }
 
 # Logging (GPUI-specific)
-log = "0.4"
-env_logger = "0.11"
+log = { workspace = true }
+env_logger = { workspace = true }
 
 # Smol runtime (used by GPUI)
-smol = "2.0"
+smol = { workspace = true }
 
 # Array processing
 ndarray = { workspace = true }
 
 # Asset embedding
-rust-embed = "8"
-anyhow = "1"
+rust-embed = { workspace = true }
+anyhow = { workspace = true }
 
 [lib]
 name = "sotf_audio_player_gpui"
-path = "src/lib.rs"
+path = "lib.rs"
 
 [[bin]]
-name = "sotf_gpui"
-path = "src/main.rs"
-
+name = "sotf-gpui"
+path = "main.rs"

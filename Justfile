@@ -79,8 +79,14 @@ prod-autoeq:
 prod-roomeq:
 	cargo build --release --bin roomeq
 
-prod-sotf-player:
+prod-sotf-player: prod-sotf-tui prod-sotf-gpui
 	cargo build --release --bin sotf_player
+
+prod-sotf-gpui:
+	cargo build --release --bin sotf-gpui -p sotf-gpui
+
+prod-sotf-tui:
+	cargo build --release --bin sotf-tui -p sotf-tui
 
 prod-sotf-recorder:
 	cargo build --release --bin sotf_recorder
@@ -96,6 +102,13 @@ prod-macos: prod-hal prod-configbar
 
 prod-head-scanner:
 	cargo build --release -p head-scanner
+
+# shortcuts
+tui:
+	cargo run --release --bin sotf-tui -p sotf-tui
+
+gpui:
+	cargo run --release --bin sotf-gpui -p sotf-gpui
 
 # ----------------------------------------------------------------------
 # AUDIO UNIT (macOS only)
@@ -222,15 +235,22 @@ update-ts:
 # DEMO
 # ----------------------------------------------------------------------
 
-demo: headphone_loss_demo plot_functions
+demo: demo-headphone-loss demo-plot-functions demo-d3rs demo-px
 
-headphone_loss_demo:
+demo-headphone-loss:
 	cargo run --release --example headphone_loss_demo -- \
 	--spl "./data_tests/headphones/asr/bowerwilkins_p7/Bowers & Wilkins P7.csv" \
 	--target "./data_tests/targets/harman-over-ear-2018.csv"
 
-plot_functions:
+demo-plot-functions:
 	cargo run --release --bin plot_functions
+
+demo-d3rs:
+	cargo run --release --bin d3rs-showcase --features="gpui"
+	cargo run --release --bin d3rs-spinorama --features="spinorama"
+
+demo-px:
+	cargo run --release --bin px-showcase
 
 # ----------------------------------------------------------------------
 # EXAMPLES

@@ -6,6 +6,7 @@ use sotf_audio_player_gpui::actions::*;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
+use sotf_audio_player_gpui::config::Config;
 use std::borrow::Cow;
 use std::fs::OpenOptions;
 use std::sync::Arc;
@@ -14,7 +15,7 @@ actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 
 /// Embedded assets including Lucide SVG icons
 #[derive(RustEmbed)]
-#[folder = "assets"]
+#[folder = "../assets"]
 #[include = "icons/*.svg"]
 struct Assets;
 
@@ -91,7 +92,7 @@ fn main() {
         cx.bind_keys(get_keybindings(keymap_preset));
 
         // Load window geometry from config
-        let window_geometry = sotf_audio_player_gpui::config::Config::load()
+        let window_geometry = Config::load()
             .ok()
             .map(|c| c.window_geometry)
             .unwrap_or_default();

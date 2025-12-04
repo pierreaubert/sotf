@@ -1,6 +1,6 @@
 [package]
 name = "gpui-px"
-version = "0.1.3"
+version = "0.1.10"
 authors.workspace = true
 edition.workspace = true
 license = "ISC"
@@ -18,7 +18,7 @@ gpui-ui-kit = { version = "0.1", path = "../gpui-ui-kit", optional = true }
 thiserror.workspace = true
 
 [[bin]]
-name = "gpui-px-showcase"
+name = "px-showcase"
 path = "bin/showcase.rs"
 
 [[example]]
