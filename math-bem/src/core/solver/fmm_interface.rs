@@ -28,7 +28,7 @@ use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
 use crate::core::assembly::mlfmm::MlfmmSystem;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 use crate::core::assembly::slfmm::SlfmmSystem;
 use crate::core::assembly::sparse::CsrMatrix;
 
@@ -93,13 +93,13 @@ impl LinearOperator for DenseOperator {
 
 /// SLFMM linear operator
 ///
-/// Requires the `native` feature as SLFMM assembly uses parallel processing.
-#[cfg(feature = "native")]
+/// Works with both `native` and `wasm` features via rayon (wasm-bindgen-rayon for WASM).
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub struct SlfmmOperator {
     system: SlfmmSystem,
 }
 
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 impl SlfmmOperator {
     /// Create a new SLFMM operator
     pub fn new(system: SlfmmSystem) -> Self {
@@ -117,7 +117,7 @@ impl SlfmmOperator {
     }
 }
 
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 impl LinearOperator for SlfmmOperator {
     fn num_rows(&self) -> usize {
         self.system.num_dofs
@@ -732,8 +732,8 @@ pub fn gmres_solve_with_ilu_operator<O: LinearOperator>(
 /// * `b` - Right-hand side vector
 /// * `config` - GMRES configuration
 ///
-/// **Note**: Requires the `native` feature for LU factorization and parallel processing.
-#[cfg(feature = "native")]
+/// **Note**: Works with both `native` and `wasm` features via rayon.
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub fn gmres_solve_with_hierarchical_precond(
     fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
     b: &Array1<Complex64>,
@@ -758,8 +758,8 @@ pub fn gmres_solve_with_hierarchical_precond(
 ///
 /// This version takes ownership of the FMM system and provides a cleaner interface.
 ///
-/// **Note**: Requires the `native` feature for LU factorization and parallel processing.
-#[cfg(feature = "native")]
+/// **Note**: Works with both `native` and `wasm` features via rayon.
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub fn gmres_solve_fmm_hierarchical(
     fmm_operator: &SlfmmOperator,
     config: &super::gmres::GmresConfig,

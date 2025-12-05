@@ -4,15 +4,15 @@
 //! levels (SPL) at listening positions from directional sources with frequency-dependent
 //! radiation patterns.
 //!
-//! **Note**: The solver functionality requires the `native` feature for parallel processing.
+//! **Note**: The solver functionality requires either the `native` or `wasm` feature for parallel processing.
 //! Data structures (RoomGeometry, Source, etc.) are always available.
 
 mod config;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 mod solver;
 
 pub use config::*;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub use solver::*;
 
 use ndarray::Array2;

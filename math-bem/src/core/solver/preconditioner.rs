@@ -4,7 +4,8 @@
 //! convergence of CGS and BiCGSTAB solvers.
 //!
 //! Most preconditioners are portable and work in WASM mode. The HierarchicalFmmPreconditioner
-//! requires the `native` feature as it uses parallel processing (rayon).
+//! works with both `native` and `wasm` features - native uses BLAS for LU factorization,
+//! WASM uses pure Rust algebra.
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
@@ -155,8 +156,9 @@ impl Preconditioner for BlockDiagonalPreconditioner {
 /// For each cluster's diagonal block, we store the LU factorization
 /// and apply it during the preconditioner solve.
 ///
-/// Requires the `native` feature for LU factorization and parallel processing.
-#[cfg(feature = "native")]
+/// Works with both `native` and `wasm` features - native uses BLAS for LU factorization,
+/// WASM uses pure Rust algebra via parallel abstractions.
+#[cfg(any(feature = "native", feature = "wasm"))]
 #[derive(Debug, Clone)]
 pub struct HierarchicalFmmPreconditioner {
     /// LU factors for each cluster's diagonal block
@@ -170,7 +172,7 @@ pub struct HierarchicalFmmPreconditioner {
     num_dofs: usize,
 }
 
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 impl HierarchicalFmmPreconditioner {
     /// Create from SLFMM near-field blocks
     ///
@@ -182,8 +184,6 @@ impl HierarchicalFmmPreconditioner {
         cluster_dof_indices: &[Vec<usize>],
         num_dofs: usize,
     ) -> Self {
-        use ndarray_linalg::Factorize;
-
         let num_clusters = cluster_dof_indices.len();
 
         // Build a map from cluster index to diagonal block
@@ -210,11 +210,18 @@ impl HierarchicalFmmPreconditioner {
 
             if let Some(block) = maybe_block {
                 let n = block.coefficients.nrows();
-                // Try LU factorization, fall back to identity if singular
-                let lu = match block.coefficients.factorize() {
-                    Ok(_factor) => block.coefficients.clone(),
-                    Err(_) => Array2::eye(n),
+                // Try to compute LU factorization, fall back to identity if singular
+                #[cfg(feature = "native")]
+                let lu = {
+                    use ndarray_linalg::Factorize;
+                    match block.coefficients.factorize() {
+                        Ok(_factor) => block.coefficients.clone(),
+                        Err(_) => Array2::eye(n),
+                    }
                 };
+                #[cfg(all(feature = "wasm", not(feature = "native")))]
+                let lu = block.coefficients.clone(); // Store matrix for pure Rust solve
+
                 block_lu.push(lu);
                 block_sizes.push(n);
             } else {
@@ -248,17 +255,14 @@ impl HierarchicalFmmPreconditioner {
 
     /// Apply block-wise forward/backward substitution
     fn apply_block_solve(&self, r: &Array1<Complex64>) -> Array1<Complex64> {
-        use ndarray_linalg::Solve;
-        use rayon::prelude::*;
+        use crate::core::parallel::parallel_enumerate_filter_map;
 
         let mut z = Array1::zeros(self.num_dofs);
 
-        // Process each cluster block in parallel
-        let results: Vec<(usize, Vec<(usize, Complex64)>)> = self
-            .block_lu
-            .par_iter()
-            .enumerate()
-            .filter_map(|(cluster_idx, lu)| {
+        // Process each cluster block in parallel using portable abstraction
+        let results: Vec<(usize, Vec<(usize, Complex64)>)> = parallel_enumerate_filter_map(
+            &self.block_lu,
+            |cluster_idx, lu| {
                 if cluster_idx >= self.cluster_dof_indices.len() {
                     return None;
                 }
@@ -281,10 +285,22 @@ impl HierarchicalFmmPreconditioner {
                 let r_local: Array1<Complex64> =
                     Array1::from_iter(dof_indices.iter().map(|&i| r[i]));
 
-                // Solve local system
-                let z_local = match lu.solve(&r_local) {
-                    Ok(sol) => sol,
-                    Err(_) => r_local, // Fall back to identity
+                // Solve local system using appropriate backend
+                #[cfg(feature = "native")]
+                let z_local = {
+                    use ndarray_linalg::Solve;
+                    match lu.solve(&r_local) {
+                        Ok(sol) => sol,
+                        Err(_) => r_local.clone(), // Fall back to identity
+                    }
+                };
+                #[cfg(all(feature = "wasm", not(feature = "native")))]
+                let z_local = {
+                    // Use pure Rust algebra solve
+                    match algebra::solve(lu, &r_local) {
+                        Some(sol) => sol,
+                        None => r_local.clone(), // Fall back to identity
+                    }
                 };
 
                 // Collect results
@@ -295,8 +311,8 @@ impl HierarchicalFmmPreconditioner {
                     .collect();
 
                 Some((cluster_idx, contributions))
-            })
-            .collect();
+            },
+        );
 
         // Scatter results back to global vector
         for (_cluster_idx, contributions) in results {
@@ -309,7 +325,7 @@ impl HierarchicalFmmPreconditioner {
     }
 }
 
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 impl Preconditioner for HierarchicalFmmPreconditioner {
     fn apply(&self, r: &Array1<Complex64>) -> Array1<Complex64> {
         self.apply_block_solve(r)
@@ -344,8 +360,8 @@ impl SparseNearfieldIlu {
     /// Builds a sparse ILU factorization using only the near-field structure,
     /// which is O(N) entries instead of O(N²).
     ///
-    /// Requires the `native` feature as SLFMM assembly uses parallel processing.
-    #[cfg(feature = "native")]
+    /// Works with both `native` and `wasm` features via rayon.
+    #[cfg(any(feature = "native", feature = "wasm"))]
     pub fn from_slfmm(
         near_blocks: &[super::super::assembly::slfmm::NearFieldBlock],
         cluster_dof_indices: &[Vec<usize>],

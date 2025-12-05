@@ -3,7 +3,7 @@
 //! This module provides three methods for assembling BEM systems:
 //!
 //! - [`tbem`] - Traditional BEM with O(N²) dense matrix (always available)
-//! - [`slfmm`] - Single-Level Fast Multipole Method (requires `native` feature)
+//! - [`slfmm`] - Single-Level Fast Multipole Method (requires `native` or `wasm` feature)
 //! - [`mlfmm`] - Multi-Level Fast Multipole Method
 //!
 //! For small problems (N < 1000), TBEM is usually fastest.
@@ -11,17 +11,17 @@
 //!
 //! ## WASM Compatibility
 //!
-//! For WASM builds (without `native` feature), only TBEM assembly is available.
-//! FMM methods require parallel processing via rayon which is not portable to WASM.
+//! With the `wasm` feature, all assembly methods are available including SLFMM.
+//! Parallel processing is provided via wasm-bindgen-rayon (Web Workers).
 
 pub mod mlfmm;
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub mod slfmm;
 pub mod sparse;
 pub mod tbem;
 
 pub use mlfmm::{MlfmmSystem, build_cluster_tree, build_mlfmm_system};
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub use slfmm::{SlfmmSystem, build_slfmm_system};
 pub use sparse::{BlockedCsr, CsrBuilder, CsrMatrix};
 pub use tbem::{

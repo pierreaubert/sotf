@@ -13,14 +13,13 @@
 //!
 //! ## WASM Compatibility
 //!
-//! When building for WASM targets, disable the `native` feature. Most solvers work
-//! in pure Rust mode, but the following functionality requires `native`:
-//! - Parallel processing via rayon (SLFMM, batched operations)
-//! - HierarchicalFmmPreconditioner (uses rayon for parallel block processing)
-//! - SlfmmOperator (SLFMM assembly uses rayon)
+//! With the `wasm` feature enabled, most solvers work including:
+//! - SlfmmOperator (SLFMM assembly via wasm-bindgen-rayon)
+//! - HierarchicalFmmPreconditioner (parallel block processing via Web Workers)
+//! - All iterative solvers (GMRES, CGS, BiCGSTAB)
+//! - Direct solver (pure Rust LU fallback)
 //!
-//! The direct solver, block preconditioner, and all iterative solvers work
-//! in WASM mode using pure Rust linear algebra fallbacks.
+//! Only `batched_blas` remains native-only for optimized BLAS operations.
 //!
 //! ## Solver Selection Guide
 //!
@@ -72,24 +71,22 @@ pub use fmm_interface::{
     CsrOperator, DenseOperator, DiagonalPreconditioner, LinearOperator, MlfmmOperator,
 };
 
-#[cfg(feature = "native")]
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub use fmm_interface::SlfmmOperator;
 
 // ILU preconditioner and solve functions (recommended for BEM)
-// These require native feature for BLAS/LAPACK
-#[cfg(feature = "native")]
+// ILU is pure Rust and works in WASM
 pub use fmm_interface::{
     IluDiagnostics, IluOperator, ilu_diagnostics, solve_tbem_with_ilu, solve_with_ilu,
     solve_with_ilu_operator,
 };
 
-// GMRES solver and ILU integration (native feature for ILU variants)
+// GMRES solver and ILU integration (portable)
 pub use fmm_interface::solve_gmres;
-#[cfg(feature = "native")]
 pub use fmm_interface::{gmres_solve_with_ilu, gmres_solve_with_ilu_operator};
 
-// Hierarchical FMM preconditioner solvers (native only)
-#[cfg(feature = "native")]
+// Hierarchical FMM preconditioner solvers (uses rayon, works in WASM)
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub use fmm_interface::{gmres_solve_fmm_hierarchical, gmres_solve_with_hierarchical_precond};
 
 // Batched BLAS FMM solvers (optimized for large problems, native only)
@@ -108,8 +105,9 @@ pub use preconditioner::{
     IdentityPreconditioner, Preconditioner, RowScalingPreconditioner, SparseNearfieldIlu,
 };
 
-// HierarchicalFmmPreconditioner requires native (uses rayon for parallel block processing)
-#[cfg(feature = "native")]
+// HierarchicalFmmPreconditioner uses rayon for parallel block processing
+// Works in WASM via wasm-bindgen-rayon
+#[cfg(any(feature = "native", feature = "wasm"))]
 pub use preconditioner::HierarchicalFmmPreconditioner;
 
 // ILU configuration types

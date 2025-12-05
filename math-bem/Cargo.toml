@@ -104,8 +104,9 @@ native = [
 # CLI requires native features
 cli = ["native", "clap"]
 
-# Parallel assembly (requires native for rayon)
-parallel = ["native"]
+# Parallel assembly - works with both native and wasm via rayon
+# Note: Previously required "native", but rayon works in WASM via wasm-bindgen-rayon
+parallel = ["rayon"]
 
 # Benchmarking
 benchmarks = ["criterion"]

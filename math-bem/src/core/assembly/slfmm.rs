@@ -12,14 +12,15 @@
 //! - [D] is the D-matrix (cluster-to-cluster translation)
 //! - [S] is the S-matrix (cluster-to-element local expansion)
 //!
-//! **Note**: This module requires the `native` feature for parallel processing.
-//! For WASM builds, use the basic TBEM assembly instead.
+//! **Note**: This module requires either the `native` or `wasm` feature for parallel processing.
+//! Parallelism is provided via rayon (native) or wasm-bindgen-rayon (WASM).
 
-#![cfg(feature = "native")]
+#![cfg(any(feature = "native", feature = "wasm"))]
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
-use rayon::prelude::*;
+
+use crate::core::parallel::{parallel_enumerate_filter_map, parallel_flat_map, parallel_map};
 
 use crate::core::greens::spherical::spherical_hankel_first_kind;
 use crate::core::integration::{regular_integration, singular_integration, unit_sphere_quadrature};
@@ -148,10 +149,9 @@ impl SlfmmSystem {
     pub fn matvec(&self, x: &Array1<Complex64>) -> Array1<Complex64> {
         // === Near-field contribution: y += [N] * x (parallelized) ===
         // Compute all near-field block contributions in parallel, then sum them
-        let near_contributions: Vec<Vec<(usize, Complex64)>> = self
-            .near_matrix
-            .par_iter()
-            .flat_map(|block| {
+        let near_contributions: Vec<Vec<(usize, Complex64)>> = parallel_flat_map(
+            &self.near_matrix,
+            |block| {
                 let src_dofs = &self.cluster_dof_indices[block.source_cluster];
                 let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
 
@@ -179,8 +179,8 @@ impl SlfmmSystem {
                 }
 
                 vec![contributions]
-            })
-            .collect();
+            },
+        );
 
         // Accumulate near-field contributions
         let mut y = Array1::zeros(self.num_dofs);
@@ -193,11 +193,9 @@ impl SlfmmSystem {
         // === Far-field contribution: y += [S][D][T] * x (parallelized) ===
 
         // Step 1: Compute multipole expansions for each cluster in parallel: t[c] = T[c] * x[c]
-        let multipoles: Vec<Array1<Complex64>> = self
-            .t_matrices
-            .par_iter()
-            .enumerate()
-            .map(|(cluster_idx, t_mat)| {
+        let multipoles: Vec<Array1<Complex64>> = crate::core::parallel::parallel_enumerate_map(
+            &self.t_matrices,
+            |cluster_idx, t_mat| {
                 let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
                 if cluster_dofs.is_empty() || t_mat.is_empty() {
                     Array1::zeros(self.num_sphere_points)
@@ -206,22 +204,21 @@ impl SlfmmSystem {
                         Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
                     t_mat.dot(&x_local)
                 }
-            })
-            .collect();
+            },
+        );
 
         // Step 2: Translate multipoles between far clusters (parallelized)
         // Compute all D*multipole products in parallel
         // D-matrix is diagonal, so D*x is just element-wise multiplication
-        let d_contributions: Vec<(usize, Array1<Complex64>)> = self
-            .d_matrices
-            .par_iter()
-            .map(|d_entry| {
+        let d_contributions: Vec<(usize, Array1<Complex64>)> = parallel_map(
+            &self.d_matrices,
+            |d_entry| {
                 let src_mult = &multipoles[d_entry.source_cluster];
                 // Diagonal matrix-vector multiply: translated[i] = diagonal[i] * src_mult[i]
                 let translated = &d_entry.diagonal * src_mult;
                 (d_entry.field_cluster, translated)
-            })
-            .collect();
+            },
+        );
 
         // Accumulate D-matrix contributions into locals (sequential to avoid race)
         let mut locals: Vec<Array1<Complex64>> = (0..self.num_clusters)
@@ -235,11 +232,9 @@ impl SlfmmSystem {
         }
 
         // Step 3: Evaluate locals at field points in parallel: y[c] += S[c] * locals[c]
-        let far_contributions: Vec<Vec<(usize, Complex64)>> = self
-            .s_matrices
-            .par_iter()
-            .enumerate()
-            .filter_map(|(cluster_idx, s_mat)| {
+        let far_contributions: Vec<Vec<(usize, Complex64)>> = parallel_enumerate_filter_map(
+            &self.s_matrices,
+            |cluster_idx, s_mat| {
                 let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
                 if cluster_dofs.is_empty() || s_mat.is_empty() {
                     return None;
@@ -251,8 +246,8 @@ impl SlfmmSystem {
                     .map(|(local_j, &global_j)| (global_j, y_local[local_j]))
                     .collect();
                 Some(contributions)
-            })
-            .collect();
+            },
+        );
 
         // Accumulate far-field contributions
         for contributions in far_contributions {
@@ -269,10 +264,9 @@ impl SlfmmSystem {
     /// Used by some iterative solvers (e.g., BiCGSTAB).
     pub fn matvec_transpose(&self, x: &Array1<Complex64>) -> Array1<Complex64> {
         // === Near-field contribution (transposed, parallelized) ===
-        let near_contributions: Vec<Vec<(usize, Complex64)>> = self
-            .near_matrix
-            .par_iter()
-            .flat_map(|block| {
+        let near_contributions: Vec<Vec<(usize, Complex64)>> = parallel_flat_map(
+            &self.near_matrix,
+            |block| {
                 let src_dofs = &self.cluster_dof_indices[block.source_cluster];
                 let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
 
@@ -296,8 +290,8 @@ impl SlfmmSystem {
                 }
 
                 vec![contributions]
-            })
-            .collect();
+            },
+        );
 
         // Accumulate near-field contributions
         let mut y = Array1::zeros(self.num_dofs);
@@ -310,11 +304,9 @@ impl SlfmmSystem {
         // === Far-field contribution (transposed, parallelized): y += T^T * D^T * S^T * x ===
 
         // Step 1: S^T * x (parallelized)
-        let locals: Vec<Array1<Complex64>> = self
-            .s_matrices
-            .par_iter()
-            .enumerate()
-            .map(|(cluster_idx, s_mat)| {
+        let locals: Vec<Array1<Complex64>> = crate::core::parallel::parallel_enumerate_map(
+            &self.s_matrices,
+            |cluster_idx, s_mat| {
                 let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
                 if cluster_dofs.is_empty() || s_mat.is_empty() {
                     Array1::zeros(self.num_sphere_points)
@@ -323,21 +315,20 @@ impl SlfmmSystem {
                         Array1::from_iter(cluster_dofs.iter().map(|&i| x[i]));
                     s_mat.t().dot(&x_local)
                 }
-            })
-            .collect();
+            },
+        );
 
         // Step 2: D^T translation (parallelized)
         // D-matrix is diagonal, so D^T = D (diagonal matrices are symmetric)
-        let d_contributions: Vec<(usize, Array1<Complex64>)> = self
-            .d_matrices
-            .par_iter()
-            .map(|d_entry| {
+        let d_contributions: Vec<(usize, Array1<Complex64>)> = parallel_map(
+            &self.d_matrices,
+            |d_entry| {
                 let fld_local = &locals[d_entry.field_cluster];
                 // Diagonal matrix-vector multiply: translated[i] = diagonal[i] * fld_local[i]
                 let translated = &d_entry.diagonal * fld_local;
                 (d_entry.source_cluster, translated)
-            })
-            .collect();
+            },
+        );
 
         // Accumulate D-matrix contributions
         let mut multipoles: Vec<Array1<Complex64>> = (0..self.num_clusters)
@@ -351,11 +342,9 @@ impl SlfmmSystem {
         }
 
         // Step 3: T^T * multipoles (parallelized)
-        let far_contributions: Vec<Vec<(usize, Complex64)>> = self
-            .t_matrices
-            .par_iter()
-            .enumerate()
-            .filter_map(|(cluster_idx, t_mat)| {
+        let far_contributions: Vec<Vec<(usize, Complex64)>> = parallel_enumerate_filter_map(
+            &self.t_matrices,
+            |cluster_idx, t_mat| {
                 let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
                 if cluster_dofs.is_empty() || t_mat.is_empty() {
                     return None;
@@ -367,8 +356,8 @@ impl SlfmmSystem {
                     .map(|(local_i, &global_i)| (global_i, y_local[local_i]))
                     .collect();
                 Some(contributions)
-            })
-            .collect();
+            },
+        );
 
         // Accumulate far-field contributions
         for contributions in far_contributions {
@@ -499,52 +488,49 @@ fn build_near_field(
     }
 
     // Compute all near-field blocks in parallel
-    let near_blocks: Vec<NearFieldBlock> = cluster_pairs
-        .par_iter()
-        .map(|&(i, j, is_self)| {
-            let cluster_i = &clusters[i];
-            let cluster_j = &clusters[j];
+    let near_blocks: Vec<NearFieldBlock> = parallel_map(&cluster_pairs, |&(i, j, is_self)| {
+        let cluster_i = &clusters[i];
+        let cluster_j = &clusters[j];
 
-            let mut block = compute_near_block(
-                elements,
-                nodes,
-                &cluster_i.element_indices,
-                &cluster_j.element_indices,
-                physics,
-                gamma,
-                tau,
-                beta,
-                is_self,
-            );
+        let mut block = compute_near_block(
+            elements,
+            nodes,
+            &cluster_i.element_indices,
+            &cluster_j.element_indices,
+            physics,
+            gamma,
+            tau,
+            beta,
+            is_self,
+        );
 
-            // Add free terms to diagonal for self-interaction blocks
-            if is_self {
-                for local_idx in 0..cluster_i.element_indices.len() {
-                    let elem_idx = cluster_i.element_indices[local_idx];
-                    let elem = &elements[elem_idx];
-                    if elem.property.is_evaluation() {
-                        continue;
+        // Add free terms to diagonal for self-interaction blocks
+        if is_self {
+            for local_idx in 0..cluster_i.element_indices.len() {
+                let elem_idx = cluster_i.element_indices[local_idx];
+                let elem = &elements[elem_idx];
+                if elem.property.is_evaluation() {
+                    continue;
+                }
+                match &elem.boundary_condition {
+                    BoundaryCondition::Velocity(_)
+                    | BoundaryCondition::VelocityWithAdmittance { .. } => {
+                        block[[local_idx, local_idx]] += gamma * 0.5;
                     }
-                    match &elem.boundary_condition {
-                        BoundaryCondition::Velocity(_)
-                        | BoundaryCondition::VelocityWithAdmittance { .. } => {
-                            block[[local_idx, local_idx]] += gamma * 0.5;
-                        }
-                        BoundaryCondition::Pressure(_) => {
-                            block[[local_idx, local_idx]] += beta * tau * 0.5;
-                        }
-                        _ => {}
+                    BoundaryCondition::Pressure(_) => {
+                        block[[local_idx, local_idx]] += beta * tau * 0.5;
                     }
+                    _ => {}
                 }
             }
+        }
 
-            NearFieldBlock {
-                source_cluster: i,
-                field_cluster: j,
-                coefficients: block,
-            }
-        })
-        .collect();
+        NearFieldBlock {
+            source_cluster: i,
+            field_cluster: j,
+            coefficients: block,
+        }
+    });
 
     system.near_matrix = near_blocks;
 }
@@ -628,37 +614,33 @@ fn build_t_matrices(
     let num_sphere_points = sphere_coords.len();
 
     // Build all T-matrices in parallel
-    let t_matrices: Vec<Array2<Complex64>> = clusters
-        .par_iter()
-        .map(|cluster| {
-            let num_elem = cluster.element_indices.len();
-            let mut t_matrix = Array2::zeros((num_sphere_points, num_elem));
+    let t_matrices: Vec<Array2<Complex64>> = parallel_map(clusters, |cluster| {
+        let num_elem = cluster.element_indices.len();
+        let mut t_matrix = Array2::zeros((num_sphere_points, num_elem));
 
-            for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
-                let elem = &elements[elem_idx];
-                if elem.property.is_evaluation() {
-                    continue;
-                }
-
-                // Precompute difference vector
-                let diff: [f64; 3] = [
-                    elem.center[0] - cluster.center[0],
-                    elem.center[1] - cluster.center[1],
-                    elem.center[2] - cluster.center[2],
-                ];
-
-                // For each integration direction on the unit sphere
-                for (p, coord) in sphere_coords.iter().enumerate() {
-                    let s_dot_diff = coord[0] * diff[0] + coord[1] * diff[1] + coord[2] * diff[2];
-                    let exp_factor =
-                        Complex64::new((k * s_dot_diff).cos(), -(k * s_dot_diff).sin());
-                    t_matrix[[p, j]] = exp_factor * sphere_weights[p];
-                }
+        for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
+            let elem = &elements[elem_idx];
+            if elem.property.is_evaluation() {
+                continue;
             }
 
-            t_matrix
-        })
-        .collect();
+            // Precompute difference vector
+            let diff: [f64; 3] = [
+                elem.center[0] - cluster.center[0],
+                elem.center[1] - cluster.center[1],
+                elem.center[2] - cluster.center[2],
+            ];
+
+            // For each integration direction on the unit sphere
+            for (p, coord) in sphere_coords.iter().enumerate() {
+                let s_dot_diff = coord[0] * diff[0] + coord[1] * diff[1] + coord[2] * diff[2];
+                let exp_factor = Complex64::new((k * s_dot_diff).cos(), -(k * s_dot_diff).sin());
+                t_matrix[[p, j]] = exp_factor * sphere_weights[p];
+            }
+        }
+
+        t_matrix
+    });
 
     system.t_matrices = t_matrices;
 }
@@ -698,36 +680,33 @@ fn build_d_matrices(
     }
 
     // Compute all D-matrices in parallel (diagonal storage only)
-    let d_matrices: Vec<DMatrixEntry> = far_pairs
-        .par_iter()
-        .map(|&(i, j)| {
-            let cluster_i = &clusters[i];
-            let cluster_j = &clusters[j];
+    let d_matrices: Vec<DMatrixEntry> = parallel_map(&far_pairs, |&(i, j)| {
+        let cluster_i = &clusters[i];
+        let cluster_j = &clusters[j];
 
-            // Distance vector between cluster centers
-            let diff = [
-                cluster_i.center[0] - cluster_j.center[0],
-                cluster_i.center[1] - cluster_j.center[1],
-                cluster_i.center[2] - cluster_j.center[2],
-            ];
-            let r = (diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]).sqrt();
-            let kr = k * r;
+        // Distance vector between cluster centers
+        let diff = [
+            cluster_i.center[0] - cluster_j.center[0],
+            cluster_i.center[1] - cluster_j.center[1],
+            cluster_i.center[2] - cluster_j.center[2],
+        ];
+        let r = (diff[0] * diff[0] + diff[1] * diff[1] + diff[2] * diff[2]).sqrt();
+        let kr = k * r;
 
-            // Compute translation using spherical Hankel functions
-            let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
+        // Compute translation using spherical Hankel functions
+        let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
 
-            // D-matrix is diagonal: D[p,p] = h_0(kr) * ik
-            // Store only the diagonal (all entries are the same in this simplified model)
-            let d_value = h_funcs[0] * Complex64::new(0.0, k);
-            let diagonal = Array1::from_elem(num_sphere_points, d_value);
+        // D-matrix is diagonal: D[p,p] = h_0(kr) * ik
+        // Store only the diagonal (all entries are the same in this simplified model)
+        let d_value = h_funcs[0] * Complex64::new(0.0, k);
+        let diagonal = Array1::from_elem(num_sphere_points, d_value);
 
-            DMatrixEntry {
-                source_cluster: i,
-                field_cluster: j,
-                diagonal,
-            }
-        })
-        .collect();
+        DMatrixEntry {
+            source_cluster: i,
+            field_cluster: j,
+            diagonal,
+        }
+    });
 
     system.d_matrices = d_matrices;
 }
@@ -745,36 +724,33 @@ fn build_s_matrices(
     let num_sphere_points = sphere_coords.len();
 
     // Build all S-matrices in parallel
-    let s_matrices: Vec<Array2<Complex64>> = clusters
-        .par_iter()
-        .map(|cluster| {
-            let num_elem = cluster.element_indices.len();
-            let mut s_matrix = Array2::zeros((num_elem, num_sphere_points));
+    let s_matrices: Vec<Array2<Complex64>> = parallel_map(clusters, |cluster| {
+        let num_elem = cluster.element_indices.len();
+        let mut s_matrix = Array2::zeros((num_elem, num_sphere_points));
 
-            for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
-                let elem = &elements[elem_idx];
-                if elem.property.is_evaluation() {
-                    continue;
-                }
-
-                // Precompute difference vector
-                let diff: [f64; 3] = [
-                    elem.center[0] - cluster.center[0],
-                    elem.center[1] - cluster.center[1],
-                    elem.center[2] - cluster.center[2],
-                ];
-
-                // For each integration direction on the unit sphere
-                for (p, coord) in sphere_coords.iter().enumerate() {
-                    let s_dot_diff = coord[0] * diff[0] + coord[1] * diff[1] + coord[2] * diff[2];
-                    let exp_factor = Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
-                    s_matrix[[j, p]] = exp_factor * sphere_weights[p];
-                }
+        for (j, &elem_idx) in cluster.element_indices.iter().enumerate() {
+            let elem = &elements[elem_idx];
+            if elem.property.is_evaluation() {
+                continue;
             }
 
-            s_matrix
-        })
-        .collect();
+            // Precompute difference vector
+            let diff: [f64; 3] = [
+                elem.center[0] - cluster.center[0],
+                elem.center[1] - cluster.center[1],
+                elem.center[2] - cluster.center[2],
+            ];
+
+            // For each integration direction on the unit sphere
+            for (p, coord) in sphere_coords.iter().enumerate() {
+                let s_dot_diff = coord[0] * diff[0] + coord[1] * diff[1] + coord[2] * diff[2];
+                let exp_factor = Complex64::new((k * s_dot_diff).cos(), (k * s_dot_diff).sin());
+                s_matrix[[j, p]] = exp_factor * sphere_weights[p];
+            }
+        }
+
+        s_matrix
+    });
 
     system.s_matrices = s_matrices;
 }
