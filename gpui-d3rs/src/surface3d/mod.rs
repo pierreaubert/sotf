@@ -42,3 +42,4 @@ pub use data::{SurfaceData, SurfaceVertex};
 pub use element::{Surface3DElement, Surface3DState};
 pub use mesh::SurfaceMesh;
 pub use renderer::Surface3DRenderer;
+pub mod projection_tests;

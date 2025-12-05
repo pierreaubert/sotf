@@ -21,13 +21,28 @@ struct Uniforms {
     diffuse: f32,
     opacity: f32,
     z_min: f32,
+    x_min_log: f32,
+    x_range_log: f32,
+    is_log_x: f32,
+    padding: f32,
 }
 
 impl Uniforms {
-    fn new(camera: &Camera3D, config: &Surface3DConfig) -> Self {
+    fn new(camera: &Camera3D, config: &Surface3DConfig, log_settings: Option<(f32, f32)>) -> Self {
         let view_proj = camera.view_projection_matrix();
         let model = Mat4::IDENTITY;
         let light_dir = config.normalized_light_direction();
+
+        let (is_log, min_log, range_log) = if let Some((min, max)) = log_settings {
+             // min and max are already in linear space (e.g. 20 and 20000)
+             // We need their logs.
+             // Avoid log(0).
+             let min_v = min.max(1e-10).log10();
+             let max_v = max.max(1e-10).log10();
+             (1.0, min_v, max_v - min_v)
+        } else {
+             (0.0, 0.0, 1.0)
+        };
 
         Self {
             view_proj: view_proj.to_cols_array_2d(),
@@ -38,6 +53,10 @@ impl Uniforms {
             diffuse: config.diffuse,
             opacity: config.opacity,
             z_min: 0.0,
+            x_min_log: min_log,
+            x_range_log: range_log,
+            is_log_x: is_log,
+            padding: 0.0,
         }
     }
 }
@@ -531,13 +550,13 @@ impl Surface3DRenderer {
     }
 
     /// Render the surface and return RGBA pixel data
-    pub fn render(&mut self, camera: &Camera3D) -> Option<Vec<u8>> {
+    pub fn render(&mut self, camera: &Camera3D, log_settings: Option<(f32, f32)>) -> Option<Vec<u8>> {
         if self.vertex_buffer.is_none() || self.width == 0 || self.height == 0 {
             return None;
         }
 
         // Update uniforms
-        let uniforms = Uniforms::new(camera, &self.config);
+        let uniforms = Uniforms::new(camera, &self.config, log_settings);
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
@@ -613,19 +632,7 @@ impl Surface3DRenderer {
             });
 
             // Draw grid box first (background)
-            // Use CullMode::Front to render back faces (inside of box)
-            // But wgpu pipeline state is immutable.
-            // I set CullMode::Front in pipeline creation?
-            // Wait, I set CullMode::None in surface pipeline.
-            // For grid pipeline, I should set CullMode::Front.
-            // Let's check my pipeline creation above.
-            // I set CullMode::Some(Back) which is default.
-            // I need CullMode::Front to see inside.
-            // Actually, let's just use CullMode::None and rely on depth test?
-            // If I use CullMode::None, I see both sides.
-            // But front faces will block view.
-            // So I MUST use CullMode::Front (cull front, show back).
-            // I'll update the pipeline creation in step 2.
+            // Use CullMode::Front (cull front, show back).
 
             render_pass.set_pipeline(&self.grid_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);

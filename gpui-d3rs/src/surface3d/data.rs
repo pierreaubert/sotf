@@ -56,6 +56,22 @@ pub struct SurfaceData {
     pub x_log: bool,
     /// Whether Y-axis is logarithmic
     pub y_log: bool,
+    /// Minimum X value (domain)
+    pub x_min: f64,
+    /// Maximum X value (domain)
+    pub x_max: f64,
+    /// Minimum Y value (domain)
+    pub y_min: f64,
+    /// Maximum Y value (domain)
+    pub y_max: f64,
+    /// Whether Z-axis is logarithmic
+    pub z_log: bool,
+    /// Custom ticks for X-axis
+    pub x_ticks: Option<Vec<f64>>,
+    /// Custom ticks for Y-axis
+    pub y_ticks: Option<Vec<f64>>,
+    /// Custom ticks for Z-axis
+    pub z_ticks: Option<Vec<f64>>,
 }
 
 impl SurfaceData {
@@ -67,6 +83,11 @@ impl SurfaceData {
     /// * `z_values` - Z values as [y][x] grid (row-major)
     pub fn from_grid(x_values: Vec<f64>, y_values: Vec<f64>, z_values: Vec<Vec<f64>>) -> Self {
         let (z_min, z_max) = Self::compute_z_range(&z_values);
+        let x_min = x_values.first().copied().unwrap_or(0.0);
+        let x_max = x_values.last().copied().unwrap_or(1.0);
+        let y_min = y_values.first().copied().unwrap_or(0.0);
+        let y_max = y_values.last().copied().unwrap_or(1.0);
+
         Self {
             x_values,
             y_values,
@@ -78,6 +99,14 @@ impl SurfaceData {
             z_label: None,
             x_log: false,
             y_log: false,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            z_log: false,
+            x_ticks: None,
+            y_ticks: None,
+            z_ticks: None,
         }
     }
 
@@ -138,6 +167,44 @@ impl SurfaceData {
         self
     }
 
+    /// Set logarithmic Z-axis
+    pub fn with_log_z(mut self, log: bool) -> Self {
+        self.z_log = log;
+        self
+    }
+
+    /// Set custom X-axis ticks
+    pub fn with_x_ticks(mut self, ticks: Vec<f64>) -> Self {
+        self.x_ticks = Some(ticks);
+        self
+    }
+
+    /// Set custom Y-axis ticks
+    pub fn with_y_ticks(mut self, ticks: Vec<f64>) -> Self {
+        self.y_ticks = Some(ticks);
+        self
+    }
+
+    /// Set custom Z-axis ticks
+    pub fn with_z_ticks(mut self, ticks: Vec<f64>) -> Self {
+        self.z_ticks = Some(ticks);
+        self
+    }
+
+    /// Override X range
+    pub fn with_x_range(mut self, min: f64, max: f64) -> Self {
+        self.x_min = min;
+        self.x_max = max;
+        self
+    }
+
+    /// Override Y range
+    pub fn with_y_range(mut self, min: f64, max: f64) -> Self {
+        self.y_min = min;
+        self.y_max = max;
+        self
+    }
+
     /// Override Z range (useful for consistent colormap scaling)
     pub fn with_z_range(mut self, min: f64, max: f64) -> Self {
         self.z_min = min;
@@ -164,6 +231,25 @@ impl SurfaceData {
     pub fn normalize_z(&self, z: f64) -> f32 {
         if (self.z_max - self.z_min).abs() < 1e-10 {
             0.5
+        } else if self.z_log {
+            // Log scale for Z
+            // Avoid log of <= 0 if data allows. If data has <= 0, map to small epsilon?
+            // Assuming positive data for now if log is requested, or caller handles it.
+            // Using similar logic to X/Y using normalized log range.
+            // Wait, normalize_z returns [0, 1], X/Y returned [-1, 1].
+            let z_val = if z <= 0.0 { 1e-10 } else { z };
+            let min_val = if self.z_min <= 0.0 { 1e-10 } else { self.z_min };
+            let max_val = if self.z_max <= 0.0 { 1e-10 } else { self.z_max };
+            
+            let log_min = min_val.ln();
+            let log_max = max_val.ln();
+            let log_z = z_val.ln();
+            
+            if (log_max - log_min).abs() < 1e-10 {
+                0.5
+            } else {
+                 ((log_z - log_min) / (log_max - log_min)) as f32
+            }
         } else {
             ((z - self.z_min) / (self.z_max - self.z_min)) as f32
         }
@@ -171,37 +257,33 @@ impl SurfaceData {
 
     /// Normalize X value to [-1, 1] range (accounting for log scale)
     pub fn normalize_x(&self, x: f64) -> f32 {
-        if self.x_values.is_empty() {
+        if (self.x_max - self.x_min).abs() < 1e-10 {
             return 0.0;
         }
-        let x_min = self.x_values[0];
-        let x_max = self.x_values[self.x_values.len() - 1];
 
         if self.x_log {
-            let log_min = x_min.ln();
-            let log_max = x_max.ln();
+            let log_min = self.x_min.ln();
+            let log_max = self.x_max.ln();
             let log_x = x.ln();
             (2.0 * (log_x - log_min) / (log_max - log_min) - 1.0) as f32
         } else {
-            (2.0 * (x - x_min) / (x_max - x_min) - 1.0) as f32
+            (2.0 * (x - self.x_min) / (self.x_max - self.x_min) - 1.0) as f32
         }
     }
 
     /// Normalize Y value to [-1, 1] range (accounting for log scale)
     pub fn normalize_y(&self, y: f64) -> f32 {
-        if self.y_values.is_empty() {
+        if (self.y_max - self.y_min).abs() < 1e-10 {
             return 0.0;
         }
-        let y_min = self.y_values[0];
-        let y_max = self.y_values[self.y_values.len() - 1];
 
         if self.y_log {
-            let log_min = y_min.ln();
-            let log_max = y_max.ln();
+            let log_min = self.y_min.ln();
+            let log_max = self.y_max.ln();
             let log_y = y.ln();
             (2.0 * (log_y - log_min) / (log_max - log_min) - 1.0) as f32
         } else {
-            (2.0 * (y - y_min) / (y_max - y_min) - 1.0) as f32
+            (2.0 * (y - self.y_min) / (self.y_max - self.y_min) - 1.0) as f32
         }
     }
 
@@ -272,5 +354,20 @@ mod tests {
         assert!((data.normalize_x(10.0) - (-1.0)).abs() < 0.01);
         assert!((data.normalize_x(1000.0) - 1.0).abs() < 0.01);
         assert!((data.normalize_x(100.0) - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_normalize_z_log() {
+        let data = SurfaceData::from_function((-1.0, 1.0), (-1.0, 1.0), 2, 2, |_, _| 0.0)
+            .with_z_range(10.0, 1000.0)
+            .with_log_z(true);
+
+        // normalize_z maps to [0, 1]
+        // 10 -> 0.0
+        // 1000 -> 1.0
+        // 100 (geometric mean) -> 0.5
+        assert!((data.normalize_z(10.0) - 0.0).abs() < 0.01);
+        assert!((data.normalize_z(1000.0) - 1.0).abs() < 0.01);
+        assert!((data.normalize_z(100.0) - 0.5).abs() < 0.01);
     }
 }

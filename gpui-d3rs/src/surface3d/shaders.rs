@@ -11,6 +11,10 @@ struct Uniforms {
     diffuse: f32,
     opacity: f32,
     z_min: f32,
+    x_min_log: f32,
+    x_range_log: f32,
+    is_log_x: f32,
+    padding: f32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -246,16 +250,16 @@ pub const GRID_FRAGMENT_SHADER: &str = r#"
 @fragment
 fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
     let pos = in.world_pos;
-    
+
     // Determine which face we are on
     // X=-1, X=1, Y=-0.5, Y=0.5, Z=-1, Z=1
-    
+
     var u = 0.0;
     var v = 0.0;
     var is_face = false;
-    
+
     let eps = 0.01;
-    
+
     if (abs(pos.x + 1.0) < eps || abs(pos.x - 1.0) < eps) {
         // YZ plane (Left/Right)
         // Map Z [-1, 1] to [0, 1]
@@ -275,42 +279,113 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
         v = pos.y + 0.5;
         is_face = true;
     }
-    
+
     if (!is_face) {
         discard;
     }
-    
+
     // Grid lines
     let major_steps = 5.0;
     let minor_steps = 25.0;
-    let line_width = 0.001;
-    let feather = 0.0005;
     
-    // Major lines
-    let dist_u_maj = abs(fract(u * major_steps) - 0.5) / major_steps;
-    let dist_v_maj = abs(fract(v * major_steps) - 0.5) / major_steps;
+    // Analytic AA using derivatives
+    // Compute screen-space change of u and v
+    let du = fwidth(u);
+    let dv = fwidth(v);
     
+    // Line width in UV space (approx 1.5 pixels)
+    // We use max(du, dv) as a conservative estimate or individual widths
+    let line_width_u = du * 1.0;
+    let line_width_v = dv * 1.0;
+
+    // Distance to nearest major grid line (interior lines) will be calculated below
+
+    // Distance to border lines (at u=0, u=1, v=0, v=1)
+    // We want a solid distinct border frame
+    let dist_u_border = min(u, 1.0 - u);
+    let dist_v_border = min(v, 1.0 - v);
+    
+    // Logarithmic X axis support
+    // If is_log_x is true, and we are on a face where U corresponds to X (XY, XZ),
+    // we should modify u-grid lines.
+    // Faces:
+    // XY (Front/Back): u maps to X.
+    // XZ (Bottom/Top): u maps to X.
+    // YZ (Left/Right): u maps to Z. Log X doesn't affect Z lines.
+    
+    var is_log_u = false;
+    if (uniforms.is_log_x > 0.5) {
+        // Check if we are on XY or XZ plane
+        // XY: abs(pos.z) ~ 1.0. XZ: abs(pos.y) ~ 0.5.
+        if (abs(pos.z) > 0.9 || abs(pos.y) < 0.6) {
+             // Wait, logic above:
+             // YZ: abs(pos.x) ~ 1.0 -> u is Z. (Safe)
+             // XZ: abs(pos.y) ~ 0.5 -> u is X. (Log apply)
+             // XY: abs(pos.z) ~ 1.0 -> u is X. (Log apply)
+             if (abs(pos.x) < 0.99) {
+                 is_log_u = true;
+             }
+        }
+    }
+
+    // Distance to nearest major grid line (interior lines)
+    var dist_u_maj = 0.0;
+    
+    if (is_log_u) {
+        // Logarithmic grid lines at decades (10^k)
+        // u = (log(x) - log(min)) / (log(max) - log(min))
+        // We want lines where x = 1 * 10^k
+        // log(x) = k
+        // u = (k - log(min)) / range
+        // k = u * range + log(min)
+        // We want k to be integer.
+        
+        let k = u * uniforms.x_range_log + uniforms.x_min_log;
+        // Distance to nearest integer k
+        let k_dist = abs(fract(k + 0.5) - 0.5);
+        // Convert distance back to U space?
+        // dk/du = range
+        // du = dk / range
+        dist_u_maj = k_dist / uniforms.x_range_log;
+    } else {
+        dist_u_maj = abs(fract(u * major_steps + 0.5) - 0.5) / major_steps;
+    }
+
+    let dist_v_maj = abs(fract(v * major_steps + 0.5) - 0.5) / major_steps;
+    let border_width_u = du * 2.0; // Slightly thicker border
+    let border_width_v = dv * 2.0;
+    
+    // Smoothstep for AA
+    let border_u_alpha = 1.0 - smoothstep(border_width_u - du, border_width_u + du, dist_u_border);
+    let border_v_alpha = 1.0 - smoothstep(border_width_v - dv, border_width_v + dv, dist_v_border);
+    let border_alpha = max(border_u_alpha, border_v_alpha);
+
     // Minor lines
-    let dist_u_min = abs(fract(u * minor_steps) - 0.5) / minor_steps;
-    let dist_v_min = abs(fract(v * minor_steps) - 0.5) / minor_steps;
-    
+    let dist_u_min = abs(fract(u * minor_steps + 0.5) - 0.5) / minor_steps;
+    let dist_v_min = abs(fract(v * minor_steps + 0.5) - 0.5) / minor_steps;
+
     var color = vec4<f32>(0.0, 0.0, 0.0, 0.0);
-    
+
     // Light blue grid color
     let grid_color = vec3<f32>(0.8, 0.85, 0.95);
+    let border_color = vec3<f32>(0.0, 0.0, 0.0); // Black border
+    
     let major_alpha = 0.8;
     let minor_alpha = 0.4;
-    
-    // Anti-aliased grid lines
-    let maj_u_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist_u_maj);
-    let maj_v_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist_v_maj);
+
+    // Anti-aliased grid lines (interior)
+    let maj_u_alpha = 1.0 - smoothstep(line_width_u - du, line_width_u + du, dist_u_maj);
+    let maj_v_alpha = 1.0 - smoothstep(line_width_v - dv, line_width_v + dv, dist_v_maj);
     let maj_alpha_val = max(maj_u_alpha, maj_v_alpha);
-    
-    let min_u_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist_u_min);
-    let min_v_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist_v_min);
+
+    let min_u_alpha = 1.0 - smoothstep(line_width_u - du, line_width_u + du, dist_u_min);
+    let min_v_alpha = 1.0 - smoothstep(line_width_v - dv, line_width_v + dv, dist_v_min);
     let min_alpha_val = max(min_u_alpha, min_v_alpha);
-    
-    if (maj_alpha_val > 0.0) {
+
+    if (border_alpha > 0.0) {
+        // Draw border
+        color = vec4<f32>(border_color, border_alpha);
+    } else if (maj_alpha_val > 0.0) {
         color = vec4<f32>(grid_color * 0.8, major_alpha * maj_alpha_val);
     } else if (min_alpha_val > 0.0) {
         color = vec4<f32>(grid_color, minor_alpha * min_alpha_val);
@@ -318,7 +393,7 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
         // Transparent background
         color = vec4<f32>(1.0, 1.0, 1.0, 0.0);
     }
-    
+
     return color;
 }
 "#;

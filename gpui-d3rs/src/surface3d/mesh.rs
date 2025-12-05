@@ -282,12 +282,13 @@ pub fn generate_bounding_box_mesh() -> SurfaceMesh {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::surface3d::config::SurfacePlotType;
 
     #[test]
     fn test_mesh_generation() {
         let data =
             SurfaceData::from_function((-1.0, 1.0), (-1.0, 1.0), 10, 10, |x, y| x * x + y * y);
-        let mesh = SurfaceMesh::from_data(&data);
+        let mesh = SurfaceMesh::from_data(&data, SurfacePlotType::Cartesian);
 
         assert_eq!(mesh.vertex_count, 100); // 10 * 10
         assert_eq!(mesh.index_count, 9 * 9 * 6); // (10-1) * (10-1) * 6
@@ -297,7 +298,7 @@ mod tests {
     fn test_mesh_normals() {
         // Flat surface should have normals pointing up
         let data = SurfaceData::from_function((-1.0, 1.0), (-1.0, 1.0), 5, 5, |_, _| 0.0);
-        let mesh = SurfaceMesh::from_data(&data);
+        let mesh = SurfaceMesh::from_data(&data, SurfacePlotType::Cartesian);
 
         for vertex in &mesh.vertices {
             // Normal should be approximately (0, 1, 0) for flat surface
@@ -320,7 +321,7 @@ mod tests {
     #[test]
     fn test_empty_mesh() {
         let data = SurfaceData::from_grid(vec![0.0], vec![0.0], vec![vec![0.0]]);
-        let mesh = SurfaceMesh::from_data(&data);
+        let mesh = SurfaceMesh::from_data(&data, SurfacePlotType::Cartesian);
 
         assert!(mesh.is_empty());
     }
