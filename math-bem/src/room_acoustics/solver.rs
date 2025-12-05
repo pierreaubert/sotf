@@ -198,7 +198,9 @@ pub fn calculate_incident_field(
     incident
 }
 
-/// Calculate pressure at field points
+/// Calculate pressure at field points using double-layer potential representation
+///
+/// Uses: p(x) = p_inc(x) + ∫∫ (∂G/∂n)(x, y) * p_surface(y) dS(y)
 pub fn calculate_field_pressure(
     mesh: &RoomMesh,
     surface_pressure: &Array1<Complex64>,
@@ -230,22 +232,35 @@ pub fn calculate_field_pressure(
         let mut p_incident = Complex64::new(0.0, 0.0);
         for source in sources {
             let r = point.distance_to(&source.position);
+            if r < 1e-10 {
+                continue;
+            }
             let amplitude = source.amplitude_towards(point, frequency);
             p_incident += greens_function_3d(r, k) * amplitude;
         }
 
-        // Scattered field from boundary integral
-        // p_scattered = Σ_j G(r) * (∂p/∂n)_j * A_j
-        // With rigid boundaries: ∂p/∂n = ∂p_incident/∂n at surface
+        // Scattered field from boundary integral using double-layer potential
+        // p_scattered = ∫∫ (∂G/∂n)(x, y) * p_surface(y) dS(y)
         let mut p_scattered = Complex64::new(0.0, 0.0);
 
         for j in 0..surface_pressure.len() {
             let r = point.distance_to(&centers[j]);
-            let g = greens_function_3d(r, k);
+            if r < 1e-10 {
+                continue;
+            }
 
-            // For rigid boundary: derive normal derivative from incident field
-            // This is a simplified model - full BEM would solve for surface unknowns
-            p_scattered += g * surface_pressure[j] * areas[j];
+            // Direction from element center to field point
+            let dx = point.x - centers[j].x;
+            let dy = point.y - centers[j].y;
+            let dz = point.z - centers[j].z;
+
+            // Cosine of angle between (point - center) direction and outward normal
+            let cos_angle = (dx * normals[j].x + dy * normals[j].y + dz * normals[j].z) / r;
+
+            // Normal derivative of Green's function
+            let dg_dn = greens_function_derivative(r, k, cos_angle);
+
+            p_scattered += dg_dn * surface_pressure[j] * areas[j];
         }
 
         pressures[ip] = p_incident + p_scattered;
@@ -405,18 +420,27 @@ pub fn solve_bem_system(
     k: f64,
     frequency: f64,
 ) -> Result<Array1<Complex64>, String> {
-    println!("  Building BEM matrix (parallel)...");
+    use crate::core::solver::gmres::{GmresConfig, gmres_solve as core_gmres_solve};
+
+    // Build BEM matrix using double-layer potential formulation
     let matrix = build_bem_matrix_parallel(mesh, k);
 
-    println!("  Computing RHS (parallel)...");
+    // Compute RHS from incident field normal derivative
     let rhs = calculate_incident_field_derivative_parallel(mesh, sources, k, frequency);
 
-    println!("  Solving with GMRES...");
-    let max_iter = 100;
-    let restart = 50;
-    let tol = 1e-6;
+    // Use the core GMRES solver
+    let config = GmresConfig {
+        max_iterations: 100,
+        restart: 50,
+        tolerance: 1e-6,
+        print_interval: 0,
+    };
 
-    gmres_solve(&matrix, &rhs, max_iter, restart, tol)
+    // Create matvec closure for dense matrix
+    let matvec = |x: &Array1<Complex64>| matrix.dot(x);
+    let solution = core_gmres_solve(matvec, &rhs, None, &config);
+
+    Ok(solution.x)
 }
 
 /// Build BEM matrix with parallel assembly
@@ -655,23 +679,29 @@ pub fn calculate_incident_field_derivative_parallel(
 }
 
 /// Calculate pressure at field points using BEM solution (parallel version)
+///
+/// Uses the double-layer potential (DLP) representation for field evaluation:
+/// p(x) = p_inc(x) + ∫∫ (∂G/∂n)(x, y) * p_surface(y) dS(y)
+///
+/// This matches the BEM formulation which solves for surface pressure using
+/// the H matrix (double-layer potential operator).
 pub fn calculate_field_pressure_bem_parallel(
     mesh: &RoomMesh,
-    surface_normal_derivative: &Array1<Complex64>,
+    surface_pressure: &Array1<Complex64>,
     sources: &[Source],
     field_points: &[Point3D],
     k: f64,
     frequency: f64,
 ) -> Array1<Complex64> {
-    // Precompute element data
+    // Precompute element data including normals for DLP evaluation
     let element_data: Vec<_> = mesh
         .elements
         .iter()
         .map(|element| {
             let nodes: Vec<Point3D> = element.nodes.iter().map(|&i| mesh.nodes[i]).collect();
-            let (center, _normal) = element_center_and_normal(&nodes);
+            let (center, normal) = element_center_and_normal(&nodes);
             let area = element_area(&nodes);
-            (center, area)
+            (center, normal, area)
         })
         .collect();
 
@@ -688,16 +718,28 @@ pub fn calculate_field_pressure_bem_parallel(
             p_incident += greens_function_3d(r, k) * amplitude;
         }
 
-        // Scattered field from boundary integral
-        // p_scattered = ∫∫ G(r) * (∂p/∂n) dS
+        // Scattered field from boundary integral using double-layer potential
+        // p_scattered = ∫∫ (∂G/∂n)(x, y) * p_surface(y) dS(y)
+        // where ∂G/∂n is the normal derivative at the surface element (pointing outward)
         let mut p_scattered = Complex64::new(0.0, 0.0);
-        for (j, (center_j, area_j)) in element_data.iter().enumerate() {
+        for (j, (center_j, normal_j, area_j)) in element_data.iter().enumerate() {
             let r = point.distance_to(center_j);
             if r < 1e-10 {
                 continue;
             }
-            let g = greens_function_3d(r, k);
-            p_scattered += g * surface_normal_derivative[j] * area_j;
+
+            // Direction from element center to field point
+            let dx = point.x - center_j.x;
+            let dy = point.y - center_j.y;
+            let dz = point.z - center_j.z;
+
+            // Cosine of angle between (point - center) direction and outward normal
+            let cos_angle = (dx * normal_j.x + dy * normal_j.y + dz * normal_j.z) / r;
+
+            // Normal derivative of Green's function: ∂G/∂n = (ikr-1) * exp(ikr) / (4πr²) * cos_angle
+            let dg_dn = greens_function_derivative(r, k, cos_angle);
+
+            p_scattered += dg_dn * surface_pressure[j] * area_j;
         }
 
         p_incident + p_scattered
