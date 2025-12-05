@@ -30,20 +30,34 @@ impl SpinoramaApp {
             }
         }
 
-        let surface_data = Surface3DData::from_grid(freq_values, angle_values, z_values)
-            .with_log_x(true)
-            .with_x_label("Frequency (Hz)")
-            .with_x_range(100.0, 20000.0)
-            .with_x_ticks(vec![
-                100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
-            ])
-            .with_y_label("Angle (deg)")
-            .with_y_ticks(vec![
-                -180.0, -120.0, -60.0, 0.0, 60.0, 120.0, 180.0,
-            ])
-            .with_z_label("SPL (dB)")
-            .with_z_range(-40.0, 10.0)
-            .with_z_ticks(vec![-40.0, -30.0, -20.0, -10.0, 0.0, 10.0]); // Explicit Z range as requested
+        let surface_data = if self.surface_plot_type == SurfacePlotType::Spherical {
+            Surface3DData::from_grid(freq_values, angle_values, z_values)
+                .with_log_x(false)
+                .with_x_label("Elevation (deg)")
+                .with_x_range(-90.0, 90.0)
+                .with_x_ticks(vec![-90.0, -45.0, 0.0, 45.0, 90.0])
+                .with_y_label("Azimuth (deg)")
+                .with_y_range(-180.0, 180.0)
+                .with_y_ticks(vec![-180.0, -120.0, -60.0, 0.0, 60.0, 120.0, 180.0])
+                .with_z_label("SPL (dB)")
+                .with_z_range(-40.0, 10.0)
+                .with_z_ticks(vec![-40.0, -30.0, -20.0, -10.0, 0.0, 10.0])
+        } else {
+            Surface3DData::from_grid(freq_values, angle_values, z_values)
+                .with_log_x(true)
+                .with_x_label("Frequency (Hz)")
+                .with_x_range(100.0, 20000.0)
+                .with_x_ticks(vec![
+                    100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+                ])
+                .with_y_label("Angle (deg)")
+                .with_y_ticks(vec![
+                    -180.0, -120.0, -60.0, 0.0, 60.0, 120.0, 180.0,
+                ])
+                .with_z_label("SPL (dB)")
+                .with_z_range(-40.0, 10.0)
+                .with_z_ticks(vec![-40.0, -30.0, -20.0, -10.0, 0.0, 10.0])
+        };
 
         // Map colormap
         let colormap = match self.contour_colormap {
