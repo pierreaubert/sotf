@@ -28,6 +28,11 @@ pub use wasm_bindgen_rayon::init_thread_pool;
 
 // BEM solver from math-bem (with pure Rust fallbacks for WASM)
 mod bem_solver;
+mod scattering_objects;
+
+// Re-export BEM types for external use
+pub use bem_solver::{BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig, IluMethod};
+pub use scattering_objects::{BoxObject, CylinderObject, ScatteringObjectConfig, SphereObject};
 
 // ============================================================================
 // Wall Materials and Absorption Coefficients
@@ -481,28 +486,41 @@ impl LShapedRoom {
             "ceiling",
         ));
 
-        // Interior walls (the step)
-        // Only add if the source is positioned to reflect off these walls
+        // Interior walls (the step) - L-shape has two interior walls:
+        // 1. Horizontal interior wall: y = depth1, x in [width2, width1]
+        // 2. Vertical interior wall: x = width2, y in [depth1, total_depth] (but only visible from section 1)
+
+        // Horizontal interior wall (y = depth1)
+        // Visible to sources in section 1 (y < depth1) when x > width2
         if source.y < self.depth1 && source.x > self.width2 {
-            // Source is in the "overhang" area of section 1
-            // Can reflect off the interior horizontal step (y = depth1)
+            // Source is in the wider front section, can see the horizontal step
             images.push((
                 Point3D::new(source.x, 2.0 * self.depth1 - source.y, source.z),
                 "step_horizontal",
             ));
         }
 
-        if source.y > self.depth1 && source.x < self.width1 && source.x > self.width2 {
-            // This shouldn't happen in a valid L-shape (source would be outside)
-            // But if it did, there would be a vertical step reflection
+        // Vertical interior wall (x = width2)
+        // Visible to sources in section 1 (y < depth1) when looking toward section 2
+        // The wall runs from y = depth1 to y = total_depth at x = width2
+        if source.y < self.depth1 && source.x > self.width2 {
+            // Source in overhang area can see vertical interior wall
+            images.push((
+                Point3D::new(2.0 * self.width2 - source.x, source.y, source.z),
+                "step_vertical",
+            ));
         }
 
-        // For sources in section 2 that could see the vertical step
+        // Also check: sources in section 2 looking back at the vertical step
+        // (from the narrow back section toward the wider front)
         if source.y > self.depth1 && source.x < self.width2 {
-            // Source is in section 2, could potentially see the vertical interior wall
-            // at x = width2 for y in [depth1, depth1+epsilon]
-            // This is a minor wall segment, often ignored in simplified ISM
-            // We'll skip it for now to avoid complexity
+            // Source in section 2 can see vertical interior wall from behind
+            // Reflection off x = width2 going toward section 1
+            // But this would put the image in the "cut-out" area, which we validate later
+            images.push((
+                Point3D::new(2.0 * self.width2 - source.x, source.y, source.z),
+                "step_vertical",
+            ));
         }
 
         images
@@ -816,6 +834,12 @@ impl From<Point3DConfig> for Point3D {
     }
 }
 
+impl From<Point3DConfig> for bem::room_acoustics::Point3D {
+    fn from(p: Point3DConfig) -> Self {
+        bem::room_acoustics::Point3D::new(p.x, p.y, p.z)
+    }
+}
+
 /// Crossover filter configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -1075,7 +1099,7 @@ fn default_spacing() -> String {
 /// Solver configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolverConfig {
-    /// Solver method: "direct", "image-source-1/2/3", "modal", or "hybrid"
+    /// Solver method: "direct", "image-source-1/2/3", "modal", "hybrid", "bem", or "hybrid-bem"
     #[serde(default = "default_method")]
     pub method: String,
     #[serde(default = "default_mesh_resolution")]
@@ -1103,6 +1127,9 @@ pub struct SolverConfig {
     /// Modal damping factor (Q factor, default 50)
     #[serde(default = "default_modal_damping")]
     pub modal_damping: f64,
+    /// BEM solver configuration (used when method is "bem" or "hybrid-bem")
+    #[serde(default)]
+    pub bem_config: BemConfig,
 }
 
 fn default_method() -> String {
@@ -1149,6 +1176,7 @@ impl Default for SolverConfig {
             hybrid_crossover_width: default_hybrid_crossover_width(),
             max_mode_order: default_max_mode_order(),
             modal_damping: default_modal_damping(),
+            bem_config: BemConfig::default(),
         }
     }
 }
@@ -1258,6 +1286,10 @@ pub struct SimulationConfig {
     pub wall_materials: WallMaterialsConfig,
     #[serde(default)]
     pub metadata: MetadataConfig,
+    /// Scattering objects inside the room (furniture, equipment, etc.)
+    /// Only used with BEM solver methods ("bem" or "hybrid-bem")
+    #[serde(default)]
+    pub scattering_objects: Vec<ScatteringObjectConfig>,
 }
 
 /// Simulation metadata
@@ -2899,6 +2931,21 @@ impl RoomSimulatorWasm {
         2.0 * PI * frequency / self.speed_of_sound
     }
 
+    /// Check if a point is inside the room geometry
+    fn point_inside_room(&self, point: &Point3D) -> bool {
+        match &self.room_geometry {
+            RoomGeometry::Rectangular(r) => {
+                point.x >= 0.0
+                    && point.x <= r.width
+                    && point.y >= 0.0
+                    && point.y <= r.depth
+                    && point.z >= 0.0
+                    && point.z <= r.height
+            }
+            RoomGeometry::LShaped(l) => l.contains(point),
+        }
+    }
+
     /// Calculate air absorption attenuation factor for a given distance
     /// Returns a multiplier in the range (0, 1] where 1 = no attenuation
     fn air_absorption_factor(&self, distance: f64, frequency: f64) -> f64 {
@@ -2914,9 +2961,15 @@ impl RoomSimulatorWasm {
     fn calculate_direct_field(&self, point: &Point3D, frequency: f64) -> Complex64 {
         let (room_width, room_depth, room_height) = self.get_room_dimensions();
 
-        // Handle modal and hybrid solvers for rectangular rooms
+        // Handle different solver methods
         let method = self.config.solver.method.as_str();
 
+        // BEM-based methods
+        if method == "bem" || method == "hybrid-bem" {
+            return self.calculate_bem_or_hybrid_bem(point, frequency, method);
+        }
+
+        // Modal and modal-ISM hybrid methods
         if method == "modal" || method == "hybrid" {
             // Modal analysis is only valid for rectangular rooms
             if let RoomGeometry::Rectangular(_) = &self.room_geometry {
@@ -2980,6 +3033,126 @@ impl RoomSimulatorWasm {
         self.calculate_ism_field(point, frequency)
     }
 
+    /// Calculate field using BEM or hybrid BEM+ISM
+    ///
+    /// For "bem" mode: Uses modal analysis for rectangular rooms (captures room modes),
+    /// falls back to BEM direct field + scattering for non-rectangular.
+    ///
+    /// For "hybrid-bem" mode: Blends modal/BEM at low frequencies with ISM at high
+    /// frequencies using Schroeder frequency crossover.
+    fn calculate_bem_or_hybrid_bem(
+        &self,
+        point: &Point3D,
+        frequency: f64,
+        method: &str,
+    ) -> Complex64 {
+        let (room_width, room_depth, room_height) = self.get_room_dimensions();
+
+        // Calculate low-frequency pressure using modal analysis (rectangular) or BEM (other)
+        let low_freq_pressure = if let RoomGeometry::Rectangular(_) = &self.room_geometry {
+            // Modal analysis for rectangular rooms - captures room resonances accurately
+            let mut modal_pressure = Complex64::new(0.0, 0.0);
+            for source in &self.sources {
+                let amplitude = source.amplitude_towards(point, frequency);
+                let phase_factor = source.phase_factor(frequency);
+
+                let modal = calculate_modal_pressure(
+                    &source.position,
+                    point,
+                    frequency,
+                    room_width,
+                    room_depth,
+                    room_height,
+                    self.config.solver.speed_of_sound,
+                    self.config.solver.max_mode_order,
+                    self.config.solver.modal_damping,
+                );
+
+                modal_pressure += modal * amplitude * phase_factor;
+            }
+
+            // Add scattering object contributions if present
+            if !self.config.scattering_objects.is_empty() {
+                let scattering_result = bem_solver::solve_bem(
+                    &self.room_geometry,
+                    &self.sources,
+                    &self.config.scattering_objects,
+                    point,
+                    frequency,
+                    self.config.solver.speed_of_sound,
+                    &self.config.solver.bem_config,
+                );
+                if let Ok(result) = scattering_result {
+                    // Add scattered field contribution (subtract direct to avoid double counting)
+                    let k = 2.0 * std::f64::consts::PI * frequency / self.config.solver.speed_of_sound;
+                    let mut direct_field = Complex64::new(0.0, 0.0);
+                    for source in &self.sources {
+                        let amp = source.amplitude_towards(point, frequency);
+                        let dist = source.position.distance_to(point);
+                        direct_field += bem_solver::greens_function(dist, k) * amp * source.phase_factor(frequency);
+                    }
+                    // Scattered contribution = total BEM - direct
+                    let scattered = result.pressure - direct_field;
+                    modal_pressure += scattered;
+                }
+            }
+
+            modal_pressure
+        } else {
+            // Non-rectangular rooms: use full BEM solver
+            let bem_result = bem_solver::solve_bem(
+                &self.room_geometry,
+                &self.sources,
+                &self.config.scattering_objects,
+                point,
+                frequency,
+                self.config.solver.speed_of_sound,
+                &self.config.solver.bem_config,
+            );
+
+            match bem_result {
+                Ok(result) => result.pressure,
+                Err(_) => return self.calculate_ism_field(point, frequency),
+            }
+        };
+
+        if method == "bem" {
+            // Pure BEM/modal: return low frequency pressure only
+            return low_freq_pressure;
+        }
+
+        // Hybrid-BEM: blend modal/BEM at low frequencies with ISM at high frequencies
+        // Use Schroeder frequency as the crossover point
+        let volume = room_width * room_depth * room_height;
+        let avg_absorption = self.wall_materials.average_absorption_at(frequency);
+        let surface_area = 2.0
+            * (room_width * room_depth + room_width * room_height + room_depth * room_height);
+        let total_abs = avg_absorption * surface_area;
+        let rt60 = rt60_sabine(volume, total_abs);
+        let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
+
+        // ISM weight increases above Schroeder frequency
+        let ism_weight = hybrid_crossover_weight(
+            frequency,
+            schroeder_freq,
+            self.config.solver.hybrid_crossover_width,
+        );
+
+        // If fully in modal/BEM region (below Schroeder), return low freq pressure
+        if ism_weight < 1e-6 {
+            return low_freq_pressure;
+        }
+
+        // If fully in ISM region (above Schroeder), return ISM pressure
+        if ism_weight > 1.0 - 1e-6 {
+            return self.calculate_ism_field(point, frequency);
+        }
+
+        // Blend: p = (1-w) * modal/BEM + w * ISM
+        let ism_pressure = self.calculate_ism_field(point, frequency);
+        low_freq_pressure * (1.0 - ism_weight) + ism_pressure * ism_weight
+    }
+
     /// Calculate field using Image Source Method (ISM)
     fn calculate_ism_field(&self, point: &Point3D, frequency: f64) -> Complex64 {
         let k = self.wavenumber(frequency);
@@ -2991,9 +3164,11 @@ impl RoomSimulatorWasm {
             "image-source-1" => 1,
             "image-source-2" => 2,
             "image-source-3" => 3,
-            "modal" => 0,  // Modal doesn't use ISM reflections
-            "hybrid" => 2, // Hybrid uses 2nd order ISM
-            _ => 2,        // Default to 2nd order
+            "modal" => 0,       // Modal doesn't use ISM reflections
+            "bem" => 0,         // BEM doesn't use ISM reflections
+            "hybrid" => 2,      // Hybrid modal/ISM uses 2nd order
+            "hybrid-bem" => 2,  // Hybrid BEM/ISM uses 2nd order
+            _ => 2,             // Default to 2nd order
         };
 
         // Get room dimensions for image source calculation
@@ -3358,6 +3533,8 @@ impl RoomSimulatorWasm {
         total_pressure
     }
 
+    /// Calculate field from a single source using the configured solver method
+    /// This mirrors calculate_direct_field but for a single source only
     fn calculate_source_field(
         &self,
         source_idx: usize,
@@ -3368,90 +3545,270 @@ impl RoomSimulatorWasm {
             return Complex64::new(0.0, 0.0);
         }
 
+        let (room_width, room_depth, room_height) = self.get_room_dimensions();
+        let method = self.config.solver.method.as_str();
+        let source = &self.sources[source_idx];
+
+        // BEM-based methods - use modal for single source
+        if method == "bem" || method == "hybrid-bem" {
+            return self.calculate_single_source_bem_or_hybrid(source_idx, point, frequency, method);
+        }
+
+        // Modal and modal-ISM hybrid methods
+        if method == "modal" || method == "hybrid" {
+            if let RoomGeometry::Rectangular(_) = &self.room_geometry {
+                let amplitude = source.amplitude_towards(point, frequency);
+                let phase_factor = source.phase_factor(frequency);
+
+                let modal_pressure = calculate_modal_pressure(
+                    &source.position,
+                    point,
+                    frequency,
+                    room_width,
+                    room_depth,
+                    room_height,
+                    self.config.solver.speed_of_sound,
+                    self.config.solver.max_mode_order,
+                    self.config.solver.modal_damping,
+                ) * amplitude * phase_factor;
+
+                if method == "modal" {
+                    return modal_pressure;
+                }
+
+                // Hybrid: blend modal and ISM based on Schroeder frequency
+                let volume = room_width * room_depth * room_height;
+                let avg_absorption = self.wall_materials.average_absorption_at(frequency);
+                let surface_area = 2.0
+                    * (room_width * room_depth
+                        + room_width * room_height
+                        + room_depth * room_height);
+                let total_abs = avg_absorption * surface_area;
+                let rt60 = rt60_sabine(volume, total_abs);
+                let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
+
+                let ism_weight = hybrid_crossover_weight(
+                    frequency,
+                    schroeder_freq,
+                    self.config.solver.hybrid_crossover_width,
+                );
+
+                if ism_weight < 1e-6 {
+                    return modal_pressure;
+                }
+
+                let ism_pressure = self.calculate_single_source_ism(source_idx, point, frequency);
+                return modal_pressure * (1.0 - ism_weight) + ism_pressure * ism_weight;
+            }
+        }
+
+        // Standard ISM calculation
+        self.calculate_single_source_ism(source_idx, point, frequency)
+    }
+
+    /// Calculate field from a single source using BEM or hybrid BEM+ISM
+    fn calculate_single_source_bem_or_hybrid(
+        &self,
+        source_idx: usize,
+        point: &Point3D,
+        frequency: f64,
+        method: &str,
+    ) -> Complex64 {
+        let (room_width, room_depth, room_height) = self.get_room_dimensions();
+        let source = &self.sources[source_idx];
+
+        // For rectangular rooms, use modal analysis for the single source
+        let low_freq_pressure = if let RoomGeometry::Rectangular(_) = &self.room_geometry {
+            let amplitude = source.amplitude_towards(point, frequency);
+            let phase_factor = source.phase_factor(frequency);
+
+            calculate_modal_pressure(
+                &source.position,
+                point,
+                frequency,
+                room_width,
+                room_depth,
+                room_height,
+                self.config.solver.speed_of_sound,
+                self.config.solver.max_mode_order,
+                self.config.solver.modal_damping,
+            ) * amplitude * phase_factor
+        } else {
+            // Non-rectangular: use direct field approximation
+            let k = self.wavenumber(frequency);
+            let amplitude = source.amplitude_towards(point, frequency);
+            let dist = source.position.distance_to(point);
+            let phase_factor = source.phase_factor(frequency);
+            greens_function_3d(dist, k) * amplitude * phase_factor
+        };
+
+        if method == "bem" {
+            return low_freq_pressure;
+        }
+
+        // Hybrid-BEM: blend with ISM at high frequencies
+        let volume = room_width * room_depth * room_height;
+        let avg_absorption = self.wall_materials.average_absorption_at(frequency);
+        let surface_area = 2.0
+            * (room_width * room_depth + room_width * room_height + room_depth * room_height);
+        let total_abs = avg_absorption * surface_area;
+        let rt60 = rt60_sabine(volume, total_abs);
+        let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
+
+        let ism_weight = hybrid_crossover_weight(
+            frequency,
+            schroeder_freq,
+            self.config.solver.hybrid_crossover_width,
+        );
+
+        if ism_weight < 1e-6 {
+            return low_freq_pressure;
+        }
+
+        if ism_weight > 1.0 - 1e-6 {
+            return self.calculate_single_source_ism(source_idx, point, frequency);
+        }
+
+        let ism_pressure = self.calculate_single_source_ism(source_idx, point, frequency);
+        low_freq_pressure * (1.0 - ism_weight) + ism_pressure * ism_weight
+    }
+
+    /// Calculate field from a single source using ISM
+    fn calculate_single_source_ism(
+        &self,
+        source_idx: usize,
+        point: &Point3D,
+        frequency: f64,
+    ) -> Complex64 {
         let k = self.wavenumber(frequency);
         let source = &self.sources[source_idx];
         let amplitude = source.amplitude_towards(point, frequency);
+        let phase_factor = source.phase_factor(frequency);
+
+        // Determine reflection order from solver method
+        let reflection_order = match self.config.solver.method.as_str() {
+            "direct" => 0,
+            "image-source-1" => 1,
+            "image-source-2" => 2,
+            "image-source-3" => 3,
+            "modal" => 0,
+            "bem" => 0,
+            "hybrid" => 2,
+            "hybrid-bem" => 2,
+            _ => 2,
+        };
 
         let (room_width, room_depth, room_height) = self.get_room_dimensions();
 
-        // Get frequency-dependent reflection coefficients for each wall
-        let r_left = self
-            .wall_materials
-            .reflection_at(WallSurface::Left, frequency);
-        let r_right = self
-            .wall_materials
-            .reflection_at(WallSurface::Right, frequency);
-        let r_front = self
-            .wall_materials
-            .reflection_at(WallSurface::Front, frequency);
-        let r_back = self
-            .wall_materials
-            .reflection_at(WallSurface::Back, frequency);
-        let r_floor = self
-            .wall_materials
-            .reflection_at(WallSurface::Floor, frequency);
-        let r_ceiling = self
-            .wall_materials
-            .reflection_at(WallSurface::Ceiling, frequency);
+        // Get frequency-dependent reflection coefficients
+        let r_left = self.wall_materials.reflection_at(WallSurface::Left, frequency);
+        let r_right = self.wall_materials.reflection_at(WallSurface::Right, frequency);
+        let r_front = self.wall_materials.reflection_at(WallSurface::Front, frequency);
+        let r_back = self.wall_materials.reflection_at(WallSurface::Back, frequency);
+        let r_floor = self.wall_materials.reflection_at(WallSurface::Floor, frequency);
+        let r_ceiling = self.wall_materials.reflection_at(WallSurface::Ceiling, frequency);
 
         let mut total_pressure = Complex64::new(0.0, 0.0);
 
-        // Direct sound with air absorption and phase alignment
+        // Direct sound
         let r_direct = source.position.distance_to(point);
         let air_atten_direct = self.air_absorption_factor(r_direct, frequency);
-        let phase_factor = source.phase_factor(frequency);
-        total_pressure +=
-            greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
+        total_pressure += greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
 
-        // First-order reflections with individual wall reflection coefficients and air absorption
-        let first_order_images = [
-            (
-                Point3D::new(-source.position.x, source.position.y, source.position.z),
-                r_left,
-            ),
-            (
-                Point3D::new(
-                    2.0 * room_width - source.position.x,
-                    source.position.y,
-                    source.position.z,
-                ),
-                r_right,
-            ),
-            (
-                Point3D::new(source.position.x, -source.position.y, source.position.z),
-                r_front,
-            ),
-            (
-                Point3D::new(
-                    source.position.x,
-                    2.0 * room_depth - source.position.y,
-                    source.position.z,
-                ),
-                r_back,
-            ),
-            (
-                Point3D::new(source.position.x, source.position.y, -source.position.z),
-                r_floor,
-            ),
-            (
-                Point3D::new(
-                    source.position.x,
-                    source.position.y,
-                    2.0 * room_height - source.position.z,
-                ),
-                r_ceiling,
-            ),
-        ];
+        if reflection_order >= 1 {
+            // First-order image sources - handle L-shaped rooms
+            let first_order_images: Vec<(Point3D, f64)> = match &self.room_geometry {
+                RoomGeometry::LShaped(l_room) => {
+                    l_room
+                        .get_first_order_images(&source.position)
+                        .into_iter()
+                        .filter_map(|(image, wall_name)| {
+                            if !l_room.is_valid_image_source(&image, point, &source.position) {
+                                return None;
+                            }
+                            let refl = match wall_name {
+                                "left" => r_left,
+                                "right" => r_right,
+                                "front" => r_front,
+                                "back" => r_back,
+                                "floor" => r_floor,
+                                "ceiling" => r_ceiling,
+                                "step_horizontal" | "step_vertical" => (r_right + r_back) / 2.0,
+                                _ => r_right,
+                            };
+                            Some((image, refl))
+                        })
+                        .collect()
+                }
+                RoomGeometry::Rectangular(_) => {
+                    vec![
+                        (Point3D::new(-source.position.x, source.position.y, source.position.z), r_left),
+                        (Point3D::new(2.0 * room_width - source.position.x, source.position.y, source.position.z), r_right),
+                        (Point3D::new(source.position.x, -source.position.y, source.position.z), r_front),
+                        (Point3D::new(source.position.x, 2.0 * room_depth - source.position.y, source.position.z), r_back),
+                        (Point3D::new(source.position.x, source.position.y, -source.position.z), r_floor),
+                        (Point3D::new(source.position.x, source.position.y, 2.0 * room_height - source.position.z), r_ceiling),
+                    ]
+                }
+            };
 
-        for (image_src, refl_coeff) in &first_order_images {
-            let r_image = image_src.distance_to(point);
-            if r_image > 1e-6 {
-                let air_atten = self.air_absorption_factor(r_image, frequency);
-                total_pressure += greens_function_3d(r_image, k)
-                    * amplitude
-                    * refl_coeff
-                    * air_atten
-                    * phase_factor;
+            for (image_src, refl_coeff) in first_order_images {
+                let r_image = image_src.distance_to(point);
+                if r_image > 1e-6 {
+                    let air_atten = self.air_absorption_factor(r_image, frequency);
+                    total_pressure += greens_function_3d(r_image, k) * amplitude * refl_coeff * air_atten * phase_factor;
+                }
+            }
+
+            // Higher-order reflections for rectangular rooms only
+            if reflection_order >= 2 {
+                if let RoomGeometry::Rectangular(_) = &self.room_geometry {
+                    for nx in -2i32..=2 {
+                        for ny in -2i32..=2 {
+                            for nz in -2i32..=2 {
+                                let order = nx.abs() + ny.abs() + nz.abs();
+                                if order < 2 || order > reflection_order as i32 {
+                                    continue;
+                                }
+
+                                let image_x = if nx % 2 == 0 {
+                                    source.position.x + (nx as f64) * room_width
+                                } else {
+                                    -source.position.x + (nx as f64 + 1.0) * room_width
+                                };
+                                let image_y = if ny % 2 == 0 {
+                                    source.position.y + (ny as f64) * room_depth
+                                } else {
+                                    -source.position.y + (ny as f64 + 1.0) * room_depth
+                                };
+                                let image_z = if nz % 2 == 0 {
+                                    source.position.z + (nz as f64) * room_height
+                                } else {
+                                    -source.position.z + (nz as f64 + 1.0) * room_height
+                                };
+
+                                let image_pos = Point3D::new(image_x, image_y, image_z);
+                                let r_image = image_pos.distance_to(point);
+
+                                if r_image > 1e-6 {
+                                    let refl_coeff = r_left.powi(((nx.abs() + 1) / 2) as i32)
+                                        * r_right.powi((nx.abs() / 2) as i32)
+                                        * r_front.powi(((ny.abs() + 1) / 2) as i32)
+                                        * r_back.powi((ny.abs() / 2) as i32)
+                                        * r_floor.powi(((nz.abs() + 1) / 2) as i32)
+                                        * r_ceiling.powi((nz.abs() / 2) as i32);
+
+                                    let air_atten = self.air_absorption_factor(r_image, frequency);
+                                    total_pressure += greens_function_3d(r_image, k)
+                                        * amplitude
+                                        * refl_coeff
+                                        * air_atten
+                                        * phase_factor;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -3899,11 +4256,16 @@ impl RoomSimulatorWasm {
                 let freq = self.frequencies[freq_idx];
 
                 // Horizontal slice - parallelize the grid computation
+                // For L-shaped rooms, points outside the room boundary get very low SPL
                 let h_spl: Vec<f64> = y_points
                     .iter()
                     .flat_map(|&y| {
                         x_points.iter().map(move |&x| {
                             let point = Point3D::new(x, y, self.listening_position.z);
+                            // Check if point is inside the room
+                            if !self.point_inside_room(&point) {
+                                return -100.0; // Very low SPL for points outside room
+                            }
                             let pressure = self.calculate_direct_field(&point, freq);
                             pressure_to_spl(pressure)
                         })
@@ -3920,11 +4282,16 @@ impl RoomSimulatorWasm {
                 };
 
                 // Vertical slice - parallelize the grid computation
+                // For L-shaped rooms, points outside the room boundary get very low SPL
                 let v_spl: Vec<f64> = z_points
                     .iter()
                     .flat_map(|&z| {
                         x_points.iter().map(move |&x| {
                             let point = Point3D::new(x, self.listening_position.y, z);
+                            // Check if point is inside the room
+                            if !self.point_inside_room(&point) {
+                                return -100.0; // Very low SPL for points outside room
+                            }
                             let pressure = self.calculate_direct_field(&point, freq);
                             pressure_to_spl(pressure)
                         })
@@ -4014,6 +4381,7 @@ pub fn create_default_config() -> String {
             date: String::new(),
             notes: String::new(),
         },
+        scattering_objects: Vec::new(),
     };
 
     serde_json::to_string_pretty(&config).unwrap_or_else(|_| "{}".to_string())

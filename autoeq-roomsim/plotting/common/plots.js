@@ -64,27 +64,29 @@ function plotFrequencyResponse(data, containerId, options = {}) {
         });
     }
 
-    // Main frequency response trace (combined, on top)
-    const mainTrace = {
-        x: data.frequencies,
-        y: data.frequency_response,
-        type: 'scatter',
-        mode: options.showMarkers ? 'lines+markers' : 'lines',
-        line: {
-            color: '#667eea',
-            width: 3
-        },
-        name: 'Combined Response',
-        hovertemplate: 'Frequency: %{x:.1f} Hz<br>SPL: %{y:.1f} dB<extra></extra>'
-    };
-    if (options.showMarkers) {
-        mainTrace.marker = {
-            size: 6,
-            color: '#667eea',
-            line: { color: 'white', width: 1 }
+    // Main frequency response trace (combined, on top) - only show if no individual source traces
+    if (!options.hideCombined) {
+        const mainTrace = {
+            x: data.frequencies,
+            y: data.frequency_response,
+            type: 'scatter',
+            mode: options.showMarkers ? 'lines+markers' : 'lines',
+            line: {
+                color: '#667eea',
+                width: 3
+            },
+            name: 'Combined Response',
+            hovertemplate: 'Frequency: %{x:.1f} Hz<br>SPL: %{y:.1f} dB<extra></extra>'
         };
+        if (options.showMarkers) {
+            mainTrace.marker = {
+                size: 6,
+                color: '#667eea',
+                line: { color: 'white', width: 1 }
+            };
+        }
+        traces.push(mainTrace);
     }
-    traces.push(mainTrace);
 
     // Determine axis range
     const minFreq = Math.min(...data.frequencies);
@@ -594,11 +596,19 @@ function plot3DCombinedSlices(hSlice, vSlice, hSPL2D, vSPL2D, data, containerId,
     const vShape = vSlice.shape;
     const traces = [];
 
+    // Get bounds for border lines
+    const hXMin = Math.min(...hSlice.x);
+    const hXMax = Math.max(...hSlice.x);
+    const hYMin = Math.min(...hSlice.y);
+    const hYMax = Math.max(...hSlice.y);
+    const lpZ = data.listening_position[2];
+    const lpY = data.listening_position[1];
+
     // Horizontal slice as surface at LP height
     const hSurface = {
         x: hSlice.x,
         y: hSlice.y,
-        z: Array(hShape[0]).fill(null).map(() => Array(hShape[1]).fill(data.listening_position[2])),
+        z: Array(hShape[0]).fill(null).map(() => Array(hShape[1]).fill(lpZ)),
         surfacecolor: hSPL2D,
         type: 'surface',
         colorscale: 'Jet',
@@ -611,11 +621,30 @@ function plot3DCombinedSlices(hSlice, vSlice, hSPL2D, vSPL2D, data, containerId,
     };
     traces.push(hSurface);
 
+    // Horizontal slice border (XY plane at LP height)
+    const hBorder = {
+        x: [hXMin, hXMax, hXMax, hXMin, hXMin],
+        y: [hYMin, hYMin, hYMax, hYMax, hYMin],
+        z: [lpZ, lpZ, lpZ, lpZ, lpZ],
+        mode: 'lines',
+        type: 'scatter3d',
+        line: { color: 'rgba(100, 100, 100, 0.8)', width: 3 },
+        name: 'Horizontal Border',
+        showlegend: false,
+        hoverinfo: 'skip'
+    };
+    traces.push(hBorder);
+
     // Vertical slice as surface at LP depth
     const vZ = vSlice.z || vSlice.y;
+    const vXMin = Math.min(...vSlice.x);
+    const vXMax = Math.max(...vSlice.x);
+    const vZMin = Math.min(...vZ);
+    const vZMax = Math.max(...vZ);
+
     const vSurface = {
         x: vSlice.x,
-        y: Array(vShape[0]).fill(null).map(() => Array(vShape[1]).fill(data.listening_position[1])),
+        y: Array(vShape[0]).fill(null).map(() => Array(vShape[1]).fill(lpY)),
         z: vZ.map(z_val => Array(vShape[1]).fill(z_val)),
         surfacecolor: vSPL2D,
         type: 'surface',
@@ -627,6 +656,20 @@ function plot3DCombinedSlices(hSlice, vSlice, hSPL2D, vSPL2D, data, containerId,
         hovertemplate: 'x: %{x:.2f} m<br>z: %{z:.2f} m<br>SPL: %{surfacecolor:.1f} dB<extra></extra>'
     };
     traces.push(vSurface);
+
+    // Vertical slice border (XZ plane at LP depth)
+    const vBorder = {
+        x: [vXMin, vXMax, vXMax, vXMin, vXMin],
+        y: [lpY, lpY, lpY, lpY, lpY],
+        z: [vZMin, vZMin, vZMax, vZMax, vZMin],
+        mode: 'lines',
+        type: 'scatter3d',
+        line: { color: 'rgba(100, 100, 100, 0.8)', width: 3 },
+        name: 'Vertical Border',
+        showlegend: false,
+        hoverinfo: 'skip'
+    };
+    traces.push(vBorder);
 
     // Add sources as 3D scatter
     const sourcesTrace = {

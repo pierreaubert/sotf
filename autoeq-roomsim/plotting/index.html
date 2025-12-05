@@ -591,9 +591,11 @@
                                 <option value="image-source-2">Image Source (2nd order)</option>
                                 <option value="image-source-3">Image Source (3rd order)</option>
                                 <option value="modal">Modal (Standing waves)</option>
-                                <option value="hybrid" selected>Hybrid (Modal + ISM)</option>
+                                <option value="hybrid">Hybrid (Modal + ISM)</option>
+                                <option value="bem">BEM (Modal + Scattering)</option>
+                                <option value="hybrid-bem" selected>Hybrid-BEM (Modal + ISM + Scattering)</option>
                             </select>
-                            <small style="color: #666;">Hybrid blends modal (low freq) with ISM (high freq)</small>
+                            <small style="color: #666;">BEM modes include scattering from furniture/objects</small>
                         </div>
                         <div class="form-group">
                             <label>Slice Resolution</label>
@@ -1126,7 +1128,8 @@
 
                 const plotResult = RoomPlots.plotFrequencyResponse(results, 'plotFrequencyResponse', {
                     darkMode: true,
-                    sourceLineDash: 'solid'
+                    sourceLineDash: 'solid',
+                    hideCombined: true
                 });
                 console.log('  plot result:', plotResult);
             } catch (e) {
