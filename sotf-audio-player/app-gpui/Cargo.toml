@@ -39,7 +39,7 @@ serde_json = { workspace = true }
 walkdir = { workspace = true }
 id3 = "1.16"
 metaflac = "0.2"
-rfd = { version = "0.15", default-features = false, features = ["gtk3"] }
+rfd = "0.15"
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-metadata = { workspace = true }

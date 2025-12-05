@@ -358,7 +358,7 @@ pub fn render_gradient_meter(
         // Meter bar container
         .child(
             div()
-                .w(px(8.0))
+                .w(px(16.0))
                 .flex_1()
                 .bg(theme_c.background)
                 .rounded(px(2.0))
@@ -433,6 +433,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .h_full()
+            .p(px(2.0)) // Match meter group padding
             // Ticks area (matches meters flex_1)
             .child(
                 div()
@@ -464,6 +465,14 @@ impl PlayerView {
                         }
                     })),
             )
+            // Spacer for Channel Name (matches render_gradient_meter)
+            .child(
+                div()
+                    .text_xs()
+                    .mt_1()
+                    .opacity(0.0)
+                    .child("Name"), // Dummy text to match height
+            )
             // Spacer (matches MSD buttons height and margin)
             .child(
                 div()
@@ -485,7 +494,7 @@ impl PlayerView {
         &self,
         group: &ChannelGroup,
         group_idx: usize,
-        is_selected: bool,
+        _is_selected: bool,
         loudness: Option<&sotf_audio_player::LoudnessData>,
         theme: &Theme,
         cx: &mut Context<Self>,
@@ -529,9 +538,8 @@ impl PlayerView {
             .flex_col()
             .flex_1()
             .p(px(2.0))
-            .rounded_md()
-            .when(is_selected, |d| d.bg(theme_c.surface_selected))
-            .when(!is_selected, |d| d.bg(theme_c.background_secondary))
+            // Removed rounded_md and selection background logic
+            .bg(theme_c.background_secondary)
             // Channel meters
             .child(div().flex().gap(px(1.0)).flex_1().h_full().children(
                 channel_data.into_iter().map(

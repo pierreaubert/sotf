@@ -72,8 +72,6 @@ pub struct UpmixerPlugin {
     /// High-resolution FFT size for direct-path enhancement
     hr_fft_size: usize,
     /// High-resolution hop size (hr_fft_size / 2)
-    hr_hop_size: usize,
-    /// Forward FFT planner (high-resolution path)
     hr_fft_forward: Arc<dyn RealToComplex<f32>>,
     /// Inverse FFT planner (high-resolution path)
     hr_fft_inverse: Arc<dyn ComplexToReal<f32>>,
@@ -324,7 +322,6 @@ impl UpmixerPlugin {
         // High-resolution path uses a shorter FFT for improved direct-path
         // time resolution. For now this is internal and disabled by default.
         let hr_fft_size = 512;
-        let hr_hop_size = hr_fft_size / 2;
         let hr_spectrum_size = hr_fft_size / 2 + 1;
         let hr_fft_forward = planner.plan_fft_forward(hr_fft_size);
         let hr_fft_inverse = planner.plan_fft_inverse(hr_fft_size);
@@ -368,7 +365,6 @@ impl UpmixerPlugin {
             fft_inverse,
 
             hr_fft_size,
-            hr_hop_size,
             hr_fft_forward,
             hr_fft_inverse,
 

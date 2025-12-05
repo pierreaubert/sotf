@@ -62,16 +62,6 @@ fn main() {
                 ],
             },
             Menu {
-                name: "File".into(),
-                items: vec![
-                    MenuItem::action("Scan Library", ScanLibrary),
-                    MenuItem::action("Add Directory...", AddDirectory),
-                    MenuItem::separator(),
-                    MenuItem::action("Settings...", OpenConfig),
-                    MenuItem::action("Quit", QuitApp),
-                ],
-            },
-            Menu {
                 name: "View".into(),
                 items: vec![
                     MenuItem::action("Library", SwitchToLibrary),

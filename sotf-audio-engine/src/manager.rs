@@ -434,60 +434,6 @@ impl AudioEngineManager {
         }
     }
 
-    // ========================================================================
-    // Loudness Monitoring Support (using plugin system)
-    // ========================================================================
-
-    /// Enable real-time loudness monitoring
-    ///
-    /// This adds a loudness analyzer plugin to the end of the plugin chain.
-    /// Call this after `start_playback()`.
-    pub fn enable_loudness_monitoring(&mut self) -> Result<(), String> {
-        use serde_json::json;
-
-        // Check if already enabled
-        if self.loudness_plugin_index.lock().is_some() {
-            log::debug!("[AudioEngineManager] Loudness monitoring already enabled");
-            return Ok(());
-        }
-
-        // Create loudness analyzer plugin config
-        let loudness_plugin = PluginConfig {
-            plugin_type: "loudness_monitor".to_string(),
-            parameters: json!({}),
-        };
-
-        // Get current plugin chain and add loudness analyzer
-        if let Some(ref mut engine) = *self.engine.lock() {
-            // We need to get the current plugins, add the loudness analyzer, and update
-            // However, we don't have a way to get the current plugin chain from the engine
-            // So we'll just add it as a single-plugin update for now
-            // This works because update_plugin_chain appends plugins
-
-            // For now, we'll just track that we want loudness monitoring
-            // The caller should add the loudness plugin to their initial chain
-            // This is a limitation of the current architecture
-
-            log::warn!(
-                "[AudioEngineManager] enable_loudness_monitoring() called after playback started"
-            );
-            log::warn!(
-                "[AudioEngineManager] This is not yet supported - add loudness_monitor plugin before start_playback()"
-            );
-            return Err(
-                "Must add loudness_monitor plugin to chain before start_playback()".to_string(),
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Disable loudness monitoring
-    pub fn disable_loudness_monitoring(&mut self) {
-        *self.loudness_plugin_index.lock() = None;
-        log::debug!("[AudioEngineManager] Loudness monitoring disabled");
-    }
-
     /// Get current loudness measurements
     ///
     /// Returns None if loudness monitoring is not enabled or no data is available yet.
@@ -512,54 +458,6 @@ impl AudioEngineManager {
         );
     }
 
-    /// Enable real-time spectrum monitoring
-    ///
-    /// This adds a spectrum analyzer plugin to the end of the plugin chain.
-    /// Call this after `start_playback()`.
-    pub fn enable_spectrum_monitoring(&mut self) -> Result<(), String> {
-        use serde_json::json;
-
-        // Check if already enabled
-        if self.spectrum_plugin_index.lock().is_some() {
-            log::debug!("[AudioEngineManager] Spectrum monitoring already enabled");
-            return Ok(());
-        }
-
-        // Create spectrum analyzer plugin config
-        let _spectrum_plugin = PluginConfig {
-            plugin_type: "spectrum".to_string(),
-            parameters: json!({}),
-        };
-
-        // Get current plugin chain and add spectrum analyzer
-        if let Some(ref mut _engine) = *self.engine.lock() {
-            // We need to get the current plugins, add the spectrum analyzer, and update
-            // However, we don't have a way to get the current plugin chain from the engine
-            // So we'll just add it as a single-plugin update for now
-            // This works because update_plugin_chain appends plugins
-
-            // For now, we'll just track that we want spectrum monitoring
-            // The caller should add the spectrum plugin to their initial chain
-            // This is a limitation of the current architecture
-
-            log::warn!(
-                "[AudioEngineManager] enable_spectrum_monitoring() called after playback started"
-            );
-            log::warn!(
-                "[AudioEngineManager] This is not yet supported - add spectrum plugin before start_playback()"
-            );
-            return Err("Must add spectrum plugin to chain before start_playback()".to_string());
-        }
-
-        Ok(())
-    }
-
-    /// Disable spectrum monitoring
-    pub fn disable_spectrum_monitoring(&mut self) {
-        *self.spectrum_plugin_index.lock() = None;
-        log::debug!("[AudioEngineManager] Spectrum monitoring disabled");
-    }
-
     /// Get current spectrum measurements
     ///
     /// Returns None if spectrum monitoring is not enabled or no data is available yet.
@@ -573,15 +471,6 @@ impl AudioEngineManager {
             }
             Err(_) => None,
         }
-    }
-
-    /// Set the spectrum plugin index (call this after adding spectrum to plugin chain)
-    pub fn set_spectrum_plugin_index(&mut self, index: usize) {
-        *self.spectrum_plugin_index.lock() = Some(index);
-        log::debug!(
-            "[AudioEngineManager] Spectrum plugin index set to {}",
-            index
-        );
     }
 
     // ========================================================================

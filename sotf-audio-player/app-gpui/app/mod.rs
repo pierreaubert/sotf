@@ -8,10 +8,10 @@
 //! - Level meters: ui/components/plugins/level_meters.rs
 
 mod autocomplete;
-mod library;
-mod navigation;
-mod queue;
-mod state;
+pub mod library;
+pub mod navigation;
+pub mod queue;
+pub mod state;
 pub mod types;
 
 // Re-export everything publicly

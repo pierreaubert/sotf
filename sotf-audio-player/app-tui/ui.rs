@@ -6,7 +6,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
-use sotf_audio::get_speaker_config_by_channels;
 use sotf_audio_player::{PluginSettings, PluginType};
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
@@ -140,14 +139,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Title bar
     draw_title(f, chunks[0], app);
 
-    // Split main content into left (main) and right (meters) columns
-    // Calculate exact width needed for right column based on channel groups
-    let num_channels = app
-        .loudness_info
-        .as_ref()
-        .map(|info| info.channel_peaks.len())
-        .unwrap_or(2);
-
     // Calculate exact width needed for meters:
     // 2 (borders) + 1 (padding) + groups + 1 (padding)
     let mut meters_width = 2 + 1; // borders + left padding
@@ -163,9 +154,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             };
             meters_width += group_width + 1; // group width + spacing
         }
-        // Remove last spacing, add right padding instead
-        meters_width -= 1;
-        meters_width += 1; // right padding
     } else {
         meters_width += 1; // right padding even if no groups
     }

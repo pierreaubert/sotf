@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::{SystemTime, UNIX_EPOCH};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -33,6 +34,65 @@ fn capitalize_words(s: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Clean album title by removing disc/volume information
+/// Handles formats like:
+/// - "Album Title (CD 1)"
+/// - "Album Title (CD-1)"
+/// - "Album Title (Disc 1)"
+/// - "Album Title CD 1"
+pub fn clean_album_title(title: &str) -> String {
+    let lower = title.to_lowercase();
+    
+    // List of markers to look for at the end of the string
+    // We look for the last occurrence to avoid false positives in the middle of titles
+    let markers = [
+        " (cd",
+        " (disc",
+        " cd ",
+        " disc ",
+        " vol.",
+        " vol ",
+        // Handle cases without space
+        "(cd",
+        "(disc",
+        // Handle square brackets
+        " [cd",
+        " [disc",
+        "[cd",
+        "[disc",
+    ];
+
+    for marker in markers {
+        if let Some(idx) = lower.rfind(marker) {
+            let suffix = &lower[idx..];
+            
+            // Heuristics to ensure this is actually a disc number:
+            
+            // 1. Must contain a digit
+            if !suffix.chars().any(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            
+            // 2. If it starts with parenthesis, it must end with parenthesis
+            if marker.contains('(') && !suffix.ends_with(')') {
+                continue;
+            }
+
+            // 3. If it starts with bracket, it must end with bracket
+            if marker.contains('[') && !suffix.ends_with(']') {
+                continue;
+            }
+            
+            // 4. If it doesn't have parentheses/brackets, it should be at the very end of the string
+            // (already guaranteed by rfind + we are checking the suffix)
+            
+            return title[..idx].trim().to_string();
+        }
+    }
+    
+    title.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -463,7 +523,9 @@ impl MusicLibrary {
     where
         F: FnMut(usize, usize),
     {
-        self.scan_incremental_with_progress(false, progress_callback)
+    {
+        self.scan_incremental_with_progress(false, None, progress_callback)
+    }
     }
 
     /// Scan directories with optional incremental mode
@@ -473,7 +535,7 @@ impl MusicLibrary {
         &mut self,
         incremental: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.scan_incremental_with_progress(incremental, |_, _| {})
+        self.scan_incremental_with_progress(incremental, None, |_, _| {})
     }
 
     /// Scan directories with optional incremental mode and progress reporting
@@ -484,6 +546,7 @@ impl MusicLibrary {
     pub fn scan_incremental_with_progress<F>(
         &mut self,
         incremental: bool,
+        cancellation_token: Option<Arc<AtomicBool>>,
         mut progress_callback: F,
     ) -> Result<(), Box<dyn std::error::Error>>
     where
@@ -513,7 +576,14 @@ impl MusicLibrary {
 
             // Let's modify scan_directory to take a mutable map of directory stats
             let (tracks, scanned) =
-                self.scan_directory(&dir_info.path, &mut album_map, incremental, &mut dir_stats)?;
+                self.scan_directory(&dir_info.path, &mut album_map, incremental, &mut dir_stats, cancellation_token.clone())?;
+            
+            // Check cancellation after each directory
+            if let Some(token) = &cancellation_token {
+                if token.load(Ordering::Relaxed) {
+                    return Err("Scan cancelled".into());
+                }
+            }
 
             total_tracks += tracks;
             scanned_tracks += scanned;
@@ -690,6 +760,7 @@ impl MusicLibrary {
         album_map: &mut HashMap<String, Album>,
         incremental: bool,
         dir_stats: &mut HashMap<PathBuf, (usize, usize)>,
+        cancellation_token: Option<Arc<AtomicBool>>,
     ) -> Result<(usize, usize), Box<dyn std::error::Error>> {
         let mut total_tracks = 0;
         let mut scanned_tracks = 0;
@@ -705,6 +776,16 @@ impl MusicLibrary {
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
+            
+            // Periodically check cancellation (every file is too frequent? maybe every 100?)
+            // Or just check here since it's inside loop
+            if let Some(token) = &cancellation_token {
+                // Determine if we should check (using some counter might be better but atomic load is cheap on x86)
+                if token.load(Ordering::Relaxed) {
+                     return Err("Scan cancelled".into());
+                }
+            }
+
             if !path.is_file() {
                 continue;
             }
@@ -741,10 +822,12 @@ impl MusicLibrary {
                     scanned_tracks += 1;
 
                     if let Ok(metadata) = extract_metadata(path) {
-                        let album_title = metadata
+                        let raw_album_title = metadata
                             .album
                             .clone()
                             .unwrap_or_else(|| "Unknown Album".to_string());
+                        
+                        let album_title = clean_album_title(&raw_album_title);
 
                         // Albums are now keyed by title only - artist comes from tracks
                         let normalized_title = normalize_album_key(&album_title);
@@ -1568,4 +1651,144 @@ mod tests {
         let loaded_path = lib.directories[0].path.canonicalize().unwrap();
         assert_eq!(loaded_path, canonical_parent);
     }
+
+    #[test]
+    fn test_clean_album_title() {
+        // Basic cases
+        assert_eq!(clean_album_title("Album Title"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (CD 1)"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (CD-1)"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (CD - 1)"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (Disc 1)"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (Disc-1)"), "Album Title");
+        
+        // Case insensitivity
+        assert_eq!(clean_album_title("Album Title (cd 1)"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (DISC 1)"), "Album Title");
+        
+        // Without parentheses
+        assert_eq!(clean_album_title("Album Title CD 1"), "Album Title");
+        assert_eq!(clean_album_title("Album Title Disc 1"), "Album Title");
+        assert_eq!(clean_album_title("Album Title Vol. 1"), "Album Title");
+        
+        // User reported cases
+        assert_eq!(clean_album_title("After The Fall (CD - 2)"), "After The Fall");
+        assert_eq!(clean_album_title("After The Fall (CD-1)"), "After The Fall");
+        assert_eq!(clean_album_title("A Night On The Town(CD 1)"), "A Night On The Town");
+        assert_eq!(clean_album_title("A Night On The Town [CD 1]"), "A Night On The Town");
+        assert_eq!(clean_album_title("A Night On The Town[CD 1]"), "A Night On The Town");
+        
+        // Should NOT clean
+        assert_eq!(clean_album_title("AC/DC"), "AC/DC");
+        assert_eq!(clean_album_title("Disco Volante"), "Disco Volante");
+        assert_eq!(clean_album_title("The CD Is Dead"), "The CD Is Dead");
+        assert_eq!(clean_album_title("Album (Live)"), "Album (Live)");
+        assert_eq!(clean_album_title("Album (Remastered)"), "Album (Remastered)");
+    }
+
+    fn create_test_album(title: &str, artist: &str, disc: u32) -> Album {
+        Album {
+            id: Some(1),
+            title: title.to_string(),
+            year: Some(2024),
+            tracks: vec![Track {
+                path: std::path::PathBuf::from("test"),
+                title: Some("Test Track".to_string()),
+                artist: Some(artist.to_string()),
+                album_artist: Some(artist.to_string()),
+                track_number: Some(1),
+                disc_number: Some(disc),
+                duration_secs: Some(180),
+                channels: Some(2),
+                sample_rate: Some(44100),
+                bit_depth: Some(16),
+                genre: None,
+                replay_gain: None,
+                replay_peak: None,
+                album_gain: None,
+                album_peak: None,
+                waveform: None,
+                composer: None,
+                conductor: None,
+                performer: None,
+                isrc: None,
+                ensemble: None,
+                edition: None,
+            }],
+            album_art_path: None,
+            album_art_thumbnail: None,
+            play_count: 0,
+            edition: None,
+            dynamic_range: None,
+        }
+    }
+
+    #[test]
+    fn test_album_grouping_regression() {
+        let albums = vec![
+            create_test_album("A Night On The Town", "Rod Stewart", 1),
+            create_test_album("A Night On The Town (CD 1)", "Rod Stewart", 1),
+            create_test_album("A Night On The Town (CD 2)", "Rod Stewart", 2),
+        ];
+
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(merged.len(), 1, "Should have grouped into 1 album");
+        assert_eq!(merged[0].title, "A Night On The Town");
+        assert_eq!(merged[0].tracks.len(), 3);
+    }
+}
+
+/// Helper function to group and merge albums
+pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
+    // Group by title and artist to consolidate editions
+    let mut groups: std::collections::HashMap<String, Vec<&Album>> =
+        std::collections::HashMap::new();
+
+    for album in albums {
+        let title = album.title.trim();
+        let normalized_title = clean_album_title(title);
+
+        let artist = album.artist().trim().to_lowercase();
+        let key = format!("{}|{}", normalized_title.trim().to_lowercase(), artist);
+        groups.entry(key).or_default().push(album);
+    }
+
+    // Merge albums
+    let mut merged_albums: Vec<Album> = Vec::new();
+    for group in groups.values() {
+        if group.is_empty() {
+            continue;
+        }
+
+        // Clone the first album as base
+        let mut base_album = (*group[0]).clone();
+
+        if group.len() > 1 {
+            base_album.title = clean_album_title(&base_album.title);
+
+            let mut all_tracks = Vec::new();
+            for album in group {
+                all_tracks.extend(album.tracks.clone());
+            }
+
+            all_tracks.sort_by(|a, b| {
+                a.disc_number
+                    .unwrap_or(1)
+                    .cmp(&b.disc_number.unwrap_or(1))
+                    .then_with(|| {
+                        a.track_number
+                            .unwrap_or(0)
+                            .cmp(&b.track_number.unwrap_or(0))
+                    })
+            });
+
+            base_album.tracks = all_tracks;
+        }
+
+        merged_albums.push(base_album);
+    }
+    
+    merged_albums
 }

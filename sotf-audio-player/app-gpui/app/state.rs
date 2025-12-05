@@ -21,6 +21,7 @@ use super::types::{
 #[derive(Debug)]
 pub struct App {
     pub library: MusicLibrary,
+    pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
     pub queue: Vec<QueueItem>,
     pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
     pub current_screen: Screen,
@@ -169,6 +170,7 @@ impl App {
 
         let mut app = Self {
             library,
+            library_scanner: None,
             queue: Vec::new(),
             expanded_queue_items: Vec::new(),
             current_screen: Screen::Library,

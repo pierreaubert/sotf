@@ -36,75 +36,8 @@ impl App {
             Specific(n) => album.uniform_channel_count() == Some(n),
         });
 
-        // Group by title and artist to consolidate editions
-        let mut groups: std::collections::HashMap<String, Vec<&Album>> =
-            std::collections::HashMap::new();
-
-        for album in albums {
-            let title = album.title.trim();
-            let lower_title = title.to_lowercase();
-            // Simple heuristic to remove disc/cd suffix
-            let normalized_title = if let Some(idx) = lower_title.find(" disc ") {
-                &title[..idx]
-            } else if let Some(idx) = lower_title.find(" (disc ") {
-                &title[..idx]
-            } else if let Some(idx) = lower_title.find(" cd ") {
-                &title[..idx]
-            } else if let Some(idx) = lower_title.find(" (cd ") {
-                &title[..idx]
-            } else {
-                title
-            };
-
-            let artist = album.artist().trim().to_lowercase();
-            let key = format!("{}|{}", normalized_title.trim().to_lowercase(), artist);
-            groups.entry(key).or_default().push(album);
-        }
-
-        // Merge albums
-        let mut merged_albums: Vec<Album> = Vec::new();
-        for group in groups.values() {
-            if group.is_empty() {
-                continue;
-            }
-
-            // Clone the first album as base
-            let mut base_album = (*group[0]).clone();
-
-            if group.len() > 1 {
-                let title = base_album.title.clone();
-                let lower_title = title.to_lowercase();
-                if let Some(idx) = lower_title.find(" disc ") {
-                    base_album.title = title[..idx].trim().to_string();
-                } else if let Some(idx) = lower_title.find(" (disc ") {
-                    base_album.title = title[..idx].trim().to_string();
-                } else if let Some(idx) = lower_title.find(" cd ") {
-                    base_album.title = title[..idx].trim().to_string();
-                } else if let Some(idx) = lower_title.find(" (cd ") {
-                    base_album.title = title[..idx].trim().to_string();
-                }
-
-                let mut all_tracks = Vec::new();
-                for album in group {
-                    all_tracks.extend(album.tracks.clone());
-                }
-
-                all_tracks.sort_by(|a, b| {
-                    a.disc_number
-                        .unwrap_or(1)
-                        .cmp(&b.disc_number.unwrap_or(1))
-                        .then_with(|| {
-                            a.track_number
-                                .unwrap_or(0)
-                                .cmp(&b.track_number.unwrap_or(0))
-                        })
-                });
-
-                base_album.tracks = all_tracks;
-            }
-
-            merged_albums.push(base_album);
-        }
+        // Group and merge albums
+        let mut merged_albums = sotf_audio_player::library::group_and_merge_albums(albums);
 
         // Finally, sort
         match self.library_sort_order {
@@ -142,6 +75,7 @@ impl App {
         self.selected_album_index = 0;
         self.reset_page();
     }
+
 
     /// Set channel filter
     pub fn set_channel_filter(&mut self, filter: ChannelFilter) {
@@ -239,6 +173,22 @@ impl App {
         let _ = self.library.add_directory(path);
     }
 
+
+
+    /// Full rescan of the library
+    pub fn rescan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.toast_message = Some(ToastMessage::info("Starting full library rescan..."));
+        // TODO: Implement actual full rescan logic in MusicLibrary if different from scan
+        // For now, we can clear and rescan or just call scan with a force flag if available
+        // Assuming scan_library is incremental, we might need a force_scan_library
+        self.scan_library()
+    }
+    
+    /// Scan for ReplayGain
+    pub fn scan_replay_gain(&mut self) {
+         self.toast_message = Some(ToastMessage::info("ReplayGain scan started (not implemented yet)..."));
+    }
+
     /// Remove the selected directory from the library
     pub fn remove_selected_directory(&mut self) {
         // We need to map from tree index to actual directory index
@@ -273,16 +223,22 @@ impl App {
 
     /// Start library scan (sets up progress tracking flags)
     pub fn start_library_scan(&mut self) {
-        self.scan_in_progress = true;
-        self.scan_progress_tracks = 0;
-        self.scan_progress_albums = 0;
-        self.toast_message = Some(ToastMessage::info("Starting library scan..."));
+        self.scan_library().ok();
+    }
+
+    /// Cancel the ongoing library scan
+    pub fn cancel_library_scan(&mut self) {
+        if let Some(scanner) = &self.library_scanner {
+            scanner.cancel();
+            self.toast_message = Some(ToastMessage::info("Cancelling scan..."));
+        }
     }
 
     /// Scan the library with progress tracking
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        use parking_lot::Mutex;
-        use std::sync::Arc;
+        if self.scan_in_progress {
+            return Ok(());
+        }
 
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
@@ -292,59 +248,13 @@ impl App {
             ToastType::Info,
         ));
 
-        // Create shared progress state
-        let progress_tracks = Arc::new(Mutex::new(0usize));
-        let progress_albums = Arc::new(Mutex::new(0usize));
-        let last_update_tracks = Arc::new(Mutex::new(0usize));
-
-        let progress_tracks_clone = Arc::clone(&progress_tracks);
-        let progress_albums_clone = Arc::clone(&progress_albums);
-        let last_update_clone = Arc::clone(&last_update_tracks);
-
-        // Use progress callback to update shared progress
-        let result = self.library.scan_with_progress(move |tracks, albums| {
-            let last = last_update_clone.lock();
-            let should_update = tracks - *last >= 1000 || tracks == 0;
-
-            if should_update {
-                *progress_tracks_clone.lock() = tracks;
-                *progress_albums_clone.lock() = albums;
-                *last_update_clone.lock() = tracks;
-                log::info!("Scan progress: {} tracks, {} albums found", tracks, albums);
-            }
-        });
-
-        // Update app state with final progress
-        self.scan_progress_tracks = *progress_tracks.lock();
-        self.scan_progress_albums = *progress_albums.lock();
-
-        self.scan_in_progress = false;
-        self.needs_rescan = false;
-        self.selected_album_index = 0;
-        self.album_list_offset = 0;
-
-        match &result {
-            Ok(_) => {
-                let album_count = self.library.albums.len();
-                let track_count: usize = self.library.albums.iter().map(|a| a.tracks.len()).sum();
-                self.toast_message = Some(ToastMessage::success(format!(
-                    "Scan complete: {} tracks in {} albums",
-                    track_count, album_count
-                )));
-                log::info!(
-                    "Scan complete: {} tracks in {} albums",
-                    track_count,
-                    album_count
-                );
-            }
-            Err(e) => {
-                self.toast_message = Some(ToastMessage::error(format!("Scan failed: {}", e)));
-                log::error!("Scan failed: {}", e);
-            }
-        }
-
-        result
+        // Start background scanner
+        let directories: Vec<std::path::PathBuf> = self.library.directories.iter().map(|d| d.path.clone()).collect();
+        self.library_scanner = Some(sotf_audio_player::LibraryScanner::start(directories));
+        
+        Ok(())
     }
+
 
     /// Get flattened directory tree for display
     pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {

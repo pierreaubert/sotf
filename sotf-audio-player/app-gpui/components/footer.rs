@@ -8,6 +8,153 @@ use gpui_ui_kit::{
     HStack, IconButton, IconButtonSize, IconButtonVariant, Potentiometer, StackAlign, StackJustify,
     StackSpacing, VStack,
 };
+use std::sync::Arc;
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// Custom element to capture waveform bounds and render bars
+struct WaveformElement {
+    waveform: Option<Vec<u8>>,
+    progress: f32,
+    played_color: gpui::Rgba,
+    unplayed_color: gpui::Rgba,
+    bounds_ref: Rc<RefCell<Option<Bounds<Pixels>>>>,
+}
+
+impl WaveformElement {
+    fn new(
+        waveform: Option<Vec<u8>>,
+        progress: f32,
+        played_color: gpui::Rgba,
+        unplayed_color: gpui::Rgba,
+        bounds_ref: Rc<RefCell<Option<Bounds<Pixels>>>>,
+    ) -> Self {
+        Self {
+            waveform,
+            progress,
+            played_color,
+            unplayed_color,
+            bounds_ref,
+        }
+    }
+}
+
+impl IntoElement for WaveformElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for WaveformElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        Some(std::panic::Location::caller())
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let layout_id = window.request_layout(
+            Style::default(),
+            [],
+            cx,
+        );
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Self::PrepaintState {
+        ()
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+        // Capture bounds
+        *self.bounds_ref.borrow_mut() = Some(bounds);
+
+        // Render logic from render_waveform_bars
+        const NUM_BARS: usize = 128;
+        const MAX_HEIGHT: f32 = 16.0;
+        const MIN_HEIGHT: f32 = 2.0;
+        const BAR_WIDTH: f32 = 4.0;
+        
+        let default_waveform: Vec<u8> = vec![64; NUM_BARS];
+        let samples = self.waveform.as_ref().unwrap_or(&default_waveform);
+
+        let bar_samples: Vec<u8> = if samples.len() == NUM_BARS {
+            samples.clone()
+        } else if samples.is_empty() {
+            vec![64; NUM_BARS]
+        } else {
+            (0..NUM_BARS)
+                .map(|i| {
+                    let src_idx = (i * samples.len()) / NUM_BARS;
+                    samples.get(src_idx).copied().unwrap_or(64)
+                })
+                .collect()
+        };
+
+        let progress_bar_idx = (self.progress * NUM_BARS as f32) as usize;
+        
+        // Calculate total width to center the bars
+        let total_width = NUM_BARS as f32 * BAR_WIDTH;
+        let start_x = bounds.origin.x + (bounds.size.width - px(total_width)) / 2.0;
+        let center_y = bounds.origin.y + bounds.size.height / 2.0;
+
+        for (idx, amplitude) in bar_samples.iter().enumerate() {
+            let height_ratio = *amplitude as f32 / 255.0;
+            let bar_height = MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * height_ratio;
+            let bar_color = if idx < progress_bar_idx {
+                self.played_color
+            } else {
+                self.unplayed_color
+            };
+
+            let x = start_x + px(idx as f32 * BAR_WIDTH);
+            
+            // Draw top half
+            window.paint_quad(PaintQuad {
+                bounds: Bounds {
+                    origin: point(x, center_y - px(bar_height)),
+                    size: size(px(BAR_WIDTH - 1.0), px(bar_height * 2.0)),
+                },
+                corner_radii: Corners::all(px(1.0)),
+                background: bar_color.into(),
+                border_widths: Edges::default(),
+                border_color: Hsla::transparent_black(),
+                border_style: Default::default(),
+            });
+        }
+    }
+}
 
 impl PlayerView {
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -193,6 +340,9 @@ impl PlayerView {
             state.app.theme.clone()
         };
 
+        let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
+        let bounds_ref_clone = bounds_ref.clone();
+
         div()
             .flex()
             .flex_col()
@@ -234,7 +384,7 @@ impl PlayerView {
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.position_secs =
-                                        (state.app.position_secs - 10.0).max(0.0);
+                                        (state.app.position_secs - 30.0).max(0.0);
                                 });
                                 cx.notify();
                             }))
@@ -285,7 +435,7 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     let max = state.app.duration_secs;
                                     state.app.position_secs =
-                                        (state.app.position_secs + 10.0).min(max);
+                                        (state.app.position_secs + 30.0).min(max);
                                 });
                                 cx.notify();
                             }))
@@ -330,7 +480,7 @@ impl PlayerView {
                     .items_center()
                     .gap_0()
                     .w_full()
-                    .mt(px(2.0)) // Move waveform up (closer to transport)
+                    .mt(px(8.0)) // Move waveform down to avoid collision
                     // Current position
                     .child(
                         div()
@@ -346,13 +496,28 @@ impl PlayerView {
                             .flex_1()
                             .h(px(36.0)) // Taller waveform
                             .cursor_pointer()
-                            .flex()
-                            .items_center() // Center bars vertically for mirrored look
-                            .children(Self::render_waveform_bars(
-                                waveform.as_ref(),
+                            .on_mouse_down(MouseButton::Left, cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                    // Calculate relative position
+                                    let x = event.position.x - bounds.origin.x;
+                                    let width = bounds.size.width;
+                                    let ratio = (x / width).clamp(0.0, 1.0);
+                                    
+                                    view.state.update(cx, |state, _cx| {
+                                        let new_pos = state.app.duration_secs * ratio as f64;
+                                        state.app.position_secs = new_pos;
+                                        // In a real implementation, we would also seek the player here
+                                        // e.g. state.player.lock().seek(new_pos);
+                                    });
+                                    cx.notify();
+                                }
+                            }))
+                            .child(WaveformElement::new(
+                                waveform.clone(),
                                 progress,
                                 progress_bar_fill,
                                 progress_bar_bg,
+                                bounds_ref,
                             )),
                     )
                     // Total duration
@@ -429,7 +594,7 @@ impl PlayerView {
                             // Speaker icon
                             .child(
                                 Icon::new(IconName::Speaker)
-                                    .size(IconSize::Lg)
+                                    .size(IconSize::Xxl)
                                     .color(theme_clone.text_secondary),
                             )
                             // Device name below
@@ -560,78 +725,7 @@ impl PlayerView {
         })
     }
 
-    /// Render waveform bars for the progress visualization
-    /// Each bar represents one sample from the 128-sample waveform data
-    /// Creates a mirrored waveform where bars extend up and down from center
-    fn render_waveform_bars(
-        waveform: Option<&Vec<u8>>,
-        progress: f32,
-        played_color: gpui::Rgba,
-        unplayed_color: gpui::Rgba,
-    ) -> Vec<gpui::Div> {
-        const NUM_BARS: usize = 128;
-        const MAX_HEIGHT: f32 = 16.0; // Half of total height (bars go up AND down)
-        const MIN_HEIGHT: f32 = 2.0;
-        const BAR_WIDTH: f32 = 4.0;
-        const GAP: f32 = 0.0;
 
-        // If no waveform data, create flat bars
-        let default_waveform: Vec<u8> = vec![64; NUM_BARS];
-        let samples = waveform.unwrap_or(&default_waveform);
-
-        // Normalize to NUM_BARS samples if different length
-        let bar_samples: Vec<u8> = if samples.len() == NUM_BARS {
-            samples.clone()
-        } else if samples.is_empty() {
-            vec![64; NUM_BARS]
-        } else {
-            // Resample to NUM_BARS
-            (0..NUM_BARS)
-                .map(|i| {
-                    let src_idx = (i * samples.len()) / NUM_BARS;
-                    samples.get(src_idx).copied().unwrap_or(64)
-                })
-                .collect()
-        };
-
-        // Progress threshold for coloring (0.0 to 1.0 maps to bar index)
-        let progress_bar_idx = (progress * NUM_BARS as f32) as usize;
-
-        bar_samples
-            .into_iter()
-            .enumerate()
-            .map(|(idx, amplitude)| {
-                // Calculate height from amplitude (0-255 -> MIN_HEIGHT to MAX_HEIGHT)
-                let height_ratio = amplitude as f32 / 255.0;
-                let bar_height = MIN_HEIGHT + (MAX_HEIGHT - MIN_HEIGHT) * height_ratio;
-
-                // Color based on whether we've played past this bar
-                let bar_color = if idx < progress_bar_idx {
-                    played_color
-                } else {
-                    unplayed_color
-                };
-
-                // Each bar is a column with top half and bottom half (mirrored)
-                div()
-                    .w(px(BAR_WIDTH))
-                    .mr(px(GAP))
-                    .h_full()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        // Single bar that represents both halves visually
-                        div()
-                            .w(px(BAR_WIDTH))
-                            .h(px(bar_height * 2.0)) // Total height (up + down from center)
-                            .bg(bar_color)
-                            .rounded_sm(),
-                    )
-            })
-            .collect()
-    }
 
     /// Render a round volume button with circular progress indicator
     /// Supports mouse scroll to change volume

@@ -23,6 +23,7 @@ impl PlayerView {
             sort_order,
             channel_filter,
             theme,
+            (min_year, max_year, categories_count, stereo_count, multichannel_count),
         ) = {
             let state = self.state.read(cx);
 
@@ -57,6 +58,41 @@ impl PlayerView {
                 state.app.library_sort_order,
                 state.app.channel_filter,
                 state.app.theme.clone(),
+                // New stats
+                {
+                    let mut min_year = 9999;
+                    let mut max_year = 0;
+                    let mut categories: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let mut stereo_count = 0;
+                    let mut multichannel_count = 0;
+
+                    for album in &state.app.library.albums {
+                        if let Some(y) = album.year {
+                            if y > 0 {
+                                if y < min_year { min_year = y; }
+                                if y > max_year { max_year = y; }
+                            }
+                        }
+
+                        if let Some(channels) = album.uniform_channel_count() {
+                            if channels == 2 {
+                                stereo_count += 1;
+                            } else if channels > 2 {
+                                multichannel_count += 1;
+                            }
+                        }
+
+                        for track in &album.tracks {
+                            if let Some(genre) = &track.genre {
+                                if !genre.is_empty() {
+                                    categories.insert(genre.to_lowercase());
+                                }
+                            }
+                        }
+                    }
+                    if min_year == 9999 { min_year = 0; }
+                    (min_year, max_year, categories.len(), stereo_count, multichannel_count)
+                }
             )
         };
 
@@ -67,13 +103,31 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .p_2()
-            // Stats row with 4 centered boxes
+            // Stats row with all boxes in one line
             .child(
                 div()
                     .flex()
+                    .flex_wrap() // Allow wrapping if window is too small
                     .justify_center()
                     .gap_2()
-                    .mb_2()
+                    .mb_4()
+                    // Box 1: Years
+                    .child(self.render_stat_box(
+                        "Years",
+                        0, // Dummy value, we'll override the text in render_stat_box_custom
+                        IconName::Disc,
+                        &theme
+                    ).with_value(format!("{} - {}", if min_year > 0 { min_year.to_string() } else { "??".to_string() }, if max_year > 0 { max_year.to_string() } else { "??".to_string() })))
+                    // Box 2: Categories
+                    .child(self.render_stat_box("Categories", categories_count, IconName::Folder, &theme))
+                    // Box 3: Channels
+                    .child(self.render_stat_box(
+                        "Stereo / Multi",
+                        0, // Dummy value
+                        IconName::AudioWaveform,
+                        &theme
+                    ).with_value(format!("{} / {}", stereo_count, multichannel_count)))
+                    // Existing boxes
                     .child(self.render_stat_box("Albums", albums_count, IconName::Album, &theme))
                     .child(self.render_stat_box("Artists", artists_count, IconName::User, &theme))
                     .child(self.render_stat_box("Tracks", tracks_count, IconName::Music, &theme))
@@ -353,14 +407,39 @@ impl PlayerView {
         count: usize,
         icon: IconName,
         theme: &crate::theme::Theme,
-    ) -> impl IntoElement {
-        // Clone values to avoid lifetime issues with closures
-        let label_owned = label.to_string();
-        let surface = theme.surface;
-        let border = theme.border;
-        let accent = theme.accent;
-        let text_primary = theme.text_primary;
-        let text_secondary = theme.text_secondary;
+    ) -> StatBox {
+        StatBox {
+            label: label.to_string(),
+            value: count.to_string(),
+            icon,
+            theme: theme.clone(),
+        }
+    }
+}
+
+struct StatBox {
+    label: String,
+    value: String,
+    icon: IconName,
+    theme: crate::theme::Theme,
+}
+
+impl StatBox {
+    fn with_value(mut self, value: String) -> Self {
+        self.value = value;
+        self
+    }
+}
+
+impl IntoElement for StatBox {
+    type Element = gpui::AnyElement;
+
+    fn into_element(self) -> Self::Element {
+        let surface = self.theme.surface;
+        let border = self.theme.border;
+        let accent = self.theme.accent;
+        let text_primary = self.theme.text_primary;
+        let text_secondary = self.theme.text_secondary;
 
         Card::new()
             .content(
@@ -372,19 +451,19 @@ impl PlayerView {
                             .items_center()
                             .justify_center()
                             .text_color(accent)
-                            .child(Icon::new(icon).size(IconSize::Lg).color(accent)),
+                            .child(Icon::new(self.icon).size(IconSize::Xxl).color(accent)),
                     )
                     .child(
                         VStack::new()
                             .spacing(StackSpacing::None)
                             .child(
-                                Text::new(format!("{}", count))
+                                Text::new(self.value)
                                     .size(TextSize::Lg)
                                     .weight(TextWeight::Bold)
                                     .color(text_primary),
                             )
                             .child(
-                                Text::new(label_owned)
+                                Text::new(self.label)
                                     .size(TextSize::Xs)
                                     .color(text_secondary),
                             )
@@ -399,5 +478,6 @@ impl PlayerView {
                     .py_1()
                     .px_2()
             })
+            .into_any_element()
     }
 }

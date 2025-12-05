@@ -133,7 +133,7 @@ impl UpmixerPlugin {
 
                         if is_front && !is_height && is_center {
                             let spread = self.center_spread.clamp(0.0, 1.0);
-                            direct_component *= (1.0 - spread);
+                            direct_component *= 1.0 - spread;
                         }
                         self.temp_freq_out[i] =
                             direct_component * direct_gain + ambient_component * ambient_gain;

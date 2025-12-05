@@ -28,6 +28,7 @@ autoeq_*.png
 bugs.md
 src/unused.rs
 /plans
+check_output_*.txt
 
 # Logs
 logs

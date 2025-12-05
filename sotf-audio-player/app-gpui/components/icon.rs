@@ -111,6 +111,8 @@ pub enum IconSize {
     Lg,
     /// Extra large (32px)
     Xl,
+    /// Extra extra large (36px)
+    Xxl,
 }
 
 impl IconSize {
@@ -122,6 +124,7 @@ impl IconSize {
             IconSize::Md => px(20.0),
             IconSize::Lg => px(24.0),
             IconSize::Xl => px(32.0),
+            IconSize::Xxl => px(36.0),
         }
     }
 }
@@ -177,6 +180,12 @@ impl Icon {
     /// Set extra large size
     pub fn xl(mut self) -> Self {
         self.size = IconSize::Xl;
+        self
+    }
+
+    /// Set extra extra large size
+    pub fn xxl(mut self) -> Self {
+        self.size = IconSize::Xxl;
         self
     }
 

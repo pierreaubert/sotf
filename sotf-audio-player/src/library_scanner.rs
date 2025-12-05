@@ -3,6 +3,7 @@
 use crate::library::MusicLibrary;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -21,6 +22,7 @@ pub enum LibraryScanMessage {
 pub struct LibraryScanner {
     _worker: JoinHandle<()>,
     message_rx: Arc<Mutex<Receiver<LibraryScanMessage>>>,
+    cancellation_token: Arc<AtomicBool>,
 }
 
 impl std::fmt::Debug for LibraryScanner {
@@ -28,6 +30,7 @@ impl std::fmt::Debug for LibraryScanner {
         f.debug_struct("LibraryScanner")
             .field("_worker", &"JoinHandle<()>")
             .field("message_rx", &"Arc<Mutex<Receiver<LibraryScanMessage>>>")
+            .field("cancellation_token", &self.cancellation_token)
             .finish()
     }
 }
@@ -53,6 +56,8 @@ impl LibraryScanner {
     /// Start a new background library scan with options
     fn start_with_options(directories: Vec<PathBuf>, force: bool) -> Self {
         let (message_tx, message_rx) = mpsc::channel::<LibraryScanMessage>();
+        let cancellation_token = Arc::new(AtomicBool::new(false));
+        let cancellation_token_clone = cancellation_token.clone();
 
         let worker = thread::spawn(move || {
             if force {
@@ -87,10 +92,11 @@ impl LibraryScanner {
             // Track progress
             let message_tx_clone = message_tx.clone();
             let last_track_count = Arc::new(Mutex::new(0usize));
+            let scan_token = cancellation_token_clone.clone();
 
             // Run the scan with progress callback
             // Use incremental=true (skip unchanged files) unless force is set
-            let result = library.scan_incremental_with_progress(!force, move |tracks, albums| {
+            let result = library.scan_incremental_with_progress(!force, Some(scan_token), move |tracks, albums| {
                 // Update UI every 500 tracks
                 let should_update = {
                     let mut last = last_track_count.lock().unwrap();
@@ -135,7 +141,14 @@ impl LibraryScanner {
         Self {
             _worker: worker,
             message_rx: Arc::new(Mutex::new(message_rx)),
+            cancellation_token,
         }
+    }
+
+    /// Cancel the ongoing scan
+    pub fn cancel(&self) {
+        log::info!("[LibraryScanner] Cancelling scan...");
+        self.cancellation_token.store(true, Ordering::Relaxed);
     }
 
     /// Try to receive a message without blocking
