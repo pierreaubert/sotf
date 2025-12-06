@@ -21,7 +21,7 @@ echo "Using nightly toolchain with atomics and bulk-memory features"
 # Build with threading support
 # -C target-feature=+atomics,+bulk-memory enables WebAssembly threads
 # -Z build-std rebuilds the standard library with thread support
-RUSTFLAGS='-C target-feature=+atomics,+bulk-memory' \
+RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals' \
     cargo +nightly build \
     --target wasm32-unknown-unknown \
     --release \
