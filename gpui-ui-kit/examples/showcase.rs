@@ -3,6 +3,7 @@
 //! A comprehensive demonstration of all gpui-ui-kit components.
 
 use gpui::*;
+use gpui_ui_kit::menu::{Menu, MenuItem};
 use gpui_ui_kit::*;
 
 struct Showcase {
@@ -84,6 +85,27 @@ impl Render for Showcase {
             .child(Divider::new().build())
             // Layout Section
             .child(self.render_layout_section())
+            .child(Divider::new().build())
+            // Icon Buttons Section
+            .child(self.render_icon_buttons_section())
+            .child(Divider::new().build())
+            // Toasts Section
+            .child(self.render_toasts_section())
+            .child(Divider::new().build())
+            // Dialog Section
+            .child(self.render_dialog_section())
+            .child(Divider::new().build())
+            // Menu Section
+            .child(self.render_menu_section())
+            .child(Divider::new().build())
+            // Tooltip Section
+            .child(self.render_tooltip_section())
+            .child(Divider::new().build())
+            // Potentiometer Section
+            .child(self.render_potentiometer_section())
+            .child(Divider::new().build())
+            // Accordion Section
+            .child(self.render_accordion_section())
     }
 }
 
@@ -714,6 +736,356 @@ impl Showcase {
                                     .child(Text::new("Right")),
                             ),
                     ),
+            )
+    }
+
+    fn render_icon_buttons_section(&self) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(self.section_header("Icon Buttons"))
+            // Variants
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Variants").weight(TextWeight::Medium))
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .align(StackAlign::Center)
+                            .child(IconButton::new("ib-ghost", "🔍").variant(IconButtonVariant::Ghost))
+                            .child(IconButton::new("ib-filled", "⚙").variant(IconButtonVariant::Filled))
+                            .child(IconButton::new("ib-outline", "✏").variant(IconButtonVariant::Outline)),
+                    ),
+            )
+            // Sizes
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Sizes").weight(TextWeight::Medium))
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .align(StackAlign::End)
+                            .child(IconButton::new("ib-xs", "★").size(IconButtonSize::Xs))
+                            .child(IconButton::new("ib-sm", "★").size(IconButtonSize::Sm))
+                            .child(IconButton::new("ib-md", "★").size(IconButtonSize::Md))
+                            .child(IconButton::new("ib-lg", "★").size(IconButtonSize::Lg))
+                            .child(IconButton::new("ib-xl", "★").size(IconButtonSize::Xl)),
+                    ),
+            )
+            // States
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("States").weight(TextWeight::Medium))
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(IconButton::new("ib-selected", "♥").selected(true).variant(IconButtonVariant::Filled))
+                            .child(IconButton::new("ib-disabled", "🔒").disabled(true))
+                            .child(IconButton::new("ib-round", "🔔").rounded_full().variant(IconButtonVariant::Filled)),
+                    ),
+            )
+    }
+
+    fn render_toasts_section(&self) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(self.section_header("Toasts"))
+            .child(Text::new("Toast notifications with different variants:").muted(true))
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Toast::new("toast-info", "This is an informational toast notification.")
+                            .title("Information")
+                            .variant(ToastVariant::Info)
+                            .closeable(false),
+                    )
+                    .child(
+                        Toast::new("toast-success", "Your operation completed successfully!")
+                            .title("Success")
+                            .variant(ToastVariant::Success)
+                            .closeable(false),
+                    )
+                    .child(
+                        Toast::new("toast-warning", "Please be aware of potential issues.")
+                            .title("Warning")
+                            .variant(ToastVariant::Warning)
+                            .closeable(false),
+                    )
+                    .child(
+                        Toast::new("toast-error", "An error occurred during the operation.")
+                            .title("Error")
+                            .variant(ToastVariant::Error)
+                            .closeable(false),
+                    ),
+            )
+    }
+
+    fn render_dialog_section(&self) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(self.section_header("Dialogs"))
+            .child(Text::new("Dialog component preview (backdrop disabled for showcase):").muted(true))
+            .child(
+                div()
+                    .relative()
+                    .h(px(200.0))
+                    .w_full()
+                    .max_w(px(500.0))
+                    .bg(rgb(0x2a2a2a))
+                    .rounded_lg()
+                    .overflow_hidden()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        // Dialog preview without backdrop
+                        div()
+                            .w(px(350.0))
+                            .bg(rgb(0x1e1e1e))
+                            .border_1()
+                            .border_color(rgb(0x007acc))
+                            .rounded_lg()
+                            .shadow_lg()
+                            .overflow_hidden()
+                            .flex()
+                            .flex_col()
+                            // Header
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .px_4()
+                                    .py_3()
+                                    .border_b_1()
+                                    .border_color(rgb(0x3a3a3a))
+                                    .child(
+                                        div()
+                                            .text_lg()
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(rgb(0xffffff))
+                                            .child("Confirm Action"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_sm()
+                                            .text_color(rgb(0x888888))
+                                            .child("×"),
+                                    ),
+                            )
+                            // Content
+                            .child(
+                                div()
+                                    .px_4()
+                                    .py_4()
+                                    .child(Text::new("Are you sure you want to continue? This action cannot be undone.")),
+                            )
+                            // Footer
+                            .child(
+                                div()
+                                    .px_4()
+                                    .py_3()
+                                    .border_t_1()
+                                    .border_color(rgb(0x3a3a3a))
+                                    .child(
+                                        HStack::new()
+                                            .justify(StackJustify::End)
+                                            .spacing(StackSpacing::Sm)
+                                            .child(Button::new("dlg-cancel", "Cancel").variant(ButtonVariant::Ghost))
+                                            .child(Button::new("dlg-confirm", "Confirm").variant(ButtonVariant::Primary)),
+                                    ),
+                            ),
+                    ),
+            )
+            // Dialog sizes info
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .child(Badge::new("Sm: 320px").variant(BadgeVariant::Info))
+                    .child(Badge::new("Md: 480px").variant(BadgeVariant::Info))
+                    .child(Badge::new("Lg: 640px").variant(BadgeVariant::Info))
+                    .child(Badge::new("Xl: 800px").variant(BadgeVariant::Info)),
+            )
+    }
+
+    fn render_menu_section(&self) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(self.section_header("Menus"))
+            // Menu component
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Dropdown Menu").weight(TextWeight::Medium))
+                    .child(
+                        Menu::new(vec![
+                            MenuItem::new("new-file", "New File").with_shortcut("⌘N").with_icon("📄"),
+                            MenuItem::new("open", "Open...").with_shortcut("⌘O").with_icon("📂"),
+                            MenuItem::new("save", "Save").with_shortcut("⌘S").with_icon("💾"),
+                            MenuItem::separator(),
+                            MenuItem::checkbox("autosave", "Auto Save", true),
+                            MenuItem::separator(),
+                            MenuItem::new("quit", "Quit").with_shortcut("⌘Q").danger(),
+                        ])
+                        .min_width(px(220.0)),
+                    ),
+            )
+            // Menu Bar info
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Menu Bar Items").weight(TextWeight::Medium))
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .child(menu_bar_button("file", "File", false))
+                            .child(menu_bar_button("edit", "Edit", false))
+                            .child(menu_bar_button("view", "View", true))
+                            .child(menu_bar_button("help", "Help", false)),
+                    ),
+            )
+    }
+
+    fn render_tooltip_section(&self) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(self.section_header("Tooltips"))
+            .child(Text::new("Tooltip placements (shown inline for showcase):").muted(true))
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Xl)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(Text::new("Top").weight(TextWeight::Medium))
+                            .child(Tooltip::new("Tooltip on top").placement(TooltipPlacement::Top)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(Text::new("Bottom").weight(TextWeight::Medium))
+                            .child(Tooltip::new("Tooltip on bottom").placement(TooltipPlacement::Bottom)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(Text::new("Left").weight(TextWeight::Medium))
+                            .child(Tooltip::new("Left tooltip").placement(TooltipPlacement::Left)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(Text::new("Right").weight(TextWeight::Medium))
+                            .child(Tooltip::new("Right tooltip").placement(TooltipPlacement::Right)),
+                    ),
+            )
+    }
+
+    fn render_potentiometer_section(&self) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(self.section_header("Potentiometers"))
+            .child(Text::new("Circular knob controls for audio/visual applications:").muted(true))
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Xl)
+                    .align(StackAlign::End)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(Potentiometer::new().value(0.0).label("0%").size(px(50.0)))
+                            .child(Text::new("0%").size(TextSize::Xs)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(Potentiometer::new().value(0.25).label("25").size(px(50.0)))
+                            .child(Text::new("25%").size(TextSize::Xs)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(Potentiometer::new().value(0.5).label("50").size(px(60.0)))
+                            .child(Text::new("50%").size(TextSize::Xs)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(Potentiometer::new().value(0.75).label("75").size(px(50.0)))
+                            .child(Text::new("75%").size(TextSize::Xs)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(Potentiometer::new().value(1.0).label("100").size(px(50.0)))
+                            .child(Text::new("100%").size(TextSize::Xs)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(
+                                Potentiometer::new()
+                                    .value(0.5)
+                                    .label("M")
+                                    .size(px(50.0))
+                                    .muted(true),
+                            )
+                            .child(Text::new("Muted").size(TextSize::Xs)),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(
+                                Potentiometer::new()
+                                    .value(0.7)
+                                    .label("Vol")
+                                    .size(px(70.0))
+                                    .accent_color(hsla(120.0 / 360.0, 0.6, 0.5, 1.0)),
+                            )
+                            .child(Text::new("Custom Color").size(TextSize::Xs)),
+                    ),
+            )
+    }
+
+    fn render_accordion_section(&self) -> impl IntoElement {
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(self.section_header("Accordion"))
+            .child(Text::new("Expandable content sections:").muted(true))
+            .child(
+                div()
+                    .w(px(400.0))
+                    .child(
+                        Accordion::new()
+                            .mode(AccordionMode::Single)
+                            .items(vec![
+                                AccordionItem::new("section-1", "Getting Started")
+                                    .content("Welcome to the UI Kit! This accordion demonstrates expandable sections that can contain any content."),
+                                AccordionItem::new("section-2", "Features")
+                                    .content("• Multiple accordion modes\n• Custom themes\n• Keyboard navigation\n• Animated transitions"),
+                                AccordionItem::new("section-3", "Configuration")
+                                    .content("Accordions support single or multiple expansion modes. Use the mode() method to configure behavior."),
+                            ])
+                            .expanded(vec!["section-1".into()]),
+                    ),
+            )
+            // Mode info
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .child(Badge::new("Single Mode").variant(BadgeVariant::Primary))
+                    .child(Badge::new("Multiple Mode").variant(BadgeVariant::Default))
+                    .child(Badge::new("Collapsible").variant(BadgeVariant::Default)),
             )
     }
 }
