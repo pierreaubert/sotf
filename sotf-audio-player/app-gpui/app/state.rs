@@ -9,6 +9,8 @@ use sotf_audio_player::{
     LoudnessData, MusicLibrary, Player, PluginChain, PluginType, SpectrumData,
 };
 
+use crate::app::SettingsTab;
+use crate::app::types::ReplayGainMode;
 use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
@@ -25,6 +27,7 @@ pub struct App {
     pub queue: Vec<QueueItem>,
     pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
     pub current_screen: Screen,
+    pub last_screen: Screen, // Track previous screen for Back/Close logic
     pub input_mode: InputMode,
 
     // UI state
@@ -63,6 +66,7 @@ pub struct App {
 
     // Plugin system
     pub plugin_chain: PluginChain,
+    pub plugin_chain_modified: bool, // Track if plugins changed since last save
     pub needs_plugin_update: bool,
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize, // Which parameter is selected in edit mode
@@ -142,6 +146,12 @@ pub struct App {
     // Device popup state
     pub show_device_popup: bool,
 
+    // active settings tab
+    pub active_settings_tab: SettingsTab,
+
+    // Filter menu state in library view
+    pub filter_menu_open: bool,
+
     // Volume drag state
     pub is_dragging_volume: bool,
     pub volume_drag_start_y: Option<f32>,
@@ -149,6 +159,20 @@ pub struct App {
 
     // Settings accordion expanded sections
     pub expanded_settings_sections: Vec<String>,
+
+    // Waveform scanner manager
+    pub waveform_manager: sotf_audio_player::WaveformScanManager,
+
+    // ReplayGain scanner manager
+    pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
+
+    // ReplayGain settings
+    pub replay_gain_enabled: bool,
+    pub replay_gain_mode: ReplayGainMode,
+    pub replay_gain_preamp: f32,
+
+    // Flag for closing studio after save
+    pub pending_studio_close: bool,
 }
 
 /// GPUI-compatible state wrapper
@@ -174,6 +198,7 @@ impl App {
             queue: Vec::new(),
             expanded_queue_items: Vec::new(),
             current_screen: Screen::Library,
+            last_screen: Screen::Library,
             input_mode: InputMode::Normal,
             search_query: String::new(),
             directory_input: String::new(),
@@ -205,6 +230,7 @@ impl App {
                 chain.add_plugin(&PluginType::LoudnessMonitor);
                 chain
             },
+            plugin_chain_modified: false,
             needs_plugin_update: false,
             editing_plugin_index: None,
             plugin_param_selection: 0,
@@ -251,10 +277,18 @@ impl App {
             divider_click_start: None,
             scan_total_files: 0,
             show_device_popup: false,
+            active_settings_tab: SettingsTab::Library,
+            filter_menu_open: false,
             is_dragging_volume: false,
             volume_drag_start_y: None,
             volume_drag_start_value: 0.0,
             expanded_settings_sections: vec!["library".to_string()],
+            waveform_manager: sotf_audio_player::WaveformScanManager::new(),
+            replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
+            replay_gain_enabled: true,
+            replay_gain_mode: ReplayGainMode::Track,
+            replay_gain_preamp: 0.0,
+            pending_studio_close: false,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts

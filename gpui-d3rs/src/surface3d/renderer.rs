@@ -36,14 +36,14 @@ impl Uniforms {
         let light_dir = config.normalized_light_direction();
 
         let (is_log, min_log, range_log) = if let Some((min, max)) = log_settings {
-             // min and max are already in linear space (e.g. 20 and 20000)
-             // We need their logs.
-             // Avoid log(0).
-             let min_v = min.max(1e-10).log10();
-             let max_v = max.max(1e-10).log10();
-             (1.0, min_v, max_v - min_v)
+            // min and max are already in linear space (e.g. 20 and 20000)
+            // We need their logs.
+            // Avoid log(0).
+            let min_v = min.max(1e-10).log10();
+            let max_v = max.max(1e-10).log10();
+            (1.0, min_v, max_v - min_v)
         } else {
-             (0.0, 0.0, 1.0)
+            (0.0, 0.0, 1.0)
         };
 
         Self {
@@ -552,7 +552,11 @@ impl Surface3DRenderer {
     }
 
     /// Render the surface and return RGBA pixel data
-    pub fn render(&mut self, camera: &Camera3D, log_settings: Option<(f32, f32)>) -> Option<Vec<u8>> {
+    pub fn render(
+        &mut self,
+        camera: &Camera3D,
+        log_settings: Option<(f32, f32)>,
+    ) -> Option<Vec<u8>> {
         if self.vertex_buffer.is_none() || self.width == 0 || self.height == 0 {
             return None;
         }
@@ -636,14 +640,14 @@ impl Surface3DRenderer {
             // Draw grid box first (background)
             // Use CullMode::Front (cull front, show back).
 
-        if self.config.show_axes && self.config.plot_type == SurfacePlotType::Cartesian {
-            render_pass.set_pipeline(&self.grid_pipeline);
-            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
-            render_pass
-                .set_index_buffer(self.grid_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            render_pass.draw_indexed(0..self.grid_index_count, 0, 0..1);
-        }
+            if self.config.show_axes && self.config.plot_type == SurfacePlotType::Cartesian {
+                render_pass.set_pipeline(&self.grid_pipeline);
+                render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
+                render_pass
+                    .set_index_buffer(self.grid_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..self.grid_index_count, 0, 0..1);
+            }
             // Draw surface
             render_pass.set_pipeline(&self.surface_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);

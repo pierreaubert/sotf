@@ -184,3 +184,104 @@ impl Drop for WaveformScanner {
         self.stop();
     }
 }
+
+/// Helper struct to manage waveform scanning state
+#[derive(Debug, Default)]
+pub struct WaveformScanManager {
+    pub scanner: Option<Arc<WaveformScanner>>,
+    pub in_progress: bool,
+    pub total: usize,
+    pub processed: usize,
+    pub succeeded: usize,
+    pub failed: usize,
+}
+
+impl WaveformScanManager {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Start scanning all tracks in the database that are missing waveform data
+    pub fn start_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Skip if already in progress
+        if self.in_progress {
+            return Ok(());
+        }
+
+        // Get database path
+        let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
+
+        // Get tracks that need waveform analysis
+        let db = MusicDatabase::open(&db_path)?;
+        let tracks = db.get_tracks_without_waveform()?;
+
+        if tracks.is_empty() {
+            log::debug!("All tracks already have waveform data");
+            return Ok(());
+        }
+
+        let total = tracks.len();
+        log::info!("Starting waveform scan for {} tracks", total);
+
+        // Determine number of threads (use CPU count or max 4)
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get().min(4))
+            .unwrap_or(2);
+
+        // Create scanner
+        let scanner = Arc::new(WaveformScanner::new(num_threads, db_path));
+
+        // Queue all tracks
+        scanner.scan_tracks(tracks);
+
+        // Store scanner and initialize progress
+        self.scanner = Some(scanner);
+        self.in_progress = true;
+        self.total = total;
+        self.processed = 0;
+        self.succeeded = 0;
+        self.failed = 0;
+
+        Ok(())
+    }
+
+    /// Update scanning progress by processing messages
+    pub fn update(&mut self) {
+        let scanner = match &self.scanner {
+            Some(s) => Arc::clone(s),
+            None => return,
+        };
+
+        // Process all pending messages
+        while let Some(msg) = scanner.try_recv() {
+            match msg {
+                WaveformScanMessage::Started { .. } => {
+                    // Track started, no action needed
+                }
+                WaveformScanMessage::Success { .. } => {
+                    self.processed += 1;
+                    self.succeeded += 1;
+                }
+                WaveformScanMessage::Error { path, error } => {
+                    self.processed += 1;
+                    self.failed += 1;
+                    log::error!("Waveform scan failed for {}: {}", path.display(), error);
+                }
+                WaveformScanMessage::Complete {
+                    total,
+                    succeeded,
+                    failed,
+                } => {
+                    self.in_progress = false;
+                    self.scanner = None;
+                    log::info!(
+                        "Waveform scan complete: {}/{} succeeded, {} failed",
+                        succeeded,
+                        total,
+                        failed
+                    );
+                }
+            }
+        }
+    }
+}

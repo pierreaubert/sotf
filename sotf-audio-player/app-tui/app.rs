@@ -42,27 +42,10 @@ pub enum LibraryViewMode {
 }
 
 /// Library sort order
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LibrarySortOrder {
-    Year,
-    Genre,
-    Artist,
-    Album,
-    Tracks,
-    Composer,
-    Popularity,
-}
+pub use sotf_audio_player::library::LibrarySortOrder;
 
 /// Channel filter options
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChannelFilter {
-    All,           // Show all albums
-    Mono,          // Only 1-channel albums
-    Stereo,        // Only 2-channel albums
-    Multichannel,  // Only albums with > 2 channels
-    Mixed,         // Only albums with mixed channel counts
-    Specific(u32), // Only albums with specific channel count
-}
+pub use sotf_audio_player::library::ChannelFilter;
 
 /// Artist node in tree view
 #[derive(Debug, Clone)]
@@ -232,21 +215,12 @@ pub struct App {
     pub maintenance_progress_checked: usize,
     pub maintenance_progress_total: usize,
 
-    // ReplayGain scanner progress
-    pub replay_gain_scanner: Option<Arc<sotf_audio_player::ReplayGainScanner>>,
-    pub replay_gain_in_progress: bool,
-    pub replay_gain_total: usize,
-    pub replay_gain_processed: usize,
-    pub replay_gain_succeeded: usize,
-    pub replay_gain_failed: usize,
+    // ReplayGain scanner manager
+    pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
 
     // Waveform scanner progress
-    pub waveform_scanner: Option<Arc<sotf_audio_player::WaveformScanner>>,
-    pub waveform_in_progress: bool,
-    pub waveform_total: usize,
-    pub waveform_processed: usize,
-    pub waveform_succeeded: usize,
-    pub waveform_failed: usize,
+    // Waveform scanner manager
+    pub waveform_manager: sotf_audio_player::WaveformScanManager,
 
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
@@ -335,18 +309,8 @@ impl App {
             maintenance_in_progress: false,
             maintenance_progress_checked: 0,
             maintenance_progress_total: 0,
-            replay_gain_scanner: None,
-            replay_gain_in_progress: false,
-            replay_gain_total: 0,
-            replay_gain_processed: 0,
-            replay_gain_succeeded: 0,
-            replay_gain_failed: 0,
-            waveform_scanner: None,
-            waveform_in_progress: false,
-            waveform_total: 0,
-            waveform_processed: 0,
-            waveform_succeeded: 0,
-            waveform_failed: 0,
+            replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
+            waveform_manager: sotf_audio_player::WaveformScanManager::new(),
             last_loaded_preset: None,
             album_images: Vec::new(),
             selected_image_index: 0,
@@ -409,101 +373,12 @@ impl App {
             .map(|config| config.channels as usize)
     }
 
-    pub fn filtered_albums(&self) -> Vec<&Album> {
-        use sotf_audio_player::AlbumChannelType;
-
-        let mut albums: Vec<&Album> = if self.search_query.is_empty() {
-            self.library.albums.iter().collect()
-        } else {
-            self.library.search_albums(&self.search_query)
-        };
-
-        // Apply channel filter
-        albums.retain(|album| match self.channel_filter {
-            ChannelFilter::All => true,
-            ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
-            ChannelFilter::Stereo => {
-                matches!(album.channel_type(), Some(AlbumChannelType::Stereo))
-            }
-            ChannelFilter::Multichannel => {
-                matches!(
-                    album.channel_type(),
-                    Some(AlbumChannelType::Multichannel(_))
-                )
-            }
-            ChannelFilter::Mixed => {
-                matches!(album.channel_type(), Some(AlbumChannelType::Mixed))
-            }
-            ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
-        });
-
-        // Sort albums based on current sort order
-        match self.library_sort_order {
-            LibrarySortOrder::Year => {
-                albums.sort_by(|a, b| {
-                    // Sort by year descending (newest first), then artist, then title
-                    b.year
-                        .cmp(&a.year)
-                        .then(a.artist().cmp(&b.artist()))
-                        .then(a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Genre => {
-                albums.sort_by(|a, b| {
-                    let genre_a = a.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
-                    let genre_b = b.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
-                    genre_a
-                        .cmp(&genre_b)
-                        .then(a.artist().cmp(&b.artist()))
-                        .then(a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Artist => {
-                albums.sort_by(|a, b| {
-                    a.artist()
-                        .cmp(&b.artist())
-                        .then(a.title.cmp(&b.title))
-                        .then(a.year.cmp(&b.year))
-                });
-            }
-            LibrarySortOrder::Album => {
-                albums.sort_by(|a, b| {
-                    a.title
-                        .cmp(&b.title)
-                        .then(a.artist().cmp(&b.artist()))
-                        .then(a.year.cmp(&b.year))
-                });
-            }
-            LibrarySortOrder::Tracks => {
-                albums.sort_by(|a, b| {
-                    b.tracks.len()
-                        .cmp(&a.tracks.len())
-                        .then(a.artist().cmp(&b.artist()))
-                        .then(a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Composer => {
-                albums.sort_by(|a, b| {
-                    let composer_a = a.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
-                    let composer_b = b.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
-                    composer_a
-                        .cmp(&composer_b)
-                        .then(a.artist().cmp(&b.artist()))
-                        .then(a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Popularity => {
-                albums.sort_by(|a, b| {
-                    // Sort by play count descending (most played first), then artist, then title
-                    b.play_count
-                        .cmp(&a.play_count)
-                        .then(a.artist().cmp(&b.artist()))
-                        .then(a.title.cmp(&b.title))
-                });
-            }
-        }
-
-        albums
+    pub fn filtered_albums(&self) -> Vec<Album> {
+        self.library.get_filtered_albums(
+            &self.search_query,
+            self.library_sort_order,
+            self.channel_filter,
+        )
     }
 
     pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
@@ -762,26 +637,7 @@ impl App {
 
     /// Get flattened directory tree for display
     pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
-        let mut items = Vec::new();
-
-        fn add_recursive(
-            items: &mut Vec<(PathBuf, usize, bool)>,
-            dir_info: &sotf_audio_player::DirectoryInfo,
-            level: usize,
-        ) {
-            items.push((dir_info.path.clone(), level, dir_info.expanded));
-
-            if dir_info.expanded {
-                for subdir in &dir_info.subdirectories {
-                    add_recursive(items, subdir, level + 1);
-                }
-            }
-        }
-
-        for dir_info in &self.library.directories {
-            add_recursive(&mut items, dir_info, 0);
-        }
-        items
+        self.library.get_directory_tree_items()
     }
 
     /// Start library scan (non-blocking background scan)
@@ -1054,226 +910,44 @@ impl App {
         result
     }
 
-    /// Start ReplayGain scanner for tracks without ReplayGain values
+    /// Start background ReplayGain analysis for tracks without gain data
     pub fn start_replay_gain_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        if self.replay_gain_in_progress {
-            return Ok(()); // Already scanning
+        let msg = self.replay_gain_manager.start_scan()?;
+        if self.replay_gain_manager.in_progress {
+            self.status_message = Some(msg);
         }
-
-        // Get database path
-        let db_path = sotf_audio_player::MusicDatabase::default_path()
-            .ok_or("Could not determine database path")?;
-
-        // Get tracks that need ReplayGain analysis
-        let db = sotf_audio_player::MusicDatabase::open(&db_path)?;
-        let tracks = db.get_tracks_without_replay_gain()?;
-
-        if tracks.is_empty() {
-            self.status_message = Some("All tracks already have ReplayGain values".to_string());
-            return Ok(());
-        }
-
-        let total = tracks.len();
-        log::info!("Starting ReplayGain scan for {} tracks", total);
-
-        // Determine number of threads (use CPU count or max 4)
-        let num_threads = std::thread::available_parallelism()
-            .map(|n| n.get().min(4))
-            .unwrap_or(2);
-
-        // Create scanner
-        let scanner = Arc::new(sotf_audio_player::ReplayGainScanner::new(
-            num_threads,
-            db_path,
-        ));
-
-        // Queue all tracks
-        scanner.scan_tracks(tracks);
-
-        // Store scanner and initialize progress
-        self.replay_gain_scanner = Some(scanner);
-        self.replay_gain_in_progress = true;
-        self.replay_gain_total = total;
-        self.replay_gain_processed = 0;
-        self.replay_gain_succeeded = 0;
-        self.replay_gain_failed = 0;
-        self.status_message = Some(format!("Analyzing {} tracks for ReplayGain...", total));
-
         Ok(())
     }
 
     /// Check for ReplayGain scanner progress updates
     pub fn check_replay_gain_progress(&mut self) {
-        if !self.replay_gain_in_progress {
+        if !self.replay_gain_manager.in_progress {
             return;
         }
 
-        // Clone the Arc to avoid borrowing self
-        let scanner = match &self.replay_gain_scanner {
-            Some(s) => Arc::clone(s),
-            None => return,
-        };
+        let just_completed = self.replay_gain_manager.update();
 
-        // Process all pending messages
-        while let Some(msg) = scanner.try_recv() {
-            use sotf_audio_player::ScanMessage;
-
-            match msg {
-                ScanMessage::Started { .. } => {
-                    // Track started, no action needed
-                }
-                ScanMessage::Success { .. } => {
-                    self.replay_gain_processed += 1;
-                    self.replay_gain_succeeded += 1;
-                }
-                ScanMessage::Error { path, error } => {
-                    self.replay_gain_processed += 1;
-                    self.replay_gain_failed += 1;
-                    log::error!("ReplayGain scan failed for {}: {}", path.display(), error);
-                }
-                ScanMessage::Complete {
-                    total,
-                    succeeded,
-                    failed,
-                } => {
-                    self.replay_gain_in_progress = false;
-                    self.replay_gain_scanner = None;
-                    self.status_message = Some(format!(
-                        "ReplayGain scan complete: {}/{} succeeded, {} failed",
-                        succeeded, total, failed
-                    ));
-                    log::info!(
-                        "ReplayGain scan complete: {}/{} succeeded, {} failed",
-                        succeeded,
-                        total,
-                        failed
-                    );
-                }
-            }
-        }
-
-        // Check if all tracks have been processed
-        if self.replay_gain_in_progress && self.replay_gain_processed >= self.replay_gain_total {
-            self.replay_gain_in_progress = false;
-            self.replay_gain_scanner = None;
+        if just_completed {
             self.status_message = Some(format!(
                 "ReplayGain scan complete: {}/{} succeeded, {} failed",
-                self.replay_gain_succeeded, self.replay_gain_total, self.replay_gain_failed
+                self.replay_gain_manager.succeeded,
+                self.replay_gain_manager.total,
+                self.replay_gain_manager.failed
             ));
-            log::info!(
-                "ReplayGain scan complete: {}/{} succeeded, {} failed",
-                self.replay_gain_succeeded,
-                self.replay_gain_total,
-                self.replay_gain_failed
-            );
         }
     }
 
     /// Start background waveform scanning for tracks without waveform data
     pub fn start_waveform_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        // Skip if already in progress
-        if self.waveform_in_progress {
-            return Ok(());
-        }
-
-        // Get database path
-        let db_path = sotf_audio_player::MusicDatabase::default_path()
-            .ok_or("Could not determine database path")?;
-
-        // Get tracks that need waveform analysis
-        let db = sotf_audio_player::MusicDatabase::open(&db_path)?;
-        let tracks = db.get_tracks_without_waveform()?;
-
-        if tracks.is_empty() {
-            log::debug!("All tracks already have waveform data");
-            return Ok(());
-        }
-
-        let total = tracks.len();
-        log::info!("Starting waveform scan for {} tracks", total);
-
-        // Determine number of threads (use CPU count or max 4)
-        let num_threads = std::thread::available_parallelism()
-            .map(|n| n.get().min(4))
-            .unwrap_or(2);
-
-        // Create scanner
-        let scanner = Arc::new(sotf_audio_player::WaveformScanner::new(
-            num_threads,
-            db_path,
-        ));
-
-        // Queue all tracks
-        scanner.scan_tracks(tracks);
-
-        // Store scanner and initialize progress
-        self.waveform_scanner = Some(scanner);
-        self.waveform_in_progress = true;
-        self.waveform_total = total;
-        self.waveform_processed = 0;
-        self.waveform_succeeded = 0;
-        self.waveform_failed = 0;
-
-        Ok(())
+        self.waveform_manager.start_scan()
     }
 
-    /// Check for waveform scanner progress updates
+    /// Check progress of waveform scan
     pub fn check_waveform_progress(&mut self) {
-        if !self.waveform_in_progress {
+        if !self.waveform_manager.in_progress {
             return;
         }
-
-        // Clone the Arc to avoid borrowing self
-        let scanner = match &self.waveform_scanner {
-            Some(s) => Arc::clone(s),
-            None => return,
-        };
-
-        // Process all pending messages
-        while let Some(msg) = scanner.try_recv() {
-            use sotf_audio_player::WaveformScanMessage;
-
-            match msg {
-                WaveformScanMessage::Started { .. } => {
-                    // Track started, no action needed
-                }
-                WaveformScanMessage::Success { .. } => {
-                    self.waveform_processed += 1;
-                    self.waveform_succeeded += 1;
-                }
-                WaveformScanMessage::Error { path, error } => {
-                    self.waveform_processed += 1;
-                    self.waveform_failed += 1;
-                    log::error!("Waveform scan failed for {}: {}", path.display(), error);
-                }
-                WaveformScanMessage::Complete {
-                    total,
-                    succeeded,
-                    failed,
-                } => {
-                    self.waveform_in_progress = false;
-                    self.waveform_scanner = None;
-                    log::info!(
-                        "Waveform scan complete: {}/{} succeeded, {} failed",
-                        succeeded,
-                        total,
-                        failed
-                    );
-                }
-            }
-        }
-
-        // Check if all tracks have been processed
-        if self.waveform_in_progress && self.waveform_processed >= self.waveform_total {
-            self.waveform_in_progress = false;
-            self.waveform_scanner = None;
-            log::info!(
-                "Waveform scan complete: {}/{} succeeded, {} failed",
-                self.waveform_succeeded,
-                self.waveform_total,
-                self.waveform_failed
-            );
-        }
+        self.waveform_manager.update();
     }
 
     /// Save current app state to config file

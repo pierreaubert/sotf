@@ -246,6 +246,7 @@ impl PlayerView {
                                 .child(
                                     div()
                                         .id(SharedString::from(format!("plugin-module-{}", idx)))
+                                        .group("plugin-module")
                                         .w(px(100.0))
                                         .h(px(110.0))
                                         .flex()
@@ -302,66 +303,114 @@ impl PlayerView {
                                                 },
                                             ),
                                         )
-                                        // Top bar with color
-                                        .child(div().h(px(4.0)).w_full().bg(color).rounded_t_md())
-                                        // Icon
+                                // Top bar with color
+                                .child(div().h(px(4.0)).w_full().bg(color).rounded_t_md())
+                                // Remove button (X) - visible on group hover
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top(px(2.0))
+                                        .right(px(2.0))
+                                        .w(px(16.0))
+                                        .h(px(16.0))
+                                        .rounded_full()
+                                        .bg(theme_c.error)
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_xs()
+                                        .text_color(rgb(0xffffff))
+                                        .cursor_pointer()
+                                        .opacity(0.0)
+                                        .group_hover("plugin-module", |s| s.opacity(1.0))
+                                        .hover(|s| s.bg(theme_c.error))
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, e: &MouseUpEvent, _, cx| {
+                                                cx.stop_propagation();
+                                                view.state.update(cx, |state, _cx| {
+                                                     state.app.plugin_chain.remove_plugin(idx);
+                                                     // Update selection if needed
+                                                     if state.app.selected_plugin_index >= state.app.plugin_chain.len() && state.app.plugin_chain.len() > 0 {
+                                                         state.app.selected_plugin_index = state.app.plugin_chain.len() - 1;
+                                                     }
+                                                     state.app.needs_plugin_update = true;
+                                                });
+                                                cx.notify();
+                                            }),
+                                        )
+                                        .child("×")
+                                )
+                                // Icon
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_2xl()
+                                        .text_color(color)
+                                        .child(icon),
+                                )
+                                // Name
+                                .child(
+                                    div()
+                                        .px_2()
+                                        .text_xs()
+                                        .text_color(theme_c.text_primary)
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .overflow_hidden()
+                                        .text_ellipsis()
+                                        .child(name),
+                                )
+                                // Bottom controls
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .px_2()
+                                        .py_1()
+                                        .border_t_1()
+                                        .border_color(theme_c.border)
+                                        // Power indicator
                                         .child(
                                             div()
-                                                .flex_1()
+                                                .w(px(16.0))
+                                                .h(px(16.0))
+                                                .rounded_full()
                                                 .flex()
                                                 .items_center()
                                                 .justify_center()
-                                                .text_2xl()
-                                                .text_color(color)
-                                                .child(icon),
-                                        )
-                                        // Name
-                                        .child(
-                                            div()
-                                                .px_2()
-                                                .text_xs()
-                                                .text_color(theme_c.text_primary)
-                                                .font_weight(FontWeight::MEDIUM)
-                                                .overflow_hidden()
-                                                .text_ellipsis()
-                                                .child(name),
-                                        )
-                                        // Bottom controls
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .justify_between()
-                                                .items_center()
-                                                .px_2()
-                                                .py_1()
-                                                .border_t_1()
-                                                .border_color(theme_c.border)
-                                                // Power indicator
-                                                .child(
-                                                    div()
-                                                        .w(px(16.0))
-                                                        .h(px(16.0))
-                                                        .rounded_full()
-                                                        .flex()
-                                                        .items_center()
-                                                        .justify_center()
-                                                        .bg(if enabled {
-                                                            theme_c.success
-                                                        } else {
-                                                            theme_c.error
-                                                        })
-                                                        .text_xs()
-                                                        .text_color(rgb(0xffffff))
-                                                        .child(if enabled { "●" } else { "○" }),
+                                                .cursor_pointer()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(move |view, e: &MouseUpEvent, _, cx| {
+                                                        cx.stop_propagation();
+                                                        view.state.update(cx, |state, _cx| {
+                                                            state.app.plugin_chain.toggle_plugin(idx);
+                                                            state.app.needs_plugin_update = true;
+                                                        });
+                                                        cx.notify();
+                                                    })
                                                 )
-                                                // Index indicator
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(theme_c.text_muted)
-                                                        .child(format!("{}", idx + 1)),
-                                                ),
+                                                .bg(if enabled {
+                                                    theme_c.success
+                                                } else {
+                                                    theme_c.error
+                                                })
+                                                .text_xs()
+                                                .text_color(rgb(0xffffff))
+                                                .child(if enabled { "●" } else { "○" }),
+                                        )
+                                        // Index indicator
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme_c.text_muted)
+                                                .child(format!("{}", idx + 1)),
                                         ),
+                                )
                                 )
                                 // Connection line after
                                 .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
@@ -422,34 +471,52 @@ impl PlayerView {
             .flex()
             .items_center()
             .gap_2()
-            .children(all_plugins.into_iter().map(|(pt, _category)| {
+            .children(all_plugins.into_iter().filter_map(|(pt, _category)| {
+                // Check if plugin is already in chain for single-instance plugins
+                let state = self.state.read(cx);
+                let already_present = state
+                    .app
+                    .plugin_chain
+                    .plugins()
+                    .iter()
+                    .any(|p| p.plugin_type() == pt);
+
+                let is_single_instance =
+                    matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
+
+                if is_single_instance && already_present {
+                    return None;
+                }
+
                 let color = plugin_color(&pt);
                 let name = short_name(&pt);
                 let theme_c = theme.clone();
 
-                div()
-                    .id(SharedString::from(format!("add-{}", name)))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .bg(theme_c.surface)
-                    .border_1()
-                    .border_color(color)
-                    .text_xs()
-                    .text_color(color)
-                    .cursor_pointer()
-                    .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.plugin_chain.add_plugin(&pt);
-                                state.app.needs_plugin_update = true;
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child(format!("+{}", name))
+                Some(
+                    div()
+                        .id(SharedString::from(format!("add-{}", name)))
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme_c.surface)
+                        .border_1()
+                        .border_color(color)
+                        .text_xs()
+                        .text_color(color)
+                        .cursor_pointer()
+                        .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.plugin_chain.add_plugin(&pt);
+                                    state.app.needs_plugin_update = true;
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .child(format!("+{}", name)),
+                )
             }))
     }
 
@@ -675,6 +742,7 @@ impl PlayerView {
                         .overflow_y_scroll()
                         .p_4()
                         .child(render_plugin_content(
+                            selected_idx, // Pass index
                             &plugin.settings,
                             is_editing,
                             param_selection,

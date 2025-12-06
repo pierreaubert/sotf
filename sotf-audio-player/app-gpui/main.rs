@@ -17,6 +17,7 @@ actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 #[derive(RustEmbed)]
 #[folder = "../assets"]
 #[include = "icons/*.svg"]
+#[include = "sotf.jpg"]
 struct Assets;
 
 fn main() {
@@ -52,7 +53,7 @@ fn main() {
             Menu {
                 name: "SotF Player".into(),
                 items: vec![
-                    MenuItem::action("About SotF Player", ToggleHelp),
+                    MenuItem::action("About SotF Player", About),
                     MenuItem::separator(),
                     MenuItem::action("Settings...", OpenConfig),
                     MenuItem::separator(),

@@ -240,15 +240,15 @@ impl SurfaceData {
             let z_val = if z <= 0.0 { 1e-10 } else { z };
             let min_val = if self.z_min <= 0.0 { 1e-10 } else { self.z_min };
             let max_val = if self.z_max <= 0.0 { 1e-10 } else { self.z_max };
-            
+
             let log_min = min_val.ln();
             let log_max = max_val.ln();
             let log_z = z_val.ln();
-            
+
             if (log_max - log_min).abs() < 1e-10 {
                 0.5
             } else {
-                 ((log_z - log_min) / (log_max - log_min)) as f32
+                ((log_z - log_min) / (log_max - log_min)) as f32
             }
         } else {
             ((z - self.z_min) / (self.z_max - self.z_min)) as f32

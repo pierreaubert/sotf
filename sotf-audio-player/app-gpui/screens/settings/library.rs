@@ -1,9 +1,10 @@
 //! Library settings content
 
+use crate::app::types::ReplayGainMode;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, HStack, StackSpacing};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Divider, HStack, StackSpacing};
 
 impl PlayerView {
     pub(crate) fn render_library_settings_content(
@@ -142,41 +143,8 @@ impl PlayerView {
                         })
                     )
             )
-            // Scan Progress Popup (Overlay-like or inline)
-            .child(
-                if scan_in_progress {
-                    div()
-                        .mt_4()
-                        .p_4()
-                        .rounded_md()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Library Scan in Progress..."))
-                        .child(
-                             div().flex().gap_6()
-                                .child(div().text_sm().child(format!("Tracks Found: {}", scan_progress_tracks)))
-                                .child(div().text_sm().child(format!("Albums Found: {}", scan_progress_albums)))
-                        )
-                        .child(
-                             Button::new("cancel-scan-btn", "Cancel Scan")
-                                .variant(ButtonVariant::Destructive)
-                                .size(ButtonSize::Sm)
-                                .theme(theme.to_button_theme())
-                                .build()
-                                .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.cancel_library_scan();
-                                    });
-                                }))
-                        )
-                } else {
-                    div().flex().child(" ") // Empty placeholder if not scanning? Or just nothing
-                }
-            )
+            // Scan Progress Popup (removed as per user request)
+            .child(div().h_0())
             // Actions Section
             .child(
                 div()
@@ -212,18 +180,120 @@ impl PlayerView {
                                     });
                                 }))
                         )
+                        )
+                    )
+            // ReplayGain Section
+            .child(
+                div()
+                    .mt_4()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(div().text_sm().font_weight(FontWeight::BOLD).child("ReplayGain"))
+                    .child(
+                        div()
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .p_4()
+                        .bg(theme.background_secondary)
+                        .rounded_md()
+                        .border_1()
+                        .border_color(theme.border)
                         .child(
-                             Button::new("replaygain-btn", "Scan ReplayGain")
-                                .variant(ButtonVariant::Secondary)
-                                .size(ButtonSize::Md)
-                                .disabled(scan_in_progress)
-                                .theme(theme.to_button_theme())
-                                .build()
-                                .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.scan_replay_gain();
-                                    });
-                                }))
+                             HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_1()
+                                        .flex_col()
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Enable ReplayGain"))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child("Automatically adjust volume to a standard level"))
+                                )
+                                .child(
+                                    // Toggle switch (simulated with button for now or use Checkbox if available)
+                                    Button::new("replay-gain-toggle", if state.app.replay_gain_enabled { "On" } else { "Off" })
+                                        .variant(if state.app.replay_gain_enabled { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                                        .size(ButtonSize::Sm)
+                                        .theme(theme.to_button_theme())
+                                        .build()
+                                        .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.replay_gain_enabled = !state.app.replay_gain_enabled;
+                                            });
+                                            cx.notify();
+                                        }))
+                                )
+                        )
+                        .child(Divider::new().color(theme.border))
+                        .child(
+                             HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_1()
+                                        .flex_col()
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Mode"))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child("Track (per-song) or Album (per-work) normalization"))
+                                )
+                                .child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .child(
+                                            Button::new("rg-mode-track", "Track")
+                                                .variant(if state.app.replay_gain_mode == ReplayGainMode::Track { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                                                .size(ButtonSize::Sm)
+                                                .theme(theme.to_button_theme())
+                                                .build()
+                                                .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.replay_gain_mode = ReplayGainMode::Track;
+                                                    });
+                                                    cx.notify();
+                                                }))
+                                        )
+                                        .child(
+                                            Button::new("rg-mode-album", "Album")
+                                                .variant(if state.app.replay_gain_mode == ReplayGainMode::Album { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                                                .size(ButtonSize::Sm)
+                                                .theme(theme.to_button_theme())
+                                                .build()
+                                                .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.replay_gain_mode = ReplayGainMode::Album;
+                                                    });
+                                                    cx.notify();
+                                                }))
+                                        )
+                                )
+                        )
+                        .child(Divider::new().color(theme.border))
+                        .child(
+                             HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_1()
+                                        .flex_col()
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Compute ReplayGain"))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child("Analyze and tag tracks lacking ReplayGain data"))
+                                )
+                                .child(
+                                     Button::new("replaygain-scan-btn", "Compute")
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Sm)
+                                        .disabled(scan_in_progress) // Also disable if library scan is running
+                                        .theme(theme.to_button_theme())
+                                        .build()
+                                        .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.scan_replay_gain();
+                                            });
+                                        }))
+                                )
                         )
                     )
             )

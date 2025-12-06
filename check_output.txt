@@ -1,0 +1,193 @@
+warning: multiple variants are never constructed
+  --> sotf-audio-plugins/src/plugin_binaural/error.rs:7:5
+   |
+ 5 | pub enum BinauralError {
+   |          ------------- variants in this enum
+ 6 |     /// SOFA file not loaded when required
+ 7 |     SofaNotLoaded,
+   |     ^^^^^^^^^^^^^
+ 8 |     /// Sample rate mismatch between SOFA and engine
+ 9 |     SampleRateMismatch { sofa_rate: u32, engine_rate: ...
+   |     ^^^^^^^^^^^^^^^^^^
+10 |     /// Invalid FFT size (must be power of 2)
+11 |     InvalidFftSize(usize),
+   |     ^^^^^^^^^^^^^^
+...
+15 |     ResamplingError(String),
+   |     ^^^^^^^^^^^^^^^
+16 |     /// HRTF preparation failed
+17 |     HrtfPreparationError(String),
+   |     ^^^^^^^^^^^^^^^^^^^^
+18 |     /// Invalid parameter value
+19 |     InvalidParameter { name: String, value: String },
+   |     ^^^^^^^^^^^^^^^^
+20 |     /// Input/output buffer size mismatch
+21 |     BufferSizeMismatch { expected: usize, got: usize },
+   |     ^^^^^^^^^^^^^^^^^^
+   |
+   = note: `BinauralError` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` on by default
+
+warning: function `calculate_reflections` is never used
+  --> sotf-audio-plugins/src/plugin_binaural/room.rs:84:8
+   |
+84 | pub fn calculate_reflections(
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: field `param_ir_file` is never read
+  --> sotf-audio-plugins/src/plugin_convolution.rs:66:5
+   |
+61 | pub struct ConvolutionPlugin {
+   |            ----------------- field in this struct
+...
+66 |     param_ir_file: ParameterId,
+   |     ^^^^^^^^^^^^^
+
+warning: `sotf-audio-plugins` (lib) generated 3 warnings
+    Checking gpui-d3rs v0.1.11 (/Users/pierre/src/sotf/gpui-d3rs)
+    Checking gpui-px v0.1.11 (/Users/pierre/src/sotf/gpui-px)
+    Checking sotf-gpui v0.5.3 (/Users/pierre/src/sotf/sotf-audio-player/app-gpui)
+warning: unused import: `std::sync::Arc`
+  --> sotf-audio-player/app-gpui/components/footer.rs:11:5
+   |
+11 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `ToastType`
+  --> sotf-audio-player/app-gpui/app/library.rs:10:67
+   |
+10 | use super::types::{ChannelFilter, LibrarySortOrder, ToastMessage, ToastType};
+   |                                                                   ^^^^^^^^^
+
+warning: unused variable: `cx`
+   --> sotf-audio-player/app-gpui/components/dialogs.rs:206:63
+    |
+206 | ...                   view.state.update(cx, |state, cx| {
+    |                                                     ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `params_clone`
+  --> sotf-audio-player/app-gpui/components/optimization_forms.rs:24:13
+   |
+24 |         let params_clone = params.clone();
+   |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_params_clone`
+
+warning: unused variable: `prefix_str`
+  --> sotf-audio-player/app-gpui/components/optimization_forms.rs:26:13
+   |
+26 |         let prefix_str = prefix.to_string();
+   |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_prefix_str`
+
+warning: unused variable: `cx`
+  --> sotf-audio-player/app-gpui/components/optimization_forms.rs:22:9
+   |
+22 |         cx: &mut Context<Self>,
+   |         ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+
+warning: unused variable: `params_clone`
+  --> sotf-audio-player/app-gpui/components/optimization_forms.rs:60:13
+   |
+60 |         let params_clone = params.clone();
+   |             ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_params_clone`
+
+warning: unused variable: `prefix_str`
+  --> sotf-audio-player/app-gpui/components/optimization_forms.rs:62:13
+   |
+62 |         let prefix_str = prefix.to_string();
+   |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_prefix_str`
+
+warning: unused variable: `cx`
+  --> sotf-audio-player/app-gpui/components/optimization_forms.rs:58:9
+   |
+58 |         cx: &mut Context<Self>,
+   |         ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+
+error[E0599]: no method named `with_transform` found for struct `gpui::Div` in the current scope
+   --> sotf-audio-player/app-gpui/plugins/common.rs:937:26
+    |
+933 | /                     div()
+934 | |                         .absolute()
+935 | |                         .w_full()
+936 | |                         .h_full()
+937 | |                         .with_transform(Transformation::rotate(Deg(angle_deg)))
+    | |                         -^^^^^^^^^^^^^^ method not found in `gpui::Div`
+    | |_________________________|
+    |
+
+error[E0425]: cannot find function, tuple struct or tuple variant `Deg` in this scope
+   --> sotf-audio-player/app-gpui/plugins/common.rs:937:64
+    |
+937 |                         .with_transform(Transformation::rotate(Deg(angle_deg)))
+    |                                                                ^^^ not found in this scope
+
+warning: unused variable: `e`
+   --> sotf-audio-player/app-gpui/plugins/rack.rs:329:69
+    |
+329 | ...                   cx.listener(move |view, e: &MouseUpEvent, _, cx| {
+    |                                               ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+warning: unused variable: `e`
+   --> sotf-audio-player/app-gpui/plugins/rack.rs:388:77
+    |
+388 | ...                   cx.listener(move |view, e: &MouseUpEvent, _, cx| {
+    |                                               ^ help: if this is intentional, prefix it with an underscore: `_e`
+
+error[E0599]: no method named `overflow_x` found for struct `gpui::Div` in the current scope
+  --> sotf-audio-player/app-gpui/plugins/upmixer.rs:92:10
+   |
+87 | /     div()
+88 | |         .flex()
+89 | |         .flex_col()
+90 | |         .gap_2()
+91 | |         .w_full()
+92 | |         .overflow_x(Overflow::Scroll) // Allow horizontal scrolling if it gets too wide
+   | |_________-^^^^^^^^^^
+   |
+help: there is a method `overflow_x_hidden` with a similar name, but with different arguments
+  --> /Users/pierre/.cargo/git/checkouts/zed-a70e2ad075855582/95a553e/crates/gpui/src/styled.rs:19:5
+   |
+19 |     gpui_macros::derive_inspector_reflection
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = note: this error originates in the attribute macro `gpui_macros::derive_inspector_reflection` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: unused variable: `view`
+  --> sotf-audio-player/app-gpui/screens/settings/library.rs:73:46
+   |
+73 | ...                   cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+   |                                    ^^^^ help: if this is intentional, prefix it with an underscore: `_view`
+
+warning: variable does not need to be mutable
+  --> sotf-audio-player/app-gpui/screens/settings/library.rs:74:88
+   |
+74 | ...                   cx.spawn(async move |view: WeakEntity<PlayerView>, mut cx| {
+   |                                                                          ----^^
+   |                                                                          |
+   |                                                                          help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` on by default
+
+warning: unused variable: `selected_idx`
+   --> sotf-audio-player/app-gpui/components/dialogs.rs:628:5
+    |
+628 |     selected_idx: usize,
+    |     ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_selected_idx`
+
+warning: unused variable: `nx`
+   --> sotf-audio-player/app-gpui/components/eq_curve.rs:403:17
+    |
+403 |             let nx = -dy / len * line_width / 2.0;
+    |                 ^^ help: if this is intentional, prefix it with an underscore: `_nx`
+
+warning: unused variable: `ny`
+   --> sotf-audio-player/app-gpui/components/eq_curve.rs:404:17
+    |
+404 |             let ny = dx / len * line_width / 2.0;
+    |                 ^^ help: if this is intentional, prefix it with an underscore: `_ny`
+
+Some errors have detailed explanations: E0425, E0599.
+For more information about an error, try `rustc --explain E0425`.
+warning: `sotf-gpui` (lib) generated 16 warnings
+error: could not compile `sotf-gpui` (lib) due to 3 previous errors; 16 warnings emitted

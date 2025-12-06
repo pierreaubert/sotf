@@ -289,8 +289,8 @@ impl UpmixerPlugin {
     ) -> Self {
         assert!(fft_size.is_power_of_two(), "FFT size must be power of 2");
         assert!(
-            lfe_cutoff_hz > 0.0 && lfe_cutoff_hz < 200.0,
-            "LFE cutoff must be between 0-200 Hz"
+            (20.0..=180.0).contains(&lfe_cutoff_hz),
+            "LFE cutoff must be between 20-180 Hz"
         );
         assert!(
             (0.0..=1.0).contains(&stereo_width),
@@ -575,10 +575,10 @@ of height speakers relative to the bed layer.",
 Range: 0.0-2.0, default 1.0.
 Controls overall subwoofer level after the mains/LFE crossover.",
             ),
-            Parameter::new_float("lfe_cutoff_hz", "LFE Cutoff (Hz)", 120.0, 40.0, 200.0)
+            Parameter::new_float("lfe_cutoff_hz", "LFE Cutoff (Hz)", 120.0, 20.0, 180.0)
                 .with_description(
                     "Linkwitz-Riley crossover frequency between mains and LFE.
-Range: 40-200 Hz, default 120 Hz.
+Range: 20-180 Hz, default 120 Hz.
 Lower values keep more bass in mains; higher values route
 more low-frequency energy into the subwoofer.",
                 ),
@@ -594,10 +594,10 @@ Range: 0.0-1.0, default 0.0.
 0.0 sends coherent center energy to the C speaker;
 1.0 moves it into a phantom center across L/R.",
             ),
-            Parameter::new_float("bandpass_hz", "Upmix Crossover (Hz)", 250.0, 200.0, 1000.0)
+            Parameter::new_float("bandpass_hz", "Upmix Crossover (Hz)", 250.0, 150.0, 350.0)
                 .with_description(
                     "Frequency above which upmixing to surrounds/height is applied.
-Range: 200-1000 Hz, default 250 Hz.
+Range: 150-350 Hz, default 250 Hz.
 Below this frequency content stays mainly in fronts + LFE;
 above it participates in the direct/ambient upmix.",
                 ),
@@ -627,10 +627,10 @@ Range: 0.0-1.0, default 1.0.
 1.0 applies the full transient-driven HR emphasis and ducking
 of the main front field.",
             ),
-            Parameter::new_float("safety_cap_db", "Safety Cap (dB)", 3.0, 0.0, 12.0)
+            Parameter::new_float("safety_cap_db", "Safety Cap (dB)", 3.0, 0.0, 3.0)
                 .with_description(
                     "Peak safety cap for the upmixer output.
-Range: 0.0-12.0 dB, default 3.0 dB.
+Range: 0.0-3.0 dB, default 3.0 dB.
 If a block's peak level after upmixing would exceed this value
 above unity, the block is scaled down to stay within the cap.",
                 ),
@@ -695,12 +695,14 @@ above unity, the block is scaled down to stay within the cap.",
         } else if id == self.param_lfe_cutoff_hz
             && let Some(cutoff) = value.as_float()
         {
-            if cutoff > 0.0 && cutoff < 200.0 && cutoff < self.bandpass_hz {
+            if cutoff >= 20.0 && cutoff <= 180.0 && cutoff < self.bandpass_hz {
                 self.lfe_cutoff_hz = cutoff;
                 self.update_crossover_gains();
                 return Ok(());
             }
-            return Err("LFE cutoff must be 0-200 Hz and less than bandpass frequency".to_string());
+            return Err(
+                "LFE cutoff must be 20-180 Hz and less than bandpass frequency".to_string(),
+            );
         } else if id == self.param_stereo_width
             && let Some(width) = value.as_float()
         {
@@ -764,11 +766,11 @@ above unity, the block is scaled down to stay within the cap.",
         } else if id == self.param_safety_cap_db
             && let Some(val) = value.as_float()
         {
-            if (0.0..=12.0).contains(&val) {
+            if (0.0..=3.0).contains(&val) {
                 self.safety_cap_db = val;
                 return Ok(());
             }
-            return Err("Safety cap must be between 0.0 and 12.0 dB".to_string());
+            return Err("Safety cap must be between 0.0 and 3.0 dB".to_string());
         }
         Err(format!("Unknown parameter: {}", id))
     }

@@ -74,7 +74,7 @@ impl ReplayGainScanner {
                         }
                     };
 
-                    log::info!(
+                    log::debug!(
                         "[ReplayGain Worker {}] Processing: {}",
                         worker_id,
                         path.display()
@@ -185,5 +185,116 @@ impl ReplayGainScanner {
 impl Drop for ReplayGainScanner {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Helper struct to manage ReplayGain scanning state
+#[derive(Debug, Default)]
+pub struct ReplayGainScanManager {
+    pub scanner: Option<Arc<ReplayGainScanner>>,
+    pub in_progress: bool,
+    pub total: usize,
+    pub processed: usize,
+    pub succeeded: usize,
+    pub failed: usize,
+}
+
+impl ReplayGainScanManager {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Start scanning all tracks in the database that are missing replaygain data
+    pub fn start_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+        // Skip if already in progress
+        if self.in_progress {
+            return Ok("Scan already in progress".to_string());
+        }
+
+        // Get database path
+        let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
+
+        // Get tracks that need analysis
+        let db = MusicDatabase::open(&db_path)?;
+        let tracks = db.get_tracks_without_replay_gain()?;
+
+        if tracks.is_empty() {
+            log::debug!("All tracks already have ReplayGain data");
+            return Ok("All tracks already have ReplayGain data".to_string());
+        }
+
+        let total = tracks.len();
+        log::info!("Starting ReplayGain scan for {} tracks", total);
+
+        // Determine number of threads (use CPU count or max 4)
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get().min(4))
+            .unwrap_or(2);
+
+        // Create scanner
+        let scanner = Arc::new(ReplayGainScanner::new(num_threads, db_path));
+
+        // Queue all tracks
+        scanner.scan_tracks(tracks);
+
+        // Store scanner and initialize progress
+        self.scanner = Some(scanner);
+        self.in_progress = true;
+        self.total = total;
+        self.processed = 0;
+        self.succeeded = 0;
+        self.failed = 0;
+
+        Ok(format!("Analyzing {} tracks for ReplayGain...", total))
+    }
+
+    /// Update scanning progress by processing messages
+    /// Returns true if scan just completed
+    pub fn update(&mut self) -> bool {
+        let scanner = match &self.scanner {
+            Some(s) => Arc::clone(s),
+            None => return false,
+        };
+
+        let mut just_completed = false;
+
+        // Process all pending messages
+        while let Some(msg) = scanner.try_recv() {
+            match msg {
+                ScanMessage::Started { .. } => {
+                    // Track started, no action needed
+                }
+                ScanMessage::Success { .. } => {
+                    self.processed += 1;
+                    self.succeeded += 1;
+                }
+                ScanMessage::Error { path, error } => {
+                    self.processed += 1;
+                    self.failed += 1;
+                    log::error!("ReplayGain scan failed for {}: {}", path.display(), error);
+                }
+                ScanMessage::Complete {
+                    total,
+                    succeeded,
+                    failed,
+                } => {
+                    self.in_progress = false;
+                    self.scanner = None;
+                    just_completed = true;
+                    log::info!(
+                        "ReplayGain scan complete: {}/{} succeeded, {} failed",
+                        succeeded,
+                        total,
+                        failed
+                    );
+                }
+            }
+        }
+
+        // Also check manual completion if we processed everyone but didn't get complete msg?
+        // (Scanner sends complete message, so we should rely on it, but redundancy is okay)
+        // Leaving it as relying on message for now as implementation of scanner sends it.
+
+        just_completed
     }
 }

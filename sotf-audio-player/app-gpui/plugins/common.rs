@@ -2,6 +2,7 @@
 
 use super::ticks::{TickConfig, render_tick_row};
 use crate::theme::Theme;
+use gpui::InteractiveElement;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -302,6 +303,7 @@ fn format_legend_value(value: f64) -> String {
 /// Render a toggle button with [OFF | ON] display
 /// The active state is highlighted, inactive is dimmed
 pub fn render_toggle(
+    plugin_idx: usize,
     label: &str,
     enabled: bool,
     idx: usize,
@@ -328,6 +330,15 @@ pub fn render_toggle(
             theme.accent
         } else {
             theme.surface
+        })
+        .id(("toggle", idx))
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            cx.dispatch_action(&UpdatePluginParam {
+                plugin_idx,
+                param_idx: idx,
+                value: if enabled { 0.0 } else { 1.0 },
+            });
         })
         // Label
         .child(
@@ -467,6 +478,7 @@ pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String 
 
 /// Render a vertical slider with label and value
 pub fn render_vertical_slider(
+    plugin_idx: usize,
     label: &str,
     value: f64,
     min: f64,
@@ -510,6 +522,35 @@ pub fn render_vertical_slider(
             theme.border
         })
         .min_w(px(70.0))
+        .id(idx) // Interactive elements likely need an ID
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            cx.dispatch_action(&SelectPluginParam {
+                plugin_idx,
+                param_idx: idx,
+            });
+        })
+        .on_click(move |event, _, cx| {
+            if event.click_count() == 2 {
+                cx.dispatch_action(&ResetPluginParam {
+                    plugin_idx,
+                    param_idx: idx,
+                });
+            }
+        })
+        .on_scroll_wheel(move |event, _, cx| {
+            let delta = event.delta.pixel_delta(px(20.0)).y;
+            let should_negate = delta > px(0.0);
+            let step = (max - min) * 0.05;
+            let change = if should_negate { -step } else { step };
+            let new_value = (value + change).clamp(min, max);
+
+            cx.dispatch_action(&UpdatePluginParam {
+                plugin_idx,
+                param_idx: idx,
+                value: new_value,
+            });
+        })
         // Label with keyboard shortcut
         .child(
             div()
@@ -851,5 +892,156 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
                 } else {
                     format!("{:.1}", peak_db)
                 }),
+        )
+}
+
+use super::actions::{ResetPluginParam, SelectPluginParam, UpdatePluginParam};
+
+/// Render a rotary knob control
+pub fn render_knob(
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    theme: &Theme,
+) -> impl IntoElement {
+    let is_selected = selected_param == idx && is_editing;
+    let normalized = ((value - min) / (max - min)).clamp(0.0, 1.0) as f32;
+
+    // Calculate angle in radians: -135 to +135 degrees
+    let start_rad = -2.35619; // -135 * PI / 180
+    let end_rad = 2.35619; // 135 * PI / 180
+    let angle_rad = start_rad + (end_rad - start_rad) * normalized;
+
+    let radius = 14.0;
+    let center = 20.0;
+    let indicator_size = 4.0;
+
+    let x = center + radius * angle_rad.cos() - (indicator_size / 2.0);
+    let y = center + radius * angle_rad.sin() - (indicator_size / 2.0);
+
+    let formatted_label = format_shortcut_label(label, shortcut_key);
+    let value_str = if unit == ":1" {
+        format!("{:.1}{}", value, unit)
+    } else if unit == "%" {
+        format!("{:.0}{}", value * 100.0, unit)
+    } else if unit == "Hz" {
+        format!("{:.0} {}", value, unit)
+    } else {
+        format!("{:.1} {}", value, unit)
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_2()
+        .p_2()
+        .rounded_lg()
+        .bg(if is_selected {
+            theme.accent_muted
+        } else {
+            theme.surface
+        })
+        .border_2()
+        .border_color(if is_selected {
+            theme.accent
+        } else {
+            theme.border
+        })
+        .min_w(px(70.0))
+        .id(("knob", idx))
+        .cursor_pointer()
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            cx.dispatch_action(&SelectPluginParam {
+                plugin_idx,
+                param_idx: idx,
+            });
+        })
+        .on_click(move |event, _, cx| {
+            if event.click_count() == 2 {
+                cx.dispatch_action(&ResetPluginParam {
+                    plugin_idx,
+                    param_idx: idx,
+                });
+            }
+        })
+        .on_scroll_wheel(move |event, _, cx| {
+            let delta = event.delta.pixel_delta(px(20.0)).y;
+            let should_negate = delta > px(0.0);
+            let step = (max - min) * 0.05;
+            let change = if should_negate { -step } else { step };
+            let new_value = (value + change).clamp(min, max);
+
+            cx.dispatch_action(&UpdatePluginParam {
+                plugin_idx,
+                param_idx: idx,
+                value: new_value,
+            });
+        })
+        // Label
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(if is_selected {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                })
+                .text_center()
+                .child(formatted_label),
+        )
+        // Knob Graphic
+        .child(
+            div()
+                .w(px(40.0))
+                .h(px(40.0))
+                .rounded_full()
+                .bg(theme.background)
+                .border_1()
+                .border_color(theme.border)
+                .relative()
+                // Indicator Dot
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(x))
+                        .top(px(y))
+                        .w(px(indicator_size))
+                        .h(px(indicator_size))
+                        .bg(if is_selected {
+                            theme.accent
+                        } else {
+                            theme.text_muted
+                        })
+                        .rounded_full(),
+                ),
+        )
+        // Value
+        .child(
+            div()
+                .px_2()
+                .py_1()
+                .rounded_md()
+                .bg(if is_selected {
+                    theme.success
+                } else {
+                    theme.background_secondary
+                })
+                .text_xs()
+                .font_weight(FontWeight::BOLD)
+                .text_color(if is_selected {
+                    theme.text_on_accent
+                } else {
+                    theme.text_primary
+                })
+                .child(value_str),
         )
 }

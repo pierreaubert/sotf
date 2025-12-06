@@ -467,11 +467,7 @@ impl PlayerView {
             )
             // Spacer for Channel Name (matches render_gradient_meter)
             .child(
-                div()
-                    .text_xs()
-                    .mt_1()
-                    .opacity(0.0)
-                    .child("Name"), // Dummy text to match height
+                div().text_xs().mt_1().opacity(0.0).child("Name"), // Dummy text to match height
             )
             // Spacer (matches MSD buttons height and margin)
             .child(

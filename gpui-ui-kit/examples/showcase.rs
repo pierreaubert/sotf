@@ -126,11 +126,23 @@ impl Showcase {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
-                            .child(Button::new("btn-primary", "Primary").variant(ButtonVariant::Primary))
-                            .child(Button::new("btn-secondary", "Secondary").variant(ButtonVariant::Secondary))
-                            .child(Button::new("btn-destructive", "Destructive").variant(ButtonVariant::Destructive))
+                            .child(
+                                Button::new("btn-primary", "Primary")
+                                    .variant(ButtonVariant::Primary),
+                            )
+                            .child(
+                                Button::new("btn-secondary", "Secondary")
+                                    .variant(ButtonVariant::Secondary),
+                            )
+                            .child(
+                                Button::new("btn-destructive", "Destructive")
+                                    .variant(ButtonVariant::Destructive),
+                            )
                             .child(Button::new("btn-ghost", "Ghost").variant(ButtonVariant::Ghost))
-                            .child(Button::new("btn-outline", "Outline").variant(ButtonVariant::Outline)),
+                            .child(
+                                Button::new("btn-outline", "Outline")
+                                    .variant(ButtonVariant::Outline),
+                            ),
                     ),
             )
             // Button Sizes
@@ -292,9 +304,21 @@ impl Showcase {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Lg)
-                            .child(Toggle::new("toggle-sm").size(ToggleSize::Sm).checked(toggle_on))
-                            .child(Toggle::new("toggle-md").size(ToggleSize::Md).checked(toggle_on))
-                            .child(Toggle::new("toggle-lg").size(ToggleSize::Lg).checked(!toggle_on))
+                            .child(
+                                Toggle::new("toggle-sm")
+                                    .size(ToggleSize::Sm)
+                                    .checked(toggle_on),
+                            )
+                            .child(
+                                Toggle::new("toggle-md")
+                                    .size(ToggleSize::Md)
+                                    .checked(toggle_on),
+                            )
+                            .child(
+                                Toggle::new("toggle-lg")
+                                    .size(ToggleSize::Lg)
+                                    .checked(!toggle_on),
+                            )
                             .child(Toggle::new("toggle-disabled").disabled(true).checked(true)),
                     ),
             )
@@ -306,21 +330,46 @@ impl Showcase {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Lg)
-                            .child(Checkbox::new("cb-sm").label("Small").size(CheckboxSize::Sm).checked(checkbox_checked))
-                            .child(Checkbox::new("cb-md").label("Medium").size(CheckboxSize::Md).checked(checkbox_checked))
-                            .child(Checkbox::new("cb-lg").label("Large").size(CheckboxSize::Lg).checked(!checkbox_checked))
-                            .child(Checkbox::new("cb-disabled").label("Disabled").disabled(true).checked(true)),
+                            .child(
+                                Checkbox::new("cb-sm")
+                                    .label("Small")
+                                    .size(CheckboxSize::Sm)
+                                    .checked(checkbox_checked),
+                            )
+                            .child(
+                                Checkbox::new("cb-md")
+                                    .label("Medium")
+                                    .size(CheckboxSize::Md)
+                                    .checked(checkbox_checked),
+                            )
+                            .child(
+                                Checkbox::new("cb-lg")
+                                    .label("Large")
+                                    .size(CheckboxSize::Lg)
+                                    .checked(!checkbox_checked),
+                            )
+                            .child(
+                                Checkbox::new("cb-disabled")
+                                    .label("Disabled")
+                                    .disabled(true)
+                                    .checked(true),
+                            ),
                     ),
             )
             // Slider
             .child(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::new(format!("Slider: {:.0}%", slider_value * 100.0)).weight(TextWeight::Medium))
                     .child(
-                        div()
-                            .w(px(300.0))
-                            .child(Slider::new("slider-demo").value(slider_value).size(SliderSize::Medium)),
+                        Text::new(format!("Slider: {:.0}%", slider_value * 100.0))
+                            .weight(TextWeight::Medium),
+                    )
+                    .child(
+                        div().w(px(300.0)).child(
+                            Slider::new("slider-demo")
+                                .value(slider_value)
+                                .size(SliderSize::Medium),
+                        ),
                     ),
             )
             // Input
@@ -395,7 +444,11 @@ impl Showcase {
                             .child(CircularProgress::new(0.25).size(px(32.0)))
                             .child(CircularProgress::new(0.50).size(px(48.0)))
                             .child(CircularProgress::new(0.75).size(px(64.0)))
-                            .child(CircularProgress::new(0.90).size(px(48.0)).variant(ProgressVariant::Success)),
+                            .child(
+                                CircularProgress::new(0.90)
+                                    .size(px(48.0))
+                                    .variant(ProgressVariant::Success),
+                            ),
                     ),
             )
     }
@@ -413,19 +466,28 @@ impl Showcase {
                             .variant(AlertVariant::Info),
                     )
                     .child(
-                        Alert::new("alert-success", "Your changes have been saved successfully.")
-                            .title("Success")
-                            .variant(AlertVariant::Success),
+                        Alert::new(
+                            "alert-success",
+                            "Your changes have been saved successfully.",
+                        )
+                        .title("Success")
+                        .variant(AlertVariant::Success),
                     )
                     .child(
-                        Alert::new("alert-warning", "Please review your settings before continuing.")
-                            .title("Warning")
-                            .variant(AlertVariant::Warning),
+                        Alert::new(
+                            "alert-warning",
+                            "Please review your settings before continuing.",
+                        )
+                        .title("Warning")
+                        .variant(AlertVariant::Warning),
                     )
                     .child(
-                        Alert::new("alert-error", "An error occurred while processing your request.")
-                            .title("Error")
-                            .variant(AlertVariant::Error),
+                        Alert::new(
+                            "alert-error",
+                            "An error occurred while processing your request.",
+                        )
+                        .title("Error")
+                        .variant(AlertVariant::Error),
                     ),
             )
             // Inline Alerts
@@ -437,8 +499,12 @@ impl Showcase {
                         HStack::new()
                             .spacing(StackSpacing::Lg)
                             .child(InlineAlert::new("Info message").variant(AlertVariant::Info))
-                            .child(InlineAlert::new("Success message").variant(AlertVariant::Success))
-                            .child(InlineAlert::new("Warning message").variant(AlertVariant::Warning))
+                            .child(
+                                InlineAlert::new("Success message").variant(AlertVariant::Success),
+                            )
+                            .child(
+                                InlineAlert::new("Warning message").variant(AlertVariant::Warning),
+                            )
                             .child(InlineAlert::new("Error message").variant(AlertVariant::Error)),
                     ),
             )
@@ -615,7 +681,11 @@ impl Showcase {
                             .child(LoadingDots::new().size(SpinnerSize::Sm))
                             .child(LoadingDots::new().size(SpinnerSize::Md))
                             .child(LoadingDots::new().size(SpinnerSize::Lg))
-                            .child(LoadingDots::new().size(SpinnerSize::Md).color(rgb(0x2da44e))),
+                            .child(
+                                LoadingDots::new()
+                                    .size(SpinnerSize::Md)
+                                    .color(rgb(0x2da44e)),
+                            ),
                     ),
             )
     }
@@ -660,27 +730,9 @@ impl Showcase {
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Xs)
-                                    .child(
-                                        div()
-                                            .p_2()
-                                            .bg(rgb(0x3a3a3a))
-                                            .rounded_md()
-                                            .child("H1"),
-                                    )
-                                    .child(
-                                        div()
-                                            .p_2()
-                                            .bg(rgb(0x3a3a3a))
-                                            .rounded_md()
-                                            .child("H2"),
-                                    )
-                                    .child(
-                                        div()
-                                            .p_2()
-                                            .bg(rgb(0x3a3a3a))
-                                            .rounded_md()
-                                            .child("H3"),
-                                    ),
+                                    .child(div().p_2().bg(rgb(0x3a3a3a)).rounded_md().child("H1"))
+                                    .child(div().p_2().bg(rgb(0x3a3a3a)).rounded_md().child("H2"))
+                                    .child(div().p_2().bg(rgb(0x3a3a3a)).rounded_md().child("H3")),
                             ),
                     ),
             )
@@ -690,20 +742,18 @@ impl Showcase {
                     .spacing(StackSpacing::Sm)
                     .child(Text::new("Spacer").weight(TextWeight::Medium))
                     .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                div()
-                                    .w(px(400.0))
-                                    .p_3()
-                                    .bg(rgb(0x2a2a2a))
-                                    .rounded_md()
-                                    .flex()
-                                    .items_center()
-                                    .child(Text::new("Left"))
-                                    .child(Spacer::new())
-                                    .child(Text::new("Right")),
-                            ),
+                        HStack::new().spacing(StackSpacing::Md).child(
+                            div()
+                                .w(px(400.0))
+                                .p_3()
+                                .bg(rgb(0x2a2a2a))
+                                .rounded_md()
+                                .flex()
+                                .items_center()
+                                .child(Text::new("Left"))
+                                .child(Spacer::new())
+                                .child(Text::new("Right")),
+                        ),
                     ),
             )
             // Dividers
@@ -720,18 +770,21 @@ impl Showcase {
                                     .child(Divider::new().color(rgb(0x555555)).build()),
                             )
                             .child(
-                                div()
-                                    .w(px(300.0))
-                                    .child(Divider::new().thickness(px(2.0)).color(rgb(0x007acc)).build()),
+                                div().w(px(300.0)).child(
+                                    Divider::new()
+                                        .thickness(px(2.0))
+                                        .color(rgb(0x007acc))
+                                        .build(),
+                                ),
                             )
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Md)
                                     .child(Text::new("Left"))
                                     .child(
-                                        div()
-                                            .h(px(20.0))
-                                            .child(Divider::vertical().color(rgb(0x555555)).build()),
+                                        div().h(px(20.0)).child(
+                                            Divider::vertical().color(rgb(0x555555)).build(),
+                                        ),
                                     )
                                     .child(Text::new("Right")),
                             ),
@@ -752,9 +805,17 @@ impl Showcase {
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .align(StackAlign::Center)
-                            .child(IconButton::new("ib-ghost", "🔍").variant(IconButtonVariant::Ghost))
-                            .child(IconButton::new("ib-filled", "⚙").variant(IconButtonVariant::Filled))
-                            .child(IconButton::new("ib-outline", "✏").variant(IconButtonVariant::Outline)),
+                            .child(
+                                IconButton::new("ib-ghost", "🔍").variant(IconButtonVariant::Ghost),
+                            )
+                            .child(
+                                IconButton::new("ib-filled", "⚙")
+                                    .variant(IconButtonVariant::Filled),
+                            )
+                            .child(
+                                IconButton::new("ib-outline", "✏")
+                                    .variant(IconButtonVariant::Outline),
+                            ),
                     ),
             )
             // Sizes
@@ -781,9 +842,17 @@ impl Showcase {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
-                            .child(IconButton::new("ib-selected", "♥").selected(true).variant(IconButtonVariant::Filled))
+                            .child(
+                                IconButton::new("ib-selected", "♥")
+                                    .selected(true)
+                                    .variant(IconButtonVariant::Filled),
+                            )
                             .child(IconButton::new("ib-disabled", "🔒").disabled(true))
-                            .child(IconButton::new("ib-round", "🔔").rounded_full().variant(IconButtonVariant::Filled)),
+                            .child(
+                                IconButton::new("ib-round", "🔔")
+                                    .rounded_full()
+                                    .variant(IconButtonVariant::Filled),
+                            ),
                     ),
             )
     }
@@ -827,7 +896,9 @@ impl Showcase {
         VStack::new()
             .spacing(StackSpacing::Lg)
             .child(self.section_header("Dialogs"))
-            .child(Text::new("Dialog component preview (backdrop disabled for showcase):").muted(true))
+            .child(
+                Text::new("Dialog component preview (backdrop disabled for showcase):").muted(true),
+            )
             .child(
                 div()
                     .relative()
@@ -869,20 +940,12 @@ impl Showcase {
                                             .text_color(rgb(0xffffff))
                                             .child("Confirm Action"),
                                     )
-                                    .child(
-                                        div()
-                                            .text_sm()
-                                            .text_color(rgb(0x888888))
-                                            .child("×"),
-                                    ),
+                                    .child(div().text_sm().text_color(rgb(0x888888)).child("×")),
                             )
                             // Content
-                            .child(
-                                div()
-                                    .px_4()
-                                    .py_4()
-                                    .child(Text::new("Are you sure you want to continue? This action cannot be undone.")),
-                            )
+                            .child(div().px_4().py_4().child(Text::new(
+                                "Are you sure you want to continue? This action cannot be undone.",
+                            )))
                             // Footer
                             .child(
                                 div()
@@ -894,8 +957,14 @@ impl Showcase {
                                         HStack::new()
                                             .justify(StackJustify::End)
                                             .spacing(StackSpacing::Sm)
-                                            .child(Button::new("dlg-cancel", "Cancel").variant(ButtonVariant::Ghost))
-                                            .child(Button::new("dlg-confirm", "Confirm").variant(ButtonVariant::Primary)),
+                                            .child(
+                                                Button::new("dlg-cancel", "Cancel")
+                                                    .variant(ButtonVariant::Ghost),
+                                            )
+                                            .child(
+                                                Button::new("dlg-confirm", "Confirm")
+                                                    .variant(ButtonVariant::Primary),
+                                            ),
                                     ),
                             ),
                     ),
@@ -922,9 +991,15 @@ impl Showcase {
                     .child(Text::new("Dropdown Menu").weight(TextWeight::Medium))
                     .child(
                         Menu::new(vec![
-                            MenuItem::new("new-file", "New File").with_shortcut("⌘N").with_icon("📄"),
-                            MenuItem::new("open", "Open...").with_shortcut("⌘O").with_icon("📂"),
-                            MenuItem::new("save", "Save").with_shortcut("⌘S").with_icon("💾"),
+                            MenuItem::new("new-file", "New File")
+                                .with_shortcut("⌘N")
+                                .with_icon("📄"),
+                            MenuItem::new("open", "Open...")
+                                .with_shortcut("⌘O")
+                                .with_icon("📂"),
+                            MenuItem::new("save", "Save")
+                                .with_shortcut("⌘S")
+                                .with_icon("💾"),
                             MenuItem::separator(),
                             MenuItem::checkbox("autosave", "Auto Save", true),
                             MenuItem::separator(),
@@ -967,7 +1042,10 @@ impl Showcase {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(Text::new("Bottom").weight(TextWeight::Medium))
-                            .child(Tooltip::new("Tooltip on bottom").placement(TooltipPlacement::Bottom)),
+                            .child(
+                                Tooltip::new("Tooltip on bottom")
+                                    .placement(TooltipPlacement::Bottom),
+                            ),
                     )
                     .child(
                         VStack::new()
@@ -979,7 +1057,9 @@ impl Showcase {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(Text::new("Right").weight(TextWeight::Medium))
-                            .child(Tooltip::new("Right tooltip").placement(TooltipPlacement::Right)),
+                            .child(
+                                Tooltip::new("Right tooltip").placement(TooltipPlacement::Right),
+                            ),
                     ),
             )
     }

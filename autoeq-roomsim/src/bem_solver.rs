@@ -85,9 +85,9 @@ pub fn to_bem_room_geometry(room: &RoomGeometry) -> BemRoomGeometry {
         RoomGeometry::Rectangular(r) => {
             BemRoomGeometry::Rectangular(BemRectangularRoom::new(r.width, r.depth, r.height))
         }
-        RoomGeometry::LShaped(l) => BemRoomGeometry::LShaped(bem::room_acoustics::LShapedRoom::new(
-            l.width1, l.depth1, l.width2, l.depth2, l.height,
-        )),
+        RoomGeometry::LShaped(l) => BemRoomGeometry::LShaped(
+            bem::room_acoustics::LShapedRoom::new(l.width1, l.depth1, l.width2, l.depth2, l.height),
+        ),
     }
 }
 
@@ -597,7 +597,9 @@ pub fn solve_bem_with_scattering(
     frequency: f64,
     config: &BemConfig,
 ) -> Result<BemResult, String> {
-    use crate::scattering_objects::{add_scattering_objects_to_mesh, estimate_scattering_element_count};
+    use crate::scattering_objects::{
+        add_scattering_objects_to_mesh, estimate_scattering_element_count,
+    };
 
     // Generate room mesh
     let mut mesh = generate_room_mesh(room, config.min_elements_per_meter);
@@ -736,20 +738,55 @@ pub fn solve_bem(
     match config.solver_method {
         BemSolverMethod::Direct => {
             // Dense solver - always use for small problems or when explicitly requested
-            solve_bem_dense(&mesh, sources, eval_point, frequency, speed_of_sound, config)
+            solve_bem_dense(
+                &mesh,
+                sources,
+                eval_point,
+                frequency,
+                speed_of_sound,
+                config,
+            )
         }
         BemSolverMethod::GmresHierarchical => {
             // Hierarchical preconditioner - best for very large problems
-            solve_bem_fmm_hierarchical(&mesh, sources, eval_point, frequency, speed_of_sound, config)
+            solve_bem_fmm_hierarchical(
+                &mesh,
+                sources,
+                eval_point,
+                frequency,
+                speed_of_sound,
+                config,
+            )
         }
         BemSolverMethod::Gmres | BemSolverMethod::GmresIlu => {
             // Auto-select based on size
             if num_elements < 500 {
-                solve_bem_dense(&mesh, sources, eval_point, frequency, speed_of_sound, config)
+                solve_bem_dense(
+                    &mesh,
+                    sources,
+                    eval_point,
+                    frequency,
+                    speed_of_sound,
+                    config,
+                )
             } else if num_elements < 3000 {
-                solve_bem_fmm_ilu(&mesh, sources, eval_point, frequency, speed_of_sound, config)
+                solve_bem_fmm_ilu(
+                    &mesh,
+                    sources,
+                    eval_point,
+                    frequency,
+                    speed_of_sound,
+                    config,
+                )
             } else {
-                solve_bem_fmm_hierarchical(&mesh, sources, eval_point, frequency, speed_of_sound, config)
+                solve_bem_fmm_hierarchical(
+                    &mesh,
+                    sources,
+                    eval_point,
+                    frequency,
+                    speed_of_sound,
+                    config,
+                )
             }
         }
     }
@@ -766,9 +803,7 @@ fn solve_bem_dense(
     speed_of_sound: f64,
     _config: &BemConfig,
 ) -> Result<BemResult, String> {
-    use bem::room_acoustics::{
-        calculate_field_pressure_bem_parallel, solve_bem_system,
-    };
+    use bem::room_acoustics::{calculate_field_pressure_bem_parallel, solve_bem_system};
 
     let bem_sources: Vec<BemSource> = sources.iter().map(to_bem_source).collect();
     let k = 2.0 * PI * frequency / speed_of_sound;
@@ -810,11 +845,10 @@ fn solve_bem_fmm_ilu(
     speed_of_sound: f64,
     config: &BemConfig,
 ) -> Result<BemResult, String> {
-    use bem::room_acoustics::{
-        calculate_field_pressure_bem_parallel,
-        solve_bem_fmm_gmres_ilu_with_result,
-    };
     use bem::core::solver::{IluMethod as BemIluMethod, IluScanningDegree};
+    use bem::room_acoustics::{
+        calculate_field_pressure_bem_parallel, solve_bem_fmm_gmres_ilu_with_result,
+    };
 
     let bem_sources: Vec<BemSource> = sources.iter().map(to_bem_source).collect();
     let k = 2.0 * PI * frequency / speed_of_sound;
@@ -831,7 +865,7 @@ fn solve_bem_fmm_ilu(
         config.max_iterations,
         config.restart,
         config.tolerance,
-        BemIluMethod::Slfmm,  // Use SLFMM pattern for near-field ILU
+        BemIluMethod::Slfmm, // Use SLFMM pattern for near-field ILU
         IluScanningDegree::Fine,
     )?;
 
@@ -904,7 +938,7 @@ fn solve_bem_fmm_hierarchical(
         frequency,
         pressure: field_pressures[0],
         num_elements,
-        iterations: 0,  // Hierarchical solver doesn't report iterations
+        iterations: 0, // Hierarchical solver doesn't report iterations
         residual: 0.0,
         converged: true,
     })
@@ -927,7 +961,15 @@ pub fn solve_bem_full(
     speed_of_sound: f64,
     config: &BemConfig,
 ) -> Result<BemResult, String> {
-    solve_bem(room, sources, &[], eval_point, frequency, speed_of_sound, config)
+    solve_bem(
+        room,
+        sources,
+        &[],
+        eval_point,
+        frequency,
+        speed_of_sound,
+        config,
+    )
 }
 
 /// Solve for room acoustics over a frequency range using BEM
@@ -955,7 +997,17 @@ pub fn solve_bem_frequency_sweep(
 ) -> Vec<Result<BemResult, String>> {
     frequencies
         .iter()
-        .map(|&freq| solve_bem(room, sources, scattering_objects, eval_point, freq, speed_of_sound, config))
+        .map(|&freq| {
+            solve_bem(
+                room,
+                sources,
+                scattering_objects,
+                eval_point,
+                freq,
+                speed_of_sound,
+                config,
+            )
+        })
         .collect()
 }
 
@@ -1063,8 +1115,15 @@ mod tests {
 
         let config = BemConfig::default();
         let frequencies = vec![50.0, 100.0, 200.0, 500.0, 1000.0];
-        let results =
-            solve_bem_frequency_sweep(&room, &sources, &[], &eval_point, &frequencies, 343.0, &config);
+        let results = solve_bem_frequency_sweep(
+            &room,
+            &sources,
+            &[],
+            &eval_point,
+            &frequencies,
+            343.0,
+            &config,
+        );
 
         assert_eq!(results.len(), 5);
         for result in results {

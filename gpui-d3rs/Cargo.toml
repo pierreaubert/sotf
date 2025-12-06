@@ -1,6 +1,6 @@
 [package]
 name = "gpui-d3rs"
-version = "0.1.10"
+version = "0.1.11"
 edition = "2021"
 authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"

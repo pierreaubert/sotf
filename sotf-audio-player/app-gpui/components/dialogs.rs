@@ -65,6 +65,59 @@ impl PlayerView {
             )
     }
 
+    pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+
+        Dialog::new("about-dialog")
+            .title("About SotF Player")
+            .size(DialogSize::Md)
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .align(StackAlign::Center)
+                    .child(
+                        div()
+                            .w(px(128.0))
+                            .h(px(128.0))
+                            .rounded_xl()
+                            .overflow_hidden()
+                            .child(
+                                img("sotf.jpg")
+                                    .w_full()
+                                    .h_full()
+                                    .object_fit(ObjectFit::Cover),
+                            ),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(
+                                Text::new("SotF Player")
+                                    .size(TextSize::Xl)
+                                    .weight(TextWeight::Bold)
+                                    .color(theme.text_primary),
+                            )
+                            .child(
+                                Text::new("Version 0.1.0")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                Text::new("© 2025 Spinorama")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_muted),
+                            ),
+                    ),
+            )
+            .footer(
+                Text::new("Press ESC to close")
+                    .size(TextSize::Xs)
+                    .muted(true),
+            )
+    }
+
     fn render_keybinding_row(
         &self,
         key: &str,
@@ -989,62 +1042,5 @@ impl PlayerView {
             .min_w(px(260.0))
     }
 
-    /// Render About dialog using Dialog component
-    pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.state.read(cx).app.theme.clone();
 
-        Dialog::new("about-dialog")
-            .title("About SotF")
-            .size(DialogSize::Sm)
-            .show_close_button(false)
-            .content(
-                VStack::new()
-                    .spacing(StackSpacing::Md)
-                    .align(StackAlign::Center)
-                    .child(
-                        Text::new("SotF")
-                            .size(TextSize::Xxl)
-                            .weight(TextWeight::Bold)
-                            .color(theme.accent),
-                    )
-                    .child(
-                        Text::new("Sound of the Future")
-                            .size(TextSize::Lg)
-                            .color(theme.text_primary),
-                    )
-                    .child(
-                        Text::new("Audio Player & Processing Engine")
-                            .size(TextSize::Sm)
-                            .color(theme.text_secondary),
-                    )
-                    .child(Divider::new())
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::Xs)
-                            .align(StackAlign::Center)
-                            .child(Text::new("Version 0.5.3").size(TextSize::Xs).muted(true))
-                            .child(
-                                Text::new("Built with Rust & GPUI")
-                                    .size(TextSize::Xs)
-                                    .muted(true),
-                            )
-                            .child(Text::new("spinorama.org").size(TextSize::Xs).muted(true)),
-                    ),
-            )
-            .footer(
-                Text::new("Click anywhere or press ESC to close")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
-            .build()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        state.app.input_mode = crate::app::InputMode::Normal;
-                    });
-                    cx.notify();
-                }),
-            )
-    }
 }

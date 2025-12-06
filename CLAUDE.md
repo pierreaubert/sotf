@@ -694,3 +694,4 @@ just validate-au      # Run auval validation
 - **Static Binary Support**: Cross-compilation for musl/static binaries
 - **Workspace version bump**: Now at 0.5.3 (individual crates may vary)
 - Read @GPUI.md before working on GPUI code.
+- when adding features to the sotf-players the business logic goes into the common library sotf-audio-player/src

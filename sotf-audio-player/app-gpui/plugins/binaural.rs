@@ -8,6 +8,7 @@ use gpui::*;
 /// Render the Binaural Decoder plugin
 #[allow(clippy::too_many_arguments)]
 pub fn render_binaural_plugin(
+    plugin_idx: usize,
     sofa_file: &str,
     input_channels: usize,
     enable_optimization: bool,
@@ -208,6 +209,7 @@ pub fn render_binaural_plugin(
                     theme,
                 ))
                 .child(render_toggle(
+                    plugin_idx,
                     "Optimization",
                     enable_optimization,
                     2,

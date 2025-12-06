@@ -1,12 +1,13 @@
 //! Convolution Plugin UI Component
 
-use super::common::{render_edit_hints, render_param_row, render_section_header};
+use super::common::{render_edit_hints, render_knob, render_param_row, render_section_header};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Render the Convolution plugin
 pub fn render_convolution_plugin(
+    plugin_idx: usize,
     ir_file: &str,
     mix: f64,
     gain_db: f64,
@@ -166,20 +167,30 @@ pub fn render_convolution_plugin(
                     is_editing,
                     theme,
                 ))
-                .child(render_param_row(
+                .child(render_knob(
+                    plugin_idx,
                     "Mix",
-                    &format!("{:.0}%", mix * 100.0),
+                    mix,
+                    0.0,
+                    1.0,
+                    "%",
                     1,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 ))
-                .child(render_param_row(
+                .child(render_knob(
+                    plugin_idx,
                     "Gain",
-                    &format!("{:+.1} dB", gain_db),
+                    gain_db,
+                    -20.0,
+                    20.0,
+                    "dB",
                     2,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 )),
         )

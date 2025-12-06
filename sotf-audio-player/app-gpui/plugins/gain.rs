@@ -12,6 +12,7 @@ use gpui::*;
 
 /// Render the Gain plugin
 pub fn render_gain_plugin(
+    plugin_idx: usize,
     gain_db: f64,
     is_editing: bool,
     selected_param: usize,
@@ -54,6 +55,7 @@ pub fn render_gain_plugin(
                         .items_center()
                         .child(render_section_header("GAIN CONTROL", theme))
                         .child(render_vertical_slider(
+                            plugin_idx,
                             "Gain",
                             gain_db,
                             -24.0,

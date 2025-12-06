@@ -254,7 +254,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     // ReplayGain progress dialog
-    if app.replay_gain_in_progress {
+    if app.replay_gain_manager.in_progress {
         draw_replay_gain_progress_dialog(f, app);
     }
 
@@ -3045,8 +3045,9 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
         height: dialog_area.height.saturating_sub(4),
     };
 
-    let progress_pct = if app.replay_gain_total > 0 {
-        (app.replay_gain_processed as f32 / app.replay_gain_total as f32 * 100.0) as u32
+    let progress_pct = if app.replay_gain_manager.total > 0 {
+        (app.replay_gain_manager.processed as f32 / app.replay_gain_manager.total as f32 * 100.0)
+            as u32
     } else {
         0
     };
@@ -3063,7 +3064,7 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
             Span::styled(
                 format!(
                     "{} / {} ({}%)",
-                    app.replay_gain_processed, app.replay_gain_total, progress_pct
+                    app.replay_gain_manager.processed, app.replay_gain_manager.total, progress_pct
                 ),
                 Style::default()
                     .fg(app.theme.accent_primary)
@@ -3074,14 +3075,14 @@ fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
         Line::from(vec![
             Span::raw("Succeeded: "),
             Span::styled(
-                format!("{}", app.replay_gain_succeeded),
+                format!("{}", app.replay_gain_manager.succeeded),
                 Style::default()
                     .fg(app.theme.accent_success)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  Failed: "),
             Span::styled(
-                format!("{}", app.replay_gain_failed),
+                format!("{}", app.replay_gain_manager.failed),
                 Style::default()
                     .fg(app.theme.accent_error)
                     .add_modifier(Modifier::BOLD),

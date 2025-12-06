@@ -12,7 +12,7 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::*;
 
-use super::common::{render_edit_hints, render_param_row, render_section_header};
+use super::common::{render_edit_hints, render_knob, render_section_header};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 
@@ -308,6 +308,7 @@ impl MeterData {
 
 /// Render the Spectrum Analyzer plugin
 pub fn render_spectrum_analyzer_plugin(
+    plugin_idx: usize,
     num_bins: usize,
     min_freq: f32,
     max_freq: f32,
@@ -316,16 +317,16 @@ pub fn render_spectrum_analyzer_plugin(
     selected_param: usize,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Generate simulated spectrum bars
+    // Generate simulated spectrum bars for the plugin card view
     let bar_count = 32;
     let bars: Vec<f32> = (0..bar_count)
         .map(|i| {
-            // Simulated frequency response curve (peaked around midrange)
+            // Simulated frequency response curve
             let t = i as f32 / bar_count as f32;
             let peak = 0.5;
             let spread = 0.3;
             let value = (-(t - peak).powi(2) / (2.0 * spread * spread)).exp();
-            value * 0.8 + 0.1 // Scale to 0.1-0.9 range
+            value * 0.8 + 0.1
         })
         .collect();
 
@@ -345,7 +346,6 @@ pub fn render_spectrum_analyzer_plugin(
                 .border_color(theme.border)
                 .p_4()
                 .child(render_section_header("SPECTRUM ANALYZER", theme))
-                // Spectrum visualization
                 .child(
                     div()
                         .h(px(120.0))
@@ -359,137 +359,73 @@ pub fn render_spectrum_analyzer_plugin(
                         .gap_px()
                         .p_2()
                         .children(bars.into_iter().enumerate().map(|(i, height)| {
-                            // Color gradient from green to red based on frequency
                             let t = i as f32 / bar_count as f32;
                             let color = if t < 0.3 {
-                                theme.meter_normal // Green for bass
+                                theme.meter_normal
                             } else if t < 0.7 {
-                                theme.meter_warning // Yellow for mids
+                                theme.meter_warning
                             } else {
-                                theme.meter_clip // Red for highs
+                                theme.meter_clip
                             };
-
                             div().flex_1().h(relative(height)).bg(color).rounded_t_sm()
                         })),
-                )
-                // Frequency labels
-                .child(
-                    div()
-                        .flex()
-                        .justify_between()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .mt_1()
-                        .child(format!("{:.0} Hz", min_freq))
-                        .child("1k")
-                        .child("10k")
-                        .child(format!("{:.0} Hz", max_freq)),
                 ),
         )
-        // Analyzer info
-        .child(
-            div().flex().gap_4().children([
-                // Resolution
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .p_3()
-                    .rounded_xl()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .child(div().text_xs().text_color(theme.text_muted).child("Bins"))
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(format!("{}", num_bins)),
-                    ),
-                // Frequency range
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .p_3()
-                    .rounded_xl()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .child(div().text_xs().text_color(theme.text_muted).child("Range"))
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(format!("{:.0}-{:.0}k", min_freq, max_freq / 1000.0)),
-                    ),
-                // Smoothing
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .p_3()
-                    .rounded_xl()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .child(div().text_xs().text_color(theme.text_muted).child("Smooth"))
-                    .child(
-                        div()
-                            .text_lg()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(format!("{:.0}%", smoothing * 100.0)),
-                    ),
-            ]),
-        )
-        // Parameters section
+        // Controls
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_3()
-                .child(render_section_header("PARAMETERS", theme))
-                .child(render_param_row(
+                .gap_4()
+                .child(render_knob(
+                    plugin_idx,
                     "Bins",
-                    &format!("{}", num_bins),
+                    num_bins as f64,
+                    10.0,
+                    100.0,
+                    "",
                     0,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 ))
-                .child(render_param_row(
-                    "Min Freq",
-                    &format!("{:.0} Hz", min_freq),
+                .child(render_knob(
+                    plugin_idx,
+                    "Min Hz",
+                    min_freq as f64,
+                    10.0,
+                    1000.0,
+                    "Hz",
                     1,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 ))
-                .child(render_param_row(
-                    "Max Freq",
-                    &format!("{:.0} Hz", max_freq),
+                .child(render_knob(
+                    plugin_idx,
+                    "Max Hz",
+                    max_freq as f64,
+                    1000.0,
+                    24000.0,
+                    "Hz",
                     2,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 ))
-                .child(render_param_row(
-                    "Smoothing",
-                    &format!("{:.2}", smoothing),
+                .child(render_knob(
+                    plugin_idx,
+                    "Smooth",
+                    smoothing as f64,
+                    0.0,
+                    1.0,
+                    "",
                     3,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 )),
         )

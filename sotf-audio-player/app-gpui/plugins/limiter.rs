@@ -15,6 +15,7 @@ use gpui::*;
 
 /// Render the Limiter plugin
 pub fn render_limiter_plugin(
+    plugin_idx: usize,
     threshold_db: f64,
     release_ms: f64,
     mix: f64,
@@ -57,6 +58,7 @@ pub fn render_limiter_plugin(
                                 .gap_3()
                                 .justify_center()
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Ceiling",
                                     threshold_db,
                                     -12.0,
@@ -69,6 +71,7 @@ pub fn render_limiter_plugin(
                                     theme,
                                 ))
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Release",
                                     release_ms,
                                     10.0,
@@ -81,6 +84,7 @@ pub fn render_limiter_plugin(
                                     theme,
                                 ))
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Mix",
                                     mix,
                                     0.0,

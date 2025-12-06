@@ -2,12 +2,14 @@
 
 use super::common::{render_edit_hints, render_param_row, render_section_header};
 use super::ticks::{ScaleType, TickConfig, render_tick_row};
+use crate::plugins::render_knob;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Render the Loudness Compensation plugin
 pub fn render_loudness_compensation_plugin(
+    plugin_idx: usize,
     target_lufs: f64,
     min_gain_db: f64,
     max_gain_db: f64,
@@ -15,15 +17,19 @@ pub fn render_loudness_compensation_plugin(
     selected_param: usize,
     theme: &Theme,
 ) -> impl IntoElement {
-    // TickConfig for target LUFS display (-30 to -10 range)
-    let lufs_tick_config = TickConfig::new(ScaleType::Linear, -30.0, -10.0)
-        .with_major_values(vec![-30.0, -24.0, -18.0, -14.0, -10.0]);
+    let lufs_tick_config = TickConfig {
+        scale: ScaleType::Linear,
+        min: -60.0,
+        max: 0.0,
+        major_values: vec![-60.0, -50.0, -40.0, -30.0, -20.0, -10.0, 0.0],
+        minor_count: 4,
+        ..TickConfig::default()
+    };
 
     div()
         .flex()
         .flex_col()
         .gap_4()
-        // Visual section - Target LUFS display
         .child(
             div()
                 .flex()
@@ -159,28 +165,43 @@ pub fn render_loudness_compensation_plugin(
                 .border_color(theme.border)
                 .p_3()
                 .child(render_section_header("PARAMETERS", theme))
-                .child(render_param_row(
+                .child(render_knob(
+                    plugin_idx,
                     "Target LUFS",
-                    &format!("{:.1}", target_lufs),
+                    target_lufs,
+                    -30.0,
+                    -5.0,
+                    "",
                     0,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 ))
-                .child(render_param_row(
+                .child(render_knob(
+                    plugin_idx,
                     "Min Gain",
-                    &format!("{:.1} dB", min_gain_db),
+                    min_gain_db,
+                    -20.0,
+                    0.0,
+                    "dB",
                     1,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 ))
-                .child(render_param_row(
+                .child(render_knob(
+                    plugin_idx,
                     "Max Gain",
-                    &format!("{:.1} dB", max_gain_db),
+                    max_gain_db,
+                    0.0,
+                    20.0,
+                    "dB",
                     2,
                     selected_param,
                     is_editing,
+                    None,
                     theme,
                 )),
         )
@@ -188,7 +209,11 @@ pub fn render_loudness_compensation_plugin(
 }
 
 /// Render the Loudness Monitor plugin (analyzer)
-pub fn render_loudness_monitor_plugin(_is_editing: bool, theme: &Theme) -> impl IntoElement {
+pub fn render_loudness_monitor_plugin(
+    _plugin_idx: usize,
+    _is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
     div()
         .flex()
         .flex_col()

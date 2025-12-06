@@ -405,8 +405,8 @@ Legend: ✅ Complete | 🚧 Planned | ❌ Not needed/planned
 - [x] Array utilities and data manipulation
 - [x] Interpolation (numeric, color, transform, zoom)
 - [ ] Force-directed layouts
-- [ ] Hierarchical layouts (tree, treemap, partition)
-- [ ] Additional color schemes
+- [o] Hierarchical layouts (tree, treemap, partition)
+- [x] Additional color schemes
 - [ ] Time formatting
 - [ ] Documentation improvements
 - [ ] Performance benchmarks

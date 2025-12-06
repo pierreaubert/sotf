@@ -31,7 +31,9 @@ mod bem_solver;
 mod scattering_objects;
 
 // Re-export BEM types for external use
-pub use bem_solver::{BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig, IluMethod};
+pub use bem_solver::{
+    BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig, IluMethod,
+};
 pub use scattering_objects::{BoxObject, CylinderObject, ScatteringObjectConfig, SphereObject};
 
 // ============================================================================
@@ -3084,12 +3086,15 @@ impl RoomSimulatorWasm {
                 );
                 if let Ok(result) = scattering_result {
                     // Add scattered field contribution (subtract direct to avoid double counting)
-                    let k = 2.0 * std::f64::consts::PI * frequency / self.config.solver.speed_of_sound;
+                    let k =
+                        2.0 * std::f64::consts::PI * frequency / self.config.solver.speed_of_sound;
                     let mut direct_field = Complex64::new(0.0, 0.0);
                     for source in &self.sources {
                         let amp = source.amplitude_towards(point, frequency);
                         let dist = source.position.distance_to(point);
-                        direct_field += bem_solver::greens_function(dist, k) * amp * source.phase_factor(frequency);
+                        direct_field += bem_solver::greens_function(dist, k)
+                            * amp
+                            * source.phase_factor(frequency);
                     }
                     // Scattered contribution = total BEM - direct
                     let scattered = result.pressure - direct_field;
@@ -3125,8 +3130,8 @@ impl RoomSimulatorWasm {
         // Use Schroeder frequency as the crossover point
         let volume = room_width * room_depth * room_height;
         let avg_absorption = self.wall_materials.average_absorption_at(frequency);
-        let surface_area = 2.0
-            * (room_width * room_depth + room_width * room_height + room_depth * room_height);
+        let surface_area =
+            2.0 * (room_width * room_depth + room_width * room_height + room_depth * room_height);
         let total_abs = avg_absorption * surface_area;
         let rt60 = rt60_sabine(volume, total_abs);
         let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
@@ -3164,11 +3169,11 @@ impl RoomSimulatorWasm {
             "image-source-1" => 1,
             "image-source-2" => 2,
             "image-source-3" => 3,
-            "modal" => 0,       // Modal doesn't use ISM reflections
-            "bem" => 0,         // BEM doesn't use ISM reflections
-            "hybrid" => 2,      // Hybrid modal/ISM uses 2nd order
-            "hybrid-bem" => 2,  // Hybrid BEM/ISM uses 2nd order
-            _ => 2,             // Default to 2nd order
+            "modal" => 0,      // Modal doesn't use ISM reflections
+            "bem" => 0,        // BEM doesn't use ISM reflections
+            "hybrid" => 2,     // Hybrid modal/ISM uses 2nd order
+            "hybrid-bem" => 2, // Hybrid BEM/ISM uses 2nd order
+            _ => 2,            // Default to 2nd order
         };
 
         // Get room dimensions for image source calculation
@@ -3551,7 +3556,8 @@ impl RoomSimulatorWasm {
 
         // BEM-based methods - use modal for single source
         if method == "bem" || method == "hybrid-bem" {
-            return self.calculate_single_source_bem_or_hybrid(source_idx, point, frequency, method);
+            return self
+                .calculate_single_source_bem_or_hybrid(source_idx, point, frequency, method);
         }
 
         // Modal and modal-ISM hybrid methods
@@ -3570,7 +3576,8 @@ impl RoomSimulatorWasm {
                     self.config.solver.speed_of_sound,
                     self.config.solver.max_mode_order,
                     self.config.solver.modal_damping,
-                ) * amplitude * phase_factor;
+                ) * amplitude
+                    * phase_factor;
 
                 if method == "modal" {
                     return modal_pressure;
@@ -3632,7 +3639,8 @@ impl RoomSimulatorWasm {
                 self.config.solver.speed_of_sound,
                 self.config.solver.max_mode_order,
                 self.config.solver.modal_damping,
-            ) * amplitude * phase_factor
+            ) * amplitude
+                * phase_factor
         } else {
             // Non-rectangular: use direct field approximation
             let k = self.wavenumber(frequency);
@@ -3649,8 +3657,8 @@ impl RoomSimulatorWasm {
         // Hybrid-BEM: blend with ISM at high frequencies
         let volume = room_width * room_depth * room_height;
         let avg_absorption = self.wall_materials.average_absorption_at(frequency);
-        let surface_area = 2.0
-            * (room_width * room_depth + room_width * room_height + room_depth * room_height);
+        let surface_area =
+            2.0 * (room_width * room_depth + room_width * room_height + room_depth * room_height);
         let total_abs = avg_absorption * surface_area;
         let rt60 = rt60_sabine(volume, total_abs);
         let schroeder_freq = 2000.0 * (rt60 / volume).sqrt();
@@ -3701,53 +3709,94 @@ impl RoomSimulatorWasm {
         let (room_width, room_depth, room_height) = self.get_room_dimensions();
 
         // Get frequency-dependent reflection coefficients
-        let r_left = self.wall_materials.reflection_at(WallSurface::Left, frequency);
-        let r_right = self.wall_materials.reflection_at(WallSurface::Right, frequency);
-        let r_front = self.wall_materials.reflection_at(WallSurface::Front, frequency);
-        let r_back = self.wall_materials.reflection_at(WallSurface::Back, frequency);
-        let r_floor = self.wall_materials.reflection_at(WallSurface::Floor, frequency);
-        let r_ceiling = self.wall_materials.reflection_at(WallSurface::Ceiling, frequency);
+        let r_left = self
+            .wall_materials
+            .reflection_at(WallSurface::Left, frequency);
+        let r_right = self
+            .wall_materials
+            .reflection_at(WallSurface::Right, frequency);
+        let r_front = self
+            .wall_materials
+            .reflection_at(WallSurface::Front, frequency);
+        let r_back = self
+            .wall_materials
+            .reflection_at(WallSurface::Back, frequency);
+        let r_floor = self
+            .wall_materials
+            .reflection_at(WallSurface::Floor, frequency);
+        let r_ceiling = self
+            .wall_materials
+            .reflection_at(WallSurface::Ceiling, frequency);
 
         let mut total_pressure = Complex64::new(0.0, 0.0);
 
         // Direct sound
         let r_direct = source.position.distance_to(point);
         let air_atten_direct = self.air_absorption_factor(r_direct, frequency);
-        total_pressure += greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
+        total_pressure +=
+            greens_function_3d(r_direct, k) * amplitude * air_atten_direct * phase_factor;
 
         if reflection_order >= 1 {
             // First-order image sources - handle L-shaped rooms
             let first_order_images: Vec<(Point3D, f64)> = match &self.room_geometry {
-                RoomGeometry::LShaped(l_room) => {
-                    l_room
-                        .get_first_order_images(&source.position)
-                        .into_iter()
-                        .filter_map(|(image, wall_name)| {
-                            if !l_room.is_valid_image_source(&image, point, &source.position) {
-                                return None;
-                            }
-                            let refl = match wall_name {
-                                "left" => r_left,
-                                "right" => r_right,
-                                "front" => r_front,
-                                "back" => r_back,
-                                "floor" => r_floor,
-                                "ceiling" => r_ceiling,
-                                "step_horizontal" | "step_vertical" => (r_right + r_back) / 2.0,
-                                _ => r_right,
-                            };
-                            Some((image, refl))
-                        })
-                        .collect()
-                }
+                RoomGeometry::LShaped(l_room) => l_room
+                    .get_first_order_images(&source.position)
+                    .into_iter()
+                    .filter_map(|(image, wall_name)| {
+                        if !l_room.is_valid_image_source(&image, point, &source.position) {
+                            return None;
+                        }
+                        let refl = match wall_name {
+                            "left" => r_left,
+                            "right" => r_right,
+                            "front" => r_front,
+                            "back" => r_back,
+                            "floor" => r_floor,
+                            "ceiling" => r_ceiling,
+                            "step_horizontal" | "step_vertical" => (r_right + r_back) / 2.0,
+                            _ => r_right,
+                        };
+                        Some((image, refl))
+                    })
+                    .collect(),
                 RoomGeometry::Rectangular(_) => {
                     vec![
-                        (Point3D::new(-source.position.x, source.position.y, source.position.z), r_left),
-                        (Point3D::new(2.0 * room_width - source.position.x, source.position.y, source.position.z), r_right),
-                        (Point3D::new(source.position.x, -source.position.y, source.position.z), r_front),
-                        (Point3D::new(source.position.x, 2.0 * room_depth - source.position.y, source.position.z), r_back),
-                        (Point3D::new(source.position.x, source.position.y, -source.position.z), r_floor),
-                        (Point3D::new(source.position.x, source.position.y, 2.0 * room_height - source.position.z), r_ceiling),
+                        (
+                            Point3D::new(-source.position.x, source.position.y, source.position.z),
+                            r_left,
+                        ),
+                        (
+                            Point3D::new(
+                                2.0 * room_width - source.position.x,
+                                source.position.y,
+                                source.position.z,
+                            ),
+                            r_right,
+                        ),
+                        (
+                            Point3D::new(source.position.x, -source.position.y, source.position.z),
+                            r_front,
+                        ),
+                        (
+                            Point3D::new(
+                                source.position.x,
+                                2.0 * room_depth - source.position.y,
+                                source.position.z,
+                            ),
+                            r_back,
+                        ),
+                        (
+                            Point3D::new(source.position.x, source.position.y, -source.position.z),
+                            r_floor,
+                        ),
+                        (
+                            Point3D::new(
+                                source.position.x,
+                                source.position.y,
+                                2.0 * room_height - source.position.z,
+                            ),
+                            r_ceiling,
+                        ),
                     ]
                 }
             };
@@ -3756,7 +3805,11 @@ impl RoomSimulatorWasm {
                 let r_image = image_src.distance_to(point);
                 if r_image > 1e-6 {
                     let air_atten = self.air_absorption_factor(r_image, frequency);
-                    total_pressure += greens_function_3d(r_image, k) * amplitude * refl_coeff * air_atten * phase_factor;
+                    total_pressure += greens_function_3d(r_image, k)
+                        * amplitude
+                        * refl_coeff
+                        * air_atten
+                        * phase_factor;
                 }
             }
 

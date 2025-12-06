@@ -198,7 +198,7 @@ impl Tabs {
         // Apply variant-specific container styling
         match self.variant {
             TabVariant::Underline => {
-                container = container.border_b_1().border_color(theme.container_border);
+                // No border on container - we'll add underlines per-tab
             }
             TabVariant::Enclosed => {
                 container = container.gap_1();
@@ -223,124 +223,212 @@ impl Tabs {
             let on_close: Option<*const dyn Fn(&SharedString, &mut Window, &mut App)> =
                 self.on_close.as_ref().map(|f| f.as_ref() as *const _);
 
-            let mut tab_el = div()
-                .id(SharedString::from(format!("tab-{}", tab_id)))
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_4()
-                .py_2();
+            // For Underline variant, we wrap the tab content and underline in a flex column
+            let tab_element = if self.variant == TabVariant::Underline {
+                let mut tab_content = div()
+                    .id(SharedString::from(format!("tab-{}", tab_id)))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_4()
+                    .py_2();
 
-            // Apply variant-specific tab styling with theme colors
-            match self.variant {
-                TabVariant::Underline => {
-                    if is_selected {
-                        tab_el = tab_el
-                            .border_b_2()
-                            .border_color(theme.accent)
-                            .text_color(theme.text_selected)
-                            .font_weight(FontWeight::SEMIBOLD);
-                    } else {
-                        let hover_color = theme.text_hover;
-                        tab_el = tab_el
-                            .text_color(theme.text_unselected)
-                            .hover(move |s| s.text_color(hover_color));
+                if is_selected {
+                    tab_content = tab_content
+                        .text_color(theme.text_selected)
+                        .font_weight(FontWeight::SEMIBOLD);
+                } else {
+                    let hover_color = theme.text_hover;
+                    tab_content = tab_content
+                        .text_color(theme.text_unselected)
+                        .hover(move |s| s.text_color(hover_color));
+                }
+
+                if disabled {
+                    tab_content = tab_content.opacity(0.5).cursor_not_allowed();
+                } else {
+                    tab_content = tab_content.cursor_pointer();
+
+                    if let Some(handler_ptr) = on_change {
+                        let idx = index;
+                        tab_content = tab_content.on_mouse_up(
+                            MouseButton::Left,
+                            move |_event, window, cx| unsafe {
+                                (*handler_ptr)(idx, window, cx);
+                            },
+                        );
                     }
                 }
-                TabVariant::Enclosed => {
-                    if is_selected {
-                        tab_el = tab_el
-                            .bg(theme.selected_bg)
-                            .rounded_t_md()
-                            .text_color(theme.text_selected);
-                    } else {
-                        let hover_bg = theme.hover_bg;
-                        let hover_text = theme.text_hover;
-                        tab_el = tab_el
-                            .text_color(theme.text_unselected)
-                            .hover(move |s| s.bg(hover_bg).text_color(hover_text));
-                    }
+
+                // Add icon
+                if let Some(custom_icon) = custom_icon {
+                    tab_content = tab_content.child(custom_icon);
+                } else if let Some(icon) = icon {
+                    tab_content = tab_content.child(div().text_sm().child(icon));
                 }
-                TabVariant::Pills => {
-                    if is_selected {
-                        tab_el = tab_el
-                            .bg(theme.accent)
-                            .rounded_md()
-                            .text_color(theme.text_selected);
-                    } else {
-                        let hover_bg = theme.selected_bg;
-                        let hover_text = theme.text_hover;
-                        tab_el = tab_el
-                            .rounded_md()
-                            .text_color(theme.text_unselected)
-                            .hover(move |s| s.bg(hover_bg).text_color(hover_text));
-                    }
-                }
-            }
 
-            if disabled {
-                tab_el = tab_el.opacity(0.5).cursor_not_allowed();
-            } else {
-                tab_el = tab_el.cursor_pointer();
+                // Add label
+                tab_content = tab_content.child(div().text_sm().child(label));
 
-                // Handle click
-                if let Some(handler_ptr) = on_change {
-                    let idx = index;
-                    tab_el =
-                        tab_el.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
-                            (*handler_ptr)(idx, window, cx);
-                        });
-                }
-            }
-
-            // Custom icon (takes precedence)
-            if let Some(custom_icon) = custom_icon {
-                tab_el = tab_el.child(custom_icon);
-            } else if let Some(icon) = icon {
-                // Text/emoji icon
-                tab_el = tab_el.child(div().text_sm().child(icon));
-            }
-
-            // Label
-            tab_el = tab_el.child(div().text_sm().child(label));
-
-            // Badge
-            if let Some(badge) = badge {
-                tab_el = tab_el.child(
-                    div()
-                        .text_xs()
-                        .px_1()
-                        .py(px(1.0))
-                        .bg(theme.badge_bg)
-                        .rounded(px(3.0))
-                        .child(badge),
-                );
-            }
-
-            // Close button
-            if closeable {
-                let id = tab_id.clone();
-                let close_color = theme.close_color;
-                let close_hover = theme.close_hover_color;
-                let mut close_btn = div()
-                    .id(SharedString::from(format!("tab-close-{}", tab_id)))
-                    .text_xs()
-                    .text_color(close_color)
-                    .hover(move |s| s.text_color(close_hover));
-
-                if let Some(handler_ptr) = on_close {
-                    close_btn = close_btn.on_mouse_up(
-                        MouseButton::Left,
-                        move |_event, window, cx| unsafe {
-                            (*handler_ptr)(&id, window, cx);
-                        },
+                // Add badge
+                if let Some(badge) = badge {
+                    tab_content = tab_content.child(
+                        div()
+                            .text_xs()
+                            .px_1()
+                            .py(px(1.0))
+                            .bg(theme.badge_bg)
+                            .rounded(px(3.0))
+                            .child(badge),
                     );
                 }
 
-                tab_el = tab_el.child(close_btn.child("×"));
-            }
+                // Add close button
+                if closeable {
+                    let id = tab_id.clone();
+                    let close_color = theme.close_color;
+                    let close_hover = theme.close_hover_color;
+                    let mut close_btn = div()
+                        .id(SharedString::from(format!("tab-close-{}", tab_id)))
+                        .text_xs()
+                        .text_color(close_color)
+                        .hover(move |s| s.text_color(close_hover));
 
-            container = container.child(tab_el);
+                    if let Some(handler_ptr) = on_close {
+                        close_btn = close_btn.on_mouse_up(
+                            MouseButton::Left,
+                            move |_event, window, cx| unsafe {
+                                (*handler_ptr)(&id, window, cx);
+                            },
+                        );
+                    }
+
+                    tab_content = tab_content.child(close_btn.child("×"));
+                }
+
+                // Create the underline - accent color for selected, border color for unselected
+                let underline = if is_selected {
+                    div().h(px(2.0)).w_full().bg(theme.accent)
+                } else {
+                    div().h(px(1.0)).w_full().bg(theme.container_border)
+                };
+
+                // Wrap in a flex column
+                div()
+                    .id(SharedString::from(format!("tab-wrapper-{}", tab_id)))
+                    .flex()
+                    .flex_col()
+                    .child(tab_content)
+                    .child(underline)
+            } else {
+                // Non-underline variants (Enclosed, Pills)
+                let mut tab_el = div()
+                    .id(SharedString::from(format!("tab-{}", tab_id)))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_4()
+                    .py_2();
+
+                match self.variant {
+                    TabVariant::Enclosed => {
+                        if is_selected {
+                            tab_el = tab_el
+                                .bg(theme.selected_bg)
+                                .rounded_t_md()
+                                .text_color(theme.text_selected);
+                        } else {
+                            let hover_bg = theme.hover_bg;
+                            let hover_text = theme.text_hover;
+                            tab_el = tab_el
+                                .text_color(theme.text_unselected)
+                                .hover(move |s| s.bg(hover_bg).text_color(hover_text));
+                        }
+                    }
+                    TabVariant::Pills => {
+                        if is_selected {
+                            tab_el = tab_el
+                                .bg(theme.accent)
+                                .rounded_md()
+                                .text_color(theme.text_selected);
+                        } else {
+                            let hover_bg = theme.selected_bg;
+                            let hover_text = theme.text_hover;
+                            tab_el = tab_el
+                                .rounded_md()
+                                .text_color(theme.text_unselected)
+                                .hover(move |s| s.bg(hover_bg).text_color(hover_text));
+                        }
+                    }
+                    TabVariant::Underline => unreachable!(),
+                }
+
+                if disabled {
+                    tab_el = tab_el.opacity(0.5).cursor_not_allowed();
+                } else {
+                    tab_el = tab_el.cursor_pointer();
+
+                    if let Some(handler_ptr) = on_change {
+                        let idx = index;
+                        tab_el = tab_el.on_mouse_up(
+                            MouseButton::Left,
+                            move |_event, window, cx| unsafe {
+                                (*handler_ptr)(idx, window, cx);
+                            },
+                        );
+                    }
+                }
+
+                // Add icon
+                if let Some(custom_icon) = custom_icon {
+                    tab_el = tab_el.child(custom_icon);
+                } else if let Some(icon) = icon {
+                    tab_el = tab_el.child(div().text_sm().child(icon));
+                }
+
+                // Add label
+                tab_el = tab_el.child(div().text_sm().child(label));
+
+                // Add badge
+                if let Some(badge) = badge {
+                    tab_el = tab_el.child(
+                        div()
+                            .text_xs()
+                            .px_1()
+                            .py(px(1.0))
+                            .bg(theme.badge_bg)
+                            .rounded(px(3.0))
+                            .child(badge),
+                    );
+                }
+
+                // Add close button
+                if closeable {
+                    let id = tab_id.clone();
+                    let close_color = theme.close_color;
+                    let close_hover = theme.close_hover_color;
+                    let mut close_btn = div()
+                        .id(SharedString::from(format!("tab-close-{}", tab_id)))
+                        .text_xs()
+                        .text_color(close_color)
+                        .hover(move |s| s.text_color(close_hover));
+
+                    if let Some(handler_ptr) = on_close {
+                        close_btn = close_btn.on_mouse_up(
+                            MouseButton::Left,
+                            move |_event, window, cx| unsafe {
+                                (*handler_ptr)(&id, window, cx);
+                            },
+                        );
+                    }
+
+                    tab_el = tab_el.child(close_btn.child("×"));
+                }
+
+                tab_el
+            };
+
+            container = container.child(tab_element);
         }
 
         container

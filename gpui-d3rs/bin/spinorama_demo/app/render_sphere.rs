@@ -1,12 +1,12 @@
 use d3rs::surface3d::{
-    Colormap as Surface3DColormap, Surface3DConfig, Surface3DElement,
-    SurfaceData as Surface3DData, SurfacePlotType,
+    Colormap as Surface3DColormap, Surface3DConfig, Surface3DElement, SurfaceData as Surface3DData,
+    SurfacePlotType,
 };
-use gpui::*;
 use gpui::prelude::FluentBuilder;
+use gpui::*;
 
-use crate::types::Colormap;
 use super::SpinoramaApp;
+use crate::types::Colormap;
 
 impl SpinoramaApp {
     /// Render 3D Sphere plot - SPL of a single frequency mapped to color
@@ -63,7 +63,8 @@ impl SpinoramaApp {
         }
 
         // 3. Configure Surface Data
-        let surface_data = Surface3DData::from_grid(synthetic_elevation.clone(), angle_values.clone(), z_values)
+        let surface_data =
+            Surface3DData::from_grid(synthetic_elevation.clone(), angle_values.clone(), z_values)
                 .with_log_x(false) // Linear Elevation
                 .with_x_label("Elevation (deg)")
                 .with_x_range(-90.0, 90.0)
@@ -218,11 +219,15 @@ impl SpinoramaApp {
                     ScrollDelta::Lines(lines) => lines.y,
                     ScrollDelta::Pixels(pixels) => {
                         let py: f32 = pixels.y.into();
-                         // Simple threshold to avoid jitter
-                        if py.abs() > 0.0 { py.signum() } else { 0.0 }
+                        // Simple threshold to avoid jitter
+                        if py.abs() > 0.0 {
+                            py.signum()
+                        } else {
+                            0.0
+                        }
                     }
                 };
-                
+
                 if delta_y != 0.0 {
                     let max_idx = freq_count.saturating_sub(1);
                     // Scroll Up (Positive) usually means "move down the page" or "decrease".
@@ -230,7 +235,7 @@ impl SpinoramaApp {
                     // Let's standard: Scroll Up (on mouse) -> Zoom In / Increase Value.
                     // Mac 'Natural Scrolling': Swipe Up -> Content moves down -> Delta is Positive?
                     // Let's assume Delta > 0 is "Up/Increase".
-                    
+
                     if delta_y > 0.0 {
                         if this.sphere_freq_idx < max_idx {
                             this.sphere_freq_idx += 1;
@@ -269,11 +274,6 @@ impl SpinoramaApp {
                     .child(colormap_selector)
                     .child(wireframe_toggle),
             )
-            .child(
-                div()
-                    .flex()
-                    .justify_center()
-                    .child(surface_view)
-            )
+            .child(div().flex().justify_center().child(surface_view))
     }
 }

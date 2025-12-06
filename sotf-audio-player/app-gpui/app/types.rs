@@ -16,6 +16,12 @@ pub enum Screen {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplayGainMode {
+    Track,
+    Album,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
     Search,
@@ -119,27 +125,8 @@ impl ToastMessage {
     }
 }
 
-/// Library sort order options
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LibrarySortOrder {
-    Year,
-    Genre,
-    Artist,
-    Album,
-    Tracks,
-    Composer,
-}
-
-/// Channel filter options
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChannelFilter {
-    All,           // Show all albums
-    Mono,          // Only 1-channel albums
-    Stereo,        // Only 2-channel albums
-    Multichannel,  // Only albums with > 2 channels
-    Mixed,         // Only albums with mixed channel counts
-    Specific(u32), // Only albums with specific channel count
-}
+// Enums mapped from library
+pub use sotf_audio_player::library::{ChannelFilter, LibrarySortOrder};
 
 #[derive(Debug)]
 pub struct QueueItem {

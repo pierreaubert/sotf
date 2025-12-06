@@ -310,36 +310,12 @@ pub fn generate_sphere_mesh(obj: &SphereObject) -> ObjectMesh {
             let v2 = face[2];
 
             // Get or create midpoints
-            let m01 = get_or_create_midpoint(
-                v0,
-                v1,
-                &mut nodes,
-                &mut midpoint_cache,
-                cx,
-                cy,
-                cz,
-                r,
-            );
-            let m12 = get_or_create_midpoint(
-                v1,
-                v2,
-                &mut nodes,
-                &mut midpoint_cache,
-                cx,
-                cy,
-                cz,
-                r,
-            );
-            let m20 = get_or_create_midpoint(
-                v2,
-                v0,
-                &mut nodes,
-                &mut midpoint_cache,
-                cx,
-                cy,
-                cz,
-                r,
-            );
+            let m01 =
+                get_or_create_midpoint(v0, v1, &mut nodes, &mut midpoint_cache, cx, cy, cz, r);
+            let m12 =
+                get_or_create_midpoint(v1, v2, &mut nodes, &mut midpoint_cache, cx, cy, cz, r);
+            let m20 =
+                get_or_create_midpoint(v2, v0, &mut nodes, &mut midpoint_cache, cx, cy, cz, r);
 
             // Create 4 new triangles
             new_faces.push([v0, m01, m20]);
@@ -491,7 +467,10 @@ pub fn generate_object_mesh(config: &ScatteringObjectConfig) -> ObjectMesh {
 }
 
 /// Generate meshes for all scattering objects and merge into room mesh
-pub fn add_scattering_objects_to_mesh(room_mesh: &mut RoomMesh, objects: &[ScatteringObjectConfig]) {
+pub fn add_scattering_objects_to_mesh(
+    room_mesh: &mut RoomMesh,
+    objects: &[ScatteringObjectConfig],
+) {
     for obj in objects {
         let obj_mesh = generate_object_mesh(obj);
         obj_mesh.merge_into(room_mesh);

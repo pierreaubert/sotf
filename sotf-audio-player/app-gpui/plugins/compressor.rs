@@ -16,6 +16,7 @@ use gpui::*;
 /// Render the Compressor plugin
 #[allow(clippy::too_many_arguments)]
 pub fn render_compressor_plugin(
+    plugin_idx: usize,
     threshold_db: f64,
     ratio: f64,
     attack_ms: f64,
@@ -65,6 +66,7 @@ pub fn render_compressor_plugin(
                                 .justify_center()
                                 .flex_wrap()
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Threshold",
                                     threshold_db,
                                     -60.0,
@@ -77,6 +79,7 @@ pub fn render_compressor_plugin(
                                     theme,
                                 ))
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Ratio",
                                     ratio,
                                     1.0,
@@ -89,6 +92,7 @@ pub fn render_compressor_plugin(
                                     theme,
                                 ))
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Attack",
                                     attack_ms,
                                     0.1,
@@ -101,6 +105,7 @@ pub fn render_compressor_plugin(
                                     theme,
                                 ))
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Release",
                                     release_ms,
                                     10.0,
@@ -113,6 +118,7 @@ pub fn render_compressor_plugin(
                                     theme,
                                 ))
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Knee",
                                     knee_db,
                                     0.0,
@@ -125,6 +131,7 @@ pub fn render_compressor_plugin(
                                     theme,
                                 ))
                                 .child(render_vertical_slider(
+                                    plugin_idx,
                                     "Makeup",
                                     makeup_gain_db,
                                     0.0,
@@ -159,6 +166,7 @@ pub fn render_compressor_plugin(
                         ))
                         // Mix slider
                         .child(div().w_full().child(render_vertical_slider(
+                            plugin_idx,
                             "Mix",
                             mix,
                             0.0,
@@ -187,6 +195,7 @@ pub fn render_compressor_plugin(
             div().flex().gap_4().children([
                 // Auto makeup toggle
                 div().flex_1().child(render_toggle(
+                    plugin_idx,
                     "Auto Makeup",
                     auto_makeup,
                     7,
@@ -196,6 +205,7 @@ pub fn render_compressor_plugin(
                 )),
                 // Link channels toggle
                 div().flex_1().child(render_toggle(
+                    plugin_idx,
                     "Link Channels",
                     link_channels,
                     8,

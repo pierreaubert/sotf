@@ -8,6 +8,7 @@ use sotf_plugins::ChannelState;
 
 /// Render the Channel Mute/Solo plugin
 pub fn render_mute_solo_plugin(
+    plugin_idx: usize,
     enabled: bool,
     channel_states: &[ChannelState],
     is_editing: bool,
@@ -238,6 +239,7 @@ pub fn render_mute_solo_plugin(
                 .p_3()
                 .child(render_section_header("PARAMETERS", theme))
                 .child(render_toggle(
+                    plugin_idx,
                     "Enabled",
                     enabled,
                     0,

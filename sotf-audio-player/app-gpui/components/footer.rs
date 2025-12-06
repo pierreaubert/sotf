@@ -67,11 +67,7 @@ impl Element for WaveformElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let layout_id = window.request_layout(
-            Style::default(),
-            [],
-            cx,
-        );
+        let layout_id = window.request_layout(Style::default(), [], cx);
         (layout_id, ())
     }
 
@@ -105,7 +101,7 @@ impl Element for WaveformElement {
         const MAX_HEIGHT: f32 = 16.0;
         const MIN_HEIGHT: f32 = 2.0;
         const BAR_WIDTH: f32 = 4.0;
-        
+
         let default_waveform: Vec<u8> = vec![64; NUM_BARS];
         let samples = self.waveform.as_ref().unwrap_or(&default_waveform);
 
@@ -123,7 +119,7 @@ impl Element for WaveformElement {
         };
 
         let progress_bar_idx = (self.progress * NUM_BARS as f32) as usize;
-        
+
         // Calculate total width to center the bars
         let total_width = NUM_BARS as f32 * BAR_WIDTH;
         let start_x = bounds.origin.x + (bounds.size.width - px(total_width)) / 2.0;
@@ -139,7 +135,7 @@ impl Element for WaveformElement {
             };
 
             let x = start_x + px(idx as f32 * BAR_WIDTH);
-            
+
             // Draw top half
             window.paint_quad(PaintQuad {
                 bounds: Bounds {
@@ -496,22 +492,25 @@ impl PlayerView {
                             .flex_1()
                             .h(px(36.0)) // Taller waveform
                             .cursor_pointer()
-                            .on_mouse_down(MouseButton::Left, cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
-                                if let Some(bounds) = *bounds_ref_clone.borrow() {
-                                    // Calculate relative position
-                                    let x = event.position.x - bounds.origin.x;
-                                    let width = bounds.size.width;
-                                    let ratio = (x / width).clamp(0.0, 1.0);
-                                    
-                                    view.state.update(cx, |state, _cx| {
-                                        let new_pos = state.app.duration_secs * ratio as f64;
-                                        state.app.position_secs = new_pos;
-                                        // In a real implementation, we would also seek the player here
-                                        // e.g. state.player.lock().seek(new_pos);
-                                    });
-                                    cx.notify();
-                                }
-                            }))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                    if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                        // Calculate relative position
+                                        let x = event.position.x - bounds.origin.x;
+                                        let width = bounds.size.width;
+                                        let ratio = (x / width).clamp(0.0, 1.0);
+
+                                        view.state.update(cx, |state, _cx| {
+                                            let new_pos = state.app.duration_secs * ratio as f64;
+                                            state.app.position_secs = new_pos;
+                                            // In a real implementation, we would also seek the player here
+                                            // e.g. state.player.lock().seek(new_pos);
+                                        });
+                                        cx.notify();
+                                    }
+                                }),
+                            )
                             .child(WaveformElement::new(
                                 waveform.clone(),
                                 progress,
@@ -567,6 +566,69 @@ impl PlayerView {
             .min_w(px(180.0))
             .justify_end()
             .relative()
+            // Studio button (Plugin Rack)
+            .child(
+                div()
+                    .id("studio-button")
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .cursor_pointer()
+                    .hover(|style| style.bg(surface_hover))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                            view.state.update(cx, |state, _cx| {
+                                let is_plugins_open = state.app.current_screen
+                                    == crate::app::Screen::Settings
+                                    && state.app.active_settings_tab
+                                        == crate::app::SettingsTab::Plugins;
+
+                                if is_plugins_open {
+                                    // Already open: Check if modified
+                                    if state.app.plugin_chain_modified {
+                                        // Propose to save (enter save mode)
+                                        state.app.input_mode = crate::app::InputMode::SavePlugins;
+                                        state.app.pending_studio_close = true;
+                                    } else {
+                                        // Close: Go back to last screen
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                } else {
+                                    // Open Studio logic
+                                    if state.app.current_screen != crate::app::Screen::Settings {
+                                        state.app.last_screen = state.app.current_screen;
+                                        state.app.current_screen = crate::app::Screen::Settings;
+                                    }
+
+                                    // Open plugins tab
+                                    state.app.active_settings_tab =
+                                        crate::app::SettingsTab::Plugins;
+                                }
+                            });
+                            cx.notify();
+                        }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                Icon::new(IconName::SlidersHorizontal)
+                                    .size(IconSize::Xxl)
+                                    .color(theme_clone.text_secondary),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(text_secondary)
+                                    .text_center()
+                                    .child("Studio"),
+                            ),
+                    ),
+            )
             // Device selection button - icon on top, name below
             .child(
                 div()
@@ -724,8 +786,6 @@ impl PlayerView {
             )
         })
     }
-
-
 
     /// Render a round volume button with circular progress indicator
     /// Supports mouse scroll to change volume

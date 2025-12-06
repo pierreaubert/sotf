@@ -8,10 +8,13 @@ members = [
     "gpui-px",
     "gpui-ui-kit",
     "math-bem",
+    "math-fem",
     "math-iir",
+    "math-solvers",
     "math-testfunctions",
     "math-convexhull3d",
     "math-de",
+    "math-wave",
     "sotf-audio-engine",
     "sotf-audio-player",
     "sotf-audio-player/app-tui",
@@ -47,9 +50,12 @@ default-members = [
     "autoeq-roomsim",
     "math-convexhull3d",
     "math-bem",
+    "math-fem",
     "math-de",
     "math-iir",
+    "math-solvers",
     "math-testfunctions",
+    "math-wave",
 ]
 resolver = "3"
 

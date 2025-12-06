@@ -11,86 +11,11 @@ use super::types::{ChannelFilter, LibrarySortOrder, ToastMessage, ToastType};
 
 impl App {
     pub fn filtered_albums(&self) -> Vec<Album> {
-        use ChannelFilter::*;
-
-        // First filter by search query
-        let mut albums: Vec<&Album> = if self.search_query.is_empty() {
-            self.library.albums.iter().collect()
-        } else {
-            self.library.search_albums(&self.search_query)
-        };
-
-        // Then filter by channel count
-        albums.retain(|album| match self.channel_filter {
-            All => true,
-            Mono => album.uniform_channel_count() == Some(1),
-            Stereo => album.uniform_channel_count() == Some(2),
-            Multichannel => {
-                if let Some(count) = album.uniform_channel_count() {
-                    count > 2
-                } else {
-                    false
-                }
-            }
-            Mixed => album.uniform_channel_count().is_none(),
-            Specific(n) => album.uniform_channel_count() == Some(n),
-        });
-
-        // Group and merge albums
-        let mut merged_albums = sotf_audio_player::library::group_and_merge_albums(albums);
-
-        // Finally, sort
-        match self.library_sort_order {
-            LibrarySortOrder::Year => {
-                merged_albums.sort_by(|a, b| {
-                    b.year
-                        .cmp(&a.year)
-                        .then_with(|| a.artist().cmp(&b.artist()))
-                        .then_with(|| a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Genre => {
-                merged_albums.sort_by(|a, b| {
-                    let genre_a = a.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
-                    let genre_b = b.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
-                    genre_a
-                        .cmp(&genre_b)
-                        .then_with(|| a.artist().cmp(&b.artist()))
-                        .then_with(|| a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Artist => {
-                merged_albums.sort_by(|a, b| {
-                    a.artist()
-                        .cmp(&b.artist())
-                        .then_with(|| a.year.cmp(&b.year).reverse())
-                        .then_with(|| a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Album => {
-                merged_albums.sort_by(|a, b| a.title.cmp(&b.title));
-            }
-            LibrarySortOrder::Tracks => {
-                merged_albums.sort_by(|a, b| {
-                    b.tracks.len()
-                        .cmp(&a.tracks.len())
-                        .then_with(|| a.artist().cmp(&b.artist()))
-                        .then_with(|| a.title.cmp(&b.title))
-                });
-            }
-            LibrarySortOrder::Composer => {
-                merged_albums.sort_by(|a, b| {
-                    let composer_a = a.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
-                    let composer_b = b.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
-                    composer_a
-                        .cmp(&composer_b)
-                        .then_with(|| a.artist().cmp(&b.artist()))
-                        .then_with(|| a.title.cmp(&b.title))
-                });
-            }
-        }
-
-        merged_albums
+        self.library.get_filtered_albums(
+            &self.search_query,
+            self.library_sort_order,
+            self.channel_filter,
+        )
     }
 
     /// Set library sort order
@@ -100,7 +25,6 @@ impl App {
         self.selected_album_index = 0;
         self.reset_page();
     }
-
 
     /// Set channel filter
     pub fn set_channel_filter(&mut self, filter: ChannelFilter) {
@@ -198,20 +122,43 @@ impl App {
         let _ = self.library.add_directory(path);
     }
 
-
-
     /// Full rescan of the library
     pub fn rescan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.toast_message = Some(ToastMessage::info("Starting full library rescan..."));
-        // TODO: Implement actual full rescan logic in MusicLibrary if different from scan
-        // For now, we can clear and rescan or just call scan with a force flag if available
-        // Assuming scan_library is incremental, we might need a force_scan_library
-        self.scan_library()
+        if self.scan_in_progress {
+            return Ok(());
+        }
+
+        self.scan_in_progress = true;
+        self.scan_progress_tracks = 0;
+        self.scan_progress_albums = 0;
+        // Toast removed to avoid clutter
+        // self.toast_message = Some(ToastMessage::info("Full library rescan..."));
+
+        // Start background scanner with force=true
+        let directories: Vec<std::path::PathBuf> = self
+            .library
+            .directories
+            .iter()
+            .map(|d| d.path.clone())
+            .collect();
+        self.library_scanner = Some(sotf_audio_player::LibraryScanner::start_force(directories));
+
+        Ok(())
     }
-    
+
     /// Scan for ReplayGain
     pub fn scan_replay_gain(&mut self) {
-         self.toast_message = Some(ToastMessage::info("ReplayGain scan started (not implemented yet)..."));
+        match self.replay_gain_manager.start_scan() {
+            Ok(msg) => {
+                self.toast_message = Some(ToastMessage::info(msg));
+            }
+            Err(e) => {
+                self.toast_message = Some(ToastMessage::error(format!(
+                    "Failed to start ReplayGain scan: {}",
+                    e
+                )));
+            }
+        }
     }
 
     /// Remove the selected directory from the library
@@ -268,34 +215,75 @@ impl App {
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
         self.scan_progress_albums = 0;
-        self.toast_message = Some(ToastMessage::persistent(
-            "Scanning library...",
-            ToastType::Info,
-        ));
+        // Toast removed to avoid clutter, progress is shown in UI
+        // self.toast_message = Some(ToastMessage::info("Scanning library..."));
 
         // Start background scanner
-        let directories: Vec<std::path::PathBuf> = self.library.directories.iter().map(|d| d.path.clone()).collect();
+        let directories: Vec<std::path::PathBuf> = self
+            .library
+            .directories
+            .iter()
+            .map(|d| d.path.clone())
+            .collect();
         self.library_scanner = Some(sotf_audio_player::LibraryScanner::start(directories));
-        
+
         Ok(())
     }
 
+    /// Update library scan progress
+    pub fn update_library_scan(&mut self) {
+        let mut reload_needed = false;
+
+        // Handle library scanner updates
+        if let Some(scanner) = &self.library_scanner {
+            let mut done = false;
+            // Drain all available messages
+            while let Some(msg) = scanner.try_recv() {
+                match msg {
+                    sotf_audio_player::LibraryScanMessage::Progress { tracks, albums } => {
+                        self.scan_progress_tracks = tracks;
+                        self.scan_progress_albums = albums;
+                    }
+                    sotf_audio_player::LibraryScanMessage::Complete { tracks, albums } => {
+                        self.scan_progress_tracks = tracks;
+                        self.scan_progress_albums = albums;
+                        self.toast_message = Some(ToastMessage::success(format!(
+                            "Scan complete. Found {} tracks in {} albums.",
+                            tracks, albums
+                        )));
+                        done = true;
+                        reload_needed = true;
+                    }
+                    sotf_audio_player::LibraryScanMessage::Error { message } => {
+                        log::error!("Library scan failed: {}", message);
+                        self.toast_message =
+                            Some(ToastMessage::error(format!("Scan failed: {}", message)));
+                        done = true;
+                    }
+                }
+            }
+
+            if done {
+                self.library_scanner = None;
+                self.scan_in_progress = false;
+                self.needs_rescan = false;
+            }
+        }
+
+        if reload_needed {
+            // Reload library to show new items
+            if let Err(e) = self.load_library_from_database() {
+                log::error!("Failed to reload library after scan: {}", e);
+                self.toast_message = Some(ToastMessage::error(
+                    "Scan complete but failed to reload library.",
+                ));
+            }
+        }
+    }
 
     /// Get flattened directory tree for display
     pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
-        let mut items = Vec::new();
-        for dir_info in &self.library.directories {
-            // Add the main directory (level 0)
-            items.push((dir_info.path.clone(), 0, dir_info.expanded));
-
-            // Add subdirectories if expanded (level 1)
-            if dir_info.expanded {
-                for subdir in &dir_info.subdirectories {
-                    items.push((subdir.path.clone(), 1, false));
-                }
-            }
-        }
-        items
+        self.library.get_directory_tree_items()
     }
 
     /// Toggle directory expansion

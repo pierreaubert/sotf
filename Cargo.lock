@@ -3524,7 +3524,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "approx",
  "autoeq",
@@ -3549,7 +3549,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "gpui",
  "gpui-d3rs",
@@ -3559,7 +3559,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.1.4"
+version = "0.1.6"
 dependencies = [
  "gpui",
 ]
@@ -5116,6 +5116,57 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-rayon",
  "which 8.0.0",
+]
+
+[[package]]
+name = "math-fem"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "criterion",
+ "log",
+ "math-solvers",
+ "math-wave",
+ "ndarray 0.17.1",
+ "num-complex",
+ "num-traits",
+ "rand 0.9.2",
+ "rayon",
+ "serde",
+ "spec_math",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "math-solvers"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "log",
+ "ndarray 0.17.1",
+ "ndarray-linalg",
+ "num-complex",
+ "num-traits",
+ "rand 0.9.2",
+ "rayon",
+ "serde",
+ "thiserror 2.0.17",
+ "wasm-bindgen",
+ "wasm-bindgen-rayon",
+]
+
+[[package]]
+name = "math-wave"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "num-complex",
+ "num-traits",
+ "serde",
+ "serde_json",
+ "spec_math",
+ "special",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

@@ -22,6 +22,7 @@ impl PlayerView {
             input_mode,
             sort_order,
             channel_filter,
+            filter_menu_open,
             theme,
             (min_year, max_year, genres_count, stereo_count, multichannel_count),
         ) = {
@@ -57,20 +58,26 @@ impl PlayerView {
                 state.app.input_mode,
                 state.app.library_sort_order,
                 state.app.channel_filter,
+                state.app.filter_menu_open,
                 state.app.theme.clone(),
                 // New stats
                 {
                     let mut min_year = 9999;
                     let mut max_year = 0;
-                    let mut genres: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let mut genres: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
                     let mut stereo_count = 0;
                     let mut multichannel_count = 0;
 
                     for album in &state.app.library.albums {
                         if let Some(y) = album.year {
                             if y > 0 {
-                                if y < min_year { min_year = y; }
-                                if y > max_year { max_year = y; }
+                                if y < min_year {
+                                    min_year = y;
+                                }
+                                if y > max_year {
+                                    max_year = y;
+                                }
                             }
                         }
 
@@ -90,13 +97,22 @@ impl PlayerView {
                             }
                         }
                     }
-                    if min_year == 9999 { min_year = 0; }
-                    (min_year, max_year, genres.len(), stereo_count, multichannel_count)
-                }
+                    if min_year == 9999 {
+                        min_year = 0;
+                    }
+                    (
+                        min_year,
+                        max_year,
+                        genres.len(),
+                        stereo_count,
+                        multichannel_count,
+                    )
+                },
             )
         };
 
         let is_search_mode = input_mode == crate::app::InputMode::Search;
+        let is_filter_open = filter_menu_open && !is_search_mode; // Close filter if search opens (logic handled in click handlers too)
 
         div()
             .flex()
@@ -114,9 +130,18 @@ impl PlayerView {
                     // Box 1: Years (clickable, sorts by Year)
                     .child(self.render_sortable_stat_box(
                         "Years",
-                        format!("{} - {}",
-                            if min_year > 0 { min_year.to_string() } else { "??".to_string() },
-                            if max_year > 0 { max_year.to_string() } else { "??".to_string() }
+                        format!(
+                            "{} - {}",
+                            if min_year > 0 {
+                                min_year.to_string()
+                            } else {
+                                "??".to_string()
+                            },
+                            if max_year > 0 {
+                                max_year.to_string()
+                            } else {
+                                "??".to_string()
+                            }
                         ),
                         IconName::Disc,
                         crate::app::LibrarySortOrder::Year,
@@ -188,30 +213,62 @@ impl PlayerView {
             // Search bar (only visible when in search mode)
             .when(is_search_mode, |el| {
                 el.child(
-                    div()
-                        .flex()
-                        .justify_center()
-                        .mb_2()
-                        .child(
-                            div()
-                                .w_96()
-                                .child(
-                                    Input::new("search-input")
-                                        .value(SharedString::from(if search_query.is_empty() {
-                                            "".to_string()
-                                        } else {
-                                            format!("{}|", search_query)
-                                        }))
-                                        .placeholder("Type to search albums, artists, tracks...")
-                                        .icon_left("🔍")
-                                        .size(InputSize::Md)
-                                        .readonly(true)
-                                        .bg_color(theme.surface)
-                                        .text_color(theme.text_primary)
-                                        .placeholder_color(theme.text_muted)
-                                        .border_color(theme.accent),
-                                ),
-                        )
+                    div().flex().justify_center().mb_2().child(
+                        div().w_96().child(
+                            Input::new("search-input")
+                                .value(SharedString::from(if search_query.is_empty() {
+                                    "".to_string()
+                                } else {
+                                    format!("{}|", search_query)
+                                }))
+                                .placeholder("Type to search albums, artists, tracks...")
+                                .icon_left("🔍")
+                                .size(InputSize::Md)
+                                .readonly(true)
+                                .bg_color(theme.surface)
+                                .text_color(theme.text_primary)
+                                .placeholder_color(theme.text_muted)
+                                .border_color(theme.accent),
+                        ),
+                    ),
+                )
+            })
+            // Filter options (only visible when filter menu is open)
+            .when(is_filter_open, |el| {
+                el.child(
+                    div().flex().justify_center().mb_2().child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(self.render_filter_button(
+                                "All",
+                                crate::app::ChannelFilter::All,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                "2.0",
+                                crate::app::ChannelFilter::Stereo,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                "5.1",
+                                crate::app::ChannelFilter::Multichannel,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                "7.1",
+                                crate::app::ChannelFilter::Specific(8),
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .build(),
+                    ),
                 )
             })
             .child(
@@ -294,8 +351,16 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let is_active = current_sort == sort_order;
-        let surface = if is_active { theme.surface_selected } else { theme.surface };
-        let border = if is_active { theme.accent } else { theme.border };
+        let surface = if is_active {
+            theme.surface_selected
+        } else {
+            theme.surface
+        };
+        let border = if is_active {
+            theme.accent
+        } else {
+            theme.border
+        };
         let accent = theme.accent;
         let text_primary = theme.text_primary;
         let text_secondary = theme.text_secondary;
@@ -354,43 +419,67 @@ impl PlayerView {
             )
     }
 
-    /// Render the channel filter box with filter buttons inside
+    /// Render the channel filter box (button style)
     fn render_channel_filter_box(
         &self,
         stereo_count: usize,
         multichannel_count: usize,
-        current_filter: crate::app::ChannelFilter,
+        _current_filter: crate::app::ChannelFilter,
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let surface = theme.surface;
-        let border = theme.border;
+        let is_open = self.state.read(cx).app.filter_menu_open;
+        let surface = if is_open {
+            theme.surface_selected
+        } else {
+            theme.surface
+        };
+        let border = if is_open { theme.accent } else { theme.border };
         let accent = theme.accent;
         let text_primary = theme.text_primary;
         let text_secondary = theme.text_secondary;
 
-        Card::new()
-            .content(
-                VStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .child(
+        div()
+            .id("channel-filter-box")
+            .cursor_pointer()
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.filter_menu_open = !state.app.filter_menu_open;
+                        // Close search if opening filter
+                        if state.app.filter_menu_open
+                            && state.app.input_mode == crate::app::InputMode::Search
+                        {
+                            state.app.input_mode = crate::app::InputMode::Normal;
+                        }
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(
+                Card::new()
+                    .content(
                         HStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .child(Icon::new(IconName::AudioWaveform).size(IconSize::Xl).color(accent)),
+                                div().flex().items_center().justify_center().child(
+                                    Icon::new(IconName::AudioWaveform)
+                                        .size(IconSize::Xl)
+                                        .color(accent),
+                                ),
                             )
                             .child(
                                 VStack::new()
                                     .spacing(StackSpacing::None)
                                     .child(
-                                        Text::new(format!("{} / {}", stereo_count, multichannel_count))
-                                            .size(TextSize::Md)
-                                            .weight(TextWeight::Bold)
-                                            .color(text_primary),
+                                        Text::new(format!(
+                                            "{} / {}",
+                                            stereo_count, multichannel_count
+                                        ))
+                                        .size(TextSize::Md)
+                                        .weight(TextWeight::Bold)
+                                        .color(text_primary),
                                     )
                                     .child(
                                         Text::new("Stereo / Multi")
@@ -401,48 +490,15 @@ impl PlayerView {
                             )
                             .build(),
                     )
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Xs)
-                            .child(self.render_filter_button(
-                                "All",
-                                crate::app::ChannelFilter::All,
-                                current_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                "2.0",
-                                crate::app::ChannelFilter::Stereo,
-                                current_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                "5.1",
-                                crate::app::ChannelFilter::Multichannel,
-                                current_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .child(self.render_filter_button(
-                                "7.1",
-                                crate::app::ChannelFilter::Specific(8),
-                                current_filter,
-                                theme.clone(),
-                                cx,
-                            ))
-                            .build(),
-                    )
-                    .build(),
+                    .style(move |card| {
+                        card.min_w(px(120.0))
+                            .bg(surface)
+                            .border_color(border)
+                            .border_1()
+                            .py_1()
+                            .px_2()
+                    }),
             )
-            .style(move |card| {
-                card.min_w(px(120.0))
-                    .bg(surface)
-                    .border_color(border)
-                    .py_1()
-                    .px_2()
-            })
     }
 
     /// Render the search icon box
@@ -452,8 +508,16 @@ impl PlayerView {
         is_active: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let surface = if is_active { theme.surface_selected } else { theme.surface };
-        let border = if is_active { theme.accent } else { theme.border };
+        let surface = if is_active {
+            theme.surface_selected
+        } else {
+            theme.surface
+        };
+        let border = if is_active {
+            theme.accent
+        } else {
+            theme.border
+        };
         let accent = theme.accent;
         let text_secondary = theme.text_secondary;
 
@@ -477,20 +541,26 @@ impl PlayerView {
             .child(
                 Card::new()
                     .content(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(div().flex().items_center().justify_center().child(
+                                Icon::new(IconName::Search).size(IconSize::Xl).color(accent),
+                            ))
                             .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .py_1()
-                                    .child(Icon::new(IconName::Search).size(IconSize::Xl).color(accent)),
-                            )
-                            .child(
-                                Text::new("Search")
-                                    .size(TextSize::Xs)
-                                    .color(text_secondary),
+                                VStack::new()
+                                    .spacing(StackSpacing::None)
+                                    .child(
+                                        Text::new("Search")
+                                            .size(TextSize::Md)
+                                            .weight(TextWeight::Bold)
+                                            .color(text_secondary),
+                                    )
+                                    .child(
+                                        Text::new("Albums")
+                                            .size(TextSize::Xs)
+                                            .color(text_secondary),
+                                    )
+                                    .build(),
                             )
                             .build(),
                     )

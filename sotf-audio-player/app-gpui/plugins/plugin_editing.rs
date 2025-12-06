@@ -530,6 +530,198 @@ impl App {
         result
     }
 
+    /// Set a specific parameter value for a plugin
+    pub fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
+        let mut channel_count_changed = false;
+        let mut update_needed = false;
+
+        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+            match &mut plugin.settings {
+                PluginSettings::Upmixer {
+                    speaker_config,
+                    gain_front_direct,
+                    gain_front_ambient,
+                    gain_rear_ambient,
+                    lfe_cutoff_hz,
+                    stereo_width,
+                    bandpass_hz,
+                    height_gain,
+                    lfe_gain,
+                    enable_subharmonic_synth,
+                    subharmonic_gain,
+                    enable_hr_direct,
+                    hr_sharpen,
+                    safety_cap_db,
+                    decorrelation_mode,
+                } => {
+                    match param_idx {
+                        0 => {
+                            // speaker_config: map value (index) to string
+                            let configs = [
+                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
+                                "9.1.4", "9.1.6",
+                            ];
+                            let idx = (value as usize).clamp(0, configs.len() - 1);
+                            *speaker_config = configs[idx].to_string();
+                            channel_count_changed = true;
+                            update_needed = true;
+                        }
+                        1 => {
+                            *gain_front_direct = value.clamp(0.0, 2.0);
+                            update_needed = true;
+                        }
+                        2 => {
+                            *gain_front_ambient = value.clamp(0.0, 2.0);
+                            update_needed = true;
+                        }
+                        3 => {
+                            *gain_rear_ambient = value.clamp(0.0, 2.0);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *lfe_cutoff_hz = value.clamp(20.0, 200.0);
+                            update_needed = true;
+                        }
+                        5 => {
+                            *stereo_width = value.clamp(0.0, 1.0);
+                            update_needed = true;
+                        }
+                        6 => {
+                            *bandpass_hz = value.clamp(150.0, 1000.0);
+                            update_needed = true;
+                        }
+                        7 => {
+                            *height_gain = value.clamp(0.0, 2.0);
+                            update_needed = true;
+                        }
+                        8 => {
+                            *lfe_gain = value.clamp(0.0, 2.0);
+                            update_needed = true;
+                        }
+                        9 => {
+                            *enable_subharmonic_synth = value > 0.5;
+                            update_needed = true;
+                        }
+                        10 => {
+                            *subharmonic_gain = value.clamp(0.0, 1.0);
+                            update_needed = true;
+                        }
+                        11 => {
+                            *enable_hr_direct = value > 0.5;
+                            update_needed = true;
+                        }
+                        12 => {
+                            *hr_sharpen = value.clamp(0.0, 1.0);
+                            update_needed = true;
+                        }
+                        13 => {
+                            *safety_cap_db = value.clamp(0.0, 12.0);
+                            update_needed = true;
+                        }
+                        14 => {
+                            *decorrelation_mode = if value > 0.5 { 1 } else { 0 };
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                    if param_idx == 0 {
+                        channel_count_changed = true;
+                    }
+                }
+                // Implement other plugins as needed, Upmixer is priority
+                PluginSettings::Gain { gain_db } => {
+                    if param_idx == 0 {
+                        *gain_db = value.clamp(-60.0, 12.0);
+                        update_needed = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if channel_count_changed {
+            self.plugin_chain.update_binaural_decoder_channels();
+        }
+
+        if update_needed {
+            self.needs_plugin_update = true;
+        }
+    }
+
+    /// Reset a specific parameter to its default value
+    pub fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
+        let plugin_type = if let Some(plugin) = self.plugin_chain.get_plugin(plugin_idx) {
+            plugin.plugin_type()
+        } else {
+            return;
+        };
+
+        // Create default settings for this plugin type
+        let default_settings = PluginSettings::default_for(&plugin_type);
+
+        // Get the default value for the parameter
+        let default_value = match &default_settings {
+            PluginSettings::Upmixer {
+                speaker_config: _,
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                lfe_cutoff_hz,
+                stereo_width,
+                bandpass_hz,
+                height_gain,
+                lfe_gain,
+                enable_subharmonic_synth,
+                subharmonic_gain,
+                enable_hr_direct,
+                hr_sharpen,
+                safety_cap_db,
+                decorrelation_mode,
+            } => {
+                match param_idx {
+                    1 => *gain_front_direct,
+                    2 => *gain_front_ambient,
+                    3 => *gain_rear_ambient,
+                    4 => *lfe_cutoff_hz,
+                    5 => *stereo_width,
+                    6 => *bandpass_hz,
+                    7 => *height_gain,
+                    8 => *lfe_gain,
+                    9 => {
+                        if *enable_subharmonic_synth {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    }
+                    10 => *subharmonic_gain,
+                    11 => {
+                        if *enable_hr_direct {
+                            1.0
+                        } else {
+                            0.0
+                        }
+                    }
+                    12 => *hr_sharpen,
+                    13 => *safety_cap_db,
+                    14 => *decorrelation_mode as f64,
+                    _ => return, // No reset for others or unknown
+                }
+            }
+            PluginSettings::Gain { gain_db } => {
+                if param_idx == 0 {
+                    *gain_db
+                } else {
+                    return;
+                }
+            }
+            _ => return,
+        };
+
+        // Apply the value
+        self.set_plugin_param(plugin_idx, param_idx, default_value);
+    }
+
     /// Load EQ filters from APO file
     pub fn load_apo_file(&mut self) -> Result<(), String> {
         use sotf_audio_player::EQFilter;

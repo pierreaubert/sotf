@@ -6,6 +6,7 @@
 //! Also includes logic modules for plugin-related App methods:
 //! - `level_meters`: Level meter group management (mute/solo/dim)
 
+pub mod actions;
 mod binaural;
 mod common;
 mod compressor;
@@ -48,6 +49,7 @@ use sotf_audio_player::PluginSettings;
 
 /// Render plugin-specific content based on plugin type
 pub fn render_plugin_content(
+    plugin_idx: usize,
     settings: &PluginSettings,
     is_editing: bool,
     selected_param: usize,
@@ -55,10 +57,12 @@ pub fn render_plugin_content(
 ) -> AnyElement {
     match settings {
         PluginSettings::EQ { filters } => {
-            render_eq_plugin(filters, is_editing, selected_param, theme).into_any_element()
+            render_eq_plugin(plugin_idx, filters, is_editing, selected_param, theme)
+                .into_any_element()
         }
         PluginSettings::Gain { gain_db } => {
-            render_gain_plugin(*gain_db, is_editing, selected_param, theme).into_any_element()
+            render_gain_plugin(plugin_idx, *gain_db, is_editing, selected_param, theme)
+                .into_any_element()
         }
         PluginSettings::Compressor {
             threshold_db,
@@ -72,6 +76,7 @@ pub fn render_plugin_content(
             link_channels,
             sidechain_hpf_hz,
         } => render_compressor_plugin(
+            plugin_idx,
             *threshold_db,
             *ratio,
             *attack_ms,
@@ -92,6 +97,7 @@ pub fn render_plugin_content(
             release_ms,
             mix,
         } => render_limiter_plugin(
+            plugin_idx,
             *threshold_db,
             *release_ms,
             *mix,
@@ -109,6 +115,7 @@ pub fn render_plugin_content(
             link_channels,
             sidechain_hpf_hz,
         } => render_gate_plugin(
+            plugin_idx,
             *threshold_db,
             *ratio,
             *attack_ms,
@@ -138,6 +145,7 @@ pub fn render_plugin_content(
             safety_cap_db,
             decorrelation_mode,
         } => render_upmixer_plugin(
+            plugin_idx,
             speaker_config,
             *gain_front_direct,
             *gain_front_ambient,
@@ -163,6 +171,7 @@ pub fn render_plugin_content(
             min_gain_db,
             max_gain_db,
         } => render_loudness_compensation_plugin(
+            plugin_idx,
             *target_lufs,
             *min_gain_db,
             *max_gain_db,
@@ -172,7 +181,7 @@ pub fn render_plugin_content(
         )
         .into_any_element(),
         PluginSettings::LoudnessMonitor => {
-            render_loudness_monitor_plugin(is_editing, theme).into_any_element()
+            render_loudness_monitor_plugin(plugin_idx, is_editing, theme).into_any_element()
         }
         PluginSettings::BinauralDecoder {
             sofa_file,
@@ -181,6 +190,7 @@ pub fn render_plugin_content(
             externalization,
             near_field_strength,
         } => render_binaural_plugin(
+            plugin_idx,
             sofa_file,
             *input_channels,
             *enable_optimization,
@@ -195,14 +205,23 @@ pub fn render_plugin_content(
             ir_file,
             mix,
             gain_db,
-        } => render_convolution_plugin(ir_file, *mix, *gain_db, is_editing, selected_param, theme)
-            .into_any_element(),
+        } => render_convolution_plugin(
+            plugin_idx,
+            ir_file,
+            *mix,
+            *gain_db,
+            is_editing,
+            selected_param,
+            theme,
+        )
+        .into_any_element(),
         PluginSettings::SpectrumAnalyzer {
             num_bins,
             min_freq,
             max_freq,
             smoothing,
         } => render_spectrum_analyzer_plugin(
+            plugin_idx,
             *num_bins,
             *min_freq,
             *max_freq,
@@ -215,7 +234,14 @@ pub fn render_plugin_content(
         PluginSettings::ChannelMuteSolo {
             enabled,
             channel_states,
-        } => render_mute_solo_plugin(*enabled, channel_states, is_editing, selected_param, theme)
-            .into_any_element(),
+        } => render_mute_solo_plugin(
+            plugin_idx,
+            *enabled,
+            channel_states,
+            is_editing,
+            selected_param,
+            theme,
+        )
+        .into_any_element(),
     }
 }

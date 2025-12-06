@@ -2,8 +2,8 @@
 
 use crate::library::MusicLibrary;
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -96,22 +96,27 @@ impl LibraryScanner {
 
             // Run the scan with progress callback
             // Use incremental=true (skip unchanged files) unless force is set
-            let result = library.scan_incremental_with_progress(!force, Some(scan_token), move |tracks, albums| {
-                // Update UI every 500 tracks
-                let should_update = {
-                    let mut last = last_track_count.lock().unwrap();
-                    if tracks >= *last + 500 {
-                        *last = tracks;
-                        true
-                    } else {
-                        false
-                    }
-                };
+            let result = library.scan_incremental_with_progress(
+                !force,
+                Some(scan_token),
+                move |tracks, albums| {
+                    // Update UI every 500 tracks
+                    let should_update = {
+                        let mut last = last_track_count.lock().unwrap();
+                        if tracks >= *last + 500 {
+                            *last = tracks;
+                            true
+                        } else {
+                            false
+                        }
+                    };
 
-                if should_update {
-                    let _ = message_tx_clone.send(LibraryScanMessage::Progress { tracks, albums });
-                }
-            });
+                    if should_update {
+                        let _ =
+                            message_tx_clone.send(LibraryScanMessage::Progress { tracks, albums });
+                    }
+                },
+            );
 
             match result {
                 Ok(()) => {

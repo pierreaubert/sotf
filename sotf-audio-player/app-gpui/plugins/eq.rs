@@ -5,9 +5,10 @@
 //! - Band controls with color coding
 //! - Interactive editing
 
+use super::common::render_knob;
 use crate::theme::Theme;
 use crate::ui::components::graphs::{
-    render_db_labels, render_eq_band_controls, render_eq_visualization, render_freq_labels,
+    render_db_labels, render_eq_visualization, render_freq_labels,
 };
 use gpui::prelude::*;
 use gpui::*;
@@ -15,13 +16,17 @@ use sotf_audio_player::EQFilter;
 
 /// Render the EQ plugin with graphical visualization
 pub fn render_eq_plugin(
+    plugin_idx: usize,
     filters: &[EQFilter],
     is_editing: bool,
-    selected_band: usize,
+    selected_param: usize,
     theme: &Theme,
 ) -> impl IntoElement {
-    let selected = if is_editing {
-        Some(selected_band)
+    let selected_band_idx = if is_editing {
+        // Determine which band is selected based on the selected_param
+        // Each band has 4 parameters (Freq, Q, Gain, Type - though Type isn't a knob)
+        // So, param_idx / 4 gives the band index.
+        Some(selected_param / 4)
     } else {
         None
     };
@@ -82,7 +87,11 @@ pub fn render_eq_plugin(
                                         .rounded_lg()
                                         .border_1()
                                         .border_color(theme.border)
-                                        .child(render_eq_visualization(filters, selected, theme)),
+                                        .child(render_eq_visualization(
+                                            filters,
+                                            selected_band_idx,
+                                            theme,
+                                        )),
                                 )
                                 // Frequency axis
                                 .child(render_freq_labels(theme)),
@@ -110,7 +119,75 @@ pub fn render_eq_plugin(
                         .child("FILTER BANDS"),
                 )
                 // Band controls
-                .child(render_eq_band_controls(filters, selected, theme)),
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_4()
+                        .children(filters.iter().enumerate().map(|(i, filter)| {
+                            // Each filter has 4 params: Freq, Q, Gain, Type
+                            let base_param_idx = i * 4;
+
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .p_2()
+                                .rounded_lg()
+                                .bg(theme.background)
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(theme.text_secondary)
+                                        .child(format!("Band {}", i + 1)),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .gap_2()
+                                        .child(render_knob(
+                                            plugin_idx,
+                                            "Freq",
+                                            filter.frequency,
+                                            20.0,
+                                            20000.0,
+                                            "Hz",
+                                            base_param_idx,
+                                            selected_param,
+                                            is_editing,
+                                            None,
+                                            theme,
+                                        ))
+                                        .child(render_knob(
+                                            plugin_idx,
+                                            "Gain",
+                                            filter.gain_db,
+                                            -24.0,
+                                            24.0,
+                                            "dB",
+                                            base_param_idx + 2,
+                                            selected_param,
+                                            is_editing,
+                                            None,
+                                            theme,
+                                        ))
+                                        .child(render_knob(
+                                            plugin_idx,
+                                            "Q",
+                                            filter.q,
+                                            0.1,
+                                            10.0,
+                                            "",
+                                            base_param_idx + 1,
+                                            selected_param,
+                                            is_editing,
+                                            None,
+                                            theme,
+                                        )),
+                                )
+                        })),
+                ),
         )
         // Edit mode hint
         .when(is_editing, |d| {

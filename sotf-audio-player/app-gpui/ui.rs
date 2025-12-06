@@ -11,6 +11,7 @@ use std::time::Duration;
 
 // Re-export all actions for backward compatibility
 pub use crate::actions::*;
+use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, UpdatePluginParam};
 
 pub struct PlayerView {
     pub(crate) state: Entity<AppState>,
@@ -24,6 +25,9 @@ impl PlayerView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
 
+        // Register plugin interactions
+        // Register plugin interactions - moved to render
+
         // Set up periodic update timer for playback position and loudness
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             loop {
@@ -32,6 +36,13 @@ impl PlayerView {
                     .await;
                 let result = this.update(cx, |view, cx| {
                     view.update_playback_state(cx);
+
+                    // Update waveform scanner
+                    view.state.update(cx, |state, _| {
+                        state.app.waveform_manager.update();
+                        state.app.replay_gain_manager.update();
+                        state.app.update_library_scan();
+                    });
 
                     // Infinite scroll check
                     if view.state.read(cx).app.current_screen == Screen::Library {
@@ -157,7 +168,10 @@ impl PlayerView {
 
     pub(crate) fn switch_screen(&mut self, screen: Screen, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.current_screen = screen;
+            if state.app.current_screen != screen {
+                state.app.last_screen = state.app.current_screen;
+                state.app.current_screen = screen;
+            }
         });
         cx.notify();
     }
@@ -173,17 +187,7 @@ impl PlayerView {
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = Screen::Settings;
-            // Expand the plugins section
-            if !state
-                .app
-                .expanded_settings_sections
-                .contains(&"plugins".to_string())
-            {
-                state
-                    .app
-                    .expanded_settings_sections
-                    .push("plugins".to_string());
-            }
+            state.app.active_settings_tab = crate::app::SettingsTab::Plugins;
         });
         cx.notify();
     }
@@ -191,17 +195,7 @@ impl PlayerView {
     fn switch_to_devices(&mut self, _: &SwitchToDevices, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = Screen::Settings;
-            // Expand the audio-device section
-            if !state
-                .app
-                .expanded_settings_sections
-                .contains(&"audio-device".to_string())
-            {
-                state
-                    .app
-                    .expanded_settings_sections
-                    .push("audio-device".to_string());
-            }
+            state.app.active_settings_tab = crate::app::SettingsTab::AudioDevice;
         });
         cx.notify();
     }
@@ -568,6 +562,18 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn about(&mut self, _: &About, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            use crate::app::InputMode;
+            if state.app.input_mode == InputMode::About {
+                state.app.input_mode = InputMode::Normal;
+            } else {
+                state.app.input_mode = InputMode::About;
+            }
+        });
+        cx.notify();
+    }
+
     fn cycle_sort_order(&mut self, _: &CycleSortOrder, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             use crate::app::LibrarySortOrder;
@@ -577,7 +583,8 @@ impl PlayerView {
                 LibrarySortOrder::Artist => LibrarySortOrder::Album,
                 LibrarySortOrder::Album => LibrarySortOrder::Tracks,
                 LibrarySortOrder::Tracks => LibrarySortOrder::Composer,
-                LibrarySortOrder::Composer => LibrarySortOrder::Year,
+                LibrarySortOrder::Composer => LibrarySortOrder::Popularity,
+                LibrarySortOrder::Popularity => LibrarySortOrder::Year,
             };
             state.app.set_library_sort_order(next_order);
         });
@@ -1338,6 +1345,7 @@ impl PlayerView {
                     state.app.input_mode = crate::app::InputMode::Normal;
                     state.app.plugin_file_input.clear();
                     state.app.clear_autocomplete();
+                    state.app.pending_studio_close = false; // Cancel close if save cancelled
                 });
                 cx.notify();
             }
@@ -1353,6 +1361,12 @@ impl PlayerView {
                     }
                     state.app.input_mode = crate::app::InputMode::Normal;
                     state.app.clear_autocomplete();
+                    state.app.plugin_chain_modified = false;
+
+                    if state.app.pending_studio_close {
+                        state.app.pending_studio_close = false;
+                        state.app.current_screen = state.app.last_screen;
+                    }
                 });
                 cx.notify();
             }
@@ -1503,12 +1517,8 @@ impl PlayerView {
                     // TODO: Implement playing specific track from queue
                 }
                 Screen::Settings => {
-                    // If Plugins section is expanded, enter plugin edit mode
-                    if state
-                        .app
-                        .expanded_settings_sections
-                        .contains(&"plugins".to_string())
-                    {
+                    // If Plugins tab is active, enter plugin edit mode
+                    if state.app.active_settings_tab == crate::app::SettingsTab::Plugins {
                         state.app.enter_plugin_edit_mode();
                     }
                 }
@@ -1532,6 +1542,47 @@ impl PlayerView {
             log::error!("Failed to play track: {}", e);
             state.app.is_playing = false;
         }
+    }
+    // Plugin parameter handling
+    fn on_update_plugin_param(
+        &mut self,
+        action: &UpdatePluginParam,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .set_plugin_param(action.plugin_idx, action.param_idx, action.value);
+        });
+        cx.notify();
+    }
+
+    fn on_select_plugin_param(
+        &mut self,
+        action: &SelectPluginParam,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.editing_plugin_index = Some(action.plugin_idx);
+            state.app.plugin_param_selection = action.param_idx;
+        });
+        cx.notify();
+    }
+
+    fn on_reset_plugin_param(
+        &mut self,
+        action: &ResetPluginParam,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .reset_plugin_param(action.plugin_idx, action.param_idx);
+        });
+        cx.notify();
     }
 }
 
@@ -1617,6 +1668,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_search))
             .on_action(cx.listener(Self::toggle_library_view))
             .on_action(cx.listener(Self::toggle_help))
+            .on_action(cx.listener(Self::about))
             .on_action(cx.listener(Self::cycle_sort_order))
             .on_action(cx.listener(Self::set_sort_artist))
             .on_action(cx.listener(Self::set_sort_album))
@@ -1653,7 +1705,12 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_limiter))
             .on_action(cx.listener(Self::quick_add_loudness))
             .on_action(cx.listener(Self::quick_add_binaural))
+            .on_action(cx.listener(Self::quick_add_binaural))
             .on_action(cx.listener(Self::edit_plugin))
+            // Plugin parameter actions
+            .on_action(cx.listener(Self::on_update_plugin_param))
+            .on_action(cx.listener(Self::on_select_plugin_param))
+            .on_action(cx.listener(Self::on_reset_plugin_param))
             // Level meter actions
             .on_action(cx.listener(Self::select_next_meter_group))
             .on_action(cx.listener(Self::select_prev_meter_group))

@@ -3,7 +3,9 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Badge, BadgeVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack};
+use gpui_ui_kit::{
+    Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+};
 
 impl PlayerView {
     pub(crate) fn render_audio_device_settings_content(
@@ -44,6 +46,9 @@ impl PlayerView {
                             let device_name = device.name.clone();
                             let is_default = device.is_default;
 
+                            // Try to find a brand image
+                            let brand_image = get_brand_image_path(&device_name);
+
                             div()
                                 .p_3()
                                 .rounded_md()
@@ -58,40 +63,64 @@ impl PlayerView {
                                         .hover(|s| s.bg(theme.surface_hover))
                                 })
                                 .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Sm)
+                                    HStack::new()
+                                        .spacing(StackSpacing::Md)
+                                        .align(StackAlign::Center)
+                                        .when_some(brand_image, |stack, image_path| {
+                                            stack.child(
+                                                div()
+                                                    .w(px(60.0))
+                                                    .h(px(60.0))
+                                                    .rounded_md()
+                                                    .bg(theme.background)
+                                                    .overflow_hidden()
+                                                    .child(
+                                                        img(image_path)
+                                                            .w_full()
+                                                            .h_full()
+                                                            .object_fit(ObjectFit::Contain), // Contain to show full brand
+                                                    ),
+                                            )
+                                        })
                                         .child(
-                                            Text::new(device_name)
-                                                .size(TextSize::Sm)
-                                                .weight(TextWeight::Semibold)
-                                                .color(if is_selected {
-                                                    theme.text_on_accent
-                                                } else {
-                                                    theme.text_primary
-                                                }),
-                                        )
-                                        .child(
-                                            HStack::new()
-                                                .spacing(StackSpacing::Md)
+                                            VStack::new()
+                                                .spacing(StackSpacing::Sm)
                                                 .child(
-                                                    Badge::new(format!("{} ch", channels))
-                                                        .variant(BadgeVariant::Info),
+                                                    Text::new(device_name)
+                                                        .size(TextSize::Sm)
+                                                        .weight(TextWeight::Semibold)
+                                                        .color(if is_selected {
+                                                            theme.text_on_accent
+                                                        } else {
+                                                            theme.text_primary
+                                                        }),
                                                 )
                                                 .child(
-                                                    Badge::new(if sample_rate >= 1000 {
-                                                        format!("{} kHz", sample_rate / 1000)
-                                                    } else {
-                                                        format!("{} Hz", sample_rate)
-                                                    })
-                                                    .variant(BadgeVariant::Info),
-                                                ),
-                                        )
-                                        .when(is_default, |stack| {
-                                            stack.child(
-                                                Badge::new("✓ Default")
-                                                    .variant(BadgeVariant::Success),
-                                            )
-                                        }),
+                                                    HStack::new()
+                                                        .spacing(StackSpacing::Md)
+                                                        .child(
+                                                            Badge::new(format!("{} ch", channels))
+                                                                .variant(BadgeVariant::Info),
+                                                        )
+                                                        .child(
+                                                            Badge::new(if sample_rate >= 1000 {
+                                                                format!(
+                                                                    "{} kHz",
+                                                                    sample_rate / 1000
+                                                                )
+                                                            } else {
+                                                                format!("{} Hz", sample_rate)
+                                                            })
+                                                            .variant(BadgeVariant::Info),
+                                                        ),
+                                                )
+                                                .when(is_default, |stack| {
+                                                    stack.child(
+                                                        Badge::new("✓ Default")
+                                                            .variant(BadgeVariant::Success),
+                                                    )
+                                                }),
+                                        ),
                                 )
                                 .on_mouse_up(
                                     MouseButton::Left,
@@ -129,4 +158,34 @@ impl PlayerView {
                 ),
             )
     }
+}
+
+/// Helper to get brand image path from device name
+fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
+    let lower_name = device_name.to_lowercase();
+    if lower_name.contains("mac") || lower_name.contains("apple") {
+        return Some("brands/apple-mac-mini.jpg");
+    }
+    if lower_name.contains("phonum") || lower_name.contains("bayerdynamic") {
+        return Some("brands/bayerdynamic-phonum.jpg");
+    }
+    if lower_name.contains("dolby") {
+        return Some("brands/dolby-audio.png");
+    }
+    if lower_name.contains("kef") || lower_name.contains("ls60") {
+        return Some("brands/kef-ls60.jpg");
+    }
+    if lower_name.contains("lg") {
+        return Some("brands/lg.png");
+    }
+    if lower_name.contains("rme") {
+        return Some("brands/rme.jpg");
+    }
+    if lower_name.contains("samsung") {
+        return Some("brands/samsung-q9.png");
+    }
+    if lower_name.contains("usb") {
+        return Some("brands/usb.png");
+    }
+    None
 }

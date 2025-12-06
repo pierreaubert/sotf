@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use std::time::{SystemTime, UNIX_EPOCH};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
@@ -44,37 +47,27 @@ fn capitalize_words(s: &str) -> String {
 /// - "Album Title CD 1"
 pub fn clean_album_title(title: &str) -> String {
     let lower = title.to_lowercase();
-    
+
     // List of markers to look for at the end of the string
     // We look for the last occurrence to avoid false positives in the middle of titles
     let markers = [
-        " (cd",
-        " (disc",
-        " cd ",
-        " disc ",
-        " vol.",
-        " vol ",
+        " (cd", " (disc", " cd ", " disc ", " vol.", " vol ",
         // Handle cases without space
-        "(cd",
-        "(disc",
-        // Handle square brackets
-        " [cd",
-        " [disc",
-        "[cd",
-        "[disc",
+        "(cd", "(disc", // Handle square brackets
+        " [cd", " [disc", "[cd", "[disc",
     ];
 
     for marker in markers {
         if let Some(idx) = lower.rfind(marker) {
             let suffix = &lower[idx..];
-            
+
             // Heuristics to ensure this is actually a disc number:
-            
+
             // 1. Must contain a digit
             if !suffix.chars().any(|c| c.is_ascii_digit()) {
                 continue;
             }
-            
+
             // 2. If it starts with parenthesis, it must end with parenthesis
             if marker.contains('(') && !suffix.ends_with(')') {
                 continue;
@@ -84,14 +77,14 @@ pub fn clean_album_title(title: &str) -> String {
             if marker.contains('[') && !suffix.ends_with(']') {
                 continue;
             }
-            
+
             // 4. If it doesn't have parentheses/brackets, it should be at the very end of the string
             // (already guaranteed by rfind + we are checking the suffix)
-            
+
             return title[..idx].trim().to_string();
         }
     }
-    
+
     title.to_string()
 }
 
@@ -151,6 +144,29 @@ pub enum AlbumChannelType {
     Stereo,            // All tracks are 2 channels
     Multichannel(u32), // All tracks have same channel count > 2
     Mixed,             // Tracks have different channel counts
+}
+
+/// Library sort order options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LibrarySortOrder {
+    Year,
+    Genre,
+    Artist,
+    Album,
+    Tracks,
+    Composer,
+    Popularity,
+}
+
+/// Channel filter options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelFilter {
+    All,           // Show all albums
+    Mono,          // Only 1-channel albums
+    Stereo,        // Only 2-channel albums
+    Multichannel,  // Only albums with > 2 channels
+    Mixed,         // Only albums with mixed channel counts
+    Specific(u32), // Only albums with specific channel count
 }
 
 impl Album {
@@ -501,6 +517,140 @@ impl MusicLibrary {
         Ok(true) // New directory added, scan needed
     }
 
+    /// Get filtered, filtered, merged, and sorted albums
+    pub fn get_filtered_albums(
+        &self,
+        query: &str,
+        sort_order: LibrarySortOrder,
+        channel_filter: ChannelFilter,
+    ) -> Vec<Album> {
+        // 1. Search
+        let mut albums: Vec<&Album> = if query.is_empty() {
+            self.albums.iter().collect()
+        } else {
+            self.search_albums(query)
+        };
+
+        // 2. Channel Filter
+        albums.retain(|album| match channel_filter {
+            ChannelFilter::All => true,
+            ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
+            ChannelFilter::Stereo => matches!(album.channel_type(), Some(AlbumChannelType::Stereo)),
+            ChannelFilter::Multichannel => matches!(
+                album.channel_type(),
+                Some(AlbumChannelType::Multichannel(_))
+            ),
+            ChannelFilter::Mixed => matches!(album.channel_type(), Some(AlbumChannelType::Mixed)),
+            ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
+        });
+
+        // 3. Merge (Consolidated logic as requested)
+        let mut merged_albums = group_and_merge_albums(albums);
+
+        // 4. Sort
+        match sort_order {
+            LibrarySortOrder::Year => {
+                merged_albums.sort_by(|a, b| {
+                    b.year
+                        .cmp(&a.year)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Genre => {
+                merged_albums.sort_by(|a, b| {
+                    let genre_a = a
+                        .tracks
+                        .first()
+                        .and_then(|t| t.genre.as_ref())
+                        .map(|s| s.to_lowercase());
+                    let genre_b = b
+                        .tracks
+                        .first()
+                        .and_then(|t| t.genre.as_ref())
+                        .map(|s| s.to_lowercase());
+                    genre_a
+                        .cmp(&genre_b)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Artist => {
+                merged_albums.sort_by(|a, b| {
+                    a.artist()
+                        .cmp(&b.artist())
+                        .then_with(|| a.year.cmp(&b.year).reverse()) // Newest first for same artist
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Album => {
+                merged_albums.sort_by(|a, b| a.title.cmp(&b.title));
+            }
+            LibrarySortOrder::Tracks => {
+                merged_albums.sort_by(|a, b| {
+                    b.tracks
+                        .len()
+                        .cmp(&a.tracks.len())
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Composer => {
+                merged_albums.sort_by(|a, b| {
+                    let composer_a = a
+                        .tracks
+                        .first()
+                        .and_then(|t| t.composer.as_ref())
+                        .map(|s| s.to_lowercase());
+                    let composer_b = b
+                        .tracks
+                        .first()
+                        .and_then(|t| t.composer.as_ref())
+                        .map(|s| s.to_lowercase());
+                    composer_a
+                        .cmp(&composer_b)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Popularity => {
+                merged_albums.sort_by(|a, b| {
+                    // Sort by play count descending
+                    b.play_count
+                        .cmp(&a.play_count)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+        }
+
+        merged_albums
+    }
+
+    /// Get flattened directory tree for display (Recursive)
+    pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
+        let mut items = Vec::new();
+
+        fn add_recursive(
+            items: &mut Vec<(PathBuf, usize, bool)>,
+            dir_info: &DirectoryInfo,
+            level: usize,
+        ) {
+            items.push((dir_info.path.clone(), level, dir_info.expanded));
+
+            if dir_info.expanded {
+                for subdir in &dir_info.subdirectories {
+                    add_recursive(items, subdir, level + 1);
+                }
+            }
+        }
+
+        for dir_info in &self.directories {
+            add_recursive(&mut items, dir_info, 0);
+        }
+        items
+    }
+
     pub fn remove_directory(&mut self, index: usize) -> Option<PathBuf> {
         if index < self.directories.len() {
             Some(self.directories.remove(index).path)
@@ -523,9 +673,7 @@ impl MusicLibrary {
     where
         F: FnMut(usize, usize),
     {
-    {
-        self.scan_incremental_with_progress(false, None, progress_callback)
-    }
+        { self.scan_incremental_with_progress(false, None, progress_callback) }
     }
 
     /// Scan directories with optional incremental mode
@@ -575,9 +723,14 @@ impl MusicLibrary {
             // So we need to know how many tracks/albums are in each subdirectory.
 
             // Let's modify scan_directory to take a mutable map of directory stats
-            let (tracks, scanned) =
-                self.scan_directory(&dir_info.path, &mut album_map, incremental, &mut dir_stats, cancellation_token.clone())?;
-            
+            let (tracks, scanned) = self.scan_directory(
+                &dir_info.path,
+                &mut album_map,
+                incremental,
+                &mut dir_stats,
+                cancellation_token.clone(),
+            )?;
+
             // Check cancellation after each directory
             if let Some(token) = &cancellation_token {
                 if token.load(Ordering::Relaxed) {
@@ -776,13 +929,13 @@ impl MusicLibrary {
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            
+
             // Periodically check cancellation (every file is too frequent? maybe every 100?)
             // Or just check here since it's inside loop
             if let Some(token) = &cancellation_token {
                 // Determine if we should check (using some counter might be better but atomic load is cheap on x86)
                 if token.load(Ordering::Relaxed) {
-                     return Err("Scan cancelled".into());
+                    return Err("Scan cancelled".into());
                 }
             }
 
@@ -826,7 +979,7 @@ impl MusicLibrary {
                             .album
                             .clone()
                             .unwrap_or_else(|| "Unknown Album".to_string());
-                        
+
                         let album_title = clean_album_title(&raw_album_title);
 
                         // Albums are now keyed by title only - artist comes from tracks
@@ -1661,29 +1814,44 @@ mod tests {
         assert_eq!(clean_album_title("Album Title (CD - 1)"), "Album Title");
         assert_eq!(clean_album_title("Album Title (Disc 1)"), "Album Title");
         assert_eq!(clean_album_title("Album Title (Disc-1)"), "Album Title");
-        
+
         // Case insensitivity
         assert_eq!(clean_album_title("Album Title (cd 1)"), "Album Title");
         assert_eq!(clean_album_title("Album Title (DISC 1)"), "Album Title");
-        
+
         // Without parentheses
         assert_eq!(clean_album_title("Album Title CD 1"), "Album Title");
         assert_eq!(clean_album_title("Album Title Disc 1"), "Album Title");
         assert_eq!(clean_album_title("Album Title Vol. 1"), "Album Title");
-        
+
         // User reported cases
-        assert_eq!(clean_album_title("After The Fall (CD - 2)"), "After The Fall");
+        assert_eq!(
+            clean_album_title("After The Fall (CD - 2)"),
+            "After The Fall"
+        );
         assert_eq!(clean_album_title("After The Fall (CD-1)"), "After The Fall");
-        assert_eq!(clean_album_title("A Night On The Town(CD 1)"), "A Night On The Town");
-        assert_eq!(clean_album_title("A Night On The Town [CD 1]"), "A Night On The Town");
-        assert_eq!(clean_album_title("A Night On The Town[CD 1]"), "A Night On The Town");
-        
+        assert_eq!(
+            clean_album_title("A Night On The Town(CD 1)"),
+            "A Night On The Town"
+        );
+        assert_eq!(
+            clean_album_title("A Night On The Town [CD 1]"),
+            "A Night On The Town"
+        );
+        assert_eq!(
+            clean_album_title("A Night On The Town[CD 1]"),
+            "A Night On The Town"
+        );
+
         // Should NOT clean
         assert_eq!(clean_album_title("AC/DC"), "AC/DC");
         assert_eq!(clean_album_title("Disco Volante"), "Disco Volante");
         assert_eq!(clean_album_title("The CD Is Dead"), "The CD Is Dead");
         assert_eq!(clean_album_title("Album (Live)"), "Album (Live)");
-        assert_eq!(clean_album_title("Album (Remastered)"), "Album (Remastered)");
+        assert_eq!(
+            clean_album_title("Album (Remastered)"),
+            "Album (Remastered)"
+        );
     }
 
     fn create_test_album(title: &str, artist: &str, disc: u32) -> Album {
@@ -1840,7 +2008,9 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
         // This preserves tracks from different discs even if they have the same title
         let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         album.tracks.retain(|track| {
-            let title_key = track.title.as_ref()
+            let title_key = track
+                .title
+                .as_ref()
                 .map(|t| t.to_lowercase())
                 .unwrap_or_default();
             let disc = track.disc_number.unwrap_or(1);
