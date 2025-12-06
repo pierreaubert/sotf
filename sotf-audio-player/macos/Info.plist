@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Bundle Identification -->
+    <key>CFBundleIdentifier</key>
+    <string>org.spinorama.sotf</string>
+    <key>CFBundleName</key>
+    <string>SotF Player</string>
+    <key>CFBundleDisplayName</key>
+    <string>SotF Player</string>
+    <key>CFBundleExecutable</key>
+    <string>sotf-gpui</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <!-- Version Information -->
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.5.3</string>
+
+    <!-- macOS Requirements -->
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+
+    <!-- UI Configuration -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+
+    <!-- Entitlements and Permissions -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>SotF Player needs microphone access for audio recording and room EQ calibration.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>SotF Player uses AppleEvents for system automation.</string>
+
+    <!-- File Type Associations -->
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Audio File</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.audio</string>
+                <string>public.mp3</string>
+                <string>org.xiph.flac</string>
+                <string>com.apple.m4a-audio</string>
+                <string>public.aiff-audio</string>
+                <string>com.microsoft.waveform-audio</string>
+                <string>org.xiph.ogg</string>
+            </array>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+        </dict>
+    </array>
+
+    <!-- URL Scheme Support (optional, for future use) -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>org.spinorama.sotf</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>sotf</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- Copyright -->
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2024 Pierre F. Aubert. Licensed under GPL-3.0-or-later.</string>
+
+    <!-- Hardened Runtime -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
+</dict>
+</plist>
