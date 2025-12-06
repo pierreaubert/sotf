@@ -487,7 +487,96 @@ impl Element for Surface3DElement {
                 false,
                 false,
             );
+        } else if self.config.plot_type == SurfacePlotType::Spherical {
+            // Helper to get screen position of a 3D point
+            let to_screen = |pos: glam::Vec3| -> Option<glam::Vec3> {
+                let p = camera.project_to_screen(pos, width, height)?;
+                // In Sphere mode, we might see back of sphere?
+                // Just use z-buffer check [0,1]
+                if p.z >= 0.0 && p.z <= 1.0 { Some(p) } else { None }
+            };
+
+            // Shared helper to draw a single tick and its label (Same as above, maybe verify if scope allows sharing or redefine)
+            // Re-defining for simplicity as scope is separate
+             let draw_tick_and_label = |window: &mut Window,
+                                     pos: glam::Vec3,
+                                     tick_vec: glam::Vec3,
+                                     label: String| {
+                let tick_end = pos + tick_vec;
+                if let (Some(s_start), Some(s_end)) = (to_screen(pos), to_screen(tick_end)) {
+                     let p1 = gpui::Point { x: px(s_start.x) + bounds.origin.x, y: px(s_start.y) + bounds.origin.y };
+                     let p2 = gpui::Point { x: px(s_end.x) + bounds.origin.x, y: px(s_end.y) + bounds.origin.y };
+                     let mut builder = gpui::PathBuilder::stroke(px(1.0));
+                     builder.move_to(p1);
+                     builder.line_to(p2);
+                     if let Ok(path) = builder.build() { window.paint_path(path, gpui::rgba(0x000000ff)); }
+                }
+
+                let label_pos = pos + tick_vec * 1.5;
+                if let Some(screen_pos) = to_screen(label_pos) {
+                    let screen_x = screen_pos.x + f32::from(bounds.origin.x);
+                    let screen_y = screen_pos.y + f32::from(bounds.origin.y);
+                    let font_size = 8.0;
+                    let text_width = measure_text_width(&label, font_size);
+                    
+                    paint_vector_text_at(
+                        window, &label, 
+                        screen_x - text_width / 2.0, 
+                        screen_y - font_size / 2.0, 
+                        font_size, 1.0, gpui::rgba(0x000000ff), 
+                        0.0
+                    );
+                }
+            };
+
+            // Draw Azimuth Labels (Equator)
+            // Y data is Azimuth (-180..180).
+            let az_ticks = self.data.y_ticks.clone().unwrap_or_else(|| vec![-180.0, -90.0, 0.0, 90.0, 180.0]);
+            
+            for az in az_ticks {
+                // Convert Azimuth to 3D pos on sphere equator (Phi=0)
+                // normalize_y maps Azimuth to [-1, 1]
+                // mesh.rs: theta = ny * PI => [-PI, PI]
+                let ny = self.data.normalize_y(az);
+                let theta = ny * std::f32::consts::PI;
+                let radius = 1.0;
+                
+                // Phi = 0 => y_pos = 0, r_xz=radius
+                let x = radius * theta.sin();
+                let z = radius * theta.cos();
+                let pos = glam::Vec3::new(x, 0.0, z);
+                
+                let tick_vec = pos.normalize() * 0.15; // Point out
+                let label = format!("{}°", az);
+                draw_tick_and_label(window, pos, tick_vec, label);
+            }
+
+            // Draw Elevation Labels (Meridian)
+            // X data is Elevation (-90..90).
+            let el_ticks = self.data.x_ticks.clone().unwrap_or_else(|| vec![-90.0, -45.0, 0.0, 45.0, 90.0]);
+            
+            // Draw on Prime Meridian (Theta=0 -> Y=0 in data, Z positive)
+            
+            for el in el_ticks {
+                if el.abs() > 89.0 { continue; } // Skip poles to avoid clutter
+
+                let nx = self.data.normalize_x(el);
+                let phi = nx * std::f32::consts::FRAC_PI_2;
+                let radius = 1.0;
+                
+                // Theta = 0
+                let y = radius * phi.sin();
+                let r_xz = radius * phi.cos();
+                let x = 0.0;
+                let z = r_xz * 1.0; // theta=0 -> sin=0, cos=1
+                
+                let pos = glam::Vec3::new(x, y, z);
+                let tick_vec = pos.normalize() * 0.1;
+                let label = format!("{}°", el);
+                
+                draw_tick_and_label(window, pos, tick_vec, label);
+            }
         }
+
     }
 }
-

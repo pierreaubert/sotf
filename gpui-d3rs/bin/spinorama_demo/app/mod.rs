@@ -35,6 +35,8 @@ use super::types::{
     BrushOverlay, ChartId, Colormap, ContourRenderMode, DirectivityPlane, LinePoint, LoadState,
     PlotCurve, PlotSection, SecondaryAxisConfig,
 };
+
+mod render_sphere;
 use super::utils::{
     cea2034_colors, format_frequency, get_angle_range, interpolate_spl_at_frequency, CEA2034_CURVES,
 };
@@ -94,6 +96,7 @@ pub struct SpinoramaApp {
     pub surface_state: Rc<RefCell<Surface3DState>>,
     pub surface_wireframe: bool,
     pub surface_plot_type: SurfacePlotType,
+    pub sphere_freq_idx: usize,
 
     // Polar contour plot state
     pub polar_contour_freq_range: (f64, f64),
@@ -155,6 +158,7 @@ impl SpinoramaApp {
 
             // Polar contour frequency range (20Hz - 20kHz)
             surface_plot_type: SurfacePlotType::Cartesian,
+            sphere_freq_idx: 0,
             polar_contour_freq_range: (20.0, 20000.0),
         };
 
@@ -790,6 +794,7 @@ impl SpinoramaApp {
                 PlotSection::Contour => self.render_contour_plot(cx),
                 PlotSection::PolarDirectivity => self.render_polar_directivity_plot(cx),
                 PlotSection::Surface3D => self.render_surface_3d_plot(cx),
+                PlotSection::SurfaceSphere => self.render_sphere_plot(cx),
                 PlotSection::PolarContour => self.render_polar_contour_plot(cx),
             },
         };

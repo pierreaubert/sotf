@@ -177,6 +177,7 @@ pub enum PlotSection {
     Contour,
     PolarDirectivity,
     Surface3D,
+    SurfaceSphere,
     PolarContour,
 }
 
@@ -189,6 +190,7 @@ impl PlotSection {
             Self::Contour,
             Self::PolarDirectivity,
             Self::Surface3D,
+            Self::SurfaceSphere,
             Self::PolarContour,
         ]
     }
@@ -201,6 +203,7 @@ impl PlotSection {
             Self::Contour => "Contour Plot",
             Self::PolarDirectivity => "Polar Directivity",
             Self::Surface3D => "3D Surface",
+            Self::SurfaceSphere => "Sphere Plot",
             Self::PolarContour => "Polar Contour",
         }
     }

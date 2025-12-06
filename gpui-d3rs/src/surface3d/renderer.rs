@@ -9,6 +9,8 @@ use glam::Mat4;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
+use crate::surface3d::SurfacePlotType;
+
 /// Uniform buffer data (must match shader layout)
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -634,13 +636,14 @@ impl Surface3DRenderer {
             // Draw grid box first (background)
             // Use CullMode::Front (cull front, show back).
 
+        if self.config.show_axes && self.config.plot_type == SurfacePlotType::Cartesian {
             render_pass.set_pipeline(&self.grid_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));
             render_pass
                 .set_index_buffer(self.grid_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             render_pass.draw_indexed(0..self.grid_index_count, 0, 0..1);
-
+        }
             // Draw surface
             render_pass.set_pipeline(&self.surface_pipeline);
             render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
