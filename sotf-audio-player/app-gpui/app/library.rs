@@ -41,6 +41,24 @@ impl App {
 
         // Finally, sort
         match self.library_sort_order {
+            LibrarySortOrder::Year => {
+                merged_albums.sort_by(|a, b| {
+                    b.year
+                        .cmp(&a.year)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Genre => {
+                merged_albums.sort_by(|a, b| {
+                    let genre_a = a.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
+                    let genre_b = b.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
+                    genre_a
+                        .cmp(&genre_b)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
             LibrarySortOrder::Artist => {
                 merged_albums.sort_by(|a, b| {
                     a.artist()
@@ -52,13 +70,20 @@ impl App {
             LibrarySortOrder::Album => {
                 merged_albums.sort_by(|a, b| a.title.cmp(&b.title));
             }
-            LibrarySortOrder::Title => {
-                merged_albums.sort_by(|a, b| a.title.cmp(&b.title));
-            }
-            LibrarySortOrder::Year => {
+            LibrarySortOrder::Tracks => {
                 merged_albums.sort_by(|a, b| {
-                    b.year
-                        .cmp(&a.year)
+                    b.tracks.len()
+                        .cmp(&a.tracks.len())
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Composer => {
+                merged_albums.sort_by(|a, b| {
+                    let composer_a = a.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
+                    let composer_b = b.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
+                    composer_a
+                        .cmp(&composer_b)
                         .then_with(|| a.artist().cmp(&b.artist()))
                         .then_with(|| a.title.cmp(&b.title))
                 });

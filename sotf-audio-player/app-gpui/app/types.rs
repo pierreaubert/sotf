@@ -122,10 +122,12 @@ impl ToastMessage {
 /// Library sort order options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibrarySortOrder {
+    Year,
+    Genre,
     Artist,
     Album,
-    Title,
-    Year,
+    Tracks,
+    Composer,
 }
 
 /// Channel filter options

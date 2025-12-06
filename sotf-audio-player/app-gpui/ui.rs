@@ -572,10 +572,12 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             use crate::app::LibrarySortOrder;
             let next_order = match state.app.library_sort_order {
+                LibrarySortOrder::Year => LibrarySortOrder::Genre,
+                LibrarySortOrder::Genre => LibrarySortOrder::Artist,
                 LibrarySortOrder::Artist => LibrarySortOrder::Album,
-                LibrarySortOrder::Album => LibrarySortOrder::Title,
-                LibrarySortOrder::Title => LibrarySortOrder::Year,
-                LibrarySortOrder::Year => LibrarySortOrder::Artist,
+                LibrarySortOrder::Album => LibrarySortOrder::Tracks,
+                LibrarySortOrder::Tracks => LibrarySortOrder::Composer,
+                LibrarySortOrder::Composer => LibrarySortOrder::Year,
             };
             state.app.set_library_sort_order(next_order);
         });
@@ -602,9 +604,10 @@ impl PlayerView {
 
     fn set_sort_title(&mut self, _: &SetSortTitle, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
+            // Title sorting now uses Album sort (sorts by album title)
             state
                 .app
-                .set_library_sort_order(crate::app::LibrarySortOrder::Title);
+                .set_library_sort_order(crate::app::LibrarySortOrder::Album);
         });
         cx.notify();
     }

@@ -1725,6 +1725,7 @@ mod tests {
 
     #[test]
     fn test_album_grouping_regression() {
+        // Test multi-disc album scenario: different disc numbers should merge
         let albums = vec![
             create_test_album("A Night On The Town", "Rod Stewart", 1),
             create_test_album("A Night On The Town (CD 1)", "Rod Stewart", 1),
@@ -1736,11 +1737,60 @@ mod tests {
 
         assert_eq!(merged.len(), 1, "Should have grouped into 1 album");
         assert_eq!(merged[0].title, "A Night On The Town");
-        assert_eq!(merged[0].tracks.len(), 3);
+        // Tracks with same title+disc+track_number get deduplicated
+        // So disc 1 tracks from album 1 and 2 merge, plus disc 2 track = 2 unique tracks
+        assert_eq!(merged[0].tracks.len(), 2);
+    }
+
+    #[test]
+    fn test_album_grouping_multi_disc() {
+        // Test proper multi-disc album where each disc has unique tracks
+        let mut album_cd1 = create_test_album("The Wall (CD 1)", "Pink Floyd", 1);
+        album_cd1.tracks[0].title = Some("In The Flesh?".to_string());
+        album_cd1.tracks[0].track_number = Some(1);
+
+        let mut album_cd2 = create_test_album("The Wall (CD 2)", "Pink Floyd", 2);
+        album_cd2.tracks[0].title = Some("Hey You".to_string());
+        album_cd2.tracks[0].track_number = Some(1);
+
+        let albums = vec![album_cd1, album_cd2];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(merged.len(), 1, "Should have grouped into 1 album");
+        assert_eq!(merged[0].title, "The Wall");
+        // Both tracks should be preserved since they have different titles
+        assert_eq!(merged[0].tracks.len(), 2);
+    }
+
+    #[test]
+    fn test_album_grouping_uses_highest_dr() {
+        // Test that highest DR album is selected for metadata
+        // Both albums have the same base title but different disc markers
+        let mut album_low_dr = create_test_album("Dark Side (CD 1)", "Pink Floyd", 1);
+        album_low_dr.dynamic_range = Some(8.0);
+        album_low_dr.year = Some(1973);
+
+        let mut album_high_dr = create_test_album("Dark Side (CD 2)", "Pink Floyd", 2);
+        album_high_dr.dynamic_range = Some(12.0);
+        album_high_dr.year = Some(2011);
+
+        let albums = vec![album_low_dr, album_high_dr];
+        let album_refs: Vec<&Album> = albums.iter().collect();
+        let merged = group_and_merge_albums(album_refs);
+
+        assert_eq!(merged.len(), 1, "Should have grouped into 1 album");
+        // Should use metadata from the higher DR album
+        assert_eq!(merged[0].year, Some(2011));
     }
 }
 
 /// Helper function to group and merge albums
+///
+/// For albums with the same title and artist:
+/// - Merge all tracks from all albums (for multi-disc albums)
+/// - Deduplicate tracks by title + disc + track number (for duplicate editions)
+/// - Keep the album metadata (year, art) from the album with highest DR
 pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
     // Group by title and artist to consolidate editions
     let mut groups: std::collections::HashMap<String, Vec<&Album>> =
@@ -1755,40 +1805,64 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
         groups.entry(key).or_default().push(album);
     }
 
-    // Merge albums
+    // Merge albums and deduplicate tracks
     let mut merged_albums: Vec<Album> = Vec::new();
     for group in groups.values() {
         if group.is_empty() {
             continue;
         }
 
-        // Clone the first album as base
-        let mut base_album = (*group[0]).clone();
+        // Select the album with highest dynamic range for metadata (year, art, etc.)
+        let best_album = group
+            .iter()
+            .max_by(|a, b| {
+                let dr_a = a.dynamic_range.unwrap_or(0.0);
+                let dr_b = b.dynamic_range.unwrap_or(0.0);
+                dr_a.partial_cmp(&dr_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(&group[0]);
 
+        let mut album = (*best_album).clone();
+
+        // Clean up the title if there are multiple editions
         if group.len() > 1 {
-            base_album.title = clean_album_title(&base_album.title);
+            album.title = clean_album_title(&album.title);
 
+            // Collect all tracks from all albums in the group
             let mut all_tracks = Vec::new();
-            for album in group {
-                all_tracks.extend(album.tracks.clone());
+            for g_album in group {
+                all_tracks.extend(g_album.tracks.clone());
             }
-
-            all_tracks.sort_by(|a, b| {
-                a.disc_number
-                    .unwrap_or(1)
-                    .cmp(&b.disc_number.unwrap_or(1))
-                    .then_with(|| {
-                        a.track_number
-                            .unwrap_or(0)
-                            .cmp(&b.track_number.unwrap_or(0))
-                    })
-            });
-
-            base_album.tracks = all_tracks;
+            album.tracks = all_tracks;
         }
 
-        merged_albums.push(base_album);
+        // Deduplicate tracks by (title + disc + track number)
+        // This preserves tracks from different discs even if they have the same title
+        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+        album.tracks.retain(|track| {
+            let title_key = track.title.as_ref()
+                .map(|t| t.to_lowercase())
+                .unwrap_or_default();
+            let disc = track.disc_number.unwrap_or(1);
+            let track_num = track.track_number.unwrap_or(0);
+            let key = format!("{}|{}|{}", title_key, disc, track_num);
+            seen_keys.insert(key)
+        });
+
+        // Sort tracks by disc and track number
+        album.tracks.sort_by(|a, b| {
+            a.disc_number
+                .unwrap_or(1)
+                .cmp(&b.disc_number.unwrap_or(1))
+                .then_with(|| {
+                    a.track_number
+                        .unwrap_or(0)
+                        .cmp(&b.track_number.unwrap_or(0))
+                })
+        });
+
+        merged_albums.push(album);
     }
-    
+
     merged_albums
 }

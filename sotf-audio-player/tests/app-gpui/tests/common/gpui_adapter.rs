@@ -85,19 +85,23 @@ fn id_to_input_mode(id: InputModeId) -> InputMode {
 
 fn sort_order_to_id(order: LibrarySortOrder) -> SortOrderId {
     match order {
+        LibrarySortOrder::Year => SortOrderId::Year,
+        LibrarySortOrder::Genre => SortOrderId::Genre,
         LibrarySortOrder::Artist => SortOrderId::Artist,
         LibrarySortOrder::Album => SortOrderId::Album,
-        LibrarySortOrder::Title => SortOrderId::Title,
-        LibrarySortOrder::Year => SortOrderId::Year,
+        LibrarySortOrder::Tracks => SortOrderId::Tracks,
+        LibrarySortOrder::Composer => SortOrderId::Composer,
     }
 }
 
 fn id_to_sort_order(id: SortOrderId) -> LibrarySortOrder {
     match id {
+        SortOrderId::Year => LibrarySortOrder::Year,
+        SortOrderId::Genre => LibrarySortOrder::Genre,
         SortOrderId::Artist => LibrarySortOrder::Artist,
         SortOrderId::Album => LibrarySortOrder::Album,
-        SortOrderId::Title => LibrarySortOrder::Title,
-        SortOrderId::Year => LibrarySortOrder::Year,
+        SortOrderId::Tracks => LibrarySortOrder::Tracks,
+        SortOrderId::Composer => LibrarySortOrder::Composer,
         SortOrderId::Popularity => LibrarySortOrder::Artist, // GPUI doesn't have Popularity yet
     }
 }
@@ -256,10 +260,12 @@ impl AppAdapter for GpuiAdapter {
             }
             Operation::CycleSortOrder => {
                 self.app.library_sort_order = match self.app.library_sort_order {
+                    LibrarySortOrder::Year => LibrarySortOrder::Genre,
+                    LibrarySortOrder::Genre => LibrarySortOrder::Artist,
                     LibrarySortOrder::Artist => LibrarySortOrder::Album,
-                    LibrarySortOrder::Album => LibrarySortOrder::Title,
-                    LibrarySortOrder::Title => LibrarySortOrder::Year,
-                    LibrarySortOrder::Year => LibrarySortOrder::Artist,
+                    LibrarySortOrder::Album => LibrarySortOrder::Tracks,
+                    LibrarySortOrder::Tracks => LibrarySortOrder::Composer,
+                    LibrarySortOrder::Composer => LibrarySortOrder::Year,
                 };
             }
             Operation::SetSortOrder(order) => {

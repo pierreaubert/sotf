@@ -238,11 +238,13 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('s') => {
             // Cycle through sort orders
             let next_order = match app.library_sort_order {
+                LibrarySortOrder::Year => LibrarySortOrder::Genre,
+                LibrarySortOrder::Genre => LibrarySortOrder::Artist,
                 LibrarySortOrder::Artist => LibrarySortOrder::Album,
-                LibrarySortOrder::Album => LibrarySortOrder::Title,
-                LibrarySortOrder::Title => LibrarySortOrder::Year,
-                LibrarySortOrder::Year => LibrarySortOrder::Popularity,
-                LibrarySortOrder::Popularity => LibrarySortOrder::Artist,
+                LibrarySortOrder::Album => LibrarySortOrder::Tracks,
+                LibrarySortOrder::Tracks => LibrarySortOrder::Composer,
+                LibrarySortOrder::Composer => LibrarySortOrder::Popularity,
+                LibrarySortOrder::Popularity => LibrarySortOrder::Year,
             };
             app.set_library_sort_order(next_order);
             None
@@ -253,23 +255,23 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Char('1') => {
+            // Sort by year
+            app.set_library_sort_order(LibrarySortOrder::Year);
+            None
+        }
+        KeyCode::Char('2') => {
+            // Sort by genre
+            app.set_library_sort_order(LibrarySortOrder::Genre);
+            None
+        }
+        KeyCode::Char('3') => {
             // Sort by artist
             app.set_library_sort_order(LibrarySortOrder::Artist);
             None
         }
-        KeyCode::Char('2') => {
+        KeyCode::Char('4') => {
             // Sort by album
             app.set_library_sort_order(LibrarySortOrder::Album);
-            None
-        }
-        KeyCode::Char('3') => {
-            // Sort by title
-            app.set_library_sort_order(LibrarySortOrder::Title);
-            None
-        }
-        KeyCode::Char('4') => {
-            // Sort by year
-            app.set_library_sort_order(LibrarySortOrder::Year);
             None
         }
         KeyCode::Char('5') => {

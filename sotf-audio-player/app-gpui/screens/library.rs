@@ -23,7 +23,7 @@ impl PlayerView {
             sort_order,
             channel_filter,
             theme,
-            (min_year, max_year, categories_count, stereo_count, multichannel_count),
+            (min_year, max_year, genres_count, stereo_count, multichannel_count),
         ) = {
             let state = self.state.read(cx);
 
@@ -62,7 +62,7 @@ impl PlayerView {
                 {
                     let mut min_year = 9999;
                     let mut max_year = 0;
-                    let mut categories: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let mut genres: std::collections::HashSet<String> = std::collections::HashSet::new();
                     let mut stereo_count = 0;
                     let mut multichannel_count = 0;
 
@@ -85,13 +85,13 @@ impl PlayerView {
                         for track in &album.tracks {
                             if let Some(genre) = &track.genre {
                                 if !genre.is_empty() {
-                                    categories.insert(genre.to_lowercase());
+                                    genres.insert(genre.to_lowercase());
                                 }
                             }
                         }
                     }
                     if min_year == 9999 { min_year = 0; }
-                    (min_year, max_year, categories.len(), stereo_count, multichannel_count)
+                    (min_year, max_year, genres.len(), stereo_count, multichannel_count)
                 }
             )
         };
@@ -103,176 +103,122 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .p_2()
-            // Stats row with all boxes in one line
+            // Top row: Sortable stat boxes + Channel filter box + Search box
             .child(
                 div()
                     .flex()
-                    .flex_wrap() // Allow wrapping if window is too small
+                    .flex_wrap()
                     .justify_center()
                     .gap_2()
-                    .mb_4()
-                    // Box 1: Years
-                    .child(self.render_stat_box(
+                    .mb_2()
+                    // Box 1: Years (clickable, sorts by Year)
+                    .child(self.render_sortable_stat_box(
                         "Years",
-                        0, // Dummy value, we'll override the text in render_stat_box_custom
+                        format!("{} - {}",
+                            if min_year > 0 { min_year.to_string() } else { "??".to_string() },
+                            if max_year > 0 { max_year.to_string() } else { "??".to_string() }
+                        ),
                         IconName::Disc,
-                        &theme
-                    ).with_value(format!("{} - {}", if min_year > 0 { min_year.to_string() } else { "??".to_string() }, if max_year > 0 { max_year.to_string() } else { "??".to_string() })))
-                    // Box 2: Categories
-                    .child(self.render_stat_box("Categories", categories_count, IconName::Folder, &theme))
-                    // Box 3: Channels
-                    .child(self.render_stat_box(
-                        "Stereo / Multi",
-                        0, // Dummy value
-                        IconName::AudioWaveform,
-                        &theme
-                    ).with_value(format!("{} / {}", stereo_count, multichannel_count)))
-                    // Existing boxes
-                    .child(self.render_stat_box("Albums", albums_count, IconName::Album, &theme))
-                    .child(self.render_stat_box("Artists", artists_count, IconName::User, &theme))
-                    .child(self.render_stat_box("Tracks", tracks_count, IconName::Music, &theme))
-                    .child(self.render_stat_box(
-                        "Composers",
-                        composers_count,
-                        IconName::PenTool,
+                        crate::app::LibrarySortOrder::Year,
+                        sort_order,
                         &theme,
-                    )),
+                        cx,
+                    ))
+                    // Box 2: Genres (clickable, sorts by Genre)
+                    .child(self.render_sortable_stat_box(
+                        "Genres",
+                        genres_count.to_string(),
+                        IconName::Folder,
+                        crate::app::LibrarySortOrder::Genre,
+                        sort_order,
+                        &theme,
+                        cx,
+                    ))
+                    // Box 3: Artists (clickable, sorts by Artist)
+                    .child(self.render_sortable_stat_box(
+                        "Artists",
+                        artists_count.to_string(),
+                        IconName::User,
+                        crate::app::LibrarySortOrder::Artist,
+                        sort_order,
+                        &theme,
+                        cx,
+                    ))
+                    // Box 4: Albums (clickable, sorts by Album title)
+                    .child(self.render_sortable_stat_box(
+                        "Albums",
+                        albums_count.to_string(),
+                        IconName::Album,
+                        crate::app::LibrarySortOrder::Album,
+                        sort_order,
+                        &theme,
+                        cx,
+                    ))
+                    // Box 5: Tracks (clickable, sorts by track count)
+                    .child(self.render_sortable_stat_box(
+                        "Tracks",
+                        tracks_count.to_string(),
+                        IconName::Music,
+                        crate::app::LibrarySortOrder::Tracks,
+                        sort_order,
+                        &theme,
+                        cx,
+                    ))
+                    // Box 6: Composers (clickable, sorts by Composer)
+                    .child(self.render_sortable_stat_box(
+                        "Composers",
+                        composers_count.to_string(),
+                        IconName::PenTool,
+                        crate::app::LibrarySortOrder::Composer,
+                        sort_order,
+                        &theme,
+                        cx,
+                    ))
+                    // Box 7: Channels with filter buttons inside
+                    .child(self.render_channel_filter_box(
+                        stereo_count,
+                        multichannel_count,
+                        channel_filter,
+                        &theme,
+                        cx,
+                    ))
+                    // Box 8: Search icon box
+                    .child(self.render_search_box(&theme, is_search_mode, cx)),
             )
-            // Search and filter row
-            .child(
-                div()
-                    .flex()
-                    .justify_between()
-                    .items_center()
-                    .mb_4()
-                    .child(
-                        div()
-                            .w_64()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        if state.app.input_mode != crate::app::InputMode::Search {
-                                            state.app.input_mode = crate::app::InputMode::Search;
-                                        }
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child(
-                                Input::new("search-input")
-                                    .value(SharedString::from(if search_query.is_empty() {
-                                        if is_search_mode {
-                                            "Type to search...".to_string()
-                                        } else {
+            // Search bar (only visible when in search mode)
+            .when(is_search_mode, |el| {
+                el.child(
+                    div()
+                        .flex()
+                        .justify_center()
+                        .mb_2()
+                        .child(
+                            div()
+                                .w_96()
+                                .child(
+                                    Input::new("search-input")
+                                        .value(SharedString::from(if search_query.is_empty() {
                                             "".to_string()
-                                        }
-                                    } else {
-                                        format!(
-                                            "{}{}",
-                                            search_query,
-                                            if is_search_mode { "|" } else { "" }
-                                        )
-                                    }))
-                                    .placeholder("Click to search")
-                                    .icon_left("🔍")
-                                    .size(InputSize::Sm)
-                                    .readonly(true)
-                                    .bg_color(theme.surface)
-                                    .text_color(theme.text_primary)
-                                    .placeholder_color(theme.text_muted)
-                                    .border_color(theme.border),
-                            ),
-                    )
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Lg)
-                            // Sort buttons
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Xs)
-                                    .child(
-                                        Text::new("Sort:")
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(self.render_sort_button(
-                                        "Artist",
-                                        crate::app::LibrarySortOrder::Artist,
-                                        sort_order,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .child(self.render_sort_button(
-                                        "Album",
-                                        crate::app::LibrarySortOrder::Album,
-                                        sort_order,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .child(self.render_sort_button(
-                                        "Title",
-                                        crate::app::LibrarySortOrder::Title,
-                                        sort_order,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .child(self.render_sort_button(
-                                        "Year",
-                                        crate::app::LibrarySortOrder::Year,
-                                        sort_order,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .build(),
-                            )
-                            // Filter buttons
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Xs)
-                                    .child(
-                                        Text::new("Filter:")
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(self.render_filter_button(
-                                        "All",
-                                        crate::app::ChannelFilter::All,
-                                        channel_filter,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .child(self.render_filter_button(
-                                        "2.0",
-                                        crate::app::ChannelFilter::Stereo,
-                                        channel_filter,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .child(self.render_filter_button(
-                                        "5.1",
-                                        crate::app::ChannelFilter::Multichannel,
-                                        channel_filter,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .child(self.render_filter_button(
-                                        "7.1",
-                                        crate::app::ChannelFilter::Mixed,
-                                        channel_filter,
-                                        theme.clone(),
-                                        cx,
-                                    ))
-                                    .build(),
-                            )
-                            .build(),
-                    ),
-            )
+                                        } else {
+                                            format!("{}|", search_query)
+                                        }))
+                                        .placeholder("Type to search albums, artists, tracks...")
+                                        .icon_left("🔍")
+                                        .size(InputSize::Md)
+                                        .readonly(true)
+                                        .bg_color(theme.surface)
+                                        .text_color(theme.text_primary)
+                                        .placeholder_color(theme.text_muted)
+                                        .border_color(theme.accent),
+                                ),
+                        )
+                )
+            })
             .child(
                 div()
                     .id("library-content-container")
                     .flex_1()
-                    .min_h_0() // Allow flex item to shrink below content size for scroll
+                    .min_h_0()
                     .overflow_hidden()
                     .child(self.render_library_grid(cx)),
             )
@@ -293,10 +239,10 @@ impl PlayerView {
             .id("album-grid")
             .flex()
             .flex_wrap()
-            .content_start() // Align items to start so they don't stretch
+            .content_start()
             .gap_4()
             .p_2()
-            .size_full() // Ensure grid takes full parent size
+            .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.grid_scroll_handle)
             .children(albums.iter().enumerate().map(|(idx, album)| {
@@ -336,27 +282,27 @@ impl PlayerView {
             }))
     }
 
-    /// Render a sort button with active state styling
-    fn render_sort_button(
+    /// Render a sortable stat box that acts as a sort button
+    fn render_sortable_stat_box(
         &self,
-        label: &'static str,
+        label: &str,
+        value: String,
+        icon: IconName,
         sort_order: crate::app::LibrarySortOrder,
         current_sort: crate::app::LibrarySortOrder,
-        theme: crate::theme::Theme,
+        theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let is_active = current_sort == sort_order;
+        let surface = if is_active { theme.surface_selected } else { theme.surface };
+        let border = if is_active { theme.accent } else { theme.border };
+        let accent = theme.accent;
+        let text_primary = theme.text_primary;
+        let text_secondary = theme.text_secondary;
 
-        Button::new(SharedString::from(format!("sort-btn-{}", label)), label)
-            .variant(if is_active {
-                ButtonVariant::Primary
-            } else {
-                ButtonVariant::Secondary
-            })
-            .size(ButtonSize::Xs)
-            .selected(is_active)
-            .theme(theme.to_button_theme())
-            .build()
+        div()
+            .id(SharedString::from(format!("stat-box-{}", label)))
+            .cursor_pointer()
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -365,6 +311,197 @@ impl PlayerView {
                     });
                     cx.notify();
                 }),
+            )
+            .child(
+                Card::new()
+                    .content(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(accent)
+                                    .child(Icon::new(icon).size(IconSize::Xl).color(accent)),
+                            )
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::None)
+                                    .child(
+                                        Text::new(value)
+                                            .size(TextSize::Md)
+                                            .weight(TextWeight::Bold)
+                                            .color(text_primary),
+                                    )
+                                    .child(
+                                        Text::new(label.to_string())
+                                            .size(TextSize::Xs)
+                                            .color(text_secondary),
+                                    )
+                                    .build(),
+                            )
+                            .build(),
+                    )
+                    .style(move |card| {
+                        card.min_w(px(100.0))
+                            .bg(surface)
+                            .border_color(border)
+                            .border_1()
+                            .py_1()
+                            .px_2()
+                    }),
+            )
+    }
+
+    /// Render the channel filter box with filter buttons inside
+    fn render_channel_filter_box(
+        &self,
+        stereo_count: usize,
+        multichannel_count: usize,
+        current_filter: crate::app::ChannelFilter,
+        theme: &crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let surface = theme.surface;
+        let border = theme.border;
+        let accent = theme.accent;
+        let text_primary = theme.text_primary;
+        let text_secondary = theme.text_secondary;
+
+        Card::new()
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(Icon::new(IconName::AudioWaveform).size(IconSize::Xl).color(accent)),
+                            )
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::None)
+                                    .child(
+                                        Text::new(format!("{} / {}", stereo_count, multichannel_count))
+                                            .size(TextSize::Md)
+                                            .weight(TextWeight::Bold)
+                                            .color(text_primary),
+                                    )
+                                    .child(
+                                        Text::new("Stereo / Multi")
+                                            .size(TextSize::Xs)
+                                            .color(text_secondary),
+                                    )
+                                    .build(),
+                            )
+                            .build(),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .child(self.render_filter_button(
+                                "All",
+                                crate::app::ChannelFilter::All,
+                                current_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                "2.0",
+                                crate::app::ChannelFilter::Stereo,
+                                current_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                "5.1",
+                                crate::app::ChannelFilter::Multichannel,
+                                current_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                "7.1",
+                                crate::app::ChannelFilter::Specific(8),
+                                current_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .build(),
+                    )
+                    .build(),
+            )
+            .style(move |card| {
+                card.min_w(px(120.0))
+                    .bg(surface)
+                    .border_color(border)
+                    .py_1()
+                    .px_2()
+            })
+    }
+
+    /// Render the search icon box
+    fn render_search_box(
+        &self,
+        theme: &crate::theme::Theme,
+        is_active: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let surface = if is_active { theme.surface_selected } else { theme.surface };
+        let border = if is_active { theme.accent } else { theme.border };
+        let accent = theme.accent;
+        let text_secondary = theme.text_secondary;
+
+        div()
+            .id("search-box")
+            .cursor_pointer()
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        if state.app.input_mode == crate::app::InputMode::Search {
+                            state.app.input_mode = crate::app::InputMode::Normal;
+                            state.app.search_query.clear();
+                        } else {
+                            state.app.input_mode = crate::app::InputMode::Search;
+                        }
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(
+                Card::new()
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .py_1()
+                                    .child(Icon::new(IconName::Search).size(IconSize::Xl).color(accent)),
+                            )
+                            .child(
+                                Text::new("Search")
+                                    .size(TextSize::Xs)
+                                    .color(text_secondary),
+                            )
+                            .build(),
+                    )
+                    .style(move |card| {
+                        card.min_w(px(70.0))
+                            .bg(surface)
+                            .border_color(border)
+                            .border_1()
+                            .py_1()
+                            .px_2()
+                    }),
             )
     }
 
@@ -398,86 +535,5 @@ impl PlayerView {
                     cx.notify();
                 }),
             )
-    }
-
-    /// Render a large stat box for the library header using Card component
-    fn render_stat_box(
-        &self,
-        label: &str,
-        count: usize,
-        icon: IconName,
-        theme: &crate::theme::Theme,
-    ) -> StatBox {
-        StatBox {
-            label: label.to_string(),
-            value: count.to_string(),
-            icon,
-            theme: theme.clone(),
-        }
-    }
-}
-
-struct StatBox {
-    label: String,
-    value: String,
-    icon: IconName,
-    theme: crate::theme::Theme,
-}
-
-impl StatBox {
-    fn with_value(mut self, value: String) -> Self {
-        self.value = value;
-        self
-    }
-}
-
-impl IntoElement for StatBox {
-    type Element = gpui::AnyElement;
-
-    fn into_element(self) -> Self::Element {
-        let surface = self.theme.surface;
-        let border = self.theme.border;
-        let accent = self.theme.accent;
-        let text_primary = self.theme.text_primary;
-        let text_secondary = self.theme.text_secondary;
-
-        Card::new()
-            .content(
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .text_color(accent)
-                            .child(Icon::new(self.icon).size(IconSize::Xxl).color(accent)),
-                    )
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::None)
-                            .child(
-                                Text::new(self.value)
-                                    .size(TextSize::Lg)
-                                    .weight(TextWeight::Bold)
-                                    .color(text_primary),
-                            )
-                            .child(
-                                Text::new(self.label)
-                                    .size(TextSize::Xs)
-                                    .color(text_secondary),
-                            )
-                            .build(),
-                    )
-                    .build(),
-            )
-            .style(move |card| {
-                card.min_w(px(120.0))
-                    .bg(surface)
-                    .border_color(border)
-                    .py_1()
-                    .px_2()
-            })
-            .into_any_element()
     }
 }

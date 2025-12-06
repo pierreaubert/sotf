@@ -398,10 +398,12 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
 
     // Display current sort order (will be rendered in green)
     let sort_order_str = match app.library_sort_order {
+        LibrarySortOrder::Year => "Year",
+        LibrarySortOrder::Genre => "Genre",
         LibrarySortOrder::Artist => "Artist",
         LibrarySortOrder::Album => "Album",
-        LibrarySortOrder::Title => "Title",
-        LibrarySortOrder::Year => "Year",
+        LibrarySortOrder::Tracks => "Tracks",
+        LibrarySortOrder::Composer => "Composer",
         LibrarySortOrder::Popularity => "Popularity",
     };
 

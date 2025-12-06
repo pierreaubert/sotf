@@ -11,10 +11,12 @@ use sotf_audio_player::{Album, MusicLibrary};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LibrarySortOrder {
     #[default]
+    Year,
+    Genre,
     Artist,
     Album,
-    Title,
-    Year,
+    Tracks,
+    Composer,
 }
 
 /// Channel filter options
@@ -138,6 +140,24 @@ impl LibraryState {
     /// Sort albums according to current sort order
     fn sort_albums(&self, albums: &mut Vec<&Album>) {
         match self.sort_order {
+            LibrarySortOrder::Year => {
+                albums.sort_by(|a, b| {
+                    b.year
+                        .cmp(&a.year)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Genre => {
+                albums.sort_by(|a, b| {
+                    let genre_a = a.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
+                    let genre_b = b.tracks.first().and_then(|t| t.genre.as_ref()).map(|s| s.to_lowercase());
+                    genre_a
+                        .cmp(&genre_b)
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
             LibrarySortOrder::Artist => {
                 albums.sort_by(|a, b| {
                     a.artist()
@@ -146,13 +166,23 @@ impl LibraryState {
                         .then_with(|| a.title.cmp(&b.title))
                 });
             }
-            LibrarySortOrder::Album | LibrarySortOrder::Title => {
+            LibrarySortOrder::Album => {
                 albums.sort_by(|a, b| a.title.cmp(&b.title));
             }
-            LibrarySortOrder::Year => {
+            LibrarySortOrder::Tracks => {
                 albums.sort_by(|a, b| {
-                    b.year
-                        .cmp(&a.year)
+                    b.tracks.len()
+                        .cmp(&a.tracks.len())
+                        .then_with(|| a.artist().cmp(&b.artist()))
+                        .then_with(|| a.title.cmp(&b.title))
+                });
+            }
+            LibrarySortOrder::Composer => {
+                albums.sort_by(|a, b| {
+                    let composer_a = a.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
+                    let composer_b = b.tracks.first().and_then(|t| t.composer.as_ref()).map(|s| s.to_lowercase());
+                    composer_a
+                        .cmp(&composer_b)
                         .then_with(|| a.artist().cmp(&b.artist()))
                         .then_with(|| a.title.cmp(&b.title))
                 });

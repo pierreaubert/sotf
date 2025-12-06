@@ -32,10 +32,12 @@ pub enum InputModeId {
 /// Normalized library sort order
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortOrderId {
+    Year,
+    Genre,
     Artist,
     Album,
-    Title,
-    Year,
+    Tracks,
+    Composer,
     Popularity,
 }
 
