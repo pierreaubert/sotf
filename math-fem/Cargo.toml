@@ -1,0 +1,55 @@
+[package]
+name = "math-fem"
+version = "0.1.0"
+description = "Multigrid FEM solver for Helmholtz equation"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["fem", "finite-element", "helmholtz", "multigrid", "acoustics"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "fem"
+path = "src/lib.rs"
+
+[dependencies]
+# Solver infrastructure
+math-solvers = { path = "../math-solvers", version = "0.1" }
+
+# Core numerical computing
+ndarray = { version = "0.17", features = ["serde"] }
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+
+# Parallel processing
+rayon = { workspace = true, optional = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+[dev-dependencies]
+approx = "0.5"
+rand = { workspace = true }
+math-wave = { path = "../math-wave" }
+spec_math = { workspace = true }
+criterion = "0.5"
+
+[[bench]]
+name = "helmholtz_3d_scaling"
+harness = false
+
+[features]
+default = ["native"]
+
+# Native feature: enables rayon parallelism
+native = ["math-solvers/native", "rayon"]
+
+# Parallel processing
+parallel = ["rayon"]

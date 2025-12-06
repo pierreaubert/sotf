@@ -1,0 +1,28 @@
+[package]
+name = "math-wave"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Analytical solutions for wave and Helmholtz equations"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["wave", "helmholtz", "acoustics", "analytical", "bessel"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "math_wave"
+path = "src/lib.rs"
+
+[dependencies]
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+# Special functions for Bessel, Hankel, Legendre
+special = { workspace = true }
+spec_math = { workspace = true }
+
+[dev-dependencies]
+approx = "0.5"

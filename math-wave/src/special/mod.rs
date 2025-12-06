@@ -1,0 +1,19 @@
+//! Special mathematical functions for wave equations
+//!
+//! This module provides implementations of special functions commonly
+//! used in wave equation solutions:
+//!
+//! - Spherical Bessel functions (jₙ, yₙ)
+//! - Spherical Hankel functions (hₙ⁽¹⁾, hₙ⁽²⁾)
+//! - Legendre polynomials (Pₙ, Pₙᵐ)
+//!
+//! These functions are critical for:
+//! - Mie theory (sphere scattering)
+//! - Spherical harmonic expansions
+//! - FMM translation operators
+
+mod bessel;
+mod legendre;
+
+pub use bessel::*;
+pub use legendre::*;

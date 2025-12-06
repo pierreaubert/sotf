@@ -1,0 +1,64 @@
+[package]
+name = "math-solvers"
+version = "0.1.0"
+description = "High-performance linear solvers for BEM and FEM"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["linear-algebra", "solvers", "gmres", "sparse", "iterative"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "solvers"
+path = "src/lib.rs"
+
+[dependencies]
+# Core numerical computing
+ndarray = { version = "0.17", features = ["serde"] }
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+
+# BLAS/LAPACK (native only)
+ndarray-linalg = { workspace = true, optional = true }
+
+# Parallel processing
+rayon = { workspace = true, optional = true }
+
+# WASM-specific dependencies
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-rayon = { version = "1.2", optional = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+[dev-dependencies]
+approx = "0.5"
+rand = { workspace = true }
+
+[features]
+default = ["native"]
+
+# Native feature: enables BLAS/LAPACK and rayon
+native = [
+    "ndarray/blas",
+    "ndarray/rayon",
+    "ndarray-linalg",
+    "rayon",
+]
+
+# Parallel processing (works with both native and wasm)
+parallel = ["rayon"]
+
+# WASM feature: enables parallel processing via wasm-bindgen-rayon
+wasm = [
+    "rayon",
+    "wasm-bindgen",
+    "wasm-bindgen-rayon",
+]
