@@ -20,6 +20,10 @@
 //! - SLFMM: 0.01 - 0.9 (sparser, lower threshold)
 //! - MLFMM: 0.005 - 0.65 (sparsest, lowest threshold)
 
+// Allow needless_range_loop for matrix algorithm code ported from NumCalc
+// These loops follow the original C indexing pattern for correctness verification
+#![allow(clippy::needless_range_loop)]
+
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 

@@ -164,8 +164,6 @@ pub struct HierarchicalFmmPreconditioner {
     /// LU factors for each cluster's diagonal block
     /// Each entry is (L, U) stored in a single array: lower triangle + diagonal in L, upper in U
     block_lu: Vec<Array2<Complex64>>,
-    /// Block sizes for each cluster
-    block_sizes: Vec<usize>,
     /// Global DOF indices for each cluster
     cluster_dof_indices: Vec<Vec<usize>>,
     /// Total number of DOFs
@@ -191,16 +189,13 @@ impl HierarchicalFmmPreconditioner {
             vec![None; num_clusters];
 
         for block in near_blocks {
-            if block.source_cluster == block.field_cluster {
-                if block.source_cluster < num_clusters {
-                    cluster_blocks[block.source_cluster] = Some(block);
-                }
+            if block.source_cluster == block.field_cluster && block.source_cluster < num_clusters {
+                cluster_blocks[block.source_cluster] = Some(block);
             }
         }
 
         // Compute LU factorization for each cluster's diagonal block
         let mut block_lu = Vec::with_capacity(num_clusters);
-        let mut block_sizes = Vec::with_capacity(num_clusters);
 
         for (cluster_idx, maybe_block) in cluster_blocks.iter().enumerate() {
             let dof_count = cluster_dof_indices
@@ -223,22 +218,18 @@ impl HierarchicalFmmPreconditioner {
                 let lu = block.coefficients.clone(); // Store matrix for pure Rust solve
 
                 block_lu.push(lu);
-                block_sizes.push(n);
             } else {
                 // No diagonal block for this cluster - use identity
                 if dof_count > 0 {
                     block_lu.push(Array2::eye(dof_count));
-                    block_sizes.push(dof_count);
                 } else {
                     block_lu.push(Array2::zeros((0, 0)));
-                    block_sizes.push(0);
                 }
             }
         }
 
         Self {
             block_lu,
-            block_sizes,
             cluster_dof_indices: cluster_dof_indices.to_vec(),
             num_dofs,
         }
@@ -260,9 +251,8 @@ impl HierarchicalFmmPreconditioner {
         let mut z = Array1::zeros(self.num_dofs);
 
         // Process each cluster block in parallel using portable abstraction
-        let results: Vec<(usize, Vec<(usize, Complex64)>)> = parallel_enumerate_filter_map(
-            &self.block_lu,
-            |cluster_idx, lu| {
+        let results: Vec<(usize, Vec<(usize, Complex64)>)> =
+            parallel_enumerate_filter_map(&self.block_lu, |cluster_idx, lu| {
                 if cluster_idx >= self.cluster_dof_indices.len() {
                     return None;
                 }
@@ -311,8 +301,7 @@ impl HierarchicalFmmPreconditioner {
                     .collect();
 
                 Some((cluster_idx, contributions))
-            },
-        );
+            });
 
         // Scatter results back to global vector
         for (_cluster_idx, contributions) in results {
@@ -336,20 +325,23 @@ impl Preconditioner for HierarchicalFmmPreconditioner {
 ///
 /// Uses only the near-field blocks to build an ILU factorization,
 /// avoiding the O(N²) cost of building a dense matrix.
+///
+/// Note: Currently uses a simplified diagonal solve as fallback.
+/// The L/U factor fields are reserved for future full ILU implementation.
 #[derive(Debug, Clone)]
 pub struct SparseNearfieldIlu {
     /// L factor values (lower triangular, stored by rows)
     l_values: Vec<Complex64>,
-    /// Column indices for L entries
-    l_col_indices: Vec<usize>,
-    /// Row start indices for L (length n+1)
-    l_row_ptr: Vec<usize>,
-    /// U factor values (upper triangular, stored by columns)
-    u_values: Vec<Complex64>,
-    /// Row indices for U entries
-    u_row_indices: Vec<usize>,
-    /// Column start indices for U (length n+1)
-    u_col_ptr: Vec<usize>,
+    /// Column indices for L entries (reserved for full ILU)
+    _l_col_indices: Vec<usize>,
+    /// Row start indices for L (length n+1, reserved for full ILU)
+    _l_row_ptr: Vec<usize>,
+    /// U factor values (upper triangular, stored by columns, reserved for full ILU)
+    _u_values: Vec<Complex64>,
+    /// Row indices for U entries (reserved for full ILU)
+    _u_row_indices: Vec<usize>,
+    /// Column start indices for U (length n+1, reserved for full ILU)
+    _u_col_ptr: Vec<usize>,
     /// Matrix dimension
     n: usize,
 }
@@ -406,11 +398,12 @@ impl SparseNearfieldIlu {
         // Remove duplicates (sum them)
         let mut unique_entries: Vec<(usize, usize, Complex64)> = Vec::new();
         for (row, col, val) in entries {
-            if let Some(last) = unique_entries.last_mut() {
-                if last.0 == row && last.1 == col {
-                    last.2 += val;
-                    continue;
-                }
+            if let Some(last) = unique_entries.last_mut()
+                && last.0 == row
+                && last.1 == col
+            {
+                last.2 += val;
+                continue;
             }
             unique_entries.push((row, col, val));
         }
@@ -447,7 +440,7 @@ impl SparseNearfieldIlu {
         for i in 0..n {
             let row_start = row_ptr[i];
             let row_end = row_ptr[i + 1];
-            let has_diag = col_indices[row_start..row_end].iter().any(|&col| col == i);
+            let has_diag = col_indices[row_start..row_end].contains(&i);
             if !has_diag {
                 // This is a simplified version - a proper implementation would
                 // insert the diagonal entry
@@ -485,11 +478,11 @@ impl SparseNearfieldIlu {
 
         Self {
             l_values,
-            l_col_indices,
-            l_row_ptr,
-            u_values,
-            u_row_indices,
-            u_col_ptr,
+            _l_col_indices: l_col_indices,
+            _l_row_ptr: l_row_ptr,
+            _u_values: u_values,
+            _u_row_indices: u_row_indices,
+            _u_col_ptr: u_col_ptr,
             n,
         }
     }

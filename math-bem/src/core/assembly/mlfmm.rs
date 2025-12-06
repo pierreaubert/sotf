@@ -405,11 +405,10 @@ impl MlfmmSystem {
 
                     let offset = son_idx * child_num_points;
                     for i in 0..child_num_points {
-                        if offset + i < child_locals.len() {
-                            if i < locals[child_level][child_cluster_idx].len() {
-                                locals[child_level][child_cluster_idx][i] +=
-                                    child_locals[offset + i];
-                            }
+                        if offset + i < child_locals.len()
+                            && i < locals[child_level][child_cluster_idx].len()
+                        {
+                            locals[child_level][child_cluster_idx][i] += child_locals[offset + i];
                         }
                     }
                 }
@@ -1013,7 +1012,7 @@ pub fn build_cluster_tree(
 
     // Set expansion parameters based on wave number
     let kr = physics.wave_number * root_radius;
-    root_level.expansion_terms = ((kr + 6.0 * kr.ln().max(1.0)) as usize).max(4).min(30);
+    root_level.expansion_terms = ((kr + 6.0 * kr.ln().max(1.0)) as usize).clamp(4, 30);
     root_level.theta_points = root_level.expansion_terms;
     root_level.phi_points = 2 * root_level.expansion_terms;
 
@@ -1156,7 +1155,7 @@ fn subdivide_level(
 
     // Set expansion parameters
     let kr = physics.wave_number * child_level.avg_radius;
-    child_level.expansion_terms = ((kr + 6.0 * kr.ln().max(1.0)) as usize).max(4).min(30);
+    child_level.expansion_terms = ((kr + 6.0 * kr.ln().max(1.0)) as usize).clamp(4, 30);
     child_level.theta_points = child_level.expansion_terms;
     child_level.phi_points = 2 * child_level.expansion_terms;
 

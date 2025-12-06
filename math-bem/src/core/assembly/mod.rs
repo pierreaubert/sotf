@@ -14,6 +14,8 @@
 //! With the `wasm` feature, all assembly methods are available including SLFMM.
 //! Parallel processing is provided via wasm-bindgen-rayon (Web Workers).
 
+// Allow needless_range_loop for complex FMM algorithm code ported from NumCalc
+#[allow(clippy::needless_range_loop)]
 pub mod mlfmm;
 #[cfg(any(feature = "native", feature = "wasm"))]
 pub mod slfmm;

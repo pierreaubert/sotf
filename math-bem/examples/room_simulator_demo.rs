@@ -9,7 +9,6 @@
 
 use bem::room_acoustics::*;
 use ndarray::Array2;
-use serde_json;
 use std::fs;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

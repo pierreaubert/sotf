@@ -3,6 +3,9 @@
 //! Direct port of integration constants from NC_IntegrationConstants.h
 //! and NC_ComputeGausseanPoints from NC_3dFunctions.cpp.
 
+// Allow excessive precision for high-precision mathematical constants
+#![allow(clippy::excessive_precision)]
+
 /// Maximum supported Gauss-Legendre order
 pub const N_GAUORDER: usize = 80;
 
@@ -11,7 +14,7 @@ pub const N_GAUORDER: usize = 80;
 /// Returns (points, weights) where points are in [-1, 1]
 pub fn gauss_legendre(order: usize) -> (Vec<f64>, Vec<f64>) {
     assert!(
-        order >= 1 && order <= N_GAUORDER,
+        (1..=N_GAUORDER).contains(&order),
         "Order must be 1..{}",
         N_GAUORDER
     );
@@ -128,7 +131,6 @@ pub fn unit_sphere_quadrature(n_theta: usize, n_phi: usize) -> (Vec<[f64; 3]>, V
 
 // Gauss-Legendre abscissas and weights
 // Ported from NC_IntegrationConstants.h
-
 static GL1_X: [f64; 1] = [0.0];
 static GL1_W: [f64; 1] = [2.0];
 

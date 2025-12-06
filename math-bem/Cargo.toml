@@ -123,6 +123,10 @@ wasm = [
     "wasm-bindgen-rayon",
 ]
 
+# Alias for native - used by examples that need ndarray-linalg
+# Named "pure-rust" because it uses Rust BLAS implementations rather than FFI to NumCalc
+pure-rust = ["native"]
+
 # Examples that require specific features
 [[example]]
 name = "simple_sphere_test"

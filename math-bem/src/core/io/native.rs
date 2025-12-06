@@ -481,7 +481,7 @@ impl BemConfig {
             let content = fs::read_to_string(&path)?;
 
             // Try JSON first
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 let nodes: Vec<[f64; 3]> = serde_json::from_str(&content)
                     .map_err(|e| ConfigError::ParseError(e.to_string()))?;
                 let n = nodes.len();
@@ -515,7 +515,7 @@ impl BemConfig {
             let content = fs::read_to_string(&path)?;
 
             // Try JSON first
-            if path.extension().map_or(false, |e| e == "json") {
+            if path.extension().is_some_and(|e| e == "json") {
                 let connectivity: Vec<Vec<usize>> = serde_json::from_str(&content)
                     .map_err(|e| ConfigError::ParseError(e.to_string()))?;
                 return Ok(elements_from_connectivity(&connectivity));
@@ -543,7 +543,7 @@ fn parse_csv_nodes(content: &str) -> Result<Array2<f64>, ConfigError> {
         }
 
         let values: Vec<f64> = line
-            .split(|c| c == ',' || c == ' ' || c == '\t')
+            .split([',', ' ', '\t'])
             .filter_map(|s| s.trim().parse().ok())
             .collect();
 
@@ -574,7 +574,7 @@ fn parse_csv_elements(content: &str) -> Result<Vec<Element>, ConfigError> {
         }
 
         let values: Vec<usize> = line
-            .split(|c| c == ',' || c == ' ' || c == '\t')
+            .split([',', ' ', '\t'])
             .filter_map(|s| s.trim().parse().ok())
             .collect();
 

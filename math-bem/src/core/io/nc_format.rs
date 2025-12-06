@@ -181,12 +181,21 @@ pub struct PointSource {
 /// Parser error types
 #[derive(Debug, thiserror::Error)]
 pub enum NcParseError {
+    /// IO error during file reading
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// Parse error at a specific line
     #[error("Parse error at line {line}: {message}")]
-    Parse { line: usize, message: String },
+    Parse {
+        /// Line number where error occurred
+        line: usize,
+        /// Error message
+        message: String,
+    },
+    /// Required section is missing from the input file
     #[error("Missing required section: {0}")]
     MissingSection(String),
+    /// Input file format is invalid
     #[error("Invalid format: {0}")]
     InvalidFormat(String),
 }
@@ -258,7 +267,7 @@ pub fn parse_nc_input_string(
 
         // Control parameters I (exclude II)
         if i > 0
-            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+            && lines.get(i.saturating_sub(1)).is_some_and(|l| {
                 l.contains("Controlparameter I") && !l.contains("Controlparameter II")
             })
         {
@@ -271,7 +280,7 @@ pub fn parse_nc_input_string(
         if i > 0
             && lines
                 .get(i.saturating_sub(1))
-                .map_or(false, |l| l.contains("Controlparameter II"))
+                .is_some_and(|l| l.contains("Controlparameter II"))
         {
             config.control_params_ii = parse_float_line(line);
             i += 1;
@@ -282,7 +291,7 @@ pub fn parse_nc_input_string(
         if i > 0
             && lines
                 .get(i.saturating_sub(1))
-                .map_or(false, |l| l.contains("Frequency Curve"))
+                .is_some_and(|l| l.contains("Frequency Curve"))
         {
             let header = parse_int_line(line);
             let num_points = header.get(1).copied().unwrap_or(0) as usize;
@@ -304,7 +313,7 @@ pub fn parse_nc_input_string(
 
         // Main Parameters I (exclude II, III, IV)
         if i > 0
-            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+            && lines.get(i.saturating_sub(1)).is_some_and(|l| {
                 l.contains("Main Parameters I")
                     && !l.contains("Main Parameters II")
                     && !l.contains("Main Parameters III")
@@ -313,7 +322,7 @@ pub fn parse_nc_input_string(
         {
             let values = parse_int_line(line);
             config.main_params_i = MainParamsI {
-                element_type: values.get(0).copied().unwrap_or(0),
+                element_type: values.first().copied().unwrap_or(0),
                 num_nodes: values.get(1).copied().unwrap_or(0) as usize,
                 num_elements: values.get(2).copied().unwrap_or(0) as usize,
                 num_object_files: values.get(3).copied().unwrap_or(0),
@@ -329,7 +338,7 @@ pub fn parse_nc_input_string(
 
         // Main Parameters II (exclude III, IV)
         if i > 0
-            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+            && lines.get(i.saturating_sub(1)).is_some_and(|l| {
                 l.contains("Main Parameters II")
                     && !l.contains("Main Parameters III")
                     && !l.contains("Main Parameters IV")
@@ -337,7 +346,7 @@ pub fn parse_nc_input_string(
         {
             let values = parse_mixed_line(line);
             config.main_params_ii = MainParamsII {
-                preconditioner: values.get(0).map(|v| *v as i32).unwrap_or(0),
+                preconditioner: values.first().map(|v| *v as i32).unwrap_or(0),
                 iterative_solver: values.get(1).map(|v| *v as i32).unwrap_or(0),
                 reserved1: values.get(2).map(|v| *v as i32).unwrap_or(0),
                 reserved2: values.get(3).copied().unwrap_or(0.0),
@@ -351,7 +360,7 @@ pub fn parse_nc_input_string(
 
         // Main Parameters III (exclude IV)
         if i > 0
-            && lines.get(i.saturating_sub(1)).map_or(false, |l| {
+            && lines.get(i.saturating_sub(1)).is_some_and(|l| {
                 l.contains("Main Parameters III") && !l.contains("Main Parameters IV")
             })
         {
@@ -364,11 +373,11 @@ pub fn parse_nc_input_string(
         if i > 0
             && lines
                 .get(i.saturating_sub(1))
-                .map_or(false, |l| l.contains("Main Parameters IV"))
+                .is_some_and(|l| l.contains("Main Parameters IV"))
         {
             let values = parse_float_line(line);
             config.main_params_iv = MainParamsIV {
-                speed_of_sound: values.get(0).copied().unwrap_or(343.0),
+                speed_of_sound: values.first().copied().unwrap_or(343.0),
                 density: values.get(1).copied().unwrap_or(1.21),
                 reference_pressure: values.get(2).copied().unwrap_or(1.0),
                 reserved: values.get(3..).map(|s| s.to_vec()).unwrap_or_default(),
@@ -423,12 +432,12 @@ pub fn parse_nc_input_string(
                         let origin = parse_float_line(lines[i].trim());
                         config.symmetry = Some(SymmetryConfig {
                             flags: [
-                                flags.get(0).copied().unwrap_or(0) != 0,
+                                flags.first().copied().unwrap_or(0) != 0,
                                 flags.get(1).copied().unwrap_or(0) != 0,
                                 flags.get(2).copied().unwrap_or(0) != 0,
                             ],
                             origin: [
-                                origin.get(0).copied().unwrap_or(0.0),
+                                origin.first().copied().unwrap_or(0.0),
                                 origin.get(1).copied().unwrap_or(0.0),
                                 origin.get(2).copied().unwrap_or(0.0),
                             ],
@@ -470,10 +479,10 @@ pub fn parse_nc_input_string(
                 if pw_line.starts_with("##") || pw_line.is_empty() {
                     break;
                 }
-                if !pw_line.starts_with('#') {
-                    if let Some(pw) = parse_plane_wave_line(pw_line) {
-                        config.plane_waves.push(pw);
-                    }
+                if !pw_line.starts_with('#')
+                    && let Some(pw) = parse_plane_wave_line(pw_line)
+                {
+                    config.plane_waves.push(pw);
                 }
                 i += 1;
             }
@@ -488,10 +497,10 @@ pub fn parse_nc_input_string(
                 if ps_line.starts_with("##") || ps_line.is_empty() {
                     break;
                 }
-                if !ps_line.starts_with('#') {
-                    if let Some(ps) = parse_point_source_line(ps_line) {
-                        config.point_sources.push(ps);
-                    }
+                if !ps_line.starts_with('#')
+                    && let Some(ps) = parse_point_source_line(ps_line)
+                {
+                    config.point_sources.push(ps);
                 }
                 i += 1;
             }

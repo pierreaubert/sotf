@@ -12,7 +12,6 @@
 
 use bem::room_acoustics::*;
 use ndarray::Array2;
-use serde_json;
 use std::env;
 use std::fs;
 
@@ -245,7 +244,7 @@ fn run_simulation(
     // Generate spatial slices (every 10th frequency for efficiency)
     println!("\nGenerating spatial slices...");
     let slice_indices: Vec<usize> = (0..simulation.frequencies.len())
-        .step_by(simulation.frequencies.len() / 20.max(1))
+        .step_by((simulation.frequencies.len() / 20).max(1))
         .collect();
 
     println!(

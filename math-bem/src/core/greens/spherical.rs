@@ -59,8 +59,8 @@ pub fn spherical_bessel_j(order: usize, x: f64) -> Vec<f64> {
         if order > 1 {
             result[1] = x / 3.0;
         }
-        for n in 2..order {
-            result[n] = 0.0;
+        for item in result.iter_mut().take(order).skip(2) {
+            *item = 0.0;
         }
         return result;
     }
@@ -112,8 +112,8 @@ pub fn spherical_bessel_y(order: usize, x: f64) -> Vec<f64> {
 
     if x.abs() < 1e-15 {
         // y_n → -∞ as x → 0
-        for n in 0..order {
-            result[n] = f64::NEG_INFINITY;
+        for item in result.iter_mut().take(order) {
+            *item = f64::NEG_INFINITY;
         }
         return result;
     }

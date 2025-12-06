@@ -4,12 +4,12 @@
 //! Helps isolate accuracy issues in the BEM implementation.
 
 use bem::analytical::sphere_scattering_3d;
-use bem::core::assembly::tbem::{build_tbem_system, build_tbem_system_corrected};
+use bem::core::assembly::tbem::build_tbem_system_with_beta;
 use bem::core::incident::IncidentField;
 use bem::core::mesh::generators::generate_icosphere_mesh;
 use bem::core::solver::direct::direct_solve;
 use bem::core::types::{BoundaryCondition, PhysicsParams};
-use ndarray::{Array1, Array2};
+use ndarray::Array2;
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
@@ -61,12 +61,7 @@ fn main() {
         "Using adaptive β (scale={:.1}): {:.4} + {:.4}i",
         beta_scale, beta.re, beta.im
     );
-    let system = bem::core::assembly::tbem::build_tbem_system_with_beta(
-        &elements,
-        &mesh.nodes,
-        &physics,
-        beta,
-    );
+    let system = build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta);
 
     println!("Matrix assembled: {}x{}", system.num_dofs, system.num_dofs);
 

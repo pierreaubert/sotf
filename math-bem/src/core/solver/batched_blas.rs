@@ -10,8 +10,7 @@
 //! - Contiguous memory layouts for cache efficiency
 //!
 //! **Note**: This module requires the `native` feature as it uses rayon for parallel processing.
-
-#![cfg(feature = "native")]
+//! The feature gate is applied at the module declaration in `mod.rs`.
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;

@@ -187,10 +187,10 @@ pub fn cylinder_directivity_2d(
         .map(|&theta| {
             let mut directivity = Complex64::new(0.0, 0.0);
 
-            for n in 0..num_terms {
+            for (n, coeff) in coefficients.iter().enumerate().take(num_terms) {
                 let weight = if n == 0 { 1.0 } else { 2.0 };
                 let cos_term = (n as f64 * theta).cos();
-                directivity += coefficients[n] * (weight * cos_term);
+                directivity += coeff * (weight * cos_term);
             }
 
             directivity

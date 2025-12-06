@@ -7,6 +7,9 @@
 //! **Note**: The solver functionality requires either the `native` or `wasm` feature for parallel processing.
 //! Data structures (RoomGeometry, Source, etc.) are always available.
 
+// Room acoustics is still experimental; allow missing docs for now
+#![allow(missing_docs)]
+
 mod config;
 #[cfg(any(feature = "native", feature = "wasm"))]
 mod solver;
@@ -56,11 +59,14 @@ impl Point3D {
 /// Room geometry types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RoomGeometry {
+    /// Rectangular (shoebox) room
     Rectangular(RectangularRoom),
+    /// L-shaped room
     LShaped(LShapedRoom),
 }
 
 impl RoomGeometry {
+    /// Generate a surface mesh with specified resolution
     pub fn generate_mesh(&self, elements_per_meter: usize) -> RoomMesh {
         match self {
             RoomGeometry::Rectangular(room) => room.generate_mesh(elements_per_meter),
@@ -97,6 +103,7 @@ impl RoomGeometry {
         }
     }
 
+    /// Get the edges of the room geometry
     pub fn get_edges(&self) -> Vec<(Point3D, Point3D)> {
         match self {
             RoomGeometry::Rectangular(room) => room.get_edges(),
@@ -117,12 +124,16 @@ struct SurfaceInfo {
 /// Rectangular room defined by dimensions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RectangularRoom {
-    pub width: f64,  // x dimension
-    pub depth: f64,  // y dimension
-    pub height: f64, // z dimension
+    /// Room width (x dimension)
+    pub width: f64,
+    /// Room depth (y dimension)
+    pub depth: f64,
+    /// Room height (z dimension)
+    pub height: f64,
 }
 
 impl RectangularRoom {
+    /// Create a new rectangular room with specified dimensions
     pub fn new(width: f64, depth: f64, height: f64) -> Self {
         Self {
             width,
@@ -549,14 +560,20 @@ impl RectangularRoom {
 /// Section 2: extension from (0, depth1) to (width2, depth1 + depth2)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LShapedRoom {
-    pub width1: f64, // Main section width (x)
-    pub depth1: f64, // Main section depth (y)
-    pub width2: f64, // Extension width (x), typically < width1
-    pub depth2: f64, // Extension depth (y)
-    pub height: f64, // Common height for both sections
+    /// Main section width (x dimension)
+    pub width1: f64,
+    /// Main section depth (y dimension)
+    pub depth1: f64,
+    /// Extension width (x dimension), typically < width1
+    pub width2: f64,
+    /// Extension depth (y dimension)
+    pub depth2: f64,
+    /// Common height for both sections (z dimension)
+    pub height: f64,
 }
 
 impl LShapedRoom {
+    /// Create a new L-shaped room with specified dimensions
     pub fn new(width1: f64, depth1: f64, width2: f64, depth2: f64, height: f64) -> Self {
         Self {
             width1,
@@ -946,13 +963,11 @@ impl CrossoverFilter {
             CrossoverFilter::FullRange => 1.0,
             CrossoverFilter::Lowpass { cutoff_freq, order } => {
                 let ratio = frequency / cutoff_freq;
-                let response = 1.0 / (1.0 + ratio.powi(*order as i32 * 2)).sqrt();
-                response
+                1.0 / (1.0 + ratio.powi(*order as i32 * 2)).sqrt()
             }
             CrossoverFilter::Highpass { cutoff_freq, order } => {
                 let ratio = cutoff_freq / frequency;
-                let response = 1.0 / (1.0 + ratio.powi(*order as i32 * 2)).sqrt();
-                response
+                1.0 / (1.0 + ratio.powi(*order as i32 * 2)).sqrt()
             }
             CrossoverFilter::Bandpass {
                 low_cutoff,

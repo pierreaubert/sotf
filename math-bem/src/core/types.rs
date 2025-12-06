@@ -274,14 +274,21 @@ pub enum BoundaryCondition {
     Pressure(Vec<Complex64>),
     /// Velocity with surface admittance
     VelocityWithAdmittance {
+        /// Velocity values at each node
         velocity: Vec<Complex64>,
+        /// Surface admittance value
         admittance: Complex64,
     },
     /// Transfer admittance
-    TransferAdmittance { admittance: Complex64 },
+    TransferAdmittance {
+        /// Transfer admittance value
+        admittance: Complex64,
+    },
     /// Transfer with surface admittance
     TransferWithSurfaceAdmittance {
+        /// Transfer admittance value
         transfer_admittance: Complex64,
+        /// Surface admittance value
         surface_admittance: Complex64,
     },
 }

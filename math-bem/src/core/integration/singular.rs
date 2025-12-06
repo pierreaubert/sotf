@@ -378,21 +378,23 @@ pub fn singular_integration_with_params(
     }
 
     // RHS for pressure BC
-    if compute_rhs && bc_type == 1 {
-        if let Some(bc) = bc_values {
-            let zbgao = bc.iter().sum::<Complex64>() / bc.len() as f64;
-            let gamma = physics.gamma();
-            let tau = physics.tau;
-            let beta = physics.burton_miller_beta();
-            result.rhs_contribution =
-                -(result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta) * zbgao;
-        }
+    if compute_rhs
+        && bc_type == 1
+        && let Some(bc) = bc_values
+    {
+        let zbgao = bc.iter().sum::<Complex64>() / bc.len() as f64;
+        let gamma = physics.gamma();
+        let tau = physics.tau;
+        let beta = physics.burton_miller_beta();
+        result.rhs_contribution =
+            -(result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta) * zbgao;
     }
 
     result
 }
 
 /// Compute shape functions, derivatives, Jacobian and position at local coordinates
+#[allow(clippy::type_complexity)]
 fn compute_shape_and_jacobian(
     element_coords: &Array2<f64>,
     element_type: ElementType,
@@ -521,10 +523,8 @@ pub fn generate_subelements(
     let mut et_sfp: Vec<Vec<f64>> = vec![vec![0.0; num_vertices]; MAX_NSE];
 
     // Initialize with original element
-    for j in 0..num_vertices {
-        xi_sfp[0][j] = csi_nodes[j];
-        et_sfp[0][j] = eta_nodes[j];
-    }
+    xi_sfp[0][..num_vertices].copy_from_slice(&csi_nodes[..num_vertices]);
+    et_sfp[0][..num_vertices].copy_from_slice(&eta_nodes[..num_vertices]);
 
     let mut nsfl = 1; // Number of subelements at current level
     let mut faclin = 2.0; // Relative edge length factor

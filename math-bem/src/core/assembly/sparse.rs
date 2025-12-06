@@ -134,8 +134,8 @@ impl CsrMatrix {
                     } else {
                         prev_row + 1
                     };
-                    for r in start..=row {
-                        row_ptrs[r] = values.len() - 1;
+                    for item in row_ptrs.iter_mut().take(row + 1).skip(start) {
+                        *item = values.len() - 1;
                     }
                 }
 
@@ -150,8 +150,8 @@ impl CsrMatrix {
         } else {
             prev_row + 1
         };
-        for r in last_row..=num_rows {
-            row_ptrs[r] = values.len();
+        for item in row_ptrs.iter_mut().take(num_rows + 1).skip(last_row) {
+            *item = values.len();
         }
 
         Self {
@@ -429,8 +429,8 @@ pub struct BlockedCsr {
 impl BlockedCsr {
     /// Create a new blocked CSR matrix
     pub fn new(num_rows: usize, num_cols: usize, block_size: usize) -> Self {
-        let num_block_rows = (num_rows + block_size - 1) / block_size;
-        let num_block_cols = (num_cols + block_size - 1) / block_size;
+        let num_block_rows = num_rows.div_ceil(block_size);
+        let num_block_cols = num_cols.div_ceil(block_size);
 
         Self {
             num_rows,

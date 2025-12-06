@@ -154,27 +154,25 @@ pub fn regular_integration(
             result.d2g_dnxdny_integral += ze;
 
             // RHS contribution
-            if compute_rhs {
-                if let Some(bc) = bc_values {
-                    // Interpolate BC at quadrature point
-                    let mut zbgao = Complex64::new(0.0, 0.0);
-                    for (i, &n) in shape_fn.iter().enumerate() {
-                        if i < bc.len() {
-                            zbgao += bc[i] * n;
-                        }
+            if compute_rhs && let Some(bc) = bc_values {
+                // Interpolate BC at quadrature point
+                let mut zbgao = Complex64::new(0.0, 0.0);
+                for (i, &n) in shape_fn.iter().enumerate() {
+                    if i < bc.len() {
+                        zbgao += bc[i] * n;
                     }
+                }
 
-                    let gamma = physics.gamma();
-                    let tau = physics.tau;
-                    let beta = physics.burton_miller_beta();
+                let gamma = physics.gamma();
+                let tau = physics.tau;
+                let beta = physics.burton_miller_beta();
 
-                    if bc_type == 0 {
-                        // Velocity BC
-                        result.rhs_contribution += (zg * gamma * tau + zht * beta) * zbgao;
-                    } else if bc_type == 1 {
-                        // Pressure BC
-                        result.rhs_contribution -= (zhh * gamma * tau + ze * beta) * zbgao;
-                    }
+                if bc_type == 0 {
+                    // Velocity BC
+                    result.rhs_contribution += (zg * gamma * tau + zht * beta) * zbgao;
+                } else if bc_type == 1 {
+                    // Pressure BC
+                    result.rhs_contribution -= (zhh * gamma * tau + ze * beta) * zbgao;
                 }
             }
         }

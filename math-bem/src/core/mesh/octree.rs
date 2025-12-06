@@ -23,10 +23,13 @@ impl AABB {
 
     /// Create an empty (invalid) bounding box
     pub fn empty() -> Self {
-        use std::f64::{INFINITY, NEG_INFINITY};
         Self {
-            min: Array1::from_vec(vec![INFINITY, INFINITY, INFINITY]),
-            max: Array1::from_vec(vec![NEG_INFINITY, NEG_INFINITY, NEG_INFINITY]),
+            min: Array1::from_vec(vec![f64::INFINITY, f64::INFINITY, f64::INFINITY]),
+            max: Array1::from_vec(vec![
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            ]),
         }
     }
 
@@ -260,11 +263,11 @@ impl Octree {
         let mut child_indices = [0usize; 8];
         let first_child = self.nodes.len();
 
-        for i in 0..8 {
+        for (i, child_idx) in child_indices.iter_mut().enumerate() {
             let child_bounds = bounds.child_bounds(i);
             let child = OctreeNode::new(child_bounds, level + 1, Some(node_idx));
             self.nodes.push(child);
-            child_indices[i] = first_child + i;
+            *child_idx = first_child + i;
         }
 
         // Distribute elements to children

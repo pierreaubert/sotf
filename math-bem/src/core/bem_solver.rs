@@ -44,9 +44,10 @@ use crate::core::solver::direct::direct_solve;
 use crate::core::types::{BoundaryCondition, Element, Mesh, PhysicsParams};
 
 /// Solver method for the linear system
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SolverMethod {
     /// Direct LU factorization (best for small problems)
+    #[default]
     Direct,
     /// Conjugate Gradient Squared (iterative)
     Cgs,
@@ -54,27 +55,16 @@ pub enum SolverMethod {
     BiCgStab,
 }
 
-impl Default for SolverMethod {
-    fn default() -> Self {
-        SolverMethod::Direct
-    }
-}
-
 /// Assembly method for the BEM matrix
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AssemblyMethod {
     /// Traditional BEM with O(N^2) dense matrix
+    #[default]
     Tbem,
     /// Single-Level Fast Multipole Method
     Slfmm,
     /// Multi-Level Fast Multipole Method
     Mlfmm,
-}
-
-impl Default for AssemblyMethod {
-    fn default() -> Self {
-        AssemblyMethod::Tbem
-    }
 }
 
 /// Boundary condition type for the problem

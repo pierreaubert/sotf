@@ -142,6 +142,7 @@ fn main() {
     }
 }
 
+#[cfg(feature = "pure-rust")]
 fn solve_system(
     a: &ndarray::Array2<num_complex::Complex64>,
     b: &ndarray::Array1<num_complex::Complex64>,

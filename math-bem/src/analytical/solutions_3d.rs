@@ -79,7 +79,7 @@ pub fn sphere_scattering_3d(
             // Total field: Σₙ (2n+1) iⁿ [jₙ(kr) - aₙ hₙ⁽¹⁾(kr)] Pₙ(cos θ)
             let mut total = Complex64::new(0.0, 0.0);
 
-            for n in 0..num_terms {
+            for (n, coeff) in coefficients.iter().enumerate().take(num_terms) {
                 let n_f64 = n as f64;
 
                 // (2n+1)
@@ -99,7 +99,7 @@ pub fn sphere_scattering_3d(
                 let pn = legendre_p(n, cos_theta);
 
                 // Add term
-                total += prefactor * i_power_n * (jn - coefficients[n] * hn) * pn;
+                total += prefactor * i_power_n * (jn - coeff * hn) * pn;
             }
 
             pressure.push(total);

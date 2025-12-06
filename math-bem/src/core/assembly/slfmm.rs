@@ -149,9 +149,8 @@ impl SlfmmSystem {
     pub fn matvec(&self, x: &Array1<Complex64>) -> Array1<Complex64> {
         // === Near-field contribution: y += [N] * x (parallelized) ===
         // Compute all near-field block contributions in parallel, then sum them
-        let near_contributions: Vec<Vec<(usize, Complex64)>> = parallel_flat_map(
-            &self.near_matrix,
-            |block| {
+        let near_contributions: Vec<Vec<(usize, Complex64)>> =
+            parallel_flat_map(&self.near_matrix, |block| {
                 let src_dofs = &self.cluster_dof_indices[block.source_cluster];
                 let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
 
@@ -179,8 +178,7 @@ impl SlfmmSystem {
                 }
 
                 vec![contributions]
-            },
-        );
+            });
 
         // Accumulate near-field contributions
         let mut y = Array1::zeros(self.num_dofs);
@@ -210,15 +208,13 @@ impl SlfmmSystem {
         // Step 2: Translate multipoles between far clusters (parallelized)
         // Compute all D*multipole products in parallel
         // D-matrix is diagonal, so D*x is just element-wise multiplication
-        let d_contributions: Vec<(usize, Array1<Complex64>)> = parallel_map(
-            &self.d_matrices,
-            |d_entry| {
+        let d_contributions: Vec<(usize, Array1<Complex64>)> =
+            parallel_map(&self.d_matrices, |d_entry| {
                 let src_mult = &multipoles[d_entry.source_cluster];
                 // Diagonal matrix-vector multiply: translated[i] = diagonal[i] * src_mult[i]
                 let translated = &d_entry.diagonal * src_mult;
                 (d_entry.field_cluster, translated)
-            },
-        );
+            });
 
         // Accumulate D-matrix contributions into locals (sequential to avoid race)
         let mut locals: Vec<Array1<Complex64>> = (0..self.num_clusters)
@@ -232,9 +228,8 @@ impl SlfmmSystem {
         }
 
         // Step 3: Evaluate locals at field points in parallel: y[c] += S[c] * locals[c]
-        let far_contributions: Vec<Vec<(usize, Complex64)>> = parallel_enumerate_filter_map(
-            &self.s_matrices,
-            |cluster_idx, s_mat| {
+        let far_contributions: Vec<Vec<(usize, Complex64)>> =
+            parallel_enumerate_filter_map(&self.s_matrices, |cluster_idx, s_mat| {
                 let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
                 if cluster_dofs.is_empty() || s_mat.is_empty() {
                     return None;
@@ -246,8 +241,7 @@ impl SlfmmSystem {
                     .map(|(local_j, &global_j)| (global_j, y_local[local_j]))
                     .collect();
                 Some(contributions)
-            },
-        );
+            });
 
         // Accumulate far-field contributions
         for contributions in far_contributions {
@@ -264,9 +258,8 @@ impl SlfmmSystem {
     /// Used by some iterative solvers (e.g., BiCGSTAB).
     pub fn matvec_transpose(&self, x: &Array1<Complex64>) -> Array1<Complex64> {
         // === Near-field contribution (transposed, parallelized) ===
-        let near_contributions: Vec<Vec<(usize, Complex64)>> = parallel_flat_map(
-            &self.near_matrix,
-            |block| {
+        let near_contributions: Vec<Vec<(usize, Complex64)>> =
+            parallel_flat_map(&self.near_matrix, |block| {
                 let src_dofs = &self.cluster_dof_indices[block.source_cluster];
                 let fld_dofs = &self.cluster_dof_indices[block.field_cluster];
 
@@ -290,8 +283,7 @@ impl SlfmmSystem {
                 }
 
                 vec![contributions]
-            },
-        );
+            });
 
         // Accumulate near-field contributions
         let mut y = Array1::zeros(self.num_dofs);
@@ -320,15 +312,13 @@ impl SlfmmSystem {
 
         // Step 2: D^T translation (parallelized)
         // D-matrix is diagonal, so D^T = D (diagonal matrices are symmetric)
-        let d_contributions: Vec<(usize, Array1<Complex64>)> = parallel_map(
-            &self.d_matrices,
-            |d_entry| {
+        let d_contributions: Vec<(usize, Array1<Complex64>)> =
+            parallel_map(&self.d_matrices, |d_entry| {
                 let fld_local = &locals[d_entry.field_cluster];
                 // Diagonal matrix-vector multiply: translated[i] = diagonal[i] * fld_local[i]
                 let translated = &d_entry.diagonal * fld_local;
                 (d_entry.source_cluster, translated)
-            },
-        );
+            });
 
         // Accumulate D-matrix contributions
         let mut multipoles: Vec<Array1<Complex64>> = (0..self.num_clusters)
@@ -342,9 +332,8 @@ impl SlfmmSystem {
         }
 
         // Step 3: T^T * multipoles (parallelized)
-        let far_contributions: Vec<Vec<(usize, Complex64)>> = parallel_enumerate_filter_map(
-            &self.t_matrices,
-            |cluster_idx, t_mat| {
+        let far_contributions: Vec<Vec<(usize, Complex64)>> =
+            parallel_enumerate_filter_map(&self.t_matrices, |cluster_idx, t_mat| {
                 let cluster_dofs = &self.cluster_dof_indices[cluster_idx];
                 if cluster_dofs.is_empty() || t_mat.is_empty() {
                     return None;
@@ -356,8 +345,7 @@ impl SlfmmSystem {
                     .map(|(local_i, &global_i)| (global_i, y_local[local_i]))
                     .collect();
                 Some(contributions)
-            },
-        );
+            });
 
         // Accumulate far-field contributions
         for contributions in far_contributions {

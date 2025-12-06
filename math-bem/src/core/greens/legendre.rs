@@ -70,14 +70,14 @@ pub fn legendre_polynomials_derivative(order: usize, x: f64) -> Vec<f64> {
     if x2_minus_1.abs() < 1e-14 {
         // Special case: x = ±1
         let sign: f64 = if x > 0.0 { 1.0 } else { -1.0 };
-        for n in 1..order {
+        for (n, result_n) in result.iter_mut().enumerate().take(order).skip(1) {
             let n_f64 = n as f64;
-            result[n] = sign.powi(n as i32 + 1) * n_f64 * (n_f64 + 1.0) / 2.0;
+            *result_n = sign.powi(n as i32 + 1) * n_f64 * (n_f64 + 1.0) / 2.0;
         }
     } else {
-        for n in 1..order {
+        for (n, result_n) in result.iter_mut().enumerate().take(order).skip(1) {
             let n_f64 = n as f64;
-            result[n] = n_f64 * (x * p[n] - p[n - 1]) / x2_minus_1;
+            *result_n = n_f64 * (x * p[n] - p[n - 1]) / x2_minus_1;
         }
     }
 

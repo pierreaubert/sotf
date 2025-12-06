@@ -476,8 +476,7 @@ pub fn apply_row_sum_correction(system: &mut TbemSystem) -> f64 {
         system.matrix[[i, i]] -= row_sum;
     }
 
-    let avg_row_sum = total_row_sum.norm() / n as f64;
-    avg_row_sum
+    total_row_sum.norm() / n as f64
 }
 
 /// Build TBEM system with row sum correction
