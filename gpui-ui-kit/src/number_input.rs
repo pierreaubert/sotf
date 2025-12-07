@@ -136,6 +136,7 @@ pub struct NumberInput {
     width: Option<f32>,
     disabled: bool,
     editing: bool,
+    text_selected: bool,
     edit_text: Option<SharedString>,
     theme: Option<NumberInputTheme>,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
@@ -160,6 +161,7 @@ impl NumberInput {
             width: None,
             disabled: false,
             editing: false,
+            text_selected: false,
             edit_text: None,
             theme: None,
             on_change: None,
@@ -232,6 +234,12 @@ impl NumberInput {
     /// Set whether the input is currently being edited
     pub fn editing(mut self, editing: bool) -> Self {
         self.editing = editing;
+        self
+    }
+
+    /// Set whether the text is fully selected (for visual feedback)
+    pub fn text_selected(mut self, selected: bool) -> Self {
+        self.text_selected = selected;
         self
     }
 
@@ -314,6 +322,7 @@ impl RenderOnce for NumberInput {
         let padding = self.size.padding();
         let disabled = self.disabled;
         let editing = self.editing;
+        let text_selected = self.text_selected;
         let current_value = self.value;
         let min = self.min;
         let max = self.max;
@@ -431,6 +440,14 @@ impl RenderOnce for NumberInput {
             }
         };
 
+        // Visual selection highlight: when text_selected is true, show accent background
+        let (value_bg, value_text_color) = if editing && text_selected {
+            // Selected text: accent background with contrasting text
+            (Some(theme.button_active), rgba(0xffffffff))
+        } else {
+            (None, text_color)
+        };
+
         let mut value_field = div()
             .id(value_id)
             .flex_1()
@@ -439,8 +456,13 @@ impl RenderOnce for NumberInput {
             .justify_center()
             .h_full()
             .px(px(padding))
-            .text_color(text_color)
+            .text_color(value_text_color)
             .child(display_text);
+
+        // Apply selection background if selected
+        if let Some(bg) = value_bg {
+            value_field = value_field.bg(bg);
+        }
 
         // Apply font size
         value_field = match self.size {

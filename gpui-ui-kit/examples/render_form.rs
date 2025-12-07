@@ -11,6 +11,7 @@ impl Showcase {
         number_db: f64,
         editing_number: Option<&'static str>,
         edit_text: String,
+        text_selected: bool,
         entity: Entity<Self>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -193,9 +194,10 @@ impl Showcase {
                                 .on_edit_start({
                                     let entity = entity.clone();
                                     move |_window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _| {
                                             showcase.editing_number = Some("basic");
                                             showcase.edit_text = format!("{:.0}", showcase.number_value);
+                                            showcase.text_selected = true;
                                         });
                                     }
                                 })
@@ -220,7 +222,7 @@ impl Showcase {
                                     }
                                 });
                             if is_editing {
-                                input = input.edit_text(edit_text.clone());
+                                input = input.edit_text(edit_text.clone()).text_selected(text_selected);
                             }
                             input
                         })
@@ -248,9 +250,10 @@ impl Showcase {
                                 .on_edit_start({
                                     let entity = entity.clone();
                                     move |_window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _| {
                                             showcase.editing_number = Some("freq");
                                             showcase.edit_text = format!("{:.0}", showcase.number_freq);
+                                            showcase.text_selected = true;
                                         });
                                     }
                                 })
@@ -275,7 +278,7 @@ impl Showcase {
                                     }
                                 });
                             if is_editing {
-                                input = input.edit_text(edit_text.clone());
+                                input = input.edit_text(edit_text.clone()).text_selected(text_selected);
                             }
                             input
                         })
@@ -303,9 +306,10 @@ impl Showcase {
                                 .on_edit_start({
                                     let entity = entity.clone();
                                     move |_window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _| {
                                             showcase.editing_number = Some("db");
                                             showcase.edit_text = format!("{:.1}", showcase.number_db);
+                                            showcase.text_selected = true;
                                         });
                                     }
                                 })
@@ -330,7 +334,7 @@ impl Showcase {
                                     }
                                 });
                             if is_editing {
-                                input = input.edit_text(edit_text.clone());
+                                input = input.edit_text(edit_text.clone()).text_selected(text_selected);
                             }
                             input
                         })

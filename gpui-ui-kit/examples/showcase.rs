@@ -125,6 +125,7 @@ pub struct Showcase {
     // Number input editing state
     editing_number: Option<&'static str>, // Which input is being edited ("basic", "freq", "db")
     edit_text: String,
+    text_selected: bool, // True when text is "selected" - first keystroke replaces all
     // Tabs state
     selected_tab: usize,
     // Potentiometer values
@@ -159,6 +160,7 @@ impl Showcase {
             number_db: -3.0,
             editing_number: None,
             edit_text: String::new(),
+            text_selected: false,
             selected_tab: 0,
             pot_0: 0.0,
             pot_25: 0.25,
@@ -267,6 +269,7 @@ impl Render for Showcase {
                     self.number_db,
                     self.editing_number,
                     self.edit_text.clone(),
+                    self.text_selected,
                     entity.clone(),
                     cx,
                 )
@@ -344,23 +347,35 @@ impl Showcase {
                     }
                     self.editing_number = None;
                     self.edit_text.clear();
+                    self.text_selected = false;
                     cx.notify();
                 }
                 "escape" => {
                     // Cancel edit
                     self.editing_number = None;
                     self.edit_text.clear();
+                    self.text_selected = false;
                     cx.notify();
                 }
                 "backspace" => {
-                    // Delete last character
-                    self.edit_text.pop();
+                    // If text is selected, clear all; otherwise delete last character
+                    if self.text_selected {
+                        self.edit_text.clear();
+                        self.text_selected = false;
+                    } else {
+                        self.edit_text.pop();
+                    }
                     cx.notify();
                 }
                 key if key.len() == 1 => {
-                    // Single character - append if valid for number
+                    // Single character - if text is selected, replace all; otherwise append
                     let ch = key.chars().next().unwrap();
                     if ch.is_ascii_digit() || ch == '.' || ch == '-' {
+                        if self.text_selected {
+                            // Replace all text with the new character
+                            self.edit_text.clear();
+                            self.text_selected = false;
+                        }
                         self.edit_text.push(ch);
                         cx.notify();
                     }

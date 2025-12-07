@@ -114,6 +114,7 @@ pub struct Select {
     is_open: bool,
     theme: Option<SelectTheme>,
     on_change: Option<Box<dyn Fn(&SharedString, &mut Window, &mut App) + 'static>>,
+    on_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 }
 
 impl Select {
@@ -130,6 +131,7 @@ impl Select {
             is_open: false,
             theme: None,
             on_change: None,
+            on_toggle: None,
         }
     }
 
@@ -187,6 +189,15 @@ impl Select {
         handler: impl Fn(&SharedString, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set toggle handler (called when trigger is clicked)
+    pub fn on_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_toggle = Some(Box::new(handler));
         self
     }
 
@@ -255,6 +266,35 @@ impl Select {
         } else {
             let hover_border = theme.trigger_border_hover;
             trigger = trigger.hover(move |s| s.border_color(hover_border));
+
+            if let Some(ref handler) = self.on_toggle {
+                let handler = std::rc::Rc::new(handler); // Wrap in Rc? Fn cannot be cloned easily.
+                // Wait, Box<dyn Fn> is not Clone.
+                // We should probably convert to Rc or use a pointer approach like elsewhere.
+                // Or since build() consumes self, we can move the handler into the closure?
+                // But we might need it multiple times if we used it elsewhere? No, only once here.
+                // But `gpui` event handlers are closures that must be 'static.
+                
+                // Let's use the raw pointer trick seen in `menu.rs` (lines 248, 281) if needed,
+                // OR since `Select` owns the Box, we can move it into an Rc if we need shared ownership,
+                // or just move it if we only attach one handler.
+                
+                // BUT `on_mouse_up` takes a closure.
+                // Let's try to just move it in.
+                // But `trigger` is modified in steps.
+                
+                // Let's cast to pointer like in Menu to avoid ownership issues?
+                // `let handler_ptr: *const dyn Fn(...) = self.on_toggle.as_ref()...`
+                // But `self` is consumed by `build`.
+                
+                // Let's just use Rc to be safe and idiomatic for these cases.
+                let on_toggle_rc = std::rc::Rc::new(self.on_toggle.unwrap());
+                let currently_open = self.is_open;
+                
+                trigger = trigger.on_mouse_up(MouseButton::Left, move |_, window, cx| {
+                    (on_toggle_rc)(!currently_open, window, cx);
+                });
+            }
         }
 
         // Display value or placeholder
