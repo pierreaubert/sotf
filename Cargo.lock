@@ -8416,13 +8416,18 @@ name = "sotf-audio-player"
 version = "0.5.3"
 dependencies = [
  "anyhow",
+ "autoeq-cea2034",
  "autoeq-iir",
+ "autoeq-roomsim",
  "chrono",
  "directories",
  "ebur128",
  "env_logger 0.11.8",
  "image",
  "log",
+ "ndarray 0.17.1",
+ "ndarray-linalg",
+ "num-complex",
  "parking_lot",
  "rusqlite",
  "serde",

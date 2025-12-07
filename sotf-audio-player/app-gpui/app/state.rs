@@ -44,6 +44,7 @@ pub struct App {
     pub headphone_optimization_progress: Vec<(usize, f64)>, // (iteration, fitness)
     pub headphone_optimization_result: Option<crate::autoeq::HeadphoneOptimizationResult>, // Results
     pub headphone_export_format: String, // Selected export format (json, apo, rme-channel, etc.)
+    pub headphone_eq_save_name: String, // Custom name for saved EQ file
     pub headphone_expanded_sections: Vec<gpui::SharedString>, // Accordion expanded sections
     pub headphone_opt_ui: OptimizationUiState, // UI state (dropdowns)
     
@@ -249,6 +250,7 @@ impl App {
             headphone_optimization_progress: Vec::new(),
             headphone_optimization_result: None,
             headphone_export_format: String::from("json"),
+            headphone_eq_save_name: String::new(),
             headphone_expanded_sections: vec![
                 gpui::SharedString::from("measurement"),
                 gpui::SharedString::from("target"),

@@ -49,13 +49,25 @@ impl PlayerView {
                         let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
                         let state = view.state.read(cx);
                         let item_count = state.app.library_items_per_page;
+                        let total_albums = state.app.filtered_albums().len();
                         let columns = state.app.library_columns.max(1);
                         let rows = (item_count + columns - 1) / columns;
-                        let estimated_height = rows as f32 * 260.0; // Approx card height + gap
+                        let card_height = 220.0; // Card (180px) + gap (16px) + margin
+                        let estimated_height = rows as f32 * card_height;
                         let window_height = state.app.window_height;
 
-                        // If we are within 1000px of the bottom, load more
-                        if scroll_y.abs() + window_height > estimated_height - 1000.0 {
+                        // scroll_y is negative when scrolling down
+                        let scroll_position = scroll_y.abs();
+
+                        // Load more if:
+                        // 1. Content doesn't fill the viewport (need more to enable scrolling)
+                        // 2. User has scrolled close to the bottom (within 500px)
+                        let content_fits_in_window = estimated_height <= window_height;
+                        let near_bottom = scroll_position + window_height > estimated_height - 500.0;
+                        let should_load = item_count < total_albums && (content_fits_in_window || near_bottom);
+
+                        // If we should load more, do it
+                        if should_load {
                             view.state
                                 .update(cx, |state, _| state.app.load_more_albums());
                         }

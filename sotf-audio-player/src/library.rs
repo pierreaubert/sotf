@@ -190,7 +190,7 @@ pub struct Album {
     pub year: Option<u32>,
     pub tracks: Vec<Track>,
     pub album_art_path: Option<PathBuf>,
-    /// 120x120 JPEG thumbnail of album art
+    /// JPEG thumbnail of album art (160x160 for high-DPI displays)
     pub album_art_thumbnail: Option<Vec<u8>>,
     pub play_count: usize,
     pub edition: Option<String>,
@@ -1541,7 +1541,10 @@ fn find_album_art(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Generate a 120x120 JPEG thumbnail from an image file
+/// Thumbnail size in pixels (160x160 for crisp display on high-DPI screens)
+const THUMBNAIL_SIZE: u32 = 160;
+
+/// Generate a JPEG thumbnail from an image file
 fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
     use image::ImageReader;
     use std::io::Cursor;
@@ -1561,8 +1564,8 @@ fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
         }
     };
 
-    // Resize to 120x120 using Lanczos3 for quality
-    let thumbnail = img.thumbnail(120, 120);
+    // Resize to thumbnail size using Lanczos3 for quality
+    let thumbnail = img.thumbnail(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
 
     // Convert to RGB8 (JPEG doesn't support alpha)
     let rgb_thumbnail = thumbnail.to_rgb8();

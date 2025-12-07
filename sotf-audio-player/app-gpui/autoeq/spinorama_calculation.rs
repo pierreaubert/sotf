@@ -1,162 +1,153 @@
-use crate::autoeq::speaker_eq::SpeakerOptimizationResult;
+use autoeq_roomsim::{calculate_modal_pressure, Point3D};
+use num_complex::Complex64;
+use std::f64::consts::PI;
 
 #[derive(Debug, Clone)]
 pub struct MeasurementCurve {
     pub frequencies: Vec<f64>,
     pub magnitude_db: Vec<f64>,
-    pub phase_deg: Option<Vec<f64>>, // Optional phase
+    pub phase_deg: Option<Vec<f64>>, // Phase needed for complex addition/removal
 }
 
 #[derive(Debug, Clone)]
-pub struct NearfieldMeasurement {
+pub struct RoomMeasurement {
     pub curve: MeasurementCurve,
-    pub driver_radius_mm: f64, // For piston scaling if needed
-    pub enclosure_diffraction_db: Option<Vec<f64>>, // Baffle step correction
+    /// Distance from source in meters (for reference)
+    pub distance_m: f64,
+    /// Absolute listener position in the room
+    pub listener_position: Point3D,
 }
 
 #[derive(Debug, Clone)]
-pub struct FarfieldMeasurement {
-    pub curve: MeasurementCurve,
-    pub gate_start_ms: f64,
-    pub gate_end_ms: f64,
-    pub mic_distance_m: f64,
+pub struct RoomCorrectionInput {
+    pub measurements: Vec<RoomMeasurement>,
+    /// Room dimensions [width, depth, height] in meters
+    pub room_dimensions: [f64; 3],
+    /// Source position in the room
+    pub source_position: Point3D,
+    /// Maximum frequency to apply room mode correction (Schroeder frequency)
+    pub correction_limit_hz: f64,
+    /// Speed of sound (m/s), default 343.0
+    pub speed_of_sound: f64,
+    /// Modal damping factor (Q), default 10.0
+    pub modal_damping: f64,
+    /// Max mode order to compute
+    pub max_mode_order: u32,
 }
 
-/// Helper to merge Nearfield and Farfield measurements into a single quasi-anechoic response
-pub fn merge_nearfield_farfield(
-    nearfields: &[NearfieldMeasurement],
-    farfield: &FarfieldMeasurement,
-    splice_freq_hz: f64,
-) -> Result<MeasurementCurve, String> {
-    // 0. Validate inputs (freq counts, etc.)
-    
-    // 1. Sum nearfield sources (Woofer + Port) if complex sum required?
-    // usually sum complex pressures.
-    
-    // 2. Apply Baffle Step Diffraction to summed nearfield.
-    
-    // 3. Level match Nearfield to Farfield at merge freq.
-    
-    // 4. Splice.
-    
-    // Dummy implementation for now: return farfield (or check logic)
-    // We need real interpolation and splicing logic.
-    
-    // For scaffolding, returning a clone of farfield with note.
-    Ok(farfield.curve.clone()) 
+impl Default for RoomCorrectionInput {
+    fn default() -> Self {
+        Self {
+            measurements: Vec::new(),
+            room_dimensions: [0.0; 3],
+            source_position: Point3D { x: 0.0, y: 0.0, z: 0.0 },
+            correction_limit_hz: 300.0,
+            speed_of_sound: 343.0,
+            modal_damping: 10.0,
+            max_mode_order: 20,
+        }
+    }
 }
 
-/// Input data for calculating full Spinorama
-pub struct SpinoramaInput {
-    pub on_axis: MeasurementCurve,
-    pub horizontal_measurements: Vec<(f64, MeasurementCurve)>, // angle -> curve
-    pub vertical_measurements: Vec<(f64, MeasurementCurve)>, // angle -> curve
-}
+/// Calculate the free-field response by removing room modes using multiple measurements
+pub fn calculate_room_correction(input: &RoomCorrectionInput) -> Result<MeasurementCurve, String> {
+    if input.measurements.is_empty() {
+        return Err("No measurements provided".to_string());
+    }
 
-pub struct SpinoramaCalculator;
+    // Validate frequency consistency
+    let freqs = &input.measurements[0].curve.frequencies;
+    let len = freqs.len();
+    for m in &input.measurements {
+        if m.curve.frequencies.len() != len {
+            return Err("Measurement frequency counts mismatch".to_string());
+        }
+        // Ideally check values match too
+    }
 
-impl SpinoramaCalculator {
-    // Calculate power average of multiple curves (dB values)
-    fn power_average(curves: &[&MeasurementCurve]) -> Result<MeasurementCurve, String> {
-        if curves.is_empty() { return Err("No curves to average".to_string()); }
+    let mut corrected_mag = Vec::with_capacity(len);
+    let mut corrected_phase = Vec::with_capacity(len);
+    
+    // Compute modes once if possible? 
+    // calculate_modal_pressure recomputes everything. 
+    // For now we accept the inefficiency as the loop over frequencies is the outer loop here.
+    
+    for i in 0..len {
+        let f = freqs[i];
         
-        let len = curves[0].frequencies.len();
-        let freqs = curves[0].frequencies.clone();
-        
-        // Ensure all curves have compatible frequency points
-        for c in curves {
-            if c.frequencies.len() != len {
-                 return Err("Curve frequency length mismatch".to_string());
+        // Complex pressure measurements
+        let mut measured_pressures = Vec::with_capacity(input.measurements.len());
+        let mut modeled_tfs = Vec::with_capacity(input.measurements.len());
+
+        for m in &input.measurements {
+            let mag = m.curve.magnitude_db[i];
+            
+            let phase_deg = if let Some(p) = &m.curve.phase_deg {
+                 p[i]
+            } else {
+                 return Err("Measurement missing phase data".to_string());
+            };
+            
+            // Convert to linear pressure
+            // P = 10^(dB/20) * e^(j * phase)
+            let mag_lin = 10.0_f64.powf(mag / 20.0);
+            let phase_rad = phase_deg.to_radians();
+            let p_meas = Complex64::from_polar(mag_lin, phase_rad);
+            measured_pressures.push(p_meas);
+
+            // Compute modeled Transfer Function (simulated room response)
+            if f <= input.correction_limit_hz {
+                let h_sim = calculate_modal_pressure(
+                    &input.source_position,
+                    &m.listener_position,
+                    f,
+                    input.room_dimensions[0],
+                    input.room_dimensions[1],
+                    input.room_dimensions[2],
+                    input.speed_of_sound,
+                    input.max_mode_order,
+                    input.modal_damping,
+                );
+                modeled_tfs.push(h_sim);
+            } else {
+                // Above limit: Use simple Direct field model (1/r * phase)
+                let r = input.source_position.distance_to(&m.listener_position).max(0.01);
+                let k = 2.0 * PI * f / input.speed_of_sound;
+                let h_direct = Complex64::from_polar(1.0/r, -k*r);
+                modeled_tfs.push(h_direct);
             }
-            // Ideally check individual frequency values match
         }
+
+        // Solve for Source S using Least Squares:
+        // M_k = S * H_k  => S = (sum M_k * H_k^*) / (sum |H_k|^2)
         
-        // Sum of powers: sum(10^(dB/10))
-        let mut sum_power = vec![0.0; len];
-        
-        for c in curves {
-            for (i, &db) in c.magnitude_db.iter().enumerate() {
-                sum_power[i] += 10f64.powf(db / 10.0);
-            }
+        let mut numerator = Complex64::new(0.0, 0.0);
+        let mut denominator = 0.0;
+
+        for (m_val, h_val) in measured_pressures.iter().zip(modeled_tfs.iter()) {
+            numerator += m_val * h_val.conj();
+            denominator += h_val.norm_sqr();
         }
-        
-        let count = curves.len() as f64;
-        let avg_mag: Vec<f64> = sum_power.iter().map(|&p| 10.0 * (p / count).log10()).collect();
-        
-        Ok(MeasurementCurve {
-            frequencies: freqs,
-            magnitude_db: avg_mag,
-            phase_deg: None, // Average phase is tricky, skipping for stats
-        })
-    }
-    
-    // Helper to find a specific angle in measurements (tolerance 1.0 deg)
-    fn find_curve<'a>(measurements: &'a [(f64, MeasurementCurve)], angle_deg: f64) -> Option<&'a MeasurementCurve> {
-        measurements.iter()
-            .find(|(a, _)| (a - angle_deg).abs() < 1.0)
-            .map(|(_, c)| c)
+
+        if denominator < 1e-12 {
+            // Fallback for singularity
+            corrected_mag.push(measured_pressures[0].norm());
+            corrected_phase.push(measured_pressures[0].arg().to_degrees());
+        } else {
+            let s_est = numerator / denominator;
+            
+            // Convert back to dB/deg
+            let s_db = 20.0 * s_est.norm().log10();
+            let s_phase = s_est.arg().to_degrees();
+            
+            corrected_mag.push(s_db);
+            corrected_phase.push(s_phase);
+        }
     }
 
-    pub fn calculate(input: &SpinoramaInput) -> Result<SpeakerOptimizationResult, String> {
-        // --- 1. Listening Window Calculation ---
-        // LW = Average(OnAxis, H+/-10, H+/-20, H+/-30, V+/-10)
-        let mut lw_curves = Vec::new();
-        lw_curves.push(&input.on_axis);
-        
-        // Horizontal +/- 10, 20, 30
-        for &angle in &[10.0, -10.0, 20.0, -20.0, 30.0, -30.0] {
-             if let Some(c) = Self::find_curve(&input.horizontal_measurements, angle) {
-                 lw_curves.push(c);
-             }
-        }
-        // Vertical +/- 10
-        for &angle in &[10.0, -10.0] {
-             if let Some(c) = Self::find_curve(&input.vertical_measurements, angle) {
-                 lw_curves.push(c);
-             }
-        }
-        
-        let listening_window = Self::power_average(&lw_curves).map_err(|e| format!("LW calc error: {}", e))?;
-        
-        // --- 2. Early Reflections ---
-        // Simplified ER average (example)
-        // Only Front Wall, Side, Rear?
-        // Standard defines weighted average of many angles.
-        // For scaffold, we assume missing angles are OK or just use what we have.
-        // ... (placeholder) ...
-        let er_curve = listening_window.magnitude_db.clone(); // Placeholder
-        let sp_curve = listening_window.magnitude_db.iter().map(|x| x - 5.0).collect(); // Placeholder
-        
-        // --- 3. Directivity Index ---
-        // DI = Listening Window - Sound Power
-        // (Or OnAxis - Sound Power for SPDI? Standard distinguishes SPDI and ERDI)
-        // ERDI = Listening Window - Early Reflections
-        // SPDI = Listening Window - Sound Power
-        
-        // ...
-        
-        // Result construction
-        // Use input.on_axis for frequencies
-        let n = input.on_axis.frequencies.len();
-        
-        Ok(SpeakerOptimizationResult {
-            biquads: Vec::new(),
-            frequencies: input.on_axis.frequencies.clone(),
-            input_curve: input.on_axis.magnitude_db.clone(), // Show On-Axis as input
-            target_curve: vec![0.0; n],
-            deviation_curve: vec![0.0; n],
-            filter_response: vec![0.0; n],
-            error_curve: vec![0.0; n],
-            corrected_curve: vec![0.0; n],
-            individual_filter_responses: Vec::new(),
-            output_path: String::new(),
-            er_curve,
-            sp_curve,
-            er_di_curve: vec![0.0; n], // Placeholder
-            sp_di_curve: vec![0.0; n], // Placeholder
-            optimization_history: Vec::new(),
-            initial_loss: 0.0,
-            final_loss: 0.0,
-        })
-    }
+    Ok(MeasurementCurve {
+        frequencies: freqs.clone(),
+        magnitude_db: corrected_mag,
+        phase_deg: Some(corrected_phase),
+    })
 }

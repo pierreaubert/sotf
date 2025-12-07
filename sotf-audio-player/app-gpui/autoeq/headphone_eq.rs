@@ -235,11 +235,12 @@ impl PlayerView {
 
     /// Save current headphone EQ result to file in selected format
     pub fn save_headphone_eq(&mut self, cx: &mut Context<Self>) {
-        let (result, export_format) = {
+        let (result, export_format, save_name) = {
             let state = self.state.read(cx);
             (
                 state.app.headphone_optimization_result.clone(),
                 state.app.headphone_export_format.clone(),
+                state.app.headphone_eq_save_name.clone(),
             )
         };
 
@@ -276,14 +277,22 @@ impl PlayerView {
             return;
         }
 
-        // Generate filename with timestamp
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
+        // Generate filename - use custom name if provided, otherwise use timestamp
         let extension = crate::autoeq::get_export_extension(&export_format);
-        let filename = format!("headphone_{}{}", timestamp, extension);
+        let filename = if save_name.trim().is_empty() {
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            format!("headphone_{}{}", timestamp, extension)
+        } else {
+            // Sanitize the name: replace invalid filename characters
+            let sanitized_name: String = save_name
+                .chars()
+                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })
+                .collect();
+            format!("{}{}", sanitized_name.trim(), extension)
+        };
         let output_path = eq_dir.join(&filename);
 
         // Convert biquads to Peq format for export functions
@@ -363,6 +372,97 @@ impl PlayerView {
                 cx.notify();
             }
         }
+    }
+
+    /// Apply the computed headphone EQ to the current playback chain
+    pub fn apply_headphone_eq_to_playback(&mut self, cx: &mut Context<Self>) {
+        let result = {
+            let state = self.state.read(cx);
+            state.app.headphone_optimization_result.clone()
+        };
+
+        let Some(result) = result else {
+            self.state.update(cx, |state, _cx| {
+                state.app.toast_message = Some(crate::app::ToastMessage::error(
+                    "No optimization result to apply",
+                ));
+            });
+            cx.notify();
+            return;
+        };
+
+        // Convert biquads to EQ filter settings
+        let filters: Vec<sotf_audio_player::EQFilter> = result
+            .biquads
+            .iter()
+            .map(|b| sotf_audio_player::EQFilter::new(
+                b.filter_type,
+                b.freq,
+                b.q,
+                b.db_gain,
+            ))
+            .collect();
+
+        // Add EQ plugin with these filters to the chain
+        self.state.update(cx, |state, _cx| {
+            // First remove any existing EQ plugin to avoid duplicates
+            let plugins = state.app.plugin_chain.plugins();
+            let hp_eq_idx = plugins.iter().position(|p| {
+                matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ)
+            });
+
+            // Remove existing EQ if found (we'll add a new one)
+            if let Some(idx) = hp_eq_idx {
+                state.app.plugin_chain.remove_plugin(idx);
+            }
+
+            // Add new EQ plugin
+            state.app.plugin_chain.add_plugin(&sotf_audio_player::PluginType::EQ);
+            let plugin_count = state.app.plugin_chain.len();
+
+            // Set the EQ settings on the newly added plugin
+            if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(plugin_count - 1) {
+                plugin.settings = sotf_audio_player::PluginSettings::EQ {
+                    filters,
+                };
+            }
+
+            state.app.needs_plugin_update = true;
+            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                "Applied headphone EQ to playback",
+            ));
+        });
+        cx.notify();
+    }
+
+    /// Clear the headphone EQ from the playback chain
+    pub fn clear_headphone_eq_from_playback(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            // Find and remove EQ plugins
+            let plugins = state.app.plugin_chain.plugins();
+            let eq_indices: Vec<_> = plugins
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    if matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Remove in reverse order to maintain correct indices
+            for idx in eq_indices.into_iter().rev() {
+                state.app.plugin_chain.remove_plugin(idx);
+            }
+
+            state.app.needs_plugin_update = true;
+            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                "Cleared EQ from playback",
+            ));
+        });
+        cx.notify();
     }
 }
 

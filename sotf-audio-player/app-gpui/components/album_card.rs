@@ -11,6 +11,11 @@ use gpui::*;
 use sotf_audio_player::Album;
 use std::sync::Arc;
 
+/// Create an image from JPEG thumbnail bytes
+fn image_from_jpeg_bytes(bytes: &[u8]) -> Arc<Image> {
+    Arc::new(Image::from_bytes(ImageFormat::Jpeg, bytes.to_vec()))
+}
+
 /// Album card display mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlbumCardMode {
@@ -186,9 +191,9 @@ impl AlbumCard {
                             .items_center()
                             .justify_center()
                             .when(has_thumbnail, |d| {
-                                if let Some(ref path) = album.album_art_path {
+                                if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
                                     d.child(
-                                        img(path.clone())
+                                        img(image_from_jpeg_bytes(thumbnail_bytes))
                                             .w(px(thumbnail_size))
                                             .h(px(thumbnail_size))
                                             .object_fit(ObjectFit::Cover),

@@ -5,7 +5,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, AccordionTheme, Button, ButtonSize, ButtonTheme,
-    ButtonVariant, Card, HStack, Progress, ProgressSize, Text, TextSize, TextWeight, VStack,
+    ButtonVariant, Card, HStack, Input, InputSize, Progress, ProgressSize, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
 };
 
 /// Target curve options for headphone EQ
@@ -32,6 +33,7 @@ impl PlayerView {
             optimization_progress,
             headphone_optimization_result,
             headphone_export_format,
+            headphone_eq_save_name,
             expanded_sections,
             headphone_opt_ui,
         ) = {
@@ -46,6 +48,7 @@ impl PlayerView {
                 state.app.headphone_optimization_progress.clone(),
                 state.app.headphone_optimization_result.clone(),
                 state.app.headphone_export_format.clone(),
+                state.app.headphone_eq_save_name.clone(),
                 state.app.headphone_expanded_sections.clone(),
                 state.app.headphone_opt_ui.clone(),
             )
@@ -93,12 +96,12 @@ impl PlayerView {
                         .size(TextSize::Xs)
                         .muted(true),
                     )
-                    // Accordion sections
+                    // Accordion sections for optimization parameters
                     .child(
                         Accordion::new()
                             .mode(AccordionMode::Multiple)
-                            .theme(accordion_theme)
-                            .expanded(expanded_sections)
+                            .theme(accordion_theme.clone())
+                            .expanded(expanded_sections.clone())
                             .item(
                                 AccordionItem::new("measurement", "Measurement File")
                                     .content(self.render_file_selection_section(
@@ -158,20 +161,13 @@ impl PlayerView {
                                     ),
                                 ),
                             )
-                            .item(
-                                AccordionItem::new("save", "Save EQ").content(
-                                    self.render_save_eq_section(
-                                        &headphone_export_format,
-                                        headphone_optimization_result.is_some(),
-                                        &theme,
-                                        cx,
-                                    ),
-                                ),
-                            )
-                            .on_change(move |id, expanded, _window, cx| {
-                                view.update(cx, |view, cx| {
-                                    view.toggle_headphone_section(id.as_ref(), expanded, cx);
-                                });
+                            .on_change({
+                                let view = view.clone();
+                                move |id, expanded, _window, cx| {
+                                    view.update(cx, |view, cx| {
+                                        view.toggle_headphone_section(id.as_ref(), expanded, cx);
+                                    });
+                                }
                             }),
                     )
                     // Generate button
@@ -218,7 +214,39 @@ impl PlayerView {
                                     self.render_optimization_result_graphs(result, &theme, 1000.0),
                                 ),
                         )
-                    }),
+                    })
+                    // Listen & Save EQ accordion (below results)
+                    .child(
+                        Accordion::new()
+                            .mode(AccordionMode::Multiple)
+                            .theme(accordion_theme)
+                            .expanded(expanded_sections)
+                            .item(
+                                AccordionItem::new("listen", "Listen").content(
+                                    self.render_listen_section(
+                                        headphone_optimization_result.as_ref(),
+                                        &theme,
+                                        cx,
+                                    ),
+                                ),
+                            )
+                            .item(
+                                AccordionItem::new("save", "Save EQ").content(
+                                    self.render_save_eq_section(
+                                        &headphone_export_format,
+                                        &headphone_eq_save_name,
+                                        headphone_optimization_result.is_some(),
+                                        &theme,
+                                        cx,
+                                    ),
+                                ),
+                            )
+                            .on_change(move |id, expanded, _window, cx| {
+                                view.update(cx, |view, cx| {
+                                    view.toggle_headphone_section(id.as_ref(), expanded, cx);
+                                });
+                            }),
+                    ),
             )
     }
 
@@ -241,6 +269,153 @@ impl PlayerView {
             }
         });
         cx.notify();
+    }
+
+    /// Render the Listen section with EQ preview and apply to playback
+    fn render_listen_section(
+        &self,
+        result: Option<&crate::autoeq::HeadphoneOptimizationResult>,
+        theme: &crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = theme.clone();
+
+        VStack::new()
+            .spacing(StackSpacing::Md)
+            .when(result.is_none(), |vstack| {
+                vstack.child(
+                    Text::new("Run optimization first to preview the EQ")
+                        .size(TextSize::Xs)
+                        .muted(true),
+                )
+            })
+            .when_some(result, |vstack, result| {
+                let num_filters = result.biquads.len();
+                let biquads = result.biquads.clone();
+
+                vstack
+                    // EQ Filters summary
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Text::new(format!("EQ Preview ({} filters)", num_filters))
+                                    .size(TextSize::Sm)
+                                    .weight(TextWeight::Medium),
+                            )
+                            // Filter list
+                            .child(
+                                div()
+                                    .id("filter-list-scroll")
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .p_2()
+                                    .rounded_md()
+                                    .bg(theme.surface)
+                                    .max_h(px(200.0))
+                                    .overflow_y_scroll()
+                                    .children(biquads.iter().enumerate().map(|(i, biquad)| {
+                                        let filter_type = format!("{:?}", biquad.filter_type);
+                                        let freq = biquad.freq;
+                                        let q = biquad.q;
+                                        let gain = biquad.db_gain;
+
+                                        div()
+                                            .flex()
+                                            .justify_between()
+                                            .items_center()
+                                            .px_2()
+                                            .py_1()
+                                            .rounded(px(4.0))
+                                            .bg(theme.background)
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.accent)
+                                                            .child(format!("#{}", i + 1)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.text_secondary)
+                                                            .child(filter_type),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_3()
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.text_primary)
+                                                            .child(format!("{:.0} Hz", freq)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.text_muted)
+                                                            .child(format!("Q {:.2}", q)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(if gain >= 0.0 {
+                                                                theme.success
+                                                            } else {
+                                                                theme.error
+                                                            })
+                                                            .child(format!(
+                                                                "{:+.1} dB",
+                                                                gain
+                                                            )),
+                                                    ),
+                                            )
+                                    })),
+                            ),
+                    )
+                    // Apply to playback button
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Button::new("apply-eq-to-playback", "Apply to Playback")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Md)
+                                    .build()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            view.apply_headphone_eq_to_playback(cx);
+                                        }),
+                                    ),
+                            )
+                            .child(
+                                Button::new("clear-eq-from-playback", "Clear EQ")
+                                    .variant(ButtonVariant::Secondary)
+                                    .size(ButtonSize::Md)
+                                    .build()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                            view.clear_headphone_eq_from_playback(cx);
+                                        }),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        Text::new("Applies the computed EQ filters to the current playback chain")
+                            .size(TextSize::Xs)
+                            .muted(true),
+                    )
+            })
     }
 
     /// Render a file selection row with label, path display, and browse button
@@ -434,19 +609,64 @@ impl PlayerView {
     fn render_save_eq_section(
         &self,
         current_format: &str,
+        save_name: &str,
         has_result: bool,
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let theme = theme.clone();
         let eq_files = self.list_saved_eq_files();
+        let view = cx.entity().downgrade();
 
         VStack::new()
-            .spacing(gpui_ui_kit::StackSpacing::Md)
+            .spacing(StackSpacing::Md)
+            // Name input
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(
+                        Text::new("EQ Name")
+                            .size(TextSize::Xs)
+                            .weight(TextWeight::Medium),
+                    )
+                    .child(
+                        div()
+                            .id("headphone-eq-name-input")
+                            .flex()
+                            .items_center()
+                            .px_3()
+                            .py_2()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(theme.border)
+                            .bg(theme.surface)
+                            .text_sm()
+                            .text_color(if save_name.is_empty() { theme.text_muted } else { theme.text_primary })
+                            .child(if save_name.is_empty() {
+                                SharedString::from("Enter a name for your EQ preset (optional)")
+                            } else {
+                                SharedString::from(format!("{}|", save_name))
+                            })
+                            .on_mouse_up(MouseButton::Left, {
+                                let view = view.clone();
+                                move |_, _window, cx| {
+                                    // Start editing the EQ name
+                                    if let Some(view) = view.upgrade() {
+                                        view.update(cx, |view, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.editing_param = Some("headphone_eq_save_name".to_string());
+                                                state.app.editing_value = state.app.headphone_eq_save_name.clone();
+                                            });
+                                        });
+                                    }
+                                }
+                            }),
+                    ),
+            )
             // Format selection
             .child(
                 VStack::new()
-                    .spacing(gpui_ui_kit::StackSpacing::Sm)
+                    .spacing(StackSpacing::Sm)
                     .child(
                         Text::new("Export Format")
                             .size(TextSize::Xs)
@@ -454,7 +674,7 @@ impl PlayerView {
                     )
                     .child(
                         HStack::new()
-                            .spacing(gpui_ui_kit::StackSpacing::Sm)
+                            .spacing(StackSpacing::Sm)
                             .wrap(true)
                             .children(
                                 crate::autoeq::EQ_EXPORT_FORMAT_OPTIONS

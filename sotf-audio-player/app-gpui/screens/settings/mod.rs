@@ -6,6 +6,7 @@ pub mod directory;
 mod headphone;
 mod library;
 mod room_eq;
+mod spinorama;
 
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -35,6 +36,9 @@ impl PlayerView {
             }
             crate::app::SettingsTab::Headphone => self
                 .render_headphone_settings_content(cx)
+                .into_any_element(),
+            crate::app::SettingsTab::Spinorama => self
+                .render_spinorama_settings_content(cx)
                 .into_any_element(),
         };
 
@@ -89,6 +93,12 @@ impl PlayerView {
                             .child(self.render_settings_tab(
                                 "Headphone",
                                 crate::app::SettingsTab::Headphone,
+                                &theme,
+                                cx,
+                            ))
+                            .child(self.render_settings_tab(
+                                "Spinorama",
+                                crate::app::SettingsTab::Spinorama,
                                 &theme,
                                 cx,
                             )),

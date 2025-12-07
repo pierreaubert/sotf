@@ -62,6 +62,7 @@ pub enum SettingsTab {
     Plugins,
     RoomEQ,
     Headphone,
+    Spinorama,
 }
 
 /// Toast message type for color coding
