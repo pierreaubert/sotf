@@ -2,8 +2,48 @@
 //!
 //! A checkbox input with optional label.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
+
+/// Theme colors for checkbox styling
+#[derive(Debug, Clone)]
+pub struct CheckboxTheme {
+    /// Background when checked
+    pub checked_bg: Rgba,
+    /// Border when unchecked
+    pub unchecked_border: Rgba,
+    /// Check mark color
+    pub check_color: Rgba,
+    /// Label color
+    pub label: Rgba,
+    /// Hover border color
+    pub hover_border: Rgba,
+}
+
+impl Default for CheckboxTheme {
+    fn default() -> Self {
+        Self {
+            checked_bg: rgb(0x007acc),
+            unchecked_border: rgb(0x555555),
+            check_color: rgb(0xffffff),
+            label: rgb(0xcccccc),
+            hover_border: rgb(0x007acc),
+        }
+    }
+}
+
+impl From<&Theme> for CheckboxTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            checked_bg: theme.accent,
+            unchecked_border: theme.border,
+            check_color: theme.text_primary,
+            label: theme.text_secondary,
+            hover_border: theme.accent,
+        }
+    }
+}
 
 /// Checkbox size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -88,16 +128,16 @@ impl Checkbox {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Stateful<Div> {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &CheckboxTheme) -> Stateful<Div> {
         let size = self.size.size();
         let checked = self.checked;
         let indeterminate = self.indeterminate;
 
         let (bg, border_color) = if checked || indeterminate {
-            (rgb(0x007acc), rgb(0x007acc))
+            (theme.checked_bg, theme.checked_bg)
         } else {
-            (rgba(0x00000000), rgb(0x555555))
+            (rgba(0x00000000), theme.unchecked_border)
         };
 
         let mut container = div()
@@ -129,13 +169,13 @@ impl Checkbox {
                 div()
                     .w(size - px(6.0))
                     .h(px(2.0))
-                    .bg(rgb(0xffffff))
+                    .bg(theme.check_color)
                     .rounded(px(1.0)),
             );
         } else if checked {
             checkbox = checkbox.child(
                 div()
-                    .text_color(rgb(0xffffff))
+                    .text_color(theme.check_color)
                     .text_xs()
                     .font_weight(FontWeight::BOLD)
                     .child("✓"),
@@ -143,7 +183,8 @@ impl Checkbox {
         }
 
         if !self.disabled {
-            checkbox = checkbox.hover(|s| s.border_color(rgb(0x007acc)));
+            let hover_border = theme.hover_border;
+            checkbox = checkbox.hover(move |s| s.border_color(hover_border));
         }
 
         container = container.child(checkbox);
@@ -155,7 +196,7 @@ impl Checkbox {
                 CheckboxSize::Md => div().text_sm(),
                 CheckboxSize::Lg => div(),
             };
-            container = container.child(label_el.text_color(rgb(0xcccccc)).child(label));
+            container = container.child(label_el.text_color(theme.label).child(label));
         }
 
         // Click handler
@@ -172,10 +213,18 @@ impl Checkbox {
     }
 }
 
+impl RenderOnce for Checkbox {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let checkbox_theme = CheckboxTheme::from(&global_theme);
+        self.build_with_theme(&checkbox_theme)
+    }
+}
+
 impl IntoElement for Checkbox {
-    type Element = Stateful<Div>;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

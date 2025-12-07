@@ -2,8 +2,60 @@
 //!
 //! A modal dialog with backdrop, title, content, and footer sections.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
+
+/// Theme colors for dialog styling
+#[derive(Debug, Clone)]
+pub struct DialogTheme {
+    /// Backdrop background
+    pub backdrop: Rgba,
+    /// Dialog background
+    pub background: Rgba,
+    /// Border color
+    pub border: Rgba,
+    /// Header border
+    pub header_border: Rgba,
+    /// Title text color
+    pub title: Rgba,
+    /// Close button text
+    pub close: Rgba,
+    /// Close button hover
+    pub close_hover: Rgba,
+    /// Close button hover background
+    pub close_hover_bg: Rgba,
+}
+
+impl Default for DialogTheme {
+    fn default() -> Self {
+        Self {
+            backdrop: rgba(0x000000aa),
+            background: rgb(0x1e1e1e),
+            border: rgb(0x007acc),
+            header_border: rgb(0x3a3a3a),
+            title: rgb(0xffffff),
+            close: rgb(0x888888),
+            close_hover: rgb(0xffffff),
+            close_hover_bg: rgb(0x3a3a3a),
+        }
+    }
+}
+
+impl From<&Theme> for DialogTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            backdrop: rgba(0x00000088),
+            background: theme.surface,
+            border: theme.accent,
+            header_border: theme.border,
+            title: theme.text_primary,
+            close: theme.text_muted,
+            close_hover: theme.text_primary,
+            close_hover_bg: theme.surface_hover,
+        }
+    }
+}
 
 /// Dialog size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -107,8 +159,8 @@ impl Dialog {
         self
     }
 
-    /// Build the dialog into elements
-    pub fn build(self) -> Div {
+    /// Build the dialog into elements with theme
+    pub fn build_with_theme(self, theme: &DialogTheme) -> Div {
         let width = self.size.width();
         let on_close = self.on_close;
         let close_on_backdrop = self.close_on_backdrop;
@@ -120,7 +172,7 @@ impl Dialog {
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgba(0x000000aa));
+            .bg(theme.backdrop);
 
         // Handle backdrop click
         if close_on_backdrop {
@@ -140,9 +192,9 @@ impl Dialog {
             .id(self.id)
             .w(width)
             .max_h(Rems(45.0))
-            .bg(rgb(0x1e1e1e))
+            .bg(theme.background)
             .border_1()
-            .border_color(rgb(0x007acc))
+            .border_color(theme.border)
             .rounded_lg()
             .shadow_lg()
             .overflow_hidden()
@@ -162,14 +214,14 @@ impl Dialog {
                 .px_4()
                 .py_3()
                 .border_b_1()
-                .border_color(rgb(0x3a3a3a));
+                .border_color(theme.header_border);
 
             if let Some(title) = self.title {
                 header = header.child(
                     div()
                         .text_lg()
                         .font_weight(FontWeight::BOLD)
-                        .text_color(rgb(0xffffff))
+                        .text_color(theme.title)
                         .child(title),
                 );
             } else {
@@ -179,6 +231,9 @@ impl Dialog {
             if self.show_close_button {
                 if let Some(ref handler) = on_close {
                     let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
+                    let close_color = theme.close;
+                    let close_hover = theme.close_hover;
+                    let close_hover_bg = theme.close_hover_bg;
                     header = header.child(
                         div()
                             .id("dialog-close-btn")
@@ -186,8 +241,8 @@ impl Dialog {
                             .py_1()
                             .rounded(px(3.0))
                             .cursor_pointer()
-                            .text_color(rgb(0x888888))
-                            .hover(|s| s.bg(rgb(0x3a3a3a)).text_color(rgb(0xffffff)))
+                            .text_color(close_color)
+                            .hover(move |s| s.bg(close_hover_bg).text_color(close_hover))
                             .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
                                 (*handler)(window, cx);
                             })
@@ -219,7 +274,7 @@ impl Dialog {
                     .px_4()
                     .py_3()
                     .border_t_1()
-                    .border_color(rgb(0x3a3a3a))
+                    .border_color(theme.header_border)
                     .child(footer),
             );
         }
@@ -228,10 +283,18 @@ impl Dialog {
     }
 }
 
+impl RenderOnce for Dialog {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let dialog_theme = DialogTheme::from(&global_theme);
+        self.build_with_theme(&dialog_theme)
+    }
+}
+
 impl IntoElement for Dialog {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

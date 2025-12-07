@@ -3,6 +3,7 @@
 //! A button that displays only an icon, with optional tooltip.
 //! Supports both text/emoji icons and custom child elements (like SVG icons).
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -47,6 +48,24 @@ impl Default for IconButtonTheme {
             text: rgba(0xccccccff),
             text_on_accent: rgba(0xffffffff),
             border: rgba(0x555555ff),
+        }
+    }
+}
+
+impl From<&Theme> for IconButtonTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            ghost_bg: rgba(0x00000000),
+            ghost_hover_bg: theme.surface_hover,
+            selected_bg: theme.surface_hover,
+            selected_hover_bg: theme.muted,
+            filled_bg: theme.surface,
+            filled_hover_bg: theme.surface_hover,
+            accent: theme.accent,
+            accent_hover: theme.accent,
+            text: theme.text_secondary,
+            text_on_accent: theme.text_primary,
+            border: theme.border,
         }
     }
 }
@@ -212,9 +231,11 @@ impl IconButton {
     }
 
     /// Get the computed colors based on variant and state
-    pub fn compute_colors(&self) -> (Rgba, Rgba, Rgba, Option<Rgba>) {
-        let default_theme = IconButtonTheme::default();
-        let theme = self.theme.as_ref().unwrap_or(&default_theme);
+    pub fn compute_colors(
+        &self,
+        fallback_theme: &IconButtonTheme,
+    ) -> (Rgba, Rgba, Rgba, Option<Rgba>) {
+        let theme = self.theme.as_ref().unwrap_or(fallback_theme);
 
         match self.variant {
             IconButtonVariant::Ghost => {
@@ -256,10 +277,10 @@ impl IconButton {
         }
     }
 
-    /// Build into element
-    pub fn build(self) -> Stateful<Div> {
+    /// Build into element with theme
+    pub fn build_with_theme(self, icon_theme: &IconButtonTheme) -> Stateful<Div> {
         let size = self.size.size();
-        let (bg, bg_hover, text_color, border) = self.compute_colors();
+        let (bg, bg_hover, text_color, border) = self.compute_colors(icon_theme);
 
         let mut el = div()
             .id(self.id)
@@ -308,10 +329,18 @@ impl IconButton {
     }
 }
 
+impl RenderOnce for IconButton {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let icon_theme = IconButtonTheme::from(&global_theme);
+        self.build_with_theme(&icon_theme)
+    }
+}
+
 impl IntoElement for IconButton {
-    type Element = Stateful<Div>;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

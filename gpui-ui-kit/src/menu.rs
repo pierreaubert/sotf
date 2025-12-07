@@ -2,6 +2,7 @@
 //!
 //! Provides a complete menu system for application navigation and context menus.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -40,6 +41,22 @@ impl Default for MenuTheme {
             text_shortcut: rgba(0x777777ff),
             hover_bg: rgba(0x3a3a3aff),
             danger_hover_bg: rgba(0xdc2626ff),
+        }
+    }
+}
+
+impl From<&Theme> for MenuTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            background: theme.surface,
+            border: theme.border,
+            separator: theme.border,
+            text: theme.text_secondary,
+            text_hover: theme.text_primary,
+            text_disabled: theme.text_muted,
+            text_shortcut: theme.text_muted,
+            hover_bg: theme.surface_hover,
+            danger_hover_bg: theme.error,
         }
     }
 }
@@ -198,11 +215,10 @@ impl Menu {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Stateful<Div> {
+    /// Build into element with theme
+    pub fn build_with_theme(self, menu_theme: &MenuTheme) -> Stateful<Div> {
         let min_width = self.min_width;
-        let default_theme = MenuTheme::default();
-        let theme = self.theme.as_ref().unwrap_or(&default_theme);
+        let theme = self.theme.as_ref().unwrap_or(menu_theme);
 
         let mut menu = div()
             .id("menu-container")
@@ -299,11 +315,19 @@ impl Menu {
     }
 }
 
+impl RenderOnce for Menu {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let menu_theme = MenuTheme::from(&global_theme);
+        self.build_with_theme(&menu_theme)
+    }
+}
+
 impl IntoElement for Menu {
-    type Element = Stateful<Div>;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }
 
@@ -399,8 +423,8 @@ impl MenuBar {
         self.active_menu.as_ref()
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &MenuTheme) -> Div {
         let mut bar = div().flex().items_center().gap_1();
 
         for item in &self.items {
@@ -420,13 +444,12 @@ impl MenuBar {
 
             if is_open {
                 button = button
-                    .bg(rgb(0x3a3a3a))
+                    .bg(theme.hover_bg)
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0xffffff));
+                    .text_color(theme.text_hover);
             } else {
-                button = button
-                    .text_color(rgb(0xcccccc))
-                    .hover(|s| s.bg(rgb(0x333333)));
+                let hover_bg = theme.hover_bg;
+                button = button.text_color(theme.text).hover(move |s| s.bg(hover_bg));
             }
 
             if let Some(handler_ptr) = on_toggle {
@@ -449,11 +472,19 @@ impl MenuBar {
     }
 }
 
+impl RenderOnce for MenuBar {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let menu_theme = MenuTheme::from(&global_theme);
+        self.build_with_theme(&menu_theme)
+    }
+}
+
 impl IntoElement for MenuBar {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }
 
@@ -463,6 +494,7 @@ pub fn menu_bar_button(
     id: impl Into<SharedString>,
     label: impl Into<SharedString>,
     is_open: bool,
+    theme: &MenuTheme,
 ) -> Stateful<Div> {
     let id = id.into();
     let label = label.into();
@@ -477,13 +509,12 @@ pub fn menu_bar_button(
 
     if is_open {
         button = button
-            .bg(rgb(0x3a3a3a))
+            .bg(theme.hover_bg)
             .font_weight(FontWeight::BOLD)
-            .text_color(rgb(0xffffff));
+            .text_color(theme.text_hover);
     } else {
-        button = button
-            .text_color(rgb(0xcccccc))
-            .hover(|s| s.bg(rgb(0x333333)));
+        let hover_bg = theme.hover_bg;
+        button = button.text_color(theme.text).hover(move |s| s.bg(hover_bg));
     }
 
     button.child(label)

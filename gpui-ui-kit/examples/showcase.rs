@@ -112,13 +112,19 @@ impl ShowcaseSection {
 pub struct Showcase {
     // Toggle states
     toggle_on: bool,
+    toggle_lg: bool,
     checkbox_checked: bool,
     // Slider value
     slider_value: f32,
+    // Vertical slider value
+    vertical_slider_value: f64,
     // Number input values
     number_value: f64,
     number_freq: f64,
     number_db: f64,
+    // Number input editing state
+    editing_number: Option<&'static str>, // Which input is being edited ("basic", "freq", "db")
+    edit_text: String,
     // Tabs state
     selected_tab: usize,
     // Potentiometer values
@@ -129,6 +135,9 @@ pub struct Showcase {
     pot_100: f64,
     pot_selected: f64,
     pot_lg: f64,
+    // Volume knob values
+    volume_value: f32,
+    volume_muted: bool,
     // Current section for navigation
     current_section: ShowcaseSection,
     // Entity for updating self
@@ -139,11 +148,15 @@ impl Showcase {
     fn new(cx: &mut Context<Self>) -> Self {
         Self {
             toggle_on: true,
+            toggle_lg: false,
             checkbox_checked: true,
             slider_value: 0.5,
+            vertical_slider_value: 0.75,
             number_value: 42.0,
             number_freq: 1000.0,
             number_db: -3.0,
+            editing_number: None,
+            edit_text: String::new(),
             selected_tab: 0,
             pot_0: 0.0,
             pot_25: 0.25,
@@ -152,6 +165,8 @@ impl Showcase {
             pot_100: 1.0,
             pot_selected: 0.5,
             pot_lg: 0.7,
+            volume_value: 0.75,
+            volume_muted: false,
             current_section: ShowcaseSection::default(),
             entity: cx.entity().clone(),
         }
@@ -240,11 +255,15 @@ impl Render for Showcase {
             ShowcaseSection::FormControls => self
                 .render_form_controls_section(
                     toggle_on,
+                    self.toggle_lg,
                     checkbox_checked,
                     slider_value,
+                    self.vertical_slider_value,
                     self.number_value,
                     self.number_freq,
                     self.number_db,
+                    self.editing_number,
+                    self.edit_text.clone(),
                     entity.clone(),
                     cx,
                 )
@@ -268,11 +287,13 @@ impl Render for Showcase {
         };
 
         div()
+            .id("showcase-root")
             .w_full()
             .h_full()
             .bg(bg_color)
             .text_color(text_color)
             .flex()
+            .on_key_down(cx.listener(Self::handle_key_down))
             .child(nav)
             .child(
                 div()
@@ -294,6 +315,55 @@ impl Render for Showcase {
                     .child(Divider::new().build())
                     .child(content),
             )
+    }
+}
+
+impl Showcase {
+    fn handle_key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Only handle keys when editing a number input
+        if let Some(editing_id) = self.editing_number {
+            match event.keystroke.key.as_str() {
+                "enter" => {
+                    // Confirm edit - parse and apply the value
+                    if let Ok(value) = self.edit_text.parse::<f64>() {
+                        match editing_id {
+                            "basic" => self.number_value = value.clamp(0.0, 100.0),
+                            "freq" => self.number_freq = value.clamp(20.0, 20000.0),
+                            "db" => self.number_db = value.clamp(-12.0, 12.0),
+                            _ => {}
+                        }
+                    }
+                    self.editing_number = None;
+                    self.edit_text.clear();
+                    cx.notify();
+                }
+                "escape" => {
+                    // Cancel edit
+                    self.editing_number = None;
+                    self.edit_text.clear();
+                    cx.notify();
+                }
+                "backspace" => {
+                    // Delete last character
+                    self.edit_text.pop();
+                    cx.notify();
+                }
+                key if key.len() == 1 => {
+                    // Single character - append if valid for number
+                    let ch = key.chars().next().unwrap();
+                    if ch.is_ascii_digit() || ch == '.' || ch == '-' {
+                        self.edit_text.push(ch);
+                        cx.notify();
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 

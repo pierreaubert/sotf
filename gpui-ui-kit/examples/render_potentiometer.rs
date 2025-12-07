@@ -1,17 +1,20 @@
 impl Showcase {
     fn render_potentiometer_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
-    let pot_0 = self.pot_0;
-    let pot_25 = self.pot_25;
-    let pot_50 = self.pot_50;
-    let pot_75 = self.pot_75;
-    let pot_100 = self.pot_100;
-    let pot_selected = self.pot_selected;
-    let pot_lg = self.pot_lg;
+        let pot_0 = self.pot_0;
+        let pot_25 = self.pot_25;
+        let pot_50 = self.pot_50;
+        let pot_75 = self.pot_75;
+        let pot_100 = self.pot_100;
+        let pot_selected = self.pot_selected;
+        let pot_lg = self.pot_lg;
+        let volume_value = self.volume_value;
+        let volume_muted = self.volume_muted;
 
-    let entity = self.entity.clone();
-    let section_title = cx.t(TranslationKey::SectionPotentiometers);
-    let selected_label = cx.t(TranslationKey::LabelSelected);
-    let large_label = cx.t(TranslationKey::LabelLarge);
+        let entity = self.entity.clone();
+        let section_title = cx.t(TranslationKey::SectionPotentiometers);
+        let selected_label = cx.t(TranslationKey::LabelSelected);
+        let large_label = cx.t(TranslationKey::LabelLarge);
+        let theme = cx.theme();
 
     VStack::new()
         .spacing(StackSpacing::Lg)
@@ -41,7 +44,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, _cx| {
+                                        entity.update(cx, |showcase, cx| {
                                             showcase.pot_0 = value;
                                         });
                                     }
@@ -64,7 +67,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, _cx| {
+                                        entity.update(cx, |showcase, cx| {
                                             showcase.pot_25 = value;
                                         });
                                     }
@@ -87,7 +90,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, _cx| {
+                                        entity.update(cx, |showcase, cx| {
                                             showcase.pot_50 = value;
                                         });
                                     }
@@ -110,7 +113,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, _cx| {
+                                        entity.update(cx, |showcase, cx| {
                                             showcase.pot_75 = value;
                                         });
                                     }
@@ -133,7 +136,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, _cx| {
+                                        entity.update(cx, |showcase, cx| {
                                             showcase.pot_100 = value;
                                         });
                                     }
@@ -157,7 +160,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, _cx| {
+                                        entity.update(cx, |showcase, cx| {
                                             showcase.pot_selected = value;
                                         });
                                     }
@@ -180,13 +183,89 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, _cx| {
+                                        entity.update(cx, |showcase, cx| {
                                             showcase.pot_lg = value;
                                         });
                                     }
                                 }),
                         )
                         .child(Text::new(large_label).size(TextSize::Xs)),
+                ),
+        )
+        // Volume Knob section
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(Text::new("Volume Knob").weight(TextWeight::Medium))
+                .child(Text::new("Circular fill knob with mute toggle (scroll to adjust, double-click to mute):").muted(true))
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Xl)
+                        .align(StackAlign::End)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    VolumeKnob::new()
+                                        .value(volume_value)
+                                        .muted(volume_muted)
+                                        .label(format!("{:.0}", volume_value * 100.0))
+                                        .size(px(48.0))
+                                        .accent_color(theme.accent)
+                                        .bg_color(theme.surface)
+                                        .text_color(theme.text_primary)
+                                        .on_change({
+                                            let entity = entity.clone();
+                                            move |value, _window, cx| {
+                                                entity.update(cx, |showcase, cx| {
+                                                    showcase.volume_value = value;
+                                                });
+                                            }
+                                        })
+                                        .on_mute_toggle({
+                                            let entity = entity.clone();
+                                            move |muted, _window, cx| {
+                                                entity.update(cx, |showcase, cx| {
+                                                    showcase.volume_muted = muted;
+                                                });
+                                            }
+                                        }),
+                                )
+                                .child(Text::new("Normal").size(TextSize::Xs)),
+                        )
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    VolumeKnob::new()
+                                        .value(0.5)
+                                        .muted(true)
+                                        .label("M")
+                                        .size(px(48.0))
+                                        .accent_color(theme.accent)
+                                        .muted_color(theme.error)
+                                        .bg_color(theme.surface)
+                                        .text_color(theme.text_primary),
+                                )
+                                .child(Text::new("Muted").size(TextSize::Xs)),
+                        )
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    VolumeKnob::new()
+                                        .value(1.0)
+                                        .label("100")
+                                        .size(px(64.0))
+                                        .accent_color(theme.success)
+                                        .bg_color(theme.surface)
+                                        .text_color(theme.text_primary),
+                                )
+                                .child(Text::new("Large (100%)").size(TextSize::Xs)),
+                        ),
                 ),
         )
     }

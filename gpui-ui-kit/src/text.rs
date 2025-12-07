@@ -2,8 +2,9 @@
 //!
 //! Typography and text styling utilities.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Component, *};
 
 /// Text size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -52,6 +53,7 @@ impl TextWeight {
 }
 
 /// A styled text component
+#[derive(IntoElement)]
 pub struct Text {
     content: SharedString,
     size: TextSize,
@@ -59,6 +61,7 @@ pub struct Text {
     color: Option<Rgba>,
     muted: bool,
     truncate: bool,
+    theme: Option<Theme>,
 }
 
 impl Text {
@@ -71,7 +74,14 @@ impl Text {
             color: None,
             muted: false,
             truncate: false,
+            theme: None,
         }
+    }
+
+    /// Set theme
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.theme = Some(theme);
+        self
     }
 
     /// Set size
@@ -104,14 +114,20 @@ impl Text {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme from App context
+    pub fn build_with_cx(self, cx: &App) -> Div {
+        let theme = self.theme.clone().unwrap_or_else(|| cx.theme());
+        self.build_with_theme(&theme)
+    }
+
+    /// Build into element with explicit theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let text_color = if let Some(color) = self.color {
             color
         } else if self.muted {
-            rgb(0x888888)
+            theme.text_muted
         } else {
-            rgb(0xffffff)
+            theme.text_secondary
         };
 
         let mut text = div()
@@ -134,20 +150,27 @@ impl Text {
 
         text.child(self.content)
     }
+
+    /// Build into element (uses default dark theme colors for backwards compatibility)
+    pub fn build(self) -> Div {
+        let theme = self.theme.clone().unwrap_or_else(Theme::dark);
+        self.build_with_theme(&theme)
+    }
 }
 
-impl IntoElement for Text {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
-        self.build()
+impl RenderOnce for Text {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = self.theme.clone().unwrap_or_else(|| cx.theme());
+        self.build_with_theme(&theme)
     }
 }
 
 /// A heading component
+#[derive(IntoElement)]
 pub struct Heading {
     content: SharedString,
     level: u8,
+    theme: Option<Theme>,
 }
 
 impl Heading {
@@ -156,7 +179,14 @@ impl Heading {
         Self {
             content: content.into(),
             level: 1,
+            theme: None,
         }
+    }
+
+    /// Set theme
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.theme = Some(theme);
+        self
     }
 
     /// Set heading level (1-6)
@@ -185,11 +215,11 @@ impl Heading {
         Self::new(content).level(4)
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with explicit theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let mut heading = div()
             .font_weight(FontWeight::BOLD)
-            .text_color(rgb(0xffffff));
+            .text_color(theme.text_primary);
 
         heading = match self.level {
             1 => heading.text_2xl(),
@@ -202,20 +232,27 @@ impl Heading {
 
         heading.child(self.content)
     }
+
+    /// Build into element (uses default dark theme colors for backwards compatibility)
+    pub fn build(self) -> Div {
+        let theme = self.theme.clone().unwrap_or_else(Theme::dark);
+        self.build_with_theme(&theme)
+    }
 }
 
-impl IntoElement for Heading {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
-        self.build()
+impl RenderOnce for Heading {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = self.theme.clone().unwrap_or_else(|| cx.theme());
+        self.build_with_theme(&theme)
     }
 }
 
 /// A code/monospace text component
+#[derive(IntoElement)]
 pub struct Code {
     content: SharedString,
     inline: bool,
+    theme: Option<Theme>,
 }
 
 impl Code {
@@ -224,6 +261,7 @@ impl Code {
         Self {
             content: content.into(),
             inline: true,
+            theme: None,
         }
     }
 
@@ -232,38 +270,56 @@ impl Code {
         Self {
             content: content.into(),
             inline: false,
+            theme: None,
         }
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Set theme
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
+
+    /// Build into element with explicit theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
+        // Code uses a slightly different color from accent
+        let code_text = match theme.variant {
+            crate::theme::ThemeVariant::Dark => rgb(0xe06c75),
+            crate::theme::ThemeVariant::Light => rgb(0xc7254e),
+        };
+
         if self.inline {
             div()
                 .px_1()
                 .py(px(1.0))
-                .bg(rgb(0x2a2a2a))
+                .bg(theme.surface)
                 .rounded(px(3.0))
                 .text_xs()
-                .text_color(rgb(0xe06c75))
+                .text_color(code_text)
                 .child(self.content)
         } else {
             div()
                 .p_3()
-                .bg(rgb(0x1a1a1a))
+                .bg(theme.muted)
                 .rounded_md()
                 .text_sm()
-                .text_color(rgb(0xcccccc))
+                .text_color(theme.text_secondary)
                 .overflow_hidden()
                 .child(self.content)
         }
     }
+
+    /// Build into element (uses default dark theme colors for backwards compatibility)
+    pub fn build(self) -> Div {
+        let theme = self.theme.clone().unwrap_or_else(Theme::dark);
+        self.build_with_theme(&theme)
+    }
 }
 
-impl IntoElement for Code {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
-        self.build()
+impl RenderOnce for Code {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = self.theme.clone().unwrap_or_else(|| cx.theme());
+        self.build_with_theme(&theme)
     }
 }
 
@@ -274,6 +330,7 @@ pub struct Link {
     href: Option<SharedString>,
     external: bool,
     on_click: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    theme: Option<Theme>,
 }
 
 impl Link {
@@ -285,7 +342,14 @@ impl Link {
             href: None,
             external: false,
             on_click: None,
+            theme: None,
         }
+    }
+
+    /// Set theme
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.theme = Some(theme);
+        self
     }
 
     /// Set href
@@ -306,13 +370,16 @@ impl Link {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Stateful<Div> {
+    /// Build into element with explicit theme
+    pub fn build_with_theme(self, theme: &Theme) -> Stateful<Div> {
+        let accent = theme.accent;
+        let accent_hover = theme.accent_hover;
+
         let mut link = div()
             .id(self.id)
-            .text_color(rgb(0x007acc))
+            .text_color(accent)
             .cursor_pointer()
-            .hover(|s| s.text_color(rgb(0x0098ff)));
+            .hover(move |s| s.text_color(accent_hover));
 
         if let Some(handler) = self.on_click {
             link = link.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
@@ -328,12 +395,25 @@ impl Link {
 
         link
     }
+
+    /// Build into element (uses default dark theme colors for backwards compatibility)
+    pub fn build(self) -> Stateful<Div> {
+        let theme = self.theme.clone().unwrap_or_else(Theme::dark);
+        self.build_with_theme(&theme)
+    }
 }
 
 impl IntoElement for Link {
-    type Element = Stateful<Div>;
+    type Element = Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        Component::new(self)
+    }
+}
+
+impl RenderOnce for Link {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = self.theme.clone().unwrap_or_else(|| cx.theme());
+        self.build_with_theme(&theme)
     }
 }

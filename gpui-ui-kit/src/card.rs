@@ -2,10 +2,12 @@
 //!
 //! A flexible card component with optional header, content, and footer sections.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
 /// A card container with optional sections
+#[derive(IntoElement)]
 pub struct Card {
     header: Option<AnyElement>,
     content: Option<AnyElement>,
@@ -49,14 +51,14 @@ impl Card {
         self
     }
 
-    /// Build the card into an element
-    pub fn build(self) -> Div {
+    /// Build the card into an element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let mut card = div()
             .flex()
             .flex_col()
-            .bg(rgb(0x1e1e1e))
+            .bg(theme.surface)
             .border_1()
-            .border_color(rgb(0x3a3a3a))
+            .border_color(theme.border)
             .rounded_lg()
             .shadow_md()
             .overflow_hidden();
@@ -68,12 +70,13 @@ impl Card {
 
         // Header section
         if let Some(header) = self.header {
+            let border = theme.border;
             card = card.child(
                 div()
                     .px_4()
                     .py_3()
                     .border_b_1()
-                    .border_color(rgb(0x3a3a3a))
+                    .border_color(border)
                     .child(header),
             );
         }
@@ -85,12 +88,13 @@ impl Card {
 
         // Footer section
         if let Some(footer) = self.footer {
+            let border = theme.border;
             card = card.child(
                 div()
                     .px_4()
                     .py_3()
                     .border_t_1()
-                    .border_color(rgb(0x3a3a3a))
+                    .border_color(border)
                     .child(footer),
             );
         }
@@ -105,10 +109,9 @@ impl Default for Card {
     }
 }
 
-impl IntoElement for Card {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
-        self.build()
+impl RenderOnce for Card {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
     }
 }

@@ -2,6 +2,7 @@
 //!
 //! User avatars and profile images.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -65,12 +66,12 @@ pub enum AvatarStatus {
 }
 
 impl AvatarStatus {
-    fn color(&self) -> Rgba {
+    fn color(&self, theme: &Theme) -> Rgba {
         match self {
-            AvatarStatus::Online => rgb(0x2da44e),
-            AvatarStatus::Offline => rgb(0x666666),
-            AvatarStatus::Away => rgb(0xd29922),
-            AvatarStatus::Busy => rgb(0xcc3333),
+            AvatarStatus::Online => theme.success,
+            AvatarStatus::Offline => theme.text_muted,
+            AvatarStatus::Away => theme.warning,
+            AvatarStatus::Busy => theme.error,
         }
     }
 }
@@ -150,8 +151,8 @@ impl Avatar {
         }
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let size = self.size.size();
         let initials = self.get_initials();
         let bg_color = self.get_bg_color();
@@ -164,7 +165,7 @@ impl Avatar {
             .w(size)
             .h(size)
             .bg(bg_color)
-            .text_color(rgb(0xffffff))
+            .text_color(theme.text_primary)
             .overflow_hidden();
 
         // Apply shape
@@ -211,9 +212,9 @@ impl Avatar {
                 .w(status_size)
                 .h(status_size)
                 .rounded_full()
-                .bg(status.color())
+                .bg(status.color(theme))
                 .border_2()
-                .border_color(rgb(0x1e1e1e));
+                .border_color(theme.background);
 
             avatar = avatar.child(status_indicator);
         }
@@ -228,11 +229,18 @@ impl Default for Avatar {
     }
 }
 
+impl RenderOnce for Avatar {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for Avatar {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }
 
@@ -271,8 +279,8 @@ impl AvatarGroup {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let size = self.size.size();
         let overlap = size * 0.3;
 
@@ -282,7 +290,7 @@ impl AvatarGroup {
         let remaining = self.avatars.len().saturating_sub(self.max_display);
 
         for (i, avatar) in self.avatars.into_iter().take(display_count).enumerate() {
-            let avatar_el = avatar.size(self.size).build();
+            let avatar_el = avatar.size(self.size).build_with_theme(theme);
             let mut wrapper = div().relative();
 
             if i > 0 {
@@ -304,8 +312,8 @@ impl AvatarGroup {
                     .w(size)
                     .h(size)
                     .rounded_full()
-                    .bg(rgb(0x3a3a3a))
-                    .text_color(rgb(0xcccccc))
+                    .bg(theme.surface)
+                    .text_color(theme.text_secondary)
                     .text_xs()
                     .font_weight(FontWeight::MEDIUM)
                     .child(format!("+{}", remaining)),
@@ -322,10 +330,17 @@ impl Default for AvatarGroup {
     }
 }
 
+impl RenderOnce for AvatarGroup {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for AvatarGroup {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

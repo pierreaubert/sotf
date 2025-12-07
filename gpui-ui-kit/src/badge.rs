@@ -2,6 +2,7 @@
 //!
 //! Small status indicators and labels.
 
+use crate::theme::{Theme, ThemeExt, ThemeVariant};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -24,15 +25,25 @@ pub enum BadgeVariant {
 }
 
 impl BadgeVariant {
-    fn colors(&self) -> (Rgba, Rgba) {
-        // Returns (background, text_color)
-        match self {
-            BadgeVariant::Default => (rgb(0x3a3a3a), rgb(0xcccccc)),
-            BadgeVariant::Primary => (rgb(0x1a4a7a), rgb(0x7cc4ff)),
-            BadgeVariant::Success => (rgb(0x1a3a1a), rgb(0x7ccc7c)),
-            BadgeVariant::Warning => (rgb(0x3a3a1a), rgb(0xcccc7c)),
-            BadgeVariant::Error => (rgb(0x3a1a1a), rgb(0xcc7c7c)),
-            BadgeVariant::Info => (rgb(0x1a3a3a), rgb(0x7ccccc)),
+    fn colors(&self, theme: &Theme) -> (Rgba, Rgba) {
+        // Returns (background, text_color) based on theme variant
+        match theme.variant {
+            ThemeVariant::Dark => match self {
+                BadgeVariant::Default => (theme.surface, theme.text_secondary),
+                BadgeVariant::Primary => (rgb(0x1a4a7a), rgb(0x7cc4ff)),
+                BadgeVariant::Success => (rgb(0x1a3a1a), rgb(0x7ccc7c)),
+                BadgeVariant::Warning => (rgb(0x3a3a1a), rgb(0xcccc7c)),
+                BadgeVariant::Error => (rgb(0x3a1a1a), rgb(0xcc7c7c)),
+                BadgeVariant::Info => (rgb(0x1a3a3a), rgb(0x7ccccc)),
+            },
+            ThemeVariant::Light => match self {
+                BadgeVariant::Default => (theme.muted, theme.text_secondary),
+                BadgeVariant::Primary => (rgb(0xdbeafe), rgb(0x1d4ed8)),
+                BadgeVariant::Success => (rgb(0xdcfce7), rgb(0x16a34a)),
+                BadgeVariant::Warning => (rgb(0xfef3c7), rgb(0xd97706)),
+                BadgeVariant::Error => (rgb(0xfee2e2), rgb(0xdc2626)),
+                BadgeVariant::Info => (rgb(0xe0f2fe), rgb(0x0284c7)),
+            },
         }
     }
 }
@@ -50,6 +61,7 @@ pub enum BadgeSize {
 }
 
 /// A badge component
+#[derive(IntoElement)]
 pub struct Badge {
     label: SharedString,
     variant: BadgeVariant,
@@ -94,9 +106,9 @@ impl Badge {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
-        let (bg, text_color) = self.variant.colors();
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
+        let (bg, text_color) = self.variant.colors(theme);
 
         let (px_val, py_val) = match self.size {
             BadgeSize::Sm => (px(6.0), px(2.0)),
@@ -139,15 +151,15 @@ impl Badge {
     }
 }
 
-impl IntoElement for Badge {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
-        self.build()
+impl RenderOnce for Badge {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
     }
 }
 
 /// A dot indicator (no text)
+#[derive(IntoElement)]
 pub struct BadgeDot {
     variant: BadgeVariant,
     size: Pixels,
@@ -174,10 +186,9 @@ impl BadgeDot {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
-        let (bg, _) = self.variant.colors();
-
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
+        let (bg, _) = self.variant.colors(theme);
         div().w(self.size).h(self.size).rounded_full().bg(bg)
     }
 }
@@ -188,10 +199,9 @@ impl Default for BadgeDot {
     }
 }
 
-impl IntoElement for BadgeDot {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
-        self.build()
+impl RenderOnce for BadgeDot {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
     }
 }

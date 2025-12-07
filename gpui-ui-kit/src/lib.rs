@@ -7,6 +7,10 @@
 #[path = "../src-app/mod.rs"]
 pub mod app;
 
+// Theme and i18n
+pub mod i18n;
+pub mod theme;
+
 // Core components
 pub mod button;
 pub mod card;
@@ -19,10 +23,13 @@ pub mod toast;
 // Form components
 pub mod checkbox;
 pub mod input;
+pub mod number_input;
 pub mod potentiometer;
 pub mod select;
 pub mod slider;
 pub mod toggle;
+pub mod vertical_slider;
+pub mod volume_knob;
 
 // Data display
 pub mod avatar;
@@ -65,10 +72,13 @@ pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 // Form
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use input::{Input, InputSize, InputVariant};
-pub use potentiometer::Potentiometer;
+pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme};
+pub use potentiometer::{Potentiometer, PotentiometerSize, PotentiometerTheme};
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
-pub use toggle::{Toggle, ToggleSize};
+pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
+pub use vertical_slider::{VerticalSlider, VerticalSliderSize, VerticalSliderTheme};
+pub use volume_knob::VolumeKnob;
 
 // Data display
 pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};
@@ -85,3 +95,7 @@ pub use stack::{Divider, HStack, Spacer, StackAlign, StackJustify, StackSpacing,
 
 // Application templates
 pub use app::{MiniApp, MiniAppConfig};
+
+// Theme and i18n
+pub use i18n::{I18nExt, I18nState, Language, TranslationKey, Translations};
+pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};

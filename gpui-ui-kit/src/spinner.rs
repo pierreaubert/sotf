@@ -2,6 +2,7 @@
 //!
 //! Loading indicators and spinners.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -79,11 +80,11 @@ impl Spinner {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let size = self.size.size();
         let border_width = self.size.border_width();
-        let color = self.color.unwrap_or(rgb(0x007acc));
+        let color = self.color.unwrap_or(theme.accent);
 
         let mut container = div().flex().items_center().gap_2();
 
@@ -106,7 +107,7 @@ impl Spinner {
                 SpinnerSize::Md => div().text_sm(),
                 SpinnerSize::Lg | SpinnerSize::Xl => div(),
             };
-            container = container.child(label_el.text_color(rgb(0xcccccc)).child(label));
+            container = container.child(label_el.text_color(theme.text_secondary).child(label));
         }
 
         container
@@ -119,11 +120,18 @@ impl Default for Spinner {
     }
 }
 
+impl RenderOnce for Spinner {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for Spinner {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }
 
@@ -154,9 +162,9 @@ impl LoadingDots {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
-        let color = self.color.unwrap_or(rgb(0x007acc));
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
+        let color = self.color.unwrap_or(theme.accent);
         let dot_size = match self.size {
             SpinnerSize::Xs => px(4.0),
             SpinnerSize::Sm => px(6.0),
@@ -195,10 +203,17 @@ impl Default for LoadingDots {
     }
 }
 
+impl RenderOnce for LoadingDots {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for LoadingDots {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

@@ -2,8 +2,9 @@
 //!
 //! Provides non-blocking notifications that appear temporarily.
 
+use crate::theme::{Theme, ThemeExt, ThemeVariant};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Component, *};
 
 /// Toast visual variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -22,10 +23,28 @@ pub enum ToastVariant {
 impl ToastVariant {
     fn icon(&self) -> &'static str {
         match self {
-            ToastVariant::Info => "ℹ",
-            ToastVariant::Success => "✓",
-            ToastVariant::Warning => "⚠",
-            ToastVariant::Error => "✕",
+            ToastVariant::Info => "i",
+            ToastVariant::Success => "v",
+            ToastVariant::Warning => "!",
+            ToastVariant::Error => "x",
+        }
+    }
+
+    fn colors(&self, theme: &Theme) -> (Rgba, Rgba, Rgba) {
+        // Returns (background, border, icon_color)
+        match theme.variant {
+            ThemeVariant::Dark => match self {
+                ToastVariant::Info => (theme.surface, theme.info, theme.info),
+                ToastVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
+                ToastVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),
+                ToastVariant::Error => (rgb(0x3a1a1a), theme.error, theme.error),
+            },
+            ThemeVariant::Light => match self {
+                ToastVariant::Info => (theme.surface, theme.info, theme.info),
+                ToastVariant::Success => (rgb(0xdcfce7), theme.success, theme.success),
+                ToastVariant::Warning => (rgb(0xfef3c7), theme.warning, theme.warning),
+                ToastVariant::Error => (rgb(0xfee2e2), theme.error, theme.error),
+            },
         }
     }
 }
@@ -95,15 +114,9 @@ impl Toast {
         self
     }
 
-    /// Build the toast into an element
-    pub fn build(self) -> Stateful<Div> {
-        // Get colors based on variant
-        let (bg, border, icon_color) = match self.variant {
-            ToastVariant::Info => (rgb(0x2a2a2a), rgb(0x007acc), rgb(0x007acc)),
-            ToastVariant::Success => (rgb(0x1a3a1a), rgb(0x2da44e), rgb(0x2da44e)),
-            ToastVariant::Warning => (rgb(0x3a3a1a), rgb(0xd29922), rgb(0xd29922)),
-            ToastVariant::Error => (rgb(0x3a1a1a), rgb(0xcc3333), rgb(0xcc3333)),
-        };
+    /// Build the toast into an element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Stateful<Div> {
+        let (bg, border, icon_color) = self.variant.colors(theme);
         let icon = self.variant.icon();
 
         let mut toast = div()
@@ -137,7 +150,7 @@ impl Toast {
                 div()
                     .text_sm()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(0xffffff))
+                    .text_color(theme.text_primary)
                     .child(title),
             );
         }
@@ -145,7 +158,7 @@ impl Toast {
         content = content.child(
             div()
                 .text_sm()
-                .text_color(rgb(0xcccccc))
+                .text_color(theme.text_secondary)
                 .child(self.message),
         );
 
@@ -153,21 +166,22 @@ impl Toast {
 
         // Close button
         if self.closeable {
+            let text_muted = theme.text_muted;
+            let text_primary = theme.text_primary;
             if let Some(handler) = self.on_close {
                 let handler_ptr: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
                 toast = toast.child(
                     div()
                         .id("toast-close")
                         .text_sm()
-                        .text_color(rgb(0x888888))
+                        .text_color(text_muted)
                         .cursor_pointer()
-                        .hover(|s| s.text_color(rgb(0xffffff)))
+                        .hover(move |s| s.text_color(text_primary))
                         .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
                             (*handler_ptr)(window, cx);
                         })
-                        .child("×"),
+                        .child("x"),
                 );
-                // Keep handler alive - it will be dropped with the toast
                 std::mem::forget(handler);
             }
         }
@@ -177,14 +191,22 @@ impl Toast {
 }
 
 impl IntoElement for Toast {
-    type Element = Stateful<Div>;
+    type Element = Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        Component::new(self)
+    }
+}
+
+impl RenderOnce for Toast {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
     }
 }
 
 /// A container for positioning toasts on screen
+#[derive(IntoElement)]
 pub struct ToastContainer {
     position: ToastPosition,
     toasts: Vec<Toast>,
@@ -245,10 +267,8 @@ impl ToastContainer {
     }
 }
 
-impl IntoElement for ToastContainer {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
+impl RenderOnce for ToastContainer {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         self.build()
     }
 }

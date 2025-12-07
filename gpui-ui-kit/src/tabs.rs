@@ -2,6 +2,7 @@
 //!
 //! Provides a horizontal tab bar with content panels and theming support.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -49,6 +50,25 @@ impl Default for TabsTheme {
             badge_bg: rgba(0x555555ff),
             close_color: rgba(0x888888ff),
             close_hover_color: rgba(0xffffffff),
+        }
+    }
+}
+
+impl From<&Theme> for TabsTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            container_bg: theme.surface,
+            container_border: theme.border,
+            selected_bg: theme.surface_hover,
+            selected_hover_bg: theme.surface_hover,
+            hover_bg: theme.surface,
+            accent: theme.accent,
+            text_selected: theme.text_primary,
+            text_unselected: theme.text_muted,
+            text_hover: theme.text_secondary,
+            badge_bg: theme.muted,
+            close_color: theme.text_muted,
+            close_hover_color: theme.text_primary,
         }
     }
 }
@@ -188,10 +208,9 @@ impl Tabs {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
-        let default_theme = TabsTheme::default();
-        let theme = self.theme.as_ref().unwrap_or(&default_theme);
+    /// Build into element with theme
+    pub fn build_with_theme(self, global_theme: &TabsTheme) -> Div {
+        let theme = self.theme.as_ref().unwrap_or(global_theme);
 
         let mut container = div().flex().items_center();
 
@@ -441,10 +460,18 @@ impl Default for Tabs {
     }
 }
 
+impl RenderOnce for Tabs {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let tabs_theme = TabsTheme::from(&global_theme);
+        self.build_with_theme(&tabs_theme)
+    }
+}
+
 impl IntoElement for Tabs {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

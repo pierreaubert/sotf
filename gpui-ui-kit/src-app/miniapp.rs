@@ -2,6 +2,8 @@
 //!
 //! Provides a reusable application shell with:
 //! - Standard menu bar with Quit option (Cmd+Q on macOS)
+//! - Theme switching (light/dark) with Cmd+T
+//! - Language switching menu
 //! - Configurable window title and size
 //! - Extensible for additional default features
 //!
@@ -24,6 +26,8 @@
 //! }
 //! ```
 
+use crate::i18n::{I18nState, Language};
+use crate::theme::{ThemeState, ThemeVariant};
 use gpui::*;
 
 /// Configuration for a MiniApp instance
@@ -39,6 +43,14 @@ pub struct MiniAppConfig {
     pub app_name: SharedString,
     /// Enable vertical scrollbar for content
     pub scrollable: bool,
+    /// Enable theme support
+    pub with_theme: bool,
+    /// Enable i18n support
+    pub with_i18n: bool,
+    /// Initial theme variant
+    pub initial_theme: ThemeVariant,
+    /// Initial language
+    pub initial_language: Language,
 }
 
 impl MiniAppConfig {
@@ -53,6 +65,10 @@ impl MiniAppConfig {
             height: 700.0,
             app_name: title,
             scrollable: true,
+            with_theme: false,
+            with_i18n: false,
+            initial_theme: ThemeVariant::default(),
+            initial_language: Language::default(),
         }
     }
 
@@ -78,6 +94,30 @@ impl MiniAppConfig {
         self.scrollable = scrollable;
         self
     }
+
+    /// Enable theme support with light/dark switching
+    pub fn with_theme(mut self, enabled: bool) -> Self {
+        self.with_theme = enabled;
+        self
+    }
+
+    /// Enable i18n support with language switching
+    pub fn with_i18n(mut self, enabled: bool) -> Self {
+        self.with_i18n = enabled;
+        self
+    }
+
+    /// Set initial theme variant
+    pub fn initial_theme(mut self, theme: ThemeVariant) -> Self {
+        self.initial_theme = theme;
+        self
+    }
+
+    /// Set initial language
+    pub fn initial_language(mut self, language: Language) -> Self {
+        self.initial_language = language;
+        self
+    }
 }
 
 impl Default for MiniAppConfig {
@@ -86,8 +126,21 @@ impl Default for MiniAppConfig {
     }
 }
 
-// Define the Quit action for the menu
-actions!(miniapp, [Quit]);
+// Define actions for the menu
+actions!(
+    miniapp,
+    [
+        Quit,
+        ToggleTheme,
+        SetThemeDark,
+        SetThemeLight,
+        SetLanguageEnglish,
+        SetLanguageFrench,
+        SetLanguageGerman,
+        SetLanguageSpanish,
+        SetLanguageJapanese,
+    ]
+);
 
 /// A wrapper view that adds vertical scrolling to its content
 struct ScrollableWrapper {
@@ -109,6 +162,8 @@ impl Render for ScrollableWrapper {
 /// It handles:
 /// - Application lifecycle
 /// - Standard menu bar with Quit option
+/// - Theme switching (light/dark) with menu and Cmd+T
+/// - Language switching menu
 /// - Window creation with configurable size
 /// - Keyboard shortcut binding (Cmd+Q to quit)
 pub struct MiniApp;
@@ -142,20 +197,95 @@ impl MiniApp {
         let config_clone = config.clone();
 
         Application::new().run(move |cx: &mut App| {
+            // Initialize theme state if enabled
+            if config_clone.with_theme {
+                cx.set_global(ThemeState::with_variant(config_clone.initial_theme));
+            }
+
+            // Initialize i18n state if enabled
+            if config_clone.with_i18n {
+                let mut i18n = I18nState::new();
+                i18n.set_language(config_clone.initial_language);
+                cx.set_global(i18n);
+            }
+
             // Register quit action
             cx.on_action::<Quit>(|_action, cx| {
                 cx.quit();
             });
 
-            // Set up menu bar with application name
-            let quit_label: SharedString = format!("Quit {}", config_clone.app_name).into();
-            cx.set_menus(vec![Menu {
-                name: config_clone.app_name.clone(),
-                items: vec![MenuItem::action(quit_label, Quit)],
-            }]);
+            // Register theme actions if enabled
+            if config_clone.with_theme {
+                cx.on_action::<ToggleTheme>(|_action, cx| {
+                    cx.update_global::<ThemeState, _>(|state, _cx| {
+                        state.toggle();
+                    });
+                    cx.refresh_windows();
+                });
 
-            // Bind Cmd+Q to quit
+                cx.on_action::<SetThemeDark>(|_action, cx| {
+                    cx.update_global::<ThemeState, _>(|state, _cx| {
+                        state.set_variant(ThemeVariant::Dark);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetThemeLight>(|_action, cx| {
+                    cx.update_global::<ThemeState, _>(|state, _cx| {
+                        state.set_variant(ThemeVariant::Light);
+                    });
+                    cx.refresh_windows();
+                });
+            }
+
+            // Register language actions if enabled
+            if config_clone.with_i18n {
+                cx.on_action::<SetLanguageEnglish>(|_action, cx| {
+                    cx.update_global::<I18nState, _>(|state, _cx| {
+                        state.set_language(Language::English);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetLanguageFrench>(|_action, cx| {
+                    cx.update_global::<I18nState, _>(|state, _cx| {
+                        state.set_language(Language::French);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetLanguageGerman>(|_action, cx| {
+                    cx.update_global::<I18nState, _>(|state, _cx| {
+                        state.set_language(Language::German);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetLanguageSpanish>(|_action, cx| {
+                    cx.update_global::<I18nState, _>(|state, _cx| {
+                        state.set_language(Language::Spanish);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetLanguageJapanese>(|_action, cx| {
+                    cx.update_global::<I18nState, _>(|state, _cx| {
+                        state.set_language(Language::Japanese);
+                    });
+                    cx.refresh_windows();
+                });
+            }
+
+            // Build menu bar
+            let menus = Self::build_menus(&config_clone);
+            cx.set_menus(menus);
+
+            // Bind keyboard shortcuts
             cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+
+            if config_clone.with_theme {
+                cx.bind_keys([KeyBinding::new("cmd-t", ToggleTheme, None)]);
+            }
 
             // Create window
             let bounds = Bounds::centered(
@@ -199,6 +329,50 @@ impl MiniApp {
 
             cx.activate(true);
         });
+    }
+
+    /// Build the menu bar based on configuration
+    fn build_menus(config: &MiniAppConfig) -> Vec<Menu> {
+        let mut menus = Vec::new();
+
+        // App menu with Quit
+        let quit_label: SharedString = format!("Quit {}", config.app_name).into();
+        menus.push(Menu {
+            name: config.app_name.clone(),
+            items: vec![MenuItem::action(quit_label, Quit)],
+        });
+
+        // View menu with Theme submenu if enabled
+        if config.with_theme {
+            menus.push(Menu {
+                name: "View".into(),
+                items: vec![MenuItem::submenu(Menu {
+                    name: "Theme".into(),
+                    items: vec![
+                        MenuItem::action("Dark", SetThemeDark),
+                        MenuItem::action("Light", SetThemeLight),
+                        MenuItem::separator(),
+                        MenuItem::action("Toggle Theme  Cmd+T", ToggleTheme),
+                    ],
+                })],
+            });
+        }
+
+        // Language menu if i18n enabled
+        if config.with_i18n {
+            menus.push(Menu {
+                name: "Language".into(),
+                items: vec![
+                    MenuItem::action("English", SetLanguageEnglish),
+                    MenuItem::action("Francais", SetLanguageFrench),
+                    MenuItem::action("Deutsch", SetLanguageGerman),
+                    MenuItem::action("Espanol", SetLanguageSpanish),
+                    MenuItem::action("Nihongo", SetLanguageJapanese),
+                ],
+            });
+        }
+
+        menus
     }
 
     /// Run a MiniApp with default configuration
@@ -256,5 +430,17 @@ mod tests {
         assert_eq!(config.width, 1000.0);
         assert_eq!(config.height, 600.0);
         assert_eq!(config.app_name.as_ref(), "My Demo App");
+    }
+
+    #[test]
+    fn test_config_with_theme() {
+        let config = MiniAppConfig::new("Test").with_theme(true);
+        assert!(config.with_theme);
+    }
+
+    #[test]
+    fn test_config_with_i18n() {
+        let config = MiniAppConfig::new("Test").with_i18n(true);
+        assert!(config.with_i18n);
     }
 }

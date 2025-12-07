@@ -2,6 +2,7 @@
 //!
 //! Contextual information displayed on hover.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -49,19 +50,19 @@ impl Tooltip {
         self
     }
 
-    /// Build the tooltip element (to be positioned by parent)
-    pub fn build(self) -> Div {
+    /// Build the tooltip element with theme (to be positioned by parent)
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let mut tooltip = div()
             .absolute()
             .px_2()
             .py_1()
-            .bg(rgb(0x1a1a1a))
+            .bg(theme.background)
             .border_1()
-            .border_color(rgb(0x3a3a3a))
+            .border_color(theme.border)
             .rounded(px(4.0))
             .shadow_lg()
             .text_xs()
-            .text_color(rgb(0xffffff))
+            .text_color(theme.text_primary)
             .whitespace_nowrap();
 
         // Position based on placement
@@ -84,11 +85,18 @@ impl Tooltip {
     }
 }
 
+impl RenderOnce for Tooltip {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for Tooltip {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }
 
@@ -124,23 +132,33 @@ impl WithTooltip {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let mut container = div().relative().child(self.child);
 
         if self.show_tooltip {
-            container =
-                container.child(Tooltip::new(self.tooltip).placement(self.placement).build());
+            container = container.child(
+                Tooltip::new(self.tooltip)
+                    .placement(self.placement)
+                    .build_with_theme(theme),
+            );
         }
 
         container
     }
 }
 
+impl RenderOnce for WithTooltip {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for WithTooltip {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

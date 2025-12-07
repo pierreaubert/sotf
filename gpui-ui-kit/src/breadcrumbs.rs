@@ -2,6 +2,7 @@
 //!
 //! Navigation breadcrumb trail.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -103,8 +104,8 @@ impl Breadcrumbs {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let mut container = div().flex().items_center().gap_2().text_sm();
 
         let last_idx = self.items.len().saturating_sub(1);
@@ -115,8 +116,11 @@ impl Breadcrumbs {
 
             // Separator (except for first item)
             if idx > 0 {
-                container =
-                    container.child(div().text_color(rgb(0x666666)).child(self.separator.char()));
+                container = container.child(
+                    div()
+                        .text_color(theme.text_muted)
+                        .child(self.separator.char()),
+                );
             }
 
             // Breadcrumb item
@@ -129,14 +133,15 @@ impl Breadcrumbs {
             if is_last {
                 // Current page - not clickable
                 crumb = crumb
-                    .text_color(rgb(0xffffff))
+                    .text_color(theme.text_primary)
                     .font_weight(FontWeight::MEDIUM);
             } else {
                 // Previous pages - clickable
+                let hover_color = theme.accent;
                 crumb = crumb
-                    .text_color(rgb(0x888888))
+                    .text_color(theme.text_muted)
                     .cursor_pointer()
-                    .hover(|s| s.text_color(rgb(0x007acc)));
+                    .hover(move |s| s.text_color(hover_color));
 
                 // Click handler
                 if let Some(ref handler) = self.on_click {
@@ -171,10 +176,17 @@ impl Default for Breadcrumbs {
     }
 }
 
+impl RenderOnce for Breadcrumbs {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for Breadcrumbs {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

@@ -2,6 +2,7 @@
 //!
 //! Provides a flexible button component with different visual styles.
 
+use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -254,8 +255,8 @@ impl Button {
 }
 
 impl RenderOnce for Button {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let theme = self.theme.unwrap_or_default();
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = self.theme.unwrap_or_else(|| ButtonTheme::from(&cx.theme()));
 
         // Handle selected state for Primary variant
         let (bg, bg_hover, text_color, border_color) = if self.selected {

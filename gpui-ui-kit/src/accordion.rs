@@ -2,6 +2,7 @@
 //!
 //! Collapsible content sections.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -25,6 +26,19 @@ impl Default for AccordionTheme {
             border: rgb(0x3a3a3a),
             title_color: rgb(0xffffff),
             indicator_color: rgb(0x888888),
+        }
+    }
+}
+
+impl From<&Theme> for AccordionTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            header_bg: theme.muted,
+            header_hover_bg: theme.surface_hover,
+            content_bg: theme.background,
+            border: theme.border,
+            title_color: theme.text_primary,
+            indicator_color: theme.text_muted,
         }
     }
 }
@@ -136,9 +150,9 @@ impl Accordion {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
-        let theme = self.theme.unwrap_or_default();
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &AccordionTheme) -> Div {
+        let theme = self.theme.clone().unwrap_or_else(|| theme.clone());
         let on_change = self.on_change.map(|h| std::rc::Rc::new(h));
 
         let mut container = div()
@@ -231,10 +245,18 @@ impl Default for Accordion {
     }
 }
 
+impl RenderOnce for Accordion {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let accordion_theme = AccordionTheme::from(&global_theme);
+        self.build_with_theme(&accordion_theme)
+    }
+}
+
 impl IntoElement for Accordion {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

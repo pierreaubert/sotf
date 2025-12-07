@@ -1,7 +1,15 @@
 //! Toggle/Switch component
 //!
-//! A toggle switch for boolean values.
+//! A toggle switch for boolean values with optional selection highlighting
+//! for plugin parameter editing.
+//!
+//! Features:
+//! - Click to toggle state
+//! - Space key to toggle when selected
+//! - Optional label
+//! - Two visual styles: Sliding (iOS-style) and Segmented ([OFF|ON])
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -51,13 +59,85 @@ impl ToggleSize {
     }
 }
 
-/// A toggle switch component
+/// Toggle visual style
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ToggleStyle {
+    /// iOS-style sliding toggle (default)
+    #[default]
+    Sliding,
+    /// Segmented [OFF | ON] style for audio plugins
+    Segmented,
+}
+
+/// Theme colors for toggle styling
+#[derive(Debug, Clone)]
+pub struct ToggleTheme {
+    /// Background when checked
+    pub checked_bg: Rgba,
+    /// Background when unchecked
+    pub unchecked_bg: Rgba,
+    /// Knob/thumb color
+    pub knob: Rgba,
+    /// Label text color
+    pub label: Rgba,
+    /// Selected state accent color
+    pub accent: Rgba,
+    /// Selected state background
+    pub accent_muted: Rgba,
+    /// Success color for ON state (segmented style)
+    pub success: Rgba,
+    /// Border color
+    pub border: Rgba,
+    /// Text on accent background
+    pub text_on_accent: Rgba,
+    /// Muted text color
+    pub text_muted: Rgba,
+}
+
+impl Default for ToggleTheme {
+    fn default() -> Self {
+        Self {
+            checked_bg: rgba(0x007accff),
+            unchecked_bg: rgba(0x3a3a3aff),
+            knob: rgba(0xffffffff),
+            label: rgba(0xccccccff),
+            accent: rgba(0x007accff),
+            accent_muted: rgba(0x007acc33),
+            success: rgba(0x22c55eff),
+            border: rgba(0x3a3a3aff),
+            text_on_accent: rgba(0xffffffff),
+            text_muted: rgba(0x888888ff),
+        }
+    }
+}
+
+impl From<&Theme> for ToggleTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            checked_bg: theme.accent,
+            unchecked_bg: theme.border,
+            knob: theme.text_primary,
+            label: theme.text_secondary,
+            accent: theme.accent,
+            accent_muted: theme.accent_muted,
+            success: theme.success,
+            border: theme.border,
+            text_on_accent: theme.text_primary,
+            text_muted: theme.text_muted,
+        }
+    }
+}
+
+/// A toggle switch component with optional selection highlighting
 pub struct Toggle {
     id: ElementId,
     checked: bool,
     label: Option<SharedString>,
     size: ToggleSize,
+    style: ToggleStyle,
     disabled: bool,
+    selected: bool,
+    theme: Option<ToggleTheme>,
     on_change: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 }
 
@@ -69,7 +149,10 @@ impl Toggle {
             checked: false,
             label: None,
             size: ToggleSize::default(),
+            style: ToggleStyle::default(),
             disabled: false,
+            selected: false,
+            theme: None,
             on_change: None,
         }
     }
@@ -92,9 +175,27 @@ impl Toggle {
         self
     }
 
+    /// Set visual style
+    pub fn style(mut self, style: ToggleStyle) -> Self {
+        self.style = style;
+        self
+    }
+
     /// Set disabled state
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Set selected state (for plugin parameter editing)
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// Set theme colors
+    pub fn theme(mut self, theme: ToggleTheme) -> Self {
+        self.theme = Some(theme);
         self
     }
 
@@ -104,18 +205,29 @@ impl Toggle {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Stateful<Div> {
+    /// Build into element with theme
+    pub fn build_with_theme(self, global_theme: &ToggleTheme) -> Stateful<Div> {
+        let theme = self.theme.clone().unwrap_or_else(|| global_theme.clone());
+        let style = self.style;
+
+        match style {
+            ToggleStyle::Sliding => self.build_sliding(&theme),
+            ToggleStyle::Segmented => self.build_segmented(&theme),
+        }
+    }
+
+    fn build_sliding(self, theme: &ToggleTheme) -> Stateful<Div> {
         let track_width = self.size.track_width();
         let track_height = self.size.track_height();
         let knob_size = self.size.knob_size();
         let knob_offset = self.size.knob_offset();
         let checked = self.checked;
+        let selected = self.selected;
 
         let track_bg = if checked {
-            rgb(0x007acc)
+            theme.checked_bg
         } else {
-            rgb(0x3a3a3a)
+            theme.unchecked_bg
         };
 
         let knob_left = if checked {
@@ -130,6 +242,17 @@ impl Toggle {
             .items_center()
             .gap_2()
             .cursor_pointer();
+
+        // Apply selection styling
+        if selected {
+            container = container
+                .px_3()
+                .py_2()
+                .rounded_lg()
+                .bg(theme.accent_muted)
+                .border_l_4()
+                .border_color(theme.accent);
+        }
 
         if self.disabled {
             container = container.opacity(0.5).cursor_not_allowed();
@@ -151,29 +274,189 @@ impl Toggle {
             .w(knob_size)
             .h(knob_size)
             .rounded_full()
-            .bg(rgb(0xffffff))
+            .bg(theme.knob)
             .shadow_sm();
 
         track = track.child(knob);
-        container = container.child(track);
 
-        // Label
-        if let Some(label) = self.label {
-            let label_el = match self.size {
-                ToggleSize::Sm => div().text_xs(),
-                ToggleSize::Md => div().text_sm(),
-                ToggleSize::Lg => div(),
-            };
-            container = container.child(label_el.text_color(rgb(0xcccccc)).child(label));
+        // Label first if selected (for row layout)
+        if let Some(label) = &self.label {
+            if selected {
+                let label_el = match self.size {
+                    ToggleSize::Sm => div().text_xs(),
+                    ToggleSize::Md => div().text_sm(),
+                    ToggleSize::Lg => div(),
+                };
+                container = container.child(
+                    label_el
+                        .text_color(theme.label)
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(label.clone()),
+                );
+            }
         }
 
-        // Click handler
+        container = container.child(track);
+
+        // Label after track if not selected
+        if let Some(label) = &self.label {
+            if !selected {
+                let label_el = match self.size {
+                    ToggleSize::Sm => div().text_xs(),
+                    ToggleSize::Md => div().text_sm(),
+                    ToggleSize::Lg => div(),
+                };
+                container = container.child(label_el.text_color(theme.label).child(label.clone()));
+            }
+        }
+
+        // Click and keyboard handlers
         if !self.disabled {
             if let Some(handler) = self.on_change {
+                let handler_rc = std::rc::Rc::new(handler);
                 let new_checked = !checked;
+
+                // Click handler
+                let handler_click = handler_rc.clone();
                 container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    handler(new_checked, window, cx);
+                    handler_click(new_checked, window, cx);
                 });
+
+                // Keyboard handler (Space key when selected)
+                if selected {
+                    let handler_key = handler_rc.clone();
+                    container = container.on_key_down(move |event, window, cx| {
+                        if event.keystroke.key == "space" {
+                            handler_key(new_checked, window, cx);
+                        }
+                    });
+                }
+            }
+        }
+
+        container
+    }
+
+    fn build_segmented(self, theme: &ToggleTheme) -> Stateful<Div> {
+        let checked = self.checked;
+        let selected = self.selected;
+
+        let mut container = div()
+            .id(self.id)
+            .flex()
+            .items_center()
+            .justify_between()
+            .cursor_pointer();
+
+        // Apply selection styling
+        if selected {
+            container = container
+                .px_3()
+                .py_2()
+                .rounded_lg()
+                .bg(theme.accent_muted)
+                .border_l_4()
+                .border_color(theme.accent);
+        } else {
+            container = container.px_3().py_2().rounded_lg();
+        }
+
+        if self.disabled {
+            container = container.opacity(0.5).cursor_not_allowed();
+        }
+
+        // Label
+        if let Some(label) = &self.label {
+            let label_color = if selected {
+                rgba(0xffffffff) // text_primary
+            } else {
+                theme.label
+            };
+            let label_weight = if selected {
+                FontWeight::MEDIUM
+            } else {
+                FontWeight::NORMAL
+            };
+            container = container.child(
+                div()
+                    .text_sm()
+                    .text_color(label_color)
+                    .font_weight(label_weight)
+                    .child(label.clone()),
+            );
+        }
+
+        // Segmented switch: [OFF | ON]
+        let switch = div()
+            .flex()
+            .rounded_md()
+            .border_1()
+            .border_color(theme.border)
+            .overflow_hidden()
+            // OFF button
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .bg(if !checked {
+                        rgba(0x4a4a4aff) // surface_hover
+                    } else {
+                        rgba(0x2a2a2aff) // background
+                    })
+                    .text_color(if !checked {
+                        rgba(0xffffffff)
+                    } else {
+                        theme.text_muted
+                    })
+                    .child("OFF"),
+            )
+            // Separator
+            .child(div().w(px(1.0)).h_full().bg(theme.border))
+            // ON button
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .text_xs()
+                    .font_weight(FontWeight::BOLD)
+                    .bg(if checked {
+                        theme.success
+                    } else {
+                        rgba(0x2a2a2aff)
+                    })
+                    .text_color(if checked {
+                        theme.text_on_accent
+                    } else {
+                        theme.text_muted
+                    })
+                    .child("ON"),
+            );
+
+        container = container.child(switch);
+
+        // Click and keyboard handlers
+        if !self.disabled {
+            if let Some(handler) = self.on_change {
+                let handler_rc = std::rc::Rc::new(handler);
+                let new_checked = !checked;
+
+                // Click handler
+                let handler_click = handler_rc.clone();
+                container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                    handler_click(new_checked, window, cx);
+                });
+
+                // Keyboard handler (Space key when selected)
+                if selected {
+                    let handler_key = handler_rc.clone();
+                    container = container.on_key_down(move |event, window, cx| {
+                        if event.keystroke.key == "space" {
+                            handler_key(new_checked, window, cx);
+                        }
+                    });
+                }
             }
         }
 
@@ -181,10 +464,18 @@ impl Toggle {
     }
 }
 
+impl RenderOnce for Toggle {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let toggle_theme = ToggleTheme::from(&global_theme);
+        self.build_with_theme(&toggle_theme)
+    }
+}
+
 impl IntoElement for Toggle {
-    type Element = Stateful<Div>;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

@@ -2,6 +2,7 @@
 //!
 //! Progress bars and indicators.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -20,12 +21,12 @@ pub enum ProgressVariant {
 }
 
 impl ProgressVariant {
-    fn color(&self) -> Rgba {
+    fn color(&self, theme: &Theme) -> Rgba {
         match self {
-            ProgressVariant::Default => rgb(0x007acc),
-            ProgressVariant::Success => rgb(0x2da44e),
-            ProgressVariant::Warning => rgb(0xd29922),
-            ProgressVariant::Error => rgb(0xcc3333),
+            ProgressVariant::Default => theme.accent,
+            ProgressVariant::Success => theme.success,
+            ProgressVariant::Warning => theme.warning,
+            ProgressVariant::Error => theme.error,
         }
     }
 }
@@ -116,10 +117,10 @@ impl Progress {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let height = self.size.height();
-        let color = self.variant.color();
+        let color = self.variant.color(theme);
         let percentage = (self.value / self.max * 100.0).clamp(0.0, 100.0);
 
         let mut container = div().flex().flex_col().gap_1().w_full();
@@ -131,7 +132,7 @@ impl Progress {
                     .flex()
                     .justify_between()
                     .text_xs()
-                    .text_color(rgb(0xcccccc))
+                    .text_color(theme.text_secondary)
                     .child(format!("{:.0}%", percentage)),
             );
         }
@@ -140,7 +141,7 @@ impl Progress {
         let track = div()
             .w_full()
             .h(height)
-            .bg(rgb(0x2a2a2a))
+            .bg(theme.surface)
             .rounded_full()
             .overflow_hidden()
             .child(
@@ -157,11 +158,18 @@ impl Progress {
     }
 }
 
+impl RenderOnce for Progress {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for Progress {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }
 
@@ -218,12 +226,12 @@ impl CircularProgress {
         self
     }
 
-    /// Build into element
+    /// Build into element with theme
     /// Note: True circular progress requires canvas/SVG rendering.
     /// This is a simplified box-based representation.
-    pub fn build(self) -> Div {
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
         let percentage = (self.value / self.max * 100.0).clamp(0.0, 100.0);
-        let color = self.variant.color();
+        let color = self.variant.color(theme);
 
         let mut container = div()
             .flex()
@@ -233,7 +241,7 @@ impl CircularProgress {
             .h(self.size)
             .rounded_full()
             .border(self.thickness)
-            .border_color(rgb(0x2a2a2a))
+            .border_color(theme.surface)
             .relative();
 
         // Progress arc approximation (using border color)
@@ -248,7 +256,7 @@ impl CircularProgress {
                 div()
                     .text_xs()
                     .font_weight(FontWeight::BOLD)
-                    .text_color(rgb(0xcccccc))
+                    .text_color(theme.text_secondary)
                     .child(format!("{:.0}%", percentage)),
             );
         }
@@ -257,10 +265,17 @@ impl CircularProgress {
     }
 }
 
+impl RenderOnce for CircularProgress {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
+    }
+}
+
 impl IntoElement for CircularProgress {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

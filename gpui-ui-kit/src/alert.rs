@@ -2,8 +2,9 @@
 //!
 //! Contextual feedback messages.
 
+use crate::theme::{Theme, ThemeExt, ThemeVariant};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Component, *};
 
 /// Alert variant
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -20,22 +21,30 @@ pub enum AlertVariant {
 }
 
 impl AlertVariant {
-    fn colors(&self) -> (Rgba, Rgba, Rgba) {
+    fn colors(&self, theme: &Theme) -> (Rgba, Rgba, Rgba) {
         // Returns (background, border, icon_color)
-        match self {
-            AlertVariant::Info => (rgb(0x1a2a3a), rgb(0x007acc), rgb(0x007acc)),
-            AlertVariant::Success => (rgb(0x1a3a1a), rgb(0x2da44e), rgb(0x2da44e)),
-            AlertVariant::Warning => (rgb(0x3a3a1a), rgb(0xd29922), rgb(0xd29922)),
-            AlertVariant::Error => (rgb(0x3a1a1a), rgb(0xcc3333), rgb(0xcc3333)),
+        match theme.variant {
+            ThemeVariant::Dark => match self {
+                AlertVariant::Info => (rgb(0x1a2a3a), theme.info, theme.info),
+                AlertVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
+                AlertVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),
+                AlertVariant::Error => (rgb(0x3a1a1a), theme.error, theme.error),
+            },
+            ThemeVariant::Light => match self {
+                AlertVariant::Info => (rgb(0xe0f2fe), theme.info, theme.info),
+                AlertVariant::Success => (rgb(0xdcfce7), theme.success, theme.success),
+                AlertVariant::Warning => (rgb(0xfef3c7), theme.warning, theme.warning),
+                AlertVariant::Error => (rgb(0xfee2e2), theme.error, theme.error),
+            },
         }
     }
 
     fn icon(&self) -> &'static str {
         match self {
-            AlertVariant::Info => "ℹ",
-            AlertVariant::Success => "✓",
-            AlertVariant::Warning => "⚠",
-            AlertVariant::Error => "✕",
+            AlertVariant::Info => "i",
+            AlertVariant::Success => "v",
+            AlertVariant::Warning => "!",
+            AlertVariant::Error => "x",
         }
     }
 }
@@ -95,9 +104,9 @@ impl Alert {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Stateful<Div> {
-        let (bg, border, icon_color) = self.variant.colors();
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Stateful<Div> {
+        let (bg, border, icon_color) = self.variant.colors(theme);
         let default_icon = self.variant.icon();
 
         let mut alert = div()
@@ -123,7 +132,7 @@ impl Alert {
                 div()
                     .text_sm()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(0xffffff))
+                    .text_color(theme.text_primary)
                     .child(title),
             );
         }
@@ -131,7 +140,7 @@ impl Alert {
         content = content.child(
             div()
                 .text_sm()
-                .text_color(rgb(0xcccccc))
+                .text_color(theme.text_secondary)
                 .child(self.message),
         );
 
@@ -139,12 +148,14 @@ impl Alert {
 
         // Close button
         if self.closeable {
+            let text_muted = theme.text_muted;
+            let text_primary = theme.text_primary;
             let mut close_btn = div()
                 .id("alert-close")
                 .text_sm()
-                .text_color(rgb(0x888888))
+                .text_color(text_muted)
                 .cursor_pointer()
-                .hover(|s| s.text_color(rgb(0xffffff)));
+                .hover(move |s| s.text_color(text_primary));
 
             if let Some(handler) = self.on_close {
                 let handler_ptr: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
@@ -155,7 +166,7 @@ impl Alert {
                 std::mem::forget(handler);
             }
 
-            alert = alert.child(close_btn.child("×"));
+            alert = alert.child(close_btn.child("x"));
         }
 
         alert
@@ -163,14 +174,22 @@ impl Alert {
 }
 
 impl IntoElement for Alert {
-    type Element = Stateful<Div>;
+    type Element = Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        Component::new(self)
+    }
+}
+
+impl RenderOnce for Alert {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
     }
 }
 
 /// A simple inline alert (no close button)
+#[derive(IntoElement)]
 pub struct InlineAlert {
     message: SharedString,
     variant: AlertVariant,
@@ -191,9 +210,9 @@ impl InlineAlert {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
-        let (_, _border, icon_color) = self.variant.colors();
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &Theme) -> Div {
+        let (_, _border, icon_color) = self.variant.colors(theme);
         let icon = self.variant.icon();
 
         div()
@@ -207,10 +226,9 @@ impl InlineAlert {
     }
 }
 
-impl IntoElement for InlineAlert {
-    type Element = Div;
-
-    fn into_element(self) -> Self::Element {
-        self.build()
+impl RenderOnce for InlineAlert {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = cx.theme();
+        self.build_with_theme(&theme)
     }
 }

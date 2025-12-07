@@ -1,5 +1,14 @@
 //! Slider component for selecting numeric values within a range
+//!
+//! Features:
+//! - Drag support: click and drag the thumb or anywhere on the track
+//! - Scroll wheel: scroll up/down to adjust value
+//! - Keyboard navigation (when focused):
+//!   - Arrow Up/Right: increase value
+//!   - Arrow Down/Left: decrease value
+//! - Value snapping with step parameter
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::*;
 
 /// Theme colors for slider styling
@@ -11,6 +20,10 @@ pub struct SliderTheme {
     pub fill: Rgba,
     /// Thumb/handle color
     pub thumb: Rgba,
+    /// Thumb hover color
+    pub thumb_hover: Rgba,
+    /// Thumb active (dragging) color
+    pub thumb_active: Rgba,
     /// Label text color
     pub label: Rgba,
     /// Value text color
@@ -23,8 +36,24 @@ impl Default for SliderTheme {
             track: rgba(0x3e3e3eff),
             fill: rgba(0x007accff),
             thumb: rgba(0xffffffff),
+            thumb_hover: rgba(0xe0e0e0ff),
+            thumb_active: rgba(0x007accff),
             label: rgba(0xccccccff),
             value: rgba(0x999999ff),
+        }
+    }
+}
+
+impl From<&Theme> for SliderTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            track: theme.border,
+            fill: theme.accent,
+            thumb: theme.text_primary,
+            thumb_hover: theme.text_secondary,
+            thumb_active: theme.accent,
+            label: theme.text_secondary,
+            value: theme.text_muted,
         }
     }
 }
@@ -57,6 +86,11 @@ impl SliderSize {
 }
 
 /// A slider component for selecting numeric values
+///
+/// Supports:
+/// - Mouse drag on track or thumb
+/// - Scroll wheel adjustment
+/// - Keyboard arrow keys (when focused)
 #[derive(IntoElement)]
 pub struct Slider {
     id: ElementId,
@@ -70,6 +104,7 @@ pub struct Slider {
     label: Option<SharedString>,
     width: f32,
     on_change: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
+    on_drag_start: Option<Box<dyn Fn(f32, f32, &mut Window, &mut App) + 'static>>,
     track_color: Option<Rgba>,
     fill_color: Option<Rgba>,
     thumb_color: Option<Rgba>,
@@ -91,6 +126,7 @@ impl Slider {
             label: None,
             width: 200.0,
             on_change: None,
+            on_drag_start: None,
             track_color: None,
             fill_color: None,
             thumb_color: None,
@@ -158,6 +194,28 @@ impl Slider {
         self
     }
 
+    /// Set drag start handler (called on mouse down with x position and current value)
+    ///
+    /// Use this to track dragging state in your app. When dragging, you should
+    /// calculate the new value based on mouse position and call the on_change handler.
+    pub fn on_drag_start(
+        mut self,
+        handler: impl Fn(f32, f32, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_drag_start = Some(Box::new(handler));
+        self
+    }
+
+    /// Helper to snap a value to the step size
+    fn snap_value(&self, value: f32) -> f32 {
+        if let Some(step) = self.step {
+            let steps = ((value - self.min) / step).round();
+            (self.min + steps * step).clamp(self.min, self.max)
+        } else {
+            value.clamp(self.min, self.max)
+        }
+    }
+
     /// Set the track color
     pub fn track_color(mut self, color: impl Into<Rgba>) -> Self {
         self.track_color = Some(color.into());
@@ -184,17 +242,19 @@ impl Slider {
 }
 
 impl RenderOnce for Slider {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let track_height = self.size.track_height();
         let thumb_size = self.size.thumb_size();
         let width = self.width;
 
-        // Use theme colors if available, then individual colors, then defaults
-        let default_theme = SliderTheme::default();
-        let theme = self.theme.as_ref().unwrap_or(&default_theme);
+        // Use theme colors if available, then individual colors, then global theme
+        let global_theme = cx.theme();
+        let global_slider_theme = SliderTheme::from(&global_theme);
+        let theme = self.theme.as_ref().unwrap_or(&global_slider_theme);
         let track_color = self.track_color.unwrap_or(theme.track);
         let fill_color = self.fill_color.unwrap_or(theme.fill);
         let thumb_color = self.thumb_color.unwrap_or(theme.thumb);
+        let thumb_hover = theme.thumb_hover;
         let label_color = theme.label;
         let value_color = theme.value;
 
@@ -212,6 +272,7 @@ impl RenderOnce for Slider {
         let max = self.max;
         let step = self.step;
         let disabled = self.disabled;
+        let current_value = self.value;
 
         let mut container = div().flex().flex_col().gap_1();
 
@@ -242,8 +303,10 @@ impl RenderOnce for Slider {
             container = container.child(label_row);
         }
 
+        // Wrap on_change in Rc for sharing between handlers
+        let on_change_rc = self.on_change.map(|h| std::rc::Rc::new(h));
+
         // Slider track
-        let on_change = self.on_change;
         let mut track = div()
             .id(self.id)
             .w(px(width))
@@ -275,9 +338,9 @@ impl RenderOnce for Slider {
                         fill_color
                     }),
             )
-            // Thumb
-            .child(
-                div()
+            // Thumb with hover effect
+            .child({
+                let mut thumb = div()
                     .absolute()
                     .left(px(thumb_left.max(0.0)))
                     .w(px(thumb_size))
@@ -290,43 +353,96 @@ impl RenderOnce for Slider {
                     } else {
                         fill_color
                     })
-                    .shadow_sm(),
-            );
+                    .shadow_sm();
+                if !disabled {
+                    thumb = thumb.hover(move |s| s.bg(thumb_hover));
+                }
+                thumb
+            });
 
         // Apply cursor style
         if disabled {
             track = track.cursor_not_allowed();
         } else {
-            track = track.cursor_pointer();
+            track = track.cursor_ew_resize();
         }
 
-        // Add click handling if not disabled and has callback
-        // Use Rc to share handler between potential multiple calls
+        // Event handlers (only if not disabled)
         if !disabled {
-            if let Some(handler) = on_change {
-                let handler = std::rc::Rc::new(handler);
-
-                // Store current value in closure
-                let current_value = self.value;
-
+            // Mouse down - start drag or handle click
+            if let Some(on_drag_start) = self.on_drag_start {
+                track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    on_drag_start(event.position.x.into(), current_value, window, cx);
+                });
+            } else if let Some(ref handler_rc) = on_change_rc {
+                // If no drag handler, use click to set value based on position
+                let handler_click = handler_rc.clone();
                 track = track.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                    // Since we can't reliably get element bounds in GPUI's on_mouse_down,
-                    // we implement a simple step-based behavior:
-                    // - Each click steps through values in the step direction
-                    // - The step size is determined by the step parameter or a default
+                    // Simple step behavior when no drag handler
                     let step_amount = step.unwrap_or((max - min) / 10.0);
-
-                    // Cycle through: increment by step, wrap at max
                     let new_value = current_value + step_amount;
                     let snapped = if new_value > max {
-                        min // Wrap around to min when exceeding max
+                        min
                     } else if let Some(step) = step {
                         let steps = ((new_value - min) / step).round();
                         (min + steps * step).clamp(min, max)
                     } else {
                         new_value.clamp(min, max)
                     };
-                    handler(snapped, window, cx);
+                    handler_click(snapped, window, cx);
+                });
+            }
+
+            // Scroll wheel - adjust value
+            if let Some(ref handler_rc) = on_change_rc {
+                let handler_scroll = handler_rc.clone();
+                track = track.on_scroll_wheel(move |event, window, cx| {
+                    // Get scroll delta - positive y means scrolling up
+                    let delta = event.delta.pixel_delta(px(20.0)).y;
+                    let scroll_up = delta < px(0.0);
+
+                    // Calculate step amount (5% of range or step size)
+                    let step_amount = step.unwrap_or((max - min) * 0.05);
+
+                    // Increase on scroll up, decrease on scroll down
+                    let change = if scroll_up { step_amount } else { -step_amount };
+                    let new_value = current_value + change;
+
+                    // Snap to step if defined
+                    let snapped = if let Some(step) = step {
+                        let steps = ((new_value - min) / step).round();
+                        (min + steps * step).clamp(min, max)
+                    } else {
+                        new_value.clamp(min, max)
+                    };
+
+                    handler_scroll(snapped, window, cx);
+                });
+            }
+
+            // Keyboard navigation
+            if let Some(handler_rc) = on_change_rc {
+                let handler_key = handler_rc.clone();
+                track = track.on_key_down(move |event, window, cx| {
+                    let step_amount = step.unwrap_or((max - min) * 0.05);
+
+                    let new_value = match event.keystroke.key.as_str() {
+                        "up" | "right" => Some(current_value + step_amount),
+                        "down" | "left" => Some(current_value - step_amount),
+                        "home" => Some(min),
+                        "end" => Some(max),
+                        _ => None,
+                    };
+
+                    if let Some(value) = new_value {
+                        let snapped = if let Some(step) = step {
+                            let steps = ((value - min) / step).round();
+                            (min + steps * step).clamp(min, max)
+                        } else {
+                            value.clamp(min, max)
+                        };
+                        handler_key(snapped, window, cx);
+                    }
                 });
             }
         }

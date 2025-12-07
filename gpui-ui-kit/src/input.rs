@@ -2,8 +2,60 @@
 //!
 //! Text input field with optional label, placeholder, and validation.
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
+
+/// Theme colors for input styling
+#[derive(Debug, Clone)]
+pub struct InputTheme {
+    /// Background color
+    pub background: Rgba,
+    /// Filled variant background
+    pub filled_bg: Rgba,
+    /// Text color
+    pub text: Rgba,
+    /// Placeholder color
+    pub placeholder: Rgba,
+    /// Label color
+    pub label: Rgba,
+    /// Border color
+    pub border: Rgba,
+    /// Border hover color
+    pub border_hover: Rgba,
+    /// Error color
+    pub error: Rgba,
+}
+
+impl Default for InputTheme {
+    fn default() -> Self {
+        Self {
+            background: rgb(0x1e1e1e),
+            filled_bg: rgb(0x2a2a2a),
+            text: rgb(0xffffff),
+            placeholder: rgb(0x666666),
+            label: rgb(0xcccccc),
+            border: rgb(0x3a3a3a),
+            border_hover: rgb(0x007acc),
+            error: rgb(0xcc3333),
+        }
+    }
+}
+
+impl From<&Theme> for InputTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            background: theme.background,
+            filled_bg: theme.surface,
+            text: theme.text_primary,
+            placeholder: theme.text_muted,
+            label: theme.text_secondary,
+            border: theme.border,
+            border_hover: theme.accent,
+            error: theme.error,
+        }
+    }
+}
 
 /// Input size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -154,8 +206,8 @@ impl Input {
         self
     }
 
-    /// Build into element
-    pub fn build(self) -> Div {
+    /// Build into element with theme
+    pub fn build_with_theme(self, theme: &InputTheme) -> Div {
         let (py, _text_size) = match self.size {
             InputSize::Sm => (px(4.0), "text_xs"),
             InputSize::Md => (px(8.0), "text_sm"),
@@ -163,11 +215,10 @@ impl Input {
         };
 
         let has_error = self.error.is_some();
-        let default_border = rgb(0x3a3a3a);
         let border_color = if has_error {
-            rgb(0xcc3333)
+            theme.error
         } else {
-            self.border_color.unwrap_or(default_border)
+            self.border_color.unwrap_or(theme.border)
         };
 
         let mut container = div().flex().flex_col().gap_1();
@@ -177,7 +228,7 @@ impl Input {
             container = container.child(
                 div()
                     .text_sm()
-                    .text_color(rgb(0xcccccc))
+                    .text_color(theme.label)
                     .font_weight(FontWeight::MEDIUM)
                     .child(label),
             );
@@ -198,11 +249,11 @@ impl Input {
         // Apply variant styling
         match self.variant {
             InputVariant::Default => {
-                input_wrapper = input_wrapper.bg(self.bg_color.unwrap_or(rgb(0x1e1e1e)));
+                input_wrapper = input_wrapper.bg(self.bg_color.unwrap_or(theme.background));
             }
             InputVariant::Filled => {
                 input_wrapper = input_wrapper
-                    .bg(self.bg_color.unwrap_or(rgb(0x2a2a2a)))
+                    .bg(self.bg_color.unwrap_or(theme.filled_bg))
                     .border_color(rgba(0x00000000));
             }
             InputVariant::Flushed => {
@@ -215,14 +266,15 @@ impl Input {
             }
         }
 
+        let border_hover = theme.border_hover;
         if self.disabled {
             input_wrapper = input_wrapper.opacity(0.5).cursor_not_allowed();
         } else if !self.readonly {
-            input_wrapper = input_wrapper.hover(|s| s.border_color(rgb(0x007acc)));
+            input_wrapper = input_wrapper.hover(move |s| s.border_color(border_hover));
         }
 
-        let placeholder_color = self.placeholder_color.unwrap_or(rgb(0x666666));
-        let text_color = self.text_color.unwrap_or(rgb(0xffffff));
+        let placeholder_color = self.placeholder_color.unwrap_or(theme.placeholder);
+        let text_color = self.text_color.unwrap_or(theme.text);
 
         // Left icon
         if let Some(icon) = self.icon_left {
@@ -254,24 +306,32 @@ impl Input {
 
         // Right icon
         if let Some(icon) = self.icon_right {
-            input_wrapper = input_wrapper.child(div().text_color(rgb(0x666666)).child(icon));
+            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon));
         }
 
         container = container.child(input_wrapper);
 
         // Error message
         if let Some(error) = self.error {
-            container = container.child(div().text_xs().text_color(rgb(0xcc3333)).child(error));
+            container = container.child(div().text_xs().text_color(theme.error).child(error));
         }
 
         container
     }
 }
 
+impl RenderOnce for Input {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let input_theme = InputTheme::from(&global_theme);
+        self.build_with_theme(&input_theme)
+    }
+}
+
 impl IntoElement for Input {
-    type Element = Div;
+    type Element = gpui::Component<Self>;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        gpui::Component::new(self)
     }
 }

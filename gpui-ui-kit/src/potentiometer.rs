@@ -1,165 +1,722 @@
+//! Potentiometer (rotary knob) component for audio plugin parameters
+//!
+//! A circular knob with:
+//! - Selection highlighting for plugin parameter editing
+//! - Drag support with vertical mouse movement
+//! - Scroll wheel adjustment
+//! - Double-click to reset to default
+//! - Keyboard navigation when selected:
+//!   - Arrow Up/Right: increase value by 5%
+//!   - Arrow Down/Left: decrease value by 5%
+//!   - Escape: reset to default
+//! - Value display with units
+//! - Keyboard shortcut hints
+//! - Rotating indicator dot
+//! - Tick marks with major (labeled) and minor (unlabeled) ticks
+
+use crate::theme::{Theme, ThemeExt};
+use gpui::prelude::*;
 use gpui::*;
 
-/// A circular potentiometer knob with fill indicator.
-#[derive(IntoElement)]
-pub struct Potentiometer {
-    value: f32,
-    label: SharedString,
-    size: Pixels,
-    muted: bool,
-    accent_color: Hsla,
-    muted_color: Hsla,
-    bg_color: Hsla,
-    text_color: Hsla,
-    on_change: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
+/// Theme colors for potentiometer styling
+#[derive(Debug, Clone)]
+pub struct PotentiometerTheme {
+    /// Background color of the container
+    pub surface: Rgba,
+    /// Surface hover color
+    pub surface_hover: Rgba,
+    /// Knob background color
+    pub knob_bg: Rgba,
+    /// Accent color
+    pub accent: Rgba,
+    /// Accent muted (for selection background)
+    pub accent_muted: Rgba,
+    /// Border color
+    pub border: Rgba,
+    /// Label text color
+    pub text_secondary: Rgba,
+    /// Value text color
+    pub text_primary: Rgba,
+    /// Muted text color (for indicator when not selected)
+    pub text_muted: Rgba,
+    /// Text on accent background
+    pub text_on_accent: Rgba,
+    /// Background secondary (for value badge)
+    pub background_secondary: Rgba,
 }
 
-impl Potentiometer {
-    pub fn new() -> Self {
+impl Default for PotentiometerTheme {
+    fn default() -> Self {
         Self {
-            value: 0.0,
-            label: "".into(),
-            size: px(40.0),
-            muted: false,
-            accent_color: hsla(0.0, 0.0, 0.5, 1.0),
-            muted_color: hsla(0.0, 0.0, 0.3, 1.0),
-            bg_color: hsla(0.0, 0.0, 0.1, 1.0),
-            text_color: hsla(0.0, 0.0, 0.9, 1.0),
-            on_change: None,
+            surface: rgba(0x2a2a2aff),
+            surface_hover: rgba(0x3a3a3aff),
+            knob_bg: rgba(0x1a1a1aff),
+            accent: rgba(0x007accff),
+            accent_muted: rgba(0x007acc33),
+            border: rgba(0x3a3a3aff),
+            text_secondary: rgba(0xaaaaaaff),
+            text_primary: rgba(0xffffffff),
+            text_muted: rgba(0x888888ff),
+            text_on_accent: rgba(0xffffffff),
+            background_secondary: rgba(0x2a2a2aff),
+        }
+    }
+}
+
+impl From<&Theme> for PotentiometerTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            surface: theme.surface,
+            surface_hover: theme.surface_hover,
+            knob_bg: theme.muted,
+            accent: theme.accent,
+            accent_muted: Rgba {
+                r: theme.accent.r,
+                g: theme.accent.g,
+                b: theme.accent.b,
+                a: 0.2,
+            },
+            border: theme.border,
+            text_secondary: theme.text_secondary,
+            text_primary: theme.text_primary,
+            text_muted: theme.text_muted,
+            text_on_accent: theme.text_primary,
+            background_secondary: theme.surface,
+        }
+    }
+}
+
+/// Potentiometer size variants
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PotentiometerSize {
+    /// Compact size
+    Sm,
+    /// Default size
+    #[default]
+    Md,
+    /// Large size
+    Lg,
+}
+
+impl PotentiometerSize {
+    fn knob_size(&self) -> f32 {
+        match self {
+            Self::Sm => 40.0,
+            Self::Md => 60.0,
+            Self::Lg => 80.0,
         }
     }
 
-    pub fn value(mut self, value: f32) -> Self {
+    fn indicator_radius(&self) -> f32 {
+        match self {
+            Self::Sm => 14.0,
+            Self::Md => 20.0,
+            Self::Lg => 26.0,
+        }
+    }
+
+    fn min_width(&self) -> f32 {
+        match self {
+            Self::Sm => 80.0,
+            Self::Md => 100.0,
+            Self::Lg => 120.0,
+        }
+    }
+}
+
+/// A potentiometer (rotary knob) component for audio plugin parameters
+#[derive(IntoElement)]
+pub struct Potentiometer {
+    id: ElementId,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: SharedString,
+    label: Option<SharedString>,
+    shortcut_key: Option<char>,
+    size: PotentiometerSize,
+    selected: bool,
+    disabled: bool,
+    theme: Option<PotentiometerTheme>,
+    on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
+    on_drag_start: Option<Box<dyn Fn(f32, f64, &mut Window, &mut App) + 'static>>,
+    on_select: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    on_reset: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+}
+
+impl Potentiometer {
+    /// Create a new potentiometer with the given ID
+    pub fn new(id: impl Into<ElementId>) -> Self {
+        Self {
+            id: id.into(),
+            value: 0.0,
+            min: 0.0,
+            max: 100.0,
+            unit: "".into(),
+            label: None,
+            shortcut_key: None,
+            size: PotentiometerSize::default(),
+            selected: false,
+            disabled: false,
+            theme: None,
+            on_change: None,
+            on_drag_start: None,
+            on_select: None,
+            on_reset: None,
+        }
+    }
+
+    /// Set the current value (clamped to min/max during render)
+    pub fn value(mut self, value: f64) -> Self {
         self.value = value;
         self
     }
 
+    /// Set the minimum value
+    pub fn min(mut self, min: f64) -> Self {
+        self.min = min;
+        self
+    }
+
+    /// Set the maximum value
+    pub fn max(mut self, max: f64) -> Self {
+        self.max = max;
+        self
+    }
+
+    /// Set the unit label (e.g., "dB", "Hz", "%", ":1")
+    pub fn unit(mut self, unit: impl Into<SharedString>) -> Self {
+        self.unit = unit.into();
+        self
+    }
+
+    /// Set the display label
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
-        self.label = label.into();
+        self.label = Some(label.into());
         self
     }
 
-    pub fn size(mut self, size: impl Into<Pixels>) -> Self {
-        self.size = size.into();
+    /// Set the keyboard shortcut key for the label
+    pub fn shortcut_key(mut self, key: char) -> Self {
+        self.shortcut_key = Some(key);
         self
     }
 
-    pub fn muted(mut self, muted: bool) -> Self {
-        self.muted = muted;
+    /// Set the potentiometer size
+    pub fn size(mut self, size: PotentiometerSize) -> Self {
+        self.size = size;
         self
     }
 
-    pub fn accent_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.accent_color = color.into();
+    /// Set selected state (for plugin parameter editing)
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
         self
     }
 
-    pub fn muted_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.muted_color = color.into();
+    /// Set disabled state
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
         self
     }
 
-    pub fn bg_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.bg_color = color.into();
+    /// Set theme colors
+    pub fn theme(mut self, theme: PotentiometerTheme) -> Self {
+        self.theme = Some(theme);
         self
     }
 
-    pub fn text_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.text_color = color.into();
-        self
-    }
-
-    pub fn on_change(mut self, handler: impl Fn(f32, &mut Window, &mut App) + 'static) -> Self {
+    /// Set value change handler (called on scroll wheel and mouse click)
+    ///
+    /// When only `on_change` is provided (without `on_select` or `on_drag_start`),
+    /// clicking the potentiometer will increment the value by 10% and wrap around at max.
+    /// Scrolling will adjust the value by 5% increments.
+    pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
         self
+    }
+
+    /// Set drag start handler (called on mouse down with y position and current value)
+    pub fn on_drag_start(
+        mut self,
+        handler: impl Fn(f32, f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_drag_start = Some(Box::new(handler));
+        self
+    }
+
+    /// Set select handler (called on click to select this parameter)
+    pub fn on_select(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_select = Some(Box::new(handler));
+        self
+    }
+
+    /// Set reset handler (called on double-click)
+    pub fn on_reset(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_reset = Some(Box::new(handler));
+        self
+    }
+
+    /// Format the label with keyboard shortcut indicator
+    fn format_label(&self) -> String {
+        let label = self
+            .label
+            .as_ref()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+        match self.shortcut_key {
+            Some(key) => {
+                let key_lower = key.to_ascii_lowercase();
+                let label_lower = label.to_lowercase();
+                if let Some(pos) = label_lower.find(key_lower) {
+                    format!(
+                        "{}[{}]{}",
+                        &label[..pos],
+                        label.chars().nth(pos).unwrap().to_ascii_uppercase(),
+                        &label[pos + 1..]
+                    )
+                } else {
+                    format!("[{}] {}", key.to_ascii_uppercase(), label)
+                }
+            }
+            None => label,
+        }
+    }
+
+    /// Format the value display
+    fn format_value(&self) -> String {
+        let value = self.value.clamp(self.min, self.max);
+        let unit = self.unit.to_string();
+        if unit == ":1" {
+            format!("{:.1}{}", value, unit)
+        } else if unit == "%" {
+            // Compute percentage relative to the range (min=0%, max=100%)
+            let pct = if self.max > self.min {
+                ((value - self.min) / (self.max - self.min)) * 100.0
+            } else {
+                0.0
+            };
+            format!("{:.0}{}", pct, unit)
+        } else if unit == "Hz" {
+            format!("{:.0} {}", value, unit)
+        } else if unit.is_empty() {
+            format!("{:.1}", value)
+        } else {
+            format!("{:.1} {}", value, unit)
+        }
     }
 }
 
 impl RenderOnce for Potentiometer {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let display_value = if self.muted {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let default_theme = PotentiometerTheme::from(&global_theme);
+        let theme = self.theme.clone().unwrap_or(default_theme);
+        let selected = self.selected;
+        let disabled = self.disabled;
+
+        let normalized = if self.max > self.min {
+            ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32
+        } else {
             0.0
-        } else {
-            self.value.clamp(0.0, 1.0)
-        };
-        let ring_color = if self.muted {
-            self.muted_color
-        } else {
-            self.accent_color
-        };
-        let text_color_final = if self.muted {
-            self.muted_color
-        } else {
-            self.text_color
         };
 
-        // Make fill color slightly lighter than the background
-        let fill_color = if self.muted {
-            self.muted_color
+        // Calculate angle for indicator with dead zone at 6 o'clock (bottom)
+        // In screen coordinates (y-down): 0° = 3 o'clock, 90° = 6 o'clock, 180° = 9 o'clock, 270° = 12 o'clock
+        // Start at 135° (7:30 position) and sweep clockwise 270° to 45° (4:30 position)
+        let start_rad: f32 = std::f32::consts::PI * 0.75; // 135° = 3π/4 (7:30)
+        let end_rad: f32 = std::f32::consts::PI * 2.25; // 405° = 45° + 360° (4:30, going through top)
+        let angle_rad = start_rad + (end_rad - start_rad) * normalized;
+
+        let knob_size = self.size.knob_size();
+        let radius = self.size.indicator_radius();
+        let center = knob_size / 2.0;
+        let indicator_size = if selected { 6.0 } else { 4.0 };
+
+        let x = center + radius * angle_rad.cos() - (indicator_size / 2.0);
+        let y = center + radius * angle_rad.sin() - (indicator_size / 2.0);
+
+        let formatted_label = self.format_label();
+        let value_str = self.format_value();
+        let min_width = self.size.min_width();
+
+        // Colors based on selection state
+        let bg_color = if selected {
+            theme.accent_muted
         } else {
-            // Lighten the background color by increasing lightness
-            let mut lighter = self.bg_color;
-            lighter.l = (lighter.l + 0.15).min(1.0);
-            lighter
+            theme.surface
+        };
+        let border_color = if selected { theme.accent } else { theme.border };
+        let knob_bg = if selected {
+            theme.surface_hover
+        } else {
+            theme.knob_bg
+        };
+        let label_color = if selected {
+            theme.accent
+        } else {
+            theme.text_secondary
+        };
+        let value_color = if selected {
+            theme.text_on_accent
+        } else {
+            theme.text_primary
+        };
+        let indicator_color = if selected {
+            theme.accent
+        } else {
+            theme.text_muted
         };
 
-        // Calculate the vertical offset for the fill circle
-        // At 0%, the circle is completely below the visible area
-        // At 100%, the circle is fully visible
-        let fill_offset = self.size * (1.0 - display_value);
+        // Capture values for closures
+        let value = self.value;
+        let min = self.min;
+        let max = self.max;
 
-        div()
-            .relative()
-            .w(self.size)
-            .h(self.size)
-            .cursor_pointer()
-            // Background circle
-            .child(div().absolute().inset_0().rounded_full().bg(self.bg_color))
-            // Filled portion (circular, slides up from bottom)
-            .child(
+        let mut container = div()
+            .id(self.id)
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_2()
+            .p_2()
+            .rounded_lg()
+            .bg(bg_color)
+            .border_2()
+            .border_color(border_color)
+            .min_w(px(min_width));
+
+        // Add shadow when selected
+        if selected {
+            container = container.shadow_md();
+        }
+
+        // Hover effect
+        let hover_border = theme.accent;
+        let hover_bg = theme.surface_hover;
+        container = container.hover(|s| s.border_color(hover_border).bg(hover_bg));
+
+        // Cursor
+        if disabled {
+            container = container.cursor_not_allowed().opacity(0.5);
+        } else {
+            container = container.cursor_ns_resize();
+        }
+
+        // Event handlers
+        if !disabled {
+            // Wrap on_change in Rc if it exists, so we can use it in multiple handlers
+            let on_change_rc = self.on_change.map(|handler| std::rc::Rc::new(handler));
+            let on_reset_rc = self.on_reset.map(|handler| std::rc::Rc::new(handler));
+
+            // Mouse down - start drag and select
+            if let Some(on_select) = self.on_select {
+                let on_drag_start = self.on_drag_start;
+                container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    on_select(window, cx);
+                    if let Some(ref handler) = on_drag_start {
+                        handler(event.position.y.into(), value, window, cx);
+                    }
+                });
+            } else if let Some(on_drag_start) = self.on_drag_start {
+                container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    on_drag_start(event.position.y.into(), value, window, cx);
+                });
+            } else if let Some(ref handler_rc) = on_change_rc {
+                // If only on_change is provided, use click to increment value
+                let handler_click = handler_rc.clone();
+                container =
+                    container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                        let step = (max - min) * 0.1;
+                        let new_value = (value + step).clamp(min, max);
+                        handler_click(new_value, window, cx);
+                    });
+            }
+
+            // Double-click - reset
+            if let Some(ref reset_rc) = on_reset_rc {
+                let reset_handler = reset_rc.clone();
+                container = container.on_click(move |event, window, cx| {
+                    if event.click_count() == 2 {
+                        reset_handler(window, cx);
+                    }
+                });
+            }
+
+            // Keyboard navigation when selected
+            if selected {
+                // Clone the handlers for keyboard events
+                if let Some(ref handler_rc) = on_change_rc {
+                    let handler_key = handler_rc.clone();
+                    let reset_key = on_reset_rc.clone();
+                    container = container.on_key_down(move |event, window, cx| {
+                        match &event.keystroke.key {
+                            // Arrow Up or Right - increase value
+                            key if key == "up" || key == "right" => {
+                                let step = (max - min) * 0.05;
+                                let new_value = (value + step).clamp(min, max);
+                                handler_key(new_value, window, cx);
+                            }
+                            // Arrow Down or Left - decrease value
+                            key if key == "down" || key == "left" => {
+                                let step = (max - min) * 0.05;
+                                let new_value = (value - step).clamp(min, max);
+                                handler_key(new_value, window, cx);
+                            }
+                            // Escape - reset to default
+                            key if key == "escape" => {
+                                if let Some(ref reset_handler) = reset_key {
+                                    reset_handler(window, cx);
+                                }
+                            }
+                            _ => {}
+                        }
+                    });
+                }
+            }
+
+            // Scroll wheel - adjust value
+            if let Some(handler_rc) = on_change_rc {
+                container = container.on_scroll_wheel(move |event, window, cx| {
+                    let delta = event.delta.pixel_delta(px(20.0)).y;
+                    let should_negate = delta > px(0.0);
+                    let step = (max - min) * 0.05;
+                    let change = if should_negate { -step } else { step };
+                    let new_value = (value + change).clamp(min, max);
+                    handler_rc(new_value, window, cx);
+                });
+            }
+        }
+
+        // Label with keyboard shortcut
+        container = container.child(
+            div()
+                .text_xs()
+                .font_weight(if selected {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::SEMIBOLD
+                })
+                .text_color(label_color)
+                .text_center()
+                .child(formatted_label),
+        );
+
+        // Determine number of major ticks based on range and size
+        // Algorithm:
+        // 1. Try divisors for max (10, 5, 3, 2) - prefer 10 for large size
+        // 2. Compute tick_interval = max / divisor
+        // 3. Check if min is a multiple of tick_interval
+        // 4. Number of ticks = range / tick_interval
+        // Example: min=100, max=1000, large → 1000/10=100, 100%100=0 ✓ → ticks every 100 → 9 ticks
+        let range = max - min;
+        let is_large = matches!(self.size, PotentiometerSize::Lg);
+
+        // Candidate divisors: large size can use 10, others prefer smaller counts
+        let divisors: &[i32] = if is_large { &[10, 5, 3, 2] } else { &[5, 3, 2] };
+
+        let num_major_ticks = {
+            let mut best_tick_count = if is_large { 10 } else { 4 };
+
+            for &div in divisors {
+                // Skip if max is not cleanly divisible by this divisor
+                if max.abs() < 0.0001 {
+                    continue;
+                }
+
+                let tick_interval = max / div as f64;
+                if tick_interval.abs() < 0.0001 {
+                    continue;
+                }
+
+                // Check if min is a multiple of tick_interval
+                let min_remainder = if min.abs() < 0.0001 {
+                    0.0
+                } else {
+                    (min / tick_interval).fract().abs()
+                };
+                let min_aligned = min_remainder < 0.01 || (1.0 - min_remainder) < 0.01;
+
+                if min_aligned {
+                    // Compute how many ticks fit in the range
+                    let tick_count = (range / tick_interval).round() as i32;
+                    if tick_count >= 2 && tick_count <= (if is_large { 10 } else { 6 }) {
+                        best_tick_count = tick_count;
+                        break;
+                    }
+                }
+            }
+
+            best_tick_count
+        };
+
+        // Number of minor ticks between each major tick
+        let minor_ticks_between = 4;
+
+        // Knob graphic with ticks - need larger container for labels
+        let container_size = knob_size + 30.0; // Extra space for tick labels
+        let mut knob_container = div().w(px(container_size)).h(px(container_size)).relative();
+
+        // Add tick marks and labels around the knob
+        let knob_offset = 15.0; // Offset to center the knob in the larger container
+        let tick_inner_radius = knob_size / 2.0; // Start at knob edge
+        let major_tick_outer_radius = tick_inner_radius + 8.0; // Major ticks
+        let minor_tick_outer_radius = tick_inner_radius + 5.0; // Minor ticks (shorter)
+        let label_radius = major_tick_outer_radius + 8.0; // Labels outside ticks
+        let major_tick_width = 3.0; // Doubled from 1.5
+        let minor_tick_width = 1.5; // Thinner for minor ticks
+
+        // Create tick colors - use accent-based colors for visibility
+        let major_tick_color = {
+            let a = theme.accent;
+            Rgba {
+                r: a.r,
+                g: a.g,
+                b: a.b,
+                a: if selected { 0.8 } else { 0.5 },
+            }
+        };
+        let minor_tick_color = {
+            let a = theme.accent;
+            Rgba {
+                r: a.r,
+                g: a.g,
+                b: a.b,
+                a: if selected { 0.4 } else { 0.25 },
+            }
+        };
+
+        // Total number of tick positions (major + minor)
+        let total_ticks = num_major_ticks * (minor_ticks_between + 1);
+
+        for i in 0..=total_ticks {
+            let tick_normalized = i as f32 / total_ticks as f32;
+            let tick_angle = start_rad + (end_rad - start_rad) * tick_normalized;
+
+            // Determine if this is a major tick (has label) or minor tick
+            let is_major = i % (minor_ticks_between + 1) == 0;
+
+            let (tick_outer_radius, tick_width, tick_color) = if is_major {
+                (major_tick_outer_radius, major_tick_width, major_tick_color)
+            } else {
+                (minor_tick_outer_radius, minor_tick_width, minor_tick_color)
+            };
+
+            // Calculate tick line positions (inner and outer points)
+            let inner_x = knob_offset + center + tick_inner_radius * tick_angle.cos();
+            let inner_y = knob_offset + center + tick_inner_radius * tick_angle.sin();
+            let outer_x = knob_offset + center + tick_outer_radius * tick_angle.cos();
+            let outer_y = knob_offset + center + tick_outer_radius * tick_angle.sin();
+
+            // Draw tick line using circles connected visually
+            let tick_length = tick_outer_radius - tick_inner_radius;
+            let num_dots = (tick_length / 1.5).max(2.0) as usize;
+            for j in 0..=num_dots {
+                let t = j as f32 / num_dots as f32;
+                let dot_x = inner_x + (outer_x - inner_x) * t - tick_width / 2.0;
+                let dot_y = inner_y + (outer_y - inner_y) * t - tick_width / 2.0;
+
+                knob_container = knob_container.child(
+                    div()
+                        .absolute()
+                        .left(px(dot_x))
+                        .top(px(dot_y))
+                        .w(px(tick_width))
+                        .h(px(tick_width))
+                        .rounded_full()
+                        .bg(tick_color),
+                );
+            }
+
+            // Add tick label only for major ticks
+            if is_major {
+                let tick_value = min + (max - min) * tick_normalized as f64;
+                let label_x = knob_offset + center + label_radius * tick_angle.cos();
+                let label_y = knob_offset + center + label_radius * tick_angle.sin();
+
+                // Format tick label
+                let unit = self.unit.as_ref();
+                let label_text = if unit == "%" {
+                    // tick_normalized is already 0.0 to 1.0, so multiply by 100 for percentage
+                    format!("{:.0}", tick_normalized * 100.0)
+                } else if unit == "Hz" {
+                    if tick_value >= 1000.0 {
+                        format!("{:.0}k", tick_value / 1000.0)
+                    } else {
+                        format!("{:.0}", tick_value)
+                    }
+                } else if unit == "dB" {
+                    format!("{:.0}", tick_value)
+                } else {
+                    format!("{:.1}", tick_value)
+                };
+
+                knob_container = knob_container.child(
+                    div()
+                        .absolute()
+                        .left(px(label_x - 6.0)) // Center the text
+                        .top(px(label_y - 5.0))
+                        .text_size(px(9.0)) // Smaller than text_xs (12px)
+                        .text_color(major_tick_color)
+                        .child(label_text),
+                );
+            }
+        }
+
+        // Knob circle (offset to center in larger container)
+        // Use major_tick_color for border to match ticks and labels
+        let mut knob = div()
+            .absolute()
+            .left(px(knob_offset))
+            .top(px(knob_offset))
+            .w(px(knob_size))
+            .h(px(knob_size))
+            .rounded_full()
+            .bg(knob_bg)
+            .border_2()
+            .border_color(major_tick_color);
+
+        if selected {
+            knob = knob.shadow_sm();
+            // Arc indicator when selected
+            knob = knob.child(
                 div()
                     .absolute()
                     .inset_0()
-                    .rounded_full()
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .absolute()
-                            .left_0()
-                            .right_0()
-                            .bottom(px(-1.0 * f32::from(fill_offset))) // Fix negation of Pixels
-                            .w(self.size)
-                            .h(self.size)
-                            .rounded_full()
-                            .bg(fill_color),
-                    ),
-            )
-            // Border ring
-            .child(
-                div()
-                    .absolute()
-                    .inset(px(2.0))
                     .rounded_full()
                     .border_2()
-                    .border_color(ring_color.opacity(0.3)),
-            )
-            // Label text in center
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_xs()
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(text_color_final)
-                    .child(self.label),
-            )
-        // TODO: Add drag interaction logic if needed, currently this is just visual migration
-        // The original component didn't seem to handle drag logic inside the render function
-        // but rather relied on the parent or was just a display?
-        // Looking at the original code, it returned a `div` which could have event handlers attached.
-        // We will need to see how it's used.
+                    .border_color(theme.accent_muted),
+            );
+        }
+
+        // Indicator dot
+        knob = knob.child(
+            div()
+                .absolute()
+                .left(px(x))
+                .top(px(y))
+                .w(px(indicator_size))
+                .h(px(indicator_size))
+                .bg(indicator_color)
+                .rounded_full()
+                .when(selected, |d| d.shadow_sm()),
+        );
+
+        // Current value in center of knob
+        knob = knob.child(
+            div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_xs()
+                .font_weight(FontWeight::BOLD)
+                .text_color(if selected { theme.accent } else { value_color })
+                .child(value_str.clone()),
+        );
+
+        knob_container = knob_container.child(knob);
+        container.child(knob_container)
     }
 }
