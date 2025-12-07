@@ -3559,7 +3559,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "gpui",
 ]
@@ -5087,7 +5087,7 @@ dependencies = [
 
 [[package]]
 name = "math-bem"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "approx",
@@ -5098,6 +5098,7 @@ dependencies = [
  "criterion",
  "env_logger 0.11.8",
  "log",
+ "math-solvers",
  "math-xem-common",
  "memory-stats",
  "ndarray 0.17.1",
@@ -5121,7 +5122,7 @@ dependencies = [
 
 [[package]]
 name = "math-fem"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "approx",
  "chrono",
@@ -5145,7 +5146,7 @@ dependencies = [
 
 [[package]]
 name = "math-solvers"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "approx",
  "log",

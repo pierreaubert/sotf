@@ -33,6 +33,7 @@ impl PlayerView {
             headphone_optimization_result,
             headphone_export_format,
             expanded_sections,
+            headphone_opt_ui,
         ) = {
             let state = self.state.read(cx);
             (
@@ -46,6 +47,7 @@ impl PlayerView {
                 state.app.headphone_optimization_result.clone(),
                 state.app.headphone_export_format.clone(),
                 state.app.headphone_expanded_sections.clone(),
+                state.app.headphone_opt_ui.clone(),
             )
         };
 
@@ -138,6 +140,7 @@ impl PlayerView {
                                 AccordionItem::new("eq-design", "EQ Design Parameters").content(
                                     self.render_eq_design_params(
                                         &headphone_params,
+                                        &headphone_opt_ui,
                                         "headphone",
                                         &theme,
                                         cx,
@@ -148,6 +151,7 @@ impl PlayerView {
                                 AccordionItem::new("tuning", "Optimization Fine Tuning").content(
                                     self.render_optimization_tuning_params(
                                         &headphone_params,
+                                        &headphone_opt_ui,
                                         "headphone",
                                         &theme,
                                         cx,

@@ -333,19 +333,19 @@ cross-static-all: cross-static-linux-x86 cross-static-linux-arm64 cross-static-w
 # Linux x86_64 static binary (musl)
 cross-static-linux-x86:
 	@echo "Building static Linux x86_64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-unknown-linux-musl --bin sotf-player-tui
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-unknown-linux-musl --bin sotf-tui
 	@echo "Done! Binary at: target/x86_64-unknown-linux-musl/release/sotf_player_tui"
 
 # Linux ARM64 static binary (musl)
 cross-static-linux-arm64:
 	@echo "Building static Linux ARM64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target aarch64-unknown-linux-musl --bin sotf-player-tui
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target aarch64-unknown-linux-musl --bin sotf-tui
 	@echo "Done! Binary at: target/aarch64-unknown-linux-musl/release/sotf_player_tui"
 
 # Windows x86_64 static binary (MSVC with static CRT)
 cross-static-windows-x86:
 	@echo "Building static Windows x86_64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-msvc --bin sotf-player-tui
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-msvc --bin sotf-tui
 	@echo "Done! Binary at: target/x86_64-pc-windows-msvc/release/sotf_player_tui.exe"
 
 # macOS universal binary (NOT fully static - limited by macOS system restrictions)
@@ -355,14 +355,14 @@ cross-static-macos:
 	@echo "Building macOS binaries..."
 	@echo "Note: macOS binaries cannot be fully static due to Apple's security policies"
 	@echo "      System frameworks (CoreAudio, etc.) will be dynamically linked"
-	cargo build --release --target x86_64-apple-darwin --bin sotf-player-tui
-	cargo build --release --target aarch64-apple-darwin --bin sotf-player-tui
+	cargo build --release --target x86_64-apple-darwin --bin sotf-tui
+	cargo build --release --target aarch64-apple-darwin --bin sotf-tui
 	@echo "Creating universal binary (Intel + Apple Silicon)..."
 	lipo -create \
-		target/x86_64-apple-darwin/release/sotf-player-tui \
-		target/aarch64-apple-darwin/release/sotf-player-tui \
-		-output target/sotf-player-tui-macos-universal
-	@echo "✓ Done! Universal binary at: target/sotf-player-tui-macos-universal"
+		target/x86_64-apple-darwin/release/sotf-tui \
+		target/aarch64-apple-darwin/release/sotf-tui \
+		-output target/sotf-tui-macos-universal
+	@echo "✓ Done! Universal binary at: target/sotf-tui-macos-universal"
 
 # Build static binary for current platform
 # Note: Requires bash/sh shell. On Linux, builds musl static binary.
@@ -373,18 +373,18 @@ build-static-local:
 	echo "Building static binary for current platform..."
 	if [ "$(uname)" = "Linux" ]; then
 		if [ "$(uname -m)" = "x86_64" ]; then
-			cargo build --release --target x86_64-unknown-linux-musl --bin sotf-player-tui
-			echo "✓ Built: target/x86_64-unknown-linux-musl/release/sotf-player-tui"
+			cargo build --release --target x86_64-unknown-linux-musl --bin sotf-tui
+			echo "✓ Built: target/x86_64-unknown-linux-musl/release/sotf-tui"
 		elif [ "$(uname -m)" = "aarch64" ]; then
-			cargo build --release --target aarch64-unknown-linux-musl --bin sotf-player-tui
-			echo "✓ Built: target/aarch64-unknown-linux-musl/release/sotf-player-tui"
+			cargo build --release --target aarch64-unknown-linux-musl --bin sotf-tui
+			echo "✓ Built: target/aarch64-unknown-linux-musl/release/sotf-tui"
 		else
 			echo "❌ Unsupported Linux architecture: $(uname -m)"
 			exit 1
 		fi
 	elif [ "$(uname)" = "Darwin" ]; then
-		cargo build --release --bin sotf-player-tui
-		echo "✓ Built: target/release/sotf-player-tui"
+		cargo build --release --bin sotf-tui
+		echo "✓ Built: target/release/sotf-tui"
 		echo "Note: macOS binaries have limited static linking due to Apple restrictions"
 	else
 		echo "❌ Unsupported platform: $(uname)"
@@ -457,6 +457,7 @@ install-ubuntu-common:
 			 ninja-build \
 			 perl \
 			 libglib2.0-dev \
+			 libxkbcommon-x11-dev \
 			 libgtk-3-dev \
 			 libwebkit2gtk-4.1-dev \
 			 libayatana-appindicator3-dev \
@@ -479,14 +480,14 @@ install-ubuntu-arm64-driver :
 		sudo apt install -y firefox
 		# where is the geckodriver ?
 
-install-ubuntu-node:
-		# use nvm
-		curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-		$HOME/.nvm/bin/nvm install stable
+#install-ubuntu-node:
+#		# use nvm
+#		curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+#		$HOME/.nvm/bin/nvm install stable
 
-install-ubuntu-x86: install-ubuntu-common install-ubuntu-x86-driver install-ubuntu-node
+install-ubuntu-x86: install-ubuntu-common install-ubuntu-x86-driver
 
-install-ubuntu-arm64: install-ubuntu-common install-ubuntu-arm64-driver install-ubuntu-node
+install-ubuntu-arm64: install-ubuntu-common install-ubuntu-arm64-driver
 
 
 # ----------------------------------------------------------------------
@@ -589,17 +590,17 @@ qa-edifierw830nb-mhfirefly:
 # POST
 # ----------------------------------------------------------------------
 
-post-install-npm:
-	cd src-ui-frontend && npm install .
+#post-install-npm:
+#	cd src-ui-frontend && npm install .
 
 post-install-rust:
 	$HOME/.cargo/bin/rustup default stable
 	$HOME/.cargo/bin/cargo install just
-	$HOME/.cargo/bin/cargo install tauri-cli
 	$HOME/.cargo/bin/cargo check
-	cd src-tauri && $HOME/.cargo/bin/cargo tauri icon
+	# $HOME/.cargo/bin/cargo install tauri-cli
+	# cd src-tauri && $HOME/.cargo/bin/cargo tauri icon
 
-post-install: post-install-rust post-install-npm
+post-install: post-install-rust # post-install-npm
 
 # ----------------------------------------------------------------------
 # SIGNING

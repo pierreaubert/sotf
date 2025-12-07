@@ -250,3 +250,12 @@ impl Default for MeasureState {
         }
     }
 }
+
+/// UI state for optimization forms (dropdowns open/closed)
+#[derive(Debug, Clone, Default)]
+pub struct OptimizationUiState {
+    pub peq_model_open: bool,
+    pub algo_open: bool,
+    pub strategy_open: bool,
+    pub local_algo_open: bool,
+}

@@ -17,7 +17,7 @@ use crate::theme::{Theme, ThemeId};
 
 use super::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode,
-    LibrarySortOrder, QueueItem, Screen, ToastMessage, MeasureState,
+    LibrarySortOrder, QueueItem, Screen, ToastMessage, MeasureState, OptimizationUiState,
 };
 
 #[derive(Debug)]
@@ -45,6 +45,7 @@ pub struct App {
     pub headphone_optimization_result: Option<crate::autoeq::HeadphoneOptimizationResult>, // Results
     pub headphone_export_format: String, // Selected export format (json, apo, rme-channel, etc.)
     pub headphone_expanded_sections: Vec<gpui::SharedString>, // Accordion expanded sections
+    pub headphone_opt_ui: OptimizationUiState, // UI state (dropdowns)
     
     // Speaker Optimization State
     pub speaker_model: String, // Selected speaker model name (e.g. "KEF LS50 Meta")
@@ -53,6 +54,7 @@ pub struct App {
     pub speaker_optimization_progress: Vec<(usize, f64)>,
     pub speaker_optimization_result: Option<crate::autoeq::speaker_eq::SpeakerOptimizationResult>,
     pub speaker_export_format: String,
+    pub speaker_opt_ui: OptimizationUiState, // UI state (dropdowns)
     
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
@@ -251,6 +253,7 @@ impl App {
                 gpui::SharedString::from("measurement"),
                 gpui::SharedString::from("target"),
             ],
+            headphone_opt_ui: OptimizationUiState::default(),
             
             // Speaker State Init
             speaker_model: String::new(),
@@ -259,6 +262,7 @@ impl App {
             speaker_optimization_progress: Vec::new(),
             speaker_optimization_result: None,
             speaker_export_format: String::from("json"),
+            speaker_opt_ui: OptimizationUiState::default(),
             
             selected_directory_index: 0,
             selected_queue_index: 0,

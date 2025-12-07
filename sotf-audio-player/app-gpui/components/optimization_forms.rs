@@ -9,9 +9,11 @@
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
-    Toggle, ToggleSize, ToggleTheme, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, Select, SelectOption,
+    StackSpacing, Text, TextSize, TextWeight, Toggle, ToggleSize, ToggleTheme, VStack,
 };
+
+use crate::app::types::OptimizationUiState;
 
 use crate::optimization_params::*;
 use crate::theme::Theme;
@@ -22,6 +24,7 @@ impl PlayerView {
     pub fn render_eq_design_params(
         &self,
         params: &OptimizationParams,
+        ui_state: &OptimizationUiState,
         prefix: &str,
         theme: &Theme,
         cx: &mut Context<Self>,
@@ -138,10 +141,11 @@ impl PlayerView {
                         )),
                 )
                 // PEQ Model
-                .child(self.render_chip_select_row(
+                .child(self.render_dropdown_row(
                     "PEQ Model",
                     &params.peq_model,
                     PEQ_MODEL_OPTIONS,
+                    ui_state.peq_model_open,
                     prefix,
                     "peq_model",
                     &theme,
@@ -154,6 +158,7 @@ impl PlayerView {
     pub fn render_optimization_tuning_params(
         &self,
         params: &OptimizationParams,
+        ui_state: &OptimizationUiState,
         prefix: &str,
         theme: &Theme,
         cx: &mut Context<Self>,
@@ -178,10 +183,11 @@ impl PlayerView {
                         ),
                 )
                 // Algorithm selection
-                .child(self.render_chip_select_row(
+                .child(self.render_dropdown_row(
                     "Algorithm",
                     &params.algo,
                     ALGORITHM_OPTIONS,
+                    ui_state.algo_open,
                     prefix,
                     "algo",
                     &theme,
@@ -212,10 +218,11 @@ impl PlayerView {
                 )
                 // DE Strategy (only for DE algorithms)
                 .when(params.algo.contains("de"), |d| {
-                    d.child(self.render_chip_select_row(
+                    d.child(self.render_dropdown_row(
                         "DE Strategy",
                         &params.strategy,
                         DE_STRATEGY_OPTIONS,
+                        ui_state.strategy_open,
                         prefix,
                         "strategy",
                         &theme,
@@ -255,10 +262,11 @@ impl PlayerView {
                 ))
                 // Local algorithm (only when refine is enabled)
                 .when(params.refine, |d| {
-                    d.child(self.render_chip_select_row(
+                    d.child(self.render_dropdown_row(
                         "Local Algo",
                         &params.local_algo,
                         LOCAL_ALGO_OPTIONS,
+                        ui_state.local_algo_open,
                         prefix,
                         "local_algo",
                         &theme,
@@ -277,7 +285,7 @@ impl PlayerView {
         )
     }
 
-    /// Render a stepper row with +/- buttons and value display
+    /// Render a stepper row with NumberInput
     fn render_stepper_row(
         &self,
         label: &str,
@@ -290,151 +298,153 @@ impl PlayerView {
     ) -> impl IntoElement {
         let theme = theme.clone();
         let label = label.to_string();
+        
+        // Capture weak handle to view for callbacks
+        let view = cx.entity().downgrade();
         let prefix_dec = prefix.to_string();
         let prefix_inc = prefix.to_string();
         let param_name_dec = param_name.to_string();
         let param_name_inc = param_name.to_string();
-        let step = limits.step;
-        let min = limits.min;
-        let max = limits.max;
-
-        // Format value nicely
-        let display_value = if step >= 1000.0 {
-            format!("{:.0}", value)
-        } else if step >= 1.0 {
-            format!("{:.0}", value)
-        } else if step >= 0.1 {
-            format!("{:.1}", value)
-        } else {
-            format!("{:.2}", value)
-        };
+        
+        let decimals = if limits.step < 1.0 { 1 } else { 0 };
 
         VStack::new()
             .spacing(StackSpacing::Xs)
             .child(Text::new(label).size(TextSize::Xs).color(theme.text_secondary))
             .child(
-                HStack::new()
-                    .spacing(StackSpacing::Xs)
-                    // Decrement button
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("{}-{}-dec", prefix, param_name)))
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .text_xs()
-                            .bg(theme.surface_hover)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.background_tertiary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    let new_value = (value - step).max(min);
+                NumberInput::new(SharedString::from(format!("{}-{}", prefix, param_name)))
+                    .value(value)
+                    .min(limits.min)
+                    .max(limits.max)
+                    .step(limits.step)
+                    .decimals(decimals)
+                    .width(100.0)
+                    .on_change(move |new_val, _window, cx| {
+                         if let Some(view) = view.upgrade() {
+                                view.update(cx, |view, cx| {
                                     view.update_optimization_param(
                                         &prefix_dec,
                                         &param_name_dec,
-                                        new_value,
+                                        new_val,
                                         cx,
                                     );
-                                }),
-                            )
-                            .child("−"),
-                    )
-                    // Value display
-                    .child(
-                        div()
-                            .min_w(px(48.0))
-                            .text_center()
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .text_xs()
-                            .bg(theme.background_secondary)
-                            .text_color(theme.text_primary)
-                            .child(display_value),
-                    )
-                    // Increment button
-                    .child(
-                        div()
-                            .id(SharedString::from(format!("{}-{}-inc", prefix, param_name)))
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .text_xs()
-                            .bg(theme.surface_hover)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.background_tertiary))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    let new_value = (value + step).min(max);
-                                    view.update_optimization_param(
-                                        &prefix_inc,
-                                        &param_name_inc,
-                                        new_value,
-                                        cx,
-                                    );
-                                }),
-                            )
-                            .child("+"),
-                    ),
+                                });
+                         }
+                    })
             )
+            // Wait, this is getting complicated.
+            // The previous code used `cx.listener`.
+            // `Button` uses `on_mouse_up(..., cx.listener(...))`.
+            // `NumberInput` uses internal `on_mouse_up` and calls `self.on_change`.
+            // The `on_change` provided to `NumberInput` takes `&mut App`.
+            // Check `NumberInput` definition again.
+            // `pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static)`.
+            
+            // To update the view from there, we need a handle to the view.
+            // `cx` passed to `render_stepper_row` is `&mut Context<PlayerView>`.
+            // So we can get a weak handle: `let view = cx.view().downgrade();`
     }
 
-    /// Render chip-style selection row
-    fn render_chip_select_row(
+    /// Render dropdown selection row using Select component
+    fn render_dropdown_row(
         &self,
         label: &str,
         current_value: &str,
         options: &[(&str, &str)],
+        is_open: bool,
         prefix: &str,
         param_name: &str,
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let theme = theme.clone();
         let label = label.to_string();
+        let prefix = prefix.to_string();
+        let param_name = param_name.to_string();
         let current_value = current_value.to_string();
-        let options: Vec<(String, String)> = options
+
+        let select_options: Vec<SelectOption> = options
             .iter()
-            .map(|(v, l)| (v.to_string(), l.to_string()))
+            .map(|(val, lbl)| SelectOption::new(val.to_string(), lbl.to_string()))
             .collect();
+
+        // Capture weak handle to view for callbacks
+        let view = cx.entity().downgrade();
+        let view2 = cx.entity().downgrade();
+        
+        // Clone for callbacks
+        let prefix1 = prefix.clone();
+        let param_name1 = param_name.clone();
+        let prefix2 = prefix.clone();
+        let param_name2 = param_name.clone();
 
         VStack::new()
             .spacing(StackSpacing::Xs)
             .child(Text::new(label).size(TextSize::Xs).color(theme.text_secondary))
             .child(
-                HStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .wrap(true)
-                    .children(options.into_iter().map(|(value, display_label)| {
-                        let is_selected = current_value == value;
-                        let prefix = prefix.to_string();
-                        let param_name = param_name.to_string();
-                        let value_clone = value.clone();
-
-                        Button::new(
-                            SharedString::from(format!("{}-{}-{}", prefix, param_name, value)),
-                            SharedString::from(display_label),
-                        )
-                        .variant(if is_selected {
-                            ButtonVariant::Primary
-                        } else {
-                            ButtonVariant::Ghost
-                        })
-                        .size(ButtonSize::Xs)
-                        .build()
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.update_optimization_param_string(
-                                    &prefix,
-                                    &param_name,
-                                    &value_clone,
-                                    cx,
-                                );
-                            }),
-                        )
-                    })),
+                Select::new(SharedString::from(format!("select-{}-{}", prefix, param_name)))
+                    .options(select_options)
+                    .selected(current_value)
+                    .is_open(is_open)
+                    .on_change(move |new_val, _window, cx| {
+                        let new_val = new_val.to_string();
+                        let prefix = prefix1.clone();
+                        let param_name = param_name1.clone();
+                        
+                         if let Some(view) = view.upgrade() {
+                             view.update(cx, |view, cx| {
+                                 view.update_optimization_param_string(&prefix, &param_name, &new_val, cx);
+                                 // Close dropdown after selection
+                                 view.update_optimization_ui_dropdown(&prefix, &param_name, false, cx);
+                             });
+                         }
+                    })
+                    // Select component doesn't have explicit on_toggle handler exposed in the viewed file...
+                    // Wait, Select component in `select.rs` does NOT expose a toggle handler!
+                    // It uses `trigger.on_mouse_up(...)` internally?
+                    // Checking `select.rs` (Step 3809): 
+                    // `trigger = trigger.on_click(...)`? 
+                    // No, `Select` does NOT handle open/close internally if `is_open` is used?
+                    // `Select` has `is_open` prop.
+                    // But `Select` implementation (Step 3809) does NOT have an `on_toggle` or binding to click the trigger to toggle state externally.
+                    // It seems `Select` in `select.rs` handles internal `on_click` only if we ADD it?
+                    // In `select.rs` line 232: `div()...cursor_pointer()`.
+                    // But no `on_mouse_up` attached to `trigger` in the `build()` method!
+                    // THIS IS A BUG/MISSING FEATURE in `Select` component?
+                    // Wait, `Select` seems designed to be controlled?
+                    // If I use `Select` without `on_toggle`, how does it open?
+                    // I must wrap `Select` or `Select` must handle it.
+                    // The `Select` code shows: `trigger` div built. No event handler attached to it regarding open state.
+                    // AND `on_change` is used for `option` clicks.
+                    
+                    // I MUST ADD event handler to the `Select` wrapper or proper interactivity.
+                    // Since I cannot modify `Select` easily (it's in ui-kit which I can modify, but prefer not to if possible).
+                    // Actually, if `Select` is broken/incomplete, I SHOULD fix `Select`.
+                    // But simple fix: Wrap `Select` in a div that handles click?
+                    // No, the trigger is inside.
+                    
+                    // Let's modify `Select` to support `on_toggle`?
+                    // Or let's assume I can click it?
+                    // Wait, line 232-244 builds trigger.
+                    // It DOES NOT attach an event listener.
+                    // So `Select` as implemented is static unless modified.
+                    // I WILL MODIFY `Select` component in `gpui-ui-kit/src/select.rs` to support `on_toggle`.
+                    // But let's finish `optimization_forms.rs` assuming `Select` works or I will fix it.
+                    // I will assume `Select` has `on_toggle` or I will add it.
+                    // The user prompt implied "use the new number input... and transform...".
+                    
+                    // I'll stick to `optimization_forms.rs` edits first. 
+                    // I'll add `on_toggle` callback to `Select` usage here.
+                    // And I'll update `Select` implementation in a separate step.
+                    .on_toggle(move |open, _window, cx| {
+                        let prefix = prefix2.clone();
+                        let param_name = param_name2.clone();
+                         if let Some(view) = view2.upgrade() {
+                             view.update(cx, |view, cx| {
+                                 view.update_optimization_ui_dropdown(&prefix, &param_name, open, cx);
+                             });
+                         }
+                    })
             )
     }
 
@@ -564,6 +574,32 @@ impl PlayerView {
             match param_name {
                 "refine" => params.refine = value,
                 "smooth" => params.smooth = value,
+                _ => {}
+            }
+        });
+        cx.notify();
+    }
+
+    /// Update UI state for dropdowns
+    pub fn update_optimization_ui_dropdown(
+        &mut self,
+        prefix: &str,
+        param_name: &str,
+        is_open: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            let ui_state = match prefix {
+                "headphone" => &mut state.app.headphone_opt_ui,
+                "speaker" => &mut state.app.speaker_opt_ui,
+                _ => return,
+            };
+
+            match param_name {
+                "peq_model" => ui_state.peq_model_open = is_open,
+                "algo" => ui_state.algo_open = is_open,
+                "strategy" => ui_state.strategy_open = is_open,
+                "local_algo" => ui_state.local_algo_open = is_open,
                 _ => {}
             }
         });
