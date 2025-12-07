@@ -6,6 +6,7 @@ pub mod graphs;
 mod header;
 pub mod icon;
 pub mod image_cache;
+pub mod measure_dialog;
 pub mod optimization_forms;
 
 // Re-export Icon types for convenience

@@ -245,7 +245,8 @@ pub fn record_and_analyze(
     output_csv_path: &Path,
     output_channel: u16,
     input_channel: u16,
-    device_name: Option<&str>,
+    output_device_name: Option<&str>,
+    input_device_name: Option<&str>,
     microphone_compensation_path: Option<&str>,
 ) -> Result<(), String> {
     use crate::AudioEngineManager;
@@ -272,7 +273,7 @@ pub fn record_and_analyze(
     let host = cpal::default_host();
 
     // Get input device (either by name or default)
-    let input_device = if let Some(dev_name) = device_name {
+    let input_device = if let Some(dev_name) = input_device_name {
         log::info!(
             "[record_and_analyze] Looking for input device: {}",
             dev_name
@@ -380,7 +381,7 @@ pub fn record_and_analyze(
         .map_err(|e| format!("Failed to load file: {}", e))?;
 
     // Get output device configuration to determine hardware channel count
-    let output_device = if let Some(dev_name) = device_name {
+    let output_device = if let Some(dev_name) = output_device_name {
         log::info!(
             "[record_and_analyze] Looking for output device: {}",
             dev_name
@@ -457,7 +458,7 @@ pub fn record_and_analyze(
 
     manager
         .start_playback(
-            device_name.map(|s| s.to_string()),
+            output_device_name.map(|s| s.to_string()),
             plugins,
             hardware_channels,
         )
@@ -1146,7 +1147,8 @@ mod tests {
                     csv_path,    // output_csv_path
                     1_u16,       // output_channel
                     1_u16,       // input_channel
-                    None,        // device_name
+                    None,        // output_device_name
+                    None,        // input_device_name
                     None,        // microphone_compensation_path
                 );
             }

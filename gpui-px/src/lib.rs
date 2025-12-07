@@ -155,6 +155,7 @@ mod color_scale;
 mod contour;
 mod error;
 mod heatmap;
+pub mod interaction;
 mod isoline;
 mod line;
 mod pie;

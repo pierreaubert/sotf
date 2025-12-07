@@ -11,7 +11,7 @@ name = "sotf_hal"
 crate-type = ["cdylib", "lib"]
 
 [[bin]]
-name = "test_loopback"
+name = "hal-loopback"
 path = "bin/test_loopback.rs"
 
 [dependencies]

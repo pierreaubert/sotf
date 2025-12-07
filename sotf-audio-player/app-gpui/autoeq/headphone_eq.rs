@@ -4,27 +4,93 @@ use crate::ui::PlayerView;
 use gpui::*;
 use std::path::PathBuf;
 
+/// Bundled target curve data
+mod target_curves {
+    pub const HARMAN_OVER_EAR_2018: &str = include_str!("../../../data_tests/targets/harman-over-ear-2018.csv");
+    pub const HARMAN_OVER_EAR_2015: &str = include_str!("../../../data_tests/targets/harman-over-ear-2015.csv");
+    pub const HARMAN_OVER_EAR_2013: &str = include_str!("../../../data_tests/targets/harman-over-ear-2013.csv");
+    pub const HARMAN_IN_EAR_2019: &str = include_str!("../../../data_tests/targets/harman-in-ear-2019.csv");
+}
+
+/// Result of headphone EQ optimization with all curves for visualization
+#[derive(Clone, Debug)]
+pub struct HeadphoneOptimizationResult {
+    /// Optimized biquad filters
+    pub biquads: Vec<autoeq_iir::Biquad>,
+    /// Frequency points (Hz) - log-spaced
+    pub frequencies: Vec<f64>,
+    /// Input headphone measurement curve (dB)
+    pub input_curve: Vec<f64>,
+    /// Target curve (dB)
+    pub target_curve: Vec<f64>,
+    /// Deviation from target = target - input (dB)
+    pub deviation_curve: Vec<f64>,
+    /// Combined filter response (dB)
+    pub filter_response: Vec<f64>,
+    /// Error = deviation - filter_response (dB)
+    pub error_curve: Vec<f64>,
+    /// Corrected response = input + filter_response (dB)
+    pub corrected_curve: Vec<f64>,
+    /// Individual filter responses (each filter's dB response)
+    pub individual_filter_responses: Vec<Vec<f64>>,
+    /// Path where results were saved
+    pub output_path: String,
+    /// Optimization history (iteration, loss)
+    pub optimization_history: Vec<(usize, f64)>,
+    /// Initial loss value
+    pub initial_loss: f64,
+    /// Final loss value
+    pub final_loss: f64,
+}
+
 impl PlayerView {
     /// Open file dialog to select headphone measurement file
     pub fn browse_headphone_curve(&mut self, cx: &mut Context<Self>) {
-        // Use rfd for native file dialog
-        let file_dialog = rfd::FileDialog::new()
-            .add_filter("CSV Files", &["csv"])
-            .add_filter("All Files", &["*"])
-            .set_title("Select Headphone Measurement File");
+        // Use async file dialog to avoid blocking the main thread
+        let state_clone = self.state.clone();
+        cx.spawn(async move |_view: WeakEntity<PlayerView>, cx| {
+            if let Some(handle) = rfd::AsyncFileDialog::new()
+                .add_filter("CSV Files", &["csv"])
+                .add_filter("All Files", &["*"])
+                .set_title("Select Headphone Measurement File")
+                .pick_file()
+                .await
+            {
+                let path_str = handle.path().display().to_string();
+                let _ = state_clone.update(cx, |state, _cx| {
+                    state.app.headphone_curve_path = path_str;
+                });
+            }
+        })
+        .detach();
+    }
 
-        if let Some(path) = file_dialog.pick_file() {
-            let path_str = path.display().to_string();
-            self.state.update(cx, |state, _cx| {
-                state.app.headphone_curve_path = path_str;
-            });
-            cx.notify();
-        }
+    /// Open file dialog to select custom target curve file
+    pub fn browse_target_curve(&mut self, cx: &mut Context<Self>) {
+        // Use async file dialog to avoid blocking the main thread
+        let state_clone = self.state.clone();
+        cx.spawn(async move |_view: WeakEntity<PlayerView>, cx| {
+            if let Some(handle) = rfd::AsyncFileDialog::new()
+                .add_filter("CSV Files", &["csv"])
+                .add_filter("All Files", &["*"])
+                .set_title("Select Custom Target Curve")
+                .pick_file()
+                .await
+            {
+                let path_str = handle.path().display().to_string();
+                let _ = state_clone.update(cx, |state, _cx| {
+                    // Store the custom path and set target to "custom"
+                    state.app.headphone_target_custom_path = path_str;
+                    state.app.headphone_target = "custom".to_string();
+                });
+            }
+        })
+        .detach();
     }
 
     /// Run headphone EQ optimization
     pub fn run_headphone_optimization(&mut self, cx: &mut Context<Self>) {
-        let (curve_path, target, params) = {
+        let (curve_path, target, target_custom_path, params, export_format) = {
             let state = self.state.read(cx);
 
             // Validate inputs
@@ -39,17 +105,32 @@ impl PlayerView {
                 return;
             }
 
+            // Validate custom target path if custom is selected
+            if state.app.headphone_target == "custom" && state.app.headphone_target_custom_path.is_empty() {
+                let _ = state;
+                self.state.update(cx, |state, _cx| {
+                    state.app.toast_message = Some(crate::app::ToastMessage::error(
+                        "Please select a custom target curve file",
+                    ));
+                });
+                cx.notify();
+                return;
+            }
+
             (
                 state.app.headphone_curve_path.clone(),
                 state.app.headphone_target.clone(),
+                state.app.headphone_target_custom_path.clone(),
                 state.app.headphone_params.clone(),
+                state.app.headphone_export_format.clone(),
             )
         };
 
-        // Mark optimization as running
+        // Mark optimization as running and clear previous results
         self.state.update(cx, |state, _cx| {
             state.app.headphone_optimization_running = true;
             state.app.headphone_optimization_progress.clear();
+            state.app.headphone_optimization_result = None;
         });
         cx.notify();
 
@@ -58,14 +139,25 @@ impl PlayerView {
 
         // Spawn background task for optimization
         cx.spawn(async move |_view, cx| {
-            match run_optimization_task(curve_path, target, params).await {
-                Ok(result_path) => {
-                    // Update state with success
+            // Run optimization
+            let result = run_optimization_task(
+                curve_path,
+                target,
+                target_custom_path,
+                params,
+                export_format,
+            ).await;
+
+            match result {
+                Ok(optimization_result) => {
+                    let output_path = optimization_result.output_path.clone();
+                    // Update state with success and results
                     let _ = state_clone.update(cx, |state, _cx| {
                         state.app.headphone_optimization_running = false;
+                        state.app.headphone_optimization_result = Some(optimization_result);
                         state.app.toast_message = Some(crate::app::ToastMessage::success(format!(
                             "EQ optimization complete! Saved to: {}",
-                            result_path
+                            output_path
                         )));
                     });
                 }
@@ -103,13 +195,136 @@ impl PlayerView {
     /// Load EQ from file and apply to plugin chain
     pub fn load_headphone_eq(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         match std::fs::read_to_string(&path) {
-            Ok(_json) => {
-                // Parse the EQ file (format TBD - could be array of biquad filters)
-                // For now, just show success
+            Ok(json) => {
+                // Parse the EQ file as array of biquad filters
+                match serde_json::from_str::<Vec<autoeq_iir::Biquad>>(&json) {
+                    Ok(biquads) => {
+                        // TODO: Apply biquads to plugin chain
+                        log::info!("Loaded {} biquad filters from {:?}", biquads.len(), path);
+                        self.state.update(cx, |state, _cx| {
+                            state.app.toast_message = Some(crate::app::ToastMessage::success(format!(
+                                "Loaded {} filters from: {}",
+                                biquads.len(),
+                                path.display()
+                            )));
+                        });
+                        cx.notify();
+                    }
+                    Err(e) => {
+                        self.state.update(cx, |state, _cx| {
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                                "Failed to parse EQ file: {}",
+                                e
+                            )));
+                        });
+                        cx.notify();
+                    }
+                }
+            }
+            Err(e) => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                        "Failed to load EQ: {}",
+                        e
+                    )));
+                });
+                cx.notify();
+            }
+        }
+    }
+
+    /// Save current headphone EQ result to file in selected format
+    pub fn save_headphone_eq(&mut self, cx: &mut Context<Self>) {
+        let (result, export_format) = {
+            let state = self.state.read(cx);
+            (
+                state.app.headphone_optimization_result.clone(),
+                state.app.headphone_export_format.clone(),
+            )
+        };
+
+        let Some(result) = result else {
+            self.state.update(cx, |state, _cx| {
+                state.app.toast_message = Some(crate::app::ToastMessage::error(
+                    "No optimization result to save",
+                ));
+            });
+            cx.notify();
+            return;
+        };
+
+        // Get EQ directory
+        let Some(eq_dir) = sotf_audio_player::config::get_eq_dir() else {
+            self.state.update(cx, |state, _cx| {
+                state.app.toast_message = Some(crate::app::ToastMessage::error(
+                    "Could not determine EQ directory",
+                ));
+            });
+            cx.notify();
+            return;
+        };
+
+        // Ensure directory exists
+        if let Err(e) = std::fs::create_dir_all(&eq_dir) {
+            self.state.update(cx, |state, _cx| {
+                state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                    "Failed to create EQ directory: {}",
+                    e
+                )));
+            });
+            cx.notify();
+            return;
+        }
+
+        // Generate filename with timestamp
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let extension = crate::autoeq::get_export_extension(&export_format);
+        let filename = format!("headphone_{}{}", timestamp, extension);
+        let output_path = eq_dir.join(&filename);
+
+        // Convert biquads to Peq format for export functions
+        let peq: autoeq_iir::Peq = result.biquads.iter().map(|b| (b.freq, b.clone())).collect();
+
+        // Generate output content based on selected format
+        let content = match export_format.as_str() {
+            "apo" => {
+                autoeq_iir::peq_format_apo("# Headphone EQ", &peq)
+            }
+            "rme-channel" => autoeq_iir::peq_format_rme_channel(&peq),
+            "rme-room" => {
+                autoeq_iir::peq_format_rme_room(&peq, &peq)
+            }
+            "aupreset" => {
+                autoeq_iir::peq_format_aupreset(&peq, "Headphone EQ")
+            }
+            _ => {
+                // Default to JSON
+                match serde_json::to_string_pretty(&result.biquads) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        self.state.update(cx, |state, _cx| {
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                                "Failed to serialize: {}",
+                                e
+                            )));
+                        });
+                        cx.notify();
+                        return;
+                    }
+                }
+            }
+        };
+
+        match std::fs::write(&output_path, content) {
+            Ok(_) => {
                 self.state.update(cx, |state, _cx| {
                     state.app.toast_message = Some(crate::app::ToastMessage::success(format!(
-                        "Loaded EQ from: {}",
-                        path.display()
+                        "Saved EQ to: {}",
+                        output_path.display()
                     )));
                 });
                 cx.notify();
@@ -117,7 +332,7 @@ impl PlayerView {
             Err(e) => {
                 self.state.update(cx, |state, _cx| {
                     state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
-                        "Failed to load EQ: {}",
+                        "Failed to save EQ: {}",
                         e
                     )));
                 });
@@ -155,8 +370,10 @@ impl PlayerView {
 async fn run_optimization_task(
     curve_path: String,
     target: String,
+    target_custom_path: String,
     params: crate::optimization_params::OptimizationParams,
-) -> Result<String, String> {
+    export_format: String,
+) -> Result<HeadphoneOptimizationResult, String> {
     // Run optimization on background thread (blocking operation)
     smol::unblock(move || {
         use std::path::PathBuf;
@@ -165,10 +382,10 @@ async fn run_optimization_task(
         let input_curve = autoeq::read_curve_from_csv(&PathBuf::from(&curve_path))
             .map_err(|e| format!("Failed to read curve file: {}", e))?;
 
-        // Load target curve from bundled data
-        let target_curve = load_target_curve(&target)?;
+        // Load target curve
+        let target_curve = load_target_curve(&target, &target_custom_path)?;
 
-        // Create standard frequency grid
+        // Create standard frequency grid (200 points, 20 Hz to 20 kHz)
         let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
 
         // Normalize and interpolate curves
@@ -252,52 +469,192 @@ async fn run_optimization_task(
             &None,
         );
 
-        // Run optimization with callback
-        // TODO: Add progress updates via channel or shared state
+        // Run optimization with history tracking
+        let history: Vec<(usize, f64)> = Vec::new();
+        let history_ptr = std::sync::Arc::new(std::sync::Mutex::new(history));
+        let history_callback = history_ptr.clone();
+
         let filter_params = autoeq::workflow::perform_optimization_with_callback(
             &args,
             &objective_data,
-            Box::new(move |_intermediate| {
-                // Progress updates would go here
+            Box::new(move |intermediate| {
+                 if let Ok(mut h) = history_callback.lock() {
+                     // Check fields of intermediate
+                     h.push((intermediate.iter, intermediate.fun));
+                 }
                 autoeq::de::CallbackAction::Continue
             }),
         )
         .map_err(|e| format!("Optimization failed: {}", e))?;
 
-        // Convert to biquad filters
-        let biquads = autoeq::x2peq::x2peq(&filter_params, args.sample_rate, args.peq_model);
+        // Retrieve history
+        let history = history_ptr.lock().map_err(|_| "Failed to lock history")?.clone();
+        let initial_loss = history.first().map(|x| x.1).unwrap_or(0.0);
+        let final_loss = history.last().map(|x| x.1).unwrap_or(0.0);
+
+        // Convert to biquad filters (x2peq returns Vec<(f64, Biquad)>)
+        let peq = autoeq::x2peq::x2peq(&filter_params, args.sample_rate, args.peq_model);
+        // Extract just the biquads from the (frequency, biquad) tuples
+        let biquads: Vec<autoeq_iir::Biquad> = peq.into_iter().map(|(_, b)| b).collect();
+
+        // Calculate all the curves for visualization
+        let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
+        let input_curve_vec: Vec<f64> = input_curve_norm.spl.iter().copied().collect();
+        let target_curve_vec: Vec<f64> = target_curve_norm.spl.iter().copied().collect();
+        let deviation_curve_vec: Vec<f64> = deviation_curve.spl.iter().copied().collect();
+
+        // Calculate combined filter response
+        let filter_response: Vec<f64> = frequencies
+            .iter()
+            .map(|&freq| {
+                biquads.iter().map(|b| b.log_result(freq)).sum()
+            })
+            .collect();
+
+        // Calculate individual filter responses
+        let individual_filter_responses: Vec<Vec<f64>> = biquads
+            .iter()
+            .map(|biquad| {
+                frequencies
+                    .iter()
+                    .map(|&freq| biquad.log_result(freq))
+                    .collect()
+            })
+            .collect();
+
+        // Error = deviation - filter_response (what we still need to correct)
+        let error_curve: Vec<f64> = deviation_curve_vec
+            .iter()
+            .zip(filter_response.iter())
+            .map(|(d, f)| d - f)
+            .collect();
+
+        // Corrected response = input + filter_response
+        let corrected_curve: Vec<f64> = input_curve_vec
+            .iter()
+            .zip(filter_response.iter())
+            .map(|(i, f)| i + f)
+            .collect();
 
         // Save to EQ directory
         let eq_dir = sotf_audio_player::config::get_eq_dir()
             .ok_or_else(|| "Could not determine EQ directory".to_string())?;
+
+        // Ensure directory exists
+        std::fs::create_dir_all(&eq_dir)
+            .map_err(|e| format!("Failed to create EQ directory: {}", e))?;
 
         // Generate filename from target and timestamp
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let filename = format!("{}_{}.json", target, timestamp);
+
+        // Use a descriptive name based on target
+        let target_name = match target.as_str() {
+            "custom" => "custom",
+            other => other,
+        };
+
+        // Get file extension for the selected format
+        let extension = crate::autoeq::get_export_extension(&export_format);
+        let filename = format!("headphone_{}_{}{}", target_name, timestamp, extension);
         let output_path = eq_dir.join(&filename);
 
-        // Save biquads as JSON
-        let json = serde_json::to_string_pretty(&biquads)
-            .map_err(|e| format!("Failed to serialize biquads: {}", e))?;
-        std::fs::write(&output_path, json)
+        // Convert biquads to Peq format for export functions
+        let peq: autoeq_iir::Peq = biquads.iter().map(|b| (b.freq, b.clone())).collect();
+
+        // Generate output content based on selected format
+        let content = match export_format.as_str() {
+            "apo" => {
+                let comment = format!("# Headphone EQ for {}", target_name);
+                autoeq_iir::peq_format_apo(&comment, &peq)
+            }
+            "rme-channel" => autoeq_iir::peq_format_rme_channel(&peq),
+            "rme-room" => {
+                // For room EQ, use same filters for left and right
+                autoeq_iir::peq_format_rme_room(&peq, &peq)
+            }
+            "aupreset" => {
+                let name = format!("Headphone EQ - {}", target_name);
+                autoeq_iir::peq_format_aupreset(&peq, &name)
+            }
+            _ => {
+                // Default to JSON
+                serde_json::to_string_pretty(&biquads)
+                    .map_err(|e| format!("Failed to serialize biquads: {}", e))?
+            }
+        };
+
+        std::fs::write(&output_path, content)
             .map_err(|e| format!("Failed to write EQ file: {}", e))?;
 
-        Ok(output_path.display().to_string())
+        Ok(HeadphoneOptimizationResult {
+            biquads,
+            frequencies,
+            input_curve: input_curve_vec,
+            target_curve: target_curve_vec,
+            deviation_curve: deviation_curve_vec,
+            filter_response,
+            error_curve,
+            corrected_curve,
+            individual_filter_responses,
+            output_path: output_path.display().to_string(),
+            optimization_history: history,
+            initial_loss,
+            final_loss,
+        })
     })
     .await
 }
 
-/// Load target curve from bundled data
-fn load_target_curve(_target: &str) -> Result<autoeq::Curve, String> {
+/// Load target curve from bundled data or custom file
+fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curve, String> {
     use ndarray::Array1;
 
-    // For now, return a flat target at 0 dB
-    // TODO: Bundle actual Harman target curves
-    let freq: Vec<f64> = (20..=20000).step_by(10).map(|f| f as f64).collect();
-    let spl: Vec<f64> = vec![0.0; freq.len()];
+    match target {
+        "harman-over-ear-2018" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2018),
+        "harman-over-ear-2015" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2015),
+        "harman-over-ear-2013" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2013),
+        "harman-in-ear-2019" => parse_csv_curve(target_curves::HARMAN_IN_EAR_2019),
+        "custom" => {
+            // Load from custom file path
+            autoeq::read_curve_from_csv(&PathBuf::from(custom_path))
+                .map_err(|e| format!("Failed to read custom target curve: {}", e))
+        }
+        _ => {
+            // Load from custom file path
+            autoeq::read_curve_from_csv(&PathBuf::from(custom_path))
+                .map_err(|e| format!("A target curve is required for headphone: {}", e))
+        }
+    }
+}
+
+/// Parse a CSV string into a Curve
+fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
+    use ndarray::Array1;
+
+    let mut freq = Vec::new();
+    let mut spl = Vec::new();
+
+    for (i, line) in csv_data.lines().enumerate() {
+        // Skip header line
+        if i == 0 && line.contains("frequency") {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split(',').collect();
+        if parts.len() >= 2 {
+            if let (Ok(f), Ok(s)) = (parts[0].trim().parse::<f64>(), parts[1].trim().parse::<f64>()) {
+                freq.push(f);
+                spl.push(s);
+            }
+        }
+    }
+
+    if freq.is_empty() {
+        return Err("No valid data found in CSV".to_string());
+    }
 
     Ok(autoeq::Curve {
         freq: Array1::from_vec(freq),

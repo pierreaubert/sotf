@@ -12,6 +12,7 @@ use super::common::{
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{Divider, HStack, StackAlign, StackSpacing, Text, TextSize, VStack};
 
 /// Render the Limiter plugin
 pub fn render_limiter_plugin(
@@ -31,131 +32,81 @@ pub fn render_limiter_plugin(
     };
     let simulated_peak = threshold_db - 3.0; // Simulated peak level below ceiling
 
-    div()
-        .flex()
-        .flex_col()
-        .gap_4()
+    // Cache theme colors for closures
+    let peak_color = if simulated_peak > threshold_db { theme.error } else { theme.success };
+    let border_color = theme.border;
+
+    VStack::new()
+        .spacing(StackSpacing::Lg)
         // Main section - Sliders, Transfer Curve and Peak Meter
         .child(
-            div()
-                .flex()
-                .gap_4()
+            HStack::new()
+                .spacing(StackSpacing::Lg)
                 // Parameters section with vertical sliders
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(render_section_header("LIMITER SETTINGS", theme))
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Ceiling", threshold_db, -12.0, 0.0, "dB",
+                                    0, selected_param, is_editing, Some('c'), theme,
+                                ))
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Release", release_ms, 10.0, 1000.0, "ms",
+                                    1, selected_param, is_editing, Some('r'), theme,
+                                ))
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Mix", mix, 0.0, 1.0, "%",
+                                    2, selected_param, is_editing, Some('m'), theme,
+                                ))
+                                .build()
+                                .justify_center(),
+                        )
+                        .build()
                         .rounded_xl()
                         .bg(theme.background_secondary)
                         .border_1()
                         .border_color(theme.border)
-                        .p_4()
-                        .child(render_section_header("LIMITER SETTINGS", theme))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_3()
-                                .justify_center()
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Ceiling",
-                                    threshold_db,
-                                    -12.0,
-                                    0.0,
-                                    "dB",
-                                    0,
-                                    selected_param,
-                                    is_editing,
-                                    Some('c'),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Release",
-                                    release_ms,
-                                    10.0,
-                                    1000.0,
-                                    "ms",
-                                    1,
-                                    selected_param,
-                                    is_editing,
-                                    Some('r'),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Mix",
-                                    mix,
-                                    0.0,
-                                    1.0,
-                                    "%",
-                                    2,
-                                    selected_param,
-                                    is_editing,
-                                    Some('m'),
-                                    theme,
-                                )),
-                        ),
+                        .p_4(),
                 )
                 // Transfer curve
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(render_transfer_curve(threshold_db, f64::INFINITY, 0.0, true, theme))
+                        .build()
                         .rounded_xl()
                         .bg(theme.background_secondary)
                         .border_1()
                         .border_color(theme.border)
-                        .p_4()
-                        .items_center()
-                        .child(render_transfer_curve(
-                            threshold_db,
-                            f64::INFINITY, // Infinite ratio for limiter
-                            0.0,           // No knee
-                            true,          // Is limiter
-                            theme,
-                        )),
+                        .p_4(),
                 )
                 // Peak meter
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(render_peak_meter(simulated_peak, threshold_db, theme))
+                        .build()
                         .rounded_xl()
                         .bg(theme.background_secondary)
                         .border_1()
                         .border_color(theme.border)
-                        .p_4()
-                        .items_center()
-                        .child(render_peak_meter(simulated_peak, threshold_db, theme)),
+                        .p_4(),
                 ),
         )
         // Large ceiling display
         .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .gap_6()
-                .p_4()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
+            HStack::new()
+                .spacing(StackSpacing::Xl)
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("CEILING"),
-                        )
+                    VStack::new()
+                        .align(StackAlign::Center)
+                        .child(Text::new("CEILING").size(TextSize::Xs).color(theme.text_muted))
                         .child(
                             div()
                                 .text_3xl()
@@ -164,30 +115,26 @@ pub fn render_limiter_plugin(
                                 .child(format!("{:.2} dB", threshold_db)),
                         ),
                 )
-                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
+                .child(Divider::vertical().color(border_color).build_simple().h(px(40.0)))
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("TRUE PEAK"),
-                        )
+                    VStack::new()
+                        .align(StackAlign::Center)
+                        .child(Text::new("TRUE PEAK").size(TextSize::Xs).color(theme.text_muted))
                         .child(
                             div()
                                 .text_xl()
                                 .font_weight(FontWeight::BOLD)
-                                .text_color(if simulated_peak > threshold_db {
-                                    theme.error
-                                } else {
-                                    theme.success
-                                })
+                                .text_color(peak_color)
                                 .child(format!("{:.1} dB", simulated_peak)),
                         ),
-                ),
+                )
+                .build()
+                .justify_center()
+                .p_4()
+                .rounded_xl()
+                .bg(theme.background_secondary)
+                .border_1()
+                .border_color(theme.border),
         )
         // Gain reduction meter
         .child(
@@ -201,20 +148,18 @@ pub fn render_limiter_plugin(
         )
         // Keyboard hints
         .child(
-            div()
+            HStack::new()
+                .spacing(StackSpacing::Lg)
+                .child(Text::new("[C]eiling").size(TextSize::Xs).color(theme.text_secondary))
+                .child(Text::new("[R]elease").size(TextSize::Xs).color(theme.text_secondary))
+                .child(Text::new("[M]ix").size(TextSize::Xs).color(theme.text_secondary))
+                .child(Text::new("1-3: Quick select").size(TextSize::Xs).color(theme.text_secondary))
+                .build()
                 .p_3()
                 .rounded_lg()
                 .bg(theme.accent_muted)
                 .border_1()
-                .border_color(theme.accent)
-                .flex()
-                .gap_4()
-                .text_xs()
-                .text_color(theme.text_secondary)
-                .child("[C]eiling")
-                .child("[R]elease")
-                .child("[M]ix")
-                .child("1-3: Quick select"),
+                .border_color(theme.accent),
         )
         .when(is_editing, |d| d.child(render_edit_hints(theme)))
 }

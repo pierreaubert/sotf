@@ -15,6 +15,7 @@ members = [
     "math-convexhull3d",
     "math-de",
     "math-wave",
+    "math-xem-common",
     "sotf-audio-engine",
     "sotf-audio-player",
     "sotf-audio-player/app-tui",
@@ -56,6 +57,7 @@ default-members = [
     "math-solvers",
     "math-testfunctions",
     "math-wave",
+    "math-xem-common",
 ]
 resolver = "3"
 

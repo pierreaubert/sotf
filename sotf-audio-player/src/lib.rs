@@ -31,6 +31,9 @@ pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMess
 pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformScanner};
 
+// Re-export measurement functionality
+pub use sotf_audio::signal_recorder;
+
 // Re-export autoeq_iir types needed by TUI
 pub use autoeq_iir::BiquadFilterType;
 

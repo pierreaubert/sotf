@@ -186,13 +186,13 @@
   ],
   "frequencies": {
     "min_freq": 20.0,
-    "max_freq": 300.0,
-    "num_points": 100,
+    "max_freq": 1000.0,
+    "num_points": 250,
     "spacing": "logarithmic"
   },
   "solver": {
     "method": "gmres+ilu",
-    "mesh_resolution": 10,
+    "mesh_resolution": 20,
     "gmres": {
       "max_iter": 10000,
       "restart": 300,
@@ -207,7 +207,7 @@
   },
   "visualization": {
     "generate_slices": true,
-    "slice_resolution": 50,
+    "slice_resolution": 250,
     "slice_frequency_indices": []
   },
   "metadata": {

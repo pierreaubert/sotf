@@ -114,6 +114,7 @@ fn test_loopback_tone() {
         config.send_channel,
         config.record_channel,
         None,
+        None,
         None, // No microphone compensation
     )
     .expect("Failed to record and analyze");
@@ -225,6 +226,7 @@ fn test_loopback_sweep_accuracy() {
         &csv_file,
         config.send_channel,
         config.record_channel,
+        None,
         None,
         None, // No microphone compensation
     )
@@ -350,6 +352,7 @@ fn test_loopback_pink_noise() {
         &csv_file,
         config.send_channel,
         config.record_channel,
+        None,
         None,
         None, // No microphone compensation
     )

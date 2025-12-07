@@ -1,4 +1,3 @@
-use gpui::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
@@ -18,6 +17,16 @@ pub struct SelectPluginParam {
 pub struct ResetPluginParam {
     pub plugin_idx: usize,
     pub param_idx: usize,
+}
+
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct StartKnobDrag {
+    pub plugin_idx: usize,
+    pub param_idx: usize,
+    pub start_y: f32,
+    pub start_value: f64,
+    pub min: f64,
+    pub max: f64,
 }
 
 impl gpui::Action for UpdatePluginParam {
@@ -77,6 +86,27 @@ impl gpui::Action for ResetPluginParam {
     }
     fn name_for_type() -> &'static str {
         "ResetPluginParam"
+    }
+    fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
+        Err(anyhow::anyhow!("Not supported via keymaps"))
+    }
+}
+
+impl gpui::Action for StartKnobDrag {
+    fn boxed_clone(&self) -> Box<dyn gpui::Action> {
+        Box::new(self.clone())
+    }
+    fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+    fn name(&self) -> &'static str {
+        "StartKnobDrag"
+    }
+    fn name_for_type() -> &'static str {
+        "StartKnobDrag"
     }
     fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
         Err(anyhow::anyhow!("Not supported via keymaps"))

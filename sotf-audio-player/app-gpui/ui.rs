@@ -11,7 +11,7 @@ use std::time::Duration;
 
 // Re-export all actions for backward compatibility
 pub use crate::actions::*;
-use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, UpdatePluginParam};
+use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam};
 
 pub struct PlayerView {
     pub(crate) state: Entity<AppState>,
@@ -1567,6 +1567,8 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state.app.editing_plugin_index = Some(action.plugin_idx);
             state.app.plugin_param_selection = action.param_idx;
+            // Enable edit mode so keyboard navigation works
+            state.app.input_mode = crate::app::InputMode::EditPlugin;
         });
         cx.notify();
     }
@@ -1581,6 +1583,24 @@ impl PlayerView {
             state
                 .app
                 .reset_plugin_param(action.plugin_idx, action.param_idx);
+        });
+        cx.notify();
+    }
+
+    fn on_start_knob_drag(
+        &mut self,
+        action: &StartKnobDrag,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.is_dragging_knob = true;
+            state.app.knob_drag_plugin_idx = action.plugin_idx;
+            state.app.knob_drag_param_idx = action.param_idx;
+            state.app.knob_drag_start_y = Some(action.start_y);
+            state.app.knob_drag_start_value = action.start_value;
+            state.app.knob_drag_min = action.min;
+            state.app.knob_drag_max = action.max;
         });
         cx.notify();
     }
@@ -1711,6 +1731,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::on_update_plugin_param))
             .on_action(cx.listener(Self::on_select_plugin_param))
             .on_action(cx.listener(Self::on_reset_plugin_param))
+            .on_action(cx.listener(Self::on_start_knob_drag))
             // Level meter actions
             .on_action(cx.listener(Self::select_next_meter_group))
             .on_action(cx.listener(Self::select_prev_meter_group))
@@ -1744,6 +1765,9 @@ impl Render for PlayerView {
                     }
                     crate::app::InputMode::LoadPlugins => {
                         view.handle_load_plugins_input(event, cx);
+                    }
+                    crate::app::InputMode::EditingParam => {
+                        // Stepper-based editing doesn't need keyboard input
                     }
                     crate::app::InputMode::Normal => {
                         // Handle screen-specific shortcuts in Normal mode
@@ -1861,6 +1885,9 @@ impl Render for PlayerView {
                 div.child(self.render_about_dialog(cx))
             })
             .child(self.render_toast(cx))
+            .when(self.state.read(cx).app.measure_state.is_some(), |div| {
+                div.child(self.render_measure_dialog(cx))
+            })
             .when(self.state.read(cx).app.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))
             })

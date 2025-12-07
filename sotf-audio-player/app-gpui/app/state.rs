@@ -17,7 +17,7 @@ use crate::theme::{Theme, ThemeId};
 
 use super::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode,
-    LibrarySortOrder, QueueItem, Screen, ToastMessage,
+    LibrarySortOrder, QueueItem, Screen, ToastMessage, MeasureState,
 };
 
 #[derive(Debug)]
@@ -36,11 +36,24 @@ pub struct App {
     pub plugin_file_input: String,    // For save/load plugin chain
     pub apo_file_input: String,       // For loading APO EQ files
     pub sofa_file_input: String,      // For loading SOFA HRTF files
-    pub headphone_curve_path: String, // Headphone measurement file
-    pub headphone_target: String,     // Selected target curve
+    pub headphone_curve_path: String,        // Headphone measurement file
+    pub headphone_target: String,             // Selected target curve (e.g. "harman-over-ear-2018" or "custom")
+    pub headphone_target_custom_path: String, // Path to custom target curve CSV file
     pub headphone_params: crate::optimization_params::OptimizationParams, // All optimization parameters
     pub headphone_optimization_running: bool, // Is optimization in progress
     pub headphone_optimization_progress: Vec<(usize, f64)>, // (iteration, fitness)
+    pub headphone_optimization_result: Option<crate::autoeq::HeadphoneOptimizationResult>, // Results
+    pub headphone_export_format: String, // Selected export format (json, apo, rme-channel, etc.)
+    pub headphone_expanded_sections: Vec<gpui::SharedString>, // Accordion expanded sections
+    
+    // Speaker Optimization State
+    pub speaker_model: String, // Selected speaker model name (e.g. "KEF LS50 Meta")
+    pub speaker_params: crate::optimization_params::OptimizationParams,
+    pub speaker_optimization_running: bool,
+    pub speaker_optimization_progress: Vec<(usize, f64)>,
+    pub speaker_optimization_result: Option<crate::autoeq::speaker_eq::SpeakerOptimizationResult>,
+    pub speaker_export_format: String,
+    
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
@@ -92,9 +105,17 @@ pub struct App {
     pub spectrum_info: Option<SpectrumData>,
 
     // Audio devices
+    // Audio devices
     pub output_devices: Vec<AudioDevice>,
     pub selected_output_device_index: usize,
     pub current_output_device_name: Option<String>,
+    
+    pub input_devices: Vec<AudioDevice>,
+    pub selected_input_device_index: usize,
+    pub current_input_device_name: Option<String>,
+    
+    // Measurement state
+    pub measure_state: Option<MeasureState>,
 
     // Flags
     pub should_quit: bool,
@@ -157,6 +178,15 @@ pub struct App {
     pub volume_drag_start_y: Option<f32>,
     pub volume_drag_start_value: f32,
 
+    // Plugin knob/slider drag state
+    pub is_dragging_knob: bool,
+    pub knob_drag_plugin_idx: usize,
+    pub knob_drag_param_idx: usize,
+    pub knob_drag_start_y: Option<f32>,
+    pub knob_drag_start_value: f64,
+    pub knob_drag_min: f64,
+    pub knob_drag_max: f64,
+
     // Settings accordion expanded sections
     pub expanded_settings_sections: Vec<String>,
 
@@ -165,6 +195,10 @@ pub struct App {
 
     // ReplayGain scanner manager
     pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
+
+    // Parameter editing state
+    pub editing_param: Option<String>,
+    pub editing_value: String,
 
     // ReplayGain settings
     pub replay_gain_enabled: bool,
@@ -207,9 +241,25 @@ impl App {
             sofa_file_input: String::new(),
             headphone_curve_path: String::new(),
             headphone_target: String::from("harman-over-ear-2018"),
+            headphone_target_custom_path: String::new(),
             headphone_params: crate::optimization_params::OptimizationParams::headphone_defaults(),
             headphone_optimization_running: false,
             headphone_optimization_progress: Vec::new(),
+            headphone_optimization_result: None,
+            headphone_export_format: String::from("json"),
+            headphone_expanded_sections: vec![
+                gpui::SharedString::from("measurement"),
+                gpui::SharedString::from("target"),
+            ],
+            
+            // Speaker State Init
+            speaker_model: String::new(),
+            speaker_params: crate::optimization_params::OptimizationParams::speaker_defaults(),
+            speaker_optimization_running: false,
+            speaker_optimization_progress: Vec::new(),
+            speaker_optimization_result: None,
+            speaker_export_format: String::from("json"),
+            
             selected_directory_index: 0,
             selected_queue_index: 0,
             album_list_offset: 0,
@@ -249,6 +299,10 @@ impl App {
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
+            input_devices: Vec::new(),
+            selected_input_device_index: 0,
+            current_input_device_name: None,
+            measure_state: None,
             should_quit: false,
             needs_rescan: false,
             scan_in_progress: false,
@@ -282,9 +336,18 @@ impl App {
             is_dragging_volume: false,
             volume_drag_start_y: None,
             volume_drag_start_value: 0.0,
+            is_dragging_knob: false,
+            knob_drag_plugin_idx: 0,
+            knob_drag_param_idx: 0,
+            knob_drag_start_y: None,
+            knob_drag_start_value: 0.0,
+            knob_drag_min: 0.0,
+            knob_drag_max: 1.0,
             expanded_settings_sections: vec!["library".to_string()],
             waveform_manager: sotf_audio_player::WaveformScanManager::new(),
             replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
+            editing_param: None,
+            editing_value: String::new(),
             replay_gain_enabled: true,
             replay_gain_mode: ReplayGainMode::Track,
             replay_gain_preamp: 0.0,
@@ -310,15 +373,22 @@ impl App {
         self.library.update_directory_scan_times();
     }
 
-    pub fn load_output_devices(&mut self) {
-        // Load available output devices
-        if let Ok(devices_map) = sotf_audio::devices::get_audio_devices()
-            && let Some(output_devices) = devices_map.get("output")
-        {
-            self.output_devices = output_devices.clone();
-            // Find the default device
-            if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
-                self.selected_output_device_index = default_idx;
+    pub fn load_audio_devices(&mut self) {
+        // Load available devices
+        if let Ok(devices_map) = sotf_audio::devices::get_audio_devices() {
+            if let Some(output_devices) = devices_map.get("output") {
+                self.output_devices = output_devices.clone();
+                // Find the default device
+                if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
+                    self.selected_output_device_index = default_idx;
+                }
+            }
+            if let Some(input_devices) = devices_map.get("input") {
+                self.input_devices = input_devices.clone();
+                // Find the default device
+                if let Some(default_idx) = input_devices.iter().position(|d| d.is_default) {
+                    self.selected_input_device_index = default_idx;
+                }
             }
         }
     }

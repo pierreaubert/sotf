@@ -82,11 +82,11 @@ name = "autoeq"
 path = "bin/autoeq.rs"
 
 [[bin]]
-name = "benchmark_autoeq_speaker"
+name = "benchmark-autoeq-speaker"
 path = "bin/autoeq_benchmark_speaker.rs"
 
 [[bin]]
-name = "autoeq_download_speakers"
+name = "autoeq-download-speakers"
 path = "bin/autoeq_download_speaker.rs"
 
 [[bin]]
@@ -94,7 +94,7 @@ name = "roomeq"
 path = "bin/roomeq.rs"
 
 [[bin]]
-name = "roomeq_fuzzer"
+name = "roomeq-fuzzer"
 path = "bin/roomeq_fuzzer.rs"
 
 [lib]

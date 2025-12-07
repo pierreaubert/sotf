@@ -450,7 +450,8 @@ pub fn record_signal(
             &csv_path,
             send_ch,                            // Output channel
             record_ch,                          // Input channel
-            device.as_deref(),                  // Optional device name
+            device.as_deref(),                  // Optional output device name
+            device.as_deref(),                  // Optional input device name
             microphone_compensation.as_deref(), // Optional microphone compensation file
         )?;
 

@@ -9,6 +9,7 @@ use gpui_ui_kit::{
     StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
+
 impl PlayerView {
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -582,7 +583,7 @@ impl PlayerView {
             )
     }
 
-    pub(crate) fn render_plugin_edit_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_plugin_edit_modal(&self, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
 
@@ -633,8 +634,9 @@ impl PlayerView {
                         .muted(true),
                 )
                 .into_element()
+                .into_any_element()
         } else {
-            div() // Return empty div if no plugin is being edited
+            div().into_any_element() // Return empty div if no plugin is being edited
         }
     }
 }
@@ -978,26 +980,40 @@ impl PlayerView {
             ("Shift-S/l", "Save/Load preset"),
         ];
 
-        Dialog::new("shortcuts-dialog")
-            .title("Keyboard Shortcuts")
-            .size(DialogSize::Full)
-            .show_close_button(false)
-            .content(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_6()
-                    .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
-                    .child(self.render_shortcut_section("Library", &library_shortcuts, &theme))
-                    .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
-                    .child(self.render_shortcut_section("Plugins", &plugin_shortcuts, &theme)),
+        div()
+            .child(
+                Dialog::new("shortcuts-dialog")
+                    .title("Keyboard Shortcuts")
+                    .size(DialogSize::Full)
+                    .show_close_button(false)
+                    .content(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_6()
+                            .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
+                            .child(self.render_shortcut_section(
+                                "Library",
+                                &library_shortcuts,
+                                &theme,
+                            ))
+                            .child(self.render_shortcut_section(
+                                "Queue",
+                                &queue_shortcuts,
+                                &theme,
+                            ))
+                            .child(self.render_shortcut_section(
+                                "Plugins",
+                                &plugin_shortcuts,
+                                &theme,
+                            )),
+                    )
+                    .footer(
+                        Text::new("Press ESC or ? to close")
+                            .size(TextSize::Xs)
+                            .muted(true),
+                    ),
             )
-            .footer(
-                Text::new("Press ESC or ? to close")
-                    .size(TextSize::Xs)
-                    .muted(true),
-            )
-            .build()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseDownEvent, _window, cx| {

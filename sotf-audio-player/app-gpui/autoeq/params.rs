@@ -258,3 +258,21 @@ pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[
     ("bobyqa", "BOBYQA"),
     ("newuoa", "NEWUOA"),
 ];
+
+/// EQ export format options
+pub const EQ_EXPORT_FORMAT_OPTIONS: &[(&str, &str, &str)] = &[
+    ("json", "JSON", ".json"),
+    ("apo", "EqualizerAPO", ".txt"),
+    ("rme-channel", "RME TotalMix (Channel)", ".xml"),
+    ("rme-room", "RME TotalMix (Room)", ".xml"),
+    ("aupreset", "Apple AUNBandEQ", ".aupreset"),
+];
+
+/// Get file extension for export format
+pub fn get_export_extension(format: &str) -> &'static str {
+    EQ_EXPORT_FORMAT_OPTIONS
+        .iter()
+        .find(|(id, _, _)| *id == format)
+        .map(|(_, _, ext)| *ext)
+        .unwrap_or(".json")
+}

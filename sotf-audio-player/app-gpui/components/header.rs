@@ -118,7 +118,8 @@ impl PlayerView {
     ) -> impl IntoElement {
         let is_open = active_menu == menu_id;
 
-        menu_bar_button(format!("menu-{}", label), label, is_open).on_mouse_up(
+        let menu_theme = _theme.to_menu_theme();
+        menu_bar_button(format!("menu-{}", label), label, is_open, &menu_theme).on_mouse_up(
             MouseButton::Left,
             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                 view.state.update(cx, |state, _cx| {
@@ -160,7 +161,7 @@ impl PlayerView {
                 _ => {}
             }
         })
-        .build()
+        .build_with_theme(&theme.to_menu_theme())
         .absolute()
         .top(px(28.0))
         .left(px(16.0))
@@ -199,7 +200,7 @@ impl PlayerView {
                 }
             });
         })
-        .build()
+        .build_with_theme(&theme.to_menu_theme())
         .absolute()
         .top(px(28.0))
         .left(px(52.0))
@@ -229,7 +230,7 @@ impl PlayerView {
                 }
             });
         })
-        .build()
+        .build_with_theme(&theme.to_menu_theme())
         .absolute()
         .top(px(28.0))
         .left(px(96.0))

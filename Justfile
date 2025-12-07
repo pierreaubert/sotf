@@ -20,7 +20,7 @@ default:
 download-once: download-spinorama download-sofa
 
 download-spinorama:
-	cargo run --bin autoeq_download_speakers --release
+	cargo run --bin autoeq-download-speakers --release
 
 download-sofa:
 	mkdir -p data_cached/org.sofacoustics/mit
@@ -67,13 +67,13 @@ alias build := prod
 prod: prod-workspace prod-autoeq prod-sotf-player prod-sotf-recorder prod-generate-audio-tests prod-roomeq
 	cargo build --release --bin plot_functions
 	cargo build --release --bin download
-	cargo build --release --bin benchmark_autoeq_speaker
-	cargo build --release --bin benchmark_convergence
-	cargo build --release --bin plot_autoeq_de
-	cargo build --release --bin run_autoeq_de
+	cargo build --release --bin benchmark-autoeq-speaker
+	cargo build --release --bin benchmark-convergence
+	cargo build --release --bin plot-autoeq-de
+	cargo build --release --bin run-autoeq-de
 
 prod-generate-audio-tests:
-	cargo build --release --bin generate_audio_tests
+	cargo build --release --bin generate-audio-tests
 
 prod-workspace:
 	cargo build --release --workspace
@@ -85,7 +85,7 @@ prod-roomeq:
 	cargo build --release --bin roomeq
 
 prod-sotf-player: prod-sotf-tui prod-sotf-gpui
-	cargo build --release --bin sotf_player
+	cargo build --release --bin sotf-player
 
 prod-sotf-gpui:
 	cargo build --release --bin sotf-gpui -p sotf-gpui
@@ -94,10 +94,10 @@ prod-sotf-tui:
 	cargo build --release --bin sotf-tui -p sotf-tui
 
 prod-sotf-recorder:
-	cargo build --release --bin sotf_recorder
+	cargo build --release --bin sotf-recorder
 
 prod-hal:
-	cargo build --release -p soft_hal
+	cargo build --release -p soft-hal
 
 prod-configbar:
 	./src-configbar/scripts/build.sh
@@ -185,12 +185,12 @@ build-au: build-au-rust build-au-swift
 bench: bench-convergence bench-autoeq-speaker
 
 bench-convergence:
-	cargo run --release --bin benchmark_convergence
+	cargo run --release --bin benchmark-convergence
 
 bench-autoeq-speaker:
 	# either jobs=1 or --no-parallel ; or a mix if you have a lot of
 	# CPU cores
-	cargo run --release --bin benchmark_autoeq_speaker -- --qa --jobs 1
+	cargo run --release --bin benchmark-autoeq-speaker -- --qa --jobs 1
 
 # ----------------------------------------------------------------------
 # CLEAN
@@ -211,13 +211,13 @@ clean:
 dev:
 	cargo build --workspace
 	cargo build --bin autoeq
-	cargo build --bin plot_functions
+	cargo build --bin plot-functions
 	cargo build --bin download
-	cargo build --bin benchmark_convergence
-	cargo build --bin benchmark_autoeq_speaker
-	cargo build --bin plot_autoeq_de
-	cargo build --bin run_autoeq_de
-	cargo build --bin sotf_audio_test
+	cargo build --bin benchmark-convergence
+	cargo build --bin benchmark-autoeq-speaker
+	cargo build --bin plot-autoeq-de
+	cargo build --bin run-autoeq-de
+	cargo build --bin sotf-audio-test
 
 # ----------------------------------------------------------------------
 # UPDATE
@@ -240,7 +240,10 @@ update-ts:
 # DEMO
 # ----------------------------------------------------------------------
 
-demo: demo-headphone-loss demo-plot-functions demo-d3rs demo-px
+demo: demo-headphone-loss demo-plot-functions demo-d3rs demo-px demo-ui-kit
+
+demo-ui-kit:
+	cargo run --release --example showcase -p gpui-ui-kit
 
 demo-headphone-loss:
 	cargo run --release --example headphone_loss_demo -- \
@@ -248,7 +251,7 @@ demo-headphone-loss:
 	--target "./data_tests/targets/harman-over-ear-2018.csv"
 
 demo-plot-functions:
-	cargo run --release --bin plot_functions
+	cargo run --release --bin plot-functions
 
 demo-d3rs:
 	cargo run --release --bin d3rs-showcase --features="gpui"
@@ -330,19 +333,19 @@ cross-static-all: cross-static-linux-x86 cross-static-linux-arm64 cross-static-w
 # Linux x86_64 static binary (musl)
 cross-static-linux-x86:
 	@echo "Building static Linux x86_64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-unknown-linux-musl --bin sotf_player_tui
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-unknown-linux-musl --bin sotf-player-tui
 	@echo "Done! Binary at: target/x86_64-unknown-linux-musl/release/sotf_player_tui"
 
 # Linux ARM64 static binary (musl)
 cross-static-linux-arm64:
 	@echo "Building static Linux ARM64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target aarch64-unknown-linux-musl --bin sotf_player_tui
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target aarch64-unknown-linux-musl --bin sotf-player-tui
 	@echo "Done! Binary at: target/aarch64-unknown-linux-musl/release/sotf_player_tui"
 
 # Windows x86_64 static binary (MSVC with static CRT)
 cross-static-windows-x86:
 	@echo "Building static Windows x86_64 binary..."
-	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-msvc --bin sotf_player_tui
+	CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --release --target x86_64-pc-windows-msvc --bin sotf-player-tui
 	@echo "Done! Binary at: target/x86_64-pc-windows-msvc/release/sotf_player_tui.exe"
 
 # macOS universal binary (NOT fully static - limited by macOS system restrictions)
@@ -352,14 +355,14 @@ cross-static-macos:
 	@echo "Building macOS binaries..."
 	@echo "Note: macOS binaries cannot be fully static due to Apple's security policies"
 	@echo "      System frameworks (CoreAudio, etc.) will be dynamically linked"
-	cargo build --release --target x86_64-apple-darwin --bin sotf_player_tui
-	cargo build --release --target aarch64-apple-darwin --bin sotf_player_tui
+	cargo build --release --target x86_64-apple-darwin --bin sotf-player-tui
+	cargo build --release --target aarch64-apple-darwin --bin sotf-player-tui
 	@echo "Creating universal binary (Intel + Apple Silicon)..."
 	lipo -create \
-		target/x86_64-apple-darwin/release/sotf_player_tui \
-		target/aarch64-apple-darwin/release/sotf_player_tui \
-		-output target/sotf_player_tui-macos-universal
-	@echo "✓ Done! Universal binary at: target/sotf_player_tui-macos-universal"
+		target/x86_64-apple-darwin/release/sotf-player-tui \
+		target/aarch64-apple-darwin/release/sotf-player-tui \
+		-output target/sotf-player-tui-macos-universal
+	@echo "✓ Done! Universal binary at: target/sotf-player-tui-macos-universal"
 
 # Build static binary for current platform
 # Note: Requires bash/sh shell. On Linux, builds musl static binary.
@@ -370,18 +373,18 @@ build-static-local:
 	echo "Building static binary for current platform..."
 	if [ "$(uname)" = "Linux" ]; then
 		if [ "$(uname -m)" = "x86_64" ]; then
-			cargo build --release --target x86_64-unknown-linux-musl --bin sotf_player_tui
-			echo "✓ Built: target/x86_64-unknown-linux-musl/release/sotf_player_tui"
+			cargo build --release --target x86_64-unknown-linux-musl --bin sotf-player-tui
+			echo "✓ Built: target/x86_64-unknown-linux-musl/release/sotf-player-tui"
 		elif [ "$(uname -m)" = "aarch64" ]; then
-			cargo build --release --target aarch64-unknown-linux-musl --bin sotf_player_tui
-			echo "✓ Built: target/aarch64-unknown-linux-musl/release/sotf_player_tui"
+			cargo build --release --target aarch64-unknown-linux-musl --bin sotf-player-tui
+			echo "✓ Built: target/aarch64-unknown-linux-musl/release/sotf-player-tui"
 		else
 			echo "❌ Unsupported Linux architecture: $(uname -m)"
 			exit 1
 		fi
 	elif [ "$(uname)" = "Darwin" ]; then
-		cargo build --release --bin sotf_player_tui
-		echo "✓ Built: target/release/sotf_player_tui"
+		cargo build --release --bin sotf-player-tui
+		echo "✓ Built: target/release/sotf-player-tui"
 		echo "Note: macOS binaries have limited static linking due to Apple restrictions"
 	else
 		echo "❌ Unsupported platform: $(uname)"

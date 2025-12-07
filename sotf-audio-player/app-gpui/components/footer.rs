@@ -5,10 +5,9 @@ use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, IconButton, IconButtonSize, IconButtonVariant, Potentiometer, StackAlign, StackJustify,
-    StackSpacing, VStack,
+    HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify,
+    StackSpacing, VStack, VolumeKnob,
 };
-use std::sync::Arc;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -98,8 +97,8 @@ impl Element for WaveformElement {
 
         // Render logic from render_waveform_bars
         const NUM_BARS: usize = 128;
-        const MAX_HEIGHT: f32 = 16.0;
-        const MIN_HEIGHT: f32 = 2.0;
+        const MAX_HEIGHT: f32 = 12.0;
+        const MIN_HEIGHT: f32 = 0.0;
         const BAR_WIDTH: f32 = 4.0;
 
         let default_waveform: Vec<u8> = vec![64; NUM_BARS];
@@ -221,8 +220,8 @@ impl PlayerView {
             // Album artwork (64x64)
             .child({
                 let art_div = div()
-                    .w(px(64.0))
-                    .h(px(64.0))
+                    .w(px(96.0))
+                    .h(px(96.0))
                     .rounded_md()
                     .bg(surface_hover)
                     .overflow_hidden();
@@ -469,14 +468,14 @@ impl PlayerView {
                             ),
                     ),
             )
-            // Waveform/progress row (moved up 20px relative to transport)
+            // Waveform/progress row - aligned with elapsed/total time
             .child(
                 div()
                     .flex()
                     .items_center()
                     .gap_0()
                     .w_full()
-                    .mt(px(8.0)) // Move waveform down to avoid collision
+                    .mt(px(28.0)) // Move waveform down to align with time labels
                     // Current position
                     .child(
                         div()
@@ -490,7 +489,8 @@ impl PlayerView {
                         div()
                             .id("waveform-bar")
                             .flex_1()
-                            .h(px(36.0)) // Taller waveform
+			    .gap_0()
+                            .h(px(24.0)) // Taller waveform
                             .cursor_pointer()
                             .on_mouse_down(
                                 MouseButton::Left,
@@ -835,7 +835,7 @@ impl PlayerView {
                 cx.notify();
             }))
             .child(
-                Potentiometer::new()
+                VolumeKnob::new()
                     .value(volume)
                     .label(format!("{}", volume_percent))
                     .size(px(72.0)) // 50% bigger (48 * 1.5 = 72)

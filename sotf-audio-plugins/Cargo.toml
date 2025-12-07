@@ -66,19 +66,19 @@ rand = { workspace = true }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bin]]
-name = "plugin_fuzzer"
+name = "plugin-fuzzer"
 path = "bin/plugin_fuzzer.rs"
 
 [[bench]]
-name = "binaural_decoder_benchmark"
+name = "binaural-decoder-benchmark"
 harness = false
 
 [[bench]]
-name = "upmixer_benchmark"
+name = "upmixer-benchmark"
 harness = false
 
 [[bench]]
-name = "compressor_benchmark"
+name = "compressor-benchmark"
 harness = false
 
 

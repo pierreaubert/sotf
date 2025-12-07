@@ -403,6 +403,8 @@ impl Theme {
             track: self.surface_hover,
             fill: self.accent,
             thumb: self.text_primary,
+            thumb_hover: self.text_secondary,
+            thumb_active: self.accent,
             label: self.text_primary,
             value: self.text_secondary,
         }

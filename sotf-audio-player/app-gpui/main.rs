@@ -126,7 +126,7 @@ fn main() {
                     }
 
                     // Load output devices
-                    app.load_output_devices();
+                    app.load_audio_devices();
 
                     // Load configuration
                     if let Err(e) = app.load_config() {

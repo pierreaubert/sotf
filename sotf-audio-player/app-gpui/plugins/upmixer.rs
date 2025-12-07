@@ -4,6 +4,7 @@ use super::common::{
 };
 use crate::theme::Theme;
 use gpui::*;
+use gpui_ui_kit::{Divider, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack};
 
 /// Render the upmixer plugin controls
 ///
@@ -31,22 +32,22 @@ pub fn render_upmixer_plugin(
     selected_param: usize,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Parameter Indices:
+    // Parameter Indices (must match plugin_editing.rs):
     // 0: Speaker Config
-    // 1: Center Gain
-    // 2: LFE Gain
-    // 3: Surround Gain
-    // 4: Top Gain
-    // 5: LFE Cutoff
-    // 6: Bandpass Center
-    // 7: Safety Cap
-    // 8: Input Level L (read-only)
-    // 9: Subharmonic Synth (0/1)
-    // 10: Input Level R (read-only)
-    // 11: HR Direct (0/1)
-    // 12: Output Level L
-    // 13: Output Level R
-    // 14: Decorrelation Mode (0=Velvet/1=LFO)
+    // 1: gain_front_direct (not shown in UI)
+    // 2: gain_front_ambient (Center Gain)
+    // 3: gain_rear_ambient (Surround Gain)
+    // 4: lfe_cutoff_hz (LFE Cutoff)
+    // 5: stereo_width (not shown in UI)
+    // 6: bandpass_hz (Bandpass Center)
+    // 7: height_gain (Top Gain)
+    // 8: lfe_gain (LFE Gain)
+    // 9: enable_subharmonic_synth (toggle)
+    // 10: subharmonic_gain (not shown in UI)
+    // 11: enable_hr_direct (toggle)
+    // 12: hr_sharpen (not shown in UI)
+    // 13: safety_cap_db (Safety Cap)
+    // 14: decorrelation_mode (0=Velvet/1=LFO)
 
     // Note: Some params like gain_front_direct might be used for future visualizers
     // so we keep them in signature but underscore if unused for now.
@@ -68,27 +69,26 @@ pub fn render_upmixer_plugin(
     // We need to own the string for the closure
     let speaker_config_owned = speaker_config.to_string();
 
-    div()
-        .flex()
-        .flex_col()
-        .w_full()
-        .h_full()
+    VStack::new()
+        .spacing(StackSpacing::None)
         .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
+            // Top toolbar row
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .build()
                 .px_3()
                 .py_2()
                 .bg(theme.background_secondary)
                 .border_b_1()
                 .border_color(theme.border)
+                .justify_between()
                 // Speaker Config
                 .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .items_center()
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(Text::new("Config:").size(TextSize::Xs).color(theme.text_secondary))
+                        .child(render_param_row("", speaker_config, 0, selected_param, is_editing, theme))
+                        .build()
                         .cursor_pointer()
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             let configs = [
@@ -105,24 +105,10 @@ pub fn render_upmixer_plugin(
                                 param_idx: 0,
                                 value: next_idx as f64,
                             });
-                        })
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_secondary)
-                                .child("Config:"),
-                        )
-                        .child(render_param_row(
-                            "",
-                            speaker_config,
-                            0,
-                            selected_param,
-                            is_editing,
-                            theme,
-                        )),
+                        }),
                 )
                 // Separator
-                .child(div().w(px(1.0)).h(px(16.0)).bg(theme.border))
+                .child(Divider::vertical().color(theme.border).build_simple().h(px(16.0)))
                 // Subharmonic Synth Toggle
                 .child(render_toggle(
                     plugin_idx,
@@ -145,10 +131,18 @@ pub fn render_upmixer_plugin(
                 ))
                 // Decorrelation Mode
                 .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .items_center()
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(Text::new("Decorrelation:").size(TextSize::Xs).color(theme.text_secondary))
+                        .child(render_param_row(
+                            "",
+                            if decorrelation_mode == 0 { "Velvet" } else { "LFO" },
+                            14,
+                            selected_param,
+                            is_editing,
+                            theme,
+                        ))
+                        .build()
                         .cursor_pointer()
                         .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                             cx.dispatch_action(&UpdatePluginParam {
@@ -156,65 +150,18 @@ pub fn render_upmixer_plugin(
                                 param_idx: 14,
                                 value: if decorrelation_mode == 0 { 1.0 } else { 0.0 },
                             });
-                        })
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_secondary)
-                                .child("Decorrelation:"),
-                        )
-                        .child(render_param_row(
-                            "",
-                            if decorrelation_mode == 0 {
-                                "Velvet"
-                            } else {
-                                "LFO"
-                            },
-                            14,
-                            selected_param,
-                            is_editing,
-                            theme,
-                        )),
+                        }),
                 ),
         )
         // Main Row Container
         .child(
-            div()
-                .flex()
-                .items_start() // Make all children same height
-                .gap_4()
-                .p_2()
+            HStack::new()
+                .spacing(StackSpacing::Lg)
+                .align(StackAlign::Start)
                 // 1. Input Levels (Stereo) - Same size as Gains
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .p_2()
-                        .rounded_lg()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_secondary)
-                                .child("Input"),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .h_full()
-                                // Placeholder for input levels as they are not available in PluginSettings directly
-                                .child(render_level_meter("L", -60.0, theme))
-                                .child(render_level_meter("R", -60.0, theme)),
-                        ),
-                )
+                .child(render_meter_panel("Input", theme))
                 // 2. Gains (Center, LFE, Surround, Top)
-                // Use Some('c') for shortcut display. Need to map others.
+                // Indices must match plugin_editing.rs
                 .child(render_vertical_slider(
                     plugin_idx,
                     "Center",
@@ -222,7 +169,7 @@ pub fn render_upmixer_plugin(
                     -12.0,
                     12.0,
                     "dB",
-                    1,
+                    2, // gain_front_ambient
                     selected_param,
                     is_editing,
                     Some('c'),
@@ -235,7 +182,7 @@ pub fn render_upmixer_plugin(
                     -12.0,
                     12.0,
                     "dB",
-                    2,
+                    8, // lfe_gain
                     selected_param,
                     is_editing,
                     Some('l'),
@@ -248,7 +195,7 @@ pub fn render_upmixer_plugin(
                     -12.0,
                     12.0,
                     "dB",
-                    3,
+                    3, // gain_rear_ambient
                     selected_param,
                     is_editing,
                     Some('s'),
@@ -261,18 +208,17 @@ pub fn render_upmixer_plugin(
                     -12.0,
                     12.0,
                     "dB",
-                    4,
+                    7, // height_gain
                     selected_param,
                     is_editing,
                     Some('t'),
                     theme,
                 ))
                 // 3. Knobs
+                // Indices must match plugin_editing.rs
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_4()
+                    VStack::new()
+                        .spacing(StackSpacing::Lg)
                         .child(render_knob(
                             plugin_idx,
                             "LFE Cut",
@@ -280,7 +226,7 @@ pub fn render_upmixer_plugin(
                             20.0,
                             180.0,
                             "Hz",
-                            5,
+                            4, // lfe_cutoff_hz
                             selected_param,
                             is_editing,
                             None,
@@ -293,75 +239,97 @@ pub fn render_upmixer_plugin(
                             150.0,
                             350.0,
                             "Hz",
-                            6,
+                            6, // bandpass_hz
                             selected_param,
                             is_editing,
                             None,
                             theme,
                         )),
                 )
-                .child(div().flex().flex_col().gap_4().child(render_knob(
-                    plugin_idx,
-                    "Safety",
-                    safety_cap_db,
-                    0.0,
-                    3.0,
-                    "dB",
-                    7,
-                    selected_param,
-                    is_editing,
-                    None,
-                    theme,
-                )))
-                // 4. Output Levels
                 .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .p_2()
-                        .rounded_lg()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_secondary)
-                                .child("Output"),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .h_full()
-                                .child(render_level_meter("L", -60.0, theme))
-                                .child(render_level_meter("R", -60.0, theme)),
-                        ),
-                ),
+                    VStack::new()
+                        .spacing(StackSpacing::Lg)
+                        .child(render_knob(
+                            plugin_idx,
+                            "Safety",
+                            safety_cap_db,
+                            0.0,
+                            3.0,
+                            "dB",
+                            13, // safety_cap_db
+                            selected_param,
+                            is_editing,
+                            None,
+                            theme,
+                        )),
+                )
+                // 4. Output Levels
+                .child(render_meter_panel("Output", theme))
+                .build()
+                .p_2(),
         )
         // Edit Hint Bar
         .child(render_edit_hints(theme))
+        .build()
+        .w_full()
+        .h_full()
 }
 
-fn render_level_meter(label: &str, level_db: f64, theme: &Theme) -> impl IntoElement {
+/// Render a meter panel with title and L/R level meters
+fn render_meter_panel(title: &str, theme: &Theme) -> impl IntoElement {
+    let title_color = theme.text_secondary;
+    let bg = theme.background_secondary;
+    let border = theme.border;
+    let meter_theme = MeterTheme {
+        background: theme.background,
+        success: theme.success,
+        error: theme.error,
+        text_muted: theme.text_muted,
+    };
+
+    VStack::new()
+        .spacing(StackSpacing::Sm)
+        .child(Text::new(title.to_string()).size(TextSize::Xs).weight(TextWeight::Semibold).color(title_color))
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(render_level_meter("L", -60.0, &meter_theme))
+                .child(render_level_meter("R", -60.0, &meter_theme)),
+        )
+        .build()
+        .flex_1()
+        .p_2()
+        .rounded_lg()
+        .bg(bg)
+        .border_1()
+        .border_color(border)
+}
+
+/// Minimal theme for level meters (avoids lifetime issues)
+struct MeterTheme {
+    background: Rgba,
+    success: Rgba,
+    error: Rgba,
+    text_muted: Rgba,
+}
+
+fn render_level_meter(label: &str, level_db: f64, theme: &MeterTheme) -> impl IntoElement {
     let clamped = (level_db + 60.0) / 60.0; // Map -60..0 to 0..1
     let pct = clamped.clamp(0.0, 1.0) as f32; // 0..1
+    let bg = theme.background;
+    let fill_color = if level_db > -0.1 { theme.error } else { theme.success };
+    let text_color = theme.text_muted;
 
-    div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap_1()
-        .h_full()
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .align(StackAlign::Center)
         .child(
             div()
                 .w(px(8.0))
                 .h(px(100.0)) // Fixed height matching sliders
-                .bg(theme.background)
+                .bg(bg)
                 .rounded_sm()
+                .relative()
                 .child(
                     div()
                         .absolute()
@@ -369,18 +337,9 @@ fn render_level_meter(label: &str, level_db: f64, theme: &Theme) -> impl IntoEle
                         .left_0()
                         .right_0()
                         .h(relative(pct)) // Relative height (0.0 - 1.0)
-                        .bg(if level_db > -0.1 {
-                            theme.error
-                        } else {
-                            theme.success
-                        })
+                        .bg(fill_color)
                         .rounded_sm(),
                 ),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .child(label.to_string()),
-        )
+        .child(Text::new(label.to_string()).size(TextSize::Xs).color(text_color))
 }

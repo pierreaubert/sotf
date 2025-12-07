@@ -567,58 +567,72 @@ impl App {
                             update_needed = true;
                         }
                         1 => {
-                            *gain_front_direct = value.clamp(0.0, 2.0);
+                            // gain_front_direct (dB)
+                            *gain_front_direct = value.clamp(-30.0, 30.0);
                             update_needed = true;
                         }
                         2 => {
-                            *gain_front_ambient = value.clamp(0.0, 2.0);
+                            // gain_front_ambient (Center Gain, dB)
+                            *gain_front_ambient = value.clamp(-30.0, 30.0);
                             update_needed = true;
                         }
                         3 => {
-                            *gain_rear_ambient = value.clamp(0.0, 2.0);
+                            // gain_rear_ambient (Surround Gain, dB)
+                            *gain_rear_ambient = value.clamp(-30.0, 30.0);
                             update_needed = true;
                         }
                         4 => {
+                            // lfe_cutoff_hz
                             *lfe_cutoff_hz = value.clamp(20.0, 200.0);
                             update_needed = true;
                         }
                         5 => {
-                            *stereo_width = value.clamp(0.0, 1.0);
+                            // stereo_width
+                            *stereo_width = value.clamp(0.0, 2.0);
                             update_needed = true;
                         }
                         6 => {
-                            *bandpass_hz = value.clamp(150.0, 1000.0);
+                            // bandpass_hz
+                            *bandpass_hz = value.clamp(100.0, 1000.0);
                             update_needed = true;
                         }
                         7 => {
-                            *height_gain = value.clamp(0.0, 2.0);
+                            // height_gain (Top Gain, dB)
+                            *height_gain = value.clamp(-30.0, 30.0);
                             update_needed = true;
                         }
                         8 => {
-                            *lfe_gain = value.clamp(0.0, 2.0);
+                            // lfe_gain (LFE Gain, dB)
+                            *lfe_gain = value.clamp(-30.0, 30.0);
                             update_needed = true;
                         }
                         9 => {
+                            // enable_subharmonic_synth (toggle)
                             *enable_subharmonic_synth = value > 0.5;
                             update_needed = true;
                         }
                         10 => {
-                            *subharmonic_gain = value.clamp(0.0, 1.0);
+                            // subharmonic_gain (dB)
+                            *subharmonic_gain = value.clamp(-30.0, 30.0);
                             update_needed = true;
                         }
                         11 => {
+                            // enable_hr_direct (toggle)
                             *enable_hr_direct = value > 0.5;
                             update_needed = true;
                         }
                         12 => {
+                            // hr_sharpen
                             *hr_sharpen = value.clamp(0.0, 1.0);
                             update_needed = true;
                         }
                         13 => {
+                            // safety_cap_db
                             *safety_cap_db = value.clamp(0.0, 12.0);
                             update_needed = true;
                         }
                         14 => {
+                            // decorrelation_mode (0=Velvet/1=LFO)
                             *decorrelation_mode = if value > 0.5 { 1 } else { 0 };
                             update_needed = true;
                         }

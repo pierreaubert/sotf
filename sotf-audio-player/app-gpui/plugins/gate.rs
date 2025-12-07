@@ -12,6 +12,7 @@ use super::common::{
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{Divider, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack};
 
 /// Render the Gate plugin
 #[allow(clippy::too_many_arguments)]
@@ -41,111 +42,62 @@ pub fn render_gate_plugin(
     let threshold_normalized = ((threshold_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
     let input_normalized = ((simulated_input_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
 
-    div()
-        .flex()
-        .flex_col()
-        .gap_4()
+    // Cache theme colors for closures
+    let gate_color = if gate_open { theme.success } else { theme.error };
+    let gate_glow = if gate_open { rgba(0x22c55e33) } else { rgba(0xef444433) };
+    let input_bar_color = gate_color;
+    let gr_color = if simulated_gr.abs() > 1.0 { theme.error } else { theme.success };
+    let border_color = theme.border;
+
+    VStack::new()
+        .spacing(StackSpacing::Lg)
         // Main section - Sliders and Threshold Display
         .child(
-            div()
-                .flex()
-                .gap_4()
+            HStack::new()
+                .spacing(StackSpacing::Lg)
                 // Parameters section with vertical sliders
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(render_section_header("GATE SETTINGS", theme))
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Threshold", threshold_db, -60.0, 0.0, "dB",
+                                    0, selected_param, is_editing, Some('t'), theme,
+                                ))
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Ratio", ratio, 1.0, 10.0, ":1",
+                                    1, selected_param, is_editing, Some('r'), theme,
+                                ))
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Attack", attack_ms, 0.1, 50.0, "ms",
+                                    2, selected_param, is_editing, Some('a'), theme,
+                                ))
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Release", release_ms, 10.0, 500.0, "ms",
+                                    3, selected_param, is_editing, Some('e'), theme,
+                                ))
+                                .child(render_vertical_slider(
+                                    plugin_idx, "Mix", mix, 0.0, 1.0, "%",
+                                    4, selected_param, is_editing, Some('m'), theme,
+                                ))
+                                .build()
+                                .justify_center(),
+                        )
+                        .build()
                         .rounded_xl()
                         .bg(theme.background_secondary)
                         .border_1()
                         .border_color(theme.border)
-                        .p_4()
-                        .child(render_section_header("GATE SETTINGS", theme))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_2()
-                                .justify_center()
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Threshold",
-                                    threshold_db,
-                                    -60.0,
-                                    0.0,
-                                    "dB",
-                                    0,
-                                    selected_param,
-                                    is_editing,
-                                    Some('t'),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Ratio",
-                                    ratio,
-                                    1.0,
-                                    10.0,
-                                    ":1",
-                                    1,
-                                    selected_param,
-                                    is_editing,
-                                    Some('r'),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Attack",
-                                    attack_ms,
-                                    0.1,
-                                    50.0,
-                                    "ms",
-                                    2,
-                                    selected_param,
-                                    is_editing,
-                                    Some('a'),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Release",
-                                    release_ms,
-                                    10.0,
-                                    500.0,
-                                    "ms",
-                                    3,
-                                    selected_param,
-                                    is_editing,
-                                    Some('e'),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx,
-                                    "Mix",
-                                    mix,
-                                    0.0,
-                                    1.0,
-                                    "%",
-                                    4,
-                                    selected_param,
-                                    is_editing,
-                                    Some('m'),
-                                    theme,
-                                )),
-                        ),
+                        .p_4(),
                 )
                 // Gate threshold visualization
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .p_4()
-                        .items_center()
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
                         .child(render_section_header("GATE STATUS", theme))
                         // Large gate open/closed indicator
                         .child(
@@ -156,41 +108,21 @@ pub fn render_gate_plugin(
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .bg(if gate_open {
-                                    rgba(0x22c55e33) // Green glow
-                                } else {
-                                    rgba(0xef444433) // Red glow
-                                })
+                                .bg(gate_glow)
                                 .border_4()
-                                .border_color(if gate_open {
-                                    theme.success
-                                } else {
-                                    theme.error
-                                })
+                                .border_color(gate_color)
                                 .child(
-                                    div()
-                                        .text_sm()
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(if gate_open {
-                                            theme.success
-                                        } else {
-                                            theme.error
-                                        })
-                                        .child(if gate_open { "OPEN" } else { "CLOSED" }),
+                                    Text::new(if gate_open { "OPEN" } else { "CLOSED" })
+                                        .size(TextSize::Sm)
+                                        .weight(TextWeight::Bold)
+                                        .color(gate_color),
                                 ),
                         )
                         // Threshold meter
                         .child(
-                            div()
-                                .w_full()
-                                .mt_4()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .mb_1()
-                                        .child("Input Level"),
-                                )
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(Text::new("Input Level").size(TextSize::Xs).color(theme.text_muted))
                                 .child(
                                     div()
                                         .h(px(12.0))
@@ -202,13 +134,7 @@ pub fn render_gate_plugin(
                                         .relative()
                                         .overflow_hidden()
                                         // Input level bar
-                                        .child(div().h_full().w(relative(input_normalized)).bg(
-                                            if gate_open {
-                                                theme.success
-                                            } else {
-                                                theme.error
-                                            },
-                                        ))
+                                        .child(div().h_full().w(relative(input_normalized)).bg(input_bar_color))
                                         // Threshold marker
                                         .child(
                                             div()
@@ -221,41 +147,32 @@ pub fn render_gate_plugin(
                                         ),
                                 )
                                 .child(
-                                    div()
-                                        .flex()
-                                        .justify_between()
-                                        .mt_1()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("-60 dB")
-                                        .child("0 dB"),
-                                ),
-                        ),
+                                    HStack::new()
+                                        .spacing(StackSpacing::None)
+                                        .child(Text::new("-60 dB").size(TextSize::Xs).color(theme.text_muted))
+                                        .child(gpui_ui_kit::Spacer::new())
+                                        .child(Text::new("0 dB").size(TextSize::Xs).color(theme.text_muted)),
+                                )
+                                .build()
+                                .w_full()
+                                .mt_4(),
+                        )
+                        .build()
+                        .rounded_xl()
+                        .bg(theme.background_secondary)
+                        .border_1()
+                        .border_color(theme.border)
+                        .p_4(),
                 ),
         )
         // Large threshold display
         .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .gap_6()
-                .p_4()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
+            HStack::new()
+                .spacing(StackSpacing::Xl)
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("THRESHOLD"),
-                        )
+                    VStack::new()
+                        .align(StackAlign::Center)
+                        .child(Text::new("THRESHOLD").size(TextSize::Xs).color(theme.text_muted))
                         .child(
                             div()
                                 .text_3xl()
@@ -264,30 +181,26 @@ pub fn render_gate_plugin(
                                 .child(format!("{:.1} dB", threshold_db)),
                         ),
                 )
-                .child(div().w(px(1.0)).h(px(40.0)).bg(theme.border))
+                .child(Divider::vertical().color(border_color).build_simple().h(px(40.0)))
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("REDUCTION"),
-                        )
+                    VStack::new()
+                        .align(StackAlign::Center)
+                        .child(Text::new("REDUCTION").size(TextSize::Xs).color(theme.text_muted))
                         .child(
                             div()
                                 .text_xl()
                                 .font_weight(FontWeight::BOLD)
-                                .text_color(if simulated_gr.abs() > 1.0 {
-                                    theme.error
-                                } else {
-                                    theme.success
-                                })
+                                .text_color(gr_color)
                                 .child(format!("{:.1} dB", simulated_gr)),
                         ),
-                ),
+                )
+                .build()
+                .justify_center()
+                .p_4()
+                .rounded_xl()
+                .bg(theme.background_secondary)
+                .border_1()
+                .border_color(theme.border),
         )
         // Gain reduction meter
         .child(
@@ -301,61 +214,47 @@ pub fn render_gate_plugin(
         )
         // Options row
         .child(
-            div().flex().gap_4().children([
+            HStack::new()
+                .spacing(StackSpacing::Lg)
                 // Link channels toggle
-                div().flex_1().child(render_toggle(
-                    plugin_idx,
-                    "Link Channels",
-                    link_channels,
-                    5,
-                    selected_param,
-                    is_editing,
-                    theme,
-                )),
+                .child(div().flex_1().child(render_toggle(
+                    plugin_idx, "Link Channels", link_channels, 5, selected_param, is_editing, theme,
+                )))
                 // Sidechain HPF
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .p_3()
-                    .rounded_xl()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child("Sidechain HPF"),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(theme.text_primary)
-                            .child(format!("{:.0} Hz", sidechain_hpf_hz)),
-                    ),
-            ]),
+                .child(
+                    VStack::new()
+                        .spacing(StackSpacing::Xs)
+                        .align(StackAlign::Center)
+                        .child(Text::new("Sidechain HPF").size(TextSize::Xs).color(theme.text_muted))
+                        .child(Text::new(format!("{:.0} Hz", sidechain_hpf_hz))
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary))
+                        .build()
+                        .flex_1()
+                        .p_3()
+                        .rounded_xl()
+                        .bg(theme.background_secondary)
+                        .border_1()
+                        .border_color(theme.border),
+                ),
         )
         // Keyboard hints
         .child(
-            div()
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .wrap(true)
+                .child(Text::new("[T]hreshold").size(TextSize::Xs).color(theme.text_secondary))
+                .child(Text::new("[R]atio").size(TextSize::Xs).color(theme.text_secondary))
+                .child(Text::new("[A]ttack").size(TextSize::Xs).color(theme.text_secondary))
+                .child(Text::new("R[e]lease").size(TextSize::Xs).color(theme.text_secondary))
+                .child(Text::new("[M]ix").size(TextSize::Xs).color(theme.text_secondary))
+                .build()
                 .p_3()
                 .rounded_lg()
                 .bg(theme.accent_muted)
                 .border_1()
-                .border_color(theme.accent)
-                .flex()
-                .flex_wrap()
-                .gap_3()
-                .text_xs()
-                .text_color(theme.text_secondary)
-                .child("[T]hreshold")
-                .child("[R]atio")
-                .child("[A]ttack")
-                .child("R[e]lease")
-                .child("[M]ix"),
+                .border_color(theme.accent),
         )
         .when(is_editing, |d| d.child(render_edit_hints(theme)))
 }

@@ -4,6 +4,7 @@ use super::render_plugin_content;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui::{MouseMoveEvent, MouseUpEvent};
 use sotf_audio_player::PluginType;
 
 /// Drag information for plugin reordering
@@ -118,6 +119,51 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .bg(theme.background)
+            // Global mouse move handler for knob/slider dragging
+            .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _window, cx| {
+                let (is_dragging, start_y, start_value, min, max, plugin_idx, param_idx) = {
+                    let state = view.state.read(cx);
+                    (
+                        state.app.is_dragging_knob,
+                        state.app.knob_drag_start_y,
+                        state.app.knob_drag_start_value,
+                        state.app.knob_drag_min,
+                        state.app.knob_drag_max,
+                        state.app.knob_drag_plugin_idx,
+                        state.app.knob_drag_param_idx,
+                    )
+                };
+
+                if is_dragging {
+                    if let Some(start_y) = start_y {
+                        let mouse_y: f32 = event.position.y.into();
+                        let delta_y = start_y - mouse_y; // Inverted: up = positive (increase)
+                        // Scale: 150px drag = full range
+                        let range = max - min;
+                        let value_delta = (delta_y as f64 / 150.0) * range;
+                        let new_value = (start_value + value_delta).clamp(min, max);
+
+                        // Update the parameter value via the plugin editing system
+                        view.state.update(cx, |state, _cx| {
+                            state.app.set_plugin_param(plugin_idx, param_idx, new_value);
+                            state.app.needs_plugin_update = true;
+                        });
+                        cx.notify();
+                    }
+                }
+            }))
+            // Global mouse up handler to stop knob/slider dragging
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        if state.app.is_dragging_knob {
+                            state.app.is_dragging_knob = false;
+                            state.app.knob_drag_start_y = None;
+                        }
+                    });
+                }),
+            )
             // Plugin Rack Strip (top)
             .child(self.render_plugin_rack(cx))
             // Parameter Panel (bottom, fills remaining space)

@@ -34,6 +34,7 @@ pub enum InputMode {
     Help,
     KeyboardShortcuts,
     About,
+    EditingParam,
 }
 
 /// Active menu dropdown (if any)
@@ -198,4 +199,54 @@ pub enum ContextMenuType {
     QueueItem,
     Plugin,
     Directory,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MeasureStep {
+    DeviceSelection,
+    SignalConfig,
+    Running,
+    Results,
+}
+
+#[derive(Debug, Clone)]
+pub struct MeasurementResult {
+    pub frequencies: Vec<f32>,
+    pub magnitude_db: Vec<f32>,
+    pub phase_deg: Vec<f32>,
+    pub csv_path: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct MeasureState {
+     pub step: MeasureStep,
+     pub signal_type: String, // "sweep", "pink-noise"
+     pub duration: String, // "5.0", "10.0"
+     pub level: f32, // -20dB etc
+     pub output_channel: usize,
+     pub input_channel: usize,
+     pub progress: f32,
+     pub status_message: String,
+     pub measurement_result: Option<MeasurementResult>,
+     // UI state for dropdowns
+     pub output_ch_open: bool,
+     pub input_ch_open: bool,
+}
+
+impl Default for MeasureState {
+    fn default() -> Self {
+        Self {
+            step: MeasureStep::DeviceSelection,
+            signal_type: "sweep".to_string(),
+            duration: "5.0".to_string(),
+            level: -20.0,
+            output_channel: 0,
+            input_channel: 0,
+            progress: 0.0,
+            status_message: String::new(),
+            measurement_result: None,
+            output_ch_open: false,
+            input_ch_open: false,
+        }
+    }
 }

@@ -71,7 +71,7 @@ impl PlayerView {
                             .on_mouse_up(
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    cx.spawn(async move |view: WeakEntity<PlayerView>, mut cx| {
+                                    cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
                                         if let Some(handle) = rfd::AsyncFileDialog::new().pick_folder().await {
                                             let path = handle.path().to_path_buf();
                                             let _ = view.update(cx, |view, cx| {
@@ -99,7 +99,7 @@ impl PlayerView {
                         directories.iter().enumerate().map(|(idx, dir)| {
                             let theme = theme.clone();
                             let bg = if idx % 2 == 0 { theme.background } else { theme.background_secondary };
-                            
+
                             div()
                                 .flex()
                                 .items_center()
