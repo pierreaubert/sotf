@@ -160,8 +160,7 @@ impl Accordion {
             .flex_col()
             .border_1()
             .border_color(theme.border)
-            .rounded_lg()
-            .overflow_hidden();
+            .rounded_lg();
 
         for (idx, item) in self.items.into_iter().enumerate() {
             let is_expanded = self.expanded.contains(&item.id);

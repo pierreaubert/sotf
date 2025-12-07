@@ -81,6 +81,9 @@ pub enum InputVariant {
     Flushed,
 }
 
+/// Callback type for input changes
+type OnChangeCallback = Box<dyn Fn(&str, &mut Window, &mut App) + 'static>;
+
 /// A text input component
 pub struct Input {
     id: ElementId,
@@ -98,6 +101,7 @@ pub struct Input {
     text_color: Option<Rgba>,
     border_color: Option<Rgba>,
     placeholder_color: Option<Rgba>,
+    on_change: Option<OnChangeCallback>,
 }
 
 impl Input {
@@ -119,6 +123,7 @@ impl Input {
             text_color: None,
             border_color: None,
             placeholder_color: None,
+            on_change: None,
         }
     }
 
@@ -203,6 +208,15 @@ impl Input {
     /// Set placeholder color
     pub fn placeholder_color(mut self, color: impl Into<Rgba>) -> Self {
         self.placeholder_color = Some(color.into());
+        self
+    }
+
+    /// Set change handler (called when input value changes)
+    pub fn on_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_change = Some(Box::new(handler));
         self
     }
 
