@@ -322,6 +322,12 @@ impl RenderOnce for NumberInput {
         let unit_clone = self.unit.clone();
         let edit_text_clone = self.edit_text.clone();
 
+        // Create unique child IDs based on parent ID
+        let parent_id = format!("{:?}", self.id);
+        let dec_id = ElementId::Name(format!("{}-dec", parent_id).into());
+        let value_id = ElementId::Name(format!("{}-value", parent_id).into());
+        let inc_id = ElementId::Name(format!("{}-inc", parent_id).into());
+
         // Wrap handlers in Rc for sharing
         let on_change_rc = self.on_change.map(|h| std::rc::Rc::new(h));
         let on_edit_start_rc = self.on_edit_start.map(|h| std::rc::Rc::new(h));
@@ -373,7 +379,7 @@ impl RenderOnce for NumberInput {
         let text_color = theme.text;
 
         let mut dec_button = div()
-            .id(ElementId::Name("dec".into()))
+            .id(dec_id)
             .flex()
             .items_center()
             .justify_center()
@@ -392,7 +398,7 @@ impl RenderOnce for NumberInput {
 
             if let Some(ref handler_rc) = on_change_rc {
                 let handler = handler_rc.clone();
-                dec_button = dec_button.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                dec_button = dec_button.on_mouse_up(MouseButton::Left, move |_, window, cx| {
                     let new_value = (current_value - step).clamp(min, max);
                     handler(new_value, window, cx);
                 });
@@ -426,7 +432,7 @@ impl RenderOnce for NumberInput {
         };
 
         let mut value_field = div()
-            .id(ElementId::Name("value".into()))
+            .id(value_id)
             .flex_1()
             .flex()
             .items_center()
@@ -449,7 +455,7 @@ impl RenderOnce for NumberInput {
             if let Some(ref handler_rc) = on_edit_start_rc {
                 let handler = handler_rc.clone();
                 value_field =
-                    value_field.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    value_field.on_mouse_up(MouseButton::Left, move |_, window, cx| {
                         handler(window, cx);
                     });
             }
@@ -553,7 +559,7 @@ impl RenderOnce for NumberInput {
 
         // Increment button (+)
         let mut inc_button = div()
-            .id(ElementId::Name("inc".into()))
+            .id(inc_id)
             .flex()
             .items_center()
             .justify_center()
@@ -572,7 +578,7 @@ impl RenderOnce for NumberInput {
 
             if let Some(ref handler_rc) = on_change_rc {
                 let handler = handler_rc.clone();
-                inc_button = inc_button.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                inc_button = inc_button.on_mouse_up(MouseButton::Left, move |_, window, cx| {
                     let new_value = (current_value + step).clamp(min, max);
                     handler(new_value, window, cx);
                 });

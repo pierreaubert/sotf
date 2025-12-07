@@ -12,6 +12,7 @@ use gpui::*;
 /// A circular volume knob with fill indicator.
 #[derive(IntoElement)]
 pub struct VolumeKnob {
+    id: ElementId,
     value: f32,
     label: SharedString,
     size: Pixels,
@@ -24,9 +25,13 @@ pub struct VolumeKnob {
     on_mute_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 }
 
+static VOLUME_KNOB_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 impl VolumeKnob {
     pub fn new() -> Self {
+        let counter = VOLUME_KNOB_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Self {
+            id: ElementId::Name(format!("volume-knob-{}", counter).into()),
             value: 0.0,
             label: "".into(),
             size: px(40.0),
@@ -38,6 +43,11 @@ impl VolumeKnob {
             on_change: None,
             on_mute_toggle: None,
         }
+    }
+
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.id = id.into();
+        self
     }
 
     pub fn value(mut self, value: f32) -> Self {
@@ -140,7 +150,7 @@ impl RenderOnce for VolumeKnob {
         let current_muted = self.muted;
 
         let mut container = div()
-            .id("volume-knob")
+            .id(self.id)
             .relative()
             .w(self.size)
             .h(self.size)
