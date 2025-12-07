@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(name = "room-simulator-bem")]
-#[command(about = "Advanced room acoustics simulator with BEM, FMM, and ILU")]
+#[command(about = "Advanced room acoustics simulator with the BEM (Boundary Element Method) algorithm", long_about = None)]
 struct Args {
     /// Path to JSON configuration file
     #[arg(short, long)]

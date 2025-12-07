@@ -13,7 +13,15 @@ categories = ["science", "mathematics", "simulation"]
 name = "fem"
 path = "src/lib.rs"
 
+[[bin]]
+name = "roomsim-fem"
+path = "bin/room_simulator_fem.rs"
+required-features = ["cli", "native"]
+
 [dependencies]
+# Common types shared with BEM
+math-xem-common = { path = "../math-xem-common", version = "0.1" }
+
 # Solver infrastructure
 math-solvers = { path = "../math-solvers", version = "0.1" }
 
@@ -33,6 +41,16 @@ serde = { workspace = true }
 
 # Logging
 log = { workspace = true }
+env_logger = { workspace = true, optional = true }
+
+# CLI
+clap = { workspace = true, optional = true }
+
+# Serialization (for JSON output)
+serde_json = { workspace = true }
+
+# Time/date for metadata
+chrono = { workspace = true }
 
 [dev-dependencies]
 approx = "0.5"
@@ -49,7 +67,10 @@ harness = false
 default = ["native"]
 
 # Native feature: enables rayon parallelism
-native = ["math-solvers/native", "rayon"]
+native = ["math-solvers/native", "rayon", "env_logger"]
+
+# CLI requires native features
+cli = ["native", "clap"]
 
 # Parallel processing
 parallel = ["rayon"]

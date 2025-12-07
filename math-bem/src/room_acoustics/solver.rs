@@ -269,12 +269,7 @@ pub fn calculate_field_pressure(
     pressures
 }
 
-/// Convert complex pressure to SPL (dB re 20 μPa)
-pub fn pressure_to_spl(pressure: Complex64) -> f64 {
-    let magnitude = pressure.norm();
-    let p_ref = 20e-6; // 20 μPa reference pressure
-    20.0 * (magnitude / p_ref).max(1e-10).log10()
-}
+// pressure_to_spl is now in xem_common::types
 
 /// Simple GMRES solver for complex linear systems
 /// Solves Ax = b using restarted GMRES

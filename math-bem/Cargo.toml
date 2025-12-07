@@ -19,6 +19,9 @@ path = "bin/room_simulator_bem.rs"
 required-features = ["cli", "native", "parallel", "memory-optimized", "out-of-core"]
 
 [dependencies]
+# Common types shared with FEM
+math-xem-common = { path = "../math-xem-common", version = "0.1" }
+
 # Core numerical computing
 # Note: We don't use workspace = true for ndarray because workspace has "blas" and "rayon" features
 # which are not portable to WASM. We conditionally enable these features via our own "native" feature.
