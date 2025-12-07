@@ -1,6 +1,6 @@
 [package]
 name = "math-bem"
-version = "0.1.4"
+version = "0.1.5"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "High-performance Boundary Element Method library for acoustic scattering"
@@ -21,6 +21,9 @@ required-features = ["cli", "native", "parallel", "memory-optimized", "out-of-co
 [dependencies]
 # Common types shared with FEM
 math-xem-common = { path = "../math-xem-common", version = "0.1" }
+
+# Shared solver infrastructure (AMG preconditioner, etc.)
+math-solvers = { path = "../math-solvers", version = "0.1", default-features = false }
 
 # Core numerical computing
 # Note: We don't use workspace = true for ndarray because workspace has "blas" and "rayon" features

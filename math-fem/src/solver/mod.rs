@@ -12,9 +12,10 @@
 use crate::assembly::HelmholtzProblem;
 use ndarray::Array1;
 use num_complex::Complex64;
-use solvers::iterative::gmres_preconditioned;
+use solvers::iterative::{gmres_pipelined, gmres_preconditioned};
 use solvers::{
-    AdditiveSchwarzPreconditioner, CsrMatrix, DiagonalPreconditioner, GmresConfig,
+    AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix,
+    DiagonalPreconditioner, GmresConfig, IdentityPreconditioner,
     IluColoringPreconditioner, IluFixedPointPreconditioner, IluPreconditioner, gmres, lu_solve,
 };
 use std::time::Instant;
@@ -32,6 +33,10 @@ pub struct SolverConfig {
     pub gmres: GmresConfigF64,
     /// Verbosity level (0 = quiet, 1 = summary, 2+ = detailed)
     pub verbosity: usize,
+    /// Number of subdomains for Schwarz preconditioning (default: 8)
+    pub schwarz_subdomains: usize,
+    /// Overlap for Schwarz preconditioning (default: 2)
+    pub schwarz_overlap: usize,
 }
 
 impl Default for SolverConfig {
@@ -45,6 +50,8 @@ impl Default for SolverConfig {
                 print_interval: 0,
             },
             verbosity: 0,
+            schwarz_subdomains: 8,
+            schwarz_overlap: 2,
         }
     }
 }
@@ -66,6 +73,12 @@ pub enum SolverType {
     GmresIluFixedPoint,
     /// GMRES with Additive Schwarz domain decomposition (parallel subdomains)
     GmresSchwarz,
+    /// GMRES with Algebraic Multigrid preconditioning (best parallel scalability)
+    GmresAmg,
+    /// Pipelined GMRES (overlaps communication/computation)
+    GmresPipelined,
+    /// Pipelined GMRES with ILU(0) preconditioning
+    GmresPipelinedIlu,
 }
 
 /// Solution result from the solver
@@ -128,6 +141,9 @@ pub fn solve(problem: &HelmholtzProblem, config: &SolverConfig) -> Result<Soluti
         SolverType::GmresIluColoring => solve_gmres_ilu_coloring(&csr, &rhs, config),
         SolverType::GmresIluFixedPoint => solve_gmres_ilu_fixedpoint(&csr, &rhs, config),
         SolverType::GmresSchwarz => solve_gmres_schwarz(&csr, &rhs, config),
+        SolverType::GmresAmg => solve_gmres_amg(&csr, &rhs, config),
+        SolverType::GmresPipelined => solve_gmres_pipelined(&csr, &rhs, config),
+        SolverType::GmresPipelinedIlu => solve_gmres_pipelined_ilu(&csr, &rhs, config),
     };
     let solve_time = solve_start.elapsed();
 
@@ -467,21 +483,21 @@ fn solve_gmres_schwarz(
     rhs: &Array1<Complex64>,
     config: &SolverConfig,
 ) -> Result<Solution, SolverError> {
-    const NUM_SUBDOMAINS: usize = 8; // Number of parallel subdomains
-    const OVERLAP: usize = 2; // Overlap layers between subdomains
+    let num_subdomains = config.schwarz_subdomains;
+    let overlap = config.schwarz_overlap;
 
     if config.verbosity > 0 {
         log::info!(
             "Using GMRES+Schwarz solver (restart={}, tol={}, {} subdomains, {} overlap)",
             config.gmres.restart,
             config.gmres.tolerance,
-            NUM_SUBDOMAINS,
-            OVERLAP
+            num_subdomains,
+            overlap
         );
     }
 
     let schwarz_start = Instant::now();
-    let precond = AdditiveSchwarzPreconditioner::from_csr(csr, NUM_SUBDOMAINS, OVERLAP);
+    let precond = AdditiveSchwarzPreconditioner::from_csr(csr, num_subdomains, overlap);
     let schwarz_time = schwarz_start.elapsed();
 
     if config.verbosity > 0 {
@@ -526,6 +542,166 @@ fn solve_gmres_schwarz(
     })
 }
 
+/// Solve using GMRES with Algebraic Multigrid (AMG) preconditioning
+///
+/// AMG provides excellent parallel scalability because:
+/// - Coarsening can be parallelized (PMIS algorithm)
+/// - Jacobi smoothing is embarrassingly parallel
+/// - Each multigrid level operates independently
+///
+/// This is recommended for large problems where parallel efficiency is important.
+fn solve_gmres_amg(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    if config.verbosity > 0 {
+        log::info!(
+            "Using GMRES+AMG solver (restart={}, tol={})",
+            config.gmres.restart,
+            config.gmres.tolerance
+        );
+    }
+
+    let amg_start = Instant::now();
+    // Use PMIS coarsening and Jacobi smoothing for best parallel performance
+    let amg_config = AmgConfig::for_parallel();
+    let precond = AmgPreconditioner::from_csr(csr, amg_config);
+    let amg_time = amg_start.elapsed();
+
+    if config.verbosity > 0 {
+        let diag = precond.diagnostics();
+        println!(
+            "  [FEM] AMG setup: {:.1}ms, {} levels, grid complexity {:.2}, operator complexity {:.2}",
+            amg_time.as_secs_f64() * 1000.0,
+            diag.num_levels,
+            diag.grid_complexity,
+            diag.operator_complexity
+        );
+    }
+
+    let result = gmres_preconditioned(csr, &precond, rhs, &config.gmres);
+
+    if config.verbosity > 0 {
+        log::info!(
+            "GMRES+AMG {} in {} iterations (residual: {:.2e})",
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using Pipelined GMRES without preconditioning
+fn solve_gmres_pipelined(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    if config.verbosity > 0 {
+        log::info!(
+            "Using Pipelined GMRES solver (restart={}, tol={})",
+            config.gmres.restart,
+            config.gmres.tolerance
+        );
+    }
+
+    let precond = IdentityPreconditioner;
+    let result = gmres_pipelined(csr, &precond, rhs, None, &config.gmres);
+
+    if config.verbosity > 0 {
+        log::info!(
+            "Pipelined GMRES {} in {} iterations (residual: {:.2e})",
+            if result.converged { "converged" } else { "did not converge" },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using Pipelined GMRES with ILU(0) preconditioning
+fn solve_gmres_pipelined_ilu(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    if config.verbosity > 0 {
+        log::info!(
+            "Using Pipelined GMRES+ILU solver (restart={}, tol={})",
+            config.gmres.restart,
+            config.gmres.tolerance
+        );
+    }
+
+    let ilu_start = Instant::now();
+    let precond = IluPreconditioner::from_csr(csr);
+    let ilu_time = ilu_start.elapsed();
+
+    if config.verbosity > 0 {
+        println!(
+            "  [FEM] ILU factorization: {:.1}ms",
+            ilu_time.as_secs_f64() * 1000.0
+        );
+    }
+
+    let result = gmres_pipelined(csr, &precond, rhs, None, &config.gmres);
+
+    if config.verbosity > 0 {
+        log::info!(
+            "Pipelined GMRES+ILU {} in {} iterations (residual: {:.2e})",
+            if result.converged { "converged" } else { "did not converge" },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
 /// Solve a Helmholtz problem directly from CSR matrix and RHS
 ///
 /// This is useful when you have pre-assembled sparse matrices.
@@ -549,6 +725,9 @@ pub fn solve_csr(
         SolverType::GmresIluColoring => solve_gmres_ilu_coloring(csr, rhs, config),
         SolverType::GmresIluFixedPoint => solve_gmres_ilu_fixedpoint(csr, rhs, config),
         SolverType::GmresSchwarz => solve_gmres_schwarz(csr, rhs, config),
+        SolverType::GmresAmg => solve_gmres_amg(csr, rhs, config),
+        SolverType::GmresPipelined => solve_gmres_pipelined(csr, rhs, config),
+        SolverType::GmresPipelinedIlu => solve_gmres_pipelined_ilu(csr, rhs, config),
     }
 }
 
@@ -686,5 +865,54 @@ mod tests {
             sol_ilu.iterations,
             sol_no_precond.iterations
         );
+    }
+
+
+    #[test]
+    fn test_solve_helmholtz_gmres_pipelined() {
+        let mesh = unit_square_triangles(4);
+        let k = Complex64::new(1.0, 0.0);
+
+        let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, |_, _, _| {
+            Complex64::new(1.0, 0.0)
+        });
+
+        let config = SolverConfig {
+            solver_type: SolverType::GmresPipelined,
+            gmres: GmresConfigF64 {
+                max_iterations: 100,
+                restart: 20,
+                tolerance: 1e-8,
+                print_interval: 0,
+            },
+            ..Default::default()
+        };
+
+        let solution = solve(&problem, &config).expect("Solver should succeed");
+        assert!(solution.converged);
+    }
+
+    #[test]
+    fn test_solve_helmholtz_gmres_pipelined_ilu() {
+        let mesh = unit_square_triangles(4);
+        let k = Complex64::new(1.0, 0.0);
+
+        let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, |_, _, _| {
+            Complex64::new(1.0, 0.0)
+        });
+
+        let config = SolverConfig {
+            solver_type: SolverType::GmresPipelinedIlu,
+            gmres: GmresConfigF64 {
+                max_iterations: 100,
+                restart: 20,
+                tolerance: 1e-8,
+                print_interval: 0,
+            },
+            ..Default::default()
+        };
+
+        let solution = solve(&problem, &config).expect("Solver should succeed");
+        assert!(solution.converged);
     }
 }

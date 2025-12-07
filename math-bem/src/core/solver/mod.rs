@@ -9,6 +9,7 @@
 //! - [`fmm_interface`] - Interface to use FMM operators with iterative solvers
 //! - [`preconditioner`] - Basic preconditioners
 //! - [`ilu_preconditioner`] - ILU preconditioner (recommended for BEM)
+//! - [`amg_preconditioner`] - AMG preconditioner (better parallel scalability)
 //! - [`batched_blas`] - Batched BLAS operations for optimized matrix computations (native only)
 //!
 //! ## WASM Compatibility
@@ -16,6 +17,7 @@
 //! With the `wasm` feature enabled, most solvers work including:
 //! - SlfmmOperator (SLFMM assembly via wasm-bindgen-rayon)
 //! - HierarchicalFmmPreconditioner (parallel block processing via Web Workers)
+//! - AmgPreconditioner (parallel AMG V-cycle)
 //! - All iterative solvers (GMRES, CGS, BiCGSTAB)
 //! - Direct solver (pure Rust LU fallback)
 //!
@@ -29,7 +31,7 @@
 //! |-------------|--------|---------------|
 //! | N < 1000 | Direct LU | - |
 //! | N < 10000 | GMRES(50) + ILU | `GmresConfig::for_small_problems()` |
-//! | N > 10000 | GMRES(100) + ILU | `GmresConfig::for_large_bem()` |
+//! | N > 10000 | GMRES(100) + AMG | `GmresConfig::for_large_bem()` |
 //!
 //! GMRES is generally preferred for large BEM problems due to:
 //! - Monotonic convergence (unlike CGS which can be erratic)
@@ -39,7 +41,7 @@
 //! ## Preconditioning Strategy
 //!
 //! BEM systems are ill-conditioned. Simple diagonal (Jacobi) preconditioning
-//! is **not sufficient**. Use ILU preconditioning:
+//! is **not sufficient**. Use ILU or AMG preconditioning:
 //!
 //! ```ignore
 //! use bem::core::solver::{
@@ -55,7 +57,23 @@
 //!     &config,
 //! );
 //! ```
+//!
+//! For better parallel scalability, use AMG:
+//!
+//! ```ignore
+//! use bem::core::solver::{AmgPreconditioner, AmgConfig, gmres_solve_preconditioned, GmresConfig};
+//!
+//! let amg = AmgPreconditioner::from_csr(&matrix, AmgConfig::for_parallel());
+//! let solution = gmres_solve_preconditioned(
+//!     |x| matrix.matvec(x),
+//!     |r| amg.apply(r),
+//!     &rhs,
+//!     None,
+//!     &GmresConfig::for_large_bem(),
+//! );
+//! ```
 
+pub mod amg_preconditioner;
 #[cfg(feature = "native")]
 pub mod batched_blas;
 pub mod bicgstab;
@@ -112,6 +130,12 @@ pub use preconditioner::HierarchicalFmmPreconditioner;
 
 // ILU configuration types
 pub use ilu_preconditioner::{IluMethod, IluPreconditioner, IluScanningDegree, IluSetup};
+
+// AMG preconditioner (portable, better parallel scalability than ILU)
+pub use amg_preconditioner::{
+    AmgConfig, AmgCoarsening, AmgCycle, AmgDiagnostics, AmgInterpolation, AmgPreconditioner,
+    AmgSmoother,
+};
 
 // GMRES configuration and solution types (portable)
 pub use gmres::{GmresConfig, GmresSolution, gmres_solve, gmres_solve_preconditioned};

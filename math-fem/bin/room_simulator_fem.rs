@@ -37,8 +37,20 @@ struct Args {
     output: PathBuf,
 
     /// Override solver method
+    #[arg(short, long, default_value = "gmres")]
+    solver: CliSolverType,
+
+    /// Override preconditioner
     #[arg(short, long)]
-    solver: Option<FemSolverMethod>,
+    preconditioner: Option<CliPreconditionerType>,
+
+    /// Krylov subspace size (restart)
+    #[arg(long, default_value = "50")]
+    krylov_size: usize,
+
+    /// Number of domains for Schwarz decomposition
+    #[arg(long, default_value = "8")]
+    schwarz_domains: usize,
 
     /// Number of parallel threads (default: all cores)
     #[arg(short = 't', long)]
@@ -50,21 +62,29 @@ struct Args {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum FemSolverMethod {
+enum CliSolverType {
     /// Direct solver (LU decomposition)
     Direct,
-    /// Iterative GMRES solver without preconditioning
+    /// GMRES iterative solver
     Gmres,
-    /// Iterative GMRES solver with ILU preconditioner (sequential triangular solves)
+    /// Pipelined GMRES
+    Pipelined,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CliPreconditionerType {
+    /// ILU(0) preconditioner
     Ilu,
-    /// Iterative GMRES solver with Jacobi preconditioner (fully parallel)
+    /// Jacobi (diagonal) preconditioner
     Jacobi,
-    /// Iterative GMRES solver with parallel ILU (graph coloring / level scheduling)
+    /// Parallel ILU with graph coloring
     IluColoring,
-    /// Iterative GMRES solver with parallel ILU (fixed-point iteration)
+    /// Parallel ILU with fixed-point iteration
     IluFixedpoint,
-    /// Iterative GMRES solver with Additive Schwarz domain decomposition (parallel subdomains)
+    /// Additive Schwarz domain decomposition
     Schwarz,
+    /// Algebraic Multigrid (AMG)
+    Amg,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -98,14 +118,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Convert to simulation
     let simulation = config.to_simulation()?;
 
-    // Determine solver method
-    let solver_method = args.solver.unwrap_or(FemSolverMethod::Ilu);
-
-    println!("\n=== Running FEM Simulation ===");
-    println!("Solver method: {:?}", solver_method);
+    // Determine internal solver type based on CLI arguments
+    let internal_solver_type = match (args.solver, args.preconditioner) {
+        (CliSolverType::Direct, _) => SolverType::Direct,
+        (CliSolverType::Gmres, None) => SolverType::Gmres,
+        (CliSolverType::Gmres, Some(CliPreconditionerType::Ilu)) => SolverType::GmresIlu,
+        (CliSolverType::Gmres, Some(CliPreconditionerType::Jacobi)) => SolverType::GmresJacobi,
+        (CliSolverType::Gmres, Some(CliPreconditionerType::IluColoring)) => SolverType::GmresIluColoring,
+        (CliSolverType::Gmres, Some(CliPreconditionerType::IluFixedpoint)) => SolverType::GmresIluFixedPoint,
+        (CliSolverType::Gmres, Some(CliPreconditionerType::Schwarz)) => SolverType::GmresSchwarz,
+        (CliSolverType::Gmres, Some(CliPreconditionerType::Amg)) => SolverType::GmresAmg,
+        (CliSolverType::Pipelined, None) => SolverType::GmresPipelined,
+        (CliSolverType::Pipelined, Some(CliPreconditionerType::Ilu)) => SolverType::GmresPipelinedIlu,
+        // Invalid combinations fallback or error
+        (solver, precond) => {
+             return Err(format!("Unsupported solver/preconditioner combination: {:?} + {:?}", solver, precond).into());
+        }
+    };
 
     // Run simulation
-    let output_data = run_fem_simulation(&simulation, &config, solver_method, args.verbose)?;
+    let output_data = run_fem_simulation(&simulation, &config, internal_solver_type, args.krylov_size, args.schwarz_domains, args.verbose)?;
 
     // Save results
     println!("\nSaving results to: {}", args.output.display());
@@ -179,18 +211,12 @@ fn create_room_mesh(simulation: &RoomSimulation, elements_per_meter: usize) -> M
 fn run_fem_simulation(
     simulation: &RoomSimulation,
     config: &RoomConfig,
-    solver_method: FemSolverMethod,
+    solver_type: SolverType,
+    krylov_size: usize,
+    schwarz_domains: usize,
     verbose: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    let solver_name = match solver_method {
-        FemSolverMethod::Direct => "fem_direct",
-        FemSolverMethod::Gmres => "fem_gmres",
-        FemSolverMethod::Ilu => "fem_gmres_ilu",
-        FemSolverMethod::Jacobi => "fem_gmres_jacobi",
-        FemSolverMethod::IluColoring => "fem_gmres_ilu_coloring",
-        FemSolverMethod::IluFixedpoint => "fem_gmres_ilu_fixedpoint",
-        FemSolverMethod::Schwarz => "fem_gmres_schwarz",
-    };
+    let solver_name = format!("{:?}", solver_type);
     println!("\n=== {} Solver ===", solver_name.to_uppercase());
 
     // Create mesh
@@ -202,72 +228,17 @@ fn run_fem_simulation(
     );
 
     // Configure solver
-    let solver_config = match solver_method {
-        FemSolverMethod::Direct => SolverConfig {
-            solver_type: SolverType::Direct,
-            verbosity: if verbose { 1 } else { 0 },
-            ..Default::default()
+    let solver_config = SolverConfig {
+        solver_type,
+        gmres: GmresConfigF64 {
+            max_iterations: config.solver.gmres.max_iter,
+            restart: krylov_size,
+            tolerance: config.solver.gmres.tolerance,
+            print_interval: if verbose { 10 } else { 0 },
         },
-        FemSolverMethod::Gmres => SolverConfig {
-            solver_type: SolverType::Gmres,
-            gmres: GmresConfigF64 {
-                max_iterations: config.solver.gmres.max_iter,
-                restart: config.solver.gmres.restart,
-                tolerance: config.solver.gmres.tolerance,
-                print_interval: if verbose { 10 } else { 0 },
-            },
-            verbosity: if verbose { 1 } else { 0 },
-        },
-        FemSolverMethod::Ilu => SolverConfig {
-            solver_type: SolverType::GmresIlu,
-            gmres: GmresConfigF64 {
-                max_iterations: config.solver.gmres.max_iter,
-                restart: config.solver.gmres.restart,
-                tolerance: config.solver.gmres.tolerance,
-                print_interval: if verbose { 10 } else { 0 },
-            },
-            verbosity: if verbose { 1 } else { 0 },
-        },
-        FemSolverMethod::Jacobi => SolverConfig {
-            solver_type: SolverType::GmresJacobi,
-            gmres: GmresConfigF64 {
-                max_iterations: config.solver.gmres.max_iter,
-                restart: config.solver.gmres.restart,
-                tolerance: config.solver.gmres.tolerance,
-                print_interval: if verbose { 10 } else { 0 },
-            },
-            verbosity: if verbose { 1 } else { 0 },
-        },
-        FemSolverMethod::IluColoring => SolverConfig {
-            solver_type: SolverType::GmresIluColoring,
-            gmres: GmresConfigF64 {
-                max_iterations: config.solver.gmres.max_iter,
-                restart: config.solver.gmres.restart,
-                tolerance: config.solver.gmres.tolerance,
-                print_interval: if verbose { 10 } else { 0 },
-            },
-            verbosity: if verbose { 1 } else { 0 },
-        },
-        FemSolverMethod::IluFixedpoint => SolverConfig {
-            solver_type: SolverType::GmresIluFixedPoint,
-            gmres: GmresConfigF64 {
-                max_iterations: config.solver.gmres.max_iter,
-                restart: config.solver.gmres.restart,
-                tolerance: config.solver.gmres.tolerance,
-                print_interval: if verbose { 10 } else { 0 },
-            },
-            verbosity: if verbose { 1 } else { 0 },
-        },
-        FemSolverMethod::Schwarz => SolverConfig {
-            solver_type: SolverType::GmresSchwarz,
-            gmres: GmresConfigF64 {
-                max_iterations: config.solver.gmres.max_iter,
-                restart: config.solver.gmres.restart,
-                tolerance: config.solver.gmres.tolerance,
-                print_interval: if verbose { 10 } else { 0 },
-            },
-            verbosity: if verbose { 1 } else { 0 },
-        },
+        verbosity: if verbose { 1 } else { 0 },
+        schwarz_subdomains: schwarz_domains,
+        schwarz_overlap: 2, // Default overlap
     };
 
     let lp = simulation.listening_positions[0];
@@ -335,7 +306,7 @@ fn run_fem_simulation(
         simulation,
         config,
         lp_spl_values,
-        solver_name,
+        &solver_name,
     ))
 }
 
