@@ -9,12 +9,18 @@
 //! - **IluColoringPreconditioner**: Parallel ILU via level scheduling
 //! - **IluFixedPointPreconditioner**: Parallel ILU via Jacobi iteration
 //! - **AdditiveSchwarzPreconditioner**: Domain decomposition with overlap (parallel)
+//! - **AmgPreconditioner**: Algebraic multigrid with parallel coarsening and smoothing
 
+mod amg;
 mod diagonal;
 mod ilu;
 mod ilu_parallel;
 mod schwarz;
 
+pub use amg::{
+    AmgConfig, AmgCoarsening, AmgCycle, AmgDiagnostics, AmgInterpolation, AmgPreconditioner,
+    AmgSmoother,
+};
 pub use diagonal::DiagonalPreconditioner;
 pub use ilu::IluPreconditioner;
 pub use ilu_parallel::{IluColoringPreconditioner, IluFixedPointPreconditioner};

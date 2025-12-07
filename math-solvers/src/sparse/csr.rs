@@ -55,6 +55,49 @@ impl<T: ComplexField> CsrMatrix<T> {
         }
     }
 
+    /// Create a CSR matrix from raw components
+    ///
+    /// This is useful for converting between different CSR matrix representations
+    /// that share the same internal structure.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input arrays are inconsistent:
+    /// - `row_ptrs` must have length `num_rows + 1`
+    /// - `col_indices` and `values` must have the same length
+    /// - `row_ptrs[num_rows]` must equal `values.len()`
+    pub fn from_raw_parts(
+        num_rows: usize,
+        num_cols: usize,
+        row_ptrs: Vec<usize>,
+        col_indices: Vec<usize>,
+        values: Vec<T>,
+    ) -> Self {
+        assert_eq!(
+            row_ptrs.len(),
+            num_rows + 1,
+            "row_ptrs must have num_rows + 1 elements"
+        );
+        assert_eq!(
+            col_indices.len(),
+            values.len(),
+            "col_indices and values must have the same length"
+        );
+        assert_eq!(
+            row_ptrs[num_rows],
+            values.len(),
+            "row_ptrs[num_rows] must equal nnz"
+        );
+
+        Self {
+            num_rows,
+            num_cols,
+            row_ptrs,
+            col_indices,
+            values,
+        }
+    }
+
     /// Create a CSR matrix from a dense matrix
     ///
     /// Only stores entries with magnitude > threshold

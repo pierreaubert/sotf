@@ -1,12 +1,12 @@
 [package]
 name = "math-solvers"
-version = "0.1.0"
+version = "0.1.2"
 description = "High-performance linear solvers for BEM and FEM"
 edition = { workspace = true }
 authors = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
-keywords = ["linear-algebra", "solvers", "gmres", "sparse", "iterative"]
+keywords = ["linear-algebra", "solvers", "gmres", "preconditionner"]
 categories = ["science", "mathematics"]
 
 [lib]

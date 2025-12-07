@@ -10,8 +10,12 @@ mod bicgstab;
 mod cg;
 mod cgs;
 mod gmres;
+#[cfg(feature = "rayon")]
+pub mod gmres_pipelined;
 
 pub use bicgstab::{BiCgstabConfig, BiCgstabSolution, bicgstab};
 pub use cg::{CgConfig, CgSolution, cg};
 pub use cgs::{CgsConfig, CgsSolution, cgs};
 pub use gmres::{GmresConfig, GmresSolution, gmres, gmres_preconditioned};
+#[cfg(feature = "rayon")]
+pub use gmres_pipelined::gmres_pipelined;

@@ -47,6 +47,8 @@ pub use direct::{LuFactorization, lu_solve};
 
 // Re-export preconditioners
 pub use preconditioners::{
-    AdditiveSchwarzPreconditioner, DiagonalPreconditioner, IdentityPreconditioner,
-    IluColoringPreconditioner, IluFixedPointPreconditioner, IluPreconditioner,
+    AdditiveSchwarzPreconditioner, AmgConfig, AmgCoarsening, AmgCycle, AmgDiagnostics,
+    AmgInterpolation, AmgPreconditioner, AmgSmoother, DiagonalPreconditioner,
+    IdentityPreconditioner, IluColoringPreconditioner, IluFixedPointPreconditioner,
+    IluPreconditioner,
 };
