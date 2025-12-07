@@ -142,6 +142,8 @@ pub struct Showcase {
     current_section: ShowcaseSection,
     // Entity for updating self
     entity: Entity<Self>,
+    // Focus handle for keyboard input
+    focus_handle: FocusHandle,
 }
 
 impl Showcase {
@@ -169,6 +171,7 @@ impl Showcase {
             volume_muted: false,
             current_section: ShowcaseSection::default(),
             entity: cx.entity().clone(),
+            focus_handle: cx.focus_handle(),
         }
     }
 }
@@ -288,6 +291,7 @@ impl Render for Showcase {
 
         div()
             .id("showcase-root")
+            .track_focus(&self.focus_handle)
             .w_full()
             .h_full()
             .bg(bg_color)

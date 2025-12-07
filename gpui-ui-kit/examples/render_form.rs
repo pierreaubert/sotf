@@ -89,19 +89,43 @@ impl Showcase {
                             Checkbox::new("cb-sm")
                                 .label(small)
                                 .size(CheckboxSize::Sm)
-                                .checked(checkbox_checked),
+                                .checked(checkbox_checked)
+                                .on_change({
+                                    let entity = entity.clone();
+                                    move |checked, _window, cx| {
+                                        entity.update(cx, |showcase, _| {
+                                            showcase.checkbox_checked = checked;
+                                        });
+                                    }
+                                }),
                         )
                         .child(
                             Checkbox::new("cb-md")
                                 .label(medium)
                                 .size(CheckboxSize::Md)
-                                .checked(checkbox_checked),
+                                .checked(checkbox_checked)
+                                .on_change({
+                                    let entity = entity.clone();
+                                    move |checked, _window, cx| {
+                                        entity.update(cx, |showcase, _| {
+                                            showcase.checkbox_checked = checked;
+                                        });
+                                    }
+                                }),
                         )
                         .child(
                             Checkbox::new("cb-lg")
                                 .label(large)
                                 .size(CheckboxSize::Lg)
-                                .checked(!checkbox_checked),
+                                .checked(!checkbox_checked)
+                                .on_change({
+                                    let entity = entity.clone();
+                                    move |checked, _window, cx| {
+                                        entity.update(cx, |showcase, _| {
+                                            showcase.checkbox_checked = !checked;
+                                        });
+                                    }
+                                }),
                         )
                         .child(
                             Checkbox::new("cb-disabled")
@@ -369,7 +393,15 @@ impl Showcase {
                                 .min(0.0)
                                 .max(100.0)
                                 .label("Level")
-                                .size(VerticalSliderSize::Lg),
+                                .size(VerticalSliderSize::Lg)
+                                .on_change({
+                                    let entity = entity.clone();
+                                    move |value, _window, cx| {
+                                        entity.update(cx, |showcase, _| {
+                                            showcase.vertical_slider_value = value;
+                                        });
+                                    }
+                                }),
                         ),
                 ),
         )
