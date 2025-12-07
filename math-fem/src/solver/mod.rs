@@ -79,6 +79,8 @@ pub enum SolverType {
     GmresPipelined,
     /// Pipelined GMRES with ILU(0) preconditioning
     GmresPipelinedIlu,
+    /// Pipelined GMRES with AMG preconditioning (best for large parallel problems)
+    GmresPipelinedAmg,
 }
 
 /// Solution result from the solver
@@ -144,6 +146,7 @@ pub fn solve(problem: &HelmholtzProblem, config: &SolverConfig) -> Result<Soluti
         SolverType::GmresAmg => solve_gmres_amg(&csr, &rhs, config),
         SolverType::GmresPipelined => solve_gmres_pipelined(&csr, &rhs, config),
         SolverType::GmresPipelinedIlu => solve_gmres_pipelined_ilu(&csr, &rhs, config),
+        SolverType::GmresPipelinedAmg => solve_gmres_pipelined_amg(&csr, &rhs, config),
     };
     let solve_time = solve_start.elapsed();
 
@@ -702,6 +705,66 @@ fn solve_gmres_pipelined_ilu(
     })
 }
 
+/// Solve using Pipelined GMRES with AMG preconditioning
+///
+/// Combines the communication-hiding benefits of pipelined GMRES with the
+/// excellent parallel scalability of AMG preconditioning. This is the best
+/// choice for very large problems on many-core systems.
+fn solve_gmres_pipelined_amg(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    if config.verbosity > 0 {
+        log::info!(
+            "Using Pipelined GMRES+AMG solver (restart={}, tol={})",
+            config.gmres.restart,
+            config.gmres.tolerance
+        );
+    }
+
+    let amg_start = Instant::now();
+    let amg_config = AmgConfig::for_parallel();
+    let precond = AmgPreconditioner::from_csr(csr, amg_config);
+    let amg_time = amg_start.elapsed();
+
+    if config.verbosity > 0 {
+        let diag = precond.diagnostics();
+        println!(
+            "  [FEM] AMG setup: {:.1}ms, {} levels, grid complexity {:.2}, operator complexity {:.2}",
+            amg_time.as_secs_f64() * 1000.0,
+            diag.num_levels,
+            diag.grid_complexity,
+            diag.operator_complexity
+        );
+    }
+
+    let result = gmres_pipelined(csr, &precond, rhs, None, &config.gmres);
+
+    if config.verbosity > 0 {
+        log::info!(
+            "Pipelined GMRES+AMG {} in {} iterations (residual: {:.2e})",
+            if result.converged { "converged" } else { "did not converge" },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
 /// Solve a Helmholtz problem directly from CSR matrix and RHS
 ///
 /// This is useful when you have pre-assembled sparse matrices.
@@ -728,6 +791,7 @@ pub fn solve_csr(
         SolverType::GmresAmg => solve_gmres_amg(csr, rhs, config),
         SolverType::GmresPipelined => solve_gmres_pipelined(csr, rhs, config),
         SolverType::GmresPipelinedIlu => solve_gmres_pipelined_ilu(csr, rhs, config),
+        SolverType::GmresPipelinedAmg => solve_gmres_pipelined_amg(csr, rhs, config),
     }
 }
 

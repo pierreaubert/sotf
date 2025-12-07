@@ -130,6 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (CliSolverType::Gmres, Some(CliPreconditionerType::Amg)) => SolverType::GmresAmg,
         (CliSolverType::Pipelined, None) => SolverType::GmresPipelined,
         (CliSolverType::Pipelined, Some(CliPreconditionerType::Ilu)) => SolverType::GmresPipelinedIlu,
+        (CliSolverType::Pipelined, Some(CliPreconditionerType::Amg)) => SolverType::GmresPipelinedAmg,
         // Invalid combinations fallback or error
         (solver, precond) => {
              return Err(format!("Unsupported solver/preconditioner combination: {:?} + {:?}", solver, precond).into());
