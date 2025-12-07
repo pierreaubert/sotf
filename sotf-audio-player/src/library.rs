@@ -39,19 +39,61 @@ fn capitalize_words(s: &str) -> String {
         .join(" ")
 }
 
-/// Clean album title by removing disc/volume information
+/// Clean album title by removing disc/volume information and catalog numbers
 /// Handles formats like:
-/// - "Album Title (CD 1)"
+/// - "Album Title (CD 1)" or "Album Title (CD1)"
 /// - "Album Title (CD-1)"
-/// - "Album Title (Disc 1)"
-/// - "Album Title CD 1"
+/// - "Album Title (Disc 1)" or "Album Title (Disc1)"
+/// - "Album Title CD 1" or "Album Title CD1"
+/// - "Album Title (3116-2)" - catalog numbers
+/// - "Album Title (R2 47730)" - catalog numbers with prefix
 pub fn clean_album_title(title: &str) -> String {
     let lower = title.to_lowercase();
+
+    // First, try to remove catalog numbers in parentheses at the end
+    // Pattern: title ends with "(...)" where content looks like a catalog number
+    // Catalog numbers typically have patterns like: "3116-2", "R2 47730", "ABC-12345", "MFSL 1234"
+    if let Some(paren_start) = lower.rfind(" (") {
+        let suffix = &lower[paren_start..];
+        if suffix.ends_with(')') {
+            let inner = &suffix[2..suffix.len() - 1].trim(); // Content inside parentheses
+            // Check if it looks like a catalog number
+            // Must contain digits AND either a dash or be alphanumeric only
+            // Must NOT be a disc marker or common album suffixes
+            let has_digit = inner.chars().any(|c| c.is_ascii_digit());
+            let is_disc_marker = inner.starts_with("cd")
+                || inner.starts_with("disc")
+                || inner.starts_with("vol");
+            let is_album_suffix = inner.contains("remaster")
+                || inner.contains("deluxe")
+                || inner.contains("edition")
+                || inner.contains("live")
+                || inner.contains("bonus")
+                || inner.contains("anniversary");
+            // Catalog numbers usually have a dash, or are short alphanumeric codes
+            // They typically don't have spaces unless it's a prefix like "R2 47730"
+            // Note: inner is lowercased, so we check for lowercase letters
+            let letter_count = inner.chars().filter(|c| c.is_ascii_lowercase()).count();
+            let digit_count = inner.chars().filter(|c| c.is_ascii_digit()).count();
+            let looks_like_catalog = has_digit
+                && !is_disc_marker
+                && !is_album_suffix
+                && inner.len() <= 15
+                && inner.len() >= 3 // Catalog numbers are at least 3 chars
+                && (inner.contains('-')
+                    || (letter_count >= 1 && digit_count >= 2));
+            if looks_like_catalog {
+                return title[..paren_start].trim().to_string();
+            }
+        }
+    }
 
     // List of markers to look for at the end of the string
     // We look for the last occurrence to avoid false positives in the middle of titles
     let markers = [
         " (cd", " (disc", " cd ", " disc ", " vol.", " vol ",
+        // Handle cases without space before number (e.g., "CD1", "Disc2")
+        " cd", " disc",
         // Handle cases without space
         "(cd", "(disc", // Handle square brackets
         " [cd", " [disc", "[cd", "[disc",
@@ -60,6 +102,7 @@ pub fn clean_album_title(title: &str) -> String {
     for marker in markers {
         if let Some(idx) = lower.rfind(marker) {
             let suffix = &lower[idx..];
+            let after_marker = &suffix[marker.len()..];
 
             // Heuristics to ensure this is actually a disc number:
 
@@ -68,17 +111,32 @@ pub fn clean_album_title(title: &str) -> String {
                 continue;
             }
 
-            // 2. If it starts with parenthesis, it must end with parenthesis
+            // 2. For markers that end with a letter (like " cd", " disc"), check that what follows
+            //    starts with a digit or dash (e.g., "cd1", "cd-1")
+            //    This prevents matching album names like "The CD Is Dead"
+            //    Skip this check for markers with parens/brackets (they have their own checks)
+            //    and for markers ending with space or period (like " vol.", " cd ")
+            let has_parens_or_brackets = marker.contains('(') || marker.contains('[');
+            let ends_with_letter = marker.chars().last().map(|c| c.is_ascii_alphabetic()).unwrap_or(false);
+            if ends_with_letter && !has_parens_or_brackets {
+                if let Some(first_char) = after_marker.chars().next() {
+                    if !first_char.is_ascii_digit() && first_char != '-' {
+                        continue;
+                    }
+                }
+            }
+
+            // 3. If it starts with parenthesis, it must end with parenthesis
             if marker.contains('(') && !suffix.ends_with(')') {
                 continue;
             }
 
-            // 3. If it starts with bracket, it must end with bracket
+            // 4. If it starts with bracket, it must end with bracket
             if marker.contains('[') && !suffix.ends_with(']') {
                 continue;
             }
 
-            // 4. If it doesn't have parentheses/brackets, it should be at the very end of the string
+            // 5. If it doesn't have parentheses/brackets, it should be at the very end of the string
             // (already guaranteed by rfind + we are checking the suffix)
 
             return title[..idx].trim().to_string();
@@ -1843,6 +1901,31 @@ mod tests {
             "A Night On The Town"
         );
 
+        // No space before number (CD1, Disc2)
+        assert_eq!(clean_album_title("ALPHA & OMEGA CD1"), "ALPHA & OMEGA");
+        assert_eq!(clean_album_title("Alpha & Omega CD2"), "Alpha & Omega");
+        assert_eq!(clean_album_title("Album Title CD1"), "Album Title");
+        assert_eq!(clean_album_title("Album Title Disc2"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (CD1)"), "Album Title");
+
+        // Catalog numbers in parentheses
+        assert_eq!(
+            clean_album_title("A Night On The Town (3116-2)"),
+            "A Night On The Town"
+        );
+        assert_eq!(
+            clean_album_title("A Night On The Town (R2 47730)"),
+            "A Night On The Town"
+        );
+        assert_eq!(
+            clean_album_title("Album Title (ABC-12345)"),
+            "Album Title"
+        );
+        assert_eq!(
+            clean_album_title("Album Title (MFSL 1234)"),
+            "Album Title"
+        );
+
         // Should NOT clean
         assert_eq!(clean_album_title("AC/DC"), "AC/DC");
         assert_eq!(clean_album_title("Disco Volante"), "Disco Volante");
@@ -1851,6 +1934,10 @@ mod tests {
         assert_eq!(
             clean_album_title("Album (Remastered)"),
             "Album (Remastered)"
+        );
+        assert_eq!(
+            clean_album_title("Album (Deluxe Edition)"),
+            "Album (Deluxe Edition)"
         );
     }
 
