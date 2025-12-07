@@ -12,6 +12,10 @@ use super::stiffness::{StiffnessMatrix, assemble_stiffness};
 use crate::basis::PolynomialDegree;
 use crate::mesh::Mesh;
 use num_complex::Complex64;
+use solvers::CsrMatrix;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 /// Helmholtz system matrix in triplet format
 #[derive(Debug, Clone)]
@@ -103,6 +107,22 @@ impl HelmholtzMatrix {
             wavenumber: self.wavenumber,
         }
     }
+
+    /// Convert to CSR sparse matrix format
+    ///
+    /// The triplets are converted to CSR format using `CsrMatrix::from_triplets`,
+    /// which handles duplicate entries by summing them.
+    pub fn to_csr(&self) -> CsrMatrix<Complex64> {
+        let triplets: Vec<(usize, usize, Complex64)> = self
+            .rows
+            .iter()
+            .zip(self.cols.iter())
+            .zip(self.values.iter())
+            .map(|((&r, &c), &v)| (r, c, v))
+            .collect();
+
+        CsrMatrix::from_triplets(self.dim, self.dim, triplets)
+    }
 }
 
 /// Assembled Helmholtz problem including RHS
@@ -133,14 +153,14 @@ impl HelmholtzProblem {
         source: F,
     ) -> Self
     where
-        F: Fn(f64, f64, f64) -> Complex64,
+        F: Fn(f64, f64, f64) -> Complex64 + Sync,
     {
         let stiffness = assemble_stiffness(mesh, degree);
         let mass = assemble_mass(mesh, degree);
         let matrix = HelmholtzMatrix::new(&stiffness, &mass, wavenumber);
 
         // Assemble RHS: b_i = ∫ f * φ_i dΩ
-        let rhs = assemble_rhs(mesh, degree, source);
+        let rhs = assemble_rhs(mesh, degree, &source);
 
         Self {
             matrix,
@@ -156,8 +176,13 @@ impl HelmholtzProblem {
     }
 }
 
-/// Assemble right-hand side vector
-fn assemble_rhs<F>(mesh: &Mesh, degree: PolynomialDegree, source: F) -> Vec<Complex64>
+/// Compute element RHS contributions (returns (node_index, value) pairs)
+fn compute_element_rhs<F>(
+    mesh: &Mesh,
+    elem_idx: usize,
+    degree: PolynomialDegree,
+    source: &F,
+) -> Vec<(usize, Complex64)>
 where
     F: Fn(f64, f64, f64) -> Complex64,
 {
@@ -165,89 +190,143 @@ where
     use crate::mesh::ElementType;
     use crate::quadrature::for_mass;
 
+    let elem = &mesh.elements[elem_idx];
+    let elem_type = elem.element_type;
+    let vertices = elem.vertices();
+    let n_nodes = vertices.len();
+
+    let quad = for_mass(elem_type, degree.degree());
+
+    // Get coordinates based on dimension
+    let is_3d = matches!(
+        elem_type,
+        ElementType::Tetrahedron | ElementType::Hexahedron
+    );
+
+    let mut f_local = vec![Complex64::new(0.0, 0.0); n_nodes];
+
+    for qp in quad.iter() {
+        let shape = evaluate_shape(elem_type, degree, qp.xi(), qp.eta(), qp.zeta());
+
+        // Map reference coordinates to physical coordinates
+        let (x, y, z, det_j) = if is_3d {
+            let coords: Vec<[f64; 3]> = vertices
+                .iter()
+                .map(|&v| [mesh.nodes[v].x, mesh.nodes[v].y, mesh.nodes[v].z])
+                .collect();
+            let jac = Jacobian::from_3d(&shape.gradients, &coords);
+
+            let x: f64 = shape
+                .values
+                .iter()
+                .zip(&coords)
+                .map(|(n, c)| n * c[0])
+                .sum();
+            let y: f64 = shape
+                .values
+                .iter()
+                .zip(&coords)
+                .map(|(n, c)| n * c[1])
+                .sum();
+            let z: f64 = shape
+                .values
+                .iter()
+                .zip(&coords)
+                .map(|(n, c)| n * c[2])
+                .sum();
+
+            (x, y, z, jac.det.abs())
+        } else {
+            let coords: Vec<[f64; 2]> = vertices
+                .iter()
+                .map(|&v| [mesh.nodes[v].x, mesh.nodes[v].y])
+                .collect();
+            let jac = Jacobian::from_2d(&shape.gradients, &coords);
+
+            let x: f64 = shape
+                .values
+                .iter()
+                .zip(&coords)
+                .map(|(n, c)| n * c[0])
+                .sum();
+            let y: f64 = shape
+                .values
+                .iter()
+                .zip(&coords)
+                .map(|(n, c)| n * c[1])
+                .sum();
+
+            (x, y, 0.0, jac.det.abs())
+        };
+
+        let f_val = source(x, y, z);
+
+        for i in 0..n_nodes {
+            f_local[i] += f_val * Complex64::new(shape.values[i] * det_j * qp.weight, 0.0);
+        }
+    }
+
+    // Return (global_node_index, value) pairs
+    vertices
+        .iter()
+        .enumerate()
+        .map(|(i, &gi)| (gi, f_local[i]))
+        .collect()
+}
+
+/// Assemble right-hand side vector
+fn assemble_rhs<F>(mesh: &Mesh, degree: PolynomialDegree, source: &F) -> Vec<Complex64>
+where
+    F: Fn(f64, f64, f64) -> Complex64 + Sync,
+{
+    #[cfg(feature = "parallel")]
+    {
+        assemble_rhs_parallel(mesh, degree, source)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        assemble_rhs_sequential(mesh, degree, source)
+    }
+}
+
+/// Sequential RHS assembly
+#[cfg(not(feature = "parallel"))]
+fn assemble_rhs_sequential<F>(mesh: &Mesh, degree: PolynomialDegree, source: &F) -> Vec<Complex64>
+where
+    F: Fn(f64, f64, f64) -> Complex64,
+{
     let n_dofs = mesh.num_nodes();
     let mut rhs = vec![Complex64::new(0.0, 0.0); n_dofs];
 
     for elem_idx in 0..mesh.num_elements() {
-        let elem = &mesh.elements[elem_idx];
-        let elem_type = elem.element_type;
-        let vertices = elem.vertices();
-        let n_nodes = vertices.len();
-
-        let quad = for_mass(elem_type, degree.degree());
-
-        // Get coordinates based on dimension
-        let is_3d = matches!(
-            elem_type,
-            ElementType::Tetrahedron | ElementType::Hexahedron
-        );
-
-        let mut f_local = vec![Complex64::new(0.0, 0.0); n_nodes];
-
-        for qp in quad.iter() {
-            let shape = evaluate_shape(elem_type, degree, qp.xi(), qp.eta(), qp.zeta());
-
-            // Map reference coordinates to physical coordinates
-            let (x, y, z, det_j) = if is_3d {
-                let coords: Vec<[f64; 3]> = vertices
-                    .iter()
-                    .map(|&v| [mesh.nodes[v].x, mesh.nodes[v].y, mesh.nodes[v].z])
-                    .collect();
-                let jac = Jacobian::from_3d(&shape.gradients, &coords);
-
-                let x: f64 = shape
-                    .values
-                    .iter()
-                    .zip(&coords)
-                    .map(|(n, c)| n * c[0])
-                    .sum();
-                let y: f64 = shape
-                    .values
-                    .iter()
-                    .zip(&coords)
-                    .map(|(n, c)| n * c[1])
-                    .sum();
-                let z: f64 = shape
-                    .values
-                    .iter()
-                    .zip(&coords)
-                    .map(|(n, c)| n * c[2])
-                    .sum();
-
-                (x, y, z, jac.det.abs())
-            } else {
-                let coords: Vec<[f64; 2]> = vertices
-                    .iter()
-                    .map(|&v| [mesh.nodes[v].x, mesh.nodes[v].y])
-                    .collect();
-                let jac = Jacobian::from_2d(&shape.gradients, &coords);
-
-                let x: f64 = shape
-                    .values
-                    .iter()
-                    .zip(&coords)
-                    .map(|(n, c)| n * c[0])
-                    .sum();
-                let y: f64 = shape
-                    .values
-                    .iter()
-                    .zip(&coords)
-                    .map(|(n, c)| n * c[1])
-                    .sum();
-
-                (x, y, 0.0, jac.det.abs())
-            };
-
-            let f_val = source(x, y, z);
-
-            for i in 0..n_nodes {
-                f_local[i] += f_val * Complex64::new(shape.values[i] * det_j * qp.weight, 0.0);
-            }
+        for (gi, val) in compute_element_rhs(mesh, elem_idx, degree, source) {
+            rhs[gi] += val;
         }
+    }
 
-        // Scatter to global RHS
-        for (i, &gi) in vertices.iter().enumerate() {
-            rhs[gi] += f_local[i];
+    rhs
+}
+
+/// Parallel RHS assembly using rayon
+#[cfg(feature = "parallel")]
+fn assemble_rhs_parallel<F>(mesh: &Mesh, degree: PolynomialDegree, source: &F) -> Vec<Complex64>
+where
+    F: Fn(f64, f64, f64) -> Complex64 + Sync,
+{
+    let n_dofs = mesh.num_nodes();
+    let n_elems = mesh.num_elements();
+
+    // Compute all element contributions in parallel
+    let all_contribs: Vec<Vec<(usize, Complex64)>> = (0..n_elems)
+        .into_par_iter()
+        .map(|elem_idx| compute_element_rhs(mesh, elem_idx, degree, source))
+        .collect();
+
+    // Merge contributions into final RHS vector
+    let mut rhs = vec![Complex64::new(0.0, 0.0); n_dofs];
+    for contribs in all_contribs {
+        for (gi, val) in contribs {
+            rhs[gi] += val;
         }
     }
 

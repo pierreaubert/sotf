@@ -7,6 +7,9 @@ use crate::mesh::{ElementType, Mesh};
 use crate::quadrature::{QuadratureRule, for_mass};
 use num_complex::Complex64;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 /// Assembled mass matrix in triplet format
 #[derive(Debug, Clone)]
 pub struct MassMatrix {
@@ -190,28 +193,82 @@ fn element_mass_hex_q1(
     (vertices.to_vec(), m_local)
 }
 
+/// Compute element mass contributions (returns triplets for one element)
+fn compute_element_mass(
+    mesh: &Mesh,
+    elem_idx: usize,
+    degree: PolynomialDegree,
+) -> Vec<(usize, usize, Complex64)> {
+    let elem_type = mesh.elements[elem_idx].element_type;
+    let quad = for_mass(elem_type, degree.degree());
+
+    let (global_nodes, m_local) = match elem_type {
+        ElementType::Triangle => element_mass_triangle_p1(mesh, elem_idx, &quad, degree),
+        ElementType::Quadrilateral => element_mass_quad_q1(mesh, elem_idx, &quad, degree),
+        ElementType::Tetrahedron => element_mass_tet_p1(mesh, elem_idx, &quad, degree),
+        ElementType::Hexahedron => element_mass_hex_q1(mesh, elem_idx, &quad, degree),
+    };
+
+    let mut triplets = Vec::new();
+    for (i, &gi) in global_nodes.iter().enumerate() {
+        for (j, &gj) in global_nodes.iter().enumerate() {
+            if m_local[i][j].norm() > 1e-15 {
+                triplets.push((gi, gj, m_local[i][j]));
+            }
+        }
+    }
+    triplets
+}
+
 /// Assemble global mass matrix from mesh
 pub fn assemble_mass(mesh: &Mesh, degree: PolynomialDegree) -> MassMatrix {
+    #[cfg(feature = "parallel")]
+    {
+        assemble_mass_parallel(mesh, degree)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        assemble_mass_sequential(mesh, degree)
+    }
+}
+
+/// Sequential mass assembly
+#[cfg(not(feature = "parallel"))]
+fn assemble_mass_sequential(mesh: &Mesh, degree: PolynomialDegree) -> MassMatrix {
     let n_dofs = mesh.num_nodes();
     let mut matrix = MassMatrix::new(n_dofs);
 
     for elem_idx in 0..mesh.num_elements() {
-        let elem_type = mesh.elements[elem_idx].element_type;
-        let quad = for_mass(elem_type, degree.degree());
+        for (gi, gj, val) in compute_element_mass(mesh, elem_idx, degree) {
+            matrix.add(gi, gj, val);
+        }
+    }
 
-        let (global_nodes, m_local) = match elem_type {
-            ElementType::Triangle => element_mass_triangle_p1(mesh, elem_idx, &quad, degree),
-            ElementType::Quadrilateral => element_mass_quad_q1(mesh, elem_idx, &quad, degree),
-            ElementType::Tetrahedron => element_mass_tet_p1(mesh, elem_idx, &quad, degree),
-            ElementType::Hexahedron => element_mass_hex_q1(mesh, elem_idx, &quad, degree),
-        };
+    matrix
+}
 
-        for (i, &gi) in global_nodes.iter().enumerate() {
-            for (j, &gj) in global_nodes.iter().enumerate() {
-                if m_local[i][j].norm() > 1e-15 {
-                    matrix.add(gi, gj, m_local[i][j]);
-                }
-            }
+/// Parallel mass assembly using rayon
+#[cfg(feature = "parallel")]
+pub fn assemble_mass_parallel(mesh: &Mesh, degree: PolynomialDegree) -> MassMatrix {
+    let n_dofs = mesh.num_nodes();
+    let n_elems = mesh.num_elements();
+
+    // Compute all element contributions in parallel
+    let all_triplets: Vec<Vec<(usize, usize, Complex64)>> = (0..n_elems)
+        .into_par_iter()
+        .map(|elem_idx| compute_element_mass(mesh, elem_idx, degree))
+        .collect();
+
+    // Merge all triplets into one matrix
+    let total_triplets: usize = all_triplets.iter().map(|t| t.len()).sum();
+    let mut matrix = MassMatrix::new(n_dofs);
+    matrix.rows.reserve(total_triplets);
+    matrix.cols.reserve(total_triplets);
+    matrix.values.reserve(total_triplets);
+
+    for triplets in all_triplets {
+        for (i, j, v) in triplets {
+            matrix.add(i, j, v);
         }
     }
 

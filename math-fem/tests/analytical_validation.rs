@@ -550,7 +550,7 @@ fn solve_mms_problem<U, F>(
 ) -> f64
 where
     U: Fn(f64, f64, f64) -> Complex64 + Copy + 'static,
-    F: Fn(f64, f64, f64) -> Complex64,
+    F: Fn(f64, f64, f64) -> Complex64 + Sync,
 {
     let k_complex = Complex64::new(k, 0.0);
     let mut problem = HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k_complex, source);

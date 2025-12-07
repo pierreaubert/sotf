@@ -7,6 +7,9 @@ use crate::mesh::{ElementType, Mesh};
 use crate::quadrature::{QuadratureRule, for_stiffness};
 use num_complex::Complex64;
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 /// Assembled stiffness matrix in triplet format
 #[derive(Debug, Clone)]
 pub struct StiffnessMatrix {
@@ -237,29 +240,84 @@ fn element_stiffness_hex_q1(
     (vertices.to_vec(), k_local)
 }
 
+/// Compute element stiffness contributions (returns triplets for one element)
+fn compute_element_stiffness(
+    mesh: &Mesh,
+    elem_idx: usize,
+    degree: PolynomialDegree,
+) -> Vec<(usize, usize, Complex64)> {
+    let elem_type = mesh.elements[elem_idx].element_type;
+    let quad = for_stiffness(elem_type, degree.degree());
+
+    let (global_nodes, k_local) = match elem_type {
+        ElementType::Triangle => element_stiffness_triangle_p1(mesh, elem_idx, &quad, degree),
+        ElementType::Quadrilateral => element_stiffness_quad_q1(mesh, elem_idx, &quad, degree),
+        ElementType::Tetrahedron => element_stiffness_tet_p1(mesh, elem_idx, &quad, degree),
+        ElementType::Hexahedron => element_stiffness_hex_q1(mesh, elem_idx, &quad, degree),
+    };
+
+    let mut triplets = Vec::new();
+    for (i, &gi) in global_nodes.iter().enumerate() {
+        for (j, &gj) in global_nodes.iter().enumerate() {
+            if k_local[i][j].norm() > 1e-15 {
+                triplets.push((gi, gj, k_local[i][j]));
+            }
+        }
+    }
+    triplets
+}
+
 /// Assemble global stiffness matrix from mesh
 pub fn assemble_stiffness(mesh: &Mesh, degree: PolynomialDegree) -> StiffnessMatrix {
+    #[cfg(feature = "parallel")]
+    {
+        println!("  [DEBUG] Using PARALLEL stiffness assembly ({} elements)", mesh.num_elements());
+        assemble_stiffness_parallel(mesh, degree)
+    }
+    #[cfg(not(feature = "parallel"))]
+    {
+        println!("  [DEBUG] Using SEQUENTIAL stiffness assembly ({} elements)", mesh.num_elements());
+        assemble_stiffness_sequential(mesh, degree)
+    }
+}
+
+/// Sequential stiffness assembly
+#[cfg(not(feature = "parallel"))]
+fn assemble_stiffness_sequential(mesh: &Mesh, degree: PolynomialDegree) -> StiffnessMatrix {
     let n_dofs = mesh.num_nodes();
     let mut matrix = StiffnessMatrix::new(n_dofs);
 
     for elem_idx in 0..mesh.num_elements() {
-        let elem_type = mesh.elements[elem_idx].element_type;
-        let quad = for_stiffness(elem_type, degree.degree());
+        for (gi, gj, val) in compute_element_stiffness(mesh, elem_idx, degree) {
+            matrix.add(gi, gj, val);
+        }
+    }
 
-        let (global_nodes, k_local) = match elem_type {
-            ElementType::Triangle => element_stiffness_triangle_p1(mesh, elem_idx, &quad, degree),
-            ElementType::Quadrilateral => element_stiffness_quad_q1(mesh, elem_idx, &quad, degree),
-            ElementType::Tetrahedron => element_stiffness_tet_p1(mesh, elem_idx, &quad, degree),
-            ElementType::Hexahedron => element_stiffness_hex_q1(mesh, elem_idx, &quad, degree),
-        };
+    matrix
+}
 
-        // Scatter to global matrix
-        for (i, &gi) in global_nodes.iter().enumerate() {
-            for (j, &gj) in global_nodes.iter().enumerate() {
-                if k_local[i][j].norm() > 1e-15 {
-                    matrix.add(gi, gj, k_local[i][j]);
-                }
-            }
+/// Parallel stiffness assembly using rayon
+#[cfg(feature = "parallel")]
+pub fn assemble_stiffness_parallel(mesh: &Mesh, degree: PolynomialDegree) -> StiffnessMatrix {
+    let n_dofs = mesh.num_nodes();
+    let n_elems = mesh.num_elements();
+
+    // Compute all element contributions in parallel
+    let all_triplets: Vec<Vec<(usize, usize, Complex64)>> = (0..n_elems)
+        .into_par_iter()
+        .map(|elem_idx| compute_element_stiffness(mesh, elem_idx, degree))
+        .collect();
+
+    // Merge all triplets into one matrix
+    let total_triplets: usize = all_triplets.iter().map(|t| t.len()).sum();
+    let mut matrix = StiffnessMatrix::new(n_dofs);
+    matrix.rows.reserve(total_triplets);
+    matrix.cols.reserve(total_triplets);
+    matrix.values.reserve(total_triplets);
+
+    for triplets in all_triplets {
+        for (i, j, v) in triplets {
+            matrix.add(i, j, v);
         }
     }
 

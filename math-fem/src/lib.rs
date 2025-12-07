@@ -33,6 +33,7 @@ pub mod boundary;
 pub mod mesh;
 pub mod multigrid;
 pub mod quadrature;
+pub mod solver;
 
 /// Library version
 pub fn version() -> &'static str {

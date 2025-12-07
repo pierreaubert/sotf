@@ -9,14 +9,19 @@
 //!   cargo run --release --bin roomsim-fem -- --help
 
 use clap::{Parser, ValueEnum};
+use fem::assembly::HelmholtzProblem;
+use fem::basis::PolynomialDegree;
+use fem::mesh::{ElementType, Mesh, Point};
+use fem::solver::{self, GmresConfigF64, SolverConfig, SolverType};
 use num_complex::Complex64;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Instant;
 
 // Import common types from math-xem-common
 use xem_common::{
     create_default_config, create_output_json, print_config_summary, pressure_to_spl, Point3D,
-    RoomConfig, RoomSimulation,
+    RoomConfig, RoomSimulation, Source,
 };
 
 #[derive(Parser, Debug)]
@@ -48,10 +53,12 @@ struct Args {
 enum FemSolverMethod {
     /// Direct solver (LU decomposition)
     Direct,
-    /// Iterative solver with multigrid preconditioner
-    Multigrid,
-    /// Iterative solver with ILU preconditioner
+    /// Iterative GMRES solver without preconditioning
+    Gmres,
+    /// Iterative GMRES solver with ILU preconditioner (sequential triangular solves)
     Ilu,
+    /// Iterative GMRES solver with Jacobi preconditioner (fully parallel)
+    Jacobi,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -66,6 +73,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build_global()
             .expect("Failed to set thread pool");
         println!("Using {} threads\n", threads);
+    } else {
+        println!("Using {} threads (rayon default)\n", rayon::current_num_threads());
     }
 
     // Load configuration
@@ -84,17 +93,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let simulation = config.to_simulation()?;
 
     // Determine solver method
-    let solver_method = args.solver.unwrap_or(FemSolverMethod::Direct);
+    let solver_method = args.solver.unwrap_or(FemSolverMethod::Ilu);
 
     println!("\n=== Running FEM Simulation ===");
     println!("Solver method: {:?}", solver_method);
 
-    // Run simulation based on solver method
-    let output_data = match solver_method {
-        FemSolverMethod::Direct => run_direct_solver(&simulation, &config, args.verbose)?,
-        FemSolverMethod::Multigrid => run_multigrid_solver(&simulation, &config, args.verbose)?,
-        FemSolverMethod::Ilu => run_ilu_solver(&simulation, &config, args.verbose)?,
-    };
+    // Run simulation
+    let output_data = run_fem_simulation(&simulation, &config, solver_method, args.verbose)?;
 
     // Save results
     println!("\nSaving results to: {}", args.output.display());
@@ -104,14 +109,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Generate a tetrahedral volume mesh from room geometry
-fn generate_volume_mesh(simulation: &RoomSimulation, elements_per_meter: usize) -> FemMesh {
-    // For now, we create a simple structured hex mesh and convert to tets
-    // This is a simplified implementation - a real implementation would use
-    // proper mesh generation libraries like TetGen or GMSH
-
+/// Create a tetrahedral mesh for the room
+fn create_room_mesh(simulation: &RoomSimulation, elements_per_meter: usize) -> Mesh {
     let (width, depth, height) = simulation.room.dimensions();
 
+    // Create a structured grid of nodes
     let nx = (width * elements_per_meter as f64).ceil() as usize + 1;
     let ny = (depth * elements_per_meter as f64).ceil() as usize + 1;
     let nz = (height * elements_per_meter as f64).ceil() as usize + 1;
@@ -120,19 +122,24 @@ fn generate_volume_mesh(simulation: &RoomSimulation, elements_per_meter: usize) 
     let dy = depth / (ny - 1) as f64;
     let dz = height / (nz - 1) as f64;
 
+    // Create 3D mesh
+    let mut mesh = Mesh::new(3);
+
     // Generate nodes
-    let mut nodes = Vec::new();
     for k in 0..nz {
         for j in 0..ny {
             for i in 0..nx {
-                nodes.push(Point3D::new(i as f64 * dx, j as f64 * dy, k as f64 * dz));
+                mesh.add_node(Point::new_3d(
+                    i as f64 * dx,
+                    j as f64 * dy,
+                    k as f64 * dz,
+                ));
             }
         }
     }
 
     // Generate tetrahedral elements by subdividing hex cells
-    // Each hex is divided into 6 tetrahedra
-    let mut elements = Vec::new();
+    // Each hex is divided into 5 tetrahedra (consistent decomposition)
     for k in 0..(nz - 1) {
         for j in 0..(ny - 1) {
             for i in 0..(nx - 1) {
@@ -146,73 +153,83 @@ fn generate_volume_mesh(simulation: &RoomSimulation, elements_per_meter: usize) 
                 let v6 = v4 + nx;
                 let v7 = v6 + 1;
 
-                // 6-tet decomposition of hex
-                elements.push(TetElement::new(v0, v1, v3, v5));
-                elements.push(TetElement::new(v0, v3, v2, v6));
-                elements.push(TetElement::new(v0, v5, v4, v6));
-                elements.push(TetElement::new(v3, v5, v6, v7));
-                elements.push(TetElement::new(v0, v3, v5, v6));
-                elements.push(TetElement::new(v3, v6, v5, v7)); // This creates a degenerate tet, fix:
+                // 5-tet decomposition of hex (consistent for structured grids)
+                mesh.add_element(ElementType::Tetrahedron, vec![v0, v1, v3, v7]);
+                mesh.add_element(ElementType::Tetrahedron, vec![v0, v3, v2, v7]);
+                mesh.add_element(ElementType::Tetrahedron, vec![v0, v2, v6, v7]);
+                mesh.add_element(ElementType::Tetrahedron, vec![v0, v6, v4, v7]);
+                mesh.add_element(ElementType::Tetrahedron, vec![v0, v4, v5, v7]);
             }
         }
     }
 
-    // Identify boundary nodes (on the surface of the room)
-    let mut boundary_nodes = Vec::new();
-    for (idx, node) in nodes.iter().enumerate() {
-        if node.x.abs() < 1e-10
-            || (node.x - width).abs() < 1e-10
-            || node.y.abs() < 1e-10
-            || (node.y - depth).abs() < 1e-10
-            || node.z.abs() < 1e-10
-            || (node.z - height).abs() < 1e-10
-        {
-            boundary_nodes.push(idx);
-        }
-    }
+    // Detect boundaries for Neumann BC (rigid walls)
+    mesh.detect_boundaries();
 
-    FemMesh {
-        nodes,
-        elements,
-        boundary_nodes,
-    }
+    mesh
 }
 
-/// FEM mesh with tetrahedral elements
-struct FemMesh {
-    nodes: Vec<Point3D>,
-    elements: Vec<TetElement>,
-    boundary_nodes: Vec<usize>,
-}
-
-/// Tetrahedral element
-#[allow(dead_code)]
-struct TetElement {
-    nodes: [usize; 4],
-}
-
-impl TetElement {
-    fn new(n0: usize, n1: usize, n2: usize, n3: usize) -> Self {
-        Self {
-            nodes: [n0, n1, n2, n3],
-        }
-    }
-}
-
-fn run_direct_solver(
+/// Run FEM simulation for all frequencies
+fn run_fem_simulation(
     simulation: &RoomSimulation,
     config: &RoomConfig,
+    solver_method: FemSolverMethod,
     verbose: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    println!("\n=== Direct FEM Solver ===");
+    let solver_name = match solver_method {
+        FemSolverMethod::Direct => "fem_direct",
+        FemSolverMethod::Gmres => "fem_gmres",
+        FemSolverMethod::Ilu => "fem_gmres_ilu",
+        FemSolverMethod::Jacobi => "fem_gmres_jacobi",
+    };
+    println!("\n=== {} Solver ===", solver_name.to_uppercase());
 
-    let mesh = generate_volume_mesh(simulation, config.solver.mesh_resolution);
+    // Create mesh
+    let mesh = create_room_mesh(simulation, config.solver.mesh_resolution);
     println!(
-        "Mesh: {} nodes, {} elements, {} boundary nodes",
-        mesh.nodes.len(),
-        mesh.elements.len(),
-        mesh.boundary_nodes.len()
+        "Mesh: {} nodes, {} elements",
+        mesh.num_nodes(),
+        mesh.num_elements()
     );
+
+    // Configure solver
+    let solver_config = match solver_method {
+        FemSolverMethod::Direct => SolverConfig {
+            solver_type: SolverType::Direct,
+            verbosity: if verbose { 1 } else { 0 },
+            ..Default::default()
+        },
+        FemSolverMethod::Gmres => SolverConfig {
+            solver_type: SolverType::Gmres,
+            gmres: GmresConfigF64 {
+                max_iterations: config.solver.gmres.max_iter,
+                restart: config.solver.gmres.restart,
+                tolerance: config.solver.gmres.tolerance,
+                print_interval: if verbose { 10 } else { 0 },
+            },
+            verbosity: if verbose { 1 } else { 0 },
+        },
+        FemSolverMethod::Ilu => SolverConfig {
+            solver_type: SolverType::GmresIlu,
+            gmres: GmresConfigF64 {
+                max_iterations: config.solver.gmres.max_iter,
+                restart: config.solver.gmres.restart,
+                tolerance: config.solver.gmres.tolerance,
+                print_interval: if verbose { 10 } else { 0 },
+            },
+            verbosity: if verbose { 1 } else { 0 },
+        },
+        FemSolverMethod::Jacobi => SolverConfig {
+            solver_type: SolverType::GmresJacobi,
+            gmres: GmresConfigF64 {
+                max_iterations: config.solver.gmres.max_iter,
+                restart: config.solver.gmres.restart,
+                tolerance: config.solver.gmres.tolerance,
+                print_interval: if verbose { 10 } else { 0 },
+            },
+            verbosity: if verbose { 1 } else { 0 },
+        },
+    };
 
     let lp = simulation.listening_positions[0];
     let mut lp_spl_values = Vec::new();
@@ -227,16 +244,46 @@ fn run_direct_solver(
             );
         }
 
-        let k = simulation.wavenumber(freq);
+        let k = Complex64::new(simulation.wavenumber(freq), 0.0);
 
-        // Solve FEM system
-        // This is a placeholder - real implementation would:
-        // 1. Assemble stiffness and mass matrices
-        // 2. Apply boundary conditions (rigid walls = Neumann BC)
-        // 3. Add source terms
-        // 4. Solve (K - k²M)u = f
+        // Create source function from room sources
+        let sources = &simulation.sources;
+        let source_fn = |x: f64, y: f64, z: f64| -> Complex64 {
+            compute_source_term(x, y, z, sources, freq)
+        };
 
-        let lp_pressure = solve_helmholtz_fem(&mesh, &simulation.sources, k, freq, lp)?;
+        // Assemble Helmholtz problem
+        let assemble_start = Instant::now();
+        let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, source_fn);
+        let assemble_time = assemble_start.elapsed();
+
+        if verbose && idx == 0 {
+            let csr = problem.matrix.to_csr();
+            println!(
+                "  System: {} DOFs, {} non-zeros (sparsity: {:.2}%)",
+                problem.num_dofs(),
+                csr.nnz(),
+                csr.sparsity() * 100.0
+            );
+        }
+
+        println!(
+            "  [Assembly] time: {:.1}ms",
+            assemble_time.as_secs_f64() * 1000.0
+        );
+
+        // Solve the system
+        let solution = solver::solve(&problem, &solver_config)?;
+
+        if verbose {
+            println!(
+                "  Solved in {} iterations (residual: {:.2e})",
+                solution.iterations, solution.residual
+            );
+        }
+
+        // Evaluate pressure at listening position
+        let lp_pressure = evaluate_solution_at_point(&mesh, &solution.values, lp);
         let lp_spl = pressure_to_spl(lp_pressure);
         lp_spl_values.push(lp_spl);
 
@@ -249,76 +296,52 @@ fn run_direct_solver(
         simulation,
         config,
         lp_spl_values,
-        "fem_direct",
+        solver_name,
     ))
 }
 
-fn run_multigrid_solver(
-    simulation: &RoomSimulation,
-    config: &RoomConfig,
-    verbose: bool,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    println!("\n=== Multigrid FEM Solver ===");
-    println!("Note: Multigrid solver not yet fully implemented, using direct solver");
-
-    // For now, fall back to direct solver
-    run_direct_solver(simulation, config, verbose)
-}
-
-fn run_ilu_solver(
-    simulation: &RoomSimulation,
-    config: &RoomConfig,
-    verbose: bool,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    println!("\n=== ILU Preconditioned FEM Solver ===");
-    println!("Note: ILU solver not yet fully implemented, using direct solver");
-
-    // For now, fall back to direct solver
-    run_direct_solver(simulation, config, verbose)
-}
-
-/// Solve Helmholtz equation using FEM
-///
-/// This is a simplified implementation that demonstrates the structure.
-/// A full implementation would use the fem crate's assembly and solver modules.
-#[allow(unused_variables)]
-fn solve_helmholtz_fem(
-    mesh: &FemMesh,
-    sources: &[xem_common::Source],
-    k: f64,
-    frequency: f64,
-    listener: Point3D,
-) -> Result<Complex64, Box<dyn std::error::Error>> {
-    // Placeholder implementation
-    // In a real FEM solver:
-    // 1. Assemble global stiffness matrix K and mass matrix M
-    // 2. Form system matrix A = K - k²M
-    // 3. Apply boundary conditions
-    // 4. Assemble RHS from source terms
-    // 5. Solve Au = f
-    // 6. Evaluate solution at listener position
-
-    // For now, return a simple analytical approximation for a rectangular room
-    // using the image source method for the first-order reflections
-
-    let mut total_pressure = Complex64::new(0.0, 0.0);
+/// Compute source term at a point from all sources
+fn compute_source_term(x: f64, y: f64, z: f64, sources: &[Source], frequency: f64) -> Complex64 {
+    let point = Point3D::new(x, y, z);
+    let mut total = Complex64::new(0.0, 0.0);
 
     for source in sources {
-        // Direct sound
-        let r_direct = source.position.distance_to(&listener);
-        if r_direct > 1e-10 {
-            let amplitude = source.amplitude_towards(&listener, frequency);
-            let phase = k * r_direct;
-            let p_direct = amplitude * Complex64::new(phase.cos(), phase.sin()) / r_direct;
-            total_pressure += p_direct;
-        }
+        // Gaussian source distribution centered at source position
+        let r = source.position.distance_to(&point);
+        let sigma = 0.1; // Source width in meters
 
-        // First-order reflections (6 walls for rectangular room)
-        // This is a simplified model - real FEM would compute the full solution
+        // Gaussian envelope
+        let envelope = (-r * r / (2.0 * sigma * sigma)).exp();
+
+        // Get directional amplitude
+        let amplitude = source.amplitude_towards(&point, frequency);
+
+        total += Complex64::new(amplitude * envelope, 0.0);
     }
 
-    // Scale to typical room acoustics levels
-    total_pressure *= 0.1;
+    total
+}
 
-    Ok(total_pressure)
+/// Evaluate FEM solution at a specific point using nearest-neighbor interpolation
+fn evaluate_solution_at_point(
+    mesh: &Mesh,
+    solution: &ndarray::Array1<Complex64>,
+    point: Point3D,
+) -> Complex64 {
+    // Find the nearest node and use its value
+    // A proper implementation would use shape function interpolation within elements
+
+    let mut min_dist = f64::MAX;
+    let mut nearest_node = 0;
+
+    for (i, node) in mesh.nodes.iter().enumerate() {
+        let dist =
+            (node.x - point.x).powi(2) + (node.y - point.y).powi(2) + (node.z - point.z).powi(2);
+        if dist < min_dist {
+            min_dist = dist;
+            nearest_node = i;
+        }
+    }
+
+    solution[nearest_node]
 }
