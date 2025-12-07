@@ -10,6 +10,9 @@ use ndarray::{Array1, Array2};
 use num_traits::Zero;
 use std::ops::Range;
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 /// Compressed Sparse Row (CSR) matrix format
 ///
 /// Memory-efficient storage for sparse matrices with O(nnz) space complexity.
@@ -188,9 +191,26 @@ impl<T: ComplexField> CsrMatrix<T> {
     }
 
     /// Matrix-vector product: y = A * x
+    ///
+    /// Uses parallel processing when the `rayon` feature is enabled and the
+    /// matrix is large enough to benefit from parallelization.
     pub fn matvec(&self, x: &Array1<T>) -> Array1<T> {
         assert_eq!(x.len(), self.num_cols, "Input vector size mismatch");
 
+        // Use parallel version for large matrices when rayon is available
+        #[cfg(feature = "rayon")]
+        {
+            // Only parallelize if we have enough rows to benefit
+            if self.num_rows >= 1000 {
+                return self.matvec_parallel(x);
+            }
+        }
+
+        self.matvec_sequential(x)
+    }
+
+    /// Sequential matrix-vector product
+    fn matvec_sequential(&self, x: &Array1<T>) -> Array1<T> {
         let mut y = Array1::from_elem(self.num_rows, T::zero());
 
         for i in 0..self.num_rows {
@@ -203,6 +223,29 @@ impl<T: ComplexField> CsrMatrix<T> {
         }
 
         y
+    }
+
+    /// Parallel matrix-vector product using rayon
+    #[cfg(feature = "rayon")]
+    fn matvec_parallel(&self, x: &Array1<T>) -> Array1<T>
+    where
+        T: Send + Sync,
+    {
+        let x_slice = x.as_slice().expect("Array should be contiguous");
+
+        let results: Vec<T> = (0..self.num_rows)
+            .into_par_iter()
+            .map(|i| {
+                let mut sum = T::zero();
+                for idx in self.row_range(i) {
+                    let j = self.col_indices[idx];
+                    sum += self.values[idx] * x_slice[j];
+                }
+                sum
+            })
+            .collect();
+
+        Array1::from_vec(results)
     }
 
     /// Matrix-vector product with accumulation: y += A * x

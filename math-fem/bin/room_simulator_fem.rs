@@ -59,6 +59,12 @@ enum FemSolverMethod {
     Ilu,
     /// Iterative GMRES solver with Jacobi preconditioner (fully parallel)
     Jacobi,
+    /// Iterative GMRES solver with parallel ILU (graph coloring / level scheduling)
+    IluColoring,
+    /// Iterative GMRES solver with parallel ILU (fixed-point iteration)
+    IluFixedpoint,
+    /// Iterative GMRES solver with Additive Schwarz domain decomposition (parallel subdomains)
+    Schwarz,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -181,6 +187,9 @@ fn run_fem_simulation(
         FemSolverMethod::Gmres => "fem_gmres",
         FemSolverMethod::Ilu => "fem_gmres_ilu",
         FemSolverMethod::Jacobi => "fem_gmres_jacobi",
+        FemSolverMethod::IluColoring => "fem_gmres_ilu_coloring",
+        FemSolverMethod::IluFixedpoint => "fem_gmres_ilu_fixedpoint",
+        FemSolverMethod::Schwarz => "fem_gmres_schwarz",
     };
     println!("\n=== {} Solver ===", solver_name.to_uppercase());
 
@@ -221,6 +230,36 @@ fn run_fem_simulation(
         },
         FemSolverMethod::Jacobi => SolverConfig {
             solver_type: SolverType::GmresJacobi,
+            gmres: GmresConfigF64 {
+                max_iterations: config.solver.gmres.max_iter,
+                restart: config.solver.gmres.restart,
+                tolerance: config.solver.gmres.tolerance,
+                print_interval: if verbose { 10 } else { 0 },
+            },
+            verbosity: if verbose { 1 } else { 0 },
+        },
+        FemSolverMethod::IluColoring => SolverConfig {
+            solver_type: SolverType::GmresIluColoring,
+            gmres: GmresConfigF64 {
+                max_iterations: config.solver.gmres.max_iter,
+                restart: config.solver.gmres.restart,
+                tolerance: config.solver.gmres.tolerance,
+                print_interval: if verbose { 10 } else { 0 },
+            },
+            verbosity: if verbose { 1 } else { 0 },
+        },
+        FemSolverMethod::IluFixedpoint => SolverConfig {
+            solver_type: SolverType::GmresIluFixedPoint,
+            gmres: GmresConfigF64 {
+                max_iterations: config.solver.gmres.max_iter,
+                restart: config.solver.gmres.restart,
+                tolerance: config.solver.gmres.tolerance,
+                print_interval: if verbose { 10 } else { 0 },
+            },
+            verbosity: if verbose { 1 } else { 0 },
+        },
+        FemSolverMethod::Schwarz => SolverConfig {
+            solver_type: SolverType::GmresSchwarz,
             gmres: GmresConfigF64 {
                 max_iterations: config.solver.gmres.max_iter,
                 restart: config.solver.gmres.restart,

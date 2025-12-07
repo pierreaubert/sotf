@@ -13,7 +13,10 @@ use crate::assembly::HelmholtzProblem;
 use ndarray::Array1;
 use num_complex::Complex64;
 use solvers::iterative::gmres_preconditioned;
-use solvers::{CsrMatrix, DiagonalPreconditioner, GmresConfig, IluPreconditioner, gmres, lu_solve};
+use solvers::{
+    AdditiveSchwarzPreconditioner, CsrMatrix, DiagonalPreconditioner, GmresConfig,
+    IluColoringPreconditioner, IluFixedPointPreconditioner, IluPreconditioner, gmres, lu_solve,
+};
 use std::time::Instant;
 use thiserror::Error;
 
@@ -57,6 +60,12 @@ pub enum SolverType {
     GmresIlu,
     /// GMRES with Jacobi (diagonal) preconditioning - fully parallel
     GmresJacobi,
+    /// GMRES with parallel ILU using graph coloring (level scheduling)
+    GmresIluColoring,
+    /// GMRES with parallel ILU using fixed-point iteration
+    GmresIluFixedPoint,
+    /// GMRES with Additive Schwarz domain decomposition (parallel subdomains)
+    GmresSchwarz,
 }
 
 /// Solution result from the solver
@@ -116,6 +125,9 @@ pub fn solve(problem: &HelmholtzProblem, config: &SolverConfig) -> Result<Soluti
         SolverType::Gmres => solve_gmres(&csr, &rhs, config),
         SolverType::GmresIlu => solve_gmres_ilu(&csr, &rhs, config),
         SolverType::GmresJacobi => solve_gmres_jacobi(&csr, &rhs, config),
+        SolverType::GmresIluColoring => solve_gmres_ilu_coloring(&csr, &rhs, config),
+        SolverType::GmresIluFixedPoint => solve_gmres_ilu_fixedpoint(&csr, &rhs, config),
+        SolverType::GmresSchwarz => solve_gmres_schwarz(&csr, &rhs, config),
     };
     let solve_time = solve_start.elapsed();
 
@@ -320,6 +332,200 @@ fn solve_gmres_jacobi(
     })
 }
 
+/// Solve using GMRES with parallel ILU (graph coloring / level scheduling)
+///
+/// Uses level scheduling to identify independent rows that can be solved
+/// in parallel. Good for matrices with structured sparsity patterns.
+fn solve_gmres_ilu_coloring(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    if config.verbosity > 0 {
+        log::info!(
+            "Using GMRES+ILU-Coloring solver (restart={}, tol={})",
+            config.gmres.restart,
+            config.gmres.tolerance
+        );
+    }
+
+    let ilu_start = Instant::now();
+    let precond = IluColoringPreconditioner::from_csr(csr);
+    let ilu_time = ilu_start.elapsed();
+
+    if config.verbosity > 0 {
+        let (fwd_levels, bwd_levels, avg_fwd, avg_bwd) = precond.level_stats();
+        println!(
+            "  [FEM] ILU-Coloring: {:.1}ms, {} fwd levels (avg {:.1}), {} bwd levels (avg {:.1})",
+            ilu_time.as_secs_f64() * 1000.0,
+            fwd_levels,
+            avg_fwd,
+            bwd_levels,
+            avg_bwd
+        );
+    }
+
+    let result = gmres_preconditioned(csr, &precond, rhs, &config.gmres);
+
+    if config.verbosity > 0 {
+        log::info!(
+            "GMRES+ILU-Coloring {} in {} iterations (residual: {:.2e})",
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with parallel ILU (fixed-point iteration)
+///
+/// Uses Jacobi-style fixed-point iteration instead of exact triangular solves.
+/// Each iteration is embarrassingly parallel. Good for highly parallel hardware.
+fn solve_gmres_ilu_fixedpoint(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    const FP_ITERATIONS: usize = 10; // Number of fixed-point iterations (10 for Helmholtz)
+
+    if config.verbosity > 0 {
+        log::info!(
+            "Using GMRES+ILU-FixedPoint solver (restart={}, tol={}, fp_iters={})",
+            config.gmres.restart,
+            config.gmres.tolerance,
+            FP_ITERATIONS
+        );
+    }
+
+    let ilu_start = Instant::now();
+    let precond = IluFixedPointPreconditioner::from_csr(csr, FP_ITERATIONS);
+    let ilu_time = ilu_start.elapsed();
+
+    if config.verbosity > 0 {
+        println!(
+            "  [FEM] ILU-FixedPoint: {:.1}ms ({} iterations per apply)",
+            ilu_time.as_secs_f64() * 1000.0,
+            FP_ITERATIONS
+        );
+    }
+
+    let result = gmres_preconditioned(csr, &precond, rhs, &config.gmres);
+
+    if config.verbosity > 0 {
+        log::info!(
+            "GMRES+ILU-FixedPoint {} in {} iterations (residual: {:.2e})",
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with Additive Schwarz domain decomposition
+///
+/// Divides the problem into overlapping subdomains that are solved in parallel.
+/// Each subdomain uses its own local ILU factorization. This approach is
+/// embarrassingly parallel at the subdomain level.
+fn solve_gmres_schwarz(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    const NUM_SUBDOMAINS: usize = 8; // Number of parallel subdomains
+    const OVERLAP: usize = 2; // Overlap layers between subdomains
+
+    if config.verbosity > 0 {
+        log::info!(
+            "Using GMRES+Schwarz solver (restart={}, tol={}, {} subdomains, {} overlap)",
+            config.gmres.restart,
+            config.gmres.tolerance,
+            NUM_SUBDOMAINS,
+            OVERLAP
+        );
+    }
+
+    let schwarz_start = Instant::now();
+    let precond = AdditiveSchwarzPreconditioner::from_csr(csr, NUM_SUBDOMAINS, OVERLAP);
+    let schwarz_time = schwarz_start.elapsed();
+
+    if config.verbosity > 0 {
+        let (num_subdomains, min_size, max_size, avg_size) = precond.stats();
+        println!(
+            "  [FEM] Schwarz DD: {:.1}ms, {} subdomains (size: min={}, max={}, avg={:.1})",
+            schwarz_time.as_secs_f64() * 1000.0,
+            num_subdomains,
+            min_size,
+            max_size,
+            avg_size
+        );
+    }
+
+    let result = gmres_preconditioned(csr, &precond, rhs, &config.gmres);
+
+    if config.verbosity > 0 {
+        log::info!(
+            "GMRES+Schwarz {} in {} iterations (residual: {:.2e})",
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
+            result.iterations,
+            result.residual
+        );
+    }
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
 /// Solve a Helmholtz problem directly from CSR matrix and RHS
 ///
 /// This is useful when you have pre-assembled sparse matrices.
@@ -340,6 +546,9 @@ pub fn solve_csr(
         SolverType::Gmres => solve_gmres(csr, rhs, config),
         SolverType::GmresIlu => solve_gmres_ilu(csr, rhs, config),
         SolverType::GmresJacobi => solve_gmres_jacobi(csr, rhs, config),
+        SolverType::GmresIluColoring => solve_gmres_ilu_coloring(csr, rhs, config),
+        SolverType::GmresIluFixedPoint => solve_gmres_ilu_fixedpoint(csr, rhs, config),
+        SolverType::GmresSchwarz => solve_gmres_schwarz(csr, rhs, config),
     }
 }
 

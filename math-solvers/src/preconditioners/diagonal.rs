@@ -1,11 +1,17 @@
 //! Diagonal (Jacobi) preconditioner
 //!
 //! Simple but effective preconditioner that scales by the diagonal of A.
+//!
+//! This preconditioner is embarrassingly parallel since it only involves
+//! element-wise operations.
 
 use crate::sparse::CsrMatrix;
 use crate::traits::{ComplexField, Preconditioner};
 use ndarray::Array1;
 use num_traits::FromPrimitive;
+
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 
 /// Diagonal (Jacobi) preconditioner
 ///
@@ -50,10 +56,39 @@ impl<T: ComplexField> DiagonalPreconditioner<T> {
 
 impl<T: ComplexField> Preconditioner<T> for DiagonalPreconditioner<T> {
     fn apply(&self, r: &Array1<T>) -> Array1<T> {
+        #[cfg(feature = "rayon")]
+        {
+            if r.len() >= 1000 {
+                return self.apply_parallel(r);
+            }
+        }
+        self.apply_sequential(r)
+    }
+}
+
+impl<T: ComplexField> DiagonalPreconditioner<T> {
+    fn apply_sequential(&self, r: &Array1<T>) -> Array1<T> {
         r.iter()
             .zip(self.inv_diag.iter())
             .map(|(&ri, &di)| ri * di)
             .collect()
+    }
+
+    #[cfg(feature = "rayon")]
+    fn apply_parallel(&self, r: &Array1<T>) -> Array1<T>
+    where
+        T: Send + Sync,
+    {
+        let r_slice = r.as_slice().expect("Array should be contiguous");
+        let inv_slice = self.inv_diag.as_slice().expect("Array should be contiguous");
+
+        let results: Vec<T> = r_slice
+            .par_iter()
+            .zip(inv_slice.par_iter())
+            .map(|(&ri, &di)| ri * di)
+            .collect();
+
+        Array1::from_vec(results)
     }
 }
 

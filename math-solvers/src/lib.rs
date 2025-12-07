@@ -46,4 +46,7 @@ pub use iterative::{
 pub use direct::{LuFactorization, lu_solve};
 
 // Re-export preconditioners
-pub use preconditioners::{DiagonalPreconditioner, IdentityPreconditioner, IluPreconditioner};
+pub use preconditioners::{
+    AdditiveSchwarzPreconditioner, DiagonalPreconditioner, IdentityPreconditioner,
+    IluColoringPreconditioner, IluFixedPointPreconditioner, IluPreconditioner,
+};
