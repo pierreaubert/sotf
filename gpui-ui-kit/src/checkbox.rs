@@ -1,6 +1,11 @@
 //! Checkbox component
 //!
 //! A checkbox input with optional label.
+//!
+//! Features:
+//! - Keyboard support: Space or Enter to toggle
+//! - Mouse support: click to toggle
+//! - Indeterminate state support
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
@@ -199,12 +204,27 @@ impl Checkbox {
             container = container.child(label_el.text_color(theme.label).child(label));
         }
 
-        // Click handler
+        // Event handlers
         if !self.disabled {
             if let Some(handler) = self.on_change {
+                let handler_rc = std::rc::Rc::new(handler);
                 let new_checked = !checked;
+
+                // Mouse click handler
+                let click_handler = handler_rc.clone();
                 container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    handler(new_checked, window, cx);
+                    click_handler(new_checked, window, cx);
+                });
+
+                // Keyboard handler (Space or Enter)
+                let key_handler = handler_rc.clone();
+                container = container.on_key_down(move |event, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "space" | " " | "enter" => {
+                            key_handler(new_checked, window, cx);
+                        }
+                        _ => {}
+                    }
                 });
             }
         }

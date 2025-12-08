@@ -384,6 +384,61 @@ Button::new("btn", "Save")
     }))
 ```
 
+## Testing
+
+The library includes a comprehensive test suite to prevent regressions:
+
+```bash
+# Run all tests
+cargo test --lib --tests
+
+# Run specific test suite
+cargo test --test i18n_tests      # Translation coverage
+cargo test --test component_tests  # Component API tests
+
+# Setup git hooks for automatic testing
+./scripts/setup-hooks.sh
+```
+
+**Test Coverage**:
+- ✅ **I18n Tests**: Verify all translations exist across 5 languages (English, French, German, Spanish, Japanese)
+- ✅ **Component Tests**: Ensure component APIs work correctly and configurations are valid
+- ✅ **25 total tests** covering critical functionality
+
+See [`TESTING.md`](TESTING.md) for detailed testing guide and [`tests/README.md`](tests/README.md) for quick reference.
+
+## Development
+
+### Running the Showcase
+
+```bash
+cargo run --example showcase
+```
+
+The showcase demonstrates all components with:
+- Interactive examples for each component
+- Theme switching (Light/Dark)
+- Language switching (5 languages)
+- Navigation sidebar
+
+### Before Committing
+
+```bash
+# Format code
+cargo fmt
+
+# Run tests
+cargo test --lib --tests
+
+# Run clippy
+cargo clippy --all-targets -- -D warnings
+```
+
+Or setup git hooks to run automatically:
+```bash
+./scripts/setup-hooks.sh
+```
+
 ## License
 
 See workspace root for license information.

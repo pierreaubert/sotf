@@ -1,9 +1,19 @@
 //! Select/Dropdown component
 //!
 //! A dropdown select component for choosing from options with theming support.
+//!
+//! Features:
+//! - Keyboard navigation:
+//!   - Arrow Up/Down: navigate options
+//!   - Enter: select highlighted option
+//!   - Escape: close dropdown
+//!   - Space: toggle dropdown open/closed
+//! - Mouse support: click to toggle, hover to highlight
 
 use gpui::prelude::*;
 use gpui::*;
+
+use crate::theme::{Theme, ThemeExt};
 
 /// Theme colors for select styling
 #[derive(Debug, Clone)]
@@ -62,6 +72,28 @@ impl Default for SelectTheme {
     }
 }
 
+impl From<&Theme> for SelectTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            trigger_bg: theme.background,
+            trigger_border: theme.border,
+            trigger_border_hover: theme.accent,
+            trigger_border_focused: theme.accent,
+            dropdown_bg: theme.surface,
+            dropdown_border: theme.border,
+            selected_bg: theme.accent,
+            option_hover_bg: theme.surface_hover,
+            label_color: theme.text_secondary,
+            text_color: theme.text_primary,
+            placeholder_color: theme.text_muted,
+            option_text_color: theme.text_secondary,
+            selected_text_color: theme.text_primary,
+            disabled_color: theme.text_muted,
+            arrow_color: theme.text_muted,
+        }
+    }
+}
+
 /// Select size variants
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectSize {
@@ -112,9 +144,11 @@ pub struct Select {
     size: SelectSize,
     disabled: bool,
     is_open: bool,
+    highlighted_index: Option<usize>,
     theme: Option<SelectTheme>,
     on_change: Option<Box<dyn Fn(&SharedString, &mut Window, &mut App) + 'static>>,
     on_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
+    on_highlight: Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>,
 }
 
 impl Select {
@@ -129,9 +163,11 @@ impl Select {
             size: SelectSize::default(),
             disabled: false,
             is_open: false,
+            highlighted_index: None,
             theme: None,
             on_change: None,
             on_toggle: None,
+            on_highlight: None,
         }
     }
 
@@ -177,6 +213,12 @@ impl Select {
         self
     }
 
+    /// Set highlighted index (for keyboard navigation)
+    pub fn highlighted_index(mut self, index: Option<usize>) -> Self {
+        self.highlighted_index = index;
+        self
+    }
+
     /// Set theme
     pub fn theme(mut self, theme: SelectTheme) -> Self {
         self.theme = Some(theme);
@@ -201,10 +243,17 @@ impl Select {
         self
     }
 
+    /// Set highlight handler (called when highlighted option changes during keyboard navigation)
+    pub fn on_highlight(
+        mut self,
+        handler: impl Fn(Option<usize>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_highlight = Some(Box::new(handler));
+        self
+    }
+
     /// Build into element
-    pub fn build(self) -> Div {
-        let default_theme = SelectTheme::default();
-        let theme = self.theme.as_ref().unwrap_or(&default_theme);
+    fn build(self, theme: &SelectTheme) -> Div {
 
         let (py, _text_size_class) = match self.size {
             SelectSize::Sm => (px(4.0), "sm"),
@@ -261,8 +310,14 @@ impl Select {
             SelectSize::Lg => trigger,
         };
 
-        // Convert on_toggle to Rc upfront so we can use it in closures
+        // Convert handlers to Rc upfront so we can use them in closures
         let on_toggle_rc = self.on_toggle.map(std::rc::Rc::new);
+        let on_change_rc = self.on_change.map(std::rc::Rc::new);
+        let on_highlight_rc = self.on_highlight.map(std::rc::Rc::new);
+
+        let currently_open = self.is_open;
+        let num_options = self.options.len();
+        let current_highlight = self.highlighted_index;
 
         if self.disabled {
             trigger = trigger.opacity(0.5).cursor_not_allowed();
@@ -270,12 +325,69 @@ impl Select {
             let hover_border = theme.trigger_border_hover;
             trigger = trigger.hover(move |s| s.border_color(hover_border));
 
+            // Mouse click handler
             if let Some(ref handler) = on_toggle_rc {
                 let handler = handler.clone();
-                let currently_open = self.is_open;
-
                 trigger = trigger.on_mouse_up(MouseButton::Left, move |_, window, cx| {
                     (handler)(!currently_open, window, cx);
+                });
+            }
+
+            // Keyboard handler
+            if let Some(ref toggle_handler) = on_toggle_rc {
+                let toggle_rc = toggle_handler.clone();
+                let change_rc = on_change_rc.clone();
+                let highlight_rc = on_highlight_rc.clone();
+                let options_clone = self.options.clone();
+
+                trigger = trigger.on_key_down(move |event, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        "space" | " " => {
+                            // Toggle open/closed
+                            toggle_rc(!currently_open, window, cx);
+                        }
+                        "escape" if currently_open => {
+                            // Close dropdown
+                            toggle_rc(false, window, cx);
+                        }
+                        "enter" if currently_open => {
+                            // Select highlighted option
+                            if let Some(idx) = current_highlight {
+                                if idx < options_clone.len() && !options_clone[idx].disabled {
+                                    if let Some(ref change_handler) = change_rc {
+                                        change_handler(&options_clone[idx].value, window, cx);
+                                    }
+                                    toggle_rc(false, window, cx);
+                                }
+                            }
+                        }
+                        "down" | "up" if currently_open => {
+                            // Navigate options
+                            let delta = if event.keystroke.key == "down" { 1 } else { -1_i32 };
+                            let new_idx = if let Some(idx) = current_highlight {
+                                let new = idx as i32 + delta;
+                                if new < 0 {
+                                    Some(num_options.saturating_sub(1))
+                                } else if new >= num_options as i32 {
+                                    Some(0)
+                                } else {
+                                    Some(new as usize)
+                                }
+                            } else {
+                                // No highlight yet, start at first/last
+                                if delta > 0 {
+                                    Some(0)
+                                } else {
+                                    Some(num_options.saturating_sub(1))
+                                }
+                            };
+
+                            if let Some(ref highlight_handler) = highlight_rc {
+                                highlight_handler(new_idx, window, cx);
+                            }
+                        }
+                        _ => {}
+                    }
                 });
             }
         }
@@ -314,8 +426,9 @@ impl Select {
                 .overflow_y_scroll()
                 .py_1();
 
-            for option in self.options {
+            for (idx, option) in self.options.iter().enumerate() {
                 let is_selected = self.selected.as_ref() == Some(&option.value);
+                let is_highlighted = self.highlighted_index == Some(idx);
                 let option_value = option.value.clone();
 
                 let mut option_el = div().px_3().py(px(6.0)).cursor_pointer();
@@ -335,6 +448,11 @@ impl Select {
                     option_el = option_el
                         .bg(theme.selected_bg)
                         .text_color(theme.selected_text_color);
+                } else if is_highlighted {
+                    // Highlight option for keyboard navigation
+                    option_el = option_el
+                        .bg(theme.option_hover_bg)
+                        .text_color(theme.option_text_color);
                 } else {
                     let hover_bg = theme.option_hover_bg;
                     option_el = option_el
@@ -342,19 +460,18 @@ impl Select {
                         .hover(move |s| s.bg(hover_bg));
 
                     // Add click handler for non-disabled, non-selected options
-                    if let Some(ref handler) = self.on_change {
-                        let handler_ptr: *const dyn Fn(&SharedString, &mut Window, &mut App) =
-                            handler.as_ref() as *const _;
+                    if let Some(ref handler) = on_change_rc {
+                        let handler_click = handler.clone();
                         option_el = option_el.on_mouse_up(
                             MouseButton::Left,
-                            move |_event, window, cx| unsafe {
-                                (*handler_ptr)(&option_value, window, cx);
+                            move |_event, window, cx| {
+                                handler_click(&option_value, window, cx);
                             },
                         );
                     }
                 }
 
-                option_el = option_el.child(option.label);
+                option_el = option_el.child(option.label.clone());
                 dropdown = dropdown.child(option_el);
             }
 
@@ -365,10 +482,24 @@ impl Select {
     }
 }
 
+impl RenderOnce for Select {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let theme = self
+            .theme
+            .clone()
+            .unwrap_or_else(|| SelectTheme::from(&global_theme));
+
+        self.build(&theme)
+    }
+}
+
 impl IntoElement for Select {
     type Element = Div;
 
     fn into_element(self) -> Self::Element {
-        self.build()
+        // When used without context, fall back to default theme
+        let theme = self.theme.clone().unwrap_or_default();
+        self.build(&theme)
     }
 }

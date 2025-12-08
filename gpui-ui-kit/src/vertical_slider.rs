@@ -14,6 +14,7 @@
 //! - Value display with units
 //! - Keyboard shortcut hints
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -58,6 +59,29 @@ impl Default for VerticalSliderTheme {
             text_muted: rgba(0x888888ff),
             text_on_accent: rgba(0xffffffff),
             background_secondary: rgba(0x2a2a2aff),
+        }
+    }
+}
+
+impl From<&Theme> for VerticalSliderTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            surface: theme.surface,
+            surface_hover: theme.surface_hover,
+            track_bg: theme.muted,
+            accent: theme.accent,
+            accent_muted: Rgba {
+                r: theme.accent.r,
+                g: theme.accent.g,
+                b: theme.accent.b,
+                a: 0.2,
+            },
+            border: theme.border,
+            text_secondary: theme.text_secondary,
+            text_primary: theme.text_primary,
+            text_muted: theme.text_muted,
+            text_on_accent: theme.text_primary,
+            background_secondary: theme.surface,
         }
     }
 }
@@ -271,8 +295,9 @@ impl VerticalSlider {
 }
 
 impl RenderOnce for VerticalSlider {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let theme = self.theme.clone().unwrap_or_default();
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let theme = self.theme.clone().unwrap_or_else(|| VerticalSliderTheme::from(&global_theme));
         let selected = self.selected;
         let disabled = self.disabled;
 

@@ -305,6 +305,29 @@ impl Potentiometer {
             format!("{:.1} {}", value, unit)
         }
     }
+
+    /// Format the value display (without unit, for center display)
+    fn format_value_only(&self) -> String {
+        let value = self.value.clamp(self.min, self.max);
+        let unit = self.unit.to_string();
+        if unit == ":1" {
+            format!("{:.1}", value)
+        } else if unit == "%" {
+            // Compute percentage relative to the range (min=0%, max=100%)
+            let pct = if self.max > self.min {
+                ((value - self.min) / (self.max - self.min)) * 100.0
+            } else {
+                0.0
+            };
+            format!("{:.0}", pct)
+        } else if unit == "Hz" {
+            format!("{:.0}", value)
+        } else if unit.is_empty() {
+            format!("{:.1}", value)
+        } else {
+            format!("{:.1}", value)
+        }
+    }
 }
 
 impl RenderOnce for Potentiometer {
@@ -331,13 +354,19 @@ impl RenderOnce for Potentiometer {
         let knob_size = self.size.knob_size();
         let radius = self.size.indicator_radius();
         let center = knob_size / 2.0;
-        let indicator_size = if selected { 6.0 } else { 4.0 };
+        // Make indicator larger for Lg size to be more visible
+        let indicator_size = match self.size {
+            PotentiometerSize::Sm => if selected { 6.0 } else { 4.0 },
+            PotentiometerSize::Md => if selected { 6.0 } else { 4.0 },
+            PotentiometerSize::Lg => if selected { 10.0 } else { 8.0 },
+        };
 
         let x = center + radius * angle_rad.cos() - (indicator_size / 2.0);
         let y = center + radius * angle_rad.sin() - (indicator_size / 2.0);
 
         let formatted_label = self.format_label();
-        let value_str = self.format_value();
+        let value_str_only = self.format_value_only();
+        let unit_str = self.unit.to_string();
         let min_width = self.size.min_width();
 
         // Colors based on selection state
@@ -362,7 +391,10 @@ impl RenderOnce for Potentiometer {
         } else {
             theme.text_primary
         };
-        let indicator_color = if selected {
+        // For Lg size, always use accent color for better visibility
+        let indicator_color = if matches!(self.size, PotentiometerSize::Lg) {
+            theme.accent
+        } else if selected {
             theme.accent
         } else {
             theme.text_muted
@@ -690,33 +722,73 @@ impl RenderOnce for Potentiometer {
         }
 
         // Indicator dot
-        knob = knob.child(
-            div()
-                .absolute()
-                .left(px(x))
-                .top(px(y))
-                .w(px(indicator_size))
-                .h(px(indicator_size))
-                .bg(indicator_color)
-                .rounded_full()
-                .when(selected, |d| d.shadow_sm()),
-        );
+        let mut indicator = div()
+            .absolute()
+            .left(px(x))
+            .top(px(y))
+            .w(px(indicator_size))
+            .h(px(indicator_size))
+            .bg(indicator_color)
+            .rounded_full();
+
+        // Add shiny shadow for Lg size and selected state
+        indicator = match self.size {
+            PotentiometerSize::Lg => indicator.shadow_md(), // Always shiny for Lg
+            _ => indicator.when(selected, |d| d.shadow_sm()),
+        };
+
+        knob = knob.child(indicator);
 
         // Current value in center of knob
-        knob = knob.child(
-            div()
-                .absolute()
-                .inset_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .text_color(if selected { theme.accent } else { value_color })
-                .child(value_str.clone()),
-        );
+        let mut value_display = div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .font_weight(FontWeight::BOLD)
+            .text_color(if selected { theme.accent } else { value_color });
+
+        // Increase font size for large potentiometer
+        value_display = match self.size {
+            PotentiometerSize::Sm => value_display.text_xs(),
+            PotentiometerSize::Md => value_display.text_xs(),
+            PotentiometerSize::Lg => value_display.text_sm(),
+        };
+
+        knob = knob.child(value_display.child(value_str_only.clone()));
 
         knob_container = knob_container.child(knob);
+
+        // Unit label at 6 o'clock position (270° standard = 90° screen, bottom center)
+        // Position it at the same radius as the tick labels
+        if !unit_str.is_empty() {
+            let unit_angle = std::f32::consts::PI * 0.5; // 90° in screen coordinates (6 o'clock)
+            let unit_x = knob_offset + center + label_radius * unit_angle.cos();
+            let unit_y = knob_offset + center + label_radius * unit_angle.sin();
+
+            // Calculate approximate centering offset based on typical unit string lengths
+            // "%" is 1 char, "Hz" is 2 chars, "dB" is 2 chars
+            // At text_xs (12px), approximate char width is ~7px
+            let estimated_width = unit_str.len() as f32 * 7.0;
+            let center_offset_x = estimated_width / 2.0;
+
+            knob_container = knob_container.child(
+                div()
+                    .absolute()
+                    .left(px(unit_x - center_offset_x))
+                    .top(px(unit_y - 14.0)) // Move up (was -6.0, now -6-sizeoffont to be closer to circle)
+                    .text_xs()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(if selected {
+                        theme.accent
+                    } else {
+                        theme.text_secondary
+                    })
+                    .child(unit_str),
+            );
+        }
+
         container.child(knob_container)
     }
 }

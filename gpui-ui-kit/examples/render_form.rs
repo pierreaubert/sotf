@@ -43,7 +43,7 @@ impl Showcase {
                                     .on_change({
                                         let entity = entity.clone();
                                         move |checked, _window, cx| {
-                                            entity.update(cx, |showcase, cx| {
+                                            entity.update(cx, |showcase, _cx| {
                                                 showcase.toggle_on = checked;
                                             });
                                         }
@@ -56,7 +56,7 @@ impl Showcase {
                                     .on_change({
                                         let entity = entity.clone();
                                         move |checked, _window, cx| {
-                                            entity.update(cx, |showcase, cx| {
+                                            entity.update(cx, |showcase, _cx| {
                                                 showcase.toggle_on = checked;
                                             });
                                         }
@@ -69,7 +69,7 @@ impl Showcase {
                                     .on_change({
                                         let entity = entity.clone();
                                         move |checked, _window, cx| {
-                                            entity.update(cx, |showcase, cx| {
+                                            entity.update(cx, |showcase, _cx| {
                                                 showcase.toggle_lg = checked;
                                             });
                                         }
@@ -154,7 +154,7 @@ impl Showcase {
                             .on_change({
                                 let entity = entity.clone();
                                 move |value, _window, cx| {
-                                    entity.update(cx, |showcase, cx| {
+                                    entity.update(cx, |showcase, _cx| {
                                         showcase.slider_value = value;
                                     });
                                 }
@@ -186,7 +186,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.number_value = value;
                                         });
                                     }
@@ -204,7 +204,7 @@ impl Showcase {
                                 .on_edit_end({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             if let Some(v) = value {
                                                 showcase.number_value = v;
                                             }
@@ -216,7 +216,7 @@ impl Showcase {
                                 .on_text_change({
                                     let entity = entity.clone();
                                     move |text, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.edit_text = text;
                                         });
                                     }
@@ -242,7 +242,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.number_freq = value;
                                         });
                                     }
@@ -260,7 +260,7 @@ impl Showcase {
                                 .on_edit_end({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             if let Some(v) = value {
                                                 showcase.number_freq = v;
                                             }
@@ -272,7 +272,7 @@ impl Showcase {
                                 .on_text_change({
                                     let entity = entity.clone();
                                     move |text, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.edit_text = text;
                                         });
                                     }
@@ -298,7 +298,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.number_db = value;
                                         });
                                     }
@@ -316,7 +316,7 @@ impl Showcase {
                                 .on_edit_end({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             if let Some(v) = value {
                                                 showcase.number_db = v;
                                             }
@@ -328,7 +328,7 @@ impl Showcase {
                                 .on_text_change({
                                     let entity = entity.clone();
                                     move |text, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.edit_text = text;
                                         });
                                     }
@@ -368,7 +368,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.vertical_slider_value = value;
                                         });
                                     }
@@ -385,7 +385,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.vertical_slider_value = value;
                                         });
                                     }
@@ -409,30 +409,161 @@ impl Showcase {
                         ),
                 ),
         )
-        // Input
+        // Text Input (display only)
         .child(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::new(input_label).weight(TextWeight::Medium))
+                .child(
+                    Text::new("Text Input (display only)")
+                        .weight(TextWeight::Medium)
+                )
+                .child(
+                    Text::new("Note: Full keyboard editing requires GPUI TextElement integration")
+                        .size(TextSize::Xs)
+                        .muted(true)
+                )
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .child(
                             Input::new("input-default")
-                                .placeholder("Default input...")
+                                .value("Display value")
                                 .variant(InputVariant::Default),
                         )
                         .child(
                             Input::new("input-filled")
-                                .placeholder("Filled input...")
+                                .placeholder("Filled variant...")
                                 .variant(InputVariant::Filled),
                         )
                         .child(
                             Input::new("input-disabled")
-                                .placeholder("Disabled...")
+                                .value("Disabled")
                                 .disabled(true),
-                        ),
-                ),
+                        )
+                )
+        )
+        // Select with keyboard navigation
+        .child({
+            let select_value = self.select_value.clone();
+            let select_open = self.select_open;
+            let select_highlighted = self.select_highlighted;
+            let entity_sel = entity.clone();
+
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new("Select Dropdown (✨ NEW: Arrow keys, Enter, Escape, Space!)")
+                        .weight(TextWeight::Medium)
+                )
+                .child(
+                    Text::new("Try: Space to open, ↑↓ to navigate, Enter to select, Esc to close")
+                        .size(TextSize::Xs)
+                        .muted(true)
+                )
+                .child(
+                    div().w(px(200.0)).child(
+                        Select::new("select-demo")
+                            .options(vec![
+                                SelectOption::new("apple", "🍎 Apple"),
+                                SelectOption::new("banana", "🍌 Banana"),
+                                SelectOption::new("cherry", "🍒 Cherry"),
+                                SelectOption::new("grape", "🍇 Grape"),
+                                SelectOption::new("orange", "🍊 Orange"),
+                            ])
+                            .selected(select_value.unwrap_or("apple".into()))
+                            .placeholder("Choose a fruit...")
+                            .label("Fruit Selection")
+                            .is_open(select_open)
+                            .highlighted_index(select_highlighted)
+                            .on_change({
+                                let entity = entity_sel.clone();
+                                move |value, _window, cx| {
+                                    entity.update(cx, |showcase, _cx| {
+                                        showcase.select_value = Some(value.clone());
+                                        showcase.select_open = false;
+                                        showcase.select_highlighted = None;
+                                    });
+                                }
+                            })
+                            .on_toggle({
+                                let entity = entity_sel.clone();
+                                move |open, _window, cx| {
+                                    entity.update(cx, |showcase, _cx| {
+                                        showcase.select_open = open;
+                                    });
+                                }
+                            })
+                            .on_highlight({
+                                let entity = entity_sel.clone();
+                                move |idx, _window, cx| {
+                                    entity.update(cx, |showcase, _cx| {
+                                        showcase.select_highlighted = idx;
+                                    });
+                                }
+                            })
+                    )
+                )
+        })
+        // Keyboard support summary
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(
+                    Text::new("⌨️ Keyboard Support Summary")
+                        .weight(TextWeight::Bold)
+                        .size(TextSize::Lg)
+                )
+                .child(Divider::new().build())
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Xl)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(Text::new("Checkbox").weight(TextWeight::Medium))
+                                .child(Text::new("• Space/Enter: Toggle").size(TextSize::Xs).muted(true))
+                        )
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(Text::new("Number Input").weight(TextWeight::Medium))
+                                .child(Text::new("• Click value to edit").size(TextSize::Xs).muted(true))
+                                .child(Text::new("• ↑↓: Inc/Dec, Enter/Esc").size(TextSize::Xs).muted(true))
+                        )
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(Text::new("Select").weight(TextWeight::Medium))
+                                .child(Text::new("• Space: Toggle open/close").size(TextSize::Xs).muted(true))
+                                .child(Text::new("• ↑↓: Navigate options").size(TextSize::Xs).muted(true))
+                                .child(Text::new("• Enter: Select, Esc: Close").size(TextSize::Xs).muted(true))
+                        )
+                )
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Xl)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(Text::new("Volume Knob").weight(TextWeight::Medium))
+                                .child(Text::new("• ↑↓/←→: Adjust volume").size(TextSize::Xs).muted(true))
+                                .child(Text::new("• M: Toggle mute").size(TextSize::Xs).muted(true))
+                        )
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(Text::new("Sliders").weight(TextWeight::Medium))
+                                .child(Text::new("• ↑↓/←→: Adjust value").size(TextSize::Xs).muted(true))
+                                .child(Text::new("• Home/End: Min/Max").size(TextSize::Xs).muted(true))
+                        )
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .child(Text::new("Potentiometer").weight(TextWeight::Medium))
+                                .child(Text::new("• ↑↓/←→: Adjust value").size(TextSize::Xs).muted(true))
+                                .child(Text::new("• Esc: Reset to default").size(TextSize::Xs).muted(true))
+                        )
+                )
         )
     }
 }

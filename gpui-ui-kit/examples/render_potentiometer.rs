@@ -44,7 +44,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.pot_0 = value;
                                         });
                                     }
@@ -67,7 +67,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.pot_25 = value;
                                         });
                                     }
@@ -90,7 +90,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.pot_50 = value;
                                         });
                                     }
@@ -113,7 +113,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.pot_75 = value;
                                         });
                                     }
@@ -136,7 +136,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.pot_100 = value;
                                         });
                                     }
@@ -160,7 +160,7 @@ impl Showcase {
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.pot_selected = value;
                                         });
                                     }
@@ -180,10 +180,17 @@ impl Showcase {
                                 .unit("%")
                                 .label("Vol")
                                 .size(PotentiometerSize::Lg)
+                                .theme({
+                                    // Create orange theme
+                                    let mut orange_theme = PotentiometerTheme::from(&theme);
+                                    orange_theme.accent = rgba(0xff8c00ff); // Orange
+                                    orange_theme.accent_muted = rgba(0xff8c0033); // Orange with transparency
+                                    orange_theme
+                                })
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {
-                                        entity.update(cx, |showcase, cx| {
+                                        entity.update(cx, |showcase, _cx| {
                                             showcase.pot_lg = value;
                                         });
                                     }
@@ -196,8 +203,8 @@ impl Showcase {
         .child(
             VStack::new()
                 .spacing(StackSpacing::Sm)
-                .child(Text::new("Volume Knob").weight(TextWeight::Medium))
-                .child(Text::new("Circular fill knob with mute toggle (scroll to adjust, double-click to mute):").muted(true))
+                .child(Text::new("Volume Knob (✨ NEW: Keyboard support!)").weight(TextWeight::Medium))
+                .child(Text::new("Try: scroll wheel, double-click to mute, arrow keys ↑↓ to adjust, M to mute").muted(true))
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Xl)
@@ -218,7 +225,7 @@ impl Showcase {
                                         .on_change({
                                             let entity = entity.clone();
                                             move |value, _window, cx| {
-                                                entity.update(cx, |showcase, cx| {
+                                                entity.update(cx, |showcase, _cx| {
                                                     showcase.volume_value = value;
                                                 });
                                             }
@@ -226,7 +233,7 @@ impl Showcase {
                                         .on_mute_toggle({
                                             let entity = entity.clone();
                                             move |muted, _window, cx| {
-                                                entity.update(cx, |showcase, cx| {
+                                                entity.update(cx, |showcase, _cx| {
                                                     showcase.volume_muted = muted;
                                                 });
                                             }

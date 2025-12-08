@@ -240,44 +240,77 @@ impl MiniApp {
 
             // Register language actions if enabled
             if config_clone.with_i18n {
-                cx.on_action::<SetLanguageEnglish>(|_action, cx| {
+                let config_for_lang = config_clone.clone();
+                cx.on_action::<SetLanguageEnglish>(move |_action, cx| {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::English);
                     });
+                    let current_language = cx.try_global::<I18nState>()
+                        .map(|state| state.language)
+                        .unwrap_or(Language::English);
+                    let menus = Self::build_menus_with_language(&config_for_lang, current_language);
+                    cx.set_menus(menus);
                     cx.refresh_windows();
                 });
 
-                cx.on_action::<SetLanguageFrench>(|_action, cx| {
+                let config_for_lang = config_clone.clone();
+                cx.on_action::<SetLanguageFrench>(move |_action, cx| {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::French);
                     });
+                    let current_language = cx.try_global::<I18nState>()
+                        .map(|state| state.language)
+                        .unwrap_or(Language::English);
+                    let menus = Self::build_menus_with_language(&config_for_lang, current_language);
+                    cx.set_menus(menus);
                     cx.refresh_windows();
                 });
 
-                cx.on_action::<SetLanguageGerman>(|_action, cx| {
+                let config_for_lang = config_clone.clone();
+                cx.on_action::<SetLanguageGerman>(move |_action, cx| {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::German);
                     });
+                    let current_language = cx.try_global::<I18nState>()
+                        .map(|state| state.language)
+                        .unwrap_or(Language::English);
+                    let menus = Self::build_menus_with_language(&config_for_lang, current_language);
+                    cx.set_menus(menus);
                     cx.refresh_windows();
                 });
 
-                cx.on_action::<SetLanguageSpanish>(|_action, cx| {
+                let config_for_lang = config_clone.clone();
+                cx.on_action::<SetLanguageSpanish>(move |_action, cx| {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::Spanish);
                     });
+                    let current_language = cx.try_global::<I18nState>()
+                        .map(|state| state.language)
+                        .unwrap_or(Language::English);
+                    let menus = Self::build_menus_with_language(&config_for_lang, current_language);
+                    cx.set_menus(menus);
                     cx.refresh_windows();
                 });
 
-                cx.on_action::<SetLanguageJapanese>(|_action, cx| {
+                let config_for_lang = config_clone.clone();
+                cx.on_action::<SetLanguageJapanese>(move |_action, cx| {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::Japanese);
                     });
+                    let current_language = cx.try_global::<I18nState>()
+                        .map(|state| state.language)
+                        .unwrap_or(Language::English);
+                    let menus = Self::build_menus_with_language(&config_for_lang, current_language);
+                    cx.set_menus(menus);
                     cx.refresh_windows();
                 });
             }
 
             // Build menu bar
-            let menus = Self::build_menus(&config_clone);
+            let current_language = cx.try_global::<I18nState>()
+                .map(|state| state.language)
+                .unwrap_or(config_clone.initial_language);
+            let menus = Self::build_menus_with_language(&config_clone, current_language);
             cx.set_menus(menus);
 
             // Bind keyboard shortcuts
@@ -331,8 +364,8 @@ impl MiniApp {
         });
     }
 
-    /// Build the menu bar based on configuration
-    fn build_menus(config: &MiniAppConfig) -> Vec<Menu> {
+    /// Build the menu bar based on configuration and current language
+    fn build_menus_with_language(config: &MiniAppConfig, current_language: Language) -> Vec<Menu> {
         let mut menus = Vec::new();
 
         // App menu with Quit
@@ -360,14 +393,23 @@ impl MiniApp {
 
         // Language menu if i18n enabled
         if config.with_i18n {
+            // Localize menu title based on current language
+            let menu_title = match current_language {
+                Language::English => "Language",
+                Language::French => "Langue",
+                Language::German => "Sprache",
+                Language::Spanish => "Idioma",
+                Language::Japanese => "言語",
+            };
+
             menus.push(Menu {
-                name: "Language".into(),
+                name: menu_title.into(),
                 items: vec![
                     MenuItem::action("English", SetLanguageEnglish),
-                    MenuItem::action("Francais", SetLanguageFrench),
+                    MenuItem::action("Français", SetLanguageFrench),
                     MenuItem::action("Deutsch", SetLanguageGerman),
-                    MenuItem::action("Espanol", SetLanguageSpanish),
-                    MenuItem::action("Nihongo", SetLanguageJapanese),
+                    MenuItem::action("Español", SetLanguageSpanish),
+                    MenuItem::action("日本語", SetLanguageJapanese),
                 ],
             });
         }

@@ -1,6 +1,10 @@
 //! Input component
 //!
 //! Text input field with optional label, placeholder, and validation.
+//!
+//! NOTE: This component displays values but does not support full keyboard text editing yet.
+//! GPUI's text editing requires TextElement integration which is more complex.
+//! For editable numeric values, use the NumberInput component which has full editing support.
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
@@ -23,8 +27,14 @@ pub struct InputTheme {
     pub border: Rgba,
     /// Border hover color
     pub border_hover: Rgba,
+    /// Border focus color
+    pub border_focus: Rgba,
     /// Error color
     pub error: Rgba,
+    /// Cursor color
+    pub cursor: Rgba,
+    /// Selection background
+    pub selection_bg: Rgba,
 }
 
 impl Default for InputTheme {
@@ -37,7 +47,10 @@ impl Default for InputTheme {
             label: rgb(0xcccccc),
             border: rgb(0x3a3a3a),
             border_hover: rgb(0x007acc),
+            border_focus: rgb(0x007acc),
             error: rgb(0xcc3333),
+            cursor: rgb(0x007acc),
+            selection_bg: rgba(0x007acc44),
         }
     }
 }
@@ -52,7 +65,15 @@ impl From<&Theme> for InputTheme {
             label: theme.text_secondary,
             border: theme.border,
             border_hover: theme.accent,
+            border_focus: theme.accent,
             error: theme.error,
+            cursor: theme.accent,
+            selection_bg: Rgba {
+                r: theme.accent.r,
+                g: theme.accent.g,
+                b: theme.accent.b,
+                a: 0.3,
+            },
         }
     }
 }
@@ -84,7 +105,7 @@ pub enum InputVariant {
 /// Callback type for input changes
 type OnChangeCallback = Box<dyn Fn(&str, &mut Window, &mut App) + 'static>;
 
-/// A text input component
+/// A text input component (display-only for now)
 pub struct Input {
     id: ElementId,
     value: SharedString,
@@ -219,9 +240,13 @@ impl Input {
         self.on_change = Some(Box::new(handler));
         self
     }
+}
 
-    /// Build into element with theme
-    pub fn build_with_theme(self, theme: &InputTheme) -> Div {
+impl RenderOnce for Input {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let global_theme = cx.theme();
+        let theme = InputTheme::from(&global_theme);
+
         let (py, _text_size) = match self.size {
             InputSize::Sm => (px(4.0), "text_xs"),
             InputSize::Md => (px(8.0), "text_sm"),
@@ -229,6 +254,9 @@ impl Input {
         };
 
         let has_error = self.error.is_some();
+        let disabled = self.disabled;
+        let readonly = self.readonly;
+
         let border_color = if has_error {
             theme.error
         } else {
@@ -238,19 +266,19 @@ impl Input {
         let mut container = div().flex().flex_col().gap_1();
 
         // Label
-        if let Some(label) = self.label {
+        if let Some(label) = &self.label {
             container = container.child(
                 div()
                     .text_sm()
                     .text_color(theme.label)
                     .font_weight(FontWeight::MEDIUM)
-                    .child(label),
+                    .child(label.clone()),
             );
         }
 
         // Input wrapper
         let mut input_wrapper = div()
-            .id(self.id)
+            .id(self.id.clone())
             .flex()
             .items_center()
             .gap_2()
@@ -281,21 +309,21 @@ impl Input {
         }
 
         let border_hover = theme.border_hover;
-        if self.disabled {
+        if disabled {
             input_wrapper = input_wrapper.opacity(0.5).cursor_not_allowed();
-        } else if !self.readonly {
-            input_wrapper = input_wrapper.hover(move |s| s.border_color(border_hover));
+        } else if !readonly {
+            input_wrapper = input_wrapper.cursor_text().hover(move |s| s.border_color(border_hover));
         }
 
         let placeholder_color = self.placeholder_color.unwrap_or(theme.placeholder);
         let text_color = self.text_color.unwrap_or(theme.text);
 
         // Left icon
-        if let Some(icon) = self.icon_left {
-            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon));
+        if let Some(icon) = &self.icon_left {
+            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon.clone()));
         }
 
-        // Input text/placeholder
+        // Input text/placeholder (display only)
         let text_el = if self.value.is_empty() {
             if let Some(placeholder) = self.placeholder {
                 div()
@@ -319,26 +347,18 @@ impl Input {
         input_wrapper = input_wrapper.child(text_el);
 
         // Right icon
-        if let Some(icon) = self.icon_right {
-            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon));
+        if let Some(icon) = &self.icon_right {
+            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon.clone()));
         }
 
         container = container.child(input_wrapper);
 
         // Error message
-        if let Some(error) = self.error {
-            container = container.child(div().text_xs().text_color(theme.error).child(error));
+        if let Some(error) = &self.error {
+            container = container.child(div().text_xs().text_color(theme.error).child(error.clone()));
         }
 
         container
-    }
-}
-
-impl RenderOnce for Input {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let global_theme = cx.theme();
-        let input_theme = InputTheme::from(&global_theme);
-        self.build_with_theme(&input_theme)
     }
 }
 

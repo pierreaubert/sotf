@@ -5,6 +5,7 @@
 //! Use Language menu to switch between languages.
 
 use gpui::*;
+use gpui_ui_kit::accordion::AccordionOrientation;
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::menu::{Menu, MenuItem};
 use gpui_ui_kit::theme::ThemeExt;
@@ -126,6 +127,14 @@ pub struct Showcase {
     editing_number: Option<&'static str>, // Which input is being edited ("basic", "freq", "db")
     edit_text: String,
     text_selected: bool, // True when text is "selected" - first keystroke replaces all
+    // Text input states
+    input_text: String,
+    input_focused: bool,
+    input_cursor: usize,
+    // Select states
+    select_value: Option<SharedString>,
+    select_open: bool,
+    select_highlighted: Option<usize>,
     // Tabs state
     selected_tab: usize,
     // Potentiometer values
@@ -139,6 +148,11 @@ pub struct Showcase {
     // Volume knob values
     volume_value: f32,
     volume_muted: bool,
+    // Accordion states
+    accordion_vertical_single: Vec<SharedString>,
+    accordion_vertical_multiple: Vec<SharedString>,
+    accordion_horizontal_single: Vec<SharedString>,
+    accordion_side_single: Vec<SharedString>,
     // Current section for navigation
     current_section: ShowcaseSection,
     // Entity for updating self
@@ -161,6 +175,12 @@ impl Showcase {
             editing_number: None,
             edit_text: String::new(),
             text_selected: false,
+            input_text: String::from("Type here..."),
+            input_focused: false,
+            input_cursor: 12,
+            select_value: Some("apple".into()),
+            select_open: false,
+            select_highlighted: None,
             selected_tab: 0,
             pot_0: 0.0,
             pot_25: 0.25,
@@ -171,6 +191,10 @@ impl Showcase {
             pot_lg: 0.7,
             volume_value: 0.75,
             volume_muted: false,
+            accordion_vertical_single: vec!["v-single-1".into()],
+            accordion_vertical_multiple: vec!["v-multi-1".into(), "v-multi-2".into()],
+            accordion_horizontal_single: vec!["h-single-1".into()],
+            accordion_side_single: vec!["side-single-1".into(), "side-single-2".into()],
             current_section: ShowcaseSection::default(),
             entity: cx.entity().clone(),
             focus_handle: cx.focus_handle(),
