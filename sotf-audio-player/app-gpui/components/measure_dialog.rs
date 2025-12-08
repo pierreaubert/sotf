@@ -82,22 +82,7 @@ impl PlayerView {
                     .child(Text::new(state.app.current_output_device_name.as_deref().unwrap_or("None").to_string()).muted(true))
                     // Select for output channel
                     .child(
-                         Select::new("out_ch_sel")
-                            .options(out_options)
-                            .selected(format!("{}", measure_state.output_channel))
-                            .is_open(measure_state.output_ch_open)
-                            .on_change(move |val, _, cx| {
-                                 let idx = val.to_string().parse::<usize>().unwrap_or(0);
-                                 weak_view.update(cx, |view, cx| {
-                                     view.state.update(cx, |state, _| {
-                                         if let Some(ms) = &mut state.app.measure_state {
-                                             ms.output_channel = idx;
-                                             ms.output_ch_open = false;
-                                         }
-                                     });
-                                 }).ok();
-                            })
-                            .build()
+                         div()
                             .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
                                 view.state.update(cx, |state, _| {
                                      if let Some(ms) = &mut state.app.measure_state {
@@ -106,6 +91,23 @@ impl PlayerView {
                                      }
                                 });
                             }))
+                            .child(
+                                Select::new("out_ch_sel")
+                                    .options(out_options)
+                                    .selected(format!("{}", measure_state.output_channel))
+                                    .is_open(measure_state.output_ch_open)
+                                    .on_change(move |val, _, cx| {
+                                         let idx = val.to_string().parse::<usize>().unwrap_or(0);
+                                         weak_view.update(cx, |view, cx| {
+                                             view.state.update(cx, |state, _| {
+                                                 if let Some(ms) = &mut state.app.measure_state {
+                                                     ms.output_channel = idx;
+                                                     ms.output_ch_open = false;
+                                                 }
+                                             });
+                                         }).ok();
+                                    })
+                            )
                     )
             )
             .child(
@@ -115,22 +117,7 @@ impl PlayerView {
                     .child(Text::new(state.app.current_input_device_name.as_deref().unwrap_or("None").to_string()).muted(true))
                     // Select for input channel
                     .child(
-                         Select::new("in_ch_sel")
-                            .options(in_options)
-                            .selected(format!("{}", measure_state.input_channel))
-                            .is_open(measure_state.input_ch_open)
-                            .on_change(move |val, _, cx| {
-                                 let idx = val.to_string().parse::<usize>().unwrap_or(0);
-                                 weak_view2.update(cx, |view, cx| {
-                                     view.state.update(cx, |state, _| {
-                                         if let Some(ms) = &mut state.app.measure_state {
-                                             ms.input_channel = idx;
-                                             ms.input_ch_open = false;
-                                         }
-                                     });
-                                 }).ok();
-                            })
-                            .build()
+                         div()
                             .on_mouse_up(MouseButton::Left, cx.listener(move |view, _, _, cx| {
                                 view.state.update(cx, |state, _| {
                                      if let Some(ms) = &mut state.app.measure_state {
@@ -139,6 +126,23 @@ impl PlayerView {
                                      }
                                 });
                             }))
+                            .child(
+                                Select::new("in_ch_sel")
+                                    .options(in_options)
+                                    .selected(format!("{}", measure_state.input_channel))
+                                    .is_open(measure_state.input_ch_open)
+                                    .on_change(move |val, _, cx| {
+                                         let idx = val.to_string().parse::<usize>().unwrap_or(0);
+                                         weak_view2.update(cx, |view, cx| {
+                                             view.state.update(cx, |state, _| {
+                                                 if let Some(ms) = &mut state.app.measure_state {
+                                                     ms.input_channel = idx;
+                                                     ms.input_ch_open = false;
+                                                 }
+                                             });
+                                         }).ok();
+                                    })
+                            )
                     )
             )
     }

@@ -15,10 +15,32 @@ use walkdir::WalkDir;
 use crate::database::MusicDatabase;
 
 /// Normalize an artist or album name for consistent grouping
-/// Converts to lowercase and trims whitespace to ensure that
-/// "2Cellos", "2CELLOS", and "2 Cellos " are treated as the same album
+/// Converts to lowercase, trims whitespace, removes diacritics and special characters
+/// Keeps ASCII letters, numbers, periods, and UTF-8 letters/numbers
+/// Examples:
+/// - "2Cellos", "2CELLOS", "2 Cellos " -> "2cellos"
+/// - "Café" -> "cafe"
+/// - "The Beatles!" -> "thebeatles"
+/// - "AC/DC" -> "acdc"
 fn normalize_album_key(name: &str) -> String {
-    name.trim().to_lowercase()
+    use unicode_normalization::UnicodeNormalization;
+
+    name.trim()
+        .nfd() // Normalize to NFD (decomposed form) to separate diacritics
+        .filter(|c| {
+            // Keep ASCII letters, numbers, and periods
+            if c.is_ascii_alphanumeric() || *c == '.' {
+                return true;
+            }
+            // Keep UTF-8 letters and numbers (non-ASCII)
+            if !c.is_ascii() && (c.is_alphabetic() || c.is_numeric()) {
+                return true;
+            }
+            // Filter out everything else (diacritics, punctuation, etc.)
+            false
+        })
+        .collect::<String>()
+        .to_lowercase()
 }
 
 /// Capitalize the first letter of each word for display
@@ -1523,8 +1545,23 @@ const ALBUM_ART_FILENAMES: &[&str] = &[
     "artwork.png",
 ];
 
-/// Find album art in the given directory
+/// Check if a file is an image based on extension
+fn is_image_file(path: &Path) -> bool {
+    if let Some(ext) = path.extension() {
+        let ext_lower = ext.to_string_lossy().to_lowercase();
+        matches!(ext_lower.as_str(), "jpg" | "jpeg" | "png" | "gif" | "webp")
+    } else {
+        false
+    }
+}
+
+/// Find album art in the given directory with smart heuristics:
+/// 1. Look for common filenames (cover, folder, front, album, artwork)
+/// 2. Look for files with "front" in the name (case-insensitive)
+/// 3. If only one image file exists in the directory, use it
+/// 4. Check subdirectories named "Artwork" or "Covers" (case-insensitive)
 fn find_album_art(dir: &Path) -> Option<PathBuf> {
+    // Strategy 1: Look for common album art filenames in the main directory
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -1538,6 +1575,115 @@ fn find_album_art(dir: &Path) -> Option<PathBuf> {
             }
         }
     }
+
+    // Strategy 2: Look for files with "front" in the name (case-insensitive)
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && is_image_file(&path) {
+                if let Some(filename) = path.file_name() {
+                    let filename_lower = filename.to_string_lossy().to_lowercase();
+                    if filename_lower.contains("front") {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+
+    // Strategy 3: If there's only one image in the directory, use it
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let images: Vec<PathBuf> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                if path.is_file() && is_image_file(&path) {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if images.len() == 1 {
+            return Some(images[0].clone());
+        }
+    }
+
+    // Strategy 4: Check for "Artwork" or "Covers" subdirectories
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(dirname) = path.file_name() {
+                    let dirname_lower = dirname.to_string_lossy().to_lowercase();
+                    if dirname_lower == "artwork" || dirname_lower == "covers" {
+                        // Recursively search in this subdirectory
+                        // Try common names first
+                        if let Some(art) = find_album_art_in_subdir(&path) {
+                            return Some(art);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Find album art in a subdirectory (used for Artwork/Covers folders)
+/// Uses the same strategies but doesn't recurse further
+fn find_album_art_in_subdir(dir: &Path) -> Option<PathBuf> {
+    // Strategy 1: Look for common filenames
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(filename) = path.file_name() {
+                    let filename_lower = filename.to_string_lossy().to_lowercase();
+                    if ALBUM_ART_FILENAMES.contains(&filename_lower.as_str()) {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+
+    // Strategy 2: Look for "front" in filename
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() && is_image_file(&path) {
+                if let Some(filename) = path.file_name() {
+                    let filename_lower = filename.to_string_lossy().to_lowercase();
+                    if filename_lower.contains("front") {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+    }
+
+    // Strategy 3: If only one image, use it
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        let images: Vec<PathBuf> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                if path.is_file() && is_image_file(&path) {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if images.len() == 1 {
+            return Some(images[0].clone());
+        }
+    }
+
     None
 }
 
@@ -2040,6 +2186,154 @@ mod tests {
         assert_eq!(merged.len(), 1, "Should have grouped into 1 album");
         // Should use metadata from the higher DR album
         assert_eq!(merged[0].year, Some(2011));
+    }
+
+    #[test]
+    fn test_normalize_album_key() {
+        // Test basic normalization
+        assert_eq!(normalize_album_key("2Cellos"), normalize_album_key("2CELLOS"));
+        assert_eq!(normalize_album_key("2Cellos"), normalize_album_key("2 Cellos "));
+
+        // Test diacritics removal
+        assert_eq!(normalize_album_key("Café"), "cafe");
+        assert_eq!(normalize_album_key("Naïve"), "naive");
+        assert_eq!(normalize_album_key("Björk"), "bjork");
+        assert_eq!(normalize_album_key("Señor"), "senor");
+
+        // Test special character removal
+        assert_eq!(normalize_album_key("The Beatles!"), "thebeatles");
+        assert_eq!(normalize_album_key("AC/DC"), "acdc");
+        assert_eq!(normalize_album_key("Album: Title"), "albumtitle");
+        assert_eq!(normalize_album_key("The Album, Vol. 2"), "thealbumvol.2");
+        assert_eq!(normalize_album_key("Rock & Roll"), "rockroll");
+
+        // Test that periods are kept
+        assert_eq!(normalize_album_key("Vol. 2"), "vol.2");
+        assert_eq!(normalize_album_key("U.S.A."), "u.s.a.");
+
+        // Test numbers are kept
+        assert_eq!(normalize_album_key("2Pac"), "2pac");
+        assert_eq!(normalize_album_key("Album 123"), "album123");
+
+        // Test UTF-8 letters and numbers are kept
+        assert_eq!(normalize_album_key("日本語"), "日本語");
+        assert_eq!(normalize_album_key("Москва"), "москва");
+        assert_eq!(normalize_album_key("Αθήνα"), "αθηνα");
+    }
+
+    #[test]
+    fn test_is_image_file() {
+        // Valid image extensions
+        assert!(is_image_file(&PathBuf::from("cover.jpg")));
+        assert!(is_image_file(&PathBuf::from("cover.jpeg")));
+        assert!(is_image_file(&PathBuf::from("cover.JPG")));
+        assert!(is_image_file(&PathBuf::from("cover.png")));
+        assert!(is_image_file(&PathBuf::from("cover.PNG")));
+        assert!(is_image_file(&PathBuf::from("cover.gif")));
+        assert!(is_image_file(&PathBuf::from("cover.webp")));
+
+        // Invalid extensions
+        assert!(!is_image_file(&PathBuf::from("track.flac")));
+        assert!(!is_image_file(&PathBuf::from("track.mp3")));
+        assert!(!is_image_file(&PathBuf::from("readme.txt")));
+        assert!(!is_image_file(&PathBuf::from("no_extension")));
+    }
+
+    #[test]
+    fn test_find_album_art_common_names() {
+        use tempfile::TempDir;
+        use std::fs::File;
+
+        // Create temporary directory with a common album art filename
+        let temp_dir = TempDir::new().unwrap();
+        let cover_path = temp_dir.path().join("cover.jpg");
+        File::create(&cover_path).unwrap();
+
+        let result = find_album_art(temp_dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), cover_path);
+    }
+
+    #[test]
+    fn test_find_album_art_front_in_name() {
+        use tempfile::TempDir;
+        use std::fs::File;
+
+        // Create temporary directory with a file containing "front" in the name
+        let temp_dir = TempDir::new().unwrap();
+        let front_path = temp_dir.path().join("booklet_front.jpg");
+        let back_path = temp_dir.path().join("booklet_back.jpg");
+        File::create(&front_path).unwrap();
+        File::create(&back_path).unwrap();
+
+        let result = find_album_art(temp_dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), front_path);
+    }
+
+    #[test]
+    fn test_find_album_art_single_image() {
+        use tempfile::TempDir;
+        use std::fs::File;
+
+        // Create temporary directory with only one image file
+        let temp_dir = TempDir::new().unwrap();
+        let image_path = temp_dir.path().join("some_random_name.jpg");
+        File::create(&image_path).unwrap();
+        // Add a non-image file
+        File::create(temp_dir.path().join("track.flac")).unwrap();
+
+        let result = find_album_art(temp_dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), image_path);
+    }
+
+    #[test]
+    fn test_find_album_art_in_artwork_subdir() {
+        use tempfile::TempDir;
+        use std::fs::{create_dir, File};
+
+        // Create temporary directory with an "Artwork" subdirectory
+        let temp_dir = TempDir::new().unwrap();
+        let artwork_dir = temp_dir.path().join("Artwork");
+        create_dir(&artwork_dir).unwrap();
+        let cover_path = artwork_dir.join("cover.jpg");
+        File::create(&cover_path).unwrap();
+
+        let result = find_album_art(temp_dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), cover_path);
+    }
+
+    #[test]
+    fn test_find_album_art_in_covers_subdir_lowercase() {
+        use tempfile::TempDir;
+        use std::fs::{create_dir, File};
+
+        // Create temporary directory with a "covers" subdirectory (lowercase)
+        let temp_dir = TempDir::new().unwrap();
+        let covers_dir = temp_dir.path().join("covers");
+        create_dir(&covers_dir).unwrap();
+        let front_path = covers_dir.join("front.png");
+        File::create(&front_path).unwrap();
+
+        let result = find_album_art(temp_dir.path());
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), front_path);
+    }
+
+    #[test]
+    fn test_find_album_art_no_images() {
+        use tempfile::TempDir;
+        use std::fs::File;
+
+        // Create temporary directory with only audio files
+        let temp_dir = TempDir::new().unwrap();
+        File::create(temp_dir.path().join("track1.flac")).unwrap();
+        File::create(temp_dir.path().join("track2.flac")).unwrap();
+
+        let result = find_album_art(temp_dir.path());
+        assert!(result.is_none());
     }
 }
 

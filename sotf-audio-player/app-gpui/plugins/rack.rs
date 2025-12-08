@@ -7,7 +7,7 @@ use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use sotf_audio_player::{PluginType, LoudnessData};
 use super::level_meters::{render_gradient_meter, db_to_position};
-use crate::app::Theme;
+use crate::theme::Theme;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -248,8 +248,7 @@ impl PlayerView {
                                     .child(format!("{} plugins", plugin_count)),
                             ),
                     )
-                    .child(self.render_add_plugin_buttons(cx)),
-                    .child(self.render_add_plugin_buttons(cx)),
+                    .child(self.render_add_plugin_buttons(cx))
             )
             // Plugin modules strip
             .child(
@@ -268,7 +267,7 @@ impl PlayerView {
                         
                         if has_input_monitor {
                             // Input is always 2 channels (Stereo) for now
-                            self.render_rack_meter(cx, 2, "IN")
+                            self.render_rack_meter(cx, 2, "IN").into_any_element()
                         } else {
                             div()
                                 .flex()
@@ -276,6 +275,7 @@ impl PlayerView {
                                 .items_center()
                                 .child(div().text_xs().text_color(theme.text_muted).child("IN"))
                                 .child(div().w(px(2.0)).h(px(30.0)).bg(theme.accent))
+                                .into_any_element()
                         }
                     })
                     // Plugin modules - inline creation with drag-and-drop
@@ -499,7 +499,7 @@ impl PlayerView {
                         }
 
                         if has_output_monitor {
-                            self.render_rack_meter(cx, channels, "OUT")
+                            self.render_rack_meter(cx, channels, "OUT").into_any_element()
                         } else {
                              div()
                                 .flex()
@@ -507,6 +507,7 @@ impl PlayerView {
                                 .items_center()
                                 .child(div().text_xs().text_color(theme.text_muted).child("OUT"))
                                 .child(div().w(px(2.0)).h(px(30.0)).bg(theme.success))
+                                .into_any_element()
                         }
                     })
                     // Empty state
@@ -533,6 +534,7 @@ impl PlayerView {
         };
 
         let theme_c = theme.clone();
+        let label = label.to_string();
 
         div()
             .flex()

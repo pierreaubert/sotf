@@ -44,6 +44,9 @@ parking_lot = { workspace = true }
 # Image processing for album art thumbnails
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
 
+# Unicode normalization for removing diacritics
+unicode-normalization = "0.1"
+
 # audio
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
