@@ -127,10 +127,11 @@ pub struct Showcase {
     editing_number: Option<&'static str>, // Which input is being edited ("basic", "freq", "db")
     edit_text: String,
     text_selected: bool, // True when text is "selected" - first keystroke replaces all
-    // Text input states
-    input_text: String,
-    input_focused: bool,
-    input_cursor: usize,
+    // Text Input component states (new editable version)
+    input_value: String,
+    input_editing: bool,
+    input_edit_text: String,
+    input_selected: bool,
     // Select states
     select_value: Option<SharedString>,
     select_open: bool,
@@ -175,9 +176,10 @@ impl Showcase {
             editing_number: None,
             edit_text: String::new(),
             text_selected: false,
-            input_text: String::from("Type here..."),
-            input_focused: false,
-            input_cursor: 12,
+            input_value: String::from("Hello World!"),
+            input_editing: false,
+            input_edit_text: String::new(),
+            input_selected: false,
             select_value: Some("apple".into()),
             select_open: false,
             select_highlighted: None,
@@ -294,6 +296,10 @@ impl Render for Showcase {
                     self.editing_number,
                     self.edit_text.clone(),
                     self.text_selected,
+                    self.input_value.clone(),
+                    self.input_editing,
+                    self.input_edit_text.clone(),
+                    self.input_selected,
                     entity.clone(),
                     cx,
                 )
@@ -356,8 +362,50 @@ impl Showcase {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Only handle keys when editing a number input
-        if let Some(editing_id) = self.editing_number {
+        // Handle keys when editing text input
+        if self.input_editing {
+            match event.keystroke.key.as_str() {
+                "enter" => {
+                    // Confirm edit
+                    self.input_value = self.input_edit_text.clone();
+                    self.input_editing = false;
+                    self.input_edit_text.clear();
+                    self.input_selected = false;
+                    cx.notify();
+                }
+                "escape" => {
+                    // Cancel edit
+                    self.input_editing = false;
+                    self.input_edit_text.clear();
+                    self.input_selected = false;
+                    cx.notify();
+                }
+                "backspace" => {
+                    // If text is selected, clear all; otherwise delete last character
+                    if self.input_selected {
+                        self.input_edit_text.clear();
+                        self.input_selected = false;
+                    } else {
+                        self.input_edit_text.pop();
+                    }
+                    cx.notify();
+                }
+                key if key.len() == 1 => {
+                    // Single character - if text is selected, replace all; otherwise append
+                    let ch = key.chars().next().unwrap();
+                    if self.input_selected {
+                        // Replace all text with the new character
+                        self.input_edit_text.clear();
+                        self.input_selected = false;
+                    }
+                    self.input_edit_text.push(ch);
+                    cx.notify();
+                }
+                _ => {}
+            }
+        }
+        // Handle keys when editing a number input
+        else if let Some(editing_id) = self.editing_number {
             match event.keystroke.key.as_str() {
                 "enter" => {
                     // Confirm edit - parse and apply the value
@@ -416,25 +464,25 @@ impl Showcase {
     }
 }
 
-include!("render_accordion.rs");
-include!("render_alert.rs");
-include!("render_avatar.rs");
-include!("render_badge.rs");
-include!("render_breadcrumbs.rs");
-include!("render_button.rs");
-include!("render_card.rs");
-include!("render_dialog.rs");
-include!("render_form.rs");
-include!("render_icon.rs");
-include!("render_layout.rs");
-include!("render_menu.rs");
-include!("render_potentiometer.rs");
-include!("render_progress.rs");
-include!("render_spinners.rs");
-include!("render_tabs.rs");
-include!("render_text.rs");
-include!("render_toast.rs");
-include!("render_tooltip.rs");
+include!("includes/render_accordion.inc.rs");
+include!("includes/render_alert.inc.rs");
+include!("includes/render_avatar.inc.rs");
+include!("includes/render_badge.inc.rs");
+include!("includes/render_breadcrumbs.inc.rs");
+include!("includes/render_button.inc.rs");
+include!("includes/render_card.inc.rs");
+include!("includes/render_dialog.inc.rs");
+include!("includes/render_form.inc.rs");
+include!("includes/render_icon.inc.rs");
+include!("includes/render_layout.inc.rs");
+include!("includes/render_menu.inc.rs");
+include!("includes/render_potentiometer.inc.rs");
+include!("includes/render_progress.inc.rs");
+include!("includes/render_spinners.inc.rs");
+include!("includes/render_tabs.inc.rs");
+include!("includes/render_text.inc.rs");
+include!("includes/render_toast.inc.rs");
+include!("includes/render_tooltip.inc.rs");
 
 fn main() {
     MiniApp::run(

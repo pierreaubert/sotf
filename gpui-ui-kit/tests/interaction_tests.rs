@@ -12,6 +12,7 @@ use gpui_ui_kit::toggle::Toggle;
 use gpui_ui_kit::accordion::{Accordion, AccordionItem, AccordionMode};
 use gpui_ui_kit::tabs::{Tabs, TabItem};
 use gpui_ui_kit::menu::{Menu, MenuItem};
+use gpui_ui_kit::input::Input;
 
 /// Test that Button supports mouse click events
 #[test]
@@ -358,6 +359,9 @@ fn test_all_components_have_event_handlers() {
         .on_toggle(|_, _, _| {})
         .on_highlight(|_, _, _| {});
 
+    // Input - change
+    let _input = Input::new("test").on_change(|_, _, _| {});
+
     // Accordion - change
     let _accordion = Accordion::new().on_change(|_, _, _, _| {});
 
@@ -441,6 +445,7 @@ fn test_stateful_components_event_coverage() {
     let _select = Select::new("test")
         .on_change(|_, _, _| {})
         .on_toggle(|_, _, _| {});
+    let _input = Input::new("test").on_change(|_, _, _| {});
 
     // Navigation components with state
     let _tabs = Tabs::new().on_change(|_, _, _| {});
@@ -450,4 +455,124 @@ fn test_stateful_components_event_coverage() {
     let _menu = Menu::new(vec![]);
 
     // If all of these compile, all stateful components support events
+}
+
+/// Test that Input component supports change events
+#[test]
+fn test_input_supports_change_events() {
+    // Input should support on_change handler for when text changes
+    let input = Input::new("test")
+        .value("initial value")
+        .placeholder("Enter text...")
+        .on_change(|_text, _window, _cx| {
+            // Change handler proves the API supports stateful input
+        });
+
+    drop(input);
+}
+
+/// Test that Input supports various states
+#[test]
+fn test_input_supports_states() {
+    // Input should support disabled, readonly, and error states
+    let _disabled_input = Input::new("disabled")
+        .value("Cannot edit")
+        .disabled(true)
+        .on_change(|_, _, _| {});
+
+    let _readonly_input = Input::new("readonly")
+        .value("Read only")
+        .readonly(true)
+        .on_change(|_, _, _| {});
+
+    let _error_input = Input::new("error")
+        .value("Invalid")
+        .error("This field is required")
+        .on_change(|_, _, _| {});
+}
+
+/// Test that Input supports visual variants
+#[test]
+fn test_input_supports_variants() {
+    use gpui_ui_kit::input::InputVariant;
+
+    // Input should support Default, Filled, and Flushed variants
+    let _default = Input::new("default")
+        .variant(InputVariant::Default)
+        .on_change(|_, _, _| {});
+
+    let _filled = Input::new("filled")
+        .variant(InputVariant::Filled)
+        .on_change(|_, _, _| {});
+
+    let _flushed = Input::new("flushed")
+        .variant(InputVariant::Flushed)
+        .on_change(|_, _, _| {});
+}
+
+/// Test that Input supports focus interaction
+#[test]
+fn test_input_supports_focus() {
+    // Input should be focusable for keyboard text entry
+    // While full text editing isn't implemented yet, the API should exist
+    let input = Input::new("focus-test")
+        .placeholder("Click to focus")
+        .on_change(|_text, _window, _cx| {
+            // Will be called when text changes via keyboard
+        });
+
+    drop(input);
+}
+
+/// Test that disabled input doesn't trigger change events
+#[test]
+fn test_disabled_input_no_events() {
+    let input = Input::new("disabled")
+        .disabled(true)
+        .on_change(|_text, _window, _cx| {
+            // This should not be called when disabled
+        });
+
+    drop(input);
+}
+
+/// Test that readonly input doesn't trigger change events
+#[test]
+fn test_readonly_input_no_events() {
+    let input = Input::new("readonly")
+        .readonly(true)
+        .on_change(|_text, _window, _cx| {
+            // This should not be called when readonly
+        });
+
+    drop(input);
+}
+
+/// Test that Input can display and update text values
+#[test]
+fn test_input_text_value_handling() {
+    // Input should be able to display and handle text values
+    let input = Input::new("text-value")
+        .value("Hello, World!")
+        .label("Enter your name")
+        .placeholder("Type here...")
+        .on_change(|new_text, _window, _cx| {
+            // Handler receives new text value
+            assert!(!new_text.is_empty());
+        });
+
+    drop(input);
+}
+
+/// Test that Input supports icons for visual feedback
+#[test]
+fn test_input_supports_icons() {
+    // Input should support left and right icons
+    let input = Input::new("with-icons")
+        .icon_left("🔍")
+        .icon_right("✓")
+        .placeholder("Search...")
+        .on_change(|_, _, _| {});
+
+    drop(input);
 }

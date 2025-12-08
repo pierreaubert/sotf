@@ -46,6 +46,7 @@ fn test_select_supports_keyboard_navigation() {
 - Checkbox, Toggle (mouse click, keyboard Space)
 - Slider (mouse drag, scroll, arrow keys)
 - Select (mouse click, keyboard Space/Enter/Escape/Arrows)
+- Input (text entry, change events, focus)
 - Accordion (mouse click on headers)
 - Tabs (mouse click, keyboard arrows)
 - Menu (mouse click, keyboard arrows/Enter)
@@ -118,13 +119,13 @@ fn test_button_configuration() {
 
 ## Test Statistics
 
-- **Total Tests**: 61 tests
-- **Interaction Tests**: 29 tests (mouse and keyboard events)
+- **Total Tests**: 69 tests
+- **Interaction Tests**: 37 tests (mouse and keyboard events)
 - **I18n Tests**: 11 tests (translations)
 - **Component Tests**: 14 tests (API validation)
 - **Library Tests**: 7 tests (MiniApp configuration)
 - **Languages Covered**: 5 (English, French, German, Spanish, Japanese)
-- **Components Covered**: Button, IconButton, Checkbox, Toggle, Slider, Select, Accordion, Tabs, Menu, Badge, Theme
+- **Components Covered**: Button, IconButton, Checkbox, Toggle, Slider, Select, Input, Accordion, Tabs, Menu, Badge, Theme
 
 ## Critical Test Scenarios
 

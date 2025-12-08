@@ -257,7 +257,7 @@ impl Select {
             SelectSize::Lg => (px(12.0), "lg"),
         };
 
-        let mut container = div().flex().flex_col().gap_1();
+        let mut container = div().relative().flex().flex_col().gap_1();
 
         // Label
         if let Some(label) = self.label {
@@ -418,6 +418,7 @@ impl Select {
                 .right_0()
                 .mt_1()
                 .bg(theme.dropdown_bg)
+                .opacity(1.0)
                 .border_1()
                 .border_color(theme.dropdown_border)
                 .rounded_md()
@@ -442,6 +443,8 @@ impl Select {
 
                 if option.disabled {
                     option_el = option_el
+                        .bg(theme.dropdown_bg)
+                        .opacity(1.0)
                         .text_color(theme.disabled_color)
                         .cursor_not_allowed();
                 } else if is_selected {
@@ -456,6 +459,8 @@ impl Select {
                 } else {
                     let hover_bg = theme.option_hover_bg;
                     option_el = option_el
+                        .bg(theme.dropdown_bg)
+                        .opacity(1.0)
                         .text_color(theme.option_text_color)
                         .hover(move |s| s.bg(hover_bg));
 
@@ -473,7 +478,7 @@ impl Select {
                 dropdown = dropdown.child(option_el);
             }
 
-            container = container.relative().child(dropdown);
+            container = container.child(dropdown);
         }
 
         container

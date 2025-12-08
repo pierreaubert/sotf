@@ -205,3 +205,32 @@ fn test_button_with_icons() {
 
     drop(button);
 }
+
+#[test]
+fn test_select_dropdown_has_opaque_background() {
+    use gpui_ui_kit::select::SelectTheme;
+
+    // Test default theme
+    let theme = SelectTheme::default();
+    // Verify dropdown_bg is opaque (alpha channel should be 1.0)
+    assert_eq!(
+        theme.dropdown_bg.a, 1.0,
+        "Select dropdown background should be opaque in default theme"
+    );
+
+    // Test theme from dark Theme
+    let app_theme = Theme::dark();
+    let select_theme = SelectTheme::from(&app_theme);
+    assert_eq!(
+        select_theme.dropdown_bg.a, 1.0,
+        "Select dropdown background should be opaque in dark theme"
+    );
+
+    // Test theme from light Theme
+    let app_theme_light = Theme::light();
+    let select_theme_light = SelectTheme::from(&app_theme_light);
+    assert_eq!(
+        select_theme_light.dropdown_bg.a, 1.0,
+        "Select dropdown background should be opaque in light theme"
+    );
+}

@@ -2,9 +2,12 @@
 //!
 //! Text input field with optional label, placeholder, and validation.
 //!
-//! NOTE: This component displays values but does not support full keyboard text editing yet.
-//! GPUI's text editing requires TextElement integration which is more complex.
-//! For editable numeric values, use the NumberInput component which has full editing support.
+//! Features:
+//! - Full keyboard text editing support
+//! - Click to focus and start editing
+//! - Enter to confirm, Escape to cancel
+//! - Text selection visual feedback
+//! - Disabled and readonly states
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
@@ -105,7 +108,7 @@ pub enum InputVariant {
 /// Callback type for input changes
 type OnChangeCallback = Box<dyn Fn(&str, &mut Window, &mut App) + 'static>;
 
-/// A text input component (display-only for now)
+/// A text input component with full keyboard editing support
 pub struct Input {
     id: ElementId,
     value: SharedString,
@@ -122,7 +125,13 @@ pub struct Input {
     text_color: Option<Rgba>,
     border_color: Option<Rgba>,
     placeholder_color: Option<Rgba>,
+    editing: bool,
+    text_selected: bool,
+    edit_text: Option<SharedString>,
     on_change: Option<OnChangeCallback>,
+    on_edit_start: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    on_edit_end: Option<Box<dyn Fn(Option<String>, &mut Window, &mut App) + 'static>>,
+    on_text_change: Option<Box<dyn Fn(String, &mut Window, &mut App) + 'static>>,
 }
 
 impl Input {
@@ -144,7 +153,13 @@ impl Input {
             text_color: None,
             border_color: None,
             placeholder_color: None,
+            editing: false,
+            text_selected: false,
+            edit_text: None,
             on_change: None,
+            on_edit_start: None,
+            on_edit_end: None,
+            on_text_change: None,
         }
     }
 
@@ -232,9 +247,52 @@ impl Input {
         self
     }
 
+    /// Set whether the input is currently being edited
+    pub fn editing(mut self, editing: bool) -> Self {
+        self.editing = editing;
+        self
+    }
+
+    /// Set whether the text is fully selected (for visual feedback)
+    pub fn text_selected(mut self, selected: bool) -> Self {
+        self.text_selected = selected;
+        self
+    }
+
+    /// Set the current edit text (when editing)
+    pub fn edit_text(mut self, text: impl Into<SharedString>) -> Self {
+        self.edit_text = Some(text.into());
+        self
+    }
+
     /// Set change handler (called when input value changes)
     pub fn on_change(mut self, handler: impl Fn(&str, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set edit start handler (called when user clicks on input to edit)
+    pub fn on_edit_start(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_edit_start = Some(Box::new(handler));
+        self
+    }
+
+    /// Set edit end handler (called when user confirms or cancels edit)
+    /// The Option<String> is Some(value) if confirmed, None if cancelled
+    pub fn on_edit_end(
+        mut self,
+        handler: impl Fn(Option<String>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_edit_end = Some(Box::new(handler));
+        self
+    }
+
+    /// Set text change handler (called when edit text changes)
+    pub fn on_text_change(
+        mut self,
+        handler: impl Fn(String, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_text_change = Some(Box::new(handler));
         self
     }
 }
@@ -253,9 +311,15 @@ impl RenderOnce for Input {
         let has_error = self.error.is_some();
         let disabled = self.disabled;
         let readonly = self.readonly;
+        let editing = self.editing;
+        let text_selected = self.text_selected;
+        let current_value = self.value.clone();
+        let edit_text_clone = self.edit_text.clone();
 
         let border_color = if has_error {
             theme.error
+        } else if editing {
+            theme.border_focus
         } else {
             self.border_color.unwrap_or(theme.border)
         };
@@ -272,6 +336,9 @@ impl RenderOnce for Input {
                     .child(label.clone()),
             );
         }
+
+        // Create a unique ID for the input field
+        let field_id = ElementId::Name(format!("{:?}-field", self.id).into());
 
         // Input wrapper
         let mut input_wrapper = div()
@@ -316,6 +383,13 @@ impl RenderOnce for Input {
 
         let placeholder_color = self.placeholder_color.unwrap_or(theme.placeholder);
         let text_color = self.text_color.unwrap_or(theme.text);
+        let selection_bg = theme.selection_bg;
+
+        // Wrap handlers in Rc for sharing
+        let _on_change_rc = self.on_change.map(|h| std::rc::Rc::new(h));
+        let on_edit_start_rc = self.on_edit_start.map(|h| std::rc::Rc::new(h));
+        let on_edit_end_rc = self.on_edit_end.map(|h| std::rc::Rc::new(h));
+        let on_text_change_rc = self.on_text_change.map(|h| std::rc::Rc::new(h));
 
         // Left icon
         if let Some(icon) = &self.icon_left {
@@ -323,26 +397,121 @@ impl RenderOnce for Input {
                 input_wrapper.child(div().text_color(placeholder_color).child(icon.clone()));
         }
 
-        // Input text/placeholder (display only)
-        let text_el = if self.value.is_empty() {
-            if let Some(placeholder) = self.placeholder {
-                div()
-                    .flex_1()
-                    .text_color(placeholder_color)
-                    .child(placeholder)
-            } else {
-                div().flex_1()
-            }
+        // Determine display text
+        let display_text = if editing {
+            edit_text_clone
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| current_value.to_string())
+        } else if current_value.is_empty() {
+            self.placeholder
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_default()
         } else {
-            div().flex_1().text_color(text_color).child(self.value)
+            current_value.to_string()
         };
 
+        // Visual selection highlight: when text_selected is true, show accent background
+        let (value_bg, value_text_color) = if editing && text_selected {
+            // Selected text: selection background with text color
+            (Some(selection_bg), text_color)
+        } else if !editing && current_value.is_empty() {
+            // Placeholder text
+            (None, placeholder_color)
+        } else {
+            // Normal text
+            (None, text_color)
+        };
+
+        let mut text_el = div()
+            .id(field_id)
+            .flex_1()
+            .text_color(value_text_color)
+            .child(display_text);
+
+        // Apply selection background if selected
+        if let Some(bg) = value_bg {
+            text_el = text_el.bg(bg);
+        }
+
         // Apply text size
-        let text_el = match self.size {
+        text_el = match self.size {
             InputSize::Sm => text_el.text_xs(),
             InputSize::Md => text_el.text_sm(),
             InputSize::Lg => text_el,
         };
+
+        // Add click handler and keyboard event handling
+        if !disabled && !readonly {
+            text_el = text_el.cursor_text();
+
+            // Add click handler to start editing
+            if !editing {
+                if let Some(ref handler_rc) = on_edit_start_rc {
+                    let handler = handler_rc.clone();
+                    text_el = text_el.on_mouse_up(MouseButton::Left, move |_, window, cx| {
+                        handler(window, cx);
+                    });
+                }
+            }
+
+            // Add keyboard event handling
+            let on_edit_end_key = on_edit_end_rc.clone();
+            let on_text_change_key = on_text_change_rc.clone();
+            let is_editing = editing;
+            let edit_text_for_key = edit_text_clone.clone();
+
+            text_el = text_el.on_key_down(move |event, window, cx| {
+                if is_editing {
+                    // Editing mode keyboard handling
+                    match event.keystroke.key.as_str() {
+                        "enter" => {
+                            // Confirm edit
+                            if let Some(ref handler) = on_edit_end_key {
+                                let text = edit_text_for_key
+                                    .as_ref()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_default();
+                                handler(Some(text), window, cx);
+                            }
+                        }
+                        "escape" => {
+                            // Cancel edit
+                            if let Some(ref handler) = on_edit_end_key {
+                                handler(None, window, cx);
+                            }
+                        }
+                        _ => {
+                            // Handle text input
+                            if let Some(ref handler) = on_text_change_key {
+                                let current = edit_text_for_key
+                                    .as_ref()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_default();
+
+                                // Handle backspace
+                                let new_text = if event.keystroke.key == "backspace" {
+                                    if current.is_empty() {
+                                        current
+                                    } else {
+                                        current[..current.len() - 1].to_string()
+                                    }
+                                } else if event.keystroke.key.len() == 1 {
+                                    // Single character - append
+                                    let ch = event.keystroke.key.chars().next().unwrap();
+                                    format!("{}{}", current, ch)
+                                } else {
+                                    current
+                                };
+
+                                handler(new_text, window, cx);
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         input_wrapper = input_wrapper.child(text_el);
 

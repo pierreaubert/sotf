@@ -12,6 +12,10 @@ impl Showcase {
         editing_number: Option<&'static str>,
         edit_text: String,
         text_selected: bool,
+        input_value: String,
+        input_editing: bool,
+        input_edit_text: String,
+        input_selected: bool,
         entity: Entity<Self>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -19,7 +23,6 @@ impl Showcase {
         let toggles_label = cx.t(TranslationKey::LabelToggles);
         let checkboxes_label = cx.t(TranslationKey::LabelCheckboxes);
         let slider_label = cx.t(TranslationKey::LabelSlider);
-        let input_label = cx.t(TranslationKey::LabelInput);
         let small = cx.t(TranslationKey::LabelSmall);
         let medium = cx.t(TranslationKey::LabelMedium);
         let large = cx.t(TranslationKey::LabelLarge);
@@ -420,14 +423,17 @@ impl Showcase {
                             ),
                     ),
             )
-            // Text Input (display only)
+            // Text Input (NEW: Full keyboard editing!)
             .child(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
-                    .child(Text::new("Text Input (display only)").weight(TextWeight::Medium))
+                    .child(
+                        Text::new("✨ Text Input (NEW: Full keyboard editing!)")
+                            .weight(TextWeight::Medium),
+                    )
                     .child(
                         Text::new(
-                            "Note: Full keyboard editing requires GPUI TextElement integration",
+                            "Try: Click to edit, type text, Enter to confirm, Escape to cancel",
                         )
                         .size(TextSize::Xs)
                         .muted(true),
@@ -435,11 +441,53 @@ impl Showcase {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Md)
-                            .child(
-                                Input::new("input-default")
-                                    .value("Display value")
-                                    .variant(InputVariant::Default),
-                            )
+                            .child({
+                                let mut input = Input::new("input-editable")
+                                    .label("Editable Text")
+                                    .value(input_value.clone())
+                                    .placeholder("Click to edit...")
+                                    .variant(InputVariant::Default)
+                                    .editing(input_editing)
+                                    .on_edit_start({
+                                        let entity = entity.clone();
+                                        move |_window, cx| {
+                                            entity.update(cx, |showcase, _| {
+                                                showcase.input_editing = true;
+                                                showcase.input_edit_text = showcase.input_value.clone();
+                                                showcase.input_selected = true;
+                                            });
+                                        }
+                                    })
+                                    .on_text_change({
+                                        let entity = entity.clone();
+                                        move |text, _window, cx| {
+                                            entity.update(cx, |showcase, _| {
+                                                showcase.input_edit_text = text;
+                                                showcase.input_selected = false;
+                                            });
+                                        }
+                                    })
+                                    .on_edit_end({
+                                        let entity = entity.clone();
+                                        move |result, _window, cx| {
+                                            entity.update(cx, |showcase, _| {
+                                                if let Some(new_value) = result {
+                                                    showcase.input_value = new_value;
+                                                }
+                                                showcase.input_editing = false;
+                                                showcase.input_edit_text.clear();
+                                                showcase.input_selected = false;
+                                            });
+                                        }
+                                    });
+
+                                if input_editing {
+                                    input = input
+                                        .edit_text(input_edit_text.clone())
+                                        .text_selected(input_selected);
+                                }
+                                input
+                            })
                             .child(
                                 Input::new("input-filled")
                                     .placeholder("Filled variant...")
@@ -535,6 +583,26 @@ impl Showcase {
                                     .child(Text::new("Checkbox").weight(TextWeight::Medium))
                                     .child(
                                         Text::new("• Space/Enter: Toggle")
+                                            .size(TextSize::Xs)
+                                            .muted(true),
+                                    ),
+                            )
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(Text::new("Text Input ✨").weight(TextWeight::Medium))
+                                    .child(
+                                        Text::new("• Click to edit text")
+                                            .size(TextSize::Xs)
+                                            .muted(true),
+                                    )
+                                    .child(
+                                        Text::new("• Type, Backspace to edit")
+                                            .size(TextSize::Xs)
+                                            .muted(true),
+                                    )
+                                    .child(
+                                        Text::new("• Enter/Esc: Save/Cancel")
                                             .size(TextSize::Xs)
                                             .muted(true),
                                     ),
