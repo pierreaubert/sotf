@@ -5,7 +5,9 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
-use sotf_audio_player::PluginType;
+use sotf_audio_player::{PluginType, LoudnessData};
+use super::level_meters::{render_gradient_meter, db_to_position};
+use crate::app::Theme;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -97,16 +99,16 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
     match plugin_type {
         PluginType::EQ => "EQ",
         PluginType::Gain => "Gain",
-        PluginType::Upmixer => "Upmix",
-        PluginType::Compressor => "Comp",
-        PluginType::Limiter => "Limit",
+        PluginType::Upmixer => "Upmixer",
+        PluginType::Compressor => "Compressor",
+        PluginType::Limiter => "Limiter",
         PluginType::Gate => "Gate",
-        PluginType::LoudnessCompensation => "Loud",
-        PluginType::BinauralDecoder => "Bin",
-        PluginType::Convolution => "Conv",
-        PluginType::LoudnessMonitor => "LUFS",
-        PluginType::SpectrumAnalyzer => "Spec",
-        PluginType::ChannelMuteSolo => "M/S",
+        PluginType::LoudnessCompensation => "Loudness",
+        PluginType::BinauralDecoder => "Binaural",
+        PluginType::Convolution => "Convolution",
+        PluginType::LoudnessMonitor => "Monitoring",
+        PluginType::SpectrumAnalyzer => "Spectrum",
+        PluginType::ChannelMuteSolo => "Mixer",
     }
 }
 
@@ -247,6 +249,7 @@ impl PlayerView {
                             ),
                     )
                     .child(self.render_add_plugin_buttons(cx)),
+                    .child(self.render_add_plugin_buttons(cx)),
             )
             // Plugin modules strip
             .child(
@@ -259,18 +262,26 @@ impl PlayerView {
                     .py_3()
                     .overflow_x_scroll()
                     .min_h(px(140.0))
-                    // Signal flow indicator (input)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .child(div().text_xs().text_color(theme.text_muted).child("IN"))
-                            .child(div().w(px(2.0)).h(px(30.0)).bg(theme.accent)),
-                    )
+                    // Signal flow indicator (input) or Input Meter
+                    .child({
+                        let has_input_monitor = plugins_data.first().map(|(pt, _, _)| matches!(pt, PluginType::LoudnessMonitor)).unwrap_or(false);
+                        
+                        if has_input_monitor {
+                            // Input is always 2 channels (Stereo) for now
+                            self.render_rack_meter(cx, 2, "IN")
+                        } else {
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .child(div().text_xs().text_color(theme.text_muted).child("IN"))
+                                .child(div().w(px(2.0)).h(px(30.0)).bg(theme.accent))
+                        }
+                    })
                     // Plugin modules - inline creation with drag-and-drop
                     .children(modules_info.into_iter().map(
                         |(idx, color, icon, name, enabled, is_selected)| {
+
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
                                 source_index: idx,
@@ -328,6 +339,7 @@ impl PlayerView {
                                                             .move_plugin(source, target);
                                                         state.app.selected_plugin_index = target;
                                                         state.app.needs_plugin_update = true;
+                                                        state.app.update_level_meter_groups(); // Reconfigure metering
                                                     });
                                                     cx.notify();
                                                 }
@@ -381,6 +393,7 @@ impl PlayerView {
                                                          state.app.selected_plugin_index = state.app.plugin_chain.len() - 1;
                                                      }
                                                      state.app.needs_plugin_update = true;
+                                                     state.app.update_level_meter_groups(); // Reconfigure metering
                                                 });
                                                 cx.notify();
                                             }),
@@ -436,6 +449,7 @@ impl PlayerView {
                                                         view.state.update(cx, |state, _cx| {
                                                             state.app.plugin_chain.toggle_plugin(idx);
                                                             state.app.needs_plugin_update = true;
+                                                            state.app.update_level_meter_groups(); // Reconfigure metering
                                                         });
                                                         cx.notify();
                                                     })
@@ -466,15 +480,36 @@ impl PlayerView {
                                 }))
                         },
                     ))
-                    // Signal flow indicator (output)
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .child(div().text_xs().text_color(theme.text_muted).child("OUT"))
-                            .child(div().w(px(2.0)).h(px(30.0)).bg(theme.success)),
-                    )
+                    ))
+                    // Signal flow indicator (output) or Output Meter
+                    .child({
+                        let has_output_monitor = plugins_data.last().map(|(pt, _, _)| matches!(pt, PluginType::LoudnessMonitor)).unwrap_or(false);
+                        
+                        // Calculate output channels
+                        // Start with 2 (Input)
+                        let mut channels = 2;
+                        for (pt, enabled, _) in &plugins_data {
+                            if *enabled {
+                                match pt {
+                                    PluginType::Upmixer => channels = 6, // 5.1
+                                    PluginType::BinauralDecoder => channels = 2, // Stereo
+                                    _ => {},
+                                }
+                            }
+                        }
+
+                        if has_output_monitor {
+                            self.render_rack_meter(cx, channels, "OUT")
+                        } else {
+                             div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .child(div().text_xs().text_color(theme.text_muted).child("OUT"))
+                                .child(div().w(px(2.0)).h(px(30.0)).bg(theme.success))
+                        }
+                    })
+                    // Empty state
                     // Empty state
                     .when(is_empty, |d| {
                         d.child(
@@ -487,6 +522,67 @@ impl PlayerView {
                                 .child("Click + Add Plugin to insert effects"),
                         )
                     }),
+            )
+    }
+
+    /// Render a compact level meter group for the rack
+    fn render_rack_meter(&self, cx: &mut Context<Self>, channels: usize, label: &str) -> impl IntoElement {
+        let (theme, loudness) = {
+            let state = self.state.read(cx);
+            (state.app.theme.clone(), state.app.loudness_info.clone())
+        };
+
+        let theme_c = theme.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .h_full()
+            .child(div().text_xs().text_color(theme.text_muted).mb_1().child(label))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(1.0))
+                    .h(px(70.0)) // Fixed height for rack
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(1.0))
+                            .children((0..channels).map(|i| {
+                                let val_db = if let Some(l) = &loudness {
+                                    let peak = l.channel_peaks.get(i).copied().unwrap_or(0.0);
+                                    if peak > 0.0001 {
+                                        20.0 * peak.log10()
+                                    } else {
+                                        -60.0
+                                    }
+                                } else {
+                                    -60.0
+                                };
+
+                                let fill_ratio = db_to_position(val_db);
+                                let yellow_threshold = db_to_position(-6.0);
+                                let red_threshold = db_to_position(-1.0);
+                                let name = match i {
+                                    0 => "L",
+                                    1 => "R",
+                                    2 => "C",
+                                    3 => "LFE",
+                                    4 => "Ls",
+                                    5 => "Rs",
+                                    _ => ".",
+                                };
+
+                                render_gradient_meter(
+                                    fill_ratio,
+                                    yellow_threshold,
+                                    red_threshold,
+                                    name.to_string(),
+                                    &theme_c,
+                                )
+                            }))
+                    )
             )
     }
 
@@ -557,6 +653,7 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.plugin_chain.add_plugin(&pt);
                                     state.app.needs_plugin_update = true;
+                                    state.app.update_level_meter_groups(); // Reconfigure metering
                                 });
                                 cx.notify();
                             }),
@@ -659,6 +756,7 @@ impl PlayerView {
                                                 view.state.update(cx, |state, _cx| {
                                                     let idx = state.app.selected_plugin_index;
                                                     state.app.move_plugin_up(idx);
+                                                    state.app.update_level_meter_groups();
                                                 });
                                                 cx.notify();
                                             }),
@@ -681,6 +779,7 @@ impl PlayerView {
                                                 view.state.update(cx, |state, _cx| {
                                                     let idx = state.app.selected_plugin_index;
                                                     state.app.move_plugin_down(idx);
+                                                    state.app.update_level_meter_groups();
                                                 });
                                                 cx.notify();
                                             }),
@@ -709,6 +808,7 @@ impl PlayerView {
                                                     let idx = state.app.selected_plugin_index;
                                                     state.app.plugin_chain.toggle_plugin(idx);
                                                     state.app.needs_plugin_update = true;
+                                                    state.app.update_level_meter_groups(); // Reconfigure metering
                                                 });
                                                 cx.notify();
                                             }),
@@ -772,6 +872,7 @@ impl PlayerView {
                                                             state.app.plugin_chain.len() - 1;
                                                     }
                                                     state.app.needs_plugin_update = true;
+                                                    state.app.update_level_meter_groups(); // Reconfigure metering
                                                 });
                                                 cx.notify();
                                             }),

@@ -10,23 +10,20 @@ repository.workspace = true
 [dependencies]
 # GPUI framework
 gpui = { git = "https://github.com/zed-industries/zed.git" }
-
-# GPUI UI Kit
 gpui-ui-kit = { path = "../../gpui-ui-kit" }
-
-# GPUI Plotting (Plotly Express-style charts)
 gpui-px = { path = "../../gpui-px" }
 gpui-d3rs = { path = "../../gpui-d3rs" }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-audio-player = { path = ".." }
-
-# Audio engine
 sotf-audio-plugins = { path = "../../sotf-audio-plugins" }
 sotf-audio-engine = { path = "../../sotf-audio-engine" }
+
+# math libraries
 autoeq-iir = { path = "../../math-iir" }
 autoeq = { path = "../../autoeq" }
 autoeq-de = { path = "../../math-de" }
+autoeq-roomsim = { path = "../../autoeq-roomsim" }
 
 # Synchronous mutex (faster than std::sync::Mutex)
 parking_lot = { workspace = true }
@@ -37,9 +34,12 @@ serde_json = { workspace = true }
 
 # File system and utilities
 walkdir = { workspace = true }
-id3 = "1.16"
-metaflac = "0.2"
-rfd = "0.15"
+rfd = { workspace = true }
+clap = { workspace = true }
+
+# Audio
+id3 = { workspace = true }
+metaflac = { workspace = true }
 symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-metadata = { workspace = true }
@@ -53,9 +53,6 @@ symphonia-format-isomp4 = { workspace = true }
 # Testing utilities
 tempfile = { workspace = true }
 
-# CLI
-clap = { workspace = true }
-
 # Logging (GPUI-specific)
 log = { workspace = true }
 env_logger = { workspace = true }
@@ -65,6 +62,7 @@ smol = { workspace = true }
 
 # Array processing
 ndarray = { workspace = true }
+num-complex = { workspace = true }
 
 # Asset embedding
 rust-embed = { workspace = true }

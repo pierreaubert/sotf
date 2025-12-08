@@ -59,12 +59,17 @@ impl PlayerView {
                         // scroll_y is negative when scrolling down
                         let scroll_position = scroll_y.abs();
 
+                        // Calculate how far the user can scroll (content beyond viewport)
+                        let scrollable_distance = (estimated_height - window_height).max(0.0);
+                        // How much scroll room remains below current position
+                        let remaining_scroll = scrollable_distance - scroll_position;
+
                         // Load more if:
-                        // 1. Content doesn't fill the viewport (need more to enable scrolling)
-                        // 2. User has scrolled close to the bottom (within 500px)
-                        let content_fits_in_window = estimated_height <= window_height;
-                        let near_bottom = scroll_position + window_height > estimated_height - 500.0;
-                        let should_load = item_count < total_albums && (content_fits_in_window || near_bottom);
+                        // 1. Content doesn't fill viewport + 1 screen buffer (preload ahead)
+                        // 2. User has scrolled and is within 1000px of the bottom
+                        let needs_more_content = estimated_height < window_height * 2.0;
+                        let near_bottom = remaining_scroll < 1000.0;
+                        let should_load = item_count < total_albums && (needs_more_content || near_bottom);
 
                         // If we should load more, do it
                         if should_load {

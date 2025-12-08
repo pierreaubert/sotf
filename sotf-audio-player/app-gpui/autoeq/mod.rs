@@ -3,7 +3,7 @@ pub mod headphone_eq;
 pub mod params;
 pub mod result_graphs;
 pub mod speaker_eq;
-// pub mod spinorama_calculation; // Disabled - missing autoeq_roomsim dependency
+pub mod spinorama_calculation; // Disabled - missing autoeq_roomsim dependency
 
 
 // Re-export commonly used types

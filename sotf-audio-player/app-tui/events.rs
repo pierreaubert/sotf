@@ -400,12 +400,12 @@ fn handle_directory_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
             let _ = app.clean_library_database();
             None
         }
-        KeyCode::Char('r') => {
+        KeyCode::Char('R') => {
             // Start ReplayGain scan for all tracks
             let _ = app.start_replay_gain_scan();
             None
         }
-        KeyCode::Char('R') => {
+        KeyCode::Char('S') => {
             // Force rescan all files (ignores modification time, preserves ReplayGain)
             app.start_force_library_scan();
             None

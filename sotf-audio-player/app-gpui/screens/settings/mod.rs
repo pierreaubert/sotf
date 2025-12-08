@@ -85,19 +85,19 @@ impl PlayerView {
                                 cx,
                             ))
                             .child(self.render_settings_tab(
-                                "Room EQ",
+                                "Room EQ (alpha)",
                                 crate::app::SettingsTab::RoomEQ,
                                 &theme,
                                 cx,
                             ))
                             .child(self.render_settings_tab(
-                                "Headphone",
+                                "Headphone (beta)",
                                 crate::app::SettingsTab::Headphone,
                                 &theme,
                                 cx,
                             ))
                             .child(self.render_settings_tab(
-                                "Spinorama",
+                                "Spinorama (alpha)",
                                 crate::app::SettingsTab::Spinorama,
                                 &theme,
                                 cx,
