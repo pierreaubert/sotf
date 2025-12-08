@@ -1,0 +1,27 @@
+[package]
+name = "gpui-au"
+version = "0.5.3"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+parking_lot = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# GPUI framework for UI
+gpui = { workspace = true }
+
+# Low-level macOS bindings for NSView extraction
+objc = "0.2"
+cocoa = "0.26"
+
+# Audio player types and UI
+sotf-audio-player = { path = "../sotf-audio-player" }
+autoeq-iir = { path = "../math-iir" }
+gpui-ui-kit = { path = "../gpui-ui-kit" }
+
+# Embed assets
+rust-embed = "8"
