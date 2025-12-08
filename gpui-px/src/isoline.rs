@@ -14,7 +14,7 @@ use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ContourConfig, render_contour};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
 /// Isoline chart builder (unfilled contour lines).
 #[derive(Debug, Clone)]

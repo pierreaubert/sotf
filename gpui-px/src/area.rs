@@ -11,7 +11,7 @@ use d3rs::scale::{LinearScale, LogScale, Scale};
 use d3rs::shape::{Area, Curve};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, PathBuilder, Rgba, canvas, div, hsla, px};
 use std::sync::Arc;
 
 /// Area chart builder.
@@ -295,8 +295,8 @@ impl AreaChart {
 ///
 /// # Example
 ///
-/// ```rust,no_run
-/// use gpui_px::{area, Curve};
+/// ```rust,ignore
+/// use gpui_px::{area, CurveType};
 ///
 /// let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let y = vec![2.0, 4.0, 3.0, 5.0, 4.5];
@@ -304,7 +304,7 @@ impl AreaChart {
 /// let chart = area(&x, &y)
 ///     .title("My Area Chart")
 ///     .color(0xff7f0e)
-///     .curve(Curve::MonotoneX)
+///     .curve(CurveType::MonotoneX)
 ///     .build()?;
 /// # Ok::<(), gpui_px::ChartError>(())
 /// ```

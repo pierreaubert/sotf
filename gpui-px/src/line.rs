@@ -13,7 +13,7 @@ use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{CurveType, LineConfig, LinePoint, render_line};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
 /// Line chart builder.
 #[derive(Debug, Clone)]

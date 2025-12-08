@@ -190,8 +190,8 @@ mod tests {
         let start = ColorScale::Viridis.map(0.0);
         let end = ColorScale::Viridis.map(1.0);
         // Viridis starts dark purple, ends yellow
-        assert!(start.r() < 0.3);
-        assert!(end.g() > 0.8);
+        assert!(start.r < 0.3);
+        assert!(end.g > 0.8);
     }
 
     #[test]
@@ -199,8 +199,8 @@ mod tests {
         let start = ColorScale::Plasma.map(0.0);
         let end = ColorScale::Plasma.map(1.0);
         // Plasma starts dark blue, ends light yellow
-        assert!(start.b() > 0.3);
-        assert!(end.r() > 0.8);
+        assert!(start.b > 0.3);
+        assert!(end.r > 0.8);
     }
 
     #[test]
@@ -209,9 +209,9 @@ mod tests {
         let mid = ColorScale::Heat.map(0.5);
         let high = ColorScale::Heat.map(1.0);
         // Low is blue, mid is white-ish, high is red
-        assert!(low.b() > low.r());
-        assert!(mid.r() > 0.9 && mid.g() > 0.9 && mid.b() > 0.9);
-        assert!(high.r() > high.b());
+        assert!(low.b > low.r);
+        assert!(mid.r > 0.9 && mid.g > 0.9 && mid.b > 0.9);
+        assert!(high.r > high.b);
     }
 
     #[test]
@@ -219,8 +219,8 @@ mod tests {
         let start = ColorScale::Greys.map(0.0);
         let end = ColorScale::Greys.map(1.0);
         // Start is white, end is black
-        assert!(start.r() > 0.99 && start.g() > 0.99 && start.b() > 0.99);
-        assert!(end.r() < 0.01 && end.g() < 0.01 && end.b() < 0.01);
+        assert!(start.r > 0.99 && start.g > 0.99 && start.b > 0.99);
+        assert!(end.r < 0.01 && end.g < 0.01 && end.b < 0.01);
     }
 
     #[test]
@@ -230,7 +230,7 @@ mod tests {
         });
         let mid = scale.map(0.5);
         // Mid should be yellow-ish (red + green)
-        assert!(mid.r() > 0.4 && mid.g() > 0.4);
+        assert!(mid.r > 0.4 && mid.g > 0.4);
     }
 
     #[test]
@@ -242,8 +242,8 @@ mod tests {
         let at_one = ColorScale::Viridis.map(1.0);
 
         // Should be clamped to endpoints
-        assert_eq!(below.r(), at_zero.r());
-        assert_eq!(above.r(), at_one.r());
+        assert_eq!(below.r, at_zero.r);
+        assert_eq!(above.r, at_one.r);
     }
 
     #[test]
@@ -251,9 +251,9 @@ mod tests {
         let f = ColorScale::Viridis.to_fn();
         let direct = ColorScale::Viridis.map(0.5);
         let via_fn = f(0.5);
-        assert_eq!(direct.r(), via_fn.r());
-        assert_eq!(direct.g(), via_fn.g());
-        assert_eq!(direct.b(), via_fn.b());
+        assert_eq!(direct.r, via_fn.r);
+        assert_eq!(direct.g, via_fn.g);
+        assert_eq!(direct.b, via_fn.b);
     }
 
     #[test]

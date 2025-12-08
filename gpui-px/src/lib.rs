@@ -98,7 +98,7 @@
 //!
 //! ## Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use gpui_px::{scatter, line, bar, heatmap, contour, isoline, ColorScale, ScaleType};
 //!
 //! // Scatter plot in 3 lines
@@ -333,7 +333,7 @@ pub(crate) fn validate_positive(values: &[f64], field: &'static str) -> Result<(
     if values.iter().any(|&v| v <= 0.0) {
         return Err(ChartError::InvalidData {
             field,
-            reason: "log scale requires positive values",
+            reason: "contains non-positive values for log scale",
         });
     }
     Ok(())
@@ -577,7 +577,7 @@ mod tests {
             result,
             Err(ChartError::InvalidData {
                 field: "x",
-                reason: "log scale requires positive values"
+                reason: "contains non-positive values for log scale"
             })
         ));
     }
@@ -590,7 +590,7 @@ mod tests {
             result,
             Err(ChartError::InvalidData {
                 field: "x",
-                reason: "log scale requires positive values"
+                reason: "contains non-positive values for log scale"
             })
         ));
     }

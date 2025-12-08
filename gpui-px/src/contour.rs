@@ -14,7 +14,7 @@ use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ContourConfig, render_contour_bands};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
 /// Contour chart builder (filled bands between thresholds).
 #[derive(Clone)]

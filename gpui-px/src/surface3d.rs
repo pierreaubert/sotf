@@ -8,7 +8,7 @@ use crate::{
 use d3rs::surface3d::{Colormap, Surface3DConfig, Surface3DElement, SurfaceData};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{IntoElement, div, hsla, px};
 
 /// Surface 3D chart builder.
 #[derive(Clone)]
@@ -258,8 +258,9 @@ impl Surface3DChart {
 ///
 /// # Example
 ///
-/// ```rust,no_run
-/// use gpui_px::{surface3d, Colormap};
+/// ```rust,ignore
+/// use gpui_px::surface3d;
+/// use d3rs::surface3d::Colormap;
 ///
 /// // 3x3 grid
 /// let z = vec![

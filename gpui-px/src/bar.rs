@@ -13,7 +13,7 @@ use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{BarConfig, BarDatum, render_bars};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
 /// Bar chart builder.
 #[derive(Debug, Clone)]

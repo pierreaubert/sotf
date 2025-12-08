@@ -13,7 +13,7 @@ use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ContourConfig, HeatmapData, render_heatmap};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
 /// Heatmap chart builder.
 #[derive(Clone)]
@@ -557,7 +557,7 @@ mod tests {
             result,
             Err(ChartError::InvalidData {
                 field: "x",
-                reason: "log scale requires positive values"
+                reason: "contains non-positive values for log scale"
             })
         ));
     }

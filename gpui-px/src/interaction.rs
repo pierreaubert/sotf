@@ -427,7 +427,7 @@ mod gpui_render {
     use super::*;
     use d3rs::zoom::ZoomState;
     use gpui::prelude::*;
-    use gpui::*;
+    use gpui::{IntoElement, div, px, hsla};
 
     /// Render a brush selection overlay.
     ///

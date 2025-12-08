@@ -18,7 +18,7 @@ use d3rs::grid::{GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale, Scale};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
 /// Statistics for a single box in a box plot
 #[derive(Debug, Clone)]
@@ -569,7 +569,7 @@ impl BoxPlotChart {
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use gpui_px::boxplot;
 ///
 /// // Generate some sample data

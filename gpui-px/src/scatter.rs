@@ -13,7 +13,7 @@ use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{ScatterConfig, ScatterPoint, render_scatter};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, IntoElement, div, hsla, px, rgb};
 
 /// Scatter chart builder.
 #[derive(Debug, Clone)]

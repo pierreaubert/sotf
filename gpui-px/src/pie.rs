@@ -9,7 +9,7 @@ use d3rs::color::D3Color;
 use d3rs::shape::{Arc, Pie};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{IntoElement, PathBuilder, canvas, div, hsla, px, point};
 
 /// Default color palette (Plotly)
 const DEFAULT_PALETTE: [u32; 10] = [
