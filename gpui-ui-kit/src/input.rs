@@ -233,10 +233,7 @@ impl Input {
     }
 
     /// Set change handler (called when input value changes)
-    pub fn on_change(
-        mut self,
-        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_change(mut self, handler: impl Fn(&str, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
         self
     }
@@ -312,7 +309,9 @@ impl RenderOnce for Input {
         if disabled {
             input_wrapper = input_wrapper.opacity(0.5).cursor_not_allowed();
         } else if !readonly {
-            input_wrapper = input_wrapper.cursor_text().hover(move |s| s.border_color(border_hover));
+            input_wrapper = input_wrapper
+                .cursor_text()
+                .hover(move |s| s.border_color(border_hover));
         }
 
         let placeholder_color = self.placeholder_color.unwrap_or(theme.placeholder);
@@ -320,7 +319,8 @@ impl RenderOnce for Input {
 
         // Left icon
         if let Some(icon) = &self.icon_left {
-            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon.clone()));
+            input_wrapper =
+                input_wrapper.child(div().text_color(placeholder_color).child(icon.clone()));
         }
 
         // Input text/placeholder (display only)
@@ -348,14 +348,16 @@ impl RenderOnce for Input {
 
         // Right icon
         if let Some(icon) = &self.icon_right {
-            input_wrapper = input_wrapper.child(div().text_color(placeholder_color).child(icon.clone()));
+            input_wrapper =
+                input_wrapper.child(div().text_color(placeholder_color).child(icon.clone()));
         }
 
         container = container.child(input_wrapper);
 
         // Error message
         if let Some(error) = &self.error {
-            container = container.child(div().text_xs().text_color(theme.error).child(error.clone()));
+            container =
+                container.child(div().text_xs().text_color(theme.error).child(error.clone()));
         }
 
         container

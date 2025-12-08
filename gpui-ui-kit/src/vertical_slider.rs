@@ -297,7 +297,10 @@ impl VerticalSlider {
 impl RenderOnce for VerticalSlider {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
-        let theme = self.theme.clone().unwrap_or_else(|| VerticalSliderTheme::from(&global_theme));
+        let theme = self
+            .theme
+            .clone()
+            .unwrap_or_else(|| VerticalSliderTheme::from(&global_theme));
         let selected = self.selected;
         let disabled = self.disabled;
 

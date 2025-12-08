@@ -245,7 +245,8 @@ impl MiniApp {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::English);
                     });
-                    let current_language = cx.try_global::<I18nState>()
+                    let current_language = cx
+                        .try_global::<I18nState>()
                         .map(|state| state.language)
                         .unwrap_or(Language::English);
                     let menus = Self::build_menus_with_language(&config_for_lang, current_language);
@@ -258,7 +259,8 @@ impl MiniApp {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::French);
                     });
-                    let current_language = cx.try_global::<I18nState>()
+                    let current_language = cx
+                        .try_global::<I18nState>()
                         .map(|state| state.language)
                         .unwrap_or(Language::English);
                     let menus = Self::build_menus_with_language(&config_for_lang, current_language);
@@ -271,7 +273,8 @@ impl MiniApp {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::German);
                     });
-                    let current_language = cx.try_global::<I18nState>()
+                    let current_language = cx
+                        .try_global::<I18nState>()
                         .map(|state| state.language)
                         .unwrap_or(Language::English);
                     let menus = Self::build_menus_with_language(&config_for_lang, current_language);
@@ -284,7 +287,8 @@ impl MiniApp {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::Spanish);
                     });
-                    let current_language = cx.try_global::<I18nState>()
+                    let current_language = cx
+                        .try_global::<I18nState>()
                         .map(|state| state.language)
                         .unwrap_or(Language::English);
                     let menus = Self::build_menus_with_language(&config_for_lang, current_language);
@@ -297,7 +301,8 @@ impl MiniApp {
                     cx.update_global::<I18nState, _>(|state, _cx| {
                         state.set_language(Language::Japanese);
                     });
-                    let current_language = cx.try_global::<I18nState>()
+                    let current_language = cx
+                        .try_global::<I18nState>()
                         .map(|state| state.language)
                         .unwrap_or(Language::English);
                     let menus = Self::build_menus_with_language(&config_for_lang, current_language);
@@ -307,7 +312,8 @@ impl MiniApp {
             }
 
             // Build menu bar
-            let current_language = cx.try_global::<I18nState>()
+            let current_language = cx
+                .try_global::<I18nState>()
                 .map(|state| state.language)
                 .unwrap_or(config_clone.initial_language);
             let menus = Self::build_menus_with_language(&config_clone, current_language);

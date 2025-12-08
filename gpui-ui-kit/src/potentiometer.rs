@@ -356,9 +356,27 @@ impl RenderOnce for Potentiometer {
         let center = knob_size / 2.0;
         // Make indicator larger for Lg size to be more visible
         let indicator_size = match self.size {
-            PotentiometerSize::Sm => if selected { 6.0 } else { 4.0 },
-            PotentiometerSize::Md => if selected { 6.0 } else { 4.0 },
-            PotentiometerSize::Lg => if selected { 10.0 } else { 8.0 },
+            PotentiometerSize::Sm => {
+                if selected {
+                    6.0
+                } else {
+                    4.0
+                }
+            }
+            PotentiometerSize::Md => {
+                if selected {
+                    6.0
+                } else {
+                    4.0
+                }
+            }
+            PotentiometerSize::Lg => {
+                if selected {
+                    10.0
+                } else {
+                    8.0
+                }
+            }
         };
 
         let x = center + radius * angle_rad.cos() - (indicator_size / 2.0);

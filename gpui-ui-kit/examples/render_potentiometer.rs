@@ -16,7 +16,7 @@ impl Showcase {
         let large_label = cx.t(TranslationKey::LabelLarge);
         let theme = cx.theme();
 
-    VStack::new()
+        VStack::new()
         .spacing(StackSpacing::Lg)
         .child(self.section_header(section_title))
         .child(

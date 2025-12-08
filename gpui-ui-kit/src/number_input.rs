@@ -476,10 +476,9 @@ impl RenderOnce for NumberInput {
             value_field = value_field.cursor_text();
             if let Some(ref handler_rc) = on_edit_start_rc {
                 let handler = handler_rc.clone();
-                value_field =
-                    value_field.on_mouse_up(MouseButton::Left, move |_, window, cx| {
-                        handler(window, cx);
-                    });
+                value_field = value_field.on_mouse_up(MouseButton::Left, move |_, window, cx| {
+                    handler(window, cx);
+                });
             }
         }
 
@@ -512,10 +511,7 @@ impl RenderOnce for NumberInput {
                                     text.trim()
                                 };
 
-                                let parsed = text
-                                    .parse::<f64>()
-                                    .ok()
-                                    .map(|v| v.clamp(min, max));
+                                let parsed = text.parse::<f64>().ok().map(|v| v.clamp(min, max));
                                 handler(parsed, window, cx);
                             }
                         }
@@ -543,11 +539,7 @@ impl RenderOnce for NumberInput {
                                 } else if event.keystroke.key.len() == 1 {
                                     // Single character - append if valid for number
                                     let ch = event.keystroke.key.chars().next().unwrap();
-                                    if ch.is_ascii_digit()
-                                        || ch == '.'
-                                        || ch == '-'
-                                        || ch == '+'
-                                    {
+                                    if ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == '+' {
                                         format!("{}{}", current, ch)
                                     } else {
                                         current

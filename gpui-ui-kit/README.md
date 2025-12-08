@@ -401,9 +401,11 @@ cargo test --test component_tests  # Component API tests
 ```
 
 **Test Coverage**:
-- ✅ **I18n Tests**: Verify all translations exist across 5 languages (English, French, German, Spanish, Japanese)
-- ✅ **Component Tests**: Ensure component APIs work correctly and configurations are valid
-- ✅ **25 total tests** covering critical functionality
+- ✅ **Interaction Tests** (29 tests): Verify all stateful components support mouse and keyboard events
+- ✅ **I18n Tests** (11 tests): Verify all translations exist across 5 languages (English, French, German, Spanish, Japanese)
+- ✅ **Component Tests** (14 tests): Ensure component APIs work correctly and configurations are valid
+- ✅ **Library Tests** (7 tests): Verify MiniApp configuration and utilities
+- ✅ **61 total tests** covering critical functionality
 
 See [`TESTING.md`](TESTING.md) for detailed testing guide and [`tests/README.md`](tests/README.md) for quick reference.
 

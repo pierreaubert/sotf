@@ -177,7 +177,12 @@ impl Accordion {
         // Handle Side layout separately since it needs different structure
         let is_side = matches!(self.orientation, AccordionOrientation::Side);
         if is_side {
-            let Accordion { items, expanded, on_change, .. } = self;
+            let Accordion {
+                items,
+                expanded,
+                on_change,
+                ..
+            } = self;
             let on_change = on_change.map(|h| std::rc::Rc::new(h));
             return Self::build_side_layout_static(items, expanded, theme, on_change);
         }
@@ -272,10 +277,7 @@ impl Accordion {
             // Content (only if expanded)
             if is_expanded {
                 if let Some(content) = item.content {
-                    let mut content_div = div()
-                        .px_4()
-                        .py_3()
-                        .bg(theme.content_bg);
+                    let mut content_div = div().px_4().py_3().bg(theme.content_bg);
 
                     // Add border based on orientation
                     content_div = if is_vertical {
@@ -299,7 +301,9 @@ impl Accordion {
         items: Vec<AccordionItem>,
         expanded: Vec<SharedString>,
         theme: AccordionTheme,
-        on_change: Option<std::rc::Rc<Box<dyn Fn(&SharedString, bool, &mut Window, &mut App) + 'static>>>,
+        on_change: Option<
+            std::rc::Rc<Box<dyn Fn(&SharedString, bool, &mut Window, &mut App) + 'static>>,
+        >,
     ) -> Div {
         let mut container = div()
             .flex()
@@ -321,7 +325,10 @@ impl Accordion {
             let is_first = idx == 0;
 
             let mut header = div()
-                .id(SharedString::from(format!("accordion-header-side-{}", item_id)))
+                .id(SharedString::from(format!(
+                    "accordion-header-side-{}",
+                    item_id
+                )))
                 .flex()
                 .items_center()
                 .justify_center()
@@ -355,11 +362,7 @@ impl Accordion {
             }
 
             // Vertical text - display each character on its own line
-            let mut text_container = div()
-                .flex()
-                .flex_col()
-                .items_center()
-                .gap_1();
+            let mut text_container = div().flex().flex_col().items_center().gap_1();
 
             // Show full text vertically when expanded, abbreviated when closed
             if is_expanded {
@@ -397,10 +400,7 @@ impl Accordion {
         container = container.child(headers_container);
 
         // Right side: content area - show all expanded items side by side
-        let mut content_container = div()
-            .flex()
-            .flex_row()
-            .flex_1();
+        let mut content_container = div().flex().flex_row().flex_1();
 
         for item in items.into_iter() {
             let is_expanded = expanded.contains(&item.id);

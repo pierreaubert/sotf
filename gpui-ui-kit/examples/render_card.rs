@@ -1,10 +1,10 @@
 impl Showcase {
     fn render_card_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
-    let section_title = cx.t(TranslationKey::SectionCards);
-    let cancel = cx.t(TranslationKey::ButtonCancel);
-    let save = cx.t(TranslationKey::ButtonSave);
+        let section_title = cx.t(TranslationKey::SectionCards);
+        let cancel = cx.t(TranslationKey::ButtonCancel);
+        let save = cx.t(TranslationKey::ButtonSave);
 
-    VStack::new()
+        VStack::new()
             .spacing(StackSpacing::Lg)
             .child(self.section_header(section_title))
             .child(

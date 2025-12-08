@@ -235,10 +235,7 @@ impl Select {
     }
 
     /// Set toggle handler (called when trigger is clicked)
-    pub fn on_toggle(
-        mut self,
-        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_toggle(mut self, handler: impl Fn(bool, &mut Window, &mut App) + 'static) -> Self {
         self.on_toggle = Some(Box::new(handler));
         self
     }
@@ -254,7 +251,6 @@ impl Select {
 
     /// Build into element
     fn build(self, theme: &SelectTheme) -> Div {
-
         let (py, _text_size_class) = match self.size {
             SelectSize::Sm => (px(4.0), "sm"),
             SelectSize::Md => (px(8.0), "md"),
@@ -363,7 +359,11 @@ impl Select {
                         }
                         "down" | "up" if currently_open => {
                             // Navigate options
-                            let delta = if event.keystroke.key == "down" { 1 } else { -1_i32 };
+                            let delta = if event.keystroke.key == "down" {
+                                1
+                            } else {
+                                -1_i32
+                            };
                             let new_idx = if let Some(idx) = current_highlight {
                                 let new = idx as i32 + delta;
                                 if new < 0 {
@@ -462,12 +462,10 @@ impl Select {
                     // Add click handler for non-disabled, non-selected options
                     if let Some(ref handler) = on_change_rc {
                         let handler_click = handler.clone();
-                        option_el = option_el.on_mouse_up(
-                            MouseButton::Left,
-                            move |_event, window, cx| {
+                        option_el =
+                            option_el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
                                 handler_click(&option_value, window, cx);
-                            },
-                        );
+                            });
                     }
                 }
 
