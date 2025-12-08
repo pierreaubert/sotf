@@ -99,7 +99,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use gpui_px::{scatter, line, bar, heatmap, contour, isoline, ColorScale, ScaleType};
+//! use gpui_px::{scatter, line, bar, heatmap, contour, isoline, treemap, TreemapNode, TilingMethod, ColorScale, ScaleType};
 //!
 //! // Scatter plot in 3 lines
 //! let chart = scatter(&x_data, &y_data)
@@ -146,6 +146,15 @@
 //!     .color(0x333333)
 //!     .stroke_width(1.5)
 //!     .build()?;
+//!
+//! // Treemap for hierarchical data
+//! let root = TreemapNode::new("Sales", 0.0)
+//!     .add_child(TreemapNode::new("East", 45.0))
+//!     .add_child(TreemapNode::new("West", 55.0));
+//! let chart = treemap(&root)
+//!     .title("Regional Sales")
+//!     .tiling_method(TilingMethod::Squarify)
+//!     .build()?;
 //! ```
 
 mod area;
@@ -161,6 +170,7 @@ mod line;
 mod pie;
 mod scatter;
 mod surface3d;
+mod treemap;
 
 pub use area::{AreaChart, area};
 pub use bar::{BarChart, bar};
@@ -174,6 +184,7 @@ pub use line::{LineChart, line};
 pub use pie::{PieChart, donut, pie};
 pub use scatter::{ScatterChart, scatter};
 pub use surface3d::{Surface3DChart, surface3d};
+pub use treemap::{TilingMethod, Treemap, TreemapNode, treemap};
 
 // Re-export d3rs types users might need
 pub use d3rs::color::D3Color;

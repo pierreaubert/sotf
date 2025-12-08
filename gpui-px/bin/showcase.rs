@@ -30,6 +30,7 @@ enum ChartSection {
     Heatmap,
     Contour,
     Isoline,
+    Treemap,
     Gallery,
 }
 
@@ -45,6 +46,7 @@ impl ChartSection {
             ChartSection::Heatmap,
             ChartSection::Contour,
             ChartSection::Isoline,
+            ChartSection::Treemap,
             ChartSection::Gallery,
         ]
     }
@@ -60,6 +62,7 @@ impl ChartSection {
             ChartSection::Heatmap => "Heatmap",
             ChartSection::Contour => "Contour",
             ChartSection::Isoline => "Isoline",
+            ChartSection::Treemap => "Treemap",
             ChartSection::Gallery => "Gallery",
         }
     }
@@ -180,6 +183,7 @@ impl ShowcaseApp {
             ChartSection::Heatmap => self.render_heatmap_demo(cx),
             ChartSection::Contour => self.render_contour_demo(cx),
             ChartSection::Isoline => self.render_isoline_demo(),
+            ChartSection::Treemap => self.render_treemap_demo(),
             ChartSection::Gallery => self.render_gallery(),
         };
 
@@ -233,7 +237,8 @@ impl ShowcaseApp {
                     .child(self.feature_item("Bar", "Categorical data comparisons"))
                     .child(self.feature_item("Heatmap", "2D scalar fields with color scales"))
                     .child(self.feature_item("Contour", "Filled bands between thresholds"))
-                    .child(self.feature_item("Isoline", "Unfilled contour lines at specific levels")),
+                    .child(self.feature_item("Isoline", "Unfilled contour lines at specific levels"))
+                    .child(self.feature_item("Treemap", "Hierarchical data as nested rectangles")),
             )
             .child(
                 div()
@@ -988,6 +993,234 @@ impl ShowcaseApp {
                     .child(div().text_sm().child("• Auto-generated or custom levels"))
                     .child(div().text_sm().child("• Line opacity control")),
             )
+    }
+
+    // ========================================================================
+    // Treemap Section
+    // ========================================================================
+
+    fn render_treemap_demo(&self) -> Div {
+        use gpui_px::{treemap, TreemapNode, TilingMethod};
+        use d3rs::color::ColorScheme;
+
+        // Create sample hierarchical data representing a file system
+        let file_system = TreemapNode::with_children(
+            "root",
+            vec![
+                TreemapNode::with_children(
+                    "src",
+                    vec![
+                        TreemapNode::new("main.rs", 45.0),
+                        TreemapNode::new("lib.rs", 32.0),
+                        TreemapNode::new("utils.rs", 18.0),
+                        TreemapNode::with_children(
+                            "components",
+                            vec![
+                                TreemapNode::new("button.rs", 12.0),
+                                TreemapNode::new("input.rs", 15.0),
+                                TreemapNode::new("layout.rs", 20.0),
+                            ],
+                        ),
+                    ],
+                ),
+                TreemapNode::with_children(
+                    "tests",
+                    vec![
+                        TreemapNode::new("integration.rs", 28.0),
+                        TreemapNode::new("unit.rs", 22.0),
+                    ],
+                ),
+                TreemapNode::with_children(
+                    "docs",
+                    vec![
+                        TreemapNode::new("README.md", 8.0),
+                        TreemapNode::new("CONTRIBUTING.md", 5.0),
+                    ],
+                ),
+                TreemapNode::new("Cargo.toml", 6.0),
+            ],
+        );
+
+        // Sales data example
+        let sales_data = TreemapNode::with_children(
+            "Global Sales",
+            vec![
+                TreemapNode::with_children(
+                    "North America",
+                    vec![
+                        TreemapNode::new("USA", 450.0),
+                        TreemapNode::new("Canada", 85.0),
+                        TreemapNode::new("Mexico", 65.0),
+                    ],
+                ),
+                TreemapNode::with_children(
+                    "Europe",
+                    vec![
+                        TreemapNode::new("Germany", 180.0),
+                        TreemapNode::new("France", 145.0),
+                        TreemapNode::new("UK", 160.0),
+                        TreemapNode::new("Spain", 95.0),
+                    ],
+                ),
+                TreemapNode::with_children(
+                    "Asia",
+                    vec![
+                        TreemapNode::new("China", 320.0),
+                        TreemapNode::new("Japan", 220.0),
+                        TreemapNode::new("India", 175.0),
+                    ],
+                ),
+            ],
+        );
+
+        // Portfolio allocation
+        let portfolio = TreemapNode::with_children(
+            "Portfolio",
+            vec![
+                TreemapNode::with_children(
+                    "Stocks",
+                    vec![
+                        TreemapNode::new("Tech", 35.0),
+                        TreemapNode::new("Healthcare", 20.0),
+                        TreemapNode::new("Finance", 15.0),
+                    ],
+                ),
+                TreemapNode::with_children(
+                    "Bonds",
+                    vec![
+                        TreemapNode::new("Government", 18.0),
+                        TreemapNode::new("Corporate", 12.0),
+                    ],
+                ),
+            ],
+        );
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
+            .child(
+                div()
+                    .text_2xl()
+                    .font_weight(FontWeight::BOLD)
+                    .child("Treemap Chart"),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgb(0x666666))
+                    .max_w(px(600.0))
+                    .child("Displays hierarchical data as nested rectangles. The size of each rectangle represents a quantitative value. Great for visualizing file systems, organizational structures, and part-to-whole relationships."),
+            )
+            .child(
+                div()
+                    .mt_2()
+                    .text_base()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Interactive: Hover over rectangles to highlight, click to log to console"),
+            )
+            .child({
+                treemap(&file_system)
+                    .title("File System Visualization (KB)")
+                    .tiling_method(TilingMethod::Squarify)
+                    .padding(2.0)
+                    .size(600.0, 400.0)
+                    .on_click(|name, value| {
+                        eprintln!("Clicked: {} (value: {})", name, value);
+                    })
+                    .build()
+                    .unwrap()
+            })
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Code"),
+            )
+            .child(self.code_block(
+                "let root = TreemapNode::with_children(\"root\", vec![\n    TreemapNode::new(\"file1.rs\", 45.0),\n    TreemapNode::with_children(\"dir\", vec![\n        TreemapNode::new(\"file2.rs\", 32.0),\n    ]),\n]);\n\ntreemap(&root)\n    .title(\"File System\")\n    .tiling_method(TilingMethod::Squarify)\n    .padding(2.0)\n    .build()?",
+            ))
+            .child(
+                div()
+                    .mt_6()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("More Examples"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_4()
+                    .child({
+                        treemap(&sales_data)
+                            .title("Global Sales (Millions)")
+                            .tiling_method(TilingMethod::Binary)
+                            .color_scheme(ColorScheme::category10())
+                            .size(350.0, 300.0)
+                            .build()
+                            .unwrap()
+                    })
+                    .child({
+                        treemap(&portfolio)
+                            .title("Portfolio Allocation (%)")
+                            .tiling_method(TilingMethod::SliceDice)
+                            .color_scheme(ColorScheme::pastel())
+                            .padding(3.0)
+                            .size(350.0, 300.0)
+                            .build()
+                            .unwrap()
+                    }),
+            )
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Features"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .ml_4()
+                    .child(div().text_sm().child("• Multiple tiling algorithms (Squarify, Binary, Slice, Dice, SliceDice)"))
+                    .child(div().text_sm().child("• Hierarchical data with unlimited nesting"))
+                    .child(div().text_sm().child("• Custom color schemes (Tableau10, Category10, Pastel1, etc.)"))
+                    .child(div().text_sm().child("• Interactive hover highlighting and click handlers"))
+                    .child(div().text_sm().child("• Configurable padding between rectangles"))
+                    .child(div().text_sm().child("• Automatic labels for larger rectangles")),
+            )
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Tiling Methods"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .ml_4()
+                    .child(div().text_sm().child("• Squarify: Creates more square-like rectangles (best aspect ratios)"))
+                    .child(div().text_sm().child("• Binary: Splits alternating horizontal/vertical"))
+                    .child(div().text_sm().child("• Slice: Horizontal strips only"))
+                    .child(div().text_sm().child("• Dice: Vertical strips only"))
+                    .child(div().text_sm().child("• SliceDice: Alternates between Slice and Dice per level")),
+            )
+            .child(
+                div()
+                    .mt_4()
+                    .text_lg()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child("Customization"),
+            )
+            .child(self.code_block(
+                "treemap(&data)\n    .title(\"My Treemap\")\n    .tiling_method(TilingMethod::Binary)\n    .color_scheme(ColorScheme::category10())\n    .padding(3.0)\n    .on_click(|name, value| {\n        println!(\"Clicked: {} ({})\", name, value);\n    })\n    .hover(true)  // Enable hover highlighting\n    .build()?",
+            ))
     }
 
     // ========================================================================
