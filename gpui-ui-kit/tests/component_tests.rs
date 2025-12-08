@@ -140,7 +140,9 @@ fn test_accordion_configuration() {
     // Test that accordion configuration works
     let items = vec![
         AccordionItem::new("item-1", "Item 1").content("Content 1"),
-        AccordionItem::new("item-2", "Item 2").content("Content 2").disabled(true),
+        AccordionItem::new("item-2", "Item 2")
+            .content("Content 2")
+            .disabled(true),
         AccordionItem::new("item-3", "Item 3").content("Content 3"),
     ];
 
@@ -165,7 +167,10 @@ fn test_theme_creation() {
     // Dark theme should have darker background (lower luminance)
     let dark_lum = dark.background.r + dark.background.g + dark.background.b;
     let light_lum = light.background.r + light.background.g + light.background.b;
-    assert!(dark_lum < light_lum, "Dark theme should be darker than light theme");
+    assert!(
+        dark_lum < light_lum,
+        "Dark theme should be darker than light theme"
+    );
 }
 
 #[test]
@@ -189,17 +194,14 @@ fn test_accordion_item_creation() {
     let expected_id: SharedString = "id".into();
     assert_eq!(item.id(), &expected_id);
 
-    let item_with_content = AccordionItem::new("id", "Title")
-        .content("Content text");
+    let item_with_content = AccordionItem::new("id", "Title").content("Content text");
     assert_eq!(item_with_content.id(), &expected_id);
 }
 
 #[test]
 fn test_button_with_icons() {
     // Test that buttons can be created with icons
-    let button = Button::new("test", "Label")
-        .icon_left("←")
-        .icon_right("→");
+    let button = Button::new("test", "Label").icon_left("←").icon_right("→");
 
     drop(button);
 }

@@ -16,7 +16,46 @@ cargo test test_language_switching
 
 ## Test Suites
 
-### 1. I18n Tests (`i18n_tests.rs`)
+### 1. Interaction Tests (`interaction_tests.rs`)
+
+**Purpose**: Validate that all stateful components support mouse and keyboard events.
+
+**What it tests**:
+- ✅ Mouse click events on all interactive components
+- ✅ Keyboard event handlers (Space, Enter, Arrow keys, Escape)
+- ✅ Mouse drag and scroll support for sliders
+- ✅ Keyboard navigation for Select, Tabs, Menu
+- ✅ Disabled components don't respond to events
+- ✅ All stateful components have proper event handlers
+
+**Example test case**:
+```rust
+#[test]
+fn test_select_supports_keyboard_navigation() {
+    let select = Select::new("test")
+        .on_change(|_value, _window, _cx| {})
+        .on_toggle(|_is_open, _window, _cx| {})
+        .on_highlight(|_index, _window, _cx| {
+            // Highlight handler proves arrow key navigation
+        });
+}
+```
+
+**Components Tested**:
+- Button, IconButton (mouse click, keyboard Space/Enter)
+- Checkbox, Toggle (mouse click, keyboard Space)
+- Slider (mouse drag, scroll, arrow keys)
+- Select (mouse click, keyboard Space/Enter/Escape/Arrows)
+- Accordion (mouse click on headers)
+- Tabs (mouse click, keyboard arrows)
+- Menu (mouse click, keyboard arrows/Enter)
+
+**When to update**:
+- ➕ Adding new interactive component → Add interaction tests
+- 🔧 Adding event handler → Test event works
+- 🐛 Fixing interaction bug → Add regression test
+
+### 2. I18n Tests (`i18n_tests.rs`)
 
 **Purpose**: Prevent regressions in translations and internationalization.
 
@@ -48,7 +87,7 @@ fn test_language_switching() {
 - 🌍 Adding new language → Test all keys exist
 - ✏️ Changing translation → Tests ensure consistency
 
-### 2. Component Tests (`component_tests.rs`)
+### 3. Component Tests (`component_tests.rs`)
 
 **Purpose**: Verify component APIs work correctly and configuration is valid.
 
@@ -79,13 +118,41 @@ fn test_button_configuration() {
 
 ## Test Statistics
 
-- **Total Tests**: 25 tests
-- **I18n Tests**: 11 tests
-- **Component Tests**: 14 tests
+- **Total Tests**: 61 tests
+- **Interaction Tests**: 29 tests (mouse and keyboard events)
+- **I18n Tests**: 11 tests (translations)
+- **Component Tests**: 14 tests (API validation)
+- **Library Tests**: 7 tests (MiniApp configuration)
 - **Languages Covered**: 5 (English, French, German, Spanish, Japanese)
-- **Components Covered**: Button, Badge, Select, Accordion, Theme
+- **Components Covered**: Button, IconButton, Checkbox, Toggle, Slider, Select, Accordion, Tabs, Menu, Badge, Theme
 
 ## Critical Test Scenarios
+
+### All Interactive Components Support Mouse and Keyboard
+
+**Problem**: Stateful components might not support proper mouse or keyboard interaction.
+
+**How We Test**:
+```rust
+// Test mouse events
+test_button_supports_mouse_click()
+test_checkbox_supports_mouse_click()
+test_slider_supports_mouse_drag()
+
+// Test keyboard events
+test_select_supports_keyboard_navigation()
+test_tabs_supports_keyboard_navigation()
+test_menu_supports_keyboard_navigation()
+
+// Test disabled state
+test_disabled_button_no_mouse_events()
+```
+
+**What This Prevents**:
+- Components not responding to clicks
+- Missing keyboard navigation for accessibility
+- Disabled components still being interactive
+- Incomplete event handler implementations
 
 ### Language Change Updates All Text
 

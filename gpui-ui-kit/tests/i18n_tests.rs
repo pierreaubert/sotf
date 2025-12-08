@@ -41,7 +41,8 @@ fn test_all_languages_have_menu_translations() {
             assert!(
                 !text.is_empty(),
                 "Language {:?} has empty translation for {:?}",
-                lang, key
+                lang,
+                key
             );
         }
     }
@@ -84,7 +85,8 @@ fn test_all_languages_have_section_translations() {
             assert!(
                 !text.is_empty(),
                 "Language {:?} has empty translation for {:?}",
-                lang, key
+                lang,
+                key
             );
         }
     }
@@ -116,7 +118,8 @@ fn test_all_languages_have_button_translations() {
             assert!(
                 !text.is_empty(),
                 "Language {:?} has empty translation for {:?}",
-                lang, key
+                lang,
+                key
             );
         }
     }
@@ -148,7 +151,8 @@ fn test_all_languages_have_alert_translations() {
             assert!(
                 !text.is_empty(),
                 "Language {:?} has empty translation for {:?}",
-                lang, key
+                lang,
+                key
             );
         }
     }
@@ -184,7 +188,8 @@ fn test_all_languages_have_label_translations() {
             assert!(
                 !text.is_empty(),
                 "Language {:?} has empty translation for {:?}",
-                lang, key
+                lang,
+                key
             );
         }
     }
@@ -227,7 +232,11 @@ fn test_fallback_to_english() {
     // (though in practice all translations should be present)
     for lang in Language::all() {
         let text = translations.get(*lang, TranslationKey::AppTitle);
-        assert_ne!(text, "???", "Language {:?} should fall back to English", lang);
+        assert_ne!(
+            text, "???",
+            "Language {:?} should fall back to English",
+            lang
+        );
     }
 }
 
