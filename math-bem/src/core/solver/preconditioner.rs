@@ -204,11 +204,11 @@ impl HierarchicalFmmPreconditioner {
                 .unwrap_or(0);
 
             if let Some(block) = maybe_block {
-                let n = block.coefficients.nrows();
                 // Try to compute LU factorization, fall back to identity if singular
                 #[cfg(feature = "native")]
                 let lu = {
                     use ndarray_linalg::Factorize;
+                    let n = block.coefficients.nrows();
                     match block.coefficients.factorize() {
                         Ok(_factor) => block.coefficients.clone(),
                         Err(_) => Array2::eye(n),

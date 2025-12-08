@@ -731,7 +731,7 @@ impl MusicLibrary {
     where
         F: FnMut(usize, usize),
     {
-        { self.scan_incremental_with_progress(false, None, progress_callback) }
+        self.scan_incremental_with_progress(false, None, progress_callback)
     }
 
     /// Scan directories with optional incremental mode

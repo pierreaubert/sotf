@@ -480,7 +480,7 @@ impl PlayerView {
                                 }))
                         },
                     ))
-                    ))
+
                     // Signal flow indicator (output) or Output Meter
                     .child({
                         let has_output_monitor = plugins_data.last().map(|(pt, _, _)| matches!(pt, PluginType::LoudnessMonitor)).unwrap_or(false);
@@ -510,7 +510,7 @@ impl PlayerView {
                         }
                     })
                     // Empty state
-                    // Empty state
+
                     .when(is_empty, |d| {
                         d.child(
                             div()

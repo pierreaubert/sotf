@@ -79,10 +79,22 @@ impl BrushSelection {
     ) -> DomainSelection {
         // Direct scale inversion - the scale's range direction determines
         // the mapping from pixel coordinates to domain coordinates
-        let x0 = x_scale.invert(self.x0).unwrap_or(x_scale.domain().0);
-        let x1 = x_scale.invert(self.x1).unwrap_or(x_scale.domain().1);
-        let y0 = y_scale.invert(self.y0).unwrap_or(y_scale.domain().0);
-        let y1 = y_scale.invert(self.y1).unwrap_or(y_scale.domain().1);
+        let x0_raw = x_scale.invert(self.x0).unwrap_or(x_scale.domain().0);
+        let x1_raw = x_scale.invert(self.x1).unwrap_or(x_scale.domain().1);
+        let y0_raw = y_scale.invert(self.y0).unwrap_or(y_scale.domain().0);
+        let y1_raw = y_scale.invert(self.y1).unwrap_or(y_scale.domain().1);
+
+        // Normalize to ensure x0 <= x1 and y0 <= y1
+        let (x0, x1) = if x0_raw <= x1_raw {
+            (x0_raw, x1_raw)
+        } else {
+            (x1_raw, x0_raw)
+        };
+        let (y0, y1) = if y0_raw <= y1_raw {
+            (y0_raw, y1_raw)
+        } else {
+            (y1_raw, y0_raw)
+        };
 
         DomainSelection { x0, y0, x1, y1 }
     }

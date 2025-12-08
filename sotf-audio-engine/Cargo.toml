@@ -45,15 +45,16 @@ chrono = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 rustfft = { workspace = true }
-realfft = "3.5"
-log = "0.4"
-env_logger = "0.11"
-directories = "5.0"
-rusqlite = { version = "0.32", features = ["bundled"] }
+realfft = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+directories = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
 walkdir = "2"
 autoeq-env = { path = "../autoeq-env" }
 autoeq-iir = { path = "../math-iir" }
 sotf-audio-plugins = { path = "../sotf-audio-plugins" }
+num-complex = { workspace = true, features = ["serde"] }
 
 # TUI framework
 ratatui = { workspace = true }

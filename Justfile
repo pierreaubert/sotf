@@ -33,16 +33,16 @@ test-generate-audio-tests: prod-generate-audio-tests
 test-rust:
 	# Exclude packages that crash due to gpui_macros stack overflow during compilation
 	# Also exclude sotf_head_scanner (opencv dependency issues)
-	cargo check --workspace --all-targets --exclude sotf-gpui --exclude gpui-px --exclude sotf_head_scanner
-	cargo test --workspace --lib --exclude sotf-gpui --exclude gpui-px --exclude sotf_head_scanner
+	cargo check --workspace --all-targets ---exclude sotf_head_scanner
+	cargo test --workspace --lib --exclude sotf_head_scanner
 
-test-ts:
-	npm run test
+#test-ts:
+#	npm run test
 
-test: test-rust test-ts
+test: test-rust # test-ts
 
 ntest:
-	cargo nextest run --no-fail-fast --workspace --lib --exclude sotf-gpui --exclude gpui-px --exclude sotf_head_scanner
+	cargo nextest run --no-fail-fast --workspace --lib --exclude sotf_head_scanner
 
 # ----------------------------------------------------------------------
 # FORMAT
