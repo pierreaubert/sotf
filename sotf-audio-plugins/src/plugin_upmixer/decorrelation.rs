@@ -137,9 +137,7 @@ impl UpmixerPlugin {
                 (freq - hf_start) / (nyquist - hf_start)
             };
 
-            let mid_reduction = if freq < mid_start {
-                1.0
-            } else if freq > mid_end {
+            let mid_reduction = if freq < mid_start || freq > mid_end {
                 1.0
             } else {
                 let t = (freq - mid_start) / (mid_end - mid_start);
@@ -220,13 +218,12 @@ impl UpmixerPlugin {
                 .unwrap();
 
             // Normalize Magnitude to 1.0 (All-Pass)
-            for i in 0..output_fft.len() {
-                let val = output_fft[i];
+            for val in output_fft.iter_mut() {
                 let norm = val.norm();
                 if norm > 1e-9 {
-                    output_fft[i] = val / norm;
+                    *val /= norm;
                 } else {
-                    output_fft[i] = Complex::new(1.0, 0.0);
+                    *val = Complex::new(1.0, 0.0);
                 }
             }
 

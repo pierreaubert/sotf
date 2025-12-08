@@ -63,6 +63,7 @@ pub struct ConvolutionPlugin {
     sample_rate: u32,
 
     // Parameters
+    #[allow(dead_code)]
     param_ir_file: ParameterId,
     param_mix: ParameterId,
     param_gain_db: ParameterId,
@@ -286,28 +287,28 @@ impl ConvolutionPlugin {
             // Convert to f32 samples
             let duration = decoded.frames();
 
-            for ch in 0..channels {
+            for (ch, sample_vec) in samples.iter_mut().enumerate().take(channels) {
                 match &decoded {
                     AudioBufferRef::F32(buf) => {
                         for i in 0..duration {
-                            samples[ch].push(buf.chan(ch)[i]);
+                            sample_vec.push(buf.chan(ch)[i]);
                         }
                     }
                     AudioBufferRef::S32(buf) => {
                         for i in 0..duration {
-                            samples[ch]
+                            sample_vec
                                 .push(<f32 as FromSample<i32>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
                     AudioBufferRef::S16(buf) => {
                         for i in 0..duration {
-                            samples[ch]
+                            sample_vec
                                 .push(<f32 as FromSample<i16>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
                     AudioBufferRef::U8(buf) => {
                         for i in 0..duration {
-                            samples[ch].push(<f32 as FromSample<u8>>::from_sample(buf.chan(ch)[i]));
+                            sample_vec.push(<f32 as FromSample<u8>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
                     AudioBufferRef::S24(buf) => {
@@ -316,12 +317,12 @@ impl ConvolutionPlugin {
                             let sample = buf.chan(ch)[i];
                             // Convert i24 to f32 by scaling
                             let sample_f32 = sample.inner() as f32 / 8388608.0; // 2^23
-                            samples[ch].push(sample_f32);
+                            sample_vec.push(sample_f32);
                         }
                     }
                     AudioBufferRef::F64(buf) => {
                         for i in 0..duration {
-                            samples[ch].push(buf.chan(ch)[i] as f32);
+                            sample_vec.push(buf.chan(ch)[i] as f32);
                         }
                     }
                     _ => return Err("Unsupported audio format for IR".to_string()),

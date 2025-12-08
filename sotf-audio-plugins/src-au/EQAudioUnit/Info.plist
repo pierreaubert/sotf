@@ -17,7 +17,7 @@
     <key>CFBundlePackageType</key>
     <string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.2.466</string>
+    <string>0.5.3</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>NSExtension</key>
@@ -51,10 +51,8 @@
                 </dict>
             </array>
         </dict>
-        <key>NSExtensionMainStoryboard</key>
-        <string>MainInterface</string>
         <key>NSExtensionPointIdentifier</key>
-        <string>com.apple.AudioUnit-UI</string>
+        <string>com.apple.AudioUnit</string>
         <key>NSExtensionPrincipalClass</key>
         <string>EQViewController</string>
     </dict>

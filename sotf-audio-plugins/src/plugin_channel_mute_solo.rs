@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// State for a single channel
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ChannelState {
     pub muted: bool,
     pub soloed: bool,
@@ -19,15 +20,6 @@ pub struct ChannelState {
     pub dimmed: bool,
 }
 
-impl Default for ChannelState {
-    fn default() -> Self {
-        Self {
-            muted: false,
-            soloed: false,
-            dimmed: false,
-        }
-    }
-}
 
 /// Configuration parameters for ChannelMuteSoloPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]

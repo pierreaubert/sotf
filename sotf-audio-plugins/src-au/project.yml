@@ -1,0 +1,66 @@
+name: SOTFAudioUnits
+options:
+  bundleIdPrefix: org.spinorama
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  MARKETING_VERSION: 0.5.3
+  CURRENT_PROJECT_VERSION: 1
+  MACOSX_DEPLOYMENT_TARGET: "15.0"
+  SWIFT_VERSION: "6.0"
+
+targets:
+  # Main app container (required for App Extension)
+  SOTFAudioUnits:
+    type: application
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: App
+        createIntermediateGroups: true
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits
+      INFOPLIST_FILE: App/Info.plist
+      CODE_SIGN_ENTITLEMENTS: App/SOTFAudioUnits.entitlements
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: EQAudioUnit
+        embed: true
+
+  # EQ Audio Unit Extension
+  EQAudioUnit:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: EQAudioUnit
+        name: EQAudioUnit
+        createIntermediateGroups: true
+      - path: Shared
+        name: Shared
+        createIntermediateGroups: true
+        headerVisibility: public
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: org.spinorama.SOTFAudioUnits.EQAudioUnit
+      INFOPLIST_FILE: EQAudioUnit/Info.plist
+      CODE_SIGN_ENTITLEMENTS: EQAudioUnit/EQAudioUnit.entitlements
+      SWIFT_OBJC_BRIDGING_HEADER: Shared/BridgingHeader.h
+      CODE_SIGN_IDENTITY: "-"
+      CODE_SIGN_STYLE: Automatic
+      LIBRARY_SEARCH_PATHS:
+        - $(PROJECT_DIR)/Resources
+      HEADER_SEARCH_PATHS:
+        - $(PROJECT_DIR)/Shared
+      SKIP_INSTALL: false
+      EXTENSION_SAFE_API_ONLY: true
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: AudioToolbox.framework
+      - sdk: CoreAudioKit.framework
+      # Link the Rust static library
+      - framework: Resources/libsotf_audio_plugins_ffi.a
+        embed: false
+        link: true

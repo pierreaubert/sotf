@@ -695,7 +695,7 @@ above unity, the block is scaled down to stay within the cap.",
         } else if id == self.param_lfe_cutoff_hz
             && let Some(cutoff) = value.as_float()
         {
-            if cutoff >= 20.0 && cutoff <= 180.0 && cutoff < self.bandpass_hz {
+            if (20.0..=180.0).contains(&cutoff) && cutoff < self.bandpass_hz {
                 self.lfe_cutoff_hz = cutoff;
                 self.update_crossover_gains();
                 return Ok(());

@@ -10,9 +10,9 @@ license = { workspace = true }
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-sotf-audio-plugins = { path = "../sotf-audio-plugins" }
-sotf-audio-engine = { path = "../sotf-audio-engine" }
-autoeq-iir = { path = "../math-iir" }
+sotf-audio-plugins = { path = ".." }
+sotf-audio-engine = { path = "../../sotf-audio-engine" }
+autoeq-iir = { path = "../../math-iir" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

@@ -160,7 +160,7 @@ pub fn apply_near_field_shadowing(
     }
 
     // Process each frequency bin (half-spectrum only, no mirroring needed for real FFT)
-    for k in 0..freq_size {
+    for (k, val) in shadowed_ear.iter_mut().enumerate().take(freq_size) {
         // Frequency for bin k
         let freq = k as f32 * sample_rate as f32 / fft_size as f32;
 
@@ -219,7 +219,7 @@ pub fn apply_near_field_shadowing(
         let gain = 10.0_f32.powf(scaled_atten_db / 20.0);
 
         // Apply to shadowed ear (no mirroring needed with real FFT)
-        shadowed_ear[k] *= gain;
+        *val *= gain;
     }
 }
 
@@ -267,7 +267,7 @@ fn interpolate_hrtf_complex(
     let freq_size = fft_size / 2 + 1;
     let mut result = vec![Complex::new(0.0, 0.0); freq_size];
 
-    for k in 0..freq_size {
+    for (k, val) in result.iter_mut().enumerate().take(freq_size) {
         let mut mag_db = 0.0f32;
         let mut phase_sum = Complex::new(0.0, 0.0);
 
@@ -309,7 +309,7 @@ fn interpolate_hrtf_complex(
         let final_phase = phase + target_phase_shift;
 
         // Reconstruct complex HRTF
-        result[k] = Complex::new(magnitude * final_phase.cos(), magnitude * final_phase.sin());
+        *val = Complex::new(magnitude * final_phase.cos(), magnitude * final_phase.sin());
     }
 
     result
@@ -329,6 +329,7 @@ fn interpolate_hrtf_complex(
 ///    gracefully handling phase unwrapping and magnitude smoothing
 ///
 /// Returns half-spectrum (N/2+1 bins) per ear for use with real FFT.
+#[allow(clippy::too_many_arguments)]
 pub fn interpolate_hrtf_frequency_domain(
     nearest: &[(usize, f32); 3],
     gains: &[f32; 3],
@@ -435,13 +436,16 @@ pub fn normalize_hrtf_gains(
         let mut left_sum = 0.0f32;
         let mut right_sum = 0.0f32;
 
-        for ch in 0..input_channels {
+        for (ch, hrtf) in hrtf_filters_freq.iter().enumerate().take(input_channels) {
             // Skip LFE channels (they're mixed separately with -3dB gain)
+            // Note: we don't have easy access to channel index here anymore if we fully removed it,
+            // but we need 'ch' to check lfe_channels.
+            // So let's revert to using enumerate
             if lfe_channels.contains(&ch) {
                 continue;
             }
 
-            let hrtf = &hrtf_filters_freq[ch];
+            let hrtf = &hrtf;
             left_sum += hrtf[k].norm(); // Magnitude
             right_sum += hrtf[k + freq_size].norm();
         }
@@ -479,13 +483,13 @@ pub fn normalize_hrtf_gains(
         );
 
         // Apply normalization to all HRTFs
-        for ch in 0..input_channels {
+        for (ch, hrtf_samples) in hrtf_filters_freq.iter_mut().enumerate().take(input_channels) {
             // Skip LFE channels (they don't use HRTFs)
             if lfe_channels.contains(&ch) {
                 continue;
             }
 
-            for sample in &mut hrtf_filters_freq[ch] {
+            for sample in hrtf_samples {
                 *sample *= normalization_factor;
             }
         }

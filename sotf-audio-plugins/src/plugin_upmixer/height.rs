@@ -28,7 +28,7 @@ impl UpmixerPlugin {
         let mut smoothed = vec![0.0_f32; spectrum_size];
 
         // 1. Spectral smoothing: moving average across adjacent bins
-        for i in 0..spectrum_size {
+        for (i, smoothed_val) in smoothed.iter_mut().enumerate() {
             let start = i.saturating_sub(window_radius);
             let end = (i + window_radius + 1).min(spectrum_size);
 
@@ -40,7 +40,7 @@ impl UpmixerPlugin {
                 count += 1;
             }
 
-            smoothed[i] = if count > 0 {
+            *smoothed_val = if count > 0 {
                 sum / count as f32
             } else {
                 self.height_band_gains[i]
@@ -48,8 +48,7 @@ impl UpmixerPlugin {
         }
 
         // 2. Temporal smoothing: blend with previous frame
-        for i in 0..spectrum_size {
-            let current = smoothed[i];
+        for (i, current) in smoothed.iter().enumerate() {
             let previous = self.height_band_gains_prev[i];
 
             // Exponential moving average

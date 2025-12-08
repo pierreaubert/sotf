@@ -81,6 +81,7 @@ pub fn speaker_to_source_position(speaker: &SpeakerPosition) -> SourcePosition {
     SourcePosition::new(speaker.azimuth, speaker.elevation, 1.0)
 }
 
+#[allow(dead_code)]
 pub fn calculate_reflections(
     room: &RoomModel,
     speaker_config: &SpeakerConfig,

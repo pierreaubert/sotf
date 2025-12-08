@@ -200,10 +200,10 @@ impl SpectrumAnalyzer {
         }
 
         // Apply smoothing (exponential moving average)
-        for i in 0..self.config.num_bins {
+        for (i, val) in magnitudes.iter_mut().enumerate().take(self.config.num_bins) {
             if self.prev_magnitudes[i].is_finite() {
-                magnitudes[i] = self.config.smoothing * self.prev_magnitudes[i]
-                    + (1.0 - self.config.smoothing) * magnitudes[i];
+                *val = self.config.smoothing * self.prev_magnitudes[i]
+                    + (1.0 - self.config.smoothing) * *val;
             }
         }
 

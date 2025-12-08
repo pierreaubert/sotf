@@ -24,7 +24,7 @@ public class EQAudioUnit: AUAudioUnit {
 
     /// AU parameters
     private var auParameters: [AUParameter] = []
-    private var parameterTree: AUParameterTree!
+    private var _parameterTree: AUParameterTree!
 
     /// Processing state
     private var maxFramesToRender: UInt32 = 512
@@ -152,14 +152,14 @@ public class EQAudioUnit: AUAudioUnit {
         }
 
         // Create parameter tree
-        parameterTree = AUParameterTree.createTree(withChildren: auParameters)
+        _parameterTree = AUParameterTree.createTree(withChildren: auParameters)
 
         // Set up parameter observation
-        parameterTree.implementorValueObserver = { [weak self] param, value in
+        _parameterTree.implementorValueObserver = { [weak self] param, value in
             self?.setParameterValue(param: param, value: value)
         }
 
-        parameterTree.implementorValueProvider = { [weak self] param in
+        _parameterTree.implementorValueProvider = { [weak self] param in
             return self?.getParameterValue(param: param) ?? param.value
         }
     }
@@ -199,7 +199,12 @@ public class EQAudioUnit: AUAudioUnit {
     // MARK: - AUAudioUnit Overrides
 
     public override var parameterTree: AUParameterTree? {
-        return self.parameterTree
+        get {
+            return _parameterTree
+        }
+        set {
+            _parameterTree = newValue
+        }
     }
 
     public override var inputBusses: AUAudioUnitBusArray {
@@ -312,5 +317,20 @@ public class EQAudioUnit: AUAudioUnit {
                 }
             }
         }
+    }
+}
+
+// MARK: - Factory Function
+
+/// Factory function required by Audio Unit extension
+/// Uses C-linkage to ensure it's callable from Objective-C runtime
+@_cdecl("EQAudioUnitFactory")
+public func EQAudioUnitFactory(componentDescription: UnsafePointer<AudioComponentDescription>) -> UnsafeMutableRawPointer? {
+    do {
+        let audioUnit = try EQAudioUnit(componentDescription: componentDescription.pointee, options: [])
+        return Unmanaged.passRetained(audioUnit).toOpaque()
+    } catch {
+        NSLog("Failed to create EQAudioUnit: \(error)")
+        return nil
     }
 }

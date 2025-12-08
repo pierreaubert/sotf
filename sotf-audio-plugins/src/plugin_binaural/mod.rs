@@ -124,6 +124,7 @@ pub struct BinauralDecoderPlugin {
 
 impl BinauralDecoderPlugin {
     /// Create a new binaural decoder plugin
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         input_channels: usize,
         fft_size: usize,
@@ -477,9 +478,7 @@ impl BinauralDecoderPlugin {
                 for i in 0..self.hop_size {
                     time_buffer[i] = input_block[i * self.input_channels + ch];
                 }
-                for i in self.hop_size..self.fft_size {
-                    time_buffer[i] = 0.0;
-                }
+                time_buffer[self.hop_size..self.fft_size].fill(0.0);
 
                 // Real-to-Complex FFT: N real -> N/2+1 complex
                 self.fft_r2c
@@ -494,8 +493,8 @@ impl BinauralDecoderPlugin {
 
             // Apply diffuse-field EQ if enabled
             if let Some(ref df_eq) = self.diffuse_field_eq_filter {
-                for k in 0..self.freq_size {
-                    sum_left[k] *= df_eq[0][k];
+                for (k, val) in sum_left.iter_mut().enumerate().take(self.freq_size) {
+                    *val *= df_eq[0][k];
                     sum_right[k] *= df_eq[1][k];
                 }
             }
@@ -540,9 +539,7 @@ impl BinauralDecoderPlugin {
                 for i in 0..self.hop_size {
                     time_buffer[i] = input_block[i * self.input_channels + ch];
                 }
-                for i in self.hop_size..self.fft_size {
-                    time_buffer[i] = 0.0;
-                }
+                time_buffer[self.hop_size..self.fft_size].fill(0.0);
 
                 // Forward FFT
                 self.fft_r2c
@@ -558,8 +555,8 @@ impl BinauralDecoderPlugin {
                 );
 
                 if let Some(ref df_eq) = self.diffuse_field_eq_filter {
-                    for k in 0..self.freq_size {
-                        left_freq[k] *= df_eq[0][k];
+                    for (k, val) in left_freq.iter_mut().enumerate().take(self.freq_size) {
+                        *val *= df_eq[0][k];
                     }
                 }
 
@@ -585,8 +582,8 @@ impl BinauralDecoderPlugin {
                 );
 
                 if let Some(ref df_eq) = self.diffuse_field_eq_filter {
-                    for k in 0..self.freq_size {
-                        right_freq[k] *= df_eq[1][k];
+                    for (k, val) in right_freq.iter_mut().enumerate().take(self.freq_size) {
+                        *val *= df_eq[1][k];
                     }
                 }
 
@@ -618,12 +615,10 @@ impl BinauralDecoderPlugin {
 
             for &lfe_ch in &self.lfe_channels {
                 // Extract LFE channel data
-                for i in 0..self.hop_size {
-                    lfe_time[i] = self.temp_input_block[i * self.input_channels + lfe_ch];
+                for (i, val) in lfe_time.iter_mut().enumerate().take(self.hop_size) {
+                    *val = self.temp_input_block[i * self.input_channels + lfe_ch];
                 }
-                for i in self.hop_size..self.fft_size {
-                    lfe_time[i] = 0.0;
-                }
+                lfe_time[self.hop_size..self.fft_size].fill(0.0);
 
                 // Forward FFT
                 self.fft_r2c
@@ -631,8 +626,8 @@ impl BinauralDecoderPlugin {
                     .expect("LFE FFT forward failed");
 
                 // Apply lowpass filter
-                for k in 0..self.freq_size {
-                    lfe_freq[k] *= self.lfe_lowpass_filter[k];
+                for (k, val) in lfe_freq.iter_mut().enumerate().take(self.freq_size) {
+                    *val *= self.lfe_lowpass_filter[k];
                 }
 
                 // Enforce real FFT constraints
@@ -650,8 +645,8 @@ impl BinauralDecoderPlugin {
 
                 // Mix into both channels
                 let scale = self.lfe_gain / self.fft_size as f32;
-                for i in 0..self.hop_size {
-                    let lfe_sample = lfe_output[i] * scale;
+                for (i, val) in lfe_output.iter().enumerate().take(self.hop_size) {
+                    let lfe_sample = *val * scale;
                     self.temp_output_block[i * 2] += lfe_sample;
                     self.temp_output_block[i * 2 + 1] += lfe_sample;
                 }

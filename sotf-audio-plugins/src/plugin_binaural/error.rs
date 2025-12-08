@@ -2,6 +2,7 @@ use std::fmt;
 
 /// Errors that can occur during binaural decoder operation
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum BinauralError {
     /// SOFA file not loaded when required
     SofaNotLoaded,

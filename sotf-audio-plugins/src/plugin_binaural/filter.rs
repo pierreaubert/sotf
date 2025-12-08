@@ -167,7 +167,7 @@ pub fn compute_lfe_filter(
     let mut lfe_lowpass_filter = vec![Complex::new(0.0, 0.0); freq_size];
 
     // Convert to frequency domain response (only positive frequencies for real FFT)
-    for bin in 0..freq_size {
+    for (bin, val) in lfe_lowpass_filter.iter_mut().enumerate().take(freq_size) {
         let freq = bin as f32 * fs / fft_size as f32;
         let omega = 2.0 * std::f32::consts::PI * freq / fs;
 
@@ -190,7 +190,7 @@ pub fn compute_lfe_filter(
         let h_re = (num_re * den_re + num_im * den_im) / denom;
         let h_im = (num_im * den_re - num_re * den_im) / denom;
 
-        lfe_lowpass_filter[bin] = Complex::new(h_re, h_im);
+        *val = Complex::new(h_re, h_im);
     }
 
     // Compute LFE gain: distance attenuation + level adjustment
