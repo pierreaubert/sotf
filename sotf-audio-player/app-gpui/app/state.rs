@@ -210,6 +210,9 @@ pub struct App {
 
     // Flag for closing studio after save
     pub pending_studio_close: bool,
+
+    // Plugin UI states
+    pub upmixer_config_open: bool,
 }
 
 /// GPUI-compatible state wrapper
@@ -358,6 +361,7 @@ impl App {
             replay_gain_mode: ReplayGainMode::Track,
             replay_gain_preamp: 0.0,
             pending_studio_close: false,
+            upmixer_config_open: false,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts

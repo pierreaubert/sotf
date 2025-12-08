@@ -1,10 +1,13 @@
-use super::actions::UpdatePluginParam;
+use super::actions::{ToggleUpmixerConfig, UpdatePluginParam};
 use super::common::{
     render_edit_hints, render_knob, render_param_row, render_toggle, render_vertical_slider,
 };
 use crate::theme::Theme;
 use gpui::*;
-use gpui_ui_kit::{Divider, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack};
+use gpui_ui_kit::{
+    Divider, HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Text, TextSize,
+    TextWeight, VStack, Toggle, ToggleStyle,
+};
 
 /// Render the upmixer plugin controls
 ///
@@ -31,6 +34,7 @@ pub fn render_upmixer_plugin(
     is_editing: bool,
     selected_param: usize,
     theme: &Theme,
+    config_open: bool,
 ) -> impl IntoElement {
     // Parameter Indices (must match plugin_editing.rs):
     // 0: Speaker Config
@@ -84,28 +88,38 @@ pub fn render_upmixer_plugin(
                 .justify_between()
                 // Speaker Config
                 .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .child(Text::new("Config:").size(TextSize::Xs).color(theme.text_secondary))
-                        .child(render_param_row("", speaker_config, 0, selected_param, is_editing, theme))
-                        .build()
-                        .cursor_pointer()
-                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                            let configs = [
-                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
-                                "9.1.4", "9.1.6",
-                            ];
-                            let current_idx = configs
+                    div().w(px(140.0)).child(
+                        Select::new("config-select")
+                            .options(
+                                [
+                                    "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
+                                    "7.1.4", "9.1.4", "9.1.6",
+                                ]
                                 .iter()
-                                .position(|&c| c == speaker_config_owned)
-                                .unwrap_or(0);
-                            let next_idx = (current_idx + 1) % configs.len();
-                            cx.dispatch_action(&UpdatePluginParam {
-                                plugin_idx,
-                                param_idx: 0,
-                                value: next_idx as f64,
-                            });
-                        }),
+                                .map(|c| SelectOption::new(c.to_string(), c.to_string()))
+                                .collect(),
+                            )
+                            .selected(speaker_config_owned.clone())
+                            .is_open(config_open)
+                            .label("Config")
+                            .size(SelectSize::Sm)
+                            .on_toggle(move |is_open, _window, cx| {
+                                cx.dispatch_action(&ToggleUpmixerConfig { open: is_open })
+                            })
+                            .on_change(move |value, _, cx| {
+                                let configs = [
+                                    "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
+                                    "7.1.4", "9.1.4", "9.1.6",
+                                ];
+                                let idx = configs.iter().position(|&c| c == value.as_ref()).unwrap_or(0);
+                                cx.dispatch_action(&UpdatePluginParam {
+                                    plugin_idx,
+                                    param_idx: 0,
+                                    value: idx as f64,
+                                });
+                                cx.dispatch_action(&ToggleUpmixerConfig { open: false });
+                            }),
+                    ),
                 )
                 // Separator
                 .child(Divider::vertical().color(theme.border).build_simple().h(px(16.0)))
@@ -158,8 +172,7 @@ pub fn render_upmixer_plugin(
             HStack::new()
                 .spacing(StackSpacing::Lg)
                 .align(StackAlign::Start)
-                // 1. Input Levels (Stereo) - Same size as Gains
-                .child(render_meter_panel("Input", theme))
+
                 // 2. Gains (Center, LFE, Surround, Top)
                 // Indices must match plugin_editing.rs
                 .child(render_vertical_slider(
@@ -263,8 +276,7 @@ pub fn render_upmixer_plugin(
                             theme,
                         )),
                 )
-                // 4. Output Levels
-                .child(render_meter_panel("Output", theme))
+
                 .build()
                 .p_2(),
         )
@@ -275,71 +287,4 @@ pub fn render_upmixer_plugin(
         .h_full()
 }
 
-/// Render a meter panel with title and L/R level meters
-fn render_meter_panel(title: &str, theme: &Theme) -> impl IntoElement {
-    let title_color = theme.text_secondary;
-    let bg = theme.background_secondary;
-    let border = theme.border;
-    let meter_theme = MeterTheme {
-        background: theme.background,
-        success: theme.success,
-        error: theme.error,
-        text_muted: theme.text_muted,
-    };
 
-    VStack::new()
-        .spacing(StackSpacing::Sm)
-        .child(Text::new(title.to_string()).size(TextSize::Xs).weight(TextWeight::Semibold).color(title_color))
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Sm)
-                .child(render_level_meter("L", -60.0, &meter_theme))
-                .child(render_level_meter("R", -60.0, &meter_theme)),
-        )
-        .build()
-        .flex_1()
-        .p_2()
-        .rounded_lg()
-        .bg(bg)
-        .border_1()
-        .border_color(border)
-}
-
-/// Minimal theme for level meters (avoids lifetime issues)
-struct MeterTheme {
-    background: Rgba,
-    success: Rgba,
-    error: Rgba,
-    text_muted: Rgba,
-}
-
-fn render_level_meter(label: &str, level_db: f64, theme: &MeterTheme) -> impl IntoElement {
-    let clamped = (level_db + 60.0) / 60.0; // Map -60..0 to 0..1
-    let pct = clamped.clamp(0.0, 1.0) as f32; // 0..1
-    let bg = theme.background;
-    let fill_color = if level_db > -0.1 { theme.error } else { theme.success };
-    let text_color = theme.text_muted;
-
-    VStack::new()
-        .spacing(StackSpacing::Xs)
-        .align(StackAlign::Center)
-        .child(
-            div()
-                .w(px(8.0))
-                .h(px(100.0)) // Fixed height matching sliders
-                .bg(bg)
-                .rounded_sm()
-                .relative()
-                .child(
-                    div()
-                        .absolute()
-                        .bottom_0()
-                        .left_0()
-                        .right_0()
-                        .h(relative(pct)) // Relative height (0.0 - 1.0)
-                        .bg(fill_color)
-                        .rounded_sm(),
-                ),
-        )
-        .child(Text::new(label.to_string()).size(TextSize::Xs).color(text_color))
-}

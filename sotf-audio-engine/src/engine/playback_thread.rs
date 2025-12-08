@@ -424,7 +424,7 @@ fn run_playback_thread(
                         CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                     // Log every mismatch for first 10, then every 100th to avoid spam
-                    if count < 10 || count % 100 == 0 {
+                    if count < 10 || count.is_multiple_of(100) {
                         log::warn!(
                             "[Playback Thread] Channel mismatch #{}: frame has {} channels, \
                              expected {} - frame discarded (check plugin chain!)",

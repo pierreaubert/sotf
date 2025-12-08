@@ -447,7 +447,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
         #[cfg(not(any(feature = "native", feature = "wasm")))]
         {
             let mut strong: Vec<Vec<usize>> = vec![Vec::new(); n];
-            for i in 0..n {
+            for (i, row_strong) in strong.iter_mut().enumerate().take(n) {
                 // Find max off-diagonal magnitude in row i
                 let mut max_off_diag = T::Real::from_f64(0.0).unwrap();
                 for (j, val) in matrix.row_entries(i) {
@@ -464,7 +464,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                 // Collect strong connections
                 for (j, val) in matrix.row_entries(i) {
                     if i != j && val.norm() >= threshold {
-                        strong[i].push(j);
+                        row_strong.push(j);
                     }
                 }
             }
@@ -698,7 +698,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                                 if a_ii.norm() > tol {
                                     let w = T::zero() - a_ij * a_ii.inv();
                                     weights.push((fine_to_coarse[j], w));
-                                    sum_weights = sum_weights + w;
+                                    sum_weights += w;
                                 }
                             }
 
@@ -707,7 +707,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                                 let mut weak_sum = T::zero();
                                 for (j, val) in matrix.row_entries(i) {
                                     if j != i && !c_neighbors.contains(&j) {
-                                        weak_sum = weak_sum + val;
+                                        weak_sum += val;
                                     }
                                 }
 
@@ -716,7 +716,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                                     let scale =
                                         T::one() + weak_sum * (a_ii * sum_weights).inv();
                                     for (_, w) in &mut weights {
-                                        *w = *w * scale;
+                                        *w *= scale;
                                     }
                                 }
                             }
@@ -784,7 +784,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                                         if let Some((_, existing)) =
                                             weights.iter_mut().find(|(idx, _)| *idx == coarse_j)
                                         {
-                                            *existing = *existing + w;
+                                            *existing += w;
                                         } else {
                                             weights.push((coarse_j, w));
                                         }
@@ -924,7 +924,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
             .map(|i| {
                 let mut sum = T::Real::from_f64(0.0).unwrap();
                 for (_, val) in matrix.row_entries(i) {
-                    sum = sum + val.norm();
+                    sum += val.norm();
                 }
                 let tol = T::Real::from_f64(1e-15).unwrap();
                 if sum > tol { sum } else { T::Real::from_f64(1.0).unwrap() }
@@ -972,7 +972,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                     if j == i {
                         diag = val;
                     } else {
-                        sum = sum - val * x[j];
+                        sum -= val * x[j];
                     }
                 }
 
@@ -990,7 +990,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                     if j == i {
                         diag = val;
                     } else {
-                        sum = sum - val * x[j];
+                        sum -= val * x[j];
                     }
                 }
 

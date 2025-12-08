@@ -129,21 +129,8 @@ impl EngineConfig {
         const LATEST_VERSION: u32 = 1;
 
         // Apply migrations sequentially
-        while config.version < LATEST_VERSION {
-            match config.version {
-                // Example migration from version 1 to 2:
-                // 1 => {
-                //     log::info!("Applying EngineConfig migration: v1 -> v2");
-                //     // Apply migration logic here
-                //     // e.g., add new field with default value, transform plugin configs, etc.
-                //     config.version = 2;
-                // }
-
-                // If we reach here with no match, we have an unknown version
-                v => {
-                    return Err(format!("Unknown EngineConfig version: {}", v).into());
-                }
-            }
+        if config.version < LATEST_VERSION {
+            return Err(format!("Unknown EngineConfig version: {}", config.version).into());
         }
 
         Ok(config)

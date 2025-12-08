@@ -339,6 +339,7 @@ pub fn generate_sphere_mesh(obj: &SphereObject) -> ObjectMesh {
 }
 
 /// Helper function to get or create midpoint vertex for sphere subdivision
+#[allow(clippy::too_many_arguments)]
 fn get_or_create_midpoint(
     v0: usize,
     v1: usize,

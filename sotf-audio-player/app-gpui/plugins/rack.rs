@@ -8,6 +8,9 @@ use gpui::{MouseMoveEvent, MouseUpEvent};
 use sotf_audio_player::{PluginType, LoudnessData};
 use super::level_meters::{render_gradient_meter, db_to_position};
 use crate::theme::Theme;
+use crate::plugins::actions::{
+    UpdatePluginParam, ToggleUpmixerConfig,
+};
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -121,6 +124,7 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .bg(theme.background)
+            .on_action(cx.listener(Self::toggle_upmixer_config))
             // Global mouse move handler for knob/slider dragging
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _window, cx| {
                 let (is_dragging, start_y, start_value, min, max, plugin_idx, param_idx) = {
@@ -384,7 +388,7 @@ impl PlayerView {
                                         .hover(|s| s.bg(theme_c.error))
                                         .on_mouse_up(
                                             MouseButton::Left,
-                                            cx.listener(move |view, e: &MouseUpEvent, _, cx| {
+                                            cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
                                                 cx.stop_propagation();
                                                 view.state.update(cx, |state, _cx| {
                                                      state.app.plugin_chain.remove_plugin(idx);
@@ -444,7 +448,7 @@ impl PlayerView {
                                                 .cursor_pointer()
                                                 .on_mouse_up(
                                                     MouseButton::Left,
-                                                    cx.listener(move |view, e: &MouseUpEvent, _, cx| {
+                                                    cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
                                                         cx.stop_propagation();
                                                         view.state.update(cx, |state, _cx| {
                                                             state.app.plugin_chain.toggle_plugin(idx);
@@ -896,6 +900,7 @@ impl PlayerView {
                             is_editing,
                             param_selection,
                             &theme,
+                            self.state.read(cx).app.upmixer_config_open,
                         )),
                 )
             })
@@ -913,5 +918,17 @@ impl PlayerView {
                         .child(div().text_sm().child("Add a plugin to get started")),
                 )
             })
+    }
+
+    fn toggle_upmixer_config(
+        &mut self,
+        action: &ToggleUpmixerConfig,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state.app.upmixer_config_open = action.open;
+        });
+        cx.notify();
     }
 }

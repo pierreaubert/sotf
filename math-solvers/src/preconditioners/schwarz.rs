@@ -39,6 +39,7 @@ pub struct AdditiveSchwarzPreconditioner<T: ComplexField> {
 
 /// A single subdomain with its local matrix and solver
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct Subdomain<T: ComplexField> {
     /// Global indices of DOFs in this subdomain
     global_indices: Vec<usize>,
@@ -142,11 +143,11 @@ fn build_adjacency<T: ComplexField>(matrix: &CsrMatrix<T>) -> Vec<Vec<usize>> {
     let n = matrix.num_rows;
     let mut adjacency = vec![Vec::new(); n];
 
-    for i in 0..n {
+    for (i, row_adj) in adjacency.iter_mut().enumerate().take(n) {
         for idx in matrix.row_ptrs[i]..matrix.row_ptrs[i + 1] {
             let j = matrix.col_indices[idx];
             if i != j {
-                adjacency[i].push(j);
+                row_adj.push(j);
             }
         }
     }
@@ -234,6 +235,7 @@ fn build_subdomain<T: ComplexField>(matrix: &CsrMatrix<T>, global_indices: Vec<u
 }
 
 /// ILU(0) factorization for a local matrix
+#[allow(clippy::type_complexity)]
 fn ilu_factorize<T: ComplexField>(
     values: &[T],
     col_indices: &[usize],
@@ -381,7 +383,7 @@ impl<T: ComplexField + Send + Sync> AdditiveSchwarzPreconditioner<T> {
 
             // Scatter back to global with weights
             for (local_idx, &global_idx) in subdomain.global_indices.iter().enumerate() {
-                result[global_idx] = result[global_idx] + local_solution[local_idx] * self.weights[global_idx];
+                result[global_idx] += local_solution[local_idx] * self.weights[global_idx];
             }
         }
 

@@ -936,8 +936,9 @@ fn apply_plugin_update(
                         );
 
                         // Try to restore the last working config
-                        if let Err(_) = processing
+                        if processing
                             .send_command(ProcessingCommand::UpdatePlugins(rollback_config.clone()))
+                            .is_err()
                         {
                             log::error!("[Manager Thread] Failed to send rollback command");
                             return Err(ConfigError::ChannelDisconnected);
@@ -976,21 +977,19 @@ fn apply_plugin_update(
                         }
 
                         // If rollback succeeded, update playback thread channel count
-                        if rollback_success {
-                            if let Some(ch) = rollback_channels {
-                                // Update state
-                                if let Ok(mut state_guard) = safe_lock(state) {
-                                    state_guard.num_channels = ch;
-                                }
-
-                                // Clear playback buffer and update channel count
-                                let _ = playback.send_command(PlaybackCommand::Stop);
-                                let _ = playback.send_command(PlaybackCommand::UpdateChannels(ch));
-                                log::info!(
-                                    "[Manager Thread] Playback reconfigured to {} channels after rollback",
-                                    ch
-                                );
+                        if rollback_success && let Some(ch) = rollback_channels {
+                            // Update state
+                            if let Ok(mut state_guard) = safe_lock(state) {
+                                state_guard.num_channels = ch;
                             }
+
+                            // Clear playback buffer and update channel count
+                            let _ = playback.send_command(PlaybackCommand::Stop);
+                            let _ = playback.send_command(PlaybackCommand::UpdateChannels(ch));
+                            log::info!(
+                                "[Manager Thread] Playback reconfigured to {} channels after rollback",
+                                ch
+                            );
                         }
 
                         // Record rollback metrics

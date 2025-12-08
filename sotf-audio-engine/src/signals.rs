@@ -281,9 +281,9 @@ pub fn interleave_per_channel(per_channel: &[Vec<f32>]) -> Vec<f32> {
     let mut interleaved = Vec::with_capacity(n_frames * n_channels);
 
     for frame in 0..n_frames {
-        for ch in 0..n_channels {
-            interleaved.push(per_channel[ch][frame]);
-        }
+    for channel_data in per_channel.iter().take(n_channels) {
+        interleaved.push(channel_data[frame]);
+    }
     }
 
     interleaved
@@ -319,10 +319,10 @@ pub fn replicate_mono(mono: &[f32], channels: u16) -> Vec<f32> {
 /// * `fade_samples` - Number of samples for the fade
 pub fn apply_fade_in(signal: &mut [f32], fade_samples: usize) {
     let fade_len = fade_samples.min(signal.len());
-    for i in 0..fade_len {
+    for (i, val) in signal.iter_mut().enumerate().take(fade_len) {
         let t = i as f32 / fade_len as f32;
         let fade = 0.5 * (1.0 - (std::f32::consts::PI * t).cos()); // Hann window
-        signal[i] *= fade;
+        *val *= fade;
     }
 }
 

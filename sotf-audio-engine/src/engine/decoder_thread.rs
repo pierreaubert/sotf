@@ -329,8 +329,9 @@ impl DecoderState {
                     };
 
                     // Process padded chunk to flush resampler state
-                    if let Ok(_) =
-                        resampler.process(&padded_chunk, &mut self.resample_output_buffer, &context)
+                    if resampler
+                        .process(&padded_chunk, &mut self.resample_output_buffer, &context)
+                        .is_ok()
                     {
                         // Calculate actual output frames (may be more due to the resampling ratio)
                         let expected_frames =

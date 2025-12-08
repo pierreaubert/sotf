@@ -642,6 +642,48 @@ impl App {
                         channel_count_changed = true;
                     }
                 }
+                PluginSettings::EQ { filters } => {
+                    let filter_idx = param_idx / 4;
+                    let field_idx = param_idx % 4;
+
+                    if let Some(filter) = filters.get_mut(filter_idx) {
+                        match field_idx {
+                            0 => {
+                                // Frequency
+                                filter.frequency = value.clamp(20.0, 20_000.0);
+                                update_needed = true;
+                            }
+                            1 => {
+                                // Q
+                                filter.q = value.clamp(0.1, 10.0);
+                                update_needed = true;
+                            }
+                            2 => {
+                                // Gain
+                                filter.gain_db = value.clamp(-24.0, 24.0);
+                                update_needed = true;
+                            }
+                            3 => {
+                                // Filter type
+                                // Map float value to enum index
+                                use sotf_audio_player::BiquadFilterType;
+                                let types = [
+                                    BiquadFilterType::Peak,
+                                    BiquadFilterType::Lowshelf,
+                                    BiquadFilterType::Highshelf,
+                                    BiquadFilterType::Lowpass,
+                                    BiquadFilterType::Highpass,
+                                    BiquadFilterType::Bandpass,
+                                    BiquadFilterType::Notch,
+                                ];
+                                let type_idx = (value as usize).clamp(0, types.len() - 1);
+                                filter.filter_type = types[type_idx];
+                                update_needed = true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 // Implement other plugins as needed, Upmixer is priority
                 PluginSettings::Gain { gain_db } => {
                     if param_idx == 0 {

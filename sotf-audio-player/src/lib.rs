@@ -1,3 +1,4 @@
+#![allow(clippy::collapsible_if)]
 /// Shared business logic for SOTF audio players (TUI, GPUI, etc.)
 ///
 /// This crate provides:

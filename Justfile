@@ -127,45 +127,55 @@ build-au-rust:
 	cargo build --release -p sotf-audio-plugins-ffi --target x86_64-apple-darwin
 	cargo build --release -p sotf-audio-plugins-ffi --target aarch64-apple-darwin
 	# Create universal binary
-	mkdir -p src-audio-plugins-au/Resources
+	mkdir -p sotf-audio-plugins/src-au/Resources
 	lipo -create \
 		target/x86_64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
 		target/aarch64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
-		-output src-audio-plugins-au/Resources/libsotf_audio_plugins_ffi.a
+		-output sotf-audio-plugins/src-au/Resources/libsotf_audio_plugins_ffi.a
 	# Copy header file
-	cp src-audio-plugins-ffi/sotf_audio_ffi.h src-audio-plugins-au/Shared/
+	cp sotf-audio-plugins/src-ffi/sotf_audio_plugin_ffi.h sotf-audio-plugins/src-au/Shared/
 	echo "✅ Universal Rust FFI library created"
 
 # Build Audio Unit plugins in Xcode
 build-au-swift: build-au-rust
 	#!/usr/bin/env bash
 	set -euxo pipefail
-	if [ ! -d "src-audio-plugins/SOTFAudioUnits.xcodeproj" ]; then
-		echo "⚠️  Xcode project not found. Please create it manually first."
-		echo "   See src-audio-plugins/README.md for instructions"
-		exit 1
+	cd sotf-audio-plugins/src-au
+	# Generate Xcode project with XcodeGen
+	if [ ! -d "SOTFAudioUnits.xcodeproj" ] || [ "project.yml" -nt "SOTFAudioUnits.xcodeproj/project.pbxproj" ]; then
+		echo "🔨 Generating Xcode project with XcodeGen..."
+		xcodegen generate
 	fi
-	xcodebuild -project src-audio-plugins/SOTFAudioUnits.xcodeproj \
+	# Build the Audio Unit
+	xcodebuild -project SOTFAudioUnits.xcodeproj \
 		-scheme EQAudioUnit \
 		-configuration Release \
 		build
 	echo "✅ Audio Unit built successfully"
 
 # Install Audio Units to system
-install-au:
+install-au: build-au-rust build-au-swift
 	#!/usr/bin/env bash
 	set -euxo pipefail
-	mkdir -p ~/Library/Audio/Plug-Ins/Components/
-	if [ -d "build/Release/EQAudioUnit.appex" ]; then
-		cp -r build/Release/EQAudioUnit.appex ~/Library/Audio/Plug-Ins/Components/
-		echo "✅ EQ Audio Unit installed"
+	# Find the Xcode DerivedData build output - need the container .app
+	XCODE_APP=$(find ~/Library/Developer/Xcode/DerivedData/SOTFAudioUnits-*/Build/Products/Release/SOTFAudioUnits.app -maxdepth 0 2>/dev/null | head -1)
+	if [ -n "$XCODE_APP" ] && [ -d "$XCODE_APP" ]; then
+		# Copy the entire app to Applications (AUv3 extensions require this)
+		rm -rf ~/Applications/SOTFAudioUnits.app
+		mkdir -p ~/Applications
+		cp -r "$XCODE_APP" ~/Applications/
+		echo "✅ SOTF Audio Units app installed to ~/Applications/"
+		echo ""
+		echo "IMPORTANT: You must launch ~/Applications/SOTFAudioUnits.app once to register the AU"
+		echo "           Then it will be available in DAWs as 'SOTF: Parametric EQ'"
+		echo ""
 	else
-		echo "⚠️  No Audio Unit build found. Run 'just build-au-swift' first"
+		echo "⚠️  No Audio Unit build found in Xcode DerivedData"
+		echo "    Run 'just build-au-swift' first"
 		exit 1
 	fi
 	# Restart Audio Component registration
-	killall -9 AudioComponentRegistrar 2>/dev/null || true
-	echo "✅ Audio Units installed to ~/Library/Audio/Plug-Ins/Components/"
+	killall -9 AudioComponentRegistrar coreaudiod 2>/dev/null || true
 
 # Validate Audio Unit
 validate-au:

@@ -146,7 +146,7 @@ impl ProcessingState {
     }
 
     /// Process a frame
-    fn process_frame(&mut self, input: &[f32], output: &mut Vec<f32>) -> Result<(), String> {
+    fn process_frame(&mut self, input: &[f32], output: &mut [f32]) -> Result<(), String> {
         if self.bypassed {
             // Bypass - just copy
             output.copy_from_slice(input);

@@ -29,6 +29,11 @@ pub struct StartKnobDrag {
     pub max: f64,
 }
 
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct ToggleUpmixerConfig {
+    pub open: bool,
+}
+
 impl gpui::Action for UpdatePluginParam {
     fn boxed_clone(&self) -> Box<dyn gpui::Action> {
         Box::new(self.clone())
@@ -107,6 +112,27 @@ impl gpui::Action for StartKnobDrag {
     }
     fn name_for_type() -> &'static str {
         "StartKnobDrag"
+    }
+    fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
+        Err(anyhow::anyhow!("Not supported via keymaps"))
+    }
+}
+
+impl gpui::Action for ToggleUpmixerConfig {
+    fn boxed_clone(&self) -> Box<dyn gpui::Action> {
+        Box::new(self.clone())
+    }
+    fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+    fn name(&self) -> &'static str {
+        "ToggleUpmixerConfig"
+    }
+    fn name_for_type() -> &'static str {
+        "ToggleUpmixerConfig"
     }
     fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
         Err(anyhow::anyhow!("Not supported via keymaps"))

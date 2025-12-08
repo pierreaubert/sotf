@@ -11,7 +11,7 @@ use std::time::Duration;
 
 // Re-export all actions for backward compatibility
 pub use crate::actions::*;
-use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam};
+use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, StartKnobDrag, ToggleUpmixerConfig, UpdatePluginParam};
 
 pub struct PlayerView {
     pub(crate) state: Entity<AppState>,
@@ -703,35 +703,6 @@ impl PlayerView {
                 .set_channel_filter(crate::app::ChannelFilter::Mixed);
         });
         cx.notify();
-    }
-
-    fn handle_search_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        // Handle text input for search mode
-        match event.keystroke.key.as_str() {
-            "backspace" => {
-                self.state.update(cx, |state, _cx| {
-                    state.app.search_query.pop();
-                    state.app.selected_album_index = 0; // Reset selection when query changes
-                });
-                cx.notify();
-            }
-            "escape" => {
-                // Already handled by Cancel action
-            }
-            "enter" => {
-                // Already handled by Enter action (exits search mode)
-            }
-            _ => {
-                // Add character to search query
-                if let Some(text) = event.keystroke.key_char.as_ref() {
-                    self.state.update(cx, |state, _cx| {
-                        state.app.search_query.push_str(text);
-                        state.app.selected_album_index = 0; // Reset selection when query changes
-                    });
-                    cx.notify();
-                }
-            }
-        }
     }
 
     fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
@@ -1763,7 +1734,9 @@ impl Render for PlayerView {
 
                 match input_mode {
                     crate::app::InputMode::Search => {
-                        view.handle_search_input(event, cx);
+                        // Search input is fully handled by the Input component
+                        // including Escape and Enter via on_edit_end callback
+                        // Do nothing here to let events reach the Input component
                     }
                     crate::app::InputMode::AddDirectory => {
                         view.handle_directory_input(event, cx);

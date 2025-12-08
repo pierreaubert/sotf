@@ -68,34 +68,15 @@ pub fn render_eq_plugin(
                         ),
                 )
                 // Graph with axis labels
+                // Graph (self-contained with axes)
                 .child(
                     div()
-                        .flex()
-                        .gap_2()
-                        // dB axis
-                        .child(render_db_labels(theme))
-                        // Graph
-                        .child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .flex_col()
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .bg(theme.surface)
-                                        .rounded_lg()
-                                        .border_1()
-                                        .border_color(theme.border)
-                                        .child(render_eq_visualization(
-                                            filters,
-                                            selected_band_idx,
-                                            theme,
-                                        )),
-                                )
-                                // Frequency axis
-                                .child(render_freq_labels(theme)),
-                        ),
+                        .flex_1()
+                        .child(render_eq_visualization(
+                            filters,
+                            selected_band_idx,
+                            theme,
+                        )),
                 ),
         )
         // Band controls section

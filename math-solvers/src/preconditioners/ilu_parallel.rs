@@ -167,8 +167,7 @@ fn compute_forward_levels(
 
     for i in 0..n {
         let mut max_dep_level = 0;
-        for idx in l_row_ptrs[i]..l_row_ptrs[i + 1] {
-            let j = l_col_indices[idx];
+        for &j in &l_col_indices[l_row_ptrs[i]..l_row_ptrs[i + 1]] {
             max_dep_level = max_dep_level.max(level[j] + 1);
         }
         level[i] = max_dep_level;
@@ -196,8 +195,7 @@ fn compute_backward_levels(
 
     for i in (0..n).rev() {
         let mut max_dep_level = 0;
-        for idx in u_row_ptrs[i]..u_row_ptrs[i + 1] {
-            let j = u_col_indices[idx];
+        for &j in &u_col_indices[u_row_ptrs[i]..u_row_ptrs[i + 1]] {
             if j > i {
                 max_dep_level = max_dep_level.max(level[j] + 1);
             }
@@ -530,13 +528,13 @@ impl<T: ComplexField + Send + Sync> IluFixedPointPreconditioner<T> {
                 // Subtract L*x contribution
                 for idx in self.l_row_ptrs[i]..self.l_row_ptrs[i + 1] {
                     let j = self.l_col_indices[idx];
-                    sum = sum - self.l_values[idx] * x[j];
+                    sum -= self.l_values[idx] * x[j];
                 }
 
                 // Subtract U_off*x contribution
                 for idx in self.u_off_row_ptrs[i]..self.u_off_row_ptrs[i + 1] {
                     let j = self.u_off_col_indices[idx];
-                    sum = sum - self.u_off_values[idx] * x[j];
+                    sum -= self.u_off_values[idx] * x[j];
                 }
 
                 x_new[i] = sum * self.u_diag_inv[i];
@@ -569,13 +567,13 @@ impl<T: ComplexField + Send + Sync> IluFixedPointPreconditioner<T> {
                     // Subtract L*x contribution
                     for idx in self.l_row_ptrs[i]..self.l_row_ptrs[i + 1] {
                         let j = self.l_col_indices[idx];
-                        sum = sum - self.l_values[idx] * x[j];
+                        sum -= self.l_values[idx] * x[j];
                     }
 
                     // Subtract U_off*x contribution
                     for idx in self.u_off_row_ptrs[i]..self.u_off_row_ptrs[i + 1] {
                         let j = self.u_off_col_indices[idx];
-                        sum = sum - self.u_off_values[idx] * x[j];
+                        sum -= self.u_off_values[idx] * x[j];
                     }
 
                     sum * self.u_diag_inv[i]

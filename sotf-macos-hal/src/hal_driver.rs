@@ -389,10 +389,10 @@ impl HALDriver {
         _object_id: AudioObjectID,
         address: &AudioObjectPropertyAddress,
     ) -> bool {
-        match address.mSelector {
-            kAudioDevicePropertyNominalSampleRate | kAudioDevicePropertyBufferFrameSize => true,
-            _ => false,
-        }
+        matches!(
+            address.mSelector,
+            kAudioDevicePropertyNominalSampleRate | kAudioDevicePropertyBufferFrameSize
+        )
     }
 
     /// Get the size of property data

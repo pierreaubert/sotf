@@ -10,11 +10,10 @@ use crate::library::{Album, Playlist, PlaylistEntry, Track};
 /// Normalize a genre value:
 /// - Replace dots and underscores with spaces
 /// - Title case each word (first letter uppercase, rest lowercase)
-/// This is specifically for genres where formats like "world.music" or "trip_hop" are common
+///   This is specifically for genres where formats like "world.music" or "trip_hop" are common
 fn normalize_genre_name(value: &str) -> String {
     value
-        .replace('.', " ")
-        .replace('_', " ")
+        .replace(['.', '_'], " ")
         .split_whitespace()
         .map(|word| {
             let mut chars = word.chars();
@@ -34,7 +33,7 @@ fn normalize_genre_name(value: &str) -> String {
 /// Returns a vector of trimmed, non-empty values (preserves original capitalization)
 fn split_metadata_value(value: &str) -> Vec<String> {
     value
-        .split(|c| c == ',' || c == '/' || c == ';')
+        .split([',', '/', ';'])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
@@ -44,7 +43,7 @@ fn split_metadata_value(value: &str) -> Vec<String> {
 /// (dots/underscores to spaces, title case)
 fn split_and_normalize_genres(value: &str) -> Vec<String> {
     value
-        .split(|c| c == ',' || c == '/' || c == ';')
+        .split([',', '/', ';'])
         .map(|s| normalize_genre_name(s.trim()))
         .filter(|s| !s.is_empty())
         .collect()

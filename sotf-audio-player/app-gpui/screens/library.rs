@@ -214,22 +214,42 @@ impl PlayerView {
             .when(is_search_mode, |el| {
                 el.child(
                     div().flex().justify_center().mb_2().child(
-                        div().w_96().child(
+                        div().w_96().child({
+                            let state = self.state.clone();
+                            let state_for_end = state.clone();
                             Input::new("search-input")
-                                .value(SharedString::from(if search_query.is_empty() {
-                                    "".to_string()
-                                } else {
-                                    format!("{}|", search_query)
-                                }))
+                                .value(SharedString::from(search_query.clone()))
+                                .edit_text(SharedString::from(search_query.clone()))
                                 .placeholder("Type to search albums, artists, tracks...")
                                 .icon_left("🔍")
                                 .size(InputSize::Md)
-                                .readonly(true)
                                 .bg_color(theme.surface)
                                 .text_color(theme.text_primary)
                                 .placeholder_color(theme.text_muted)
-                                .border_color(theme.accent),
-                        ),
+                                .border_color(theme.accent)
+                                .editing(true)
+                                .on_text_change(move |text, _window, cx| {
+                                    state.update(cx, |state, _| {
+                                        state.app.search_query = text;
+                                        state.app.selected_album_index = 0;
+                                        state.app.reset_page();
+                                    });
+                                })
+                                .on_edit_end(move |text_opt, _window, cx| {
+                                    // Handle Enter or Escape - exit search mode
+                                    if text_opt.is_some() {
+                                        // Enter pressed - keep search results and exit
+                                        state_for_end.update(cx, |state, _| {
+                                            state.app.input_mode = crate::app::InputMode::Normal;
+                                        });
+                                    } else {
+                                        // Escape pressed - clear search and exit
+                                        state_for_end.update(cx, |state, _| {
+                                            state.app.input_mode = crate::app::InputMode::Normal;
+                                        });
+                                    }
+                                })
+                        }),
                     ),
                 )
             })

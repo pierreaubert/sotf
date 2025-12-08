@@ -3820,7 +3820,7 @@ impl RoomSimulatorWasm {
                         for ny in -2i32..=2 {
                             for nz in -2i32..=2 {
                                 let order = nx.abs() + ny.abs() + nz.abs();
-                                if order < 2 || order > reflection_order as i32 {
+                                if order < 2 || order > reflection_order {
                                     continue;
                                 }
 
@@ -3844,12 +3844,12 @@ impl RoomSimulatorWasm {
                                 let r_image = image_pos.distance_to(point);
 
                                 if r_image > 1e-6 {
-                                    let refl_coeff = r_left.powi(((nx.abs() + 1) / 2) as i32)
-                                        * r_right.powi((nx.abs() / 2) as i32)
-                                        * r_front.powi(((ny.abs() + 1) / 2) as i32)
-                                        * r_back.powi((ny.abs() / 2) as i32)
-                                        * r_floor.powi(((nz.abs() + 1) / 2) as i32)
-                                        * r_ceiling.powi((nz.abs() / 2) as i32);
+                                    let refl_coeff = r_left.powi((nx.abs() + 1) / 2)
+                                        * r_right.powi(nx.abs() / 2)
+                                        * r_front.powi((ny.abs() + 1) / 2)
+                                        * r_back.powi(ny.abs() / 2)
+                                        * r_floor.powi((nz.abs() + 1) / 2)
+                                        * r_ceiling.powi(nz.abs() / 2);
 
                                     let air_atten = self.air_absorption_factor(r_image, frequency);
                                     total_pressure += greens_function_3d(r_image, k)

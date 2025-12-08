@@ -22,6 +22,7 @@ members = [
     "sotf-audio-player/app-gpui",
     "sotf-audio-midi",
     "sotf-audio-plugins",
+    "sotf-audio-plugins/src-ffi",
     "sotf-macos-hal",
     "sotf-head-scanner",
 ]

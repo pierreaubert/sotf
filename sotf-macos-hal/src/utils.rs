@@ -32,11 +32,7 @@ pub fn create_asbd(
     bits_per_channel: u32,
     is_float: bool,
 ) -> AudioStreamBasicDescription {
-    let format_id = if is_float {
-        kAudioFormatLinearPCM
-    } else {
-        kAudioFormatLinearPCM
-    };
+    let format_id = kAudioFormatLinearPCM;
 
     let format_flags = if is_float {
         kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved
@@ -202,10 +198,7 @@ pub fn is_format_supported(asbd: &AudioStreamBasicDescription) -> bool {
     }
 
     // Check bit depth
-    match asbd.mBitsPerChannel {
-        16 | 24 | 32 => true,
-        _ => false,
-    }
+    matches!(asbd.mBitsPerChannel, 16 | 24 | 32)
 }
 
 /// Convert dB to linear gain

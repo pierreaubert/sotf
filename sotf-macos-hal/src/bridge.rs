@@ -53,7 +53,7 @@ unsafe fn init_driver() -> Result<Arc<Mutex<HALDriver>>> {
     DRIVER_INSTANCE
         .get()
         .ok_or_else(|| AudioDriverError::Device("Failed to initialize driver".to_string()).into())
-        .map(|arc| arc.clone())
+        .cloned()
 }
 
 /// Get the global driver instance
@@ -61,10 +61,12 @@ unsafe fn get_driver() -> Result<Arc<Mutex<HALDriver>>> {
     DRIVER_INSTANCE
         .get()
         .ok_or_else(|| AudioDriverError::Device("Driver not initialized".to_string()).into())
-        .map(|arc| arc.clone())
+        .cloned()
 }
 
 /// Entry point called when Core Audio loads the driver plugin
+#[allow(clippy::missing_safety_doc)]
+#[allow(clippy::missing_transmute_annotations)]
 pub unsafe extern "C" fn audio_driver_plugin_open(
     driver_ref: *mut c_void, // Simplified host info
     driver: *mut *mut AudioServerPlugInDriverInterface,
@@ -147,6 +149,7 @@ pub unsafe extern "C" fn audio_driver_plugin_open(
 }
 
 /// Entry point called when Core Audio unloads the driver
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn audio_driver_plugin_close(
     driver: *mut AudioServerPlugInDriverInterface,
 ) -> OSStatus {
@@ -166,6 +169,7 @@ pub unsafe extern "C" fn audio_driver_plugin_close(
 }
 
 /// Factory function for creating driver instances
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn audio_driver_plugin_factory(_uuid: CFUUIDRef) -> *mut c_void {
     log::info!("🏭 AudioDriverPlugInFactory called (not implemented, returning null)");
 

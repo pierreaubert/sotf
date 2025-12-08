@@ -81,6 +81,7 @@ use libc::c_void;
 
 /// Main entry point called by Core Audio when loading the driver
 #[no_mangle]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AudioDriverPlugInOpen(
     driver_ref: *mut c_void,
     driver: *mut *mut AudioServerPlugInDriverInterface,
@@ -95,6 +96,7 @@ pub unsafe extern "C" fn AudioDriverPlugInOpen(
 
 /// Called when Core Audio unloads the driver
 #[no_mangle]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AudioDriverPlugInClose(
     driver: *mut AudioServerPlugInDriverInterface,
 ) -> OSStatus {
@@ -106,6 +108,7 @@ pub unsafe extern "C" fn AudioDriverPlugInClose(
 
 /// Entry point for factory function
 #[no_mangle]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AudioDriverPlugInFactory(uuid: CFUUIDRef) -> *mut c_void {
     // Initialize logging first
     init_logging();
@@ -118,6 +121,7 @@ pub unsafe extern "C" fn AudioDriverPlugInFactory(uuid: CFUUIDRef) -> *mut c_voi
 
 /// Alias for factory function (for backward compatibility)
 #[no_mangle]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AutoEQHalFactory(uuid: CFUUIDRef) -> *mut c_void {
     log::info!("🏭 AutoEQHalFactory alias called, forwarding to AudioDriverPlugInFactory");
     AudioDriverPlugInFactory(uuid)

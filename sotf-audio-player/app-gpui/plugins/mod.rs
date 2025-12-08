@@ -54,6 +54,7 @@ pub fn render_plugin_content(
     is_editing: bool,
     selected_param: usize,
     theme: &Theme,
+    config_open: bool,
 ) -> AnyElement {
     match settings {
         PluginSettings::EQ { filters } => {
@@ -164,6 +165,7 @@ pub fn render_plugin_content(
             is_editing,
             selected_param,
             theme,
+            config_open,
         )
         .into_any_element(),
         PluginSettings::LoudnessCompensation {

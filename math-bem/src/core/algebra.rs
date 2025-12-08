@@ -273,12 +273,14 @@ pub fn determinant(a: &Array2<Complex64>) -> Option<Complex64> {
 ///
 /// Uses BLAS when `native` feature is enabled, falls back to pure Rust otherwise.
 #[cfg(feature = "native")]
+#[allow(missing_docs)]
 pub fn solve_auto(a: &Array2<Complex64>, b: &Array1<Complex64>) -> Option<Array1<Complex64>> {
     use ndarray_linalg::Solve;
     a.solve(b).ok()
 }
 
 #[cfg(not(feature = "native"))]
+#[allow(missing_docs)]
 pub fn solve_auto(a: &Array2<Complex64>, b: &Array1<Complex64>) -> Option<Array1<Complex64>> {
     solve(a, b)
 }
@@ -287,12 +289,14 @@ pub fn solve_auto(a: &Array2<Complex64>, b: &Array1<Complex64>) -> Option<Array1
 ///
 /// Uses BLAS when `native` feature is enabled, falls back to pure Rust otherwise.
 #[cfg(feature = "native")]
+#[allow(missing_docs)]
 pub fn inverse_auto(a: &Array2<Complex64>) -> Option<Array2<Complex64>> {
     use ndarray_linalg::Inverse;
     a.inv().ok()
 }
 
 #[cfg(not(feature = "native"))]
+#[allow(missing_docs)]
 pub fn inverse_auto(a: &Array2<Complex64>) -> Option<Array2<Complex64>> {
     inverse(a)
 }

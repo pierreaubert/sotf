@@ -504,28 +504,28 @@ pub fn generate_window(n: usize, window_type: WindowType, kaiser_beta: f64) -> V
             window.fill(1.0);
         }
         WindowType::Hamming => {
-            for i in 0..n {
-                window[i] = 0.54 - 0.46 * (2.0 * PI * i as f64 / (n - 1) as f64).cos();
+            for (i, w) in window.iter_mut().enumerate() {
+                *w = 0.54 - 0.46 * (2.0 * PI * i as f64 / (n - 1) as f64).cos();
             }
         }
         WindowType::Hann => {
-            for i in 0..n {
-                window[i] = 0.5 * (1.0 - (2.0 * PI * i as f64 / (n - 1) as f64).cos());
+            for (i, w) in window.iter_mut().enumerate() {
+                *w = 0.5 * (1.0 - (2.0 * PI * i as f64 / (n - 1) as f64).cos());
             }
         }
         WindowType::Blackman => {
-            for i in 0..n {
+            for (i, w) in window.iter_mut().enumerate() {
                 let arg = 2.0 * PI * i as f64 / (n - 1) as f64;
-                window[i] = 0.42 - 0.5 * arg.cos() + 0.08 * (2.0 * arg).cos();
+                *w = 0.42 - 0.5 * arg.cos() + 0.08 * (2.0 * arg).cos();
             }
         }
         WindowType::Kaiser => {
             let i0_beta = bessel_i0(kaiser_beta);
             let n_minus_1 = (n - 1) as f64;
-            for i in 0..n {
+            for (i, w) in window.iter_mut().enumerate() {
                 let x =
                     kaiser_beta * (1.0 - ((2.0 * i as f64 - n_minus_1) / n_minus_1).powi(2)).sqrt();
-                window[i] = bessel_i0(x) / i0_beta;
+                *w = bessel_i0(x) / i0_beta;
             }
         }
     }
@@ -553,26 +553,26 @@ fn design_fir_lowpass(
     let m = (n - 1) as f64 / 2.0;
 
     // Generate ideal lowpass sinc function
-    for i in 0..n {
+    for (i, h_val) in h.iter_mut().enumerate() {
         let x = i as f64 - m;
         if x == 0.0 {
-            h[i] = 2.0 * fc;
+            *h_val = 2.0 * fc;
         } else {
-            h[i] = (2.0 * PI * fc * x).sin() / (PI * x);
+            *h_val = (2.0 * PI * fc * x).sin() / (PI * x);
         }
     }
 
     // Apply window
     let window_coeffs = generate_window(n, window, kaiser_beta);
-    for i in 0..n {
-        h[i] *= window_coeffs[i];
+    for (i, h_val) in h.iter_mut().enumerate() {
+         *h_val *= window_coeffs[i];
     }
 
     // Normalize to unit gain at DC
     let sum: f64 = h.iter().sum();
     if sum.abs() > 1e-10 {
-        for i in 0..n {
-            h[i] /= sum;
+        for h_val in h.iter_mut() {
+            *h_val /= sum;
         }
     }
 
@@ -592,8 +592,8 @@ fn design_fir_highpass(
 
     // Spectral inversion: negate all coefficients and add 1 to center tap
     let m = h.len() / 2;
-    for i in 0..h.len() {
-        h[i] = -h[i];
+    for h_val in h.iter_mut() {
+        *h_val = -*h_val;
     }
     h[m] += 1.0;
 
@@ -622,21 +622,21 @@ fn design_fir_bandpass(
     let m = (n - 1) as f64 / 2.0;
 
     // Generate ideal bandpass filter (difference of two sinc functions)
-    for i in 0..n {
+    for (i, h_val) in h.iter_mut().enumerate() {
         let x = i as f64 - m;
         if x == 0.0 {
-            h[i] = 2.0 * (fc_high - fc_low);
+            *h_val = 2.0 * (fc_high - fc_low);
         } else {
             let sinc_high = (2.0 * PI * fc_high * x).sin() / (PI * x);
             let sinc_low = (2.0 * PI * fc_low * x).sin() / (PI * x);
-            h[i] = sinc_high - sinc_low;
+            *h_val = sinc_high - sinc_low;
         }
     }
 
     // Apply window
     let window_coeffs = generate_window(n, window, kaiser_beta);
-    for i in 0..n {
-        h[i] *= window_coeffs[i];
+    for (i, h_val) in h.iter_mut().enumerate() {
+         *h_val *= window_coeffs[i];
     }
 
     h
@@ -656,8 +656,8 @@ fn design_fir_bandstop(
 
     // Spectral inversion: negate all coefficients and add 1 to center tap
     let m = h.len() / 2;
-    for i in 0..h.len() {
-        h[i] = -h[i];
+    for h_val in h.iter_mut() {
+        *h_val = -*h_val;
     }
     h[m] += 1.0;
 
