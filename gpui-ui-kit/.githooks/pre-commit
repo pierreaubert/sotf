@@ -1,0 +1,43 @@
+#!/bin/bash
+# Pre-commit hook to run tests and prevent regressions
+
+set -e
+
+echo "🔍 Running pre-commit checks for gpui-ui-kit..."
+echo ""
+
+# Change to repository root
+cd "$(git rev-parse --show-toplevel)/gpui-ui-kit" || exit 1
+
+# Check formatting
+echo "📝 Checking code formatting..."
+if ! cargo fmt -- --check; then
+    echo "❌ Code formatting check failed!"
+    echo "   Run: cargo fmt"
+    exit 1
+fi
+echo "✅ Code formatting OK"
+echo ""
+
+# Run tests
+echo "🧪 Running tests..."
+if ! cargo test --lib --tests --quiet; then
+    echo "❌ Tests failed!"
+    echo "   Run: cargo test --lib --tests"
+    exit 1
+fi
+echo "✅ All tests passed"
+echo ""
+
+# Run clippy (optional - can be slow)
+# Uncomment to enable
+# echo "🔍 Running clippy..."
+# if ! cargo clippy --all-targets -- -D warnings; then
+#     echo "❌ Clippy found issues!"
+#     exit 1
+# fi
+# echo "✅ Clippy OK"
+# echo ""
+
+echo "✅ All pre-commit checks passed!"
+exit 0
