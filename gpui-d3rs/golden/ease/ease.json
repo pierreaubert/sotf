@@ -2,7 +2,7 @@
   "module": "d3-ease",
   "function": "ease",
   "tolerance": 0.000001,
-  "generated_at": "2025-11-30T17:15:08.649Z",
+  "generated_at": "2025-12-08T20:24:30.923Z",
   "test_cases": [
     {
       "name": "linear",

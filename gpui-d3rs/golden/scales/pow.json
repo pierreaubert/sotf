@@ -2,7 +2,7 @@
   "module": "d3-scale",
   "function": "scalePow",
   "tolerance": 0.000001,
-  "generated_at": "2025-11-30T17:15:08.641Z",
+  "generated_at": "2025-12-08T20:24:30.915Z",
   "test_cases": [
     {
       "name": "exponent_2",

@@ -1,6 +1,6 @@
 [package]
 name = "gpui-d3rs"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"
@@ -111,6 +111,22 @@ required-features = ["gpu-2d"]
 name = "gpu2d_contour_demo"
 path = "examples/gpu2d_contour_demo.rs"
 required-features = ["gpu-2d"]
+
+[[example]]
+name = "hierarchy_demo"
+path = "examples/hierarchy_demo.rs"
+
+[[example]]
+name = "force_demo"
+path = "examples/force_demo.rs"
+
+[[example]]
+name = "chord_demo"
+path = "examples/chord_demo.rs"
+
+[[example]]
+name = "chromatic_demo"
+path = "examples/chromatic_demo.rs"
 
 [[bin]]
 name = "d3rs-spinorama"

@@ -169,6 +169,32 @@ pub fn render(_app: &ShowcaseApp) -> Div {
                         .child(render_named_color("from_hsl(60, 1.0, 0.5)", D3Color::from_hsl(60.0, 1.0, 0.5))),
                 ),
         )
+        // Chromatic Scales
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_lg()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child("Chromatic Scales"),
+                )
+                .child(
+                   div()
+                       .text_sm()
+                       .text_color(rgb(0x666666))
+                       .mb_2()
+                       .child("Sequential and Diverging scales from d3-scale-chromatic:"),
+                )
+                // TODO: Fix type inference/coercion for function pointers to render_chromatic_row
+                // .child(render_chromatic_row("Turbo", turbo_wrapper))
+                // .child(render_chromatic_row("Viridis", viridis_wrapper))
+                // .child(render_chromatic_row("Magma", magma_wrapper))
+                // .child(render_chromatic_row("RdBu", rdbu_wrapper)),
+                .child(div().text_sm().text_color(rgb(0x888888)).child("(Chromatic scales disabled due to temporary compilation issue)")),
+        )
         // Code example
         .child(
             div()
@@ -407,3 +433,24 @@ fn render_named_color(code: &'static str, color: D3Color) -> Div {
 }
 
 use super::ShowcaseApp;
+
+/// Render a chromatic scale row
+fn render_chromatic_row(label: &'static str, scale_fn: fn(f64) -> D3Color) -> Div {
+   div()
+       .flex()
+       .items_center()
+       .gap_3()
+       .child(
+           div()
+               .w(px(120.0))
+               .text_sm()
+               .text_color(rgb(0x333333))
+               .child(label),
+       )
+       .child(div().flex().children((0..50).map(|i| {
+           let t = i as f64 / 49.0;
+           let color = scale_fn(t);
+           div().w(px(8.0)).h(px(30.0)).bg(color.to_rgba())
+       })))
+}
+

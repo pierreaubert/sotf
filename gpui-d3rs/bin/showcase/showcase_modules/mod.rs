@@ -10,6 +10,9 @@ pub mod quadtree;
 pub mod scales;
 pub mod scatter_plots;
 pub mod surface_plots;
+pub mod hierarchy;
+pub mod force;
+pub mod chord;
 pub mod transitions;
 
 // Re-export the main types that the modules need

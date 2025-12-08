@@ -2,6 +2,7 @@
 //!
 //! Demonstrates all d3rs functionality in a single application with tabbed navigation.
 
+use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
@@ -28,6 +29,10 @@ pub enum DemoSection {
     D3KDE,
     D3Treemap,
     D3StackedBars,
+    // New Modules
+    Hierarchy,
+    Force,
+    Chord,
 }
 
 impl DemoSection {
@@ -50,6 +55,9 @@ impl DemoSection {
             Self::D3KDE,
             Self::D3Treemap,
             Self::D3StackedBars,
+            Self::Hierarchy,
+            Self::Force,
+            Self::Chord,
         ]
     }
 
@@ -72,6 +80,9 @@ impl DemoSection {
             Self::D3KDE => "D3: KDE",
             Self::D3Treemap => "D3: Treemap",
             Self::D3StackedBars => "D3: Stacked Bars",
+            Self::Hierarchy => "Hierarchy",
+            Self::Force => "Force Graph",
+            Self::Chord => "Chord Diagram",
         }
     }
 }
@@ -174,6 +185,9 @@ pub struct ShowcaseApp {
     pub stacked_bars_m_samples: usize,
     pub stacked_bars_animation_progress: f64,
     pub stacked_bars_animating: bool,
+    // Force Simulation
+    pub force_simulation: d3rs::force::Simulation,
+    pub force_running: bool,
 }
 
 impl ShowcaseApp {
@@ -215,6 +229,23 @@ impl ShowcaseApp {
             stacked_bars_m_samples: 40,
             stacked_bars_animation_progress: 0.0,
             stacked_bars_animating: false,
+            // Force Simulation
+            force_simulation: {
+                // Initialize simulation
+                use d3rs::force::{Simulation, SimulationNode, ForceManyBody, ForceCenter};
+                let width = 800.0;
+                let height = 600.0;
+                let mut nodes = Vec::new();
+                for i in 0..50 {
+                   let x = width / 2.0 + (i as f64 * 13.0 % 100.0 - 50.0);
+                   let y = height / 2.0 + (i as f64 * 17.0 % 100.0 - 50.0);
+                   nodes.push(SimulationNode::new(i, x, y));
+                }
+                Simulation::new(nodes)
+                    .force(Box::new(ForceManyBody::new()))
+                    .force(Box::new(ForceCenter::new(width / 2.0, height / 2.0)))
+            },
+            force_running: false,
         }
     }
 
@@ -291,6 +322,9 @@ impl ShowcaseApp {
             DemoSection::D3StackedBars => {
                 showcase_modules::d3_examples::stacked_grouped_bars::render(self, cx)
             }
+            DemoSection::Hierarchy => showcase_modules::hierarchy::render(self, cx),
+            DemoSection::Force => showcase_modules::force::render(self, cx),
+            DemoSection::Chord => showcase_modules::chord::render(self, cx),
         };
 
         div()
