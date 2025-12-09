@@ -12,7 +12,7 @@ categories = ["visualization", "gui"]
 name = "d3rs"
 
 [features]
-default = ["gpui"]
+default = ["gpui", "gpu-2d"]
 gpui = ["dep:gpui", "dep:gpui-ui-kit"]
 spinorama = ["dep:autoeq", "dep:autoeq-cea2034", "dep:tokio", "dep:ndarray", "dep:reqwest", "dep:urlencoding", "gpui"]
 gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "gpui"]
@@ -45,7 +45,7 @@ serde_json = "1.0"
 [[bin]]
 name = "d3rs-showcase"
 path = "bin/showcase/main.rs"
-required-features = ["gpui"]
+required-features = ["gpui", "gpu-2d"]
 
 # Non-GPUI examples (can run without gpui feature)
 [[example]]

@@ -36,7 +36,11 @@ impl Render for ChordDemo {
         // Ribbon generator
         let outer_radius = 200.0;
         let inner_radius = 180.0;
-        let ribbon = RibbonGenerator::new(inner_radius);
+        
+        let center_x = self.width / 2.0;
+        let center_y = self.height / 2.0;
+        
+        let ribbon = RibbonGenerator::new(inner_radius).center(center_x, center_y);
         
         let colors = vec![
             rgb(0x000000), 
@@ -47,18 +51,9 @@ impl Render for ChordDemo {
         
         let mut elements = Vec::new();
         
-        // Center the diagram
-        let center_x = self.width / 2.0;
-        let center_y = self.height / 2.0;
-        
         // Render Groups (Arcs)
-        // We'll use SVG paths for arcs.
-        // Quick arc path generator since d3rs-shape is available?
-        // Let's use d3rs-shape if possible, but for now we manually do simple arcs or just robust implementation depending on what's exposed.
-        // Actually d3rs-shape has Arc.
-        
         use d3rs::shape::arc::{Arc, ArcDatum};
-        let arc_gen = Arc::new();
+        let arc_gen = Arc::new().center(center_x, center_y);
         
         for group in &chords.groups {
             let datum = ArcDatum::new()
@@ -72,12 +67,12 @@ impl Render for ChordDemo {
             elements.push(
                 div()
                     .absolute()
-                    .left(px(center_x as f32))
-                    .top(px(center_y as f32))
+                    .size_full()
                     .child(
                         svg()
                             .path(path.to_svg_string())
                             .text_color(colors[group.index % colors.len()])
+                            .size_full()
                     )
             );
         }
@@ -89,13 +84,13 @@ impl Render for ChordDemo {
              elements.push(
                 div()
                     .absolute()
-                    .left(px(center_x as f32))
-                    .top(px(center_y as f32))
+                    .size_full()
                     .child(
                 svg()
                     .path(path_d)
                     .text_color(colors[chord.target.index % colors.len()])
                     .opacity(0.67)
+                    .size_full()
                     )
             );
         }

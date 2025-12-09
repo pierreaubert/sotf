@@ -1,39 +1,27 @@
 use gpui::*;
 use crate::ShowcaseApp;
+use d3rs::gpu2d::Chart2DElement;
 
-pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
-    
-    // START SHORTCUT: Since we can't easily change the signature everywhere right now without refactoring main.rs dispatch,
-    // let's assume the loop is started in main.rs or we handle it differently.
-    // Actually, I will modify main.rs to pass &mut ShowcaseApp to render_content modules.
-    // Wait, main.rs calls `render_content(&mut self, ...)` and then matches on `self.current_section`.
-    // The modules signatures in other files currently take `&ShowcaseApp`.
-    // I should check `overview.rs` signature.
-    
-    // Inspecting `overview::render`: `pub fn render(app: &ShowcaseApp) -> Div`
-    // So I need to update all signatures if I want to pass mutable app.
-    // OR I can use Interior Mutability for the simulation if strictly necessary, but `ShowcaseApp` owns it.
-    
-    // Better plan: Initialize the loop in `ShowcaseApp::new` if it's meant to run always, or handle the specific Force tick in `main.rs` via `cx.spawn`.
-    // Given `force_demo.rs` experience, `Simulation` is lightweight.
-    
-    // For now, let's just render the nodes.
-    
-    let mut elements = Vec::new();
-    
-    for node_rc in &app.force_simulation.nodes {
-        let n = node_rc.borrow();
-        elements.push(
-            div()
-                .absolute()
-                .left(px(n.x as f32 - 5.0))
-                .top(px(n.y as f32 - 5.0))
-                .size(px(10.0))
-                .bg(rgb(0xff4444))
-                .rounded_full()
-        );
+pub fn render(app: &mut ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+     if app.force_running {
+        for _ in 0..5 {
+            app.force_simulation.tick();
+        }
+        cx.notify();
+    } else {
+        // Start running if not already
+        app.force_running = true;
+        cx.notify();
     }
-    
+
+    // Extract node positions to pass to the closure
+    let node_data: Vec<(f32, f32)> = app.force_simulation.nodes.iter()
+        .map(|n| {
+            let n = n.borrow();
+            (n.x as f32, n.y as f32)
+        })
+        .collect();
+
     div()
         .flex()
         .flex_col()
@@ -42,7 +30,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
             div()
                 .text_xl()
                 .font_weight(FontWeight::BOLD)
-                .child("Force Directed Graph"),
+                .child("Force Directed Graph (GPU Accelerated)"),
         )
          .child(
             div()
@@ -57,8 +45,14 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                 .bg(rgb(0xf0f0f0))
                 .border_1()
                 .border_color(rgb(0xcccccc))
-                .relative()
                 .overflow_hidden()
-                .children(elements)
+                .child(
+                    Chart2DElement::new(move |renderer, _bounds| {
+                         for (x, y) in &node_data {
+                            renderer.draw_circle(*x, *y, 5.0, [1.0, 0.2, 0.2, 1.0]);
+                        }
+                    })
+                    .background_color([0.94, 0.94, 0.94, 1.0])
+                )
         )
 }

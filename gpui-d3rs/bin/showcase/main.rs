@@ -50,14 +50,14 @@ impl DemoSection {
             Self::Transitions,
             Self::Geo,
             Self::Colors,
+            Self::Hierarchy,
+            Self::Force,
+            Self::Chord,
             // D3 Observable Examples
             Self::D3VolcanoContours,
             Self::D3KDE,
             Self::D3Treemap,
             Self::D3StackedBars,
-            Self::Hierarchy,
-            Self::Force,
-            Self::Chord,
         ]
     }
 
@@ -75,14 +75,14 @@ impl DemoSection {
             Self::Transitions => "Transitions",
             Self::Geo => "Geo",
             Self::Colors => "Colors",
+            Self::Hierarchy => "Hierarchy",
+            Self::Force => "Force Graph",
+            Self::Chord => "Chord Diagram",
             // D3 Observable Examples
             Self::D3VolcanoContours => "D3: Volcano",
             Self::D3KDE => "D3: KDE",
             Self::D3Treemap => "D3: Treemap",
             Self::D3StackedBars => "D3: Stacked Bars",
-            Self::Hierarchy => "Hierarchy",
-            Self::Force => "Force Graph",
-            Self::Chord => "Chord Diagram",
         }
     }
 }
@@ -254,12 +254,14 @@ impl ShowcaseApp {
 
         div()
             .w(px(200.0))
+            .id("sidebar-scroll")
             .h_full()
             .bg(rgb(0x1e1e1e))
             .border_r_1()
             .border_color(rgb(0x3c3c3c))
             .flex()
             .flex_col()
+            .overflow_y_scroll()
             .p_4()
             .gap_2()
             .child(
@@ -350,7 +352,10 @@ impl Render for ShowcaseApp {
 
 fn main() {
     MiniApp::run(
-        MiniAppConfig::new("d3rs Showcase").size(1000.0, 800.0),
+        MiniAppConfig::new("d3rs Showcase")
+            .size(1000.0, 800.0)
+            .with_theme(true)
+            .with_i18n(true),
         |cx| cx.new(ShowcaseApp::new),
     );
 }

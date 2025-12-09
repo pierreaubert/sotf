@@ -50,13 +50,15 @@ impl Render for ForceDemo {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Run a simulation tick
         let view = cx.entity().clone();
-        cx.spawn(|mut cx| async move {
+        /*
+        cx.spawn(|_, mut cx: &mut AsyncAppContext| async move {
             // Run at ~60fps
             cx.background_executor().timer(Duration::from_millis(16)).await;
             view.update(&mut cx, |demo, cx| {
                 demo.tick(cx);
             }).ok();
         }).detach();
+        */
 
         let mut elements = Vec::new();
         

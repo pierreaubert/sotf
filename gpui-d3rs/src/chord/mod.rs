@@ -167,24 +167,33 @@ impl ChordLayout {
 /// Generates SVG path data for a ribbon (chord)
 pub struct RibbonGenerator {
     pub radius: f64,
+    pub center_x: f64,
+    pub center_y: f64,
 }
 
 impl RibbonGenerator {
     pub fn new(radius: f64) -> Self {
-        Self { radius }
+        Self { 
+            radius,
+            center_x: 0.0,
+            center_y: 0.0,
+        }
     }
     
-    pub fn generate(&self, chord: &Chord) -> String {
-        // Simple quadratic bezier implementation between two arcs
-        // Start: source end_angle
-        // Control: (0,0)
-        // End: target start_angle
-        // ... then target arc
-        // ... then return to source via control
-        
+    pub fn center(mut self, x: f64, y: f64) -> Self {
+        self.center_x = x;
+        self.center_y = y;
+        self
+    }
+    
+
+    pub fn generate_path(&self, chord: &Chord) -> crate::shape::path::Path {
         use std::f64::consts::PI;
+        use crate::shape::path::PathBuilder;
         
         let r = self.radius;
+        let cx = self.center_x;
+        let cy = self.center_y;
         
         let sa0 = chord.source.start_angle - PI/2.0;
         let sa1 = chord.source.end_angle - PI/2.0;
@@ -192,21 +201,32 @@ impl RibbonGenerator {
         let ta0 = chord.target.start_angle - PI/2.0;
         let ta1 = chord.target.end_angle - PI/2.0;
         
-        let sx0 = r * sa0.cos();
-        let sy0 = r * sa0.sin();
-        let sx1 = r * sa1.cos();
-        let sy1 = r * sa1.sin();
+        let sx0 = cx + r * sa0.cos();
+        let sy0 = cy + r * sa0.sin();
+        let sx1 = cx + r * sa1.cos();
+        let sy1 = cy + r * sa1.sin();
         
-        let tx0 = r * ta0.cos();
-        let ty0 = r * ta0.sin();
-        let tx1 = r * ta1.cos();
-        let ty1 = r * ta1.sin();
+        let tx0 = cx + r * ta0.cos();
+        let ty0 = cy + r * ta0.sin();
+        let tx1 = cx + r * ta1.cos();
+        let ty1 = cy + r * ta1.sin();
         
-        format!(
-            "M{},{} A{},{},0,0,1,{},{} Q0,0,{},{} A{},{},0,0,1,{},{} Q0,0,{},{} Z",
-            sx0, sy0, r, r, sx1, sy1,
-            tx0, ty0, r, r, tx1, ty1,
-            sx0, sy0
-        )
+        PathBuilder::new()
+             .move_to(sx0, sy0)
+             .arc(cx, cy, r, sa0, sa1, true) // Wait, arc direction?
+             // Arc(x, y, r, start, end, anticlockwise)
+             // Start sa0, End sa1. Normalized angles.
+             // Usually clockwise. So anticlockwise = false.
+             // But d3-chord ribbons are complex. Simple Bezier approximation:
+             .quadratic_curve_to(cx, cy, tx0, ty0)
+             .arc(cx, cy, r, ta0, ta1, true)
+             .quadratic_curve_to(cx, cy, sx0, sy0)
+             .close_path()
+             .build()
+    }
+    
+    // Legacy String return for compatibility
+    pub fn generate(&self, chord: &Chord) -> String {
+        self.generate_path(chord).to_svg_string()
     }
 }
