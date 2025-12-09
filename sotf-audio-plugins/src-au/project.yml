@@ -60,7 +60,9 @@ targets:
       - sdk: AVFoundation.framework
       - sdk: AudioToolbox.framework
       - sdk: CoreAudioKit.framework
-      # Link the Rust static library
-      - framework: Resources/libsotf_audio_plugins_ffi.a
-        embed: false
-        link: true
+      # Note: Rust FFI library (libsotf_audio_plugins_ffi.a) is temporarily disabled
+      # while we get the pure Swift implementation working first.
+      # Uncomment below to enable Rust FFI:
+      # - framework: Resources/libsotf_audio_plugins_ffi.a
+      #   embed: false
+      #   link: true

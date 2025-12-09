@@ -7,6 +7,11 @@
 #include <stdint.h>
 #include <stddef.h>
 
+// Note: GPUIBridge.h is NOT included yet due to duplicate symbols
+// between libsotf_audio_plugins_ffi.a and libsotf_gpui_au.a
+// Uncomment below when the linking issue is resolved:
+// #include "GPUIBridge.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

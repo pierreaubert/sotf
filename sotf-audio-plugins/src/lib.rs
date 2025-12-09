@@ -43,10 +43,10 @@ mod simd;
 mod sofa;
 mod speaker_config;
 
-// HAL plugins (macOS only)
-#[cfg(target_os = "macos")]
+// HAL plugins (macOS only, requires 'hal' feature)
+#[cfg(all(target_os = "macos", feature = "hal"))]
 mod plugin_hal_input;
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 mod plugin_hal_output;
 
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
@@ -103,8 +103,8 @@ pub use plugin_loudness_compensation::LoudnessCompensation;
 // Define PluginHost as alias for DawHost (the single supported host type)
 pub type PluginHost = DawHost;
 
-// HAL plugins (macOS only)
-#[cfg(target_os = "macos")]
+// HAL plugins (macOS only, requires 'hal' feature)
+#[cfg(all(target_os = "macos", feature = "hal"))]
 pub use plugin_hal_input::{HalInputPlugin, HalInputPluginParams};
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 pub use plugin_hal_output::{HalOutputPlugin, HalOutputPluginParams};

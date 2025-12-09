@@ -56,7 +56,12 @@ id3 = { workspace = true }
 metaflac = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-sotf_hal = { path = "../sotf-macos-hal" }
+sotf_hal = { path = "../sotf-macos-hal", optional = true }
+
+[features]
+default = ["hal"]
+hal = ["sotf_hal"]
+no-hal = []
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

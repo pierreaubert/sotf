@@ -1,16 +1,17 @@
 // EQAudioUnit.swift
-// SOTF Parametric EQ Audio Unit
+// SOTF Parametric EQ Audio Unit - Pure Swift Implementation
+// Note: This is a standalone Swift implementation that doesn't depend on Rust FFI
 
 import AVFoundation
 import AudioToolbox
 import CoreAudioKit
 
+/// Number of EQ bands
+private let kNumBands = 5
+
 /// SOTF Parametric EQ Audio Unit
 public class EQAudioUnit: AUAudioUnit {
     // MARK: - Properties
-
-    /// Rust plugin handle
-    private var pluginHandle: OpaquePointer?
 
     /// Audio format
     private var inputFormat: AVAudioFormat
@@ -19,15 +20,21 @@ public class EQAudioUnit: AUAudioUnit {
     /// Input/output busses
     private var inputBus: AUAudioUnitBus
     private var outputBus: AUAudioUnitBus
-    private var inputBusArray: AUAudioUnitBusArray!
-    private var outputBusArray: AUAudioUnitBusArray!
+    private var _inputBusArray: AUAudioUnitBusArray!
+    private var _outputBusArray: AUAudioUnitBusArray!
 
     /// AU parameters
     private var auParameters: [AUParameter] = []
-    private var _parameterTree: AUParameterTree!
+    private var _parameterTree: AUParameterTree?
 
     /// Processing state
-    private var maxFramesToRender: UInt32 = 512
+    private var _maxFramesToRender: UInt32 = 512
+
+    /// Filter coefficients (biquad) for each band
+    private var filterCoefficients: [[Double]] = []
+
+    /// Filter states (z-1, z-2 for each channel, for each band)
+    private var filterStates: [[[Double]]] = []
 
     // MARK: - Initialization
 
@@ -42,208 +49,185 @@ public class EQAudioUnit: AUAudioUnit {
         self.outputFormat = format
 
         // Create busses
-        do {
-            inputBus = try AUAudioUnitBus(format: format)
-            outputBus = try AUAudioUnitBus(format: format)
-            inputBus.maximumChannelCount = 2
-            outputBus.maximumChannelCount = 2
-        } catch {
-            throw error
-        }
+        inputBus = try AUAudioUnitBus(format: format)
+        outputBus = try AUAudioUnitBus(format: format)
+        inputBus.maximumChannelCount = 2
+        outputBus.maximumChannelCount = 2
+
+        // Initialize filter states
+        filterCoefficients = Array(repeating: [1.0, 0.0, 0.0, 0.0, 0.0], count: kNumBands)
+        filterStates = Array(repeating: Array(repeating: [0.0, 0.0], count: 2), count: kNumBands)
 
         try super.init(componentDescription: componentDescription, options: options)
 
         // Create bus arrays
-        inputBusArray = AUAudioUnitBusArray(audioUnit: self, busType: .input, busses: [inputBus])
-        outputBusArray = AUAudioUnitBusArray(audioUnit: self, busType: .output, busses: [outputBus])
-
-        // Initialize Rust plugin
-        initializePlugin()
+        _inputBusArray = AUAudioUnitBusArray(audioUnit: self, busType: .input, busses: [inputBus])
+        _outputBusArray = AUAudioUnitBusArray(audioUnit: self, busType: .output, busses: [outputBus])
 
         // Create parameter tree
         createParameterTree()
     }
 
-    deinit {
-        if let handle = pluginHandle {
-            plugin_destroy(handle)
-        }
-    }
-
-    // MARK: - Plugin Initialization
-
-    private func initializePlugin() {
-        // Default EQ configuration (10-band parametric EQ, all flat)
-        let config = """
-        {
-            "filters": []
-        }
-        """
-
-        guard let handle = plugin_create(
-            "EQ",
-            config,
-            UInt32(inputFormat.sampleRate),
-            Int(inputFormat.channelCount),
-            Int(outputFormat.channelCount)
-        ) else {
-            if let error = plugin_get_last_error() {
-                let errorStr = String(cString: error)
-                NSLog("Failed to create EQ plugin: \(errorStr)")
-            }
-            return
-        }
-
-        self.pluginHandle = handle
-        NSLog("EQ plugin created successfully")
-    }
-
     // MARK: - Parameter Tree
 
     private func createParameterTree() {
-        guard let handle = pluginHandle else {
-            NSLog("Cannot create parameter tree: plugin not initialized")
-            return
-        }
+        var params: [AUParameter] = []
 
-        // Get parameter count from Rust
-        let paramCount = plugin_get_parameter_count(handle)
-        NSLog("Creating parameter tree with \(paramCount) parameters")
+        // Create parameters for each band: frequency, gain, Q
+        for band in 0..<kNumBands {
+            let bandNum = band + 1
 
-        // Create AU parameters from Rust parameter info
-        for i in 0..<Int(paramCount) {
-            guard let paramInfo = plugin_get_parameter_info(handle, i) else {
-                continue
-            }
-
-            let id = String(cString: paramInfo.pointee.id)
-            let name = String(cString: paramInfo.pointee.name)
-            let unit = String(cString: paramInfo.pointee.unit)
-
-            // Convert unit string to AudioUnitParameterUnit
-            let auUnit: AudioUnitParameterUnit
-            switch unit {
-            case "Hz":
-                auUnit = .hertz
-            case "dB":
-                auUnit = .decibels
-            default:
-                auUnit = .generic
-            }
-
-            // Create AU parameter (using index as address)
-            let param = AUParameterTree.createParameter(
-                withIdentifier: id,
-                name: name,
-                address: AUParameterAddress(i),
-                min: Float(paramInfo.pointee.min_value),
-                max: Float(paramInfo.pointee.max_value),
-                unit: auUnit,
-                unitName: unit.isEmpty ? nil : unit,
+            // Frequency parameter
+            let freq = AUParameterTree.createParameter(
+                withIdentifier: "band\(band)_freq",
+                name: "Band \(bandNum) Frequency",
+                address: AUParameterAddress(band * 3),
+                min: 20.0,
+                max: 20000.0,
+                unit: .hertz,
+                unitName: "Hz",
                 flags: [.flag_IsReadable, .flag_IsWritable],
                 valueStrings: nil,
                 dependentParameters: nil
             )
+            // Default frequencies spread across spectrum
+            let defaultFreqs: [Float] = [100.0, 300.0, 1000.0, 3000.0, 10000.0]
+            freq.value = defaultFreqs[band]
+            params.append(freq)
 
-            // Set default value
-            param.value = Float(paramInfo.pointee.default_value)
+            // Gain parameter
+            let gain = AUParameterTree.createParameter(
+                withIdentifier: "band\(band)_gain",
+                name: "Band \(bandNum) Gain",
+                address: AUParameterAddress(band * 3 + 1),
+                min: -12.0,
+                max: 12.0,
+                unit: .decibels,
+                unitName: "dB",
+                flags: [.flag_IsReadable, .flag_IsWritable],
+                valueStrings: nil,
+                dependentParameters: nil
+            )
+            gain.value = 0.0
+            params.append(gain)
 
-            auParameters.append(param)
+            // Q parameter
+            let q = AUParameterTree.createParameter(
+                withIdentifier: "band\(band)_q",
+                name: "Band \(bandNum) Q",
+                address: AUParameterAddress(band * 3 + 2),
+                min: 0.1,
+                max: 10.0,
+                unit: .generic,
+                unitName: nil,
+                flags: [.flag_IsReadable, .flag_IsWritable],
+                valueStrings: nil,
+                dependentParameters: nil
+            )
+            q.value = 1.0
+            params.append(q)
         }
+
+        auParameters = params
 
         // Create parameter tree
-        _parameterTree = AUParameterTree.createTree(withChildren: auParameters)
+        _parameterTree = AUParameterTree.createTree(withChildren: params)
 
         // Set up parameter observation
-        _parameterTree.implementorValueObserver = { [weak self] param, value in
-            self?.setParameterValue(param: param, value: value)
+        _parameterTree?.implementorValueObserver = { [weak self] param, value in
+            self?.parameterChanged(param: param, value: value)
         }
 
-        _parameterTree.implementorValueProvider = { [weak self] param in
-            return self?.getParameterValue(param: param) ?? param.value
+        // Note: implementorValueProvider is NOT set because the AUParameter
+        // objects already store their values. Setting it and returning param.value
+        // would cause infinite recursion.
+    }
+
+    private func parameterChanged(param: AUParameter, value: AUValue) {
+        // Recalculate filter coefficients when parameters change
+        let band = Int(param.address) / 3
+
+        if band < kNumBands {
+            recalculateFilterCoefficients(band: band)
         }
     }
 
-    private func setParameterValue(param: AUParameter, value: AUValue) {
-        guard let handle = pluginHandle else { return }
+    private func recalculateFilterCoefficients(band: Int) {
+        let freqParam = auParameters[band * 3]
+        let gainParam = auParameters[band * 3 + 1]
+        let qParam = auParameters[band * 3 + 2]
 
-        let id = param.identifier
+        let freq = Double(freqParam.value)
+        let gainDb = Double(gainParam.value)
+        let q = Double(qParam.value)
+        let sampleRate = inputFormat.sampleRate
 
-        // Convert raw value to normalized (0.0-1.0)
-        let normalized = Double((value - param.minValue) / (param.maxValue - param.minValue))
+        // Calculate peaking EQ biquad coefficients
+        let A = pow(10.0, gainDb / 40.0)
+        let w0 = 2.0 * Double.pi * freq / sampleRate
+        let sinW0 = sin(w0)
+        let cosW0 = cos(w0)
+        let alpha = sinW0 / (2.0 * q)
 
-        // Set in Rust plugin
-        let result = plugin_set_parameter(handle, id, normalized)
-        if result != 0 {
-            NSLog("Failed to set parameter \(id): error \(result)")
-        }
-    }
+        let b0 = 1.0 + alpha * A
+        let b1 = -2.0 * cosW0
+        let b2 = 1.0 - alpha * A
+        let a0 = 1.0 + alpha / A
+        let a1 = -2.0 * cosW0
+        let a2 = 1.0 - alpha / A
 
-    private func getParameterValue(param: AUParameter) -> AUValue {
-        guard let handle = pluginHandle else { return param.value }
-
-        let id = param.identifier
-
-        // Get normalized value from Rust
-        let normalized = plugin_get_parameter(handle, id)
-
-        if normalized < 0 {
-            return param.value // Error, return cached value
-        }
-
-        // Denormalize to raw value
-        let value = param.minValue + Float(normalized) * (param.maxValue - param.minValue)
-        return value
+        // Normalize coefficients
+        filterCoefficients[band] = [b0/a0, b1/a0, b2/a0, a1/a0, a2/a0]
     }
 
     // MARK: - AUAudioUnit Overrides
 
     public override var parameterTree: AUParameterTree? {
-        get {
-            return _parameterTree
-        }
-        set {
-            _parameterTree = newValue
-        }
+        get { return _parameterTree }
+        set { _parameterTree = newValue }
     }
 
     public override var inputBusses: AUAudioUnitBusArray {
-        return inputBusArray
+        return _inputBusArray
     }
 
     public override var outputBusses: AUAudioUnitBusArray {
-        return outputBusArray
+        return _outputBusArray
     }
 
     public override var maximumFramesToRender: AUAudioFrameCount {
-        get { return maxFramesToRender }
-        set { maxFramesToRender = newValue }
+        get { return _maxFramesToRender }
+        set { _maxFramesToRender = newValue }
     }
 
     public override func allocateRenderResources() throws {
         try super.allocateRenderResources()
 
-        // Update plugin sample rate if format changed
-        if let handle = pluginHandle {
-            let newSampleRate = UInt32(outputBus.format.sampleRate)
-            plugin_reset(handle)
-            NSLog("Allocated render resources at \(newSampleRate)Hz")
+        // Recalculate all filter coefficients
+        for band in 0..<kNumBands {
+            recalculateFilterCoefficients(band: band)
+        }
+
+        // Reset filter states
+        for band in 0..<kNumBands {
+            for ch in 0..<2 {
+                filterStates[band][ch] = [0.0, 0.0]
+            }
         }
     }
 
     public override func deallocateRenderResources() {
         super.deallocateRenderResources()
-
-        // Reset plugin state
-        if let handle = pluginHandle {
-            plugin_reset(handle)
-        }
     }
 
     // MARK: - Audio Processing
 
     public override var internalRenderBlock: AUInternalRenderBlock {
-        return { [weak self] (
+        // Capture necessary state for the render block
+        let coefficients = filterCoefficients
+        var states = filterStates
+
+        return { (
             actionFlags,
             timestamp,
             frameCount,
@@ -252,14 +236,6 @@ public class EQAudioUnit: AUAudioUnit {
             realtimeEventListHead,
             pullInputBlock
         ) in
-            guard let self = self else {
-                return kAudioUnitErr_Uninitialized
-            }
-
-            guard let handle = self.pluginHandle else {
-                return kAudioUnitErr_Uninitialized
-            }
-
             guard let pullInputBlock = pullInputBlock else {
                 return kAudioUnitErr_NoConnection
             }
@@ -272,65 +248,95 @@ public class EQAudioUnit: AUAudioUnit {
                 return status
             }
 
-            // Get audio buffer
+            // Process audio through biquad filters
             let outputBufferList = UnsafeMutableAudioBufferListPointer(outputData)
-            guard let mData = outputBufferList[0].mData else {
-                return kAudioUnitErr_NoConnection
-            }
 
-            let inputPtr = mData.assumingMemoryBound(to: Float.self)
-            let outputPtr = mData.assumingMemoryBound(to: Float.self)
+            for bufferIndex in 0..<outputBufferList.count {
+                guard let mData = outputBufferList[bufferIndex].mData else {
+                    continue
+                }
 
-            // Process through Rust plugin
-            let result = plugin_process(handle, inputPtr, outputPtr, Int(frameCount))
+                let samples = mData.assumingMemoryBound(to: Float.self)
+                let numSamples = Int(outputBufferList[bufferIndex].mDataByteSize) / MemoryLayout<Float>.size
+                let channelCount = Int(outputBufferList[bufferIndex].mNumberChannels)
 
-            if result != 0 {
-                // Processing failed - pass through audio unchanged
-                return noErr
+                // Process interleaved stereo
+                for frame in 0..<(numSamples / channelCount) {
+                    for ch in 0..<min(channelCount, 2) {
+                        var sample = Double(samples[frame * channelCount + ch])
+
+                        // Apply each band's filter
+                        for band in 0..<kNumBands {
+                            let c = coefficients[band]
+                            let z1 = states[band][ch][0]
+                            let z2 = states[band][ch][1]
+
+                            // Direct Form II Transposed biquad
+                            let output = c[0] * sample + z1
+                            states[band][ch][0] = c[1] * sample - c[3] * output + z2
+                            states[band][ch][1] = c[2] * sample - c[4] * output
+
+                            sample = output
+                        }
+
+                        samples[frame * channelCount + ch] = Float(sample)
+                    }
+                }
             }
 
             return noErr
         }
     }
 
+    // MARK: - Channel Capabilities
+
+    public override var channelCapabilities: [NSNumber]? {
+        // Return explicit channel configuration: only stereo (2 in, 2 out)
+        return [2, 2]
+    }
+
     // MARK: - State Management
 
     public override var fullState: [String: Any]? {
         get {
-            var state: [String: Any] = [:]
+            var state: [String: Any] = [
+                kAUPresetTypeKey: FourCharCode(kAudioUnitType_Effect) as NSNumber,
+                kAUPresetSubtypeKey: FourCharCode(fourCharCodeFrom("SOEQ")) as NSNumber,
+                kAUPresetManufacturerKey: FourCharCode(fourCharCodeFrom("SOTF")) as NSNumber,
+                kAUPresetVersionKey: 1 as NSNumber,
+                kAUPresetNameKey: "Default"
+            ]
 
-            // Save all parameter values
+            // Add parameter values
             for param in auParameters {
                 state[param.identifier] = param.value
             }
-
             return state
         }
         set {
             guard let state = newValue else { return }
-
-            // Restore parameter values
             for param in auParameters {
                 if let value = state[param.identifier] as? Float {
                     param.value = value
-                    setParameterValue(param: param, value: value)
                 }
             }
         }
     }
 }
 
-// MARK: - Factory Function
+// MARK: - Helper Functions
 
-/// Factory function required by Audio Unit extension
-/// Uses C-linkage to ensure it's callable from Objective-C runtime
-@_cdecl("EQAudioUnitFactory")
-public func EQAudioUnitFactory(componentDescription: UnsafePointer<AudioComponentDescription>) -> UnsafeMutableRawPointer? {
-    do {
-        let audioUnit = try EQAudioUnit(componentDescription: componentDescription.pointee, options: [])
-        return Unmanaged.passRetained(audioUnit).toOpaque()
-    } catch {
-        NSLog("Failed to create EQAudioUnit: \(error)")
-        return nil
+private func fourCharCodeFrom(_ string: String) -> FourCharCode {
+    var result: FourCharCode = 0
+    for char in string.prefix(4).utf8 {
+        result = result << 8 + FourCharCode(char)
     }
+    return result
 }
+
+// Preset keys
+private let kAUPresetTypeKey = "type"
+private let kAUPresetSubtypeKey = "subtype"
+private let kAUPresetManufacturerKey = "manufacturer"
+private let kAUPresetVersionKey = "version"
+private let kAUPresetNameKey = "name"
