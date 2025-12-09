@@ -14,6 +14,7 @@ pub mod hierarchy;
 pub mod force;
 pub mod chord;
 pub mod transitions;
+pub mod world_data;
 
 // Re-export the main types that the modules need
 pub use crate::{ContourRenderMode, ShowcaseApp};
