@@ -81,8 +81,13 @@ pub fn render_upmixer_plugin(
                             .is_open(config_open)
                             .label("Config")
                             .size(SelectSize::Sm)
-                            .on_toggle(move |is_open, _window, cx| {
-                                cx.dispatch_action(&ToggleUpmixerConfig { open: is_open })
+                            .on_toggle({
+                                let entity = entity.clone();
+                                move |is_open, _window, cx| {
+                                    entity.update(cx, |state, _| {
+                                        state.app.upmixer_config_open = is_open;
+                                    });
+                                }
                             })
                             .on_change({
                                 let entity = entity.clone();
@@ -94,8 +99,8 @@ pub fn render_upmixer_plugin(
                                     let idx = configs.iter().position(|&c| c == value.as_ref()).unwrap_or(0);
                                     entity.update(cx, |state, _| {
                                         state.app.set_plugin_param(plugin_idx, 0, idx as f64);
+                                        state.app.upmixer_config_open = false;
                                     });
-                                    cx.dispatch_action(&ToggleUpmixerConfig { open: false });
                                 }
                             }),
                     ),
@@ -262,8 +267,7 @@ pub fn render_upmixer_plugin(
                 .p_4()
                 .justify_center(),
         )
-        // Edit Hint Bar
-        .child(render_edit_hints(theme))
+        // Edit Hint Bar removed
         .build()
         .w_full()
         .h_full()

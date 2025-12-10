@@ -123,6 +123,10 @@ impl PlayerView {
 
     pub(crate) fn next_track(&mut self, _: &NextTrack, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
             if let Some(path) = state.app.next_track() {
                 let sample_rate = 48000.0;
                 let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
@@ -146,6 +150,10 @@ impl PlayerView {
 
     pub(crate) fn prev_track(&mut self, _: &PrevTrack, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
             if let Some(path) = state.app.previous_track() {
                 let sample_rate = 48000.0;
                 let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
@@ -593,6 +601,10 @@ impl PlayerView {
 
     fn cycle_sort_order(&mut self, _: &CycleSortOrder, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
             use crate::app::LibrarySortOrder;
             let next_order = match state.app.library_sort_order {
                 LibrarySortOrder::Year => LibrarySortOrder::Genre,
@@ -652,6 +664,10 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
             state.app.cycle_channel_filter();
         });
         cx.notify();
@@ -705,6 +721,62 @@ impl PlayerView {
         cx.notify();
     }
 
+    /// Check if we're in a text input mode where actions should be blocked
+    fn is_text_input_mode(input_mode: crate::app::InputMode) -> bool {
+        use crate::app::InputMode;
+        matches!(
+            input_mode,
+            InputMode::Search
+                | InputMode::AddDirectory
+                | InputMode::SavePlugins
+                | InputMode::LoadPlugins
+                | InputMode::LoadApoFile
+                | InputMode::LoadSofaFile
+        )
+    }
+
+    fn handle_search_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        // Handle text input for search mode
+        match event.keystroke.key.as_str() {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.search_query.pop();
+                    state.app.selected_album_index = 0;
+                    state.app.reset_page();
+                });
+                cx.notify();
+            }
+            "escape" => {
+                // Exit search mode and clear search
+                self.state.update(cx, |state, _cx| {
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.search_query.clear();
+                    state.app.selected_album_index = 0;
+                    state.app.reset_page();
+                });
+                cx.notify();
+            }
+            "enter" => {
+                // Exit search mode but keep search results
+                self.state.update(cx, |state, _cx| {
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                });
+                cx.notify();
+            }
+            _ => {
+                // Add character to search query
+                if let Some(text) = event.keystroke.key_char.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.search_query.push_str(text);
+                        state.app.selected_album_index = 0;
+                        state.app.reset_page();
+                    });
+                    cx.notify();
+                }
+            }
+        }
+    }
+
     fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for add directory mode
         match event.keystroke.key.as_str() {
@@ -747,34 +819,46 @@ impl PlayerView {
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
         self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
-                Screen::Library => {
-                    state.app.select_next_album();
+            .update(cx, |state, _cx| {
+                // Block if in text input mode
+                if Self::is_text_input_mode(state.app.input_mode) {
+                    return;
                 }
-                Screen::Queue => {
-                    state.app.select_next_queue_item();
+                match state.app.current_screen {
+                    Screen::Library => {
+                        state.app.select_next_album();
+                    }
+                    Screen::Queue => {
+                        state.app.select_next_queue_item();
+                    }
+                    Screen::DirectoryManager => {
+                        state.app.select_next_directory();
+                    }
+                    _ => {}
                 }
-                Screen::DirectoryManager => {
-                    state.app.select_next_directory();
-                }
-                _ => {}
             });
         cx.notify();
     }
 
     fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
         self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
-                Screen::Library => {
-                    state.app.select_previous_album();
+            .update(cx, |state, _cx| {
+                // Block if in text input mode
+                if Self::is_text_input_mode(state.app.input_mode) {
+                    return;
                 }
-                Screen::Queue => {
-                    state.app.select_previous_queue_item();
+                match state.app.current_screen {
+                    Screen::Library => {
+                        state.app.select_previous_album();
+                    }
+                    Screen::Queue => {
+                        state.app.select_previous_queue_item();
+                    }
+                    Screen::DirectoryManager => {
+                        state.app.select_previous_directory();
+                    }
+                    _ => {}
                 }
-                Screen::DirectoryManager => {
-                    state.app.select_previous_directory();
-                }
-                _ => {}
             });
         cx.notify();
     }
@@ -919,14 +1003,20 @@ impl PlayerView {
 
     fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
         self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
-                Screen::Queue => {
-                    state.app.remove_from_queue(state.app.selected_queue_index);
+            .update(cx, |state, _cx| {
+                // Block if in text input mode
+                if Self::is_text_input_mode(state.app.input_mode) {
+                    return;
                 }
-                Screen::DirectoryManager => {
-                    state.app.remove_selected_directory();
+                match state.app.current_screen {
+                    Screen::Queue => {
+                        state.app.remove_from_queue(state.app.selected_queue_index);
+                    }
+                    Screen::DirectoryManager => {
+                        state.app.remove_selected_directory();
+                    }
+                    _ => {}
                 }
-                _ => {}
             });
         cx.notify();
     }
@@ -1073,6 +1163,10 @@ impl PlayerView {
 
     fn edit_plugin(&mut self, _: &EditPlugin, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
             state.app.enter_plugin_edit_mode();
         });
         cx.notify();
@@ -1479,17 +1573,30 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
 
-            // Handle input modes first
-            if state.app.input_mode == InputMode::AddDirectory {
-                // Add the directory
-                if !state.app.directory_input.is_empty() {
-                    let path = std::path::PathBuf::from(&state.app.directory_input);
-                    state.app.add_directory(path);
-                    state.app.directory_input.clear();
-                    state.app.clear_autocomplete();
+            // Block action if in text input modes (where typing should take priority)
+            match state.app.input_mode {
+                InputMode::Search
+                | InputMode::SavePlugins
+                | InputMode::LoadPlugins
+                | InputMode::LoadApoFile
+                | InputMode::LoadSofaFile => {
+                    // Don't execute action - these modes handle Enter themselves via keyboard handlers
+                    return;
                 }
-                state.app.input_mode = InputMode::Normal;
-                return;
+                InputMode::AddDirectory => {
+                    // Add the directory
+                    if !state.app.directory_input.is_empty() {
+                        let path = std::path::PathBuf::from(&state.app.directory_input);
+                        state.app.add_directory(path);
+                        state.app.directory_input.clear();
+                        state.app.clear_autocomplete();
+                    }
+                    state.app.input_mode = InputMode::Normal;
+                    return;
+                }
+                _ => {
+                    // Continue to handle screen-specific actions
+                }
             }
 
             // Handle screen-specific actions in Normal mode
@@ -1654,8 +1761,19 @@ impl Render for PlayerView {
             )
         };
 
+        // Determine key context based on input mode
+        // Use "TextInput" context when typing to disable single-letter keybindings
+        let key_context = {
+            let state = self.state.read(cx);
+            if Self::is_text_input_mode(state.app.input_mode) {
+                "TextInput"
+            } else {
+                "PlayerView"
+            }
+        };
+
         div()
-            .key_context("PlayerView")
+            .key_context(key_context)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::toggle_playback))
             .on_action(cx.listener(Self::stop_playback))
@@ -1734,26 +1852,31 @@ impl Render for PlayerView {
 
                 match input_mode {
                     crate::app::InputMode::Search => {
-                        // Search input is fully handled by the Input component
-                        // including Escape and Enter via on_edit_end callback
-                        // Do nothing here to let events reach the Input component
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
+                        view.handle_search_input(event, cx);
                     }
                     crate::app::InputMode::AddDirectory => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_directory_input(event, cx);
                     }
                     crate::app::InputMode::EditPlugin => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_plugin_edit_input(event, cx);
                     }
                     crate::app::InputMode::LoadApoFile => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_apo_file_input(event, cx);
                     }
                     crate::app::InputMode::LoadSofaFile => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_sofa_file_input(event, cx);
                     }
                     crate::app::InputMode::SavePlugins => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_save_plugins_input(event, cx);
                     }
                     crate::app::InputMode::LoadPlugins => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_load_plugins_input(event, cx);
                     }
                     crate::app::InputMode::EditingParam => {

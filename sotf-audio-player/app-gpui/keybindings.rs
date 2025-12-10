@@ -123,9 +123,9 @@ fn common_bindings() -> Vec<KeyBinding> {
 fn default_bindings() -> Vec<KeyBinding> {
     vec![
         // Track navigation
-        KeyBinding::new("n", actions::NextTrack, None),
+        KeyBinding::new("n", actions::NextTrack, Some("PlayerView")),
         KeyBinding::new(">", actions::NextTrack, None),
-        KeyBinding::new("b", actions::PrevTrack, None),
+        KeyBinding::new("b", actions::PrevTrack, Some("PlayerView")),
         KeyBinding::new("<", actions::PrevTrack, None),
         // Volume
         KeyBinding::new("+", actions::VolumeUp, None),
@@ -138,21 +138,21 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("alt-l", actions::CycleLanguage, None),
         // Search and view toggles
         KeyBinding::new("/", actions::ToggleSearch, None),
-        KeyBinding::new("t", actions::ToggleLibraryView, None),
+        KeyBinding::new("t", actions::ToggleLibraryView, Some("PlayerView")),
         KeyBinding::new("?", actions::ToggleHelp, None),
         // Sort and filter cycling
-        KeyBinding::new("s", actions::CycleSortOrder, None),
-        KeyBinding::new("c", actions::CycleChannelFilter, None),
+        KeyBinding::new("s", actions::CycleSortOrder, Some("PlayerView")),
+        KeyBinding::new("c", actions::CycleChannelFilter, Some("PlayerView")),
         // Navigation - arrow keys and hjkl for grid/list navigation
         KeyBinding::new("left", actions::SelectLeft, None),
         KeyBinding::new("right", actions::SelectRight, None),
         KeyBinding::new("up", actions::SelectUp, None),
         KeyBinding::new("down", actions::SelectDown, None),
         // Vim-style navigation alternatives (hjkl)
-        KeyBinding::new("h", actions::SelectLeft, None),
-        KeyBinding::new("l", actions::SelectRight, None),
-        KeyBinding::new("k", actions::SelectUp, None),
-        KeyBinding::new("j", actions::SelectDown, None),
+        KeyBinding::new("h", actions::SelectLeft, Some("PlayerView")),
+        KeyBinding::new("l", actions::SelectRight, Some("PlayerView")),
+        KeyBinding::new("k", actions::SelectUp, Some("PlayerView")),
+        KeyBinding::new("j", actions::SelectDown, Some("PlayerView")),
         // Page navigation
         KeyBinding::new("pageup", actions::SelectPrevPage, None),
         KeyBinding::new("pagedown", actions::SelectNextPage, None),
@@ -163,14 +163,14 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("cmd-right", actions::NextPage, None),
         // Enter action
         KeyBinding::new("enter", actions::Enter, None),
-        KeyBinding::new("a", actions::Enter, None),
+        KeyBinding::new("a", actions::Enter, Some("PlayerView")),
         // Remove/delete
-        KeyBinding::new("d", actions::RemoveItem, None),
+        KeyBinding::new("d", actions::RemoveItem, Some("PlayerView")),
         KeyBinding::new("delete", actions::RemoveItem, None),
         // Plugin controls
-        KeyBinding::new("u", actions::MovePluginUp, None),
+        KeyBinding::new("u", actions::MovePluginUp, Some("PlayerView")),
         KeyBinding::new("shift-n", actions::MovePluginDown, None),
-        KeyBinding::new("e", actions::EditPlugin, None),
+        KeyBinding::new("e", actions::EditPlugin, Some("PlayerView")),
         // Directory management
         KeyBinding::new("shift-a", actions::AddDirectory, None),
         KeyBinding::new("shift-s", actions::ScanLibrary, None),
@@ -178,10 +178,10 @@ fn default_bindings() -> Vec<KeyBinding> {
         // Level meter controls
         KeyBinding::new("tab", actions::SelectNextMeterGroup, None),
         KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, None),
-        KeyBinding::new("m", actions::ToggleMeterMute, None),
+        KeyBinding::new("m", actions::ToggleMeterMute, Some("PlayerView")),
         KeyBinding::new("shift-m", actions::ToggleMeterSolo, None),
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),
-        KeyBinding::new("x", actions::ClearMeterMutesSolos, None),
+        KeyBinding::new("x", actions::ClearMeterMutesSolos, Some("PlayerView")),
     ]
 }
 
@@ -210,9 +210,9 @@ fn vim_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("o s", actions::CycleSortOrder, None),
         KeyBinding::new("o c", actions::CycleChannelFilter, None),
         // Navigation - pure Vim hjkl
-        KeyBinding::new("k", actions::SelectPrev, None),
+        KeyBinding::new("k", actions::SelectPrev, Some("PlayerView")),
         KeyBinding::new("up", actions::SelectPrev, None),
-        KeyBinding::new("j", actions::SelectNext, None),
+        KeyBinding::new("j", actions::SelectNext, Some("PlayerView")),
         KeyBinding::new("down", actions::SelectNext, None),
         KeyBinding::new("ctrl-u", actions::SelectPrevPage, None),
         KeyBinding::new("ctrl-d", actions::SelectNextPage, None),
@@ -221,23 +221,23 @@ fn vim_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("g g", actions::PrevPage, None),
         KeyBinding::new("G", actions::NextPage, None),
         // Expand/collapse - Vim fold style
-        KeyBinding::new("h", actions::ToggleExpand, None),
-        KeyBinding::new("l", actions::ToggleExpand, None),
+        KeyBinding::new("h", actions::ToggleExpand, Some("PlayerView")),
+        KeyBinding::new("l", actions::ToggleExpand, Some("PlayerView")),
         KeyBinding::new("left", actions::ToggleExpand, None),
         KeyBinding::new("right", actions::ToggleExpand, None),
         KeyBinding::new("z o", actions::ToggleExpand, None),
         KeyBinding::new("z c", actions::ToggleExpand, None),
         // Enter action
         KeyBinding::new("enter", actions::Enter, None),
-        KeyBinding::new("o", actions::Enter, None),
+        KeyBinding::new("o", actions::Enter, Some("PlayerView")),
         // Remove/delete - Vim style
         KeyBinding::new("d d", actions::RemoveItem, None),
-        KeyBinding::new("x", actions::RemoveItem, None),
+        KeyBinding::new("x", actions::RemoveItem, Some("PlayerView")),
         KeyBinding::new("delete", actions::RemoveItem, None),
         // Plugin controls - Vim style
         KeyBinding::new("K", actions::MovePluginUp, None),
         KeyBinding::new("J", actions::MovePluginDown, None),
-        KeyBinding::new("i", actions::EditPlugin, None),
+        KeyBinding::new("i", actions::EditPlugin, Some("PlayerView")),
         // Directory management
         KeyBinding::new("g a", actions::AddDirectory, None),
         KeyBinding::new("g s", actions::ScanLibrary, None),
@@ -245,7 +245,7 @@ fn vim_bindings() -> Vec<KeyBinding> {
         // Level meter controls
         KeyBinding::new("tab", actions::SelectNextMeterGroup, None),
         KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, None),
-        KeyBinding::new("m", actions::ToggleMeterMute, None),
+        KeyBinding::new("m", actions::ToggleMeterMute, Some("PlayerView")),
         KeyBinding::new("M", actions::ToggleMeterSolo, None),
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),
         KeyBinding::new("g x", actions::ClearMeterMutesSolos, None),
@@ -378,7 +378,7 @@ fn vscode_bindings() -> Vec<KeyBinding> {
         // Level meter controls
         KeyBinding::new("tab", actions::SelectNextMeterGroup, None),
         KeyBinding::new("shift-tab", actions::SelectPrevMeterGroup, None),
-        KeyBinding::new("m", actions::ToggleMeterMute, None),
+        KeyBinding::new("m", actions::ToggleMeterMute, Some("PlayerView")),
         KeyBinding::new("shift-m", actions::ToggleMeterSolo, None),
         KeyBinding::new("ctrl-m", actions::ToggleMeterDim, None),
         KeyBinding::new("ctrl-shift-m", actions::ClearMeterMutesSolos, None),

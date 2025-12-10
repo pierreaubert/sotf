@@ -267,23 +267,7 @@ impl PlayerView {
                     .py_3()
                     .overflow_x_scroll()
                     .min_h(px(140.0))
-                    // Signal flow indicator (input) or Input Meter
-                    .child({
-                        let has_input_monitor = plugins_data.first().map(|(pt, _, _)| matches!(pt, PluginType::LoudnessMonitor)).unwrap_or(false);
-                        
-                        if has_input_monitor {
-                            // Input is always 2 channels (Stereo) for now
-                            self.render_rack_meter(cx, 2, "IN").into_any_element()
-                        } else {
-                            div()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .child(div().text_xs().text_color(theme.text_muted).child("IN"))
-                                .child(div().w(px(2.0)).h(px(30.0)).bg(theme.accent))
-                                .into_any_element()
-                        }
-                    })
+                    // Input Meter removed from rack strip (moved to detail panel)
                     // Plugin modules - inline creation with drag-and-drop
                     .children(modules_info.into_iter().map(
                         |(idx, color, icon, name, enabled, is_selected)| {
@@ -487,35 +471,7 @@ impl PlayerView {
                         },
                     ))
 
-                    // Signal flow indicator (output) or Output Meter
-                    .child({
-                        let has_output_monitor = plugins_data.last().map(|(pt, _, _)| matches!(pt, PluginType::LoudnessMonitor)).unwrap_or(false);
-                        
-                        // Calculate output channels
-                        // Start with 2 (Input)
-                        let mut channels = 2;
-                        for (pt, enabled, _) in &plugins_data {
-                            if *enabled {
-                                match pt {
-                                    PluginType::Upmixer => channels = 6, // 5.1
-                                    PluginType::BinauralDecoder => channels = 2, // Stereo
-                                    _ => {},
-                                }
-                            }
-                        }
-
-                        if has_output_monitor {
-                            self.render_rack_meter(cx, channels, "OUT").into_any_element()
-                        } else {
-                             div()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .child(div().text_xs().text_color(theme.text_muted).child("OUT"))
-                                .child(div().w(px(2.0)).h(px(30.0)).bg(theme.success))
-                                .into_any_element()
-                        }
-                    })
+                    // Output Meter removed from rack strip (moved to detail panel)
                     // Empty state
 
                     .when(is_empty, |d| {
@@ -532,8 +488,8 @@ impl PlayerView {
             )
     }
 
-    /// Render a compact level meter group for the rack
-    fn render_rack_meter(&self, cx: &mut Context<Self>, channels: usize, label: &str) -> impl IntoElement {
+    /// Render a side level meter group for the detail panel
+    fn render_side_meter(&self, cx: &mut Context<Self>, channels: usize, label: &str) -> impl IntoElement {
         let (theme, loudness) = {
             let state = self.state.read(cx);
             (state.app.theme.clone(), state.app.loudness_info.clone())
@@ -547,16 +503,21 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .h_full()
-            .child(div().text_xs().text_color(theme.text_muted).mb_1().child(label))
+            .py_4()
+            .px_2()
+            .bg(theme.background_secondary)
+            .border_x_1()
+            .border_color(theme.border)
+            .child(div().text_xs().text_color(theme.text_muted).mb_2().child(label))
             .child(
                 div()
                     .flex()
-                    .gap(px(1.0))
-                    .h(px(70.0)) // Fixed height for rack
+                    .gap(px(2.0))
+                    .h_full()
                     .child(
                         div()
                             .flex()
-                            .gap(px(1.0))
+                            .gap(px(2.0))
                             .children((0..channels).map(|i| {
                                 let val_db = if let Some(l) = &loudness {
                                     let peak = l.channel_peaks.get(i).copied().unwrap_or(0.0);
@@ -579,6 +540,12 @@ impl PlayerView {
                                     3 => "LFE",
                                     4 => "Ls",
                                     5 => "Rs",
+                                    6 => "Sl",
+                                    7 => "Sr",
+                                    8 => "Tfl",
+                                    9 => "Tfr",
+                                    10 => "Trl",
+                                    11 => "Trr", 
                                     _ => ".",
                                 };
 
@@ -741,170 +708,51 @@ impl PlayerView {
                                         )),
                                 ),
                         )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                // Move buttons
-                                .child(
-                                    div()
-                                        .id("move-up")
-                                        .px_3()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(theme.surface)
-                                        .text_sm()
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(theme.surface_hover))
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    let idx = state.app.selected_plugin_index;
-                                                    state.app.move_plugin_up(idx);
-                                                    state.app.update_level_meter_groups();
-                                                });
-                                                cx.notify();
-                                            }),
-                                        )
-                                        .child("◀ Move"),
-                                )
-                                .child(
-                                    div()
-                                        .id("move-down")
-                                        .px_3()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(theme.surface)
-                                        .text_sm()
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(theme.surface_hover))
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    let idx = state.app.selected_plugin_index;
-                                                    state.app.move_plugin_down(idx);
-                                                    state.app.update_level_meter_groups();
-                                                });
-                                                cx.notify();
-                                            }),
-                                        )
-                                        .child("Move ▶"),
-                                )
-                                // Toggle power
-                                .child(
-                                    div()
-                                        .id("toggle-power")
-                                        .px_3()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(if plugin_enabled {
-                                            theme.success
-                                        } else {
-                                            theme.error
-                                        })
-                                        .text_sm()
-                                        .text_color(rgb(0xffffff))
-                                        .cursor_pointer()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    let idx = state.app.selected_plugin_index;
-                                                    state.app.plugin_chain.toggle_plugin(idx);
-                                                    state.app.needs_plugin_update = true;
-                                                    state.app.update_level_meter_groups(); // Reconfigure metering
-                                                });
-                                                cx.notify();
-                                            }),
-                                        )
-                                        .child(if plugin_enabled { "ON" } else { "OFF" }),
-                                )
-                                // Edit button
-                                .child(
-                                    div()
-                                        .id("edit-btn")
-                                        .px_4()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(if is_editing {
-                                            theme.accent
-                                        } else {
-                                            theme.surface
-                                        })
-                                        .text_sm()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .cursor_pointer()
-                                        .hover(|s| s.bg(theme.accent_hover))
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    if state.app.editing_plugin_index.is_some() {
-                                                        state.app.exit_plugin_edit_mode();
-                                                    } else {
-                                                        state.app.enter_plugin_edit_mode();
-                                                    }
-                                                });
-                                                cx.notify();
-                                            }),
-                                        )
-                                        .child(if is_editing { "Done" } else { "Edit" }),
-                                )
-                                // Remove button
-                                .child(
-                                    div()
-                                        .id("remove-btn")
-                                        .px_3()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(theme.error)
-                                        .text_sm()
-                                        .text_color(rgb(0xffffff))
-                                        .cursor_pointer()
-                                        .hover(|s| s.opacity(0.8))
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    let idx = state.app.selected_plugin_index;
-                                                    state.app.plugin_chain.remove_plugin(idx);
-                                                    if state.app.selected_plugin_index
-                                                        >= state.app.plugin_chain.len()
-                                                        && state.app.plugin_chain.len() > 0
-                                                    {
-                                                        state.app.selected_plugin_index =
-                                                            state.app.plugin_chain.len() - 1;
-                                                    }
-                                                    state.app.needs_plugin_update = true;
-                                                    state.app.update_level_meter_groups(); // Reconfigure metering
-                                                });
-                                                cx.notify();
-                                            }),
-                                        )
-                                        .child("Remove"),
-                                ),
-                        ),
+
                 )
-                // Plugin-specific visualization + Parameters
-                .child(
-                    div()
-                        .id("params-scroll")
-                        .flex_1()
-                        .overflow_y_scroll()
-                        .p_4()
-                        .child(render_plugin_content(
-                            self.state.clone(),
-                            selected_idx, // Pass index
-                            &plugin.settings,
-                            is_editing,
-                            param_selection,
-                            &theme,
-                            self.state.read(cx).app.upmixer_config_open,
-                        )),
-                )
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .min_h(px(0.0)) // Allow shrinking
+                    // Left: Input Meter
+                    .child(self.render_side_meter(cx, 2, "IN"))
+                    
+                    // Center: Plugin Content
+                    .child(
+                        div()
+                            .id("params-scroll")
+                            .flex_1()
+                            .overflow_y_scroll()
+                            .p_4()
+                            .child(render_plugin_content(
+                                self.state.clone(),
+                                selected_idx, // Pass index
+                                &plugin.settings,
+                                is_editing,
+                                param_selection,
+                                &theme,
+                                self.state.read(cx).app.upmixer_config_open,
+                            ))
+                    )
+                    
+                    // Right: Output Meter
+                    .child({
+                        let state = self.state.read(cx);
+                        // Calculate output channels logic again for main view
+                        let mut channels = 2;
+                        for p in state.app.plugin_chain.plugins() {
+                            if p.enabled {
+                                match p.plugin_type() {
+                                    PluginType::Upmixer => channels = 6, // 5.1
+                                    PluginType::BinauralDecoder => channels = 2, // Stereo
+                                    _ => {},
+                                }
+                            }
+                        }
+                        self.render_side_meter(cx, channels, "OUT")
+                    })
+            )
             })
             .when(!has_plugin, |d| {
                 d.child(
