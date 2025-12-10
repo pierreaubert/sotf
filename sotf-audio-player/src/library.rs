@@ -2339,12 +2339,15 @@ mod tests {
 
 /// Helper function to group and merge albums
 ///
-/// For albums with the same title and artist:
+/// For albums with the same title (regardless of artist):
 /// - Merge all tracks from all albums (for multi-disc albums)
 /// - Deduplicate tracks by title + disc + track number (for duplicate editions)
 /// - Keep the album metadata (year, art) from the album with highest DR
+/// - Prefer albums with known artists over "Unknown Artist" or "Various Artists"
 pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
-    // Group by title and artist to consolidate editions
+    // Group by normalized title only (ignoring artist) to consolidate editions
+    // This handles cases like the same album appearing with different artist names
+    // (e.g., "2CELLOS" with "Unknown Artist" vs "2Cellos")
     let mut groups: std::collections::HashMap<String, Vec<&Album>> =
         std::collections::HashMap::new();
 
@@ -2352,8 +2355,8 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
         let title = album.title.trim();
         let normalized_title = clean_album_title(title);
 
-        let artist = album.artist().trim().to_lowercase();
-        let key = format!("{}|{}", normalized_title.trim().to_lowercase(), artist);
+        // Group by title only - we'll select the best artist when merging
+        let key = normalized_title.trim().to_lowercase();
         groups.entry(key).or_default().push(album);
     }
 
@@ -2364,10 +2367,29 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
             continue;
         }
 
-        // Select the album with highest dynamic range for metadata (year, art, etc.)
+        // Helper to check if an artist is a "known" artist (not Unknown/Various)
+        let is_known_artist = |artist: &str| -> bool {
+            let lower = artist.to_lowercase();
+            !lower.contains("unknown") && !lower.contains("various")
+        };
+
+        // Select the best album for metadata:
+        // 1. Prefer albums with known artists over "Unknown Artist" / "Various Artists"
+        // 2. Among albums with same artist quality, prefer highest dynamic range
         let best_album = group
             .iter()
             .max_by(|a, b| {
+                let a_known = is_known_artist(&a.artist());
+                let b_known = is_known_artist(&b.artist());
+
+                // First compare by artist quality (known > unknown)
+                match (a_known, b_known) {
+                    (true, false) => return std::cmp::Ordering::Greater,
+                    (false, true) => return std::cmp::Ordering::Less,
+                    _ => {}
+                }
+
+                // Then by dynamic range
                 let dr_a = a.dynamic_range.unwrap_or(0.0);
                 let dr_b = b.dynamic_range.unwrap_or(0.0);
                 dr_a.partial_cmp(&dr_b).unwrap_or(std::cmp::Ordering::Equal)
