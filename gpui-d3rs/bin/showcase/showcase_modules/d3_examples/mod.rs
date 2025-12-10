@@ -19,4 +19,3 @@ pub use kernel_density_estimation::KernelType;
 pub use stacked_grouped_bars::BarLayout;
 pub use treemap::TilingMethod;
 pub use volcano_contours::render;
-pub use volcano_contours::VolcanoColorScale;

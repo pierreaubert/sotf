@@ -203,7 +203,7 @@ fn interpolate_layouts(
 
 fn start_animation_loop(entity: Entity<ShowcaseApp>, cx: &mut Context<ShowcaseApp>) {
     let animation_entity = entity.clone();
-    cx.spawn(async move |_this: WeakEntity<ShowcaseApp>, mut cx| {
+    cx.spawn(async move |_this: WeakEntity<ShowcaseApp>, cx| {
         loop {
             Timer::after(Duration::from_millis(16)).await;
             let should_continue = cx

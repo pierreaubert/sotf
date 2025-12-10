@@ -56,7 +56,7 @@ pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         |_bounds, _window, _cx| {},
                         move |bounds, _state, window, _cx| {
                          let center = bounds.center();
-                         let mut paint_d3_path = |d3_path: d3rs::shape::path::Path, color: Rgba, opacity: f32, window: &mut gpui::Window| {
+                         let paint_d3_path = |d3_path: d3rs::shape::path::Path, color: Rgba, opacity: f32, window: &mut gpui::Window| {
                             let points = d3_path.flatten(0.1);
                             if points.is_empty() { return; }
                             

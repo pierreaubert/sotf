@@ -188,11 +188,27 @@ pub struct ShowcaseApp {
     // Force Simulation
     pub force_simulation: d3rs::force::Simulation,
     pub force_running: bool,
+    // Snapshot state
+    pub snapshot_mode: bool,
+    pub snapshot_list: Vec<DemoSection>,
+    pub snapshot_index: usize,
+    pub snapshot_wait_frames: usize,
 }
 
 impl ShowcaseApp {
-    fn new(_cx: &mut Context<Self>) -> Self {
-        Self {
+    fn new(cx: &mut Context<Self>) -> Self {
+        let args: Vec<String> = std::env::args().collect();
+        let snapshot_mode = args.iter().any(|arg| arg == "--snapshot");
+
+        // Create output directory if needed
+        if snapshot_mode {
+            let output_dir = std::path::Path::new("docs/images");
+            if !output_dir.exists() {
+                std::fs::create_dir_all(output_dir).ok();
+            }
+        }
+
+        let app = Self {
             current_section: DemoSection::default(),
             // Geo demo defaults
             geo_projection_type: GeoProjectionType::default(),
@@ -246,8 +262,18 @@ impl ShowcaseApp {
                     .force(Box::new(ForceCenter::new(width / 2.0, height / 2.0)))
             },
             force_running: false,
-        }
+            snapshot_mode,
+            snapshot_list: DemoSection::all(),
+            snapshot_index: 0,
+            snapshot_wait_frames: 3, // Wait 60 frames initially
+        };
+
+
+
+        app
     }
+
+
 
     fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.current_section;
@@ -342,6 +368,64 @@ impl ShowcaseApp {
 
 impl Render for ShowcaseApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Snapshot automation logic
+        if self.snapshot_mode {
+            if self.snapshot_index == 0 {
+                println!("Starting snapshot automation...");
+            }
+	    cx.notify(); // Request next frame
+
+	    if self.snapshot_index < self.snapshot_list.len() {
+                // Determine output path
+                let section = self.snapshot_list[self.snapshot_index];
+                let index = self.snapshot_index;
+                let label = section.label().replace(" ", "_").replace(":", "").to_lowercase();
+
+                // Ensure output directory exists (relative to CWD)
+                let output_dir = std::path::Path::new("docs/images");
+                if !output_dir.exists() {
+                     std::fs::create_dir_all(output_dir).expect("Failed to create docs/images directory");
+                }
+
+                let output_path = format!("docs/images/demo_{:02}_{}.png", index, label);
+                println!("Capturing: {} -> {}", section.label(), output_path);
+
+                // Try to get window ID via osascript (macOS specific) to capture only the window
+                // Process name usually matches binary name "d3rs-showcase"
+                let window_id = std::process::Command::new("osascript")
+                    .args(&["-e", "tell application \"System Events\" to get id of window 1 of (first process whose name contains \"showcase\")"])
+                    .output()
+                    .ok()
+                    .and_then(|out| String::from_utf8(out.stdout).ok())
+                    .map(|s| s.trim().to_string());
+
+                let mut cmd = std::process::Command::new("screencapture");
+                cmd.arg("-x"); // silent
+
+                if let Some(wid) = window_id {
+                    // Capture specific window
+                    cmd.arg("-l").arg(wid);
+                } else {
+                    // Fallback to main monitor
+                    cmd.arg("-m");
+                }
+
+                let _ = cmd.arg(&output_path).output();
+
+                // Advance to next demo
+                self.snapshot_index += 1;
+                if self.snapshot_index < self.snapshot_list.len() {
+                    self.current_section = self.snapshot_list[self.snapshot_index];
+                    cx.notify();
+                } else {
+                    println!("Snapshot automation complete.");
+                    cx.quit();
+                }
+            } else {
+                cx.quit();
+            }
+        }
+
         div()
             .flex()
             .size_full()

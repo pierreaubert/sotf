@@ -137,7 +137,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     let continents = world_continents();
                                     
                                     // Helper to render path
-                                    let mut render_path = |path_str: String, fill: Option<Rgba>, stroke: Option<Rgba>, width: f32| {
+                                    let render_path = |path_str: String, fill: Option<Rgba>, stroke: Option<Rgba>, width: f32| {
                                         // Decide whether to fill or stroke based on args (simplistic)
                                         let mut path_builder = if fill.is_some() {
                                             PathBuilder::fill()
@@ -283,7 +283,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                          // In production, use a real SVG path parser or d3rs should output Path events directly
                                          // Use PathBuilder::fill() for filled shapes
                                          let mut builder = PathBuilder::fill();
-                                         let mut tokens = continents_svg.replace("M", " M ").replace("L", " L ").replace("Z", " Z ").replace("z", " Z ");
+                                         let tokens = continents_svg.replace("M", " M ").replace("L", " L ").replace("Z", " Z ").replace("z", " Z ");
                                          let parts: Vec<&str> = tokens.split_whitespace().collect();
                                          let mut i = 0;
                                          while i < parts.len() {
@@ -340,7 +340,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
 
                                         // Use PathBuilder::stroke() for lines
                                         let mut builder = PathBuilder::stroke(px(1.0));
-                                         let mut tokens = grid_svg.replace("M", " M ").replace("L", " L ");
+                                         let tokens = grid_svg.replace("M", " M ").replace("L", " L ");
                                          let parts: Vec<&str> = tokens.split_whitespace().collect();
                                          let mut i = 0;
                                          while i < parts.len() {
@@ -626,26 +626,26 @@ fn project_point(
 
     let (x, y) = match proj_type {
         GeoProjectionType::Mercator => {
-            let mut proj = Mercator::new().scale(scale).translate(center_x, center_y);
+            let proj = Mercator::new().scale(scale).translate(center_x, center_y);
             // We already rotated the point, so we project directly? 
             // NO, `projejct` expects unrotated if the projection itself handles rotation.
             // But here we rotated MANUALLY above. So we project the rotated coords.
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::Equirectangular => {
-            let mut proj = Equirectangular::new().scale(scale).translate(center_x, center_y);
+            let proj = Equirectangular::new().scale(scale).translate(center_x, center_y);
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::Orthographic => {
-            let mut proj = Orthographic::new().scale(scale).translate(center_x, center_y);
+            let proj = Orthographic::new().scale(scale).translate(center_x, center_y);
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::Stereographic => {
-            let mut proj = Stereographic::new().scale(scale).translate(center_x, center_y);
+            let proj = Stereographic::new().scale(scale).translate(center_x, center_y);
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::ConicEqualArea => {
-            let mut proj = ConicEqualArea::new().scale(scale).translate(center_x, center_y).center(0.0, 30.0);
+            let proj = ConicEqualArea::new().scale(scale).translate(center_x, center_y).center(0.0, 30.0);
             proj.project(rotated_lon, rotated_lat)
         }
     };

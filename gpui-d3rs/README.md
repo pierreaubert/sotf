@@ -115,6 +115,17 @@ for creating interactive visualizations.
   - `d3rs::random` - Random number generators
   - `d3rs::text` - Text measurement and rendering utilities
 
+## Visual Gallery
+
+<p align="center">
+  <img src="docs/images/demo_00_overview.png" width="45%" alt="Overview Demo"/>
+  <img src="docs/images/demo_08_contours.png" width="45%" alt="Contours Demo"/>
+  <img src="docs/images/demo_10_geo.png" width="45%" alt="Geo Projection"/>
+  <img src="docs/images/demo_17_force.png" width="45%" alt="Force Directed Graph"/>
+  <img src="docs/images/demo_18_chord.png" width="45%" alt="Chord Diagram"/>
+  <img src="docs/images/demo_15_stacked_to_grouped_bars.png" width="45%" alt="Stacked Bars"/>
+</p>
+
 ## Quick Start
 
 Add to your `Cargo.toml`:
@@ -262,6 +273,10 @@ cargo run --example timer_demo --no-default-features      # Timing utilities
 
 # Spinorama demo (requires spinorama feature)
 cargo run --features spinorama --bin spinorama-demo --release
+
+# Generate showcase snapshots (macOS only)
+# This will iterate through all demos and save screenshots to docs/images/
+cargo run --bin d3rs-showcase -- --snapshot
 ```
 
 ## API Philosophy: D3.js vs gpui-d3rs
