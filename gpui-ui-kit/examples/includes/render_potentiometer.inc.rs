@@ -7,6 +7,7 @@ impl Showcase {
         let pot_100 = self.pot_100;
         let pot_selected = self.pot_selected;
         let pot_lg = self.pot_lg;
+        let pot_freq_log = self.pot_freq_log;
         let volume_value = self.volume_value;
         let volume_muted = self.volume_muted;
 
@@ -197,6 +198,66 @@ impl Showcase {
                                 }),
                         )
                         .child(Text::new(large_label).size(TextSize::Xs)),
+                ),
+        )
+        // Logarithmic scale section
+        .child(
+            VStack::new()
+                .spacing(StackSpacing::Sm)
+                .child(Text::new("Logarithmic Scale (for frequency controls)").weight(TextWeight::Medium))
+                .child(Text::new("Use .scale(PotentiometerScale::Logarithmic) for frequency-like values (20Hz-20kHz)").muted(true))
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Xl)
+                        .align(StackAlign::End)
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Potentiometer::new("pot-freq-log")
+                                        .value(pot_freq_log)
+                                        .min(20.0)
+                                        .max(20000.0)
+                                        .unit("Hz")
+                                        .label("Freq (Log)")
+                                        .size(PotentiometerSize::Lg)
+                                        .scale(PotentiometerScale::Logarithmic)
+                                        .on_change({
+                                            let entity = entity.clone();
+                                            move |value, _window, cx| {
+                                                entity.update(cx, |showcase, _cx| {
+                                                    showcase.pot_freq_log = value;
+                                                });
+                                            }
+                                        }),
+                                )
+                                .child(Text::new(format!("{:.0} Hz", pot_freq_log)).size(TextSize::Xs)),
+                        )
+                        .child(
+                            VStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Potentiometer::new("pot-freq-linear")
+                                        .value(pot_selected)
+                                        .min(20.0)
+                                        .max(20000.0)
+                                        .unit("Hz")
+                                        .label("Freq (Linear)")
+                                        .size(PotentiometerSize::Lg)
+                                        // Default linear scale for comparison
+                                        .on_change({
+                                            let entity = entity.clone();
+                                            move |value, _window, cx| {
+                                                entity.update(cx, |showcase, _cx| {
+                                                    showcase.pot_selected = value;
+                                                });
+                                            }
+                                        }),
+                                )
+                                .child(Text::new(format!("{:.0} Hz (compare)", pot_selected)).size(TextSize::Xs)),
+                        ),
                 ),
         )
         // Volume Knob section

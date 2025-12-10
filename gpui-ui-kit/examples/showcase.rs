@@ -146,6 +146,7 @@ pub struct Showcase {
     pot_100: f64,
     pot_selected: f64,
     pot_lg: f64,
+    pot_freq_log: f64, // Logarithmic frequency potentiometer (20-20000 Hz)
     // Volume knob values
     volume_value: f32,
     volume_muted: bool,
@@ -191,6 +192,7 @@ impl Showcase {
             pot_100: 1.0,
             pot_selected: 0.5,
             pot_lg: 0.7,
+            pot_freq_log: 1000.0, // Default to 1kHz
             volume_value: 0.75,
             volume_muted: false,
             accordion_vertical_single: vec!["v-single-1".into()],

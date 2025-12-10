@@ -321,10 +321,10 @@ impl Select {
             let hover_border = theme.trigger_border_hover;
             trigger = trigger.hover(move |s| s.border_color(hover_border));
 
-            // Mouse click handler
+            // Mouse click handler - use on_mouse_down for more reliable response
             if let Some(ref handler) = on_toggle_rc {
                 let handler = handler.clone();
-                trigger = trigger.on_mouse_up(MouseButton::Left, move |_, window, cx| {
+                trigger = trigger.on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     (handler)(!currently_open, window, cx);
                 });
             }
@@ -432,7 +432,11 @@ impl Select {
                 let is_highlighted = self.highlighted_index == Some(idx);
                 let option_value = option.value.clone();
 
-                let mut option_el = div().px_3().py(px(6.0)).cursor_pointer();
+                let mut option_el = div()
+                    .id(SharedString::from(format!("select-option-{}", idx)))
+                    .px_3()
+                    .py(px(6.0))
+                    .cursor_pointer();
 
                 // Apply text size
                 option_el = match self.size {
@@ -468,7 +472,7 @@ impl Select {
                     if let Some(ref handler) = on_change_rc {
                         let handler_click = handler.clone();
                         option_el =
-                            option_el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                            option_el.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                                 handler_click(&option_value, window, cx);
                             });
                     }

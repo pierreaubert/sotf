@@ -98,6 +98,65 @@ pub enum PotentiometerSize {
     Lg,
 }
 
+/// Scale type for potentiometer value mapping
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PotentiometerScale {
+    /// Linear scale (default) - equal increments
+    #[default]
+    Linear,
+    /// Logarithmic scale - for frequency, etc.
+    /// Values must be positive (min > 0)
+    Logarithmic,
+}
+
+impl PotentiometerScale {
+    /// Convert a value to normalized position [0, 1] based on scale type
+    fn value_to_normalized(self, value: f64, min: f64, max: f64) -> f64 {
+        match self {
+            PotentiometerScale::Linear => {
+                if max > min {
+                    ((value - min) / (max - min)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                }
+            }
+            PotentiometerScale::Logarithmic => {
+                // For log scale, min must be > 0
+                let min = min.max(1e-10);
+                let max = max.max(min + 1e-10);
+                let value = value.clamp(min, max);
+                let log_min = min.ln();
+                let log_max = max.ln();
+                ((value.ln() - log_min) / (log_max - log_min)).clamp(0.0, 1.0)
+            }
+        }
+    }
+
+    /// Convert a normalized position [0, 1] to a value based on scale type
+    fn normalized_to_value(self, normalized: f64, min: f64, max: f64) -> f64 {
+        match self {
+            PotentiometerScale::Linear => min + normalized * (max - min),
+            PotentiometerScale::Logarithmic => {
+                // For log scale, min must be > 0
+                let min = min.max(1e-10);
+                let max = max.max(min + 1e-10);
+                let log_min = min.ln();
+                let log_max = max.ln();
+                (log_min + normalized * (log_max - log_min)).exp()
+            }
+        }
+    }
+
+    /// Compute new value after stepping in normalized space
+    /// `direction`: 1.0 for increase, -1.0 for decrease
+    /// `step_percent`: step size as fraction (e.g., 0.05 for 5%)
+    fn step_value(self, current: f64, min: f64, max: f64, direction: f64, step_percent: f64) -> f64 {
+        let current_norm = self.value_to_normalized(current, min, max);
+        let new_norm = (current_norm + step_percent * direction).clamp(0.0, 1.0);
+        self.normalized_to_value(new_norm, min, max)
+    }
+}
+
 impl PotentiometerSize {
     fn knob_size(&self) -> f32 {
         match self {
@@ -135,6 +194,7 @@ pub struct Potentiometer {
     label: Option<SharedString>,
     shortcut_key: Option<char>,
     size: PotentiometerSize,
+    scale: PotentiometerScale,
     selected: bool,
     disabled: bool,
     theme: Option<PotentiometerTheme>,
@@ -156,6 +216,7 @@ impl Potentiometer {
             label: None,
             shortcut_key: None,
             size: PotentiometerSize::default(),
+            scale: PotentiometerScale::default(),
             selected: false,
             disabled: false,
             theme: None,
@@ -164,6 +225,11 @@ impl Potentiometer {
             on_select: None,
             on_reset: None,
         }
+    }
+
+    /// Convert a value to normalized position [0, 1] based on scale type
+    fn value_to_normalized(&self, value: f64) -> f64 {
+        self.scale.value_to_normalized(value, self.min, self.max)
     }
 
     /// Set the current value (clamped to min/max during render)
@@ -205,6 +271,17 @@ impl Potentiometer {
     /// Set the potentiometer size
     pub fn size(mut self, size: PotentiometerSize) -> Self {
         self.size = size;
+        self
+    }
+
+    /// Set the value scale type (linear or logarithmic)
+    ///
+    /// Use `Logarithmic` for frequency parameters (e.g., 20Hz to 20kHz)
+    /// where equal visual distances should represent equal ratios.
+    ///
+    /// Note: For logarithmic scale, min must be > 0.
+    pub fn scale(mut self, scale: PotentiometerScale) -> Self {
+        self.scale = scale;
         self
     }
 
@@ -338,11 +415,8 @@ impl RenderOnce for Potentiometer {
         let selected = self.selected;
         let disabled = self.disabled;
 
-        let normalized = if self.max > self.min {
-            ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32
-        } else {
-            0.0
-        };
+        // Use scale-aware normalization for indicator position
+        let normalized = self.value_to_normalized(self.value) as f32;
 
         // Calculate angle for indicator with dead zone at 6 o'clock (bottom)
         // In screen coordinates (y-down): 0° = 3 o'clock, 90° = 6 o'clock, 180° = 9 o'clock, 270° = 12 o'clock
@@ -422,6 +496,7 @@ impl RenderOnce for Potentiometer {
         let value = self.value;
         let min = self.min;
         let max = self.max;
+        let scale = self.scale;
 
         let mut container = div()
             .id(self.id)
@@ -477,8 +552,8 @@ impl RenderOnce for Potentiometer {
                 let handler_click = handler_rc.clone();
                 container =
                     container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                        let step = (max - min) * 0.1;
-                        let new_value = (value + step).clamp(min, max);
+                        // Use scale-aware stepping (10% in normalized space)
+                        let new_value = scale.step_value(value, min, max, 1.0, 0.1);
                         handler_click(new_value, window, cx);
                     });
             }
@@ -503,14 +578,14 @@ impl RenderOnce for Potentiometer {
                         match &event.keystroke.key {
                             // Arrow Up or Right - increase value
                             key if key == "up" || key == "right" => {
-                                let step = (max - min) * 0.05;
-                                let new_value = (value + step).clamp(min, max);
+                                // Use scale-aware stepping (5% in normalized space)
+                                let new_value = scale.step_value(value, min, max, 1.0, 0.05);
                                 handler_key(new_value, window, cx);
                             }
                             // Arrow Down or Left - decrease value
                             key if key == "down" || key == "left" => {
-                                let step = (max - min) * 0.05;
-                                let new_value = (value - step).clamp(min, max);
+                                // Use scale-aware stepping (5% in normalized space)
+                                let new_value = scale.step_value(value, min, max, -1.0, 0.05);
                                 handler_key(new_value, window, cx);
                             }
                             // Escape - reset to default
@@ -529,10 +604,10 @@ impl RenderOnce for Potentiometer {
             if let Some(handler_rc) = on_change_rc {
                 container = container.on_scroll_wheel(move |event, window, cx| {
                     let delta = event.delta.pixel_delta(px(20.0)).y;
-                    let should_negate = delta > px(0.0);
-                    let step = (max - min) * 0.05;
-                    let change = if should_negate { -step } else { step };
-                    let new_value = (value + change).clamp(min, max);
+                    // Scroll down = increase, scroll up = decrease
+                    let direction = if delta > px(0.0) { -1.0 } else { 1.0 };
+                    // Use scale-aware stepping (5% in normalized space)
+                    let new_value = scale.step_value(value, min, max, direction, 0.05);
                     handler_rc(new_value, window, cx);
                 });
             }
@@ -680,7 +755,8 @@ impl RenderOnce for Potentiometer {
 
             // Add tick label only for major ticks
             if is_major {
-                let tick_value = min + (max - min) * tick_normalized as f64;
+                // Convert normalized position to actual value using scale
+                let tick_value = scale.normalized_to_value(tick_normalized as f64, min, max);
                 let label_x = knob_offset + center + label_radius * tick_angle.cos();
                 let label_y = knob_offset + center + label_radius * tick_angle.sin();
 

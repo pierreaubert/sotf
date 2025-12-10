@@ -73,7 +73,7 @@ pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use input::{Input, InputSize, InputVariant};
 pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme};
-pub use potentiometer::{Potentiometer, PotentiometerSize, PotentiometerTheme};
+pub use potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme};
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
