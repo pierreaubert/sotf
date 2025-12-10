@@ -4,6 +4,7 @@ members = [
     "autoeq-cea2034",
     "autoeq-env",
     "autoeq-roomsim",
+    "gpui-au",
     "gpui-d3rs",
     "gpui-px",
     "gpui-ui-kit",

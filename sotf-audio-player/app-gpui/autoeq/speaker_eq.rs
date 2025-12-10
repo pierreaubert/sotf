@@ -61,7 +61,7 @@ impl PlayerView {
         // Note: For now we'll just simulate progress or handle it if we have a real backend
         // Since run_speaker_optimization_task is async, we spawn it.
 
-        cx.spawn(async move |view: WeakEntity<PlayerView>, mut cx| {
+        cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
             let result = run_speaker_optimization_task(
                 speaker_model,
                 String::new(), // Target not used yet/handled internally

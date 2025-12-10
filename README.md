@@ -31,7 +31,7 @@ just build
 just test
 ```
 
-and you are set up. See this [README](src-autoeq/README.md) for instructions on how to use it.
+and you are set up. See this [README](autoeq/README.md) for instructions on how to use it.
 
 ## Toolkit
 
@@ -163,19 +163,19 @@ It does have interfaces to demonstrate how the system works:
 - A better looking interface is in construction on src-gpui-player but not ready for general use at all.
 
 Status:
-- src-audio-engine: production quality
-- src-audio-plugins: code is good but some plugins need tuning.
-- src-audio-plugins-ffi: beta quality
-- src-audio-plugins-au: an attempt at generating AUplugins
-- src-audio-player: production quality
-- src-audio-player-tui: good quality, can scan by 4k albums and play them with an TUI interface. It is good for testing parameters and plugins.
-- src-audio-player-gpui: experimental status
+- sotf-audio-engine: production quality
+- sotf-audio-plugins: code is good but some plugins need tuning.
+- sotf-audio-plugins/src-ffi: beta quality
+- gpui-au: a bridge between AUv3 plugin and gpui
+- sotf-audio-player: production quality
+- sotf-audio-player/app-tui: good quality, can scan by 4k albums and play them with an TUI interface. It is good for testing parameters and plugins.
+- sotf-audio-player/app-gpui: experimental status
 
 
-### MacOS specifig: src-hal and src-confbar
+### MacOS specific: sotf-macos-hal and sotf-macos-configbar
 
-src-hal crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
-src-confbar crate allows you to configure the above driver and is conveniently available from the menubar.
+sotf-macos-hal crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
+sotf-macos-configbar crate allows you to configure the above driver and is conveniently available from the menubar.
 
 Status: experimental for HAL and ok for confbar.
 
@@ -193,13 +193,13 @@ not converted yet (adjoint computation etc).
 
 Status: ok-ish
 
-### src-head-scanner
+### sotf-head-scanner
 
 An experimental app to scan your head and do all the computations to get an HRTF. There is a long way to go but we are making progress.
 
-### src-tauri and and src-ui-frontend
+### app-tauri and and app-tauri/sotf-ui-frontend
 
-The Tauri backend for the frontend. Noting special here, just a wrapper around src-audio and src-autoeq.
+The Tauri backend for the frontend. Noting special here, just a wrapper around sotf-audio and autoeq.
 The UI frontend :) Nothing special here, just a boring UI.
 
 Status: working but unpolished

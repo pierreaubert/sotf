@@ -1,7 +1,7 @@
 pub mod album_card;
 mod dialogs;
-pub mod eq_curve;
 mod footer;
+pub mod eq_curve;
 pub mod graphs;
 mod header;
 pub mod icon;

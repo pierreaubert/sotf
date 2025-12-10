@@ -328,6 +328,172 @@ impl Element for LevelMeterElement {
 // Gradient Meter Rendering (div-based)
 // ============================================================================
 
+/// Render a horizontal gain reduction meter
+/// Uses render_gradient_meter for consistent styling
+pub fn render_gr_meter(
+    gain_reduction_db: f64, // Should be negative or 0
+    max_db: f64,            // e.g., -30.0 (max gain reduction to display)
+    theme: &Theme,
+) -> impl IntoElement {
+    use super::ticks::{TickConfig, render_tick_row};
+
+    let gr_abs = gain_reduction_db.abs();
+    let tick_config = TickConfig::gain_reduction(max_db);
+
+    // Calculate fill ratio using tick config scale
+    let fill_ratio = tick_config.value_to_position(gr_abs);
+
+    // Color gradient: green -> yellow -> red based on amount
+    let color = if gr_abs < 3.0 {
+        theme.meter_normal // Green
+    } else if gr_abs < 10.0 {
+        theme.meter_warning // Yellow/Orange
+    } else {
+        theme.meter_clip // Red
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .w_full()
+        // Header row with label and value
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .items_center()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_secondary)
+                        .child("Gain Reduction"),
+                )
+                .child(
+                    div()
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme.surface)
+                        .text_xs()
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(color)
+                        .child(format!("{:.1} dB", gr_abs)),
+                ),
+        )
+        // Meter bar (full width)
+        .child(
+            div()
+                .h(px(12.0))
+                .w_full()
+                .bg(theme.background)
+                .rounded_md()
+                .border_1()
+                .border_color(theme.border)
+                .overflow_hidden()
+                .child(
+                    div()
+                        .h_full()
+                        .w(relative(fill_ratio))
+                        .bg(color)
+                        .rounded_l_md(),
+                ),
+        )
+        // Tick marks (full width)
+        .child(render_tick_row(&tick_config, 0.0, 0.0))
+        // Legend (full width)
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .children(
+                    tick_config
+                        .major_values
+                        .iter()
+                        .map(|v| div().child(format!("{:.0}", v))),
+                ),
+        )
+}
+
+/// Render a vertical peak meter with ceiling indicator
+pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl IntoElement {
+    let min_db = -60.0;
+    let normalized = ((peak_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
+    let ceiling_normalized = ((ceiling_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
+
+    // Color based on level
+    let color = if peak_db > ceiling_db {
+        theme.meter_clip // Red - clipping
+    } else if peak_db > ceiling_db - 3.0 {
+        theme.meter_clip // Near ceiling
+    } else if peak_db > -12.0 {
+        theme.meter_warning // Yellow - moderate
+    } else {
+        theme.meter_normal // Green - safe
+    };
+
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_1()
+        // Label
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(theme.text_secondary)
+                .child("Peak"),
+        )
+        // Meter
+        .child(
+            div()
+                .w(px(20.0))
+                .h(px(80.0))
+                .bg(theme.background)
+                .rounded_md()
+                .border_1()
+                .border_color(theme.border)
+                .relative()
+                .overflow_hidden()
+                // Level bar
+                .child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .h(relative(normalized))
+                        .bg(color),
+                )
+                // Ceiling marker
+                .child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .right_0()
+                        .bottom(relative(ceiling_normalized))
+                        .h(px(2.0))
+                        .bg(theme.meter_clip),
+                ),
+        )
+        // Value
+        .child(
+            div()
+                .text_xs()
+                .font_weight(FontWeight::BOLD)
+                .text_color(color)
+                .child(if peak_db <= min_db {
+                    "-∞".to_string()
+                } else {
+                    format!("{:.1}", peak_db)
+                }),
+        )
+}
+
 /// Render a meter with gradient coloring (green, yellow at top, red at clip)
 pub fn render_gradient_meter(
     fill_ratio: f32,

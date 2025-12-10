@@ -1,7 +1,6 @@
 //! Common utilities for plugin UI components
 
-use super::actions::{ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam};
-use super::ticks::{TickConfig, render_tick_row};
+use crate::app::{AppState, InputMode};
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -116,194 +115,6 @@ pub fn render_edit_hints(theme: &Theme) -> impl IntoElement {
         .child("Enter: Done")
 }
 
-/// Render a meter/gauge visualization (simple, linear scale)
-pub fn render_meter(
-    value: f32, // 0.0 to 1.0
-    label: &str,
-    color: Rgba,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .child(label.to_string()),
-        )
-        .child(
-            div()
-                .h(px(8.0))
-                .w_full()
-                .bg(theme.surface)
-                .rounded_full()
-                .overflow_hidden()
-                .child(
-                    div()
-                        .h_full()
-                        .w(relative(value.clamp(0.0, 1.0)))
-                        .bg(color)
-                        .rounded_full(),
-                ),
-        )
-}
-
-/// Configuration for horizontal meter styling
-pub struct HorizontalMeterConfig {
-    pub label_width: f32,
-    pub value_width: f32,
-    pub bar_height: f32,
-    pub show_ticks: bool,
-    pub show_legend: bool,
-}
-
-impl Default for HorizontalMeterConfig {
-    fn default() -> Self {
-        Self {
-            label_width: 32.0,
-            value_width: 50.0,
-            bar_height: 20.0,
-            show_ticks: true,
-            show_legend: true,
-        }
-    }
-}
-
-/// Render a horizontal meter with proper scaling, ticks, and legend
-///
-/// Uses TickConfig for consistent bar fill, tick marks, and legend alignment.
-/// The bar fill, ticks, and legend all use the same scale transformation.
-pub fn render_horizontal_meter(
-    label: &str,
-    value: f64,
-    value_format: &str, // e.g., "{:.1} dB" or "{:.0}%"
-    tick_config: &TickConfig,
-    bar_color: Rgba,
-    meter_config: &HorizontalMeterConfig,
-    theme: &Theme,
-) -> impl IntoElement {
-    let ratio = tick_config.value_to_position(value);
-    let value_str = format_value(value, value_format);
-    let gap = 4.0;
-
-    div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        // Bar row: [label] [bar] [value]
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(gap))
-                // Label
-                .child(
-                    div()
-                        .w(px(meter_config.label_width))
-                        .text_xs()
-                        .text_color(theme.text_secondary)
-                        .child(label.to_string()),
-                )
-                // Bar with border
-                .child(
-                    div()
-                        .flex_1()
-                        .h(px(meter_config.bar_height))
-                        .rounded(px(4.0))
-                        .border_1()
-                        .border_color(theme.border)
-                        .bg(theme.background)
-                        .overflow_hidden()
-                        .child(div().h_full().w(relative(ratio)).bg(bar_color)),
-                )
-                // Value display
-                .child(
-                    div()
-                        .w(px(meter_config.value_width))
-                        .text_xs()
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.text_primary)
-                        .text_align(TextAlign::Right)
-                        .child(value_str),
-                ),
-        )
-        // Tick marks (if enabled)
-        .when(meter_config.show_ticks, |d| {
-            d.child(render_tick_row(
-                tick_config,
-                meter_config.label_width,
-                meter_config.value_width,
-            ))
-        })
-        // Legend (if enabled)
-        .when(meter_config.show_legend, |d| {
-            d.child(render_meter_legend(
-                tick_config,
-                meter_config.label_width,
-                meter_config.value_width,
-                theme,
-            ))
-        })
-}
-
-/// Render legend labels aligned with meter bar
-fn render_meter_legend(
-    tick_config: &TickConfig,
-    label_width: f32,
-    value_width: f32,
-    theme: &Theme,
-) -> impl IntoElement {
-    let gap = 4.0;
-
-    div()
-        .flex()
-        .gap(px(gap))
-        // Label spacer
-        .child(div().w(px(label_width)))
-        // Legend area (flex-1, justify_between for labels)
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .justify_between()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .children(tick_config.major_values.iter().map(|v| {
-                    let label = format_legend_value(*v);
-                    div().child(label)
-                })),
-        )
-        // Value spacer
-        .child(div().w(px(value_width)))
-}
-
-/// Format a value for display based on format string
-fn format_value(value: f64, format: &str) -> String {
-    // Simple format string parsing
-    if format.contains("{:.1}") {
-        format.replace("{:.1}", &format!("{:.1}", value))
-    } else if format.contains("{:.0}") {
-        format.replace("{:.0}", &format!("{:.0}", value))
-    } else if format.contains("{:.2}") {
-        format.replace("{:.2}", &format!("{:.2}", value))
-    } else if format.contains("{:+.1}") {
-        format.replace("{:+.1}", &format!("{:+.1}", value))
-    } else {
-        format!("{:.1}", value)
-    }
-}
-
-/// Format legend value (handles positive values with + sign for dB scales)
-fn format_legend_value(value: f64) -> String {
-    if value > 0.0 {
-        format!("+{}", value as i32)
-    } else {
-        format!("{}", value as i32)
-    }
-}
-
 /// Convert Theme to ToggleTheme for gpui-ui-kit Toggle
 fn theme_to_toggle_theme(theme: &Theme) -> ToggleTheme {
     ToggleTheme {
@@ -322,7 +133,9 @@ fn theme_to_toggle_theme(theme: &Theme) -> ToggleTheme {
 
 /// Render a toggle button with [OFF | ON] display
 /// The active state is highlighted, inactive is dimmed
+/// Uses Entity<AppState> for direct state updates
 pub fn render_toggle(
+    entity: Entity<AppState>,
     plugin_idx: usize,
     label: &str,
     enabled: bool,
@@ -333,17 +146,15 @@ pub fn render_toggle(
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
-    Toggle::new(("toggle", idx))
+    Toggle::new(("toggle", plugin_idx * 1000 + idx))
         .checked(enabled)
         .label(label.to_string())
         .selected(is_selected)
         .style(ToggleStyle::Segmented)
         .theme(theme_to_toggle_theme(theme))
         .on_change(move |new_checked, _, cx| {
-            cx.dispatch_action(&UpdatePluginParam {
-                plugin_idx,
-                param_idx: idx,
-                value: if new_checked { 1.0 } else { 0.0 },
+            entity.update(cx, |state, _| {
+                state.app.set_plugin_param(plugin_idx, idx, if new_checked { 1.0 } else { 0.0 });
             });
         })
 }
@@ -482,7 +293,9 @@ fn theme_to_vertical_slider_theme(theme: &Theme) -> VerticalSliderTheme {
 }
 
 /// Render a vertical slider with label, value, drag support and enhanced visual feedback
+/// Uses Entity<AppState> for direct state updates
 pub fn render_vertical_slider(
+    entity: Entity<AppState>,
     plugin_idx: usize,
     label: &str,
     value: f64,
@@ -497,7 +310,7 @@ pub fn render_vertical_slider(
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
-    let mut slider = VerticalSlider::new(idx)
+    let mut slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx))
         .value(value)
         .min(min)
         .max(max)
@@ -505,34 +318,45 @@ pub fn render_vertical_slider(
         .label(label.to_string())
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
-        .on_change(move |new_value, _, cx| {
-            cx.dispatch_action(&UpdatePluginParam {
-                plugin_idx,
-                param_idx: idx,
-                value: new_value,
-            });
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                });
+            }
         })
-        .on_drag_start(move |start_y, start_value, _, cx| {
-            cx.dispatch_action(&StartKnobDrag {
-                plugin_idx,
-                param_idx: idx,
-                start_y,
-                start_value,
-                min,
-                max,
-            });
+        .on_drag_start({
+            let entity = entity.clone();
+            move |start_y, start_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.is_dragging_knob = true;
+                    state.app.knob_drag_plugin_idx = plugin_idx;
+                    state.app.knob_drag_param_idx = idx;
+                    state.app.knob_drag_start_y = Some(start_y);
+                    state.app.knob_drag_start_value = start_value;
+                    state.app.knob_drag_min = min;
+                    state.app.knob_drag_max = max;
+                });
+            }
         })
-        .on_select(move |_, cx| {
-            cx.dispatch_action(&SelectPluginParam {
-                plugin_idx,
-                param_idx: idx,
-            });
+        .on_select({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_param_selection = idx;
+                    state.app.input_mode = InputMode::EditPlugin;
+                });
+            }
         })
-        .on_reset(move |_, cx| {
-            cx.dispatch_action(&ResetPluginParam {
-                plugin_idx,
-                param_idx: idx,
-            });
+        .on_reset({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.reset_plugin_param(plugin_idx, idx);
+                });
+            }
         });
 
     if let Some(key) = shortcut_key {
@@ -540,104 +364,6 @@ pub fn render_vertical_slider(
     }
 
     slider
-}
-
-/// Render a horizontal gain reduction meter
-/// Uses TickConfig for consistent bar fill, ticks, and legend alignment
-pub fn render_gr_meter(
-    gain_reduction_db: f64, // Should be negative or 0
-    max_db: f64,            // e.g., -30.0
-    theme: &Theme,
-) -> impl IntoElement {
-    let gr_abs = gain_reduction_db.abs();
-    let tick_config = TickConfig::gain_reduction(max_db);
-
-    // Color gradient: green -> yellow -> orange -> red based on amount
-    let color = gr_color(gr_abs, theme);
-
-    let meter_config = HorizontalMeterConfig {
-        label_width: 0.0, // No label column for GR meter
-        value_width: 0.0, // No value column (shown in header)
-        bar_height: 12.0,
-        show_ticks: true,
-        show_legend: true,
-    };
-
-    div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .w_full()
-        // Header row with label and value
-        .child(
-            div()
-                .flex()
-                .justify_between()
-                .items_center()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_secondary)
-                        .child("Gain Reduction"),
-                )
-                .child(
-                    div()
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
-                        .bg(theme.surface)
-                        .text_xs()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(color)
-                        .child(format!("{:.1} dB", gr_abs)),
-                ),
-        )
-        // Meter bar (full width, no label/value columns)
-        .child(
-            div()
-                .h(px(meter_config.bar_height))
-                .w_full()
-                .bg(theme.background)
-                .rounded_md()
-                .border_1()
-                .border_color(theme.border)
-                .overflow_hidden()
-                .child(
-                    div()
-                        .h_full()
-                        .w(relative(tick_config.value_to_position(gr_abs)))
-                        .bg(color)
-                        .rounded_l_md(),
-                ),
-        )
-        // Tick marks (full width)
-        .child(render_tick_row(&tick_config, 0.0, 0.0))
-        // Legend (full width)
-        .child(
-            div()
-                .flex()
-                .justify_between()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .children(
-                    tick_config
-                        .major_values
-                        .iter()
-                        .map(|v| div().child(format!("{:.0}", v))),
-                ),
-        )
-}
-
-/// Get color for gain reduction amount
-fn gr_color(gr_abs: f64, theme: &Theme) -> Rgba {
-    if gr_abs < 3.0 {
-        theme.meter_normal // Green
-    } else if gr_abs < 10.0 {
-        theme.meter_warning // Yellow/Orange
-    } else {
-        theme.meter_clip // Red
-    }
 }
 
 /// Render a simple transfer curve visualization (input vs output)
@@ -726,82 +452,6 @@ pub fn render_transfer_curve(
         )
 }
 
-/// Render a peak meter (vertical)
-pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl IntoElement {
-    let min_db = -60.0;
-    let normalized = ((peak_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
-    let ceiling_normalized = ((ceiling_db - min_db) / (0.0 - min_db)).clamp(0.0, 1.0) as f32;
-
-    // Color based on level
-    let color = if peak_db > ceiling_db {
-        theme.meter_clip // Red - clipping
-    } else if peak_db > ceiling_db - 3.0 {
-        theme.meter_clip // Near ceiling
-    } else if peak_db > -12.0 {
-        theme.meter_warning // Yellow - moderate
-    } else {
-        theme.meter_normal // Green - safe
-    };
-
-    div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap_1()
-        // Label
-        .child(
-            div()
-                .text_xs()
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(theme.text_secondary)
-                .child("Peak"),
-        )
-        // Meter
-        .child(
-            div()
-                .w(px(20.0))
-                .h(px(80.0))
-                .bg(theme.background)
-                .rounded_md()
-                .border_1()
-                .border_color(theme.border)
-                .relative()
-                .overflow_hidden()
-                // Level bar
-                .child(
-                    div()
-                        .absolute()
-                        .bottom_0()
-                        .left_0()
-                        .right_0()
-                        .h(relative(normalized))
-                        .bg(color),
-                )
-                // Ceiling marker
-                .child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .right_0()
-                        .bottom(relative(ceiling_normalized))
-                        .h(px(2.0))
-                        .bg(theme.meter_clip),
-                ),
-        )
-        // Value
-        .child(
-            div()
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .text_color(color)
-                .child(if peak_db <= min_db {
-                    "-∞".to_string()
-                } else {
-                    format!("{:.1}", peak_db)
-                }),
-        )
-}
-
 /// Convert Theme to PotentiometerTheme for gpui-ui-kit Potentiometer
 fn theme_to_potentiometer_theme(theme: &Theme) -> PotentiometerTheme {
     PotentiometerTheme {
@@ -820,7 +470,9 @@ fn theme_to_potentiometer_theme(theme: &Theme) -> PotentiometerTheme {
 }
 
 /// Render a rotary knob control with drag support and enhanced visual feedback
+/// Uses Entity<AppState> for direct state updates instead of action dispatch
 pub fn render_knob(
+    entity: Entity<AppState>,
     plugin_idx: usize,
     label: &str,
     value: f64,
@@ -835,7 +487,7 @@ pub fn render_knob(
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
-    let mut knob = Potentiometer::new(("knob", idx))
+    let mut knob = Potentiometer::new(("knob", plugin_idx * 1000 + idx))
         .value(value)
         .min(min)
         .max(max)
@@ -843,34 +495,45 @@ pub fn render_knob(
         .label(label.to_string())
         .selected(is_selected)
         .theme(theme_to_potentiometer_theme(theme))
-        .on_change(move |new_value, _, cx| {
-            cx.dispatch_action(&UpdatePluginParam {
-                plugin_idx,
-                param_idx: idx,
-                value: new_value,
-            });
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                });
+            }
         })
-        .on_drag_start(move |start_y, start_value, _, cx| {
-            cx.dispatch_action(&StartKnobDrag {
-                plugin_idx,
-                param_idx: idx,
-                start_y,
-                start_value,
-                min,
-                max,
-            });
+        .on_drag_start({
+            let entity = entity.clone();
+            move |start_y, start_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.is_dragging_knob = true;
+                    state.app.knob_drag_plugin_idx = plugin_idx;
+                    state.app.knob_drag_param_idx = idx;
+                    state.app.knob_drag_start_y = Some(start_y);
+                    state.app.knob_drag_start_value = start_value;
+                    state.app.knob_drag_min = min;
+                    state.app.knob_drag_max = max;
+                });
+            }
         })
-        .on_select(move |_, cx| {
-            cx.dispatch_action(&SelectPluginParam {
-                plugin_idx,
-                param_idx: idx,
-            });
+        .on_select({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_param_selection = idx;
+                    state.app.input_mode = InputMode::EditPlugin;
+                });
+            }
         })
-        .on_reset(move |_, cx| {
-            cx.dispatch_action(&ResetPluginParam {
-                plugin_idx,
-                param_idx: idx,
-            });
+        .on_reset({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.reset_plugin_param(plugin_idx, idx);
+                });
+            }
         });
 
     if let Some(key) = shortcut_key {

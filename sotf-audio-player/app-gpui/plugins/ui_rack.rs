@@ -5,12 +5,9 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
-use sotf_audio_player::{PluginType, LoudnessData};
+use sotf_audio_player::PluginType;
 use super::level_meters::{render_gradient_meter, db_to_position};
-use crate::theme::Theme;
-use crate::plugins::actions::{
-    UpdatePluginParam, ToggleUpmixerConfig,
-};
+use crate::plugins::actions::ToggleUpmixerConfig;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -125,6 +122,11 @@ impl PlayerView {
             .size_full()
             .bg(theme.background)
             .on_action(cx.listener(Self::toggle_upmixer_config))
+            // Plugin parameter actions - needed for knob/slider interaction
+            .on_action(cx.listener(Self::on_update_plugin_param))
+            .on_action(cx.listener(Self::on_select_plugin_param))
+            .on_action(cx.listener(Self::on_reset_plugin_param))
+            .on_action(cx.listener(Self::on_start_knob_drag))
             // Global mouse move handler for knob/slider dragging
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _window, cx| {
                 let (is_dragging, start_y, start_value, min, max, plugin_idx, param_idx) = {
@@ -693,7 +695,6 @@ impl PlayerView {
             .flex_1()
             .flex()
             .flex_col()
-            .overflow_hidden()
             .when(has_plugin, |d| {
                 let plugin = plugin_data.clone().unwrap();
                 let plugin_type = plugin.plugin_type().clone();
@@ -895,6 +896,7 @@ impl PlayerView {
                         .overflow_y_scroll()
                         .p_4()
                         .child(render_plugin_content(
+                            self.state.clone(),
                             selected_idx, // Pass index
                             &plugin.settings,
                             is_editing,

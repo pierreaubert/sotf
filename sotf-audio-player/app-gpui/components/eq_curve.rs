@@ -400,8 +400,8 @@ impl EQCurveElement {
             }
 
             // Perpendicular vector for line thickness
-            let nx = -dy / len * line_width / 2.0;
-            let ny = dx / len * line_width / 2.0;
+            let _nx = -dy / len * line_width / 2.0;
+            let _ny = dx / len * line_width / 2.0;
 
             // For a simple approximation, draw a thin rectangle
             let min_x = x1.min(x2);

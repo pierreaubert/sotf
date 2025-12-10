@@ -1,6 +1,5 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{Card, Text, TextSize, TextWeight, VStack};
 
 impl PlayerView {

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use sotf_audio_player::Album;
 
 use super::state::App;
-use super::types::{ChannelFilter, LibrarySortOrder, ToastMessage, ToastType};
+use super::types::{ChannelFilter, LibrarySortOrder, ToastMessage};
 
 impl App {
     pub fn filtered_albums(&self) -> Vec<Album> {

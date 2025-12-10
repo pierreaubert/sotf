@@ -11,7 +11,7 @@ use std::time::Duration;
 
 // Re-export all actions for backward compatibility
 pub use crate::actions::*;
-use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, StartKnobDrag, ToggleUpmixerConfig, UpdatePluginParam};
+use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam};
 
 pub struct PlayerView {
     pub(crate) state: Entity<AppState>,
@@ -1532,7 +1532,7 @@ impl PlayerView {
         }
     }
     // Plugin parameter handling
-    fn on_update_plugin_param(
+    pub(crate) fn on_update_plugin_param(
         &mut self,
         action: &UpdatePluginParam,
         _: &mut Window,
@@ -1546,7 +1546,7 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn on_select_plugin_param(
+    pub(crate) fn on_select_plugin_param(
         &mut self,
         action: &SelectPluginParam,
         _: &mut Window,
@@ -1561,7 +1561,7 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn on_reset_plugin_param(
+    pub(crate) fn on_reset_plugin_param(
         &mut self,
         action: &ResetPluginParam,
         _: &mut Window,
@@ -1575,7 +1575,7 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn on_start_knob_drag(
+    pub(crate) fn on_start_knob_drag(
         &mut self,
         action: &StartKnobDrag,
         _: &mut Window,

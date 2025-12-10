@@ -595,8 +595,8 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
-        // HAL plugins (macOS only)
-        #[cfg(target_os = "macos")]
+        // HAL plugins (macOS only, requires 'hal' feature)
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         "hal_input" => {
             use sotf_plugins::{HalInputPlugin, HalInputPluginParams};
 
@@ -607,7 +607,7 @@ fn create_plugin(
             Ok(Box::new(plugin))
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         "hal_output" => {
             use sotf_plugins::{HalOutputPlugin, HalOutputPluginParams, InPlacePluginAdapter};
 

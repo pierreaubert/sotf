@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use sotf_hal::HalOutputWriter;
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
@@ -169,16 +169,16 @@ struct PlaybackState {
     underrun_count: Arc<AtomicU64>,
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_writer: parking_lot::Mutex<Option<HalOutputWriter>>,
 }
 
 impl PlaybackState {
     fn new(buffer_frames: usize, channels: usize) -> Self {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         let hal_writer = HalOutputWriter::new();
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         if hal_writer.is_none() {
             log::warn!("[Playback Thread] Failed to initialize HAL output writer");
         }
@@ -189,7 +189,7 @@ impl PlaybackState {
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)), // Start at 100%
-            #[cfg(target_os = "macos")]
+            #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_writer: parking_lot::Mutex::new(hal_writer),
         }
     }
@@ -587,8 +587,8 @@ fn build_output_stream(
                     }
                 }
 
-                // Write to HAL (loopback)
-                #[cfg(target_os = "macos")]
+                // Write to HAL (loopback) - only available with 'hal' feature
+                #[cfg(all(target_os = "macos", feature = "hal"))]
                 {
                     let mut writer_guard = state_clone.hal_writer.lock();
                     if let Some(writer) = &mut *writer_guard {

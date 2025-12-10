@@ -1,10 +1,4 @@
 //! Spectrum Analyzer UI Components
-//!
-//! This module consolidates all spectrum analyzer functionality:
-//! - GPU-accelerated spectrum element (`SpectrumElement`)
-//! - Plugin parameter editing UI
-//! - Full-screen spectrum display
-//! - Meter data for level meters with smoothed animation
 
 use std::panic;
 use std::sync::Arc;
@@ -13,6 +7,7 @@ use gpui::prelude::*;
 use gpui::*;
 
 use super::common::{render_edit_hints, render_knob, render_section_header};
+use crate::app::AppState;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 
@@ -306,15 +301,21 @@ impl MeterData {
 // Plugin UI
 // ============================================================================
 
+/// State for rendering the Spectrum Analyzer plugin
+pub struct SpectrumRenderState {
+    pub num_bins: usize,
+    pub min_freq: f32,
+    pub max_freq: f32,
+    pub smoothing: f32,
+    pub is_editing: bool,
+    pub selected_param: usize,
+}
+
 /// Render the Spectrum Analyzer plugin
 pub fn render_spectrum_analyzer_plugin(
+    entity: Entity<AppState>,
     plugin_idx: usize,
-    num_bins: usize,
-    min_freq: f32,
-    max_freq: f32,
-    smoothing: f32,
-    is_editing: bool,
-    selected_param: usize,
+    state: SpectrumRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
     // Generate simulated spectrum bars for the plugin card view
@@ -377,59 +378,63 @@ pub fn render_spectrum_analyzer_plugin(
                 .flex()
                 .gap_4()
                 .child(render_knob(
+                    entity.clone(),
                     plugin_idx,
                     "Bins",
-                    num_bins as f64,
+                    state.num_bins as f64,
                     10.0,
                     100.0,
                     "",
                     0,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     None,
                     theme,
                 ))
                 .child(render_knob(
+                    entity.clone(),
                     plugin_idx,
                     "Min Hz",
-                    min_freq as f64,
+                    state.min_freq as f64,
                     10.0,
                     1000.0,
                     "Hz",
                     1,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     None,
                     theme,
                 ))
                 .child(render_knob(
+                    entity.clone(),
                     plugin_idx,
                     "Max Hz",
-                    max_freq as f64,
+                    state.max_freq as f64,
                     1000.0,
                     24000.0,
                     "Hz",
                     2,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     None,
                     theme,
                 ))
                 .child(render_knob(
+                    entity.clone(),
                     plugin_idx,
                     "Smooth",
-                    smoothing as f64,
+                    state.smoothing as f64,
                     0.0,
                     1.0,
                     "",
                     3,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     None,
                     theme,
                 )),
         )
-        .when(is_editing, |d| d.child(render_edit_hints(theme)))
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }
 
 impl PlayerView {

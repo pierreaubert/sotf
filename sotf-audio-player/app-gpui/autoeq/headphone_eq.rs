@@ -710,7 +710,7 @@ async fn run_optimization_task(
 
 /// Load target curve from bundled data or custom file
 fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curve, String> {
-    use ndarray::Array1;
+
 
     match target {
         "harman-over-ear-2018" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2018),

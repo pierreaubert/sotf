@@ -1,5 +1,5 @@
 use crate::ui::PlayerView;
-use crate::app::types::{MeasureState, MeasureStep};
+use crate::app::types::MeasureState;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Button, ButtonVariant, Card, Text, TextSize, TextWeight, VStack};

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use sotf_hal::HalInputReader;
 
 const SPIN_MS_SLEEP_DECODER: u64 = 10;
@@ -88,7 +88,7 @@ struct DecoderState {
     resample_output_buffer: Vec<f32>,
     hal_input_buffer: Vec<f32>,
 
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_reader: Option<HalInputReader>,
 }
 
@@ -105,7 +105,7 @@ impl DecoderState {
             decode_buffer: None,
             resample_output_buffer: Vec::new(),
             hal_input_buffer: Vec::new(),
-            #[cfg(target_os = "macos")]
+            #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_reader: None,
         }
     }
@@ -155,7 +155,7 @@ impl DecoderState {
         self.current_file = Some(path);
         self.spec = Some(spec);
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             self.hal_reader = None;
         }
@@ -411,7 +411,7 @@ impl DecoderState {
         self.current_file = None;
         self.spec = None;
         self.silent_source = false;
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             self.hal_reader = None;
         }
@@ -422,7 +422,7 @@ impl DecoderState {
         self.stop(); // Clear any existing decoder
         self.silent_source = true;
 
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             self.hal_reader = HalInputReader::new();
             if self.hal_reader.is_some() {
@@ -431,7 +431,7 @@ impl DecoderState {
                 log::warn!("[Decoder Thread] Failed to initialize HAL input reader");
             }
         }
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
         log::info!("[Decoder Thread] Started silent source mode (HAL input not supported)");
     }
 
@@ -442,7 +442,7 @@ impl DecoderState {
         frame_size: usize,
         sample_rate: u32,
     ) -> Result<(), String> {
-        #[cfg(target_os = "macos")]
+        #[cfg(all(target_os = "macos", feature = "hal"))]
         if let Some(reader) = &mut self.hal_reader {
             // Read from HAL
             // HAL usually provides 2 channels

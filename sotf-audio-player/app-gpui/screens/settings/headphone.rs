@@ -5,7 +5,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, AccordionTheme, Button, ButtonSize, ButtonTheme,
-    ButtonVariant, Card, HStack, Input, InputSize, Progress, ProgressSize, StackSpacing, Text,
+    ButtonVariant, Card, HStack, Progress, ProgressSize, StackSpacing, Text,
     TextSize, TextWeight, VStack,
 };
 

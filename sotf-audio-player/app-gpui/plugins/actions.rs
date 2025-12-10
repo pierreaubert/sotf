@@ -138,3 +138,28 @@ impl gpui::Action for ToggleUpmixerConfig {
         Err(anyhow::anyhow!("Not supported via keymaps"))
     }
 }
+#[derive(Clone, PartialEq, Debug, Deserialize, Serialize)]
+pub struct OpenSofaFile {
+    pub plugin_idx: usize,
+}
+
+impl gpui::Action for OpenSofaFile {
+    fn boxed_clone(&self) -> Box<dyn gpui::Action> {
+        Box::new(self.clone())
+    }
+    fn partial_eq(&self, other: &dyn gpui::Action) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .map_or(false, |other| self == other)
+    }
+    fn name(&self) -> &'static str {
+        "OpenSofaFile"
+    }
+    fn name_for_type() -> &'static str {
+        "OpenSofaFile"
+    }
+    fn build(_: serde_json::Value) -> anyhow::Result<Box<dyn gpui::Action>> {
+        Err(anyhow::anyhow!("Not supported via keymaps"))
+    }
+}

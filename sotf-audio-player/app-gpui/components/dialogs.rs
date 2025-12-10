@@ -5,8 +5,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Dialog, DialogSize, Divider, HStack, StackAlign, StackJustify,
-    StackSpacing, Text, TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, Dialog, DialogSize, HStack, StackAlign, StackJustify, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
 };
 
 
@@ -257,7 +257,7 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 // Close menu and execute action based on menu type
-                                view.state.update(cx, |state, cx| {
+                                view.state.update(cx, |state, _cx| {
                                     let menu_type = state
                                         .app
                                         .context_menu
@@ -680,7 +680,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
 // Helper function to render plugin parameters for editing
 fn render_plugin_param_list(
     plugin: &sotf_audio_player::Plugin,
-    selected_idx: usize,
+    _selected_idx: usize,
 ) -> Vec<(String, String)> {
     use sotf_audio_player::PluginSettings;
 

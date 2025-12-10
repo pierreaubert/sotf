@@ -46,7 +46,7 @@ impl PlayerView {
     fn render_measure_device_selection(
         &self,
         measure_state: &MeasureState,
-        theme: &crate::theme::Theme,
+        _theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -150,7 +150,7 @@ impl PlayerView {
     fn render_measure_signal_config(
         &self,
         measure_state: &MeasureState,
-        theme: &crate::theme::Theme,
+        _theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         VStack::new()
@@ -161,10 +161,10 @@ impl PlayerView {
                     .child(Text::new("Signal Type").weight(TextWeight::Semibold))
                     .child(
                         HStack::new().spacing(StackSpacing::Sm)
-                        .child(self.render_option_chip("Sweep", measure_state.signal_type == "sweep", cx, |state, val| {
+                        .child(self.render_option_chip("Sweep", measure_state.signal_type == "sweep", cx, |state, _val| {
                             if let Some(ms) = &mut state.app.measure_state { ms.signal_type = "sweep".to_string(); }
                         }))
-                        .child(self.render_option_chip("Pink Noise", measure_state.signal_type == "pink-noise", cx, |state, val| {
+                        .child(self.render_option_chip("Pink Noise", measure_state.signal_type == "pink-noise", cx, |state, _val| {
                              if let Some(ms) = &mut state.app.measure_state { ms.signal_type = "pink-noise".to_string(); }
                         }))
                     )
@@ -175,13 +175,13 @@ impl PlayerView {
                     .child(Text::new("Duration (s)").weight(TextWeight::Semibold))
                      .child(
                         HStack::new().spacing(StackSpacing::Sm)
-                        .child(self.render_option_chip("2.0s", measure_state.duration == "2.0", cx, |state, val| {
+                        .child(self.render_option_chip("2.0s", measure_state.duration == "2.0", cx, |state, _val| {
                             if let Some(ms) = &mut state.app.measure_state { ms.duration = "2.0".to_string(); }
                         }))
-                         .child(self.render_option_chip("5.0s", measure_state.duration == "5.0", cx, |state, val| {
+                         .child(self.render_option_chip("5.0s", measure_state.duration == "5.0", cx, |state, _val| {
                             if let Some(ms) = &mut state.app.measure_state { ms.duration = "5.0".to_string(); }
                         }))
-                         .child(self.render_option_chip("10.0s", measure_state.duration == "10.0", cx, |state, val| {
+                         .child(self.render_option_chip("10.0s", measure_state.duration == "10.0", cx, |state, _val| {
                             if let Some(ms) = &mut state.app.measure_state { ms.duration = "10.0".to_string(); }
                         }))
                     )
@@ -193,13 +193,13 @@ impl PlayerView {
                      .child(
                         HStack::new().spacing(StackSpacing::Sm)
                         // Simple level selection for now
-                         .child(self.render_option_chip("-10 dB", (measure_state.level - (-10.0)).abs() < 0.1, cx, |state, val| {
+                         .child(self.render_option_chip("-10 dB", (measure_state.level - (-10.0)).abs() < 0.1, cx, |state, _val| {
                             if let Some(ms) = &mut state.app.measure_state { ms.level = -10.0; }
                         }))
-                         .child(self.render_option_chip("-20 dB", (measure_state.level - (-20.0)).abs() < 0.1, cx, |state, val| {
+                         .child(self.render_option_chip("-20 dB", (measure_state.level - (-20.0)).abs() < 0.1, cx, |state, _val| {
                             if let Some(ms) = &mut state.app.measure_state { ms.level = -20.0; }
                         }))
-                         .child(self.render_option_chip("-40 dB", (measure_state.level - (-40.0)).abs() < 0.1, cx, |state, val| {
+                         .child(self.render_option_chip("-40 dB", (measure_state.level - (-40.0)).abs() < 0.1, cx, |state, _val| {
                             if let Some(ms) = &mut state.app.measure_state { ms.level = -40.0; }
                         }))
                     )
@@ -301,7 +301,7 @@ impl PlayerView {
     fn render_measure_footer(
         &self,
         measure_state: &MeasureState,
-        theme: &crate::theme::Theme,
+        _theme: &crate::theme::Theme,
          cx: &mut Context<Self>,
     ) -> impl IntoElement {
          HStack::new()

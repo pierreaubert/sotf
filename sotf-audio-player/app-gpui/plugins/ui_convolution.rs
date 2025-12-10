@@ -1,21 +1,29 @@
 //! Convolution Plugin UI Component
 
 use super::common::{render_edit_hints, render_knob, render_param_row, render_section_header};
+use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 
+/// State for rendering the Convolution plugin
+pub struct ConvolutionRenderState<'a> {
+    pub ir_file: &'a str,
+    pub mix: f64,
+    pub gain_db: f64,
+    pub is_editing: bool,
+    pub selected_param: usize,
+}
+
 /// Render the Convolution plugin
 pub fn render_convolution_plugin(
+    entity: Entity<AppState>,
     plugin_idx: usize,
-    ir_file: &str,
-    mix: f64,
-    gain_db: f64,
-    is_editing: bool,
-    selected_param: usize,
+    state: ConvolutionRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let has_ir = !ir_file.is_empty();
+    let has_ir = !state.ir_file.is_empty();
+    let ir_file = state.ir_file;
 
     div()
         .flex()
@@ -130,7 +138,7 @@ pub fn render_convolution_plugin(
                                 .bg(theme.surface)
                                 .rounded_full()
                                 .overflow_hidden()
-                                .child(div().h_full().w(relative(mix as f32)).bg(theme.accent)),
+                                .child(div().h_full().w(relative(state.mix as f32)).bg(theme.accent)),
                         )
                         .child(div().text_xs().text_color(theme.text_muted).child("WET")),
                 )
@@ -140,7 +148,7 @@ pub fn render_convolution_plugin(
                         .text_lg()
                         .font_weight(FontWeight::BOLD)
                         .text_color(theme.text_primary)
-                        .child(format!("{:.0}%", mix * 100.0)),
+                        .child(format!("{:.0}%", state.mix * 100.0)),
                 ),
         )
         // Parameters section
@@ -163,36 +171,38 @@ pub fn render_convolution_plugin(
                         ir_file.rsplit('/').next().unwrap_or(ir_file)
                     },
                     0,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     theme,
                 ))
                 .child(render_knob(
+                    entity.clone(),
                     plugin_idx,
                     "Mix",
-                    mix,
+                    state.mix,
                     0.0,
                     1.0,
                     "%",
                     1,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     None,
                     theme,
                 ))
                 .child(render_knob(
+                    entity.clone(),
                     plugin_idx,
                     "Gain",
-                    gain_db,
+                    state.gain_db,
                     -20.0,
                     20.0,
                     "dB",
                     2,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     None,
                     theme,
                 )),
         )
-        .when(is_editing, |d| d.child(render_edit_hints(theme)))
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

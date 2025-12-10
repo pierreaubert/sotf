@@ -2,44 +2,50 @@
 //!
 //! Noise gate with:
 //! - Threshold visualization with gate status
-//! - Vertical slider controls
+//! - Rotary knob controls
 //! - Gain reduction meter
 
 use super::common::{
-    render_edit_hints, render_gr_meter, render_section_header, render_toggle,
-    render_vertical_slider,
+    render_edit_hints, render_knob, render_section_header, render_toggle,
 };
+use super::level_meters::render_gr_meter;
+use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Divider, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack};
 
+/// State for rendering the Gate plugin
+pub struct GateRenderState {
+    pub threshold_db: f64,
+    pub ratio: f64,
+    pub attack_ms: f64,
+    pub release_ms: f64,
+    pub mix: f64,
+    pub link_channels: bool,
+    pub sidechain_hpf_hz: f64,
+    pub is_editing: bool,
+    pub selected_param: usize,
+}
+
 /// Render the Gate plugin
-#[allow(clippy::too_many_arguments)]
 pub fn render_gate_plugin(
+    entity: Entity<AppState>,
     plugin_idx: usize,
-    threshold_db: f64,
-    ratio: f64,
-    attack_ms: f64,
-    release_ms: f64,
-    mix: f64,
-    link_channels: bool,
-    sidechain_hpf_hz: f64,
-    is_editing: bool,
-    selected_param: usize,
+    state: GateRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
     // Simulated values (in real implementation, these would come from the audio engine)
     let simulated_input_db = -30.0; // Simulated input level
-    let gate_open = simulated_input_db > threshold_db;
+    let gate_open = simulated_input_db > state.threshold_db;
     let simulated_gr = if gate_open {
         0.0
     } else {
-        (threshold_db - simulated_input_db).min(0.0) * ratio
+        (state.threshold_db - simulated_input_db).min(0.0) * state.ratio
     };
 
     // Normalize threshold for visual display (-60 to 0 dB range)
-    let threshold_normalized = ((threshold_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
+    let threshold_normalized = ((state.threshold_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
     let input_normalized = ((simulated_input_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
 
     // Cache theme colors for closures
@@ -51,50 +57,13 @@ pub fn render_gate_plugin(
 
     VStack::new()
         .spacing(StackSpacing::Lg)
-        // Main section - Sliders and Threshold Display
+        // Main section - Knobs and Threshold Display
         .child(
             HStack::new()
                 .spacing(StackSpacing::Lg)
-                // Parameters section with vertical sliders
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .child(render_section_header("GATE SETTINGS", theme))
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .child(render_vertical_slider(
-                                    plugin_idx, "Threshold", threshold_db, -60.0, 0.0, "dB",
-                                    0, selected_param, is_editing, Some('t'), theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx, "Ratio", ratio, 1.0, 10.0, ":1",
-                                    1, selected_param, is_editing, Some('r'), theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx, "Attack", attack_ms, 0.1, 50.0, "ms",
-                                    2, selected_param, is_editing, Some('a'), theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx, "Release", release_ms, 10.0, 500.0, "ms",
-                                    3, selected_param, is_editing, Some('e'), theme,
-                                ))
-                                .child(render_vertical_slider(
-                                    plugin_idx, "Mix", mix, 0.0, 1.0, "%",
-                                    4, selected_param, is_editing, Some('m'), theme,
-                                ))
-                                .build()
-                                .justify_center(),
-                        )
-                        .build()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .p_4(),
-                )
-                // Gate threshold visualization
-                .child(
+                .align(StackAlign::Start)
+                 // Gate threshold visualization
+                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
@@ -163,6 +132,74 @@ pub fn render_gate_plugin(
                         .border_1()
                         .border_color(theme.border)
                         .p_4(),
+                )
+                // Parameters section with knobs
+                .child(
+                    VStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .child(render_section_header("GATE SETTINGS", theme))
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .wrap(true)
+                                .child(render_knob(
+                                    entity.clone(), plugin_idx, "Threshold", state.threshold_db, -60.0, 0.0, "dB",
+                                    0, state.selected_param, state.is_editing, Some('t'), theme,
+                                ))
+                                .child(render_knob(
+                                    entity.clone(), plugin_idx, "Ratio", state.ratio, 1.0, 10.0, ":1",
+                                    1, state.selected_param, state.is_editing, Some('r'), theme,
+                                ))
+                                .child(render_knob(
+                                    entity.clone(), plugin_idx, "Attack", state.attack_ms, 0.1, 50.0, "ms",
+                                    2, state.selected_param, state.is_editing, Some('a'), theme,
+                                ))
+                                .child(render_knob(
+                                    entity.clone(), plugin_idx, "Release", state.release_ms, 10.0, 500.0, "ms",
+                                    3, state.selected_param, state.is_editing, Some('e'), theme,
+                                ))
+                                .child(render_knob(
+                                    entity.clone(), plugin_idx, "Mix", state.mix, 0.0, 1.0, "%",
+                                    4, state.selected_param, state.is_editing, Some('m'), theme,
+                                ))
+                                .build()
+                                .justify_center(),
+                        )
+                         // Options row
+                         .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Lg)
+                                // Link channels toggle
+                                .child(render_toggle(
+                                    entity.clone(), plugin_idx, "Link Channels", state.link_channels, 5, state.selected_param, state.is_editing, theme,
+                                ))
+                                .build()
+                                .mt_4()
+                                .justify_center()
+                        )
+                        .child(
+                             // Sidechain HPF display
+                            VStack::new()
+                                .spacing(StackSpacing::Xs)
+                                .align(StackAlign::Center)
+                                .child(Text::new("Sidechain HPF").size(TextSize::Xs).color(theme.text_muted))
+                                .child(Text::new(format!("{:.0} Hz", state.sidechain_hpf_hz))
+                                    .size(TextSize::Sm)
+                                    .weight(TextWeight::Bold)
+                                    .color(theme.text_primary))
+                                .build()
+                                .p_2()
+                                .rounded_lg()
+                                .bg(theme.background)
+                                .mt_2()
+                        )
+                        .build()
+                        .flex_1()
+                        .rounded_xl()
+                        .bg(theme.background_secondary)
+                        .border_1()
+                        .border_color(theme.border)
+                        .p_4(),
                 ),
         )
         // Large threshold display
@@ -178,7 +215,7 @@ pub fn render_gate_plugin(
                                 .text_3xl()
                                 .font_weight(FontWeight::BOLD)
                                 .text_color(theme.warning)
-                                .child(format!("{:.1} dB", threshold_db)),
+                                .child(format!("{:.1} dB", state.threshold_db)),
                         ),
                 )
                 .child(Divider::vertical().color(border_color).build_simple().h(px(40.0)))
@@ -212,33 +249,6 @@ pub fn render_gate_plugin(
                 .p_4()
                 .child(render_gr_meter(simulated_gr, -40.0, theme)),
         )
-        // Options row
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Lg)
-                // Link channels toggle
-                .child(div().flex_1().child(render_toggle(
-                    plugin_idx, "Link Channels", link_channels, 5, selected_param, is_editing, theme,
-                )))
-                // Sidechain HPF
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Xs)
-                        .align(StackAlign::Center)
-                        .child(Text::new("Sidechain HPF").size(TextSize::Xs).color(theme.text_muted))
-                        .child(Text::new(format!("{:.0} Hz", sidechain_hpf_hz))
-                            .size(TextSize::Sm)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary))
-                        .build()
-                        .flex_1()
-                        .p_3()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border),
-                ),
-        )
         // Keyboard hints
         .child(
             HStack::new()
@@ -256,5 +266,5 @@ pub fn render_gate_plugin(
                 .border_1()
                 .border_color(theme.accent),
         )
-        .when(is_editing, |d| d.child(render_edit_hints(theme)))
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

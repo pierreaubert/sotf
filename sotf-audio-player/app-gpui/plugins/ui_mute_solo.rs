@@ -1,21 +1,28 @@
 //! Channel Mute/Solo Plugin UI Component
 
 use super::common::{render_edit_hints, render_section_header, render_toggle};
+use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_plugins::ChannelState;
 
+/// State for rendering the Channel Mute/Solo plugin
+pub struct ChannelMuteSoloRenderState<'a> {
+    pub enabled: bool,
+    pub channel_states: &'a [ChannelState],
+    pub is_editing: bool,
+    pub selected_param: usize,
+}
+
 /// Render the Channel Mute/Solo plugin
 pub fn render_mute_solo_plugin(
+    entity: Entity<AppState>,
     plugin_idx: usize,
-    enabled: bool,
-    channel_states: &[ChannelState],
-    is_editing: bool,
-    selected_param: usize,
+    state: ChannelMuteSoloRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let channel_count = channel_states.len();
+    let channel_count = state.channel_states.len();
 
     // Channel layout names
     let channel_names: Vec<&str> = match channel_count {
@@ -44,12 +51,12 @@ pub fn render_mute_solo_plugin(
                 .child(render_section_header("CHANNEL MIXER", theme))
                 // Channel strips
                 .child(div().flex().gap_3().justify_center().children(
-                    channel_states.iter().enumerate().map(|(i, state)| {
+                    state.channel_states.iter().enumerate().map(|(i, s)| {
                         let name = channel_names.get(i).copied().unwrap_or("Ch");
-                        let is_muted = state.muted;
-                        let is_soloed = state.soloed;
+                        let is_muted = s.muted;
+                        let is_soloed = s.soloed;
                         let is_active =
-                            !is_muted && (!channel_states.iter().any(|s| s.soloed) || is_soloed);
+                            !is_muted && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
 
                         div()
                             .flex()
@@ -169,7 +176,7 @@ pub fn render_mute_solo_plugin(
                     .bg(theme.background_secondary)
                     .border_1()
                     .border_color(theme.border)
-                    .child(div().w(px(12.0)).h(px(12.0)).rounded_full().bg(if enabled {
+                    .child(div().w(px(12.0)).h(px(12.0)).rounded_full().bg(if state.enabled {
                         theme.success
                     } else {
                         theme.error
@@ -178,7 +185,7 @@ pub fn render_mute_solo_plugin(
                         div()
                             .text_sm()
                             .text_color(theme.text_primary)
-                            .child(if enabled { "Active" } else { "Bypassed" }),
+                            .child(if state.enabled { "Active" } else { "Bypassed" }),
                     ),
                 // Mute count
                 div()
@@ -199,7 +206,7 @@ pub fn render_mute_solo_plugin(
                             .text_color(theme.error)
                             .child(format!(
                                 "{}",
-                                channel_states.iter().filter(|s| s.muted).count()
+                                state.channel_states.iter().filter(|s| s.muted).count()
                             )),
                     ),
                 // Solo count
@@ -221,7 +228,7 @@ pub fn render_mute_solo_plugin(
                             .text_color(theme.warning)
                             .child(format!(
                                 "{}",
-                                channel_states.iter().filter(|s| s.soloed).count()
+                                state.channel_states.iter().filter(|s| s.soloed).count()
                             )),
                     ),
             ]),
@@ -239,12 +246,13 @@ pub fn render_mute_solo_plugin(
                 .p_3()
                 .child(render_section_header("PARAMETERS", theme))
                 .child(render_toggle(
+                    entity.clone(),
                     plugin_idx,
                     "Enabled",
-                    enabled,
+                    state.enabled,
                     0,
-                    selected_param,
-                    is_editing,
+                    state.selected_param,
+                    state.is_editing,
                     theme,
                 ))
                 .child(
@@ -272,5 +280,5 @@ pub fn render_mute_solo_plugin(
                 .child("Shift+M: Solo")
                 .child("x: Clear all"),
         )
-        .when(is_editing, |d| d.child(render_edit_hints(theme)))
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

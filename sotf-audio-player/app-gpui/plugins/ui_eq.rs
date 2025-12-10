@@ -6,27 +6,32 @@
 //! - Interactive editing
 
 use super::common::render_knob;
+use crate::app::AppState;
 use crate::theme::Theme;
-use crate::ui::components::graphs::{
-    render_db_labels, render_eq_visualization, render_freq_labels,
-};
+use crate::ui::components::graphs::render_eq_visualization;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::EQFilter;
 
+/// State for rendering the EQ plugin
+pub struct EqRenderState<'a> {
+    pub filters: &'a [EQFilter],
+    pub is_editing: bool,
+    pub selected_param: usize,
+}
+
 /// Render the EQ plugin with graphical visualization
 pub fn render_eq_plugin(
+    entity: Entity<AppState>,
     plugin_idx: usize,
-    filters: &[EQFilter],
-    is_editing: bool,
-    selected_param: usize,
+    state: EqRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let selected_band_idx = if is_editing {
+    let selected_band_idx = if state.is_editing {
         // Determine which band is selected based on the selected_param
         // Each band has 4 parameters (Freq, Q, Gain, Type - though Type isn't a knob)
         // So, param_idx / 4 gives the band index.
-        Some(selected_param / 4)
+        Some(state.selected_param / 4)
     } else {
         None
     };
@@ -64,7 +69,7 @@ pub fn render_eq_plugin(
                             div()
                                 .text_xs()
                                 .text_color(theme.text_muted)
-                                .child(format!("{} bands", filters.len())),
+                                .child(format!("{} bands", state.filters.len())),
                         ),
                 )
                 // Graph with axis labels
@@ -73,7 +78,7 @@ pub fn render_eq_plugin(
                     div()
                         .flex_1()
                         .child(render_eq_visualization(
-                            filters,
+                            state.filters,
                             selected_band_idx,
                             theme,
                         )),
@@ -105,7 +110,7 @@ pub fn render_eq_plugin(
                         .flex()
                         .flex_wrap()
                         .gap_4()
-                        .children(filters.iter().enumerate().map(|(i, filter)| {
+                        .children(state.filters.iter().enumerate().map(|(i, filter)| {
                             // Each filter has 4 params: Freq, Q, Gain, Type
                             let base_param_idx = i * 4;
 
@@ -128,6 +133,7 @@ pub fn render_eq_plugin(
                                         .flex()
                                         .gap_2()
                                         .child(render_knob(
+                                            entity.clone(),
                                             plugin_idx,
                                             "Freq",
                                             filter.frequency,
@@ -135,12 +141,13 @@ pub fn render_eq_plugin(
                                             20000.0,
                                             "Hz",
                                             base_param_idx,
-                                            selected_param,
-                                            is_editing,
+                                            state.selected_param,
+                                            state.is_editing,
                                             None,
                                             theme,
                                         ))
                                         .child(render_knob(
+                                            entity.clone(),
                                             plugin_idx,
                                             "Gain",
                                             filter.gain_db,
@@ -148,12 +155,13 @@ pub fn render_eq_plugin(
                                             24.0,
                                             "dB",
                                             base_param_idx + 2,
-                                            selected_param,
-                                            is_editing,
+                                            state.selected_param,
+                                            state.is_editing,
                                             None,
                                             theme,
                                         ))
                                         .child(render_knob(
+                                            entity.clone(),
                                             plugin_idx,
                                             "Q",
                                             filter.q,
@@ -161,8 +169,8 @@ pub fn render_eq_plugin(
                                             10.0,
                                             "",
                                             base_param_idx + 1,
-                                            selected_param,
-                                            is_editing,
+                                            state.selected_param,
+                                            state.is_editing,
                                             None,
                                             theme,
                                         )),
@@ -171,7 +179,7 @@ pub fn render_eq_plugin(
                 ),
         )
         // Edit mode hint
-        .when(is_editing, |d| {
+        .when(state.is_editing, |d| {
             d.child(
                 div()
                     .p_3()

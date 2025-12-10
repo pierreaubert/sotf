@@ -126,15 +126,22 @@ build-au-rust:
 	# Build for both architectures
 	cargo build --release -p sotf-audio-plugins-ffi --target x86_64-apple-darwin
 	cargo build --release -p sotf-audio-plugins-ffi --target aarch64-apple-darwin
-	# Create universal binary
+	cargo build --release -p gpui-au --target x86_64-apple-darwin
+	cargo build --release -p gpui-au --target aarch64-apple-darwin
+	# Create universal binaries
 	mkdir -p sotf-audio-plugins/src-au/Resources
 	lipo -create \
 		target/x86_64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
 		target/aarch64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
 		-output sotf-audio-plugins/src-au/Resources/libsotf_audio_plugins_ffi.a
-	# Copy header file
+	lipo -create \
+		target/x86_64-apple-darwin/release/libgpui_au.a \
+		target/aarch64-apple-darwin/release/libgpui_au.a \
+		-output sotf-audio-plugins/src-au/Resources/libgpui_au.a
+	# Copy header files
 	cp sotf-audio-plugins/src-ffi/sotf_audio_plugin_ffi.h sotf-audio-plugins/src-au/Shared/
-	echo "✅ Universal Rust FFI library created"
+	cp gpui-au/GPUIBridge.h sotf-audio-plugins/src-au/Shared/
+	echo "✅ Universal Rust FFI libraries created"
 
 # Build Audio Unit plugins in Xcode
 build-au-swift: build-au-rust

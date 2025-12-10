@@ -9,8 +9,7 @@
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, Select, SelectOption,
-    StackSpacing, Text, TextSize, TextWeight, Toggle, ToggleSize, ToggleTheme, VStack,
+    Card, HStack, NumberInput, Select, SelectOption, StackSpacing, Text, TextSize, TextWeight, Toggle, ToggleSize, ToggleTheme, VStack,
 };
 
 use crate::app::types::OptimizationUiState;
@@ -302,9 +301,9 @@ impl PlayerView {
         // Capture weak handle to view for callbacks
         let view = cx.entity().downgrade();
         let prefix_dec = prefix.to_string();
-        let prefix_inc = prefix.to_string();
+        let _prefix_inc = prefix.to_string();
         let param_name_dec = param_name.to_string();
-        let param_name_inc = param_name.to_string();
+        let _param_name_inc = param_name.to_string();
         
         let decimals = if limits.step < 1.0 { 1 } else { 0 };
 

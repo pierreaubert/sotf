@@ -3556,8 +3556,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-au"
+version = "0.5.3"
+dependencies = [
+ "autoeq-iir",
+ "cocoa 0.26.0",
+ "env_logger 0.11.8",
+ "gpui",
+ "gpui-ui-kit",
+ "log",
+ "objc",
+ "parking_lot",
+ "rust-embed",
+ "sotf-audio-player",
+]
+
+[[package]]
 name = "gpui-d3rs"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "approx",
  "autoeq",
@@ -3582,7 +3598,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "gpui",
  "gpui-d3rs",
