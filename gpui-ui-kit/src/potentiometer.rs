@@ -606,8 +606,12 @@ impl RenderOnce for Potentiometer {
                     let delta = event.delta.pixel_delta(px(20.0)).y;
                     // Scroll down = increase, scroll up = decrease
                     let direction = if delta > px(0.0) { -1.0 } else { 1.0 };
-                    // Use scale-aware stepping (5% in normalized space)
-                    let new_value = scale.step_value(value, min, max, direction, 0.05);
+
+                    // Check for shift key for fine-grained control
+                    let step_size = if event.modifiers.shift { 0.005 } else { 0.05 };
+
+                    // Use scale-aware stepping
+                    let new_value = scale.step_value(value, min, max, direction, step_size);
                     handler_rc(new_value, window, cx);
                 });
             }
