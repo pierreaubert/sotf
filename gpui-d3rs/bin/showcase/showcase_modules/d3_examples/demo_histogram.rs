@@ -3,7 +3,6 @@ use d3rs::scale::{LinearScale, Scale};
 use gpui::prelude::*;
 use gpui::*;
 
-
 pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let width = 600.0;
     let height = 400.0;
@@ -11,7 +10,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
 
     // Generate random data binned
     // In a real app we'd use random generator, here fixed mock
-    let data = vec![1.0, 2.0, 2.5, 3.0, 3.5, 3.5, 4.0, 4.0, 4.0, 5.0, 5.5, 6.0, 9.0];
+    let data = vec![
+        1.0, 2.0, 2.5, 3.0, 3.5, 3.5, 4.0, 4.0, 4.0, 5.0, 5.5, 6.0, 9.0,
+    ];
 
     // Binning
     let min_val = data.iter().fold(f64::INFINITY, |a, &b| a.min(b));
@@ -25,8 +26,9 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         let idx = ((d - min_val) / step).floor() as usize;
         if idx < bin_count {
             bins[idx] += 1;
-        } else if idx == bin_count { // Handle max value edge case
-             bins[idx-1] += 1;
+        } else if idx == bin_count {
+            // Handle max value edge case
+            bins[idx - 1] += 1;
         }
     }
 
@@ -75,15 +77,28 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .h(px(h as f32))
                         .bg(rgb(0x4682b4))
                 }))
-                // Axes (simplified)
-                .child(
+                // Axis Ticks & Labels
+                .children((0..=bin_count).map(|i| {
+                    let val = min_val + i as f64 * step;
+                    let x = x_scale.scale(val);
+                    let y = height - margin;
+
                     div()
                         .absolute()
-                        .left(px(margin as f32))
-                        .bottom(px(margin as f32))
-                        .w(px((width - 2.0 * margin) as f32))
-                        .h(px(1.0))
-                        .bg(rgb(0x000000))
-                )
+                        .left(px(x as f32))
+                        .top(px(y as f32))
+                        .children(vec![
+                            // Tick mark
+                            div().w(px(1.0)).h(px(5.0)).bg(rgb(0x000000)),
+                            // Label
+                            div()
+                                .absolute()
+                                .top(px(8.0))
+                                // .left(px(10.0)) // Center align approx
+                                .text_xs()
+                                .text_color(rgb(0x333333))
+                                .child(format!("{:.1}", val)),
+                        ])
+                })),
         )
 }

@@ -1,8 +1,8 @@
+use super::super::world_data::get_world_data;
 use crate::ShowcaseApp;
-use d3rs::geo::{projection::Mercator, GeoPath, GeoJsonGeometry};
+use d3rs::geo::{projection::Mercator, GeoJsonGeometry, GeoPath};
 use gpui::prelude::*;
 use gpui::*;
-use super::super::world_data::get_world_data;
 
 pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let width = 800.0;
@@ -10,20 +10,28 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
 
     // Get world data
     let geometry = get_world_data(app.use_large_data);
-    
+
     // Split MultiPolygon into individual polygons to color them
     let features: Vec<GeoJsonGeometry> = match geometry {
-        GeoJsonGeometry::MultiPolygon(polys) => {
-            polys.iter().map(|p| GeoJsonGeometry::Polygon(p.clone())).collect()
-        },
+        GeoJsonGeometry::MultiPolygon(polys) => polys
+            .iter()
+            .map(|p| GeoJsonGeometry::Polygon(p.clone()))
+            .collect(),
         _ => vec![],
     };
-    
+
     let colors = [
-        rgb(0xf7fbff), rgb(0xdeebf7), rgb(0xc6dbef), rgb(0x9ecae1), 
-        rgb(0x6baed6), rgb(0x4292c6), rgb(0x2171b5), rgb(0x08519c), rgb(0x08306b),
+        rgb(0xf7fbff),
+        rgb(0xdeebf7),
+        rgb(0xc6dbef),
+        rgb(0x9ecae1),
+        rgb(0x6baed6),
+        rgb(0x4292c6),
+        rgb(0x2171b5),
+        rgb(0x08519c),
+        rgb(0x08306b),
     ];
-    
+
     // Generate paths
     let mut feature_paths = Vec::new();
     for (i, geo) in features.iter().enumerate() {
@@ -53,29 +61,28 @@ pub fn render(app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .h(px(height))
                 .bg(rgb(0xaadaff)) // Ocean color
                 .relative()
-                .child(
-                    canvas(
-                        move |bounds, _, _| {
-                             let parsed: Vec<_> = feature_paths.iter().map(|(d, i)| {
-                                (super::path_utils::parse_svg_path(d, bounds), *i)
-                            }).collect();
-                            parsed
-                        },
-                        move |_bounds, paths, window, _| {
-                            for (path_opt, i) in paths {
-                                if let Some(path) = path_opt {
-                                    // Mock value to choose color
-                                    let val_idx = (i * 3 + 1) % colors.len();
-                                    let color = colors[val_idx];
-                                    window.paint_path(path, color);
-                                    
-                                    // Stroke? paint_path fills. 
-                                    // To stroke, we need PathBuilder::stroke logic or another path.
-                                    // Ignoring stroke for filled choropleth demo.
-                                }
+                .child(canvas(
+                    move |bounds, _, _| {
+                        let parsed: Vec<_> = feature_paths
+                            .iter()
+                            .map(|(d, i)| (super::path_utils::parse_svg_path(d, bounds), *i))
+                            .collect();
+                        parsed
+                    },
+                    move |_bounds, paths, window, _| {
+                        for (path_opt, i) in paths {
+                            if let Some(path) = path_opt {
+                                // Mock value to choose color
+                                let val_idx = (i * 3 + 1) % colors.len();
+                                let color = colors[val_idx];
+                                window.paint_path(path, color);
+
+                                // Stroke? paint_path fills.
+                                // To stroke, we need PathBuilder::stroke logic or another path.
+                                // Ignoring stroke for filled choropleth demo.
                             }
                         }
-                    )
-                )
+                    },
+                )),
         )
 }

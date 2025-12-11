@@ -110,7 +110,7 @@ fn terrain_noise(x: f64, y: f64) -> f64 {
 }
 
 /// Get the elevation value range
-pub fn _volcano_extent() -> (f64, f64) {
+pub fn volcano_extent() -> (f64, f64) {
     let data = generate_volcano_data();
     let min = data.iter().cloned().fold(f64::INFINITY, f64::min);
     let max = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);

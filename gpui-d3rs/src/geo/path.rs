@@ -132,14 +132,31 @@ impl<P: Projection> GeoPath<P> {
 
         let d = self.config.digits;
         let mut path = String::new();
+        let mut prev_lon: Option<f64> = None;
 
         for (i, &(lon, lat)) in coords.iter().enumerate() {
             let (x, y) = self.projection.project(lon, lat);
-            if i == 0 {
+
+            // Check if coordinates are valid
+            if !x.is_finite() || !y.is_finite() {
+                prev_lon = None;
+                continue;
+            }
+
+            // Detect antimeridian crossing: if longitude jumps > 180 degrees
+            let crosses_antimeridian = if let Some(prev) = prev_lon {
+                (lon - prev).abs() > 180.0
+            } else {
+                false
+            };
+
+            if i == 0 || crosses_antimeridian {
                 path.push_str(&format!("M{:.d$},{:.d$}", x, y, d = d));
             } else {
                 path.push_str(&format!("L{:.d$},{:.d$}", x, y, d = d));
             }
+
+            prev_lon = Some(lon);
         }
 
         path
@@ -168,17 +185,47 @@ impl<P: Projection> GeoPath<P> {
                 continue;
             }
 
+            let mut prev_lon: Option<f64> = None;
+            let mut ring_started = false;
+
             for (i, &(lon, lat)) in ring.iter().enumerate() {
                 let (x, y) = self.projection.project(lon, lat);
-                if i == 0 {
+
+                // Check if coordinates are valid
+                if !x.is_finite() || !y.is_finite() {
+                    prev_lon = None;
+                    if ring_started {
+                        path.push('Z');
+                        ring_started = false;
+                    }
+                    continue;
+                }
+
+                // Detect antimeridian crossing: if longitude jumps > 180 degrees
+                let crosses_antimeridian = if let Some(prev) = prev_lon {
+                    (lon - prev).abs() > 180.0
+                } else {
+                    false
+                };
+
+                if i == 0 || crosses_antimeridian {
+                    // Close previous segment if we're breaking due to antimeridian
+                    if ring_started && crosses_antimeridian {
+                        path.push('Z');
+                    }
                     path.push_str(&format!("M{:.d$},{:.d$}", x, y, d = d));
+                    ring_started = true;
                 } else {
                     path.push_str(&format!("L{:.d$},{:.d$}", x, y, d = d));
                 }
+
+                prev_lon = Some(lon);
             }
 
             // Close the ring
-            path.push('Z');
+            if ring_started {
+                path.push('Z');
+            }
         }
 
         path
@@ -350,5 +397,226 @@ mod tests {
         // Origin should project to translate point
         assert!((projected[0].0 - 500.0).abs() < 1e-6);
         assert!((projected[0].1 - 300.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_antimeridian_line_string_crossing() {
+        // Line crossing from Russia (170°E) to Alaska (-170°W)
+        // This should create two separate path segments
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        let geometry = GeoJsonGeometry::LineString(vec![
+            (170.0, 60.0),  // Eastern Russia
+            (-170.0, 60.0), // Alaska
+        ]);
+        let svg = path.render(&geometry);
+
+        // Should have two M commands (one for start, one after crossing)
+        let m_count = svg.matches('M').count();
+        assert_eq!(
+            m_count, 2,
+            "Should have 2 move commands for antimeridian crossing"
+        );
+
+        // Should NOT have L command connecting them
+        let l_count = svg.matches('L').count();
+        assert_eq!(
+            l_count, 0,
+            "Should have no line commands across antimeridian"
+        );
+    }
+
+    #[test]
+    fn test_antimeridian_line_string_no_crossing() {
+        // Line NOT crossing antimeridian (normal case)
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        let geometry = GeoJsonGeometry::LineString(vec![(10.0, 60.0), (20.0, 60.0), (30.0, 60.0)]);
+        let svg = path.render(&geometry);
+
+        // Should have only 1 M command at start
+        let m_count = svg.matches('M').count();
+        assert_eq!(m_count, 1, "Should have 1 move command for normal line");
+
+        // Should have L commands connecting points
+        let l_count = svg.matches('L').count();
+        assert_eq!(l_count, 2, "Should have 2 line commands for 3-point line");
+    }
+
+    #[test]
+    fn test_antimeridian_polygon_crossing() {
+        // Polygon crossing antimeridian (like part of Russia)
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        let geometry = GeoJsonGeometry::Polygon(vec![vec![
+            (170.0, 65.0),
+            (175.0, 60.0),
+            (-175.0, 60.0), // Crosses antimeridian here
+            (-170.0, 65.0),
+            (170.0, 65.0), // Close the ring
+        ]]);
+        let svg = path.render(&geometry);
+
+        // Should have multiple M commands due to antimeridian breaks
+        let m_count = svg.matches('M').count();
+        assert!(
+            m_count >= 2,
+            "Should have at least 2 move commands for crossing polygon"
+        );
+
+        // Should have multiple Z commands (closed segments)
+        let z_count = svg.matches('Z').count();
+        assert!(
+            z_count >= 2,
+            "Should have at least 2 close commands for crossing polygon"
+        );
+    }
+
+    #[test]
+    fn test_antimeridian_polygon_no_crossing() {
+        // Normal polygon not crossing antimeridian
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        let geometry = GeoJsonGeometry::Polygon(vec![vec![
+            (10.0, 50.0),
+            (20.0, 50.0),
+            (20.0, 60.0),
+            (10.0, 60.0),
+            (10.0, 50.0),
+        ]]);
+        let svg = path.render(&geometry);
+
+        // Should have only 1 M command
+        let m_count = svg.matches('M').count();
+        assert_eq!(m_count, 1, "Should have 1 move command for normal polygon");
+
+        // Should have exactly 1 Z command (closed ring)
+        let z_count = svg.matches('Z').count();
+        assert_eq!(z_count, 1, "Should have 1 close command for normal polygon");
+    }
+
+    #[test]
+    fn test_antimeridian_multipolygon_with_crossing() {
+        // MultiPolygon with one polygon crossing antimeridian
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        let geometry = GeoJsonGeometry::MultiPolygon(vec![
+            // First polygon: normal (Europe)
+            vec![vec![
+                (0.0, 50.0),
+                (10.0, 50.0),
+                (10.0, 55.0),
+                (0.0, 55.0),
+                (0.0, 50.0),
+            ]],
+            // Second polygon: crosses antimeridian (Russia/Alaska)
+            vec![vec![
+                (170.0, 60.0),
+                (175.0, 60.0),
+                (-175.0, 60.0), // Crossing
+                (-170.0, 60.0),
+                (170.0, 60.0),
+            ]],
+        ]);
+        let svg = path.render(&geometry);
+
+        // Should have M commands for both polygons plus breaks
+        let m_count = svg.matches('M').count();
+        assert!(
+            m_count >= 3,
+            "Should have at least 3 move commands (2 polygons + crossing)"
+        );
+
+        // Should have multiple Z commands
+        let z_count = svg.matches('Z').count();
+        assert!(z_count >= 3, "Should have at least 3 close commands");
+    }
+
+    #[test]
+    fn test_invalid_coordinates_handling() {
+        // Test that infinite/NaN coordinates are handled gracefully
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        // LineString with valid and invalid coordinates
+        let geometry = GeoJsonGeometry::LineString(vec![
+            (0.0, 0.0),
+            (10.0, 10.0),
+            (f64::NAN, f64::NAN), // Invalid
+            (20.0, 20.0),
+            (30.0, 30.0),
+        ]);
+        let svg = path.render(&geometry);
+
+        // Should successfully render (not panic)
+        assert!(!svg.is_empty(), "Should render despite invalid coordinates");
+
+        // Should have M commands before and after invalid point
+        let m_count = svg.matches('M').count();
+        assert!(m_count >= 1, "Should have at least 1 move command");
+    }
+
+    #[test]
+    fn test_antimeridian_with_orthographic_projection() {
+        // Test antimeridian handling with non-Equirectangular projection
+        use crate::geo::projection::Orthographic;
+
+        let proj = Orthographic::new().scale(100.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        let geometry = GeoJsonGeometry::LineString(vec![(170.0, 0.0), (-170.0, 0.0)]);
+        let svg = path.render(&geometry);
+
+        // Should detect crossing even with different projection
+        let m_count = svg.matches('M').count();
+        assert!(
+            m_count >= 1,
+            "Should handle antimeridian with Orthographic projection"
+        );
+    }
+
+    #[test]
+    fn test_antimeridian_multiple_crossings() {
+        // Line with multiple antimeridian crossings
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        let geometry = GeoJsonGeometry::LineString(vec![
+            (170.0, 0.0),
+            (-170.0, 0.0), // First crossing
+            (-160.0, 0.0),
+            (160.0, 0.0), // Second crossing (going back)
+        ]);
+        let svg = path.render(&geometry);
+
+        // Should have multiple M commands for multiple crossings
+        let m_count = svg.matches('M').count();
+        assert!(
+            m_count >= 3,
+            "Should have at least 3 move commands for 2 crossings"
+        );
+    }
+
+    #[test]
+    fn test_antimeridian_edge_cases() {
+        let proj = Equirectangular::new().scale(1.0).translate(0.0, 0.0);
+        let path = GeoPath::new(proj);
+
+        // Test exactly at +180
+        let geometry1 =
+            GeoJsonGeometry::LineString(vec![(179.0, 0.0), (180.0, 0.0), (-179.0, 0.0)]);
+        let svg1 = path.render(&geometry1);
+        assert!(!svg1.is_empty(), "Should handle +180 boundary");
+
+        // Test exactly at -180
+        let geometry2 =
+            GeoJsonGeometry::LineString(vec![(-179.0, 0.0), (-180.0, 0.0), (179.0, 0.0)]);
+        let svg2 = path.render(&geometry2);
+        assert!(!svg2.is_empty(), "Should handle -180 boundary");
     }
 }

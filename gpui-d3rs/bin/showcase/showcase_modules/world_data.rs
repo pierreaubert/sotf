@@ -11,8 +11,7 @@ pub fn get_world_data(use_large: bool) -> &'static GeoJsonGeometry {
             // Path relative to this file: ../../data/land-50m.json
             // But include_str is relative to current file.
             let json = include_str!("../data/land-50m.json");
-            super::topojson_utils::parse_topojson(json)
-                .expect("Failed to parse large world data")
+            super::topojson_utils::parse_topojson(json).expect("Failed to parse large world data")
         })
     } else {
         SMALL_DATA.get_or_init(generate_small_data)

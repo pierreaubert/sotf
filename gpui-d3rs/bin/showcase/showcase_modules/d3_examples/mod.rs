@@ -7,19 +7,19 @@
 //!
 //! Source examples from: https://observablehq.com/@d3
 
+pub mod demo_choropleth;
+pub mod demo_histogram;
+pub mod demo_horizon;
+pub mod demo_revenue;
+pub mod demo_versor;
 pub mod faithful_data;
 pub mod flare_data;
 pub mod kernel_density_estimation;
+pub mod path_utils;
 pub mod stacked_grouped_bars;
 pub mod treemap;
 pub mod volcano_contours;
 pub mod volcano_data;
-pub mod path_utils;
-pub mod demo_versor;
-pub mod demo_histogram;
-pub mod demo_revenue;
-pub mod demo_horizon;
-pub mod demo_choropleth;
 
 pub use kernel_density_estimation::KernelType;
 pub use stacked_grouped_bars::BarLayout;

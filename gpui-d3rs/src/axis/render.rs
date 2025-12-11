@@ -181,10 +181,8 @@ where
                 config.label_font_size
             };
 
-            let title_top = config.tick_size
-                + config.tick_padding
-                + label_height
-                + config.title_padding;
+            let title_top =
+                config.tick_size + config.tick_padding + label_height + config.title_padding;
             let font_config = VectorFontConfig::horizontal(
                 config.title_font_size,
                 theme.axis_label_color().into(),

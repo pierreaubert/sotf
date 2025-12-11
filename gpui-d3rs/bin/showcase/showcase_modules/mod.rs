@@ -13,9 +13,9 @@ pub mod quadtree;
 pub mod scales;
 pub mod scatter_plots;
 pub mod surface_plots;
+pub mod topojson_utils;
 pub mod transitions;
 pub mod world_data;
-pub mod topojson_utils;
 
 // Re-export the main types that the modules need
 pub use crate::{ContourRenderMode, ShowcaseApp};
