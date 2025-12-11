@@ -45,7 +45,7 @@ pub use d3rs::brush::{
     BrushConfig as BrushConfigD3, BrushSelection as BrushSelectionD3,
     DomainSelection as DomainSelectionD3,
 };
-pub use d3rs::interpolate::zoom::{interpolate_zoom, zoom_duration, ZoomParams, ZoomView};
+pub use d3rs::interpolate::zoom::{ZoomParams, ZoomView, interpolate_zoom, zoom_duration};
 pub use d3rs::zoom::{ZoomConfig as ZoomConfigD3, ZoomState as ZoomStateD3};
 
 /// Chart interaction mode
@@ -192,7 +192,8 @@ impl ChartInteraction {
 
         // Apply zoom if requested
         if apply_zoom {
-            self.zoom.zoom_to(domain.x0, domain.x1, domain.y0, domain.y1);
+            self.zoom
+                .zoom_to(domain.x0, domain.x1, domain.y0, domain.y1);
         }
 
         Some(domain)
@@ -427,12 +428,15 @@ mod gpui_render {
     use super::*;
     use d3rs::zoom::ZoomState;
     use gpui::prelude::*;
-    use gpui::{IntoElement, div, px, hsla};
+    use gpui::{IntoElement, div, hsla, px};
 
     /// Render a brush selection overlay.
     ///
     /// This renders a semi-transparent rectangle showing the current brush selection.
-    pub fn render_brush_overlay(selection: &BrushSelection, config: &BrushConfig) -> impl IntoElement {
+    pub fn render_brush_overlay(
+        selection: &BrushSelection,
+        config: &BrushConfig,
+    ) -> impl IntoElement {
         let x = selection.x0 as f32;
         let y = selection.y0 as f32;
         let width = selection.width() as f32;
@@ -497,12 +501,7 @@ mod gpui_render {
     }
 
     /// Render crosshairs at the mouse position.
-    pub fn render_crosshairs(
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-    ) -> impl IntoElement {
+    pub fn render_crosshairs(x: f32, y: f32, width: f32, height: f32) -> impl IntoElement {
         div()
             .absolute()
             .inset_0()
@@ -531,7 +530,9 @@ mod gpui_render {
 }
 
 #[cfg(feature = "gpui")]
-pub use gpui_render::{render_brush_overlay, render_crosshairs, render_reset_button, render_zoom_indicator};
+pub use gpui_render::{
+    render_brush_overlay, render_crosshairs, render_reset_button, render_zoom_indicator,
+};
 
 #[cfg(test)]
 mod tests {

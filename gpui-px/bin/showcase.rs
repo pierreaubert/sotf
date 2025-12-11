@@ -1000,8 +1000,8 @@ impl ShowcaseApp {
     // ========================================================================
 
     fn render_treemap_demo(&self) -> Div {
-        use gpui_px::{treemap, TreemapNode, TilingMethod};
         use d3rs::color::ColorScheme;
+        use gpui_px::{TilingMethod, TreemapNode, treemap};
 
         // Create sample hierarchical data representing a file system
         let file_system = TreemapNode::with_children(

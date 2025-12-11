@@ -21,13 +21,11 @@
 //! ```
 
 use crate::error::ChartError;
-use crate::{
-    validate_dimensions, DEFAULT_HEIGHT, DEFAULT_WIDTH, TITLE_AREA_HEIGHT,
-};
+use crate::{DEFAULT_HEIGHT, DEFAULT_WIDTH, TITLE_AREA_HEIGHT, validate_dimensions};
 use d3rs::color::ColorScheme;
-use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::{div, hsla, px, rgb, IntoElement, Rgba, MouseButton};
+use gpui::{IntoElement, MouseButton, Rgba, div, hsla, px, rgb};
 use std::rc::Rc;
 
 /// Tiling algorithm for treemap layout.
@@ -240,7 +238,9 @@ impl Treemap {
         );
 
         // Render rectangles
-        let color_scheme = self.color_scheme.unwrap_or_else(|| ColorScheme::tableau10());
+        let color_scheme = self
+            .color_scheme
+            .unwrap_or_else(|| ColorScheme::tableau10());
         let mut plot_content = div()
             .w(px(plot_width as f32))
             .h(px(plot_height as f32))
@@ -296,9 +296,10 @@ impl Treemap {
                 let handler = Rc::clone(handler);
                 let name = rect_name.clone();
                 let value = rect_value;
-                rect_div = rect_div.on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
-                    handler(&name, value);
-                });
+                rect_div =
+                    rect_div.on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                        handler(&name, value);
+                    });
             }
 
             let rect_div = rect_div;
@@ -311,15 +312,12 @@ impl Treemap {
                 // Using relative luminance formula: 0.2126*R + 0.7152*G + 0.0722*B
                 let luminance = 0.2126 * rgba.r + 0.7152 * rgba.g + 0.0722 * rgba.b;
                 let text_color = if luminance > 0.5 {
-                    hsla(0.0, 0.0, 0.1, 1.0)  // Dark text for light backgrounds
+                    hsla(0.0, 0.0, 0.1, 1.0) // Dark text for light backgrounds
                 } else {
                     hsla(0.0, 0.0, 0.95, 1.0) // White text for dark backgrounds
                 };
 
-                let font_config = VectorFontConfig::horizontal(
-                    font_size as f32,
-                    text_color,
-                );
+                let font_config = VectorFontConfig::horizontal(font_size as f32, text_color);
 
                 rect_div
                     .flex()
@@ -452,11 +450,7 @@ fn compute_treemap(
         });
     } else {
         // Layout children based on tiling method
-        let children: Vec<_> = node
-            .children
-            .iter()
-            .map(|c| (c, c.total_value()))
-            .collect();
+        let children: Vec<_> = node.children.iter().map(|c| (c, c.total_value())).collect();
 
         let rects = match method {
             TilingMethod::Squarify => tile_squarify(&children, px0, py0, px1, py1, total_value),
@@ -651,7 +645,8 @@ fn tile_squarify(
             // Calculate worst aspect ratio in this row
             let mut worst_ratio: f64 = 0.0;
             for (_n, value) in row {
-                let rect_area = (*value / row_sum) * (short_side * long_side / (w.max(h) / short_side));
+                let rect_area =
+                    (*value / row_sum) * (short_side * long_side / (w.max(h) / short_side));
                 let rect_short = rect_area / long_side;
                 let ratio = rect_short.max(long_side / rect_short);
                 worst_ratio = worst_ratio.max(ratio);
