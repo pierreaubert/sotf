@@ -154,7 +154,9 @@ pub fn render_toggle(
         .theme(theme_to_toggle_theme(theme))
         .on_change(move |new_checked, _, cx| {
             entity.update(cx, |state, _| {
-                state.app.set_plugin_param(plugin_idx, idx, if new_checked { 1.0 } else { 0.0 });
+                state
+                    .app
+                    .set_plugin_param(plugin_idx, idx, if new_checked { 1.0 } else { 0.0 });
             });
         })
 }

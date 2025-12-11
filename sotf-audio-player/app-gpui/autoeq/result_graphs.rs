@@ -6,8 +6,8 @@
 //! 3. Error curve (deviation - filter response)
 //! 4. Response with/without filter and target
 
-use crate::autoeq::speaker_eq::SpeakerOptimizationResult;
 use crate::autoeq::HeadphoneOptimizationResult;
+use crate::autoeq::speaker_eq::SpeakerOptimizationResult;
 use crate::components::graphs::{band_color, format_frequency};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -118,7 +118,12 @@ impl PlayerView {
                             "Optimization Process (Before: {:.2}, After: {:.2})",
                             result.initial_loss, result.final_loss
                         ),
-                        render_optimization_loss_plot(result, theme, available_width - 16.0, graph_height),
+                        render_optimization_loss_plot(
+                            result,
+                            theme,
+                            available_width - 16.0,
+                            graph_height,
+                        ),
                         theme,
                     )),
             )
@@ -361,7 +366,8 @@ fn render_filter_response_plot(
         let config = LineConfig::new()
             .stroke_width(1.5)
             .stroke_color(D3Color::from_rgba(color));
-        curve_elements.push(render_line(&freq_scale, &db_scale, &points, &config).into_any_element());
+        curve_elements
+            .push(render_line(&freq_scale, &db_scale, &points, &config).into_any_element());
     }
 
     let sum_points: Vec<LinePoint> = result
@@ -373,7 +379,8 @@ fn render_filter_response_plot(
     let sum_config = LineConfig::new()
         .stroke_width(2.0)
         .stroke_color(D3Color::from_rgba(colors::filter()));
-    curve_elements.push(render_line(&freq_scale, &db_scale, &sum_points, &sum_config).into_any_element());
+    curve_elements
+        .push(render_line(&freq_scale, &db_scale, &sum_points, &sum_config).into_any_element());
 
     let theme = theme.clone();
     let mut legend_with_sum = legend_items;
@@ -401,7 +408,13 @@ fn render_filter_response_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .children(curve_elements),
                         )
                         .child(render_x_axis(graph_width, &theme)),
@@ -487,7 +500,13 @@ fn render_filter_vs_deviation_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve1)
                                 .child(curve2),
                         )
@@ -555,7 +574,13 @@ fn render_error_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve),
                         )
                         .child(render_x_axis(graph_width, &theme)),
@@ -653,7 +678,13 @@ fn render_response_comparison_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve1)
                                 .child(curve3)
                                 .child(curve2),
@@ -745,7 +776,7 @@ fn render_optimization_loss_plot(
             max_iter * 0.75,
             max_iter,
         ];
-        
+
         div()
             .absolute()
             .inset_0()
@@ -759,11 +790,23 @@ fn render_optimization_loss_plot(
                     .w(px(1.0))
                     .bg(grid_color)
             }))
-             .child(
-                 div().absolute().top(px(loss_scale.scale(min_loss) as f32)).left_0().right_0().h(px(1.0)).bg(grid_color)
+            .child(
+                div()
+                    .absolute()
+                    .top(px(loss_scale.scale(min_loss) as f32))
+                    .left_0()
+                    .right_0()
+                    .h(px(1.0))
+                    .bg(grid_color),
             )
-             .child(
-                 div().absolute().top(px(loss_scale.scale(max_loss) as f32)).left_0().right_0().h(px(1.0)).bg(grid_color)
+            .child(
+                div()
+                    .absolute()
+                    .top(px(loss_scale.scale(max_loss) as f32))
+                    .left_0()
+                    .right_0()
+                    .h(px(1.0))
+                    .bg(grid_color),
             )
     };
 
@@ -823,15 +866,25 @@ impl PlayerView {
                     // Plot 1: Main Response (Input, Target, Corrected)
                     .child(render_plot_with_title(
                         "On-Axis / Listening Window Response",
-                        render_spinorama_main_response_plot(result, theme, graph_width, graph_height),
+                        render_spinorama_main_response_plot(
+                            result,
+                            theme,
+                            graph_width,
+                            graph_height,
+                        ),
                         theme,
                     ))
                     // Plot 2: Filter Response
-                     .child(render_plot_with_title(
-                         "Filter Response",
-                         render_speaker_filter_response_plot(result, theme, graph_width, graph_height),
-                         theme,
-                     ))
+                    .child(render_plot_with_title(
+                        "Filter Response",
+                        render_speaker_filter_response_plot(
+                            result,
+                            theme,
+                            graph_width,
+                            graph_height,
+                        ),
+                        theme,
+                    )),
             )
             // Row 2: Early Reflections and Sound Power
             .child(
@@ -849,21 +902,26 @@ impl PlayerView {
                         "Sound Power",
                         render_spinorama_sp_plot(result, theme, graph_width, graph_height),
                         theme,
-                    ))
+                    )),
             )
             // Row 3: Directivity Indexes
-             .child(
+            .child(
                 div()
                     .flex()
                     .gap_2()
-                     // Plot 5: Directivity Index (ER & SP)
+                    // Plot 5: Directivity Index (ER & SP)
                     .child(render_plot_with_title(
                         "Directivity Index",
-                        render_spinorama_di_plot(result, theme, available_width - 16.0, graph_height),
+                        render_spinorama_di_plot(
+                            result,
+                            theme,
+                            available_width - 16.0,
+                            graph_height,
+                        ),
                         theme,
-                    ))
+                    )),
             )
-             // Row 4: Optimization Process
+            // Row 4: Optimization Process
             .child(
                 div()
                     .flex()
@@ -874,11 +932,15 @@ impl PlayerView {
                             "Optimization Process (Before: {:.2}, After: {:.2})",
                             result.initial_loss, result.final_loss
                         ),
-                        render_speaker_optimization_loss_plot(result, theme, available_width - 16.0, graph_height),
+                        render_speaker_optimization_loss_plot(
+                            result,
+                            theme,
+                            available_width - 16.0,
+                            graph_height,
+                        ),
                         theme,
                     )),
             )
-
     }
 }
 
@@ -900,21 +962,46 @@ fn render_spinorama_main_response_plot(
     let graph_width = width - Y_AXIS_WIDTH;
     let graph_height = height;
 
-    let freq_scale = LogScale::new().domain(MIN_FREQ, MAX_FREQ).range(0.0, graph_width as f64);
-    let db_scale = LinearScale::new().domain(min_db, max_db).range(graph_height as f64, 0.0);
+    let freq_scale = LogScale::new()
+        .domain(MIN_FREQ, MAX_FREQ)
+        .range(0.0, graph_width as f64);
+    let db_scale = LinearScale::new()
+        .domain(min_db, max_db)
+        .range(graph_height as f64, 0.0);
 
-    let points_input: Vec<LinePoint> = result.frequencies.iter().zip(result.input_curve.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
-    let points_corrected: Vec<LinePoint> = result.frequencies.iter().zip(result.corrected_curve.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
-    let points_target: Vec<LinePoint> = result.frequencies.iter().zip(result.target_curve.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
+    let points_input: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.input_curve.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
+    let points_corrected: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.corrected_curve.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
+    let points_target: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.target_curve.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
 
-    let config_input = LineConfig::new().stroke_width(1.5).stroke_color(D3Color::from_rgba(colors::input()));
-    let config_corrected = LineConfig::new().stroke_width(2.0).stroke_color(D3Color::from_rgba(colors::corrected()));
-    let config_target = LineConfig::new().stroke_width(2.0).stroke_color(D3Color::from_rgba(colors::target()));
+    let config_input = LineConfig::new()
+        .stroke_width(1.5)
+        .stroke_color(D3Color::from_rgba(colors::input()));
+    let config_corrected = LineConfig::new()
+        .stroke_width(2.0)
+        .stroke_color(D3Color::from_rgba(colors::corrected()));
+    let config_target = LineConfig::new()
+        .stroke_width(2.0)
+        .stroke_color(D3Color::from_rgba(colors::target()));
 
     let curve_input = render_line(&freq_scale, &db_scale, &points_input, &config_input);
     let curve_corrected = render_line(&freq_scale, &db_scale, &points_corrected, &config_corrected);
     let curve_target = render_line(&freq_scale, &db_scale, &points_target, &config_target);
-   
+
     let legend_items = vec![
         ("Original".to_string(), colors::input()),
         ("Corrected".to_string(), colors::corrected()),
@@ -933,10 +1020,10 @@ fn render_spinorama_main_response_plot(
                 .flex()
                 .child(render_y_axis(min_db, max_db, graph_height, &theme))
                 .child(
-                     div()
+                    div()
                         .flex_col()
                         .child(
-                             div()
+                            div()
                                 .w(px(graph_width))
                                 .h(px(graph_height))
                                 .bg(theme.surface)
@@ -945,13 +1032,19 @@ fn render_spinorama_main_response_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve_target)
                                 .child(curve_input)
                                 .child(curve_corrected),
                         )
                         .child(render_x_axis(graph_width, &theme)),
-                )
+                ),
         )
         .child(render_compact_legend(&legend_items, &theme))
 }
@@ -963,23 +1056,33 @@ fn render_speaker_filter_response_plot(
     width: f32,
     height: f32,
 ) -> Div {
-     let all_values: Vec<f64> = result
-        .filter_response.iter().copied().collect();
-     let (min_db, max_db) = calculate_db_range(&all_values);
-     let graph_width = width - Y_AXIS_WIDTH;
-     let graph_height = height;
+    let all_values: Vec<f64> = result.filter_response.iter().copied().collect();
+    let (min_db, max_db) = calculate_db_range(&all_values);
+    let graph_width = width - Y_AXIS_WIDTH;
+    let graph_height = height;
 
-    let freq_scale = LogScale::new().domain(MIN_FREQ, MAX_FREQ).range(0.0, graph_width as f64);
-    let db_scale = LinearScale::new().domain(min_db, max_db).range(graph_height as f64, 0.0);
+    let freq_scale = LogScale::new()
+        .domain(MIN_FREQ, MAX_FREQ)
+        .range(0.0, graph_width as f64);
+    let db_scale = LinearScale::new()
+        .domain(min_db, max_db)
+        .range(graph_height as f64, 0.0);
 
-     let points: Vec<LinePoint> = result.frequencies.iter().zip(result.filter_response.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
-     let config = LineConfig::new().stroke_width(2.0).stroke_color(D3Color::from_rgba(colors::filter()));
-     let curve = render_line(&freq_scale, &db_scale, &points, &config);
+    let points: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.filter_response.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
+    let config = LineConfig::new()
+        .stroke_width(2.0)
+        .stroke_color(D3Color::from_rgba(colors::filter()));
+    let curve = render_line(&freq_scale, &db_scale, &points, &config);
 
-     let legend_items = vec![("Filter Response".to_string(), colors::filter())];
-     let theme = theme.clone();
+    let legend_items = vec![("Filter Response".to_string(), colors::filter())];
+    let theme = theme.clone();
 
-     div()
+    div()
         .w(px(width))
         .h(px(height + X_AXIS_HEIGHT + 16.0))
         .flex()
@@ -989,10 +1092,10 @@ fn render_speaker_filter_response_plot(
                 .flex()
                 .child(render_y_axis(min_db, max_db, graph_height, &theme))
                 .child(
-                     div()
+                    div()
                         .flex_col()
                         .child(
-                             div()
+                            div()
                                 .w(px(graph_width))
                                 .h(px(graph_height))
                                 .bg(theme.surface)
@@ -1001,14 +1104,19 @@ fn render_speaker_filter_response_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve),
                         )
                         .child(render_x_axis(graph_width, &theme)),
-                )
+                ),
         )
         .child(render_compact_legend(&legend_items, &theme))
-
 }
 
 /// Render Early Reflections Plot
@@ -1018,21 +1126,49 @@ fn render_spinorama_er_plot(
     width: f32,
     height: f32,
 ) -> Div {
-    let er_corrected: Vec<f64> = result.er_curve.iter().zip(result.filter_response.iter()).map(|(er, f)| er + f).collect();
-    
-    let all_values: Vec<f64> = result.er_curve.iter().chain(er_corrected.iter()).copied().collect();
+    let er_corrected: Vec<f64> = result
+        .er_curve
+        .iter()
+        .zip(result.filter_response.iter())
+        .map(|(er, f)| er + f)
+        .collect();
+
+    let all_values: Vec<f64> = result
+        .er_curve
+        .iter()
+        .chain(er_corrected.iter())
+        .copied()
+        .collect();
     let (min_db, max_db) = calculate_db_range(&all_values);
     let graph_width = width - Y_AXIS_WIDTH;
     let graph_height = height;
 
-    let freq_scale = LogScale::new().domain(MIN_FREQ, MAX_FREQ).range(0.0, graph_width as f64);
-    let db_scale = LinearScale::new().domain(min_db, max_db).range(graph_height as f64, 0.0);
+    let freq_scale = LogScale::new()
+        .domain(MIN_FREQ, MAX_FREQ)
+        .range(0.0, graph_width as f64);
+    let db_scale = LinearScale::new()
+        .domain(min_db, max_db)
+        .range(graph_height as f64, 0.0);
 
-    let points_orig: Vec<LinePoint> = result.frequencies.iter().zip(result.er_curve.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
-    let points_corr: Vec<LinePoint> = result.frequencies.iter().zip(er_corrected.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
+    let points_orig: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.er_curve.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
+    let points_corr: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(er_corrected.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
 
-    let config_orig = LineConfig::new().stroke_width(1.5).stroke_color(D3Color::from_rgba(gpui::rgba(0xaaaaaaff))); // Grey
-    let config_corr = LineConfig::new().stroke_width(2.0).stroke_color(D3Color::from_rgba(colors::corrected()));
+    let config_orig = LineConfig::new()
+        .stroke_width(1.5)
+        .stroke_color(D3Color::from_rgba(gpui::rgba(0xaaaaaaff))); // Grey
+    let config_corr = LineConfig::new()
+        .stroke_width(2.0)
+        .stroke_color(D3Color::from_rgba(colors::corrected()));
 
     let curve_orig = render_line(&freq_scale, &db_scale, &points_orig, &config_orig);
     let curve_corr = render_line(&freq_scale, &db_scale, &points_corr, &config_corr);
@@ -1041,9 +1177,9 @@ fn render_spinorama_er_plot(
         ("Original ER".to_string(), gpui::rgba(0xaaaaaaff)),
         ("Corrected ER".to_string(), colors::corrected()),
     ];
-     let theme = theme.clone();
+    let theme = theme.clone();
 
-     div()
+    div()
         .w(px(width))
         .h(px(height + X_AXIS_HEIGHT + 16.0))
         .flex()
@@ -1053,10 +1189,10 @@ fn render_spinorama_er_plot(
                 .flex()
                 .child(render_y_axis(min_db, max_db, graph_height, &theme))
                 .child(
-                     div()
+                    div()
                         .flex_col()
                         .child(
-                             div()
+                            div()
                                 .w(px(graph_width))
                                 .h(px(graph_height))
                                 .bg(theme.surface)
@@ -1065,12 +1201,18 @@ fn render_spinorama_er_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve_orig)
                                 .child(curve_corr),
                         )
                         .child(render_x_axis(graph_width, &theme)),
-                )
+                ),
         )
         .child(render_compact_legend(&legend_items, &theme))
 }
@@ -1082,22 +1224,50 @@ fn render_spinorama_sp_plot(
     width: f32,
     height: f32,
 ) -> Div {
-     // SP Original vs SP Corrected
-    let sp_corrected: Vec<f64> = result.sp_curve.iter().zip(result.filter_response.iter()).map(|(sp, f)| sp + f).collect();
-    
-    let all_values: Vec<f64> = result.sp_curve.iter().chain(sp_corrected.iter()).copied().collect();
+    // SP Original vs SP Corrected
+    let sp_corrected: Vec<f64> = result
+        .sp_curve
+        .iter()
+        .zip(result.filter_response.iter())
+        .map(|(sp, f)| sp + f)
+        .collect();
+
+    let all_values: Vec<f64> = result
+        .sp_curve
+        .iter()
+        .chain(sp_corrected.iter())
+        .copied()
+        .collect();
     let (min_db, max_db) = calculate_db_range(&all_values);
     let graph_width = width - Y_AXIS_WIDTH;
     let graph_height = height;
 
-    let freq_scale = LogScale::new().domain(MIN_FREQ, MAX_FREQ).range(0.0, graph_width as f64);
-    let db_scale = LinearScale::new().domain(min_db, max_db).range(graph_height as f64, 0.0);
+    let freq_scale = LogScale::new()
+        .domain(MIN_FREQ, MAX_FREQ)
+        .range(0.0, graph_width as f64);
+    let db_scale = LinearScale::new()
+        .domain(min_db, max_db)
+        .range(graph_height as f64, 0.0);
 
-    let points_orig: Vec<LinePoint> = result.frequencies.iter().zip(result.sp_curve.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
-    let points_corr: Vec<LinePoint> = result.frequencies.iter().zip(sp_corrected.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
+    let points_orig: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.sp_curve.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
+    let points_corr: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(sp_corrected.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
 
-    let config_orig = LineConfig::new().stroke_width(1.5).stroke_color(D3Color::from_rgba(gpui::rgba(0xaaaaaaff))); // Grey
-    let config_corr = LineConfig::new().stroke_width(2.0).stroke_color(D3Color::from_rgba(colors::corrected()));
+    let config_orig = LineConfig::new()
+        .stroke_width(1.5)
+        .stroke_color(D3Color::from_rgba(gpui::rgba(0xaaaaaaff))); // Grey
+    let config_corr = LineConfig::new()
+        .stroke_width(2.0)
+        .stroke_color(D3Color::from_rgba(colors::corrected()));
 
     let curve_orig = render_line(&freq_scale, &db_scale, &points_orig, &config_orig);
     let curve_corr = render_line(&freq_scale, &db_scale, &points_corr, &config_corr);
@@ -1106,9 +1276,9 @@ fn render_spinorama_sp_plot(
         ("Original SP".to_string(), gpui::rgba(0xaaaaaaff)),
         ("Corrected SP".to_string(), colors::corrected()),
     ];
-     let theme = theme.clone();
+    let theme = theme.clone();
 
-     div()
+    div()
         .w(px(width))
         .h(px(height + X_AXIS_HEIGHT + 16.0))
         .flex()
@@ -1118,10 +1288,10 @@ fn render_spinorama_sp_plot(
                 .flex()
                 .child(render_y_axis(min_db, max_db, graph_height, &theme))
                 .child(
-                     div()
+                    div()
                         .flex_col()
                         .child(
-                             div()
+                            div()
                                 .w(px(graph_width))
                                 .h(px(graph_height))
                                 .bg(theme.surface)
@@ -1130,12 +1300,18 @@ fn render_spinorama_sp_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve_orig)
                                 .child(curve_corr),
                         )
                         .child(render_x_axis(graph_width, &theme)),
-                )
+                ),
         )
         .child(render_compact_legend(&legend_items, &theme))
 }
@@ -1147,19 +1323,42 @@ fn render_spinorama_di_plot(
     width: f32,
     height: f32,
 ) -> Div {
-    let all_values: Vec<f64> = result.er_di_curve.iter().chain(result.sp_di_curve.iter()).copied().collect();
+    let all_values: Vec<f64> = result
+        .er_di_curve
+        .iter()
+        .chain(result.sp_di_curve.iter())
+        .copied()
+        .collect();
     let (min_db, max_db) = calculate_db_range(&all_values);
     let graph_width = width - Y_AXIS_WIDTH;
     let graph_height = height;
 
-    let freq_scale = LogScale::new().domain(MIN_FREQ, MAX_FREQ).range(0.0, graph_width as f64);
-    let db_scale = LinearScale::new().domain(min_db, max_db).range(graph_height as f64, 0.0);
+    let freq_scale = LogScale::new()
+        .domain(MIN_FREQ, MAX_FREQ)
+        .range(0.0, graph_width as f64);
+    let db_scale = LinearScale::new()
+        .domain(min_db, max_db)
+        .range(graph_height as f64, 0.0);
 
-    let points_er: Vec<LinePoint> = result.frequencies.iter().zip(result.er_di_curve.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
-    let points_sp: Vec<LinePoint> = result.frequencies.iter().zip(result.sp_di_curve.iter()).map(|(&f, &db)| LinePoint::new(f, db)).collect();
+    let points_er: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.er_di_curve.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
+    let points_sp: Vec<LinePoint> = result
+        .frequencies
+        .iter()
+        .zip(result.sp_di_curve.iter())
+        .map(|(&f, &db)| LinePoint::new(f, db))
+        .collect();
 
-    let config_er = LineConfig::new().stroke_width(2.0).stroke_color(D3Color::from_rgba(gpui::rgba(0xf472b6ff))); // Pink
-    let config_sp = LineConfig::new().stroke_width(2.0).stroke_color(D3Color::from_rgba(gpui::rgba(0xc084fcff))); // Purple
+    let config_er = LineConfig::new()
+        .stroke_width(2.0)
+        .stroke_color(D3Color::from_rgba(gpui::rgba(0xf472b6ff))); // Pink
+    let config_sp = LineConfig::new()
+        .stroke_width(2.0)
+        .stroke_color(D3Color::from_rgba(gpui::rgba(0xc084fcff))); // Purple
 
     let curve_er = render_line(&freq_scale, &db_scale, &points_er, &config_er);
     let curve_sp = render_line(&freq_scale, &db_scale, &points_sp, &config_sp);
@@ -1168,9 +1367,9 @@ fn render_spinorama_di_plot(
         ("ER Directivity Index".to_string(), gpui::rgba(0xf472b6ff)),
         ("SP Directivity Index".to_string(), gpui::rgba(0xc084fcff)),
     ];
-     let theme = theme.clone();
+    let theme = theme.clone();
 
-     div()
+    div()
         .w(px(width))
         .h(px(height + X_AXIS_HEIGHT + 16.0))
         .flex()
@@ -1180,10 +1379,10 @@ fn render_spinorama_di_plot(
                 .flex()
                 .child(render_y_axis(min_db, max_db, graph_height, &theme))
                 .child(
-                     div()
+                    div()
                         .flex_col()
                         .child(
-                             div()
+                            div()
                                 .w(px(graph_width))
                                 .h(px(graph_height))
                                 .bg(theme.surface)
@@ -1192,12 +1391,18 @@ fn render_spinorama_di_plot(
                                 .border_color(theme.border)
                                 .relative()
                                 .overflow_hidden()
-                                .child(render_grid_lines(graph_width, graph_height, min_db, max_db, &theme))
+                                .child(render_grid_lines(
+                                    graph_width,
+                                    graph_height,
+                                    min_db,
+                                    max_db,
+                                    &theme,
+                                ))
                                 .child(curve_er)
                                 .child(curve_sp),
                         )
                         .child(render_x_axis(graph_width, &theme)),
-                )
+                ),
         )
         .child(render_compact_legend(&legend_items, &theme))
 }
@@ -1253,7 +1458,7 @@ fn render_speaker_optimization_loss_plot(
             max_iter * 0.75,
             max_iter,
         ];
-        
+
         div()
             .absolute()
             .inset_0()
@@ -1267,11 +1472,23 @@ fn render_speaker_optimization_loss_plot(
                     .w(px(1.0))
                     .bg(grid_color)
             }))
-             .child(
-                 div().absolute().top(px(loss_scale.scale(min_loss) as f32)).left_0().right_0().h(px(1.0)).bg(grid_color)
+            .child(
+                div()
+                    .absolute()
+                    .top(px(loss_scale.scale(min_loss) as f32))
+                    .left_0()
+                    .right_0()
+                    .h(px(1.0))
+                    .bg(grid_color),
             )
-             .child(
-                 div().absolute().top(px(loss_scale.scale(max_loss) as f32)).left_0().right_0().h(px(1.0)).bg(grid_color)
+            .child(
+                div()
+                    .absolute()
+                    .top(px(loss_scale.scale(max_loss) as f32))
+                    .left_0()
+                    .right_0()
+                    .h(px(1.0))
+                    .bg(grid_color),
             )
     };
 

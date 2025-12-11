@@ -11,7 +11,9 @@ use std::time::Duration;
 
 // Re-export all actions for backward compatibility
 pub use crate::actions::*;
-use crate::plugins::actions::{ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam};
+use crate::plugins::actions::{
+    ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam,
+};
 
 pub struct PlayerView {
     pub(crate) state: Entity<AppState>,
@@ -69,7 +71,8 @@ impl PlayerView {
                         // 2. User has scrolled and is within 1000px of the bottom
                         let needs_more_content = estimated_height < window_height * 2.0;
                         let near_bottom = remaining_scroll < 1000.0;
-                        let should_load = item_count < total_albums && (needs_more_content || near_bottom);
+                        let should_load =
+                            item_count < total_albums && (needs_more_content || near_bottom);
 
                         // If we should load more, do it
                         if should_load {
@@ -818,48 +821,46 @@ impl PlayerView {
     }
 
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
-        self.state
-            .update(cx, |state, _cx| {
-                // Block if in text input mode
-                if Self::is_text_input_mode(state.app.input_mode) {
-                    return;
+        self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
+            match state.app.current_screen {
+                Screen::Library => {
+                    state.app.select_next_album();
                 }
-                match state.app.current_screen {
-                    Screen::Library => {
-                        state.app.select_next_album();
-                    }
-                    Screen::Queue => {
-                        state.app.select_next_queue_item();
-                    }
-                    Screen::DirectoryManager => {
-                        state.app.select_next_directory();
-                    }
-                    _ => {}
+                Screen::Queue => {
+                    state.app.select_next_queue_item();
                 }
-            });
+                Screen::DirectoryManager => {
+                    state.app.select_next_directory();
+                }
+                _ => {}
+            }
+        });
         cx.notify();
     }
 
     fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
-        self.state
-            .update(cx, |state, _cx| {
-                // Block if in text input mode
-                if Self::is_text_input_mode(state.app.input_mode) {
-                    return;
+        self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
+            match state.app.current_screen {
+                Screen::Library => {
+                    state.app.select_previous_album();
                 }
-                match state.app.current_screen {
-                    Screen::Library => {
-                        state.app.select_previous_album();
-                    }
-                    Screen::Queue => {
-                        state.app.select_previous_queue_item();
-                    }
-                    Screen::DirectoryManager => {
-                        state.app.select_previous_directory();
-                    }
-                    _ => {}
+                Screen::Queue => {
+                    state.app.select_previous_queue_item();
                 }
-            });
+                Screen::DirectoryManager => {
+                    state.app.select_previous_directory();
+                }
+                _ => {}
+            }
+        });
         cx.notify();
     }
 
@@ -1002,22 +1003,21 @@ impl PlayerView {
     }
 
     fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
-        self.state
-            .update(cx, |state, _cx| {
-                // Block if in text input mode
-                if Self::is_text_input_mode(state.app.input_mode) {
-                    return;
+        self.state.update(cx, |state, _cx| {
+            // Block if in text input mode
+            if Self::is_text_input_mode(state.app.input_mode) {
+                return;
+            }
+            match state.app.current_screen {
+                Screen::Queue => {
+                    state.app.remove_from_queue(state.app.selected_queue_index);
                 }
-                match state.app.current_screen {
-                    Screen::Queue => {
-                        state.app.remove_from_queue(state.app.selected_queue_index);
-                    }
-                    Screen::DirectoryManager => {
-                        state.app.remove_selected_directory();
-                    }
-                    _ => {}
+                Screen::DirectoryManager => {
+                    state.app.remove_selected_directory();
                 }
-            });
+                _ => {}
+            }
+        });
         cx.notify();
     }
 

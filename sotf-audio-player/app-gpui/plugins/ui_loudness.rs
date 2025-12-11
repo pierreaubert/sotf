@@ -69,7 +69,9 @@ pub fn render_loudness_compensation_plugin(
                         .child(
                             div()
                                 .h_full()
-                                .w(relative(lufs_tick_config.value_to_position(state.target_lufs)))
+                                .w(relative(
+                                    lufs_tick_config.value_to_position(state.target_lufs),
+                                ))
                                 .bg(theme.info),
                         ),
                 )

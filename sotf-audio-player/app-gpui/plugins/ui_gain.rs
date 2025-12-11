@@ -205,7 +205,8 @@ pub fn render_gain_plugin(
                                         .bg(theme.success)
                                 } else {
                                     // Cut - bar goes left from center
-                                    let width = (-state.gain_db / 24.0).clamp(0.0, 1.0) as f32 * 0.5;
+                                    let width =
+                                        (-state.gain_db / 24.0).clamp(0.0, 1.0) as f32 * 0.5;
                                     div()
                                         .absolute()
                                         .right(relative(0.5))

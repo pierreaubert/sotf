@@ -9,7 +9,6 @@ use gpui_ui_kit::{
     TextSize, TextWeight, VStack,
 };
 
-
 impl PlayerView {
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -991,17 +990,17 @@ impl PlayerView {
                             .flex()
                             .flex_wrap()
                             .gap_6()
-                            .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
+                            .child(self.render_shortcut_section(
+                                "Global",
+                                &global_shortcuts,
+                                &theme,
+                            ))
                             .child(self.render_shortcut_section(
                                 "Library",
                                 &library_shortcuts,
                                 &theme,
                             ))
-                            .child(self.render_shortcut_section(
-                                "Queue",
-                                &queue_shortcuts,
-                                &theme,
-                            ))
+                            .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
                             .child(self.render_shortcut_section(
                                 "Plugins",
                                 &plugin_shortcuts,
@@ -1057,6 +1056,4 @@ impl PlayerView {
             .build()
             .min_w(px(260.0))
     }
-
-
 }

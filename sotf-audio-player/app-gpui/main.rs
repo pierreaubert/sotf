@@ -67,7 +67,11 @@ fn main() {
                 items: vec![
                     MenuItem::action("Library", SwitchToLibrary),
                     MenuItem::action("Queue", SwitchToQueue),
+                    MenuItem::action("Settings", SwitchToSettings),
+                    MenuItem::action("Devices", SwitchToDevices),
                     MenuItem::action("Plugins", SwitchToPlugins),
+                    MenuItem::action("HeadphoneEQ", SwitchToHeadphoneEQ),
+                    MenuItem::action("RoomEQ", SwitchToRoomEQ),
                 ],
             },
             Menu {

@@ -70,8 +70,8 @@ pub fn render_upmixer_plugin(
                         Select::new("config-select")
                             .options(
                                 [
-                                    "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
-                                    "7.1.4", "9.1.4", "9.1.6",
+                                    "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
+                                    "9.1.4", "9.1.6",
                                 ]
                                 .iter()
                                 .map(|c| SelectOption::new(c.to_string(), c.to_string()))
@@ -96,7 +96,10 @@ pub fn render_upmixer_plugin(
                                         "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
                                         "7.1.4", "9.1.4", "9.1.6",
                                     ];
-                                    let idx = configs.iter().position(|&c| c == value.as_ref()).unwrap_or(0);
+                                    let idx = configs
+                                        .iter()
+                                        .position(|&c| c == value.as_ref())
+                                        .unwrap_or(0);
                                     entity.update(cx, |state, _| {
                                         state.app.set_plugin_param(plugin_idx, 0, idx as f64);
                                         state.app.upmixer_config_open = false;
@@ -106,7 +109,12 @@ pub fn render_upmixer_plugin(
                     ),
                 )
                 // Separator
-                .child(Divider::vertical().color(theme.border).build_simple().h(px(16.0)))
+                .child(
+                    Divider::vertical()
+                        .color(theme.border)
+                        .build_simple()
+                        .h(px(16.0)),
+                )
                 // Subharmonic Synth Toggle
                 .child(render_toggle(
                     entity.clone(),
@@ -133,10 +141,18 @@ pub fn render_upmixer_plugin(
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
-                        .child(Text::new("Decorrelation:").size(TextSize::Xs).color(theme.text_secondary))
+                        .child(
+                            Text::new("Decorrelation:")
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                        )
                         .child(render_param_row(
                             "",
-                            if state.decorrelation_mode == 0 { "Velvet" } else { "LFO" },
+                            if state.decorrelation_mode == 0 {
+                                "Velvet"
+                            } else {
+                                "LFO"
+                            },
                             14,
                             state.selected_param,
                             state.is_editing,
@@ -148,7 +164,11 @@ pub fn render_upmixer_plugin(
                             let entity = entity.clone();
                             move |_, _, cx| {
                                 entity.update(cx, |state, _| {
-                                    state.app.set_plugin_param(plugin_idx, 14, if decorrelation_mode == 0 { 1.0 } else { 0.0 });
+                                    state.app.set_plugin_param(
+                                        plugin_idx,
+                                        14,
+                                        if decorrelation_mode == 0 { 1.0 } else { 0.0 },
+                                    );
                                 });
                             }
                         }),
@@ -160,7 +180,6 @@ pub fn render_upmixer_plugin(
                 .spacing(StackSpacing::Lg)
                 .align(StackAlign::Start)
                 .wrap(true)
-
                 // 2. Gains (Center, LFE, Surround, Top)
                 // Indices must match plugin_editing.rs
                 .child(render_knob(

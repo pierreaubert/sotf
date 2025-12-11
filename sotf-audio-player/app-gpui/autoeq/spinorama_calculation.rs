@@ -1,4 +1,4 @@
-use autoeq_roomsim::{calculate_modal_pressure, Point3D};
+use autoeq_roomsim::{Point3D, calculate_modal_pressure};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
@@ -40,7 +40,11 @@ impl Default for RoomCorrectionInput {
         Self {
             measurements: Vec::new(),
             room_dimensions: [0.0; 3],
-            source_position: Point3D { x: 0.0, y: 0.0, z: 0.0 },
+            source_position: Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
             correction_limit_hz: 300.0,
             speed_of_sound: 343.0,
             modal_damping: 10.0,
@@ -67,27 +71,27 @@ pub fn calculate_room_correction(input: &RoomCorrectionInput) -> Result<Measurem
 
     let mut corrected_mag = Vec::with_capacity(len);
     let mut corrected_phase = Vec::with_capacity(len);
-    
-    // Compute modes once if possible? 
-    // calculate_modal_pressure recomputes everything. 
+
+    // Compute modes once if possible?
+    // calculate_modal_pressure recomputes everything.
     // For now we accept the inefficiency as the loop over frequencies is the outer loop here.
-    
+
     for i in 0..len {
         let f = freqs[i];
-        
+
         // Complex pressure measurements
         let mut measured_pressures = Vec::with_capacity(input.measurements.len());
         let mut modeled_tfs = Vec::with_capacity(input.measurements.len());
 
         for m in &input.measurements {
             let mag = m.curve.magnitude_db[i];
-            
+
             let phase_deg = if let Some(p) = &m.curve.phase_deg {
-                 p[i]
+                p[i]
             } else {
-                 return Err("Measurement missing phase data".to_string());
+                return Err("Measurement missing phase data".to_string());
             };
-            
+
             // Convert to linear pressure
             // P = 10^(dB/20) * e^(j * phase)
             let mag_lin = 10.0_f64.powf(mag / 20.0);
@@ -111,16 +115,19 @@ pub fn calculate_room_correction(input: &RoomCorrectionInput) -> Result<Measurem
                 modeled_tfs.push(h_sim);
             } else {
                 // Above limit: Use simple Direct field model (1/r * phase)
-                let r = input.source_position.distance_to(&m.listener_position).max(0.01);
+                let r = input
+                    .source_position
+                    .distance_to(&m.listener_position)
+                    .max(0.01);
                 let k = 2.0 * PI * f / input.speed_of_sound;
-                let h_direct = Complex64::from_polar(1.0/r, -k*r);
+                let h_direct = Complex64::from_polar(1.0 / r, -k * r);
                 modeled_tfs.push(h_direct);
             }
         }
 
         // Solve for Source S using Least Squares:
         // M_k = S * H_k  => S = (sum M_k * H_k^*) / (sum |H_k|^2)
-        
+
         let mut numerator = Complex64::new(0.0, 0.0);
         let mut denominator = 0.0;
 
@@ -135,11 +142,11 @@ pub fn calculate_room_correction(input: &RoomCorrectionInput) -> Result<Measurem
             corrected_phase.push(measured_pressures[0].arg().to_degrees());
         } else {
             let s_est = numerator / denominator;
-            
+
             // Convert back to dB/deg
             let s_db = 20.0 * s_est.norm().log10();
             let s_phase = s_est.arg().to_degrees();
-            
+
             corrected_mag.push(s_db);
             corrected_phase.push(s_phase);
         }

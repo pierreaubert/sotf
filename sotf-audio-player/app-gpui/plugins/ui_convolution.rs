@@ -138,7 +138,12 @@ pub fn render_convolution_plugin(
                                 .bg(theme.surface)
                                 .rounded_full()
                                 .overflow_hidden()
-                                .child(div().h_full().w(relative(state.mix as f32)).bg(theme.accent)),
+                                .child(
+                                    div()
+                                        .h_full()
+                                        .w(relative(state.mix as f32))
+                                        .bg(theme.accent),
+                                ),
                         )
                         .child(div().text_xs().text_color(theme.text_muted).child("WET")),
                 )

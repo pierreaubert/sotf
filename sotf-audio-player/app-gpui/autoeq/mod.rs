@@ -5,7 +5,6 @@ pub mod result_graphs;
 pub mod speaker_eq;
 pub mod spinorama_calculation; // Disabled - missing autoeq_roomsim dependency
 
-
 // Re-export commonly used types
 pub use headphone_eq::HeadphoneOptimizationResult;
 pub use params::{

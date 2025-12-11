@@ -3,27 +3,26 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 
-
 /// Result of a speaker optimization run
 #[derive(Clone, Debug)]
 pub struct SpeakerOptimizationResult {
     pub biquads: Vec<autoeq_iir::Biquad>,
     pub frequencies: Vec<f64>,
-    pub input_curve: Vec<f64>,        // On-axis or listening window
-    pub target_curve: Vec<f64>,       // Calculated target
-    pub deviation_curve: Vec<f64>,    // Input - Target
-    pub filter_response: Vec<f64>,    // Sum of biquads
-    pub error_curve: Vec<f64>,        // Deviation + Filter
-    pub corrected_curve: Vec<f64>,    // Input + Filter
+    pub input_curve: Vec<f64>,     // On-axis or listening window
+    pub target_curve: Vec<f64>,    // Calculated target
+    pub deviation_curve: Vec<f64>, // Input - Target
+    pub filter_response: Vec<f64>, // Sum of biquads
+    pub error_curve: Vec<f64>,     // Deviation + Filter
+    pub corrected_curve: Vec<f64>, // Input + Filter
     pub individual_filter_responses: Vec<Vec<f64>>,
     pub output_path: String,
-    
+
     // Spinorama specific curves
-    pub er_curve: Vec<f64>,           // Early Reflections
-    pub sp_curve: Vec<f64>,           // Sound Power
-    pub er_di_curve: Vec<f64>,        // Early Reflections Directivity Index
-    pub sp_di_curve: Vec<f64>,        // Sound Power Directivity Index
-    
+    pub er_curve: Vec<f64>,    // Early Reflections
+    pub sp_curve: Vec<f64>,    // Sound Power
+    pub er_di_curve: Vec<f64>, // Early Reflections Directivity Index
+    pub sp_di_curve: Vec<f64>, // Sound Power Directivity Index
+
     pub optimization_history: Vec<(usize, f64)>,
     pub initial_loss: f64,
     pub final_loss: f64,
@@ -56,7 +55,7 @@ impl PlayerView {
             state.app.speaker_optimization_result = None;
         });
         cx.notify();
-        
+
         // Create a callback for progress updates
         // Note: For now we'll just simulate progress or handle it if we have a real backend
         // Since run_speaker_optimization_task is async, we spawn it.
@@ -68,7 +67,8 @@ impl PlayerView {
                 String::new(),
                 params,
                 export_format,
-            ).await;
+            )
+            .await;
 
             view.update(cx, |view, cx| {
                 view.state.update(cx, |state, _cx| {
@@ -81,15 +81,17 @@ impl PlayerView {
                             ));
                         }
                         Err(e) => {
-                             state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
-                                "Optimization failed: {}", e
-                            )));
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                                format!("Optimization failed: {}", e),
+                            ));
                         }
                     }
                 });
                 cx.notify();
-            }).ok();
-        }).detach();
+            })
+            .ok();
+        })
+        .detach();
     }
 }
 
@@ -103,8 +105,8 @@ pub async fn run_speaker_optimization_task(
 ) -> Result<SpeakerOptimizationResult, String> {
     // Simulate delay for dummy task
     if speaker_model == "Dummy Speaker" {
-         smol::Timer::after(std::time::Duration::from_millis(500)).await;
-         return Ok(generate_dummy_result(params));
+        smol::Timer::after(std::time::Duration::from_millis(500)).await;
+        return Ok(generate_dummy_result(params));
     }
 
     Err("Downloading speaker data is not yet implemented. Please select 'Dummy Speaker' for UI testing.".to_string())
@@ -112,10 +114,15 @@ pub async fn run_speaker_optimization_task(
 
 fn generate_dummy_result(_params: OptimizationParams) -> SpeakerOptimizationResult {
     let n = 200;
-    let frequencies: Vec<f64> = (0..n).map(|i| 20.0 * (1000.0f64).powf(i as f64 / n as f64)).collect();
-    let input_curve: Vec<f64> = frequencies.iter().map(|f| (f/1000.0).sin() * 5.0).collect();
+    let frequencies: Vec<f64> = (0..n)
+        .map(|i| 20.0 * (1000.0f64).powf(i as f64 / n as f64))
+        .collect();
+    let input_curve: Vec<f64> = frequencies
+        .iter()
+        .map(|f| (f / 1000.0).sin() * 5.0)
+        .collect();
     let target_curve: Vec<f64> = vec![0.0; n];
-    
+
     SpeakerOptimizationResult {
         biquads: Vec::new(),
         frequencies: frequencies.clone(),

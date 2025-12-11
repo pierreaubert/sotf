@@ -83,9 +83,8 @@ pub fn clean_album_title(title: &str) -> String {
             // Must contain digits AND either a dash or be alphanumeric only
             // Must NOT be a disc marker or common album suffixes
             let has_digit = inner.chars().any(|c| c.is_ascii_digit());
-            let is_disc_marker = inner.starts_with("cd")
-                || inner.starts_with("disc")
-                || inner.starts_with("vol");
+            let is_disc_marker =
+                inner.starts_with("cd") || inner.starts_with("disc") || inner.starts_with("vol");
             let is_album_suffix = inner.contains("remaster")
                 || inner.contains("deluxe")
                 || inner.contains("edition")
@@ -115,8 +114,7 @@ pub fn clean_album_title(title: &str) -> String {
     let markers = [
         " (cd", " (disc", " cd ", " disc ", " vol.", " vol ",
         // Handle cases without space before number (e.g., "CD1", "Disc2")
-        " cd", " disc",
-        // Handle cases without space
+        " cd", " disc", // Handle cases without space
         "(cd", "(disc", // Handle square brackets
         " [cd", " [disc", "[cd", "[disc",
     ];
@@ -139,7 +137,11 @@ pub fn clean_album_title(title: &str) -> String {
             //    Skip this check for markers with parens/brackets (they have their own checks)
             //    and for markers ending with space or period (like " vol.", " cd ")
             let has_parens_or_brackets = marker.contains('(') || marker.contains('[');
-            let ends_with_letter = marker.chars().last().map(|c| c.is_ascii_alphabetic()).unwrap_or(false);
+            let ends_with_letter = marker
+                .chars()
+                .last()
+                .map(|c| c.is_ascii_alphabetic())
+                .unwrap_or(false);
             if ends_with_letter && !has_parens_or_brackets {
                 if let Some(first_char) = after_marker.chars().next() {
                     if !first_char.is_ascii_digit() && first_char != '-' {
@@ -2066,14 +2068,8 @@ mod tests {
             clean_album_title("A Night On The Town (R2 47730)"),
             "A Night On The Town"
         );
-        assert_eq!(
-            clean_album_title("Album Title (ABC-12345)"),
-            "Album Title"
-        );
-        assert_eq!(
-            clean_album_title("Album Title (MFSL 1234)"),
-            "Album Title"
-        );
+        assert_eq!(clean_album_title("Album Title (ABC-12345)"), "Album Title");
+        assert_eq!(clean_album_title("Album Title (MFSL 1234)"), "Album Title");
 
         // Should NOT clean
         assert_eq!(clean_album_title("AC/DC"), "AC/DC");
@@ -2191,8 +2187,14 @@ mod tests {
     #[test]
     fn test_normalize_album_key() {
         // Test basic normalization
-        assert_eq!(normalize_album_key("2Cellos"), normalize_album_key("2CELLOS"));
-        assert_eq!(normalize_album_key("2Cellos"), normalize_album_key("2 Cellos "));
+        assert_eq!(
+            normalize_album_key("2Cellos"),
+            normalize_album_key("2CELLOS")
+        );
+        assert_eq!(
+            normalize_album_key("2Cellos"),
+            normalize_album_key("2 Cellos ")
+        );
 
         // Test diacritics removal
         assert_eq!(normalize_album_key("Café"), "cafe");
@@ -2241,8 +2243,8 @@ mod tests {
 
     #[test]
     fn test_find_album_art_common_names() {
-        use tempfile::TempDir;
         use std::fs::File;
+        use tempfile::TempDir;
 
         // Create temporary directory with a common album art filename
         let temp_dir = TempDir::new().unwrap();
@@ -2256,8 +2258,8 @@ mod tests {
 
     #[test]
     fn test_find_album_art_front_in_name() {
-        use tempfile::TempDir;
         use std::fs::File;
+        use tempfile::TempDir;
 
         // Create temporary directory with a file containing "front" in the name
         let temp_dir = TempDir::new().unwrap();
@@ -2273,8 +2275,8 @@ mod tests {
 
     #[test]
     fn test_find_album_art_single_image() {
-        use tempfile::TempDir;
         use std::fs::File;
+        use tempfile::TempDir;
 
         // Create temporary directory with only one image file
         let temp_dir = TempDir::new().unwrap();
@@ -2290,8 +2292,8 @@ mod tests {
 
     #[test]
     fn test_find_album_art_in_artwork_subdir() {
+        use std::fs::{File, create_dir};
         use tempfile::TempDir;
-        use std::fs::{create_dir, File};
 
         // Create temporary directory with an "Artwork" subdirectory
         let temp_dir = TempDir::new().unwrap();
@@ -2307,8 +2309,8 @@ mod tests {
 
     #[test]
     fn test_find_album_art_in_covers_subdir_lowercase() {
+        use std::fs::{File, create_dir};
         use tempfile::TempDir;
-        use std::fs::{create_dir, File};
 
         // Create temporary directory with a "covers" subdirectory (lowercase)
         let temp_dir = TempDir::new().unwrap();
@@ -2324,8 +2326,8 @@ mod tests {
 
     #[test]
     fn test_find_album_art_no_images() {
-        use tempfile::TempDir;
         use std::fs::File;
+        use tempfile::TempDir;
 
         // Create temporary directory with only audio files
         let temp_dir = TempDir::new().unwrap();

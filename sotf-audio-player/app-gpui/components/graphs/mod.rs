@@ -193,12 +193,15 @@ fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
 /// Generate dB tick values for axis
 fn generate_db_ticks(min_db: f64, max_db: f64) -> Vec<f64> {
     let range = max_db - min_db;
-    let step = if range <= 24.0 {
-        6.0
+    // Use smaller step sizes for more ticks
+    let step = if range <= 12.0 {
+        2.0 // Every 2dB for small ranges
+    } else if range <= 24.0 {
+        3.0 // Every 3dB for medium ranges
     } else if range <= 48.0 {
-        12.0
+        6.0 // Every 6dB for large ranges
     } else {
-        24.0
+        12.0 // Every 12dB for very large ranges
     };
 
     let mut ticks = Vec::new();
@@ -555,13 +558,14 @@ pub fn render_eq_visualization(
     filters: &[EQFilter],
     selected_band: Option<usize>,
     theme: &Theme,
+    available_width: f32,
 ) -> impl IntoElement {
     render_freq_response_graph(
         filters,
         selected_band,
-        GraphConfig::default(),
+        GraphConfig::default().with_grid_lines(), // Enable grid lines
         theme,
-        400.0, // Default width
+        available_width,
     )
 }
 

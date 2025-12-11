@@ -55,8 +55,8 @@ pub fn render_mute_solo_plugin(
                         let name = channel_names.get(i).copied().unwrap_or("Ch");
                         let is_muted = s.muted;
                         let is_soloed = s.soloed;
-                        let is_active =
-                            !is_muted && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
+                        let is_active = !is_muted
+                            && (!state.channel_states.iter().any(|st| st.soloed) || is_soloed);
 
                         div()
                             .flex()
@@ -176,11 +176,17 @@ pub fn render_mute_solo_plugin(
                     .bg(theme.background_secondary)
                     .border_1()
                     .border_color(theme.border)
-                    .child(div().w(px(12.0)).h(px(12.0)).rounded_full().bg(if state.enabled {
-                        theme.success
-                    } else {
-                        theme.error
-                    }))
+                    .child(
+                        div()
+                            .w(px(12.0))
+                            .h(px(12.0))
+                            .rounded_full()
+                            .bg(if state.enabled {
+                                theme.success
+                            } else {
+                                theme.error
+                            }),
+                    )
                     .child(
                         div()
                             .text_sm()

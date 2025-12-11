@@ -8,10 +8,10 @@
 
 pub mod actions;
 pub mod common;
-pub mod ticks;
-pub mod theme;
-pub mod level_meters;
 pub mod editing;
+pub mod level_meters;
+pub mod theme;
+pub mod ticks;
 
 mod binaural;
 mod ui_compressor;
@@ -27,8 +27,11 @@ mod ui_spectrum;
 mod ui_upmixer;
 
 pub use common::*;
-pub use level_meters::{LevelMeterElement, MeterColors, db_to_position, render_gradient_meter, render_gr_meter, render_peak_meter};
 pub use editing::get_param_count;
+pub use level_meters::{
+    LevelMeterElement, MeterColors, db_to_position, render_gr_meter, render_gradient_meter,
+    render_peak_meter,
+};
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
@@ -42,7 +45,9 @@ pub use ui_limiter::render_limiter_plugin;
 pub use ui_loudness::{render_loudness_compensation_plugin, render_loudness_monitor_plugin};
 pub use ui_mute_solo::render_mute_solo_plugin;
 pub use ui_rack::PluginDragInfo;
-pub use ui_spectrum::{MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin};
+pub use ui_spectrum::{
+    MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin,
+};
 pub use ui_upmixer::render_upmixer_plugin;
 
 use crate::app::AppState;
@@ -217,7 +222,8 @@ pub fn render_plugin_content(
         )
         .into_any_element(),
         PluginSettings::LoudnessMonitor => {
-            render_loudness_monitor_plugin(entity.clone(), plugin_idx, is_editing, theme).into_any_element()
+            render_loudness_monitor_plugin(entity.clone(), plugin_idx, is_editing, theme)
+                .into_any_element()
         }
         PluginSettings::BinauralDecoder {
             sofa_file,

@@ -6,10 +6,7 @@
 //! - Peak meter with ceiling indicator
 //! - Rotary knob controls
 
-use super::common::{
-    render_edit_hints, render_knob, render_section_header,
-    render_transfer_curve,
-};
+use super::common::{render_edit_hints, render_knob, render_section_header, render_transfer_curve};
 use super::level_meters::{render_gr_meter, render_peak_meter};
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -42,7 +39,11 @@ pub fn render_limiter_plugin(
     let simulated_peak = state.threshold_db - 3.0; // Simulated peak level below ceiling
 
     // Cache theme colors for closures
-    let peak_color = if simulated_peak > state.threshold_db { theme.error } else { theme.success };
+    let peak_color = if simulated_peak > state.threshold_db {
+        theme.error
+    } else {
+        theme.success
+    };
     let border_color = theme.border;
 
     VStack::new()
@@ -52,12 +53,18 @@ pub fn render_limiter_plugin(
             HStack::new()
                 .spacing(StackSpacing::Lg)
                 .align(StackAlign::Start)
-                 // Transfer curve
-                 .child(
+                // Transfer curve
+                .child(
                     VStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(render_transfer_curve(state.threshold_db, f64::INFINITY, 0.0, true, theme))
+                        .child(render_transfer_curve(
+                            state.threshold_db,
+                            f64::INFINITY,
+                            0.0,
+                            true,
+                            theme,
+                        ))
                         .build()
                         .rounded_xl()
                         .bg(theme.background_secondary)
@@ -87,16 +94,46 @@ pub fn render_limiter_plugin(
                             HStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Ceiling", state.threshold_db, -12.0, 0.0, "dB",
-                                    0, state.selected_param, state.is_editing, Some('c'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Ceiling",
+                                    state.threshold_db,
+                                    -12.0,
+                                    0.0,
+                                    "dB",
+                                    0,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('c'),
+                                    theme,
                                 ))
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Release", state.release_ms, 10.0, 1000.0, "ms",
-                                    1, state.selected_param, state.is_editing, Some('r'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Release",
+                                    state.release_ms,
+                                    10.0,
+                                    1000.0,
+                                    "ms",
+                                    1,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('r'),
+                                    theme,
                                 ))
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Mix", state.mix, 0.0, 1.0, "%",
-                                    2, state.selected_param, state.is_editing, Some('m'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Mix",
+                                    state.mix,
+                                    0.0,
+                                    1.0,
+                                    "%",
+                                    2,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('m'),
+                                    theme,
                                 ))
                                 .build()
                                 .justify_center(),
@@ -117,7 +154,11 @@ pub fn render_limiter_plugin(
                 .child(
                     VStack::new()
                         .align(StackAlign::Center)
-                        .child(Text::new("CEILING").size(TextSize::Xs).color(theme.text_muted))
+                        .child(
+                            Text::new("CEILING")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
                         .child(
                             div()
                                 .text_3xl()
@@ -126,11 +167,20 @@ pub fn render_limiter_plugin(
                                 .child(format!("{:.2} dB", state.threshold_db)),
                         ),
                 )
-                .child(Divider::vertical().color(border_color).build_simple().h(px(40.0)))
+                .child(
+                    Divider::vertical()
+                        .color(border_color)
+                        .build_simple()
+                        .h(px(40.0)),
+                )
                 .child(
                     VStack::new()
                         .align(StackAlign::Center)
-                        .child(Text::new("TRUE PEAK").size(TextSize::Xs).color(theme.text_muted))
+                        .child(
+                            Text::new("TRUE PEAK")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
                         .child(
                             div()
                                 .text_xl()
@@ -161,10 +211,26 @@ pub fn render_limiter_plugin(
         .child(
             HStack::new()
                 .spacing(StackSpacing::Lg)
-                .child(Text::new("[C]eiling").size(TextSize::Xs).color(theme.text_secondary))
-                .child(Text::new("[R]elease").size(TextSize::Xs).color(theme.text_secondary))
-                .child(Text::new("[M]ix").size(TextSize::Xs).color(theme.text_secondary))
-                .child(Text::new("1-3: Quick select").size(TextSize::Xs).color(theme.text_secondary))
+                .child(
+                    Text::new("[C]eiling")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new("[R]elease")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new("[M]ix")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new("1-3: Quick select")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
                 .build()
                 .p_3()
                 .rounded_lg()

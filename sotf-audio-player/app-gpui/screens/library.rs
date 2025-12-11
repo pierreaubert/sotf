@@ -213,8 +213,11 @@ impl PlayerView {
             // Search bar (only visible when in search mode)
             .when(is_search_mode, |el| {
                 el.child(
-                    div().flex().justify_center().mb_2().child(
-                        div().w_96().child({
+                    div()
+                        .flex()
+                        .justify_center()
+                        .mb_2()
+                        .child(div().w_96().child({
                             let state = self.state.clone();
                             let state_for_end = state.clone();
                             Input::new("search-input")
@@ -249,8 +252,7 @@ impl PlayerView {
                                         });
                                     }
                                 })
-                        }),
-                    ),
+                        })),
                 )
             })
             // Filter options (only visible when filter menu is open)

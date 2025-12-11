@@ -5,8 +5,8 @@ use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify,
-    StackSpacing, VStack, VolumeKnob,
+    HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify, StackSpacing,
+    VStack, VolumeKnob,
 };
 
 use std::cell::RefCell;
@@ -489,7 +489,7 @@ impl PlayerView {
                         div()
                             .id("waveform-bar")
                             .flex_1()
-			    .gap_0()
+                            .gap_0()
                             .h(px(24.0)) // Taller waveform
                             .cursor_pointer()
                             .on_mouse_down(

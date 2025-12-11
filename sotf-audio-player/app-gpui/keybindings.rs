@@ -87,11 +87,8 @@ fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-p", actions::SwitchToPlugins, None),
         KeyBinding::new("shift-o", actions::SwitchToDevices, None),
         KeyBinding::new("shift-d", actions::SwitchToDirectoryManager, None),
-        KeyBinding::new("L", actions::SwitchToLibrary, None),
-        KeyBinding::new("Q", actions::SwitchToQueue, None),
-        KeyBinding::new("P", actions::SwitchToPlugins, None),
-        KeyBinding::new("O", actions::SwitchToDevices, None),
-        KeyBinding::new("D", actions::SwitchToDirectoryManager, None),
+        KeyBinding::new("shift-r", actions::SwitchToRoomEQ, None),
+        KeyBinding::new("shift-h", actions::SwitchToHeadphoneEQ, None),
         // Menu bar actions (platform convention)
         KeyBinding::new("cmd-,", actions::OpenConfig, None),
         KeyBinding::new("cmd-q", actions::QuitApp, None),

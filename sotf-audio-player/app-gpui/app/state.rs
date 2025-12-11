@@ -17,7 +17,7 @@ use crate::theme::{Theme, ThemeId};
 
 use super::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode,
-    LibrarySortOrder, QueueItem, Screen, ToastMessage, MeasureState, OptimizationUiState,
+    LibrarySortOrder, MeasureState, OptimizationUiState, QueueItem, Screen, ToastMessage,
 };
 
 #[derive(Debug)]
@@ -36,18 +36,18 @@ pub struct App {
     pub plugin_file_input: String,    // For save/load plugin chain
     pub apo_file_input: String,       // For loading APO EQ files
     pub sofa_file_input: String,      // For loading SOFA HRTF files
-    pub headphone_curve_path: String,        // Headphone measurement file
-    pub headphone_target: String,             // Selected target curve (e.g. "harman-over-ear-2018" or "custom")
+    pub headphone_curve_path: String, // Headphone measurement file
+    pub headphone_target: String, // Selected target curve (e.g. "harman-over-ear-2018" or "custom")
     pub headphone_target_custom_path: String, // Path to custom target curve CSV file
     pub headphone_params: crate::optimization_params::OptimizationParams, // All optimization parameters
     pub headphone_optimization_running: bool, // Is optimization in progress
     pub headphone_optimization_progress: Vec<(usize, f64)>, // (iteration, fitness)
     pub headphone_optimization_result: Option<crate::autoeq::HeadphoneOptimizationResult>, // Results
     pub headphone_export_format: String, // Selected export format (json, apo, rme-channel, etc.)
-    pub headphone_eq_save_name: String, // Custom name for saved EQ file
+    pub headphone_eq_save_name: String,  // Custom name for saved EQ file
     pub headphone_expanded_sections: Vec<gpui::SharedString>, // Accordion expanded sections
     pub headphone_opt_ui: OptimizationUiState, // UI state (dropdowns)
-    
+
     // Speaker Optimization State
     pub speaker_model: String, // Selected speaker model name (e.g. "KEF LS50 Meta")
     pub speaker_params: crate::optimization_params::OptimizationParams,
@@ -56,7 +56,7 @@ pub struct App {
     pub speaker_optimization_result: Option<crate::autoeq::speaker_eq::SpeakerOptimizationResult>,
     pub speaker_export_format: String,
     pub speaker_opt_ui: OptimizationUiState, // UI state (dropdowns)
-    
+
     pub selected_album_index: usize,
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
@@ -112,11 +112,11 @@ pub struct App {
     pub output_devices: Vec<AudioDevice>,
     pub selected_output_device_index: usize,
     pub current_output_device_name: Option<String>,
-    
+
     pub input_devices: Vec<AudioDevice>,
     pub selected_input_device_index: usize,
     pub current_input_device_name: Option<String>,
-    
+
     // Measurement state
     pub measure_state: Option<MeasureState>,
 
@@ -259,7 +259,7 @@ impl App {
                 gpui::SharedString::from("target"),
             ],
             headphone_opt_ui: OptimizationUiState::default(),
-            
+
             // Speaker State Init
             speaker_model: String::new(),
             speaker_params: crate::optimization_params::OptimizationParams::speaker_defaults(),
@@ -268,7 +268,7 @@ impl App {
             speaker_optimization_result: None,
             speaker_export_format: String::from("json"),
             speaker_opt_ui: OptimizationUiState::default(),
-            
+
             selected_directory_index: 0,
             selected_queue_index: 0,
             album_list_offset: 0,

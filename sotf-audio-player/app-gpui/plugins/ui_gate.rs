@@ -5,9 +5,7 @@
 //! - Rotary knob controls
 //! - Gain reduction meter
 
-use super::common::{
-    render_edit_hints, render_knob, render_section_header, render_toggle,
-};
+use super::common::{render_edit_hints, render_knob, render_section_header, render_toggle};
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -49,10 +47,22 @@ pub fn render_gate_plugin(
     let input_normalized = ((simulated_input_db + 60.0) / 60.0).clamp(0.0, 1.0) as f32;
 
     // Cache theme colors for closures
-    let gate_color = if gate_open { theme.success } else { theme.error };
-    let gate_glow = if gate_open { rgba(0x22c55e33) } else { rgba(0xef444433) };
+    let gate_color = if gate_open {
+        theme.success
+    } else {
+        theme.error
+    };
+    let gate_glow = if gate_open {
+        rgba(0x22c55e33)
+    } else {
+        rgba(0xef444433)
+    };
     let input_bar_color = gate_color;
-    let gr_color = if simulated_gr.abs() > 1.0 { theme.error } else { theme.success };
+    let gr_color = if simulated_gr.abs() > 1.0 {
+        theme.error
+    } else {
+        theme.success
+    };
     let border_color = theme.border;
 
     VStack::new()
@@ -62,8 +72,8 @@ pub fn render_gate_plugin(
             HStack::new()
                 .spacing(StackSpacing::Lg)
                 .align(StackAlign::Start)
-                 // Gate threshold visualization
-                 .child(
+                // Gate threshold visualization
+                .child(
                     VStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
@@ -91,7 +101,11 @@ pub fn render_gate_plugin(
                         .child(
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
-                                .child(Text::new("Input Level").size(TextSize::Xs).color(theme.text_muted))
+                                .child(
+                                    Text::new("Input Level")
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_muted),
+                                )
                                 .child(
                                     div()
                                         .h(px(12.0))
@@ -103,7 +117,12 @@ pub fn render_gate_plugin(
                                         .relative()
                                         .overflow_hidden()
                                         // Input level bar
-                                        .child(div().h_full().w(relative(input_normalized)).bg(input_bar_color))
+                                        .child(
+                                            div()
+                                                .h_full()
+                                                .w(relative(input_normalized))
+                                                .bg(input_bar_color),
+                                        )
                                         // Threshold marker
                                         .child(
                                             div()
@@ -118,9 +137,17 @@ pub fn render_gate_plugin(
                                 .child(
                                     HStack::new()
                                         .spacing(StackSpacing::None)
-                                        .child(Text::new("-60 dB").size(TextSize::Xs).color(theme.text_muted))
+                                        .child(
+                                            Text::new("-60 dB")
+                                                .size(TextSize::Xs)
+                                                .color(theme.text_muted),
+                                        )
                                         .child(gpui_ui_kit::Spacer::new())
-                                        .child(Text::new("0 dB").size(TextSize::Xs).color(theme.text_muted)),
+                                        .child(
+                                            Text::new("0 dB")
+                                                .size(TextSize::Xs)
+                                                .color(theme.text_muted),
+                                        ),
                                 )
                                 .build()
                                 .w_full()
@@ -143,55 +170,118 @@ pub fn render_gate_plugin(
                                 .spacing(StackSpacing::Md)
                                 .wrap(true)
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Threshold", state.threshold_db, -60.0, 0.0, "dB",
-                                    0, state.selected_param, state.is_editing, Some('t'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Threshold",
+                                    state.threshold_db,
+                                    -60.0,
+                                    0.0,
+                                    "dB",
+                                    0,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('t'),
+                                    theme,
                                 ))
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Ratio", state.ratio, 1.0, 10.0, ":1",
-                                    1, state.selected_param, state.is_editing, Some('r'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Ratio",
+                                    state.ratio,
+                                    1.0,
+                                    10.0,
+                                    ":1",
+                                    1,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('r'),
+                                    theme,
                                 ))
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Attack", state.attack_ms, 0.1, 50.0, "ms",
-                                    2, state.selected_param, state.is_editing, Some('a'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Attack",
+                                    state.attack_ms,
+                                    0.1,
+                                    50.0,
+                                    "ms",
+                                    2,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('a'),
+                                    theme,
                                 ))
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Release", state.release_ms, 10.0, 500.0, "ms",
-                                    3, state.selected_param, state.is_editing, Some('e'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Release",
+                                    state.release_ms,
+                                    10.0,
+                                    500.0,
+                                    "ms",
+                                    3,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('e'),
+                                    theme,
                                 ))
                                 .child(render_knob(
-                                    entity.clone(), plugin_idx, "Mix", state.mix, 0.0, 1.0, "%",
-                                    4, state.selected_param, state.is_editing, Some('m'), theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Mix",
+                                    state.mix,
+                                    0.0,
+                                    1.0,
+                                    "%",
+                                    4,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('m'),
+                                    theme,
                                 ))
                                 .build()
                                 .justify_center(),
                         )
-                         // Options row
-                         .child(
+                        // Options row
+                        .child(
                             HStack::new()
                                 .spacing(StackSpacing::Lg)
                                 // Link channels toggle
                                 .child(render_toggle(
-                                    entity.clone(), plugin_idx, "Link Channels", state.link_channels, 5, state.selected_param, state.is_editing, theme,
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Link Channels",
+                                    state.link_channels,
+                                    5,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
                                 ))
                                 .build()
                                 .mt_4()
-                                .justify_center()
+                                .justify_center(),
                         )
                         .child(
-                             // Sidechain HPF display
+                            // Sidechain HPF display
                             VStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .align(StackAlign::Center)
-                                .child(Text::new("Sidechain HPF").size(TextSize::Xs).color(theme.text_muted))
-                                .child(Text::new(format!("{:.0} Hz", state.sidechain_hpf_hz))
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Bold)
-                                    .color(theme.text_primary))
+                                .child(
+                                    Text::new("Sidechain HPF")
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_muted),
+                                )
+                                .child(
+                                    Text::new(format!("{:.0} Hz", state.sidechain_hpf_hz))
+                                        .size(TextSize::Sm)
+                                        .weight(TextWeight::Bold)
+                                        .color(theme.text_primary),
+                                )
                                 .build()
                                 .p_2()
                                 .rounded_lg()
                                 .bg(theme.background)
-                                .mt_2()
+                                .mt_2(),
                         )
                         .build()
                         .flex_1()
@@ -209,7 +299,11 @@ pub fn render_gate_plugin(
                 .child(
                     VStack::new()
                         .align(StackAlign::Center)
-                        .child(Text::new("THRESHOLD").size(TextSize::Xs).color(theme.text_muted))
+                        .child(
+                            Text::new("THRESHOLD")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
                         .child(
                             div()
                                 .text_3xl()
@@ -218,11 +312,20 @@ pub fn render_gate_plugin(
                                 .child(format!("{:.1} dB", state.threshold_db)),
                         ),
                 )
-                .child(Divider::vertical().color(border_color).build_simple().h(px(40.0)))
+                .child(
+                    Divider::vertical()
+                        .color(border_color)
+                        .build_simple()
+                        .h(px(40.0)),
+                )
                 .child(
                     VStack::new()
                         .align(StackAlign::Center)
-                        .child(Text::new("REDUCTION").size(TextSize::Xs).color(theme.text_muted))
+                        .child(
+                            Text::new("REDUCTION")
+                                .size(TextSize::Xs)
+                                .color(theme.text_muted),
+                        )
                         .child(
                             div()
                                 .text_xl()
@@ -254,11 +357,31 @@ pub fn render_gate_plugin(
             HStack::new()
                 .spacing(StackSpacing::Md)
                 .wrap(true)
-                .child(Text::new("[T]hreshold").size(TextSize::Xs).color(theme.text_secondary))
-                .child(Text::new("[R]atio").size(TextSize::Xs).color(theme.text_secondary))
-                .child(Text::new("[A]ttack").size(TextSize::Xs).color(theme.text_secondary))
-                .child(Text::new("R[e]lease").size(TextSize::Xs).color(theme.text_secondary))
-                .child(Text::new("[M]ix").size(TextSize::Xs).color(theme.text_secondary))
+                .child(
+                    Text::new("[T]hreshold")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new("[R]atio")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new("[A]ttack")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new("R[e]lease")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
+                .child(
+                    Text::new("[M]ix")
+                        .size(TextSize::Xs)
+                        .color(theme.text_secondary),
+                )
                 .build()
                 .p_3()
                 .rounded_lg()

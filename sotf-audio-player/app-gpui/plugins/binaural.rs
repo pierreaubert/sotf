@@ -91,7 +91,8 @@ pub fn render_binaural_plugin(
                                         .text_ellipsis()
                                         .max_w(px(200.0))
                                         .child(if has_sofa {
-                                            state.sofa_file
+                                            state
+                                                .sofa_file
                                                 .rsplit('/')
                                                 .next()
                                                 .unwrap_or(state.sofa_file)
@@ -201,7 +202,7 @@ pub fn render_binaural_plugin(
                                                 .child("Right"),
                                         ),
                                 )
-                        })
+                        }),
                 ),
         )
         // Parameters section
@@ -245,7 +246,12 @@ pub fn render_binaural_plugin(
                                         .child(if state.sofa_file.is_empty() {
                                             "None".to_string()
                                         } else {
-                                            state.sofa_file.rsplit('/').next().unwrap_or(state.sofa_file).to_string()
+                                            state
+                                                .sofa_file
+                                                .rsplit('/')
+                                                .next()
+                                                .unwrap_or(state.sofa_file)
+                                                .to_string()
                                         }),
                                 )
                                 .child(
@@ -261,9 +267,7 @@ pub fn render_binaural_plugin(
                                         .cursor_pointer()
                                         .hover(|s| s.bg(theme.surface_hover))
                                         .on_click(move |_, _, cx| {
-                                            cx.dispatch_action(&OpenSofaFile {
-                                                plugin_idx,
-                                            });
+                                            cx.dispatch_action(&OpenSofaFile { plugin_idx });
                                         })
                                         .child("Load"),
                                 ),
@@ -340,7 +344,7 @@ pub fn render_binaural_plugin(
                                         .text_xs()
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(theme.text_primary)
-                                        .child(format!("{:.0}%", state.externalization * 100.0))
+                                        .child(format!("{:.0}%", state.externalization * 100.0)),
                                 ),
                         )
                         // Near Field Knob
@@ -389,7 +393,10 @@ pub fn render_binaural_plugin(
                                         .text_xs()
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(theme.text_primary)
-                                        .child(format!("{:.0}%", state.near_field_strength * 100.0))
+                                        .child(format!(
+                                            "{:.0}%",
+                                            state.near_field_strength * 100.0
+                                        )),
                                 ),
                         ),
                 ),

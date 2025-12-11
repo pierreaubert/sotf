@@ -6,10 +6,14 @@ use std::path::PathBuf;
 
 /// Bundled target curve data
 mod target_curves {
-    pub const HARMAN_OVER_EAR_2018: &str = include_str!("../../../data_tests/targets/harman-over-ear-2018.csv");
-    pub const HARMAN_OVER_EAR_2015: &str = include_str!("../../../data_tests/targets/harman-over-ear-2015.csv");
-    pub const HARMAN_OVER_EAR_2013: &str = include_str!("../../../data_tests/targets/harman-over-ear-2013.csv");
-    pub const HARMAN_IN_EAR_2019: &str = include_str!("../../../data_tests/targets/harman-in-ear-2019.csv");
+    pub const HARMAN_OVER_EAR_2018: &str =
+        include_str!("../../../data_tests/targets/harman-over-ear-2018.csv");
+    pub const HARMAN_OVER_EAR_2015: &str =
+        include_str!("../../../data_tests/targets/harman-over-ear-2015.csv");
+    pub const HARMAN_OVER_EAR_2013: &str =
+        include_str!("../../../data_tests/targets/harman-over-ear-2013.csv");
+    pub const HARMAN_IN_EAR_2019: &str =
+        include_str!("../../../data_tests/targets/harman-in-ear-2019.csv");
 }
 
 /// Result of headphone EQ optimization with all curves for visualization
@@ -106,7 +110,9 @@ impl PlayerView {
             }
 
             // Validate custom target path if custom is selected
-            if state.app.headphone_target == "custom" && state.app.headphone_target_custom_path.is_empty() {
+            if state.app.headphone_target == "custom"
+                && state.app.headphone_target_custom_path.is_empty()
+            {
                 let _ = state;
                 self.state.update(cx, |state, _cx| {
                     state.app.toast_message = Some(crate::app::ToastMessage::error(
@@ -146,7 +152,8 @@ impl PlayerView {
                 target_custom_path,
                 params,
                 export_format,
-            ).await;
+            )
+            .await;
 
             match result {
                 Ok(optimization_result) => {
@@ -202,20 +209,20 @@ impl PlayerView {
                         // TODO: Apply biquads to plugin chain
                         log::info!("Loaded {} biquad filters from {:?}", biquads.len(), path);
                         self.state.update(cx, |state, _cx| {
-                            state.app.toast_message = Some(crate::app::ToastMessage::success(format!(
-                                "Loaded {} filters from: {}",
-                                biquads.len(),
-                                path.display()
-                            )));
+                            state.app.toast_message =
+                                Some(crate::app::ToastMessage::success(format!(
+                                    "Loaded {} filters from: {}",
+                                    biquads.len(),
+                                    path.display()
+                                )));
                         });
                         cx.notify();
                     }
                     Err(e) => {
                         self.state.update(cx, |state, _cx| {
-                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
-                                "Failed to parse EQ file: {}",
-                                e
-                            )));
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                                format!("Failed to parse EQ file: {}", e),
+                            ));
                         });
                         cx.notify();
                     }
@@ -289,7 +296,13 @@ impl PlayerView {
             // Sanitize the name: replace invalid filename characters
             let sanitized_name: String = save_name
                 .chars()
-                .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' { c } else { '_' })
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '-' || c == '_' || c == ' ' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
                 .collect();
             format!("{}{}", sanitized_name.trim(), extension)
         };
@@ -300,26 +313,19 @@ impl PlayerView {
 
         // Generate output content based on selected format
         let content = match export_format.as_str() {
-            "apo" => {
-                autoeq_iir::peq_format_apo("# Headphone EQ", &peq)
-            }
+            "apo" => autoeq_iir::peq_format_apo("# Headphone EQ", &peq),
             "rme-channel" => autoeq_iir::peq_format_rme_channel(&peq),
-            "rme-room" => {
-                autoeq_iir::peq_format_rme_room(&peq, &peq)
-            }
-            "aupreset" => {
-                autoeq_iir::peq_format_aupreset(&peq, "Headphone EQ")
-            }
+            "rme-room" => autoeq_iir::peq_format_rme_room(&peq, &peq),
+            "aupreset" => autoeq_iir::peq_format_aupreset(&peq, "Headphone EQ"),
             _ => {
                 // Default to JSON
                 match serde_json::to_string_pretty(&result.biquads) {
                     Ok(json) => json,
                     Err(e) => {
                         self.state.update(cx, |state, _cx| {
-                            state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
-                                "Failed to serialize: {}",
-                                e
-                            )));
+                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                                format!("Failed to serialize: {}", e),
+                            ));
                         });
                         cx.notify();
                         return;
@@ -395,21 +401,16 @@ impl PlayerView {
         let filters: Vec<sotf_audio_player::EQFilter> = result
             .biquads
             .iter()
-            .map(|b| sotf_audio_player::EQFilter::new(
-                b.filter_type,
-                b.freq,
-                b.q,
-                b.db_gain,
-            ))
+            .map(|b| sotf_audio_player::EQFilter::new(b.filter_type, b.freq, b.q, b.db_gain))
             .collect();
 
         // Add EQ plugin with these filters to the chain
         self.state.update(cx, |state, _cx| {
             // First remove any existing EQ plugin to avoid duplicates
             let plugins = state.app.plugin_chain.plugins();
-            let hp_eq_idx = plugins.iter().position(|p| {
-                matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ)
-            });
+            let hp_eq_idx = plugins
+                .iter()
+                .position(|p| matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ));
 
             // Remove existing EQ if found (we'll add a new one)
             if let Some(idx) = hp_eq_idx {
@@ -417,14 +418,15 @@ impl PlayerView {
             }
 
             // Add new EQ plugin
-            state.app.plugin_chain.add_plugin(&sotf_audio_player::PluginType::EQ);
+            state
+                .app
+                .plugin_chain
+                .add_plugin(&sotf_audio_player::PluginType::EQ);
             let plugin_count = state.app.plugin_chain.len();
 
             // Set the EQ settings on the newly added plugin
             if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(plugin_count - 1) {
-                plugin.settings = sotf_audio_player::PluginSettings::EQ {
-                    filters,
-                };
+                plugin.settings = sotf_audio_player::PluginSettings::EQ { filters };
             }
 
             state.app.needs_plugin_update = true;
@@ -578,17 +580,20 @@ async fn run_optimization_task(
             &args,
             &objective_data,
             Box::new(move |intermediate| {
-                 if let Ok(mut h) = history_callback.lock() {
-                     // Check fields of intermediate
-                     h.push((intermediate.iter, intermediate.fun));
-                 }
+                if let Ok(mut h) = history_callback.lock() {
+                    // Check fields of intermediate
+                    h.push((intermediate.iter, intermediate.fun));
+                }
                 autoeq::de::CallbackAction::Continue
             }),
         )
         .map_err(|e| format!("Optimization failed: {}", e))?;
 
         // Retrieve history
-        let history = history_ptr.lock().map_err(|_| "Failed to lock history")?.clone();
+        let history = history_ptr
+            .lock()
+            .map_err(|_| "Failed to lock history")?
+            .clone();
         let initial_loss = history.first().map(|x| x.1).unwrap_or(0.0);
         let final_loss = history.last().map(|x| x.1).unwrap_or(0.0);
 
@@ -606,9 +611,7 @@ async fn run_optimization_task(
         // Calculate combined filter response
         let filter_response: Vec<f64> = frequencies
             .iter()
-            .map(|&freq| {
-                biquads.iter().map(|b| b.log_result(freq)).sum()
-            })
+            .map(|&freq| biquads.iter().map(|b| b.log_result(freq)).sum())
             .collect();
 
         // Calculate individual filter responses
@@ -710,8 +713,6 @@ async fn run_optimization_task(
 
 /// Load target curve from bundled data or custom file
 fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curve, String> {
-
-
     match target {
         "harman-over-ear-2018" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2018),
         "harman-over-ear-2015" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2015),
@@ -745,7 +746,10 @@ fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
 
         let parts: Vec<&str> = line.split(',').collect();
         if parts.len() >= 2 {
-            if let (Ok(f), Ok(s)) = (parts[0].trim().parse::<f64>(), parts[1].trim().parse::<f64>()) {
+            if let (Ok(f), Ok(s)) = (
+                parts[0].trim().parse::<f64>(),
+                parts[1].trim().parse::<f64>(),
+            ) {
                 freq.push(f);
                 spl.push(s);
             }

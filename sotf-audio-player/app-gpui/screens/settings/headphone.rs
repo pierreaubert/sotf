@@ -5,8 +5,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, AccordionTheme, Button, ButtonSize, ButtonTheme,
-    ButtonVariant, Card, HStack, Progress, ProgressSize, StackSpacing, Text,
-    TextSize, TextWeight, VStack,
+    ButtonVariant, Card, HStack, Progress, ProgressSize, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
 };
 
 /// Target curve options for headphone EQ
@@ -372,10 +372,7 @@ impl PlayerView {
                                                             } else {
                                                                 theme.error
                                                             })
-                                                            .child(format!(
-                                                                "{:+.1} dB",
-                                                                gain
-                                                            )),
+                                                            .child(format!("{:+.1} dB", gain)),
                                                     ),
                                             )
                                     })),
@@ -441,7 +438,11 @@ impl PlayerView {
 
         VStack::new()
             .spacing(gpui_ui_kit::StackSpacing::Sm)
-            .child(Text::new(label).size(TextSize::Xs).weight(TextWeight::Medium))
+            .child(
+                Text::new(label)
+                    .size(TextSize::Xs)
+                    .weight(TextWeight::Medium),
+            )
             .child(
                 HStack::new()
                     .spacing(gpui_ui_kit::StackSpacing::Sm)
@@ -641,7 +642,11 @@ impl PlayerView {
                             .border_color(theme.border)
                             .bg(theme.surface)
                             .text_sm()
-                            .text_color(if save_name.is_empty() { theme.text_muted } else { theme.text_primary })
+                            .text_color(if save_name.is_empty() {
+                                theme.text_muted
+                            } else {
+                                theme.text_primary
+                            })
                             .child(if save_name.is_empty() {
                                 SharedString::from("Enter a name for your EQ preset (optional)")
                             } else {
@@ -654,8 +659,10 @@ impl PlayerView {
                                     if let Some(view) = view.upgrade() {
                                         view.update(cx, |view, cx| {
                                             view.state.update(cx, |state, _cx| {
-                                                state.app.editing_param = Some("headphone_eq_save_name".to_string());
-                                                state.app.editing_value = state.app.headphone_eq_save_name.clone();
+                                                state.app.editing_param =
+                                                    Some("headphone_eq_save_name".to_string());
+                                                state.app.editing_value =
+                                                    state.app.headphone_eq_save_name.clone();
                                             });
                                         });
                                     }
@@ -672,40 +679,35 @@ impl PlayerView {
                             .size(TextSize::Xs)
                             .weight(TextWeight::Medium),
                     )
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .wrap(true)
-                            .children(
-                                crate::autoeq::EQ_EXPORT_FORMAT_OPTIONS
-                                    .iter()
-                                    .map(|(value, label, _ext)| {
-                                        let is_selected = current_format == *value;
-                                        let value = value.to_string();
+                    .child(HStack::new().spacing(StackSpacing::Sm).wrap(true).children(
+                        crate::autoeq::EQ_EXPORT_FORMAT_OPTIONS.iter().map(
+                            |(value, label, _ext)| {
+                                let is_selected = current_format == *value;
+                                let value = value.to_string();
 
-                                        Button::new(
-                                            SharedString::from(format!("export-format-{}", value)),
-                                            *label,
-                                        )
-                                        .variant(if is_selected {
-                                            ButtonVariant::Primary
-                                        } else {
-                                            ButtonVariant::Secondary
-                                        })
-                                        .size(ButtonSize::Sm)
-                                        .build()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.headphone_export_format = value.clone();
-                                                });
-                                                cx.notify();
-                                            }),
-                                        )
+                                Button::new(
+                                    SharedString::from(format!("export-format-{}", value)),
+                                    *label,
+                                )
+                                .variant(if is_selected {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Sm)
+                                .build()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.headphone_export_format = value.clone();
+                                        });
+                                        cx.notify();
                                     }),
-                            ),
-                    ),
+                                )
+                            },
+                        ),
+                    )),
             )
             // Save button
             .child(
@@ -734,24 +736,16 @@ impl PlayerView {
             // Saved files list
             .when(!eq_files.is_empty(), |vstack| {
                 vstack
-                    .child(
-                        div()
-                            .h(px(1.0))
-                            .w_full()
-                            .bg(theme.border)
-                            .my_2(),
-                    )
+                    .child(div().h(px(1.0)).w_full().bg(theme.border).my_2())
                     .child(
                         Text::new("Saved EQ Files")
                             .size(TextSize::Xs)
                             .weight(TextWeight::Medium),
                     )
                     .child(
-                        Text::new(
-                            "~/Library/Application Support/org.spinorama.sotf/EQ",
-                        )
-                        .size(TextSize::Xs)
-                        .muted(true),
+                        Text::new("~/Library/Application Support/org.spinorama.sotf/EQ")
+                            .size(TextSize::Xs)
+                            .muted(true),
                     )
                     .children(eq_files.into_iter().map(|path| {
                         let filename = path
@@ -858,7 +852,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         use d3rs::color::D3Color;
         use d3rs::scale::LinearScale;
-        use d3rs::shape::{render_line, LineConfig, LinePoint};
+        use d3rs::shape::{LineConfig, LinePoint, render_line};
 
         let graph_width = 400.0_f32;
         let graph_height = 120.0_f32;

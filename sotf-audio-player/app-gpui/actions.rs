@@ -15,12 +15,14 @@ actions!(
         PrevTrack,
         VolumeUp,
         VolumeDown,
+        SwitchToDevices,
+        SwitchToDirectoryManager,
+        SwitchToHeadphoneEQ,
         SwitchToLibrary,
         SwitchToQueue,
         SwitchToPlugins,
-        SwitchToDevices,
+        SwitchToRoomEQ,
         SwitchToSpectrum,
-        SwitchToDirectoryManager,
         SwitchToSettings,
         OpenConfig, // Menu bar: open config (cmd-,)
         QuitApp,    // Menu bar: quit app (cmd-q)

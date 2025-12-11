@@ -1,13 +1,13 @@
 //! Plugin screen rendering functions - Professional DAW-style interface
 
+use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
+use crate::plugins::actions::ToggleUpmixerConfig;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use sotf_audio_player::PluginType;
-use super::level_meters::{render_gradient_meter, db_to_position};
-use crate::plugins::actions::ToggleUpmixerConfig;
 
 /// Drag information for plugin reordering
 #[derive(Clone)]
@@ -489,7 +489,12 @@ impl PlayerView {
     }
 
     /// Render a side level meter group for the detail panel
-    fn render_side_meter(&self, cx: &mut Context<Self>, channels: usize, label: &str) -> impl IntoElement {
+    fn render_side_meter(
+        &self,
+        cx: &mut Context<Self>,
+        channels: usize,
+        label: &str,
+    ) -> impl IntoElement {
         let (theme, loudness) = {
             let state = self.state.read(cx);
             (state.app.theme.clone(), state.app.loudness_info.clone())
@@ -508,56 +513,57 @@ impl PlayerView {
             .bg(theme.background_secondary)
             .border_x_1()
             .border_color(theme.border)
-            .child(div().text_xs().text_color(theme.text_muted).mb_2().child(label))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(theme.text_muted)
+                    .mb_2()
+                    .child(label),
+            )
             .child(
                 div()
                     .flex()
                     .gap(px(2.0))
                     .h_full()
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(2.0))
-                            .children((0..channels).map(|i| {
-                                let val_db = if let Some(l) = &loudness {
-                                    let peak = l.channel_peaks.get(i).copied().unwrap_or(0.0);
-                                    if peak > 0.0001 {
-                                        20.0 * peak.log10()
-                                    } else {
-                                        -60.0
-                                    }
-                                } else {
-                                    -60.0
-                                };
+                    .child(div().flex().gap(px(2.0)).children((0..channels).map(|i| {
+                        let val_db = if let Some(l) = &loudness {
+                            let peak = l.channel_peaks.get(i).copied().unwrap_or(0.0);
+                            if peak > 0.0001 {
+                                20.0 * peak.log10()
+                            } else {
+                                -60.0
+                            }
+                        } else {
+                            -60.0
+                        };
 
-                                let fill_ratio = db_to_position(val_db);
-                                let yellow_threshold = db_to_position(-6.0);
-                                let red_threshold = db_to_position(-1.0);
-                                let name = match i {
-                                    0 => "L",
-                                    1 => "R",
-                                    2 => "C",
-                                    3 => "LFE",
-                                    4 => "Ls",
-                                    5 => "Rs",
-                                    6 => "Sl",
-                                    7 => "Sr",
-                                    8 => "Tfl",
-                                    9 => "Tfr",
-                                    10 => "Trl",
-                                    11 => "Trr", 
-                                    _ => ".",
-                                };
+                        let fill_ratio = db_to_position(val_db);
+                        let yellow_threshold = db_to_position(-6.0);
+                        let red_threshold = db_to_position(-1.0);
+                        let name = match i {
+                            0 => "L",
+                            1 => "R",
+                            2 => "C",
+                            3 => "LFE",
+                            4 => "Ls",
+                            5 => "Rs",
+                            6 => "Sl",
+                            7 => "Sr",
+                            8 => "Tfl",
+                            9 => "Tfr",
+                            10 => "Trl",
+                            11 => "Trr",
+                            _ => ".",
+                        };
 
-                                render_gradient_meter(
-                                    fill_ratio,
-                                    yellow_threshold,
-                                    red_threshold,
-                                    name.to_string(),
-                                    &theme_c,
-                                )
-                            }))
-                    )
+                        render_gradient_meter(
+                            fill_ratio,
+                            yellow_threshold,
+                            red_threshold,
+                            name.to_string(),
+                            &theme_c,
+                        )
+                    }))),
             )
     }
 
@@ -707,52 +713,49 @@ impl PlayerView {
                                             ),
                                         )),
                                 ),
-                        )
-
+                        ),
                 )
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .min_h(px(0.0)) // Allow shrinking
-                    // Left: Input Meter
-                    .child(self.render_side_meter(cx, 2, "IN"))
-                    
-                    // Center: Plugin Content
-                    .child(
-                        div()
-                            .id("params-scroll")
-                            .flex_1()
-                            .overflow_y_scroll()
-                            .p_4()
-                            .child(render_plugin_content(
-                                self.state.clone(),
-                                selected_idx, // Pass index
-                                &plugin.settings,
-                                is_editing,
-                                param_selection,
-                                &theme,
-                                self.state.read(cx).app.upmixer_config_open,
-                            ))
-                    )
-                    
-                    // Right: Output Meter
-                    .child({
-                        let state = self.state.read(cx);
-                        // Calculate output channels logic again for main view
-                        let mut channels = 2;
-                        for p in state.app.plugin_chain.plugins() {
-                            if p.enabled {
-                                match p.plugin_type() {
-                                    PluginType::Upmixer => channels = 6, // 5.1
-                                    PluginType::BinauralDecoder => channels = 2, // Stereo
-                                    _ => {},
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .min_h(px(0.0)) // Allow shrinking
+                        // Left: Input Meter
+                        .child(self.render_side_meter(cx, 2, "IN"))
+                        // Center: Plugin Content
+                        .child(
+                            div()
+                                .id("params-scroll")
+                                .flex_1()
+                                .overflow_y_scroll()
+                                .p_4()
+                                .child(render_plugin_content(
+                                    self.state.clone(),
+                                    selected_idx, // Pass index
+                                    &plugin.settings,
+                                    is_editing,
+                                    param_selection,
+                                    &theme,
+                                    self.state.read(cx).app.upmixer_config_open,
+                                )),
+                        )
+                        // Right: Output Meter
+                        .child({
+                            let state = self.state.read(cx);
+                            // Calculate output channels logic again for main view
+                            let mut channels = 2;
+                            for p in state.app.plugin_chain.plugins() {
+                                if p.enabled {
+                                    match p.plugin_type() {
+                                        PluginType::Upmixer => channels = 6,         // 5.1
+                                        PluginType::BinauralDecoder => channels = 2, // Stereo
+                                        _ => {}
+                                    }
                                 }
                             }
-                        }
-                        self.render_side_meter(cx, channels, "OUT")
-                    })
-            )
+                            self.render_side_meter(cx, channels, "OUT")
+                        }),
+                )
             })
             .when(!has_plugin, |d| {
                 d.child(
