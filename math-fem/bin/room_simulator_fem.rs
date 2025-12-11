@@ -20,8 +20,8 @@ use std::time::Instant;
 
 // Import common types from math-xem-common
 use xem_common::{
-    create_default_config, create_output_json, print_config_summary, pressure_to_spl, Point3D,
-    RoomConfig, RoomSimulation, Source,
+    Point3D, RoomConfig, RoomSimulation, Source, create_default_config, create_output_json,
+    pressure_to_spl, print_config_summary,
 };
 
 #[derive(Parser, Debug)]
@@ -100,7 +100,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Failed to set thread pool");
         println!("Using {} threads\n", threads);
     } else {
-        println!("Using {} threads (rayon default)\n", rayon::current_num_threads());
+        println!(
+            "Using {} threads (rayon default)\n",
+            rayon::current_num_threads()
+        );
     }
 
     // Load configuration
@@ -124,21 +127,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (CliSolverType::Gmres, None) => SolverType::Gmres,
         (CliSolverType::Gmres, Some(CliPreconditionerType::Ilu)) => SolverType::GmresIlu,
         (CliSolverType::Gmres, Some(CliPreconditionerType::Jacobi)) => SolverType::GmresJacobi,
-        (CliSolverType::Gmres, Some(CliPreconditionerType::IluColoring)) => SolverType::GmresIluColoring,
-        (CliSolverType::Gmres, Some(CliPreconditionerType::IluFixedpoint)) => SolverType::GmresIluFixedPoint,
+        (CliSolverType::Gmres, Some(CliPreconditionerType::IluColoring)) => {
+            SolverType::GmresIluColoring
+        }
+        (CliSolverType::Gmres, Some(CliPreconditionerType::IluFixedpoint)) => {
+            SolverType::GmresIluFixedPoint
+        }
         (CliSolverType::Gmres, Some(CliPreconditionerType::Schwarz)) => SolverType::GmresSchwarz,
         (CliSolverType::Gmres, Some(CliPreconditionerType::Amg)) => SolverType::GmresAmg,
         (CliSolverType::Pipelined, None) => SolverType::GmresPipelined,
-        (CliSolverType::Pipelined, Some(CliPreconditionerType::Ilu)) => SolverType::GmresPipelinedIlu,
-        (CliSolverType::Pipelined, Some(CliPreconditionerType::Amg)) => SolverType::GmresPipelinedAmg,
+        (CliSolverType::Pipelined, Some(CliPreconditionerType::Ilu)) => {
+            SolverType::GmresPipelinedIlu
+        }
+        (CliSolverType::Pipelined, Some(CliPreconditionerType::Amg)) => {
+            SolverType::GmresPipelinedAmg
+        }
         // Invalid combinations fallback or error
         (solver, precond) => {
-             return Err(format!("Unsupported solver/preconditioner combination: {:?} + {:?}", solver, precond).into());
+            return Err(format!(
+                "Unsupported solver/preconditioner combination: {:?} + {:?}",
+                solver, precond
+            )
+            .into());
         }
     };
 
     // Run simulation
-    let output_data = run_fem_simulation(&simulation, &config, internal_solver_type, args.krylov_size, args.schwarz_domains, args.verbose)?;
+    let output_data = run_fem_simulation(
+        &simulation,
+        &config,
+        internal_solver_type,
+        args.krylov_size,
+        args.schwarz_domains,
+        args.verbose,
+    )?;
 
     // Save results
     println!("\nSaving results to: {}", args.output.display());
@@ -168,11 +190,7 @@ fn create_room_mesh(simulation: &RoomSimulation, elements_per_meter: usize) -> M
     for k in 0..nz {
         for j in 0..ny {
             for i in 0..nx {
-                mesh.add_node(Point::new_3d(
-                    i as f64 * dx,
-                    j as f64 * dy,
-                    k as f64 * dz,
-                ));
+                mesh.add_node(Point::new_3d(i as f64 * dx, j as f64 * dy, k as f64 * dz));
             }
         }
     }
@@ -259,9 +277,8 @@ fn run_fem_simulation(
 
         // Create source function from room sources
         let sources = &simulation.sources;
-        let source_fn = |x: f64, y: f64, z: f64| -> Complex64 {
-            compute_source_term(x, y, z, sources, freq)
-        };
+        let source_fn =
+            |x: f64, y: f64, z: f64| -> Complex64 { compute_source_term(x, y, z, sources, freq) };
 
         // Assemble Helmholtz problem
         let assemble_start = Instant::now();

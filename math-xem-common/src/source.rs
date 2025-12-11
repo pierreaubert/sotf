@@ -145,7 +145,6 @@ impl CrossoverFilter {
     }
 }
 
-
 /// Sound source with position and directivity
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {

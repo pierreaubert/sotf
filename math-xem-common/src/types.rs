@@ -345,6 +345,10 @@ mod tests {
     #[test]
     fn test_wavenumber() {
         let k = wavenumber(1000.0, 343.0);
-        assert_relative_eq!(k, 2.0 * std::f64::consts::PI * 1000.0 / 343.0, epsilon = 1e-10);
+        assert_relative_eq!(
+            k,
+            2.0 * std::f64::consts::PI * 1000.0 / 343.0,
+            epsilon = 1e-10
+        );
     }
 }

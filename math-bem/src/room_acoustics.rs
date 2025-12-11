@@ -20,9 +20,9 @@ pub use solver::*;
 
 // Re-export common types from math-xem-common
 pub use xem_common::{
-    constants, log_space, pressure_to_spl, wavenumber, CrossoverFilter, DirectivityPattern,
-    FrequencyResult, LShapedRoom, ListeningPosition, Point3D, RectangularRoom, RoomGeometry,
-    RoomMesh, RoomSimulation, SimulationResults, SliceData, Source, SurfaceElement,
+    CrossoverFilter, DirectivityPattern, FrequencyResult, LShapedRoom, ListeningPosition, Point3D,
+    RectangularRoom, RoomGeometry, RoomMesh, RoomSimulation, SimulationResults, SliceData, Source,
+    SurfaceElement, constants, log_space, pressure_to_spl, wavenumber,
 };
 // Re-export output utilities
 pub use xem_common::{

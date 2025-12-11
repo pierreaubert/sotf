@@ -5,7 +5,7 @@
 
 // Re-export the common configuration types
 pub use xem_common::{
-    CrossoverConfig, DirectivityConfig, FrequencyConfig, FmmConfig, GmresConfig, IluConfig,
+    CrossoverConfig, DirectivityConfig, FmmConfig, FrequencyConfig, GmresConfig, IluConfig,
     MetadataConfig, Point3DConfig, RoomConfig, RoomGeometryConfig, SolverConfig, SourceConfig,
     VisualizationConfig,
 };

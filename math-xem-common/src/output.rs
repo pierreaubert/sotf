@@ -2,7 +2,7 @@
 
 use crate::config::{MetadataConfig, RoomConfig, RoomSimulation, VisualizationConfig};
 use crate::geometry::RoomGeometry;
-use crate::types::{pressure_to_spl, Point3D, RoomMesh};
+use crate::types::{Point3D, RoomMesh, pressure_to_spl};
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};

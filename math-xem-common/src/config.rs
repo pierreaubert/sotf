@@ -2,7 +2,7 @@
 
 use crate::geometry::{LShapedRoom, RectangularRoom, RoomGeometry};
 use crate::source::{CrossoverFilter, DirectivityPattern, Source};
-use crate::types::{log_space, Point3D};
+use crate::types::{Point3D, log_space};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;

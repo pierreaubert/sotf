@@ -80,7 +80,10 @@ impl<T: ComplexField> DiagonalPreconditioner<T> {
         T: Send + Sync,
     {
         let r_slice = r.as_slice().expect("Array should be contiguous");
-        let inv_slice = self.inv_diag.as_slice().expect("Array should be contiguous");
+        let inv_slice = self
+            .inv_diag
+            .as_slice()
+            .expect("Array should be contiguous");
 
         let results: Vec<T> = r_slice
             .par_iter()

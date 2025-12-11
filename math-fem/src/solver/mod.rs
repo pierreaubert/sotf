@@ -14,9 +14,9 @@ use ndarray::Array1;
 use num_complex::Complex64;
 use solvers::iterative::{gmres_pipelined, gmres_preconditioned};
 use solvers::{
-    AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix,
-    DiagonalPreconditioner, GmresConfig, IdentityPreconditioner,
-    IluColoringPreconditioner, IluFixedPointPreconditioner, IluPreconditioner, gmres, lu_solve,
+    AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix, DiagonalPreconditioner,
+    GmresConfig, IdentityPreconditioner, IluColoringPreconditioner, IluFixedPointPreconditioner,
+    IluPreconditioner, gmres, lu_solve,
 };
 use std::time::Instant;
 use thiserror::Error;
@@ -633,7 +633,11 @@ fn solve_gmres_pipelined(
     if config.verbosity > 0 {
         log::info!(
             "Pipelined GMRES {} in {} iterations (residual: {:.2e})",
-            if result.converged { "converged" } else { "did not converge" },
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
             result.iterations,
             result.residual
         );
@@ -684,7 +688,11 @@ fn solve_gmres_pipelined_ilu(
     if config.verbosity > 0 {
         log::info!(
             "Pipelined GMRES+ILU {} in {} iterations (residual: {:.2e})",
-            if result.converged { "converged" } else { "did not converge" },
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
             result.iterations,
             result.residual
         );
@@ -744,7 +752,11 @@ fn solve_gmres_pipelined_amg(
     if config.verbosity > 0 {
         log::info!(
             "Pipelined GMRES+AMG {} in {} iterations (residual: {:.2e})",
-            if result.converged { "converged" } else { "did not converge" },
+            if result.converged {
+                "converged"
+            } else {
+                "did not converge"
+            },
             result.iterations,
             result.residual
         );
@@ -895,7 +907,10 @@ mod tests {
         let k = Complex64::new(2.0, 0.0);
 
         let problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, |x, y, _| {
-            Complex64::new((x * std::f64::consts::PI).sin() * (y * std::f64::consts::PI).sin(), 0.0)
+            Complex64::new(
+                (x * std::f64::consts::PI).sin() * (y * std::f64::consts::PI).sin(),
+                0.0,
+            )
         });
 
         let gmres_config = GmresConfigF64 {
@@ -930,7 +945,6 @@ mod tests {
             sol_no_precond.iterations
         );
     }
-
 
     #[test]
     fn test_solve_helmholtz_gmres_pipelined() {

@@ -590,7 +590,7 @@ impl<T: ComplexField + Send + Sync> IluFixedPointPreconditioner<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::iterative::{gmres_preconditioned, GmresConfig};
+    use crate::iterative::{GmresConfig, gmres_preconditioned};
     use ndarray::array;
     use num_complex::Complex64;
 
@@ -669,10 +669,7 @@ mod tests {
         };
 
         let sol = gmres_preconditioned(&matrix, &precond, &b, &config);
-        assert!(
-            sol.converged,
-            "GMRES with ILU-fixedpoint should converge"
-        );
+        assert!(sol.converged, "GMRES with ILU-fixedpoint should converge");
     }
 
     #[test]

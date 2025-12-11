@@ -542,12 +542,7 @@ fn test_with_math_wave_damped_wave() {
 // ============================================================================
 
 /// Helper: solve Helmholtz problem with MMS and return L2 error
-fn solve_mms_problem<U, F>(
-    mesh: &fem::mesh::Mesh,
-    k: f64,
-    exact_u: U,
-    source: F,
-) -> f64
+fn solve_mms_problem<U, F>(mesh: &fem::mesh::Mesh, k: f64, exact_u: U, source: F) -> f64
 where
     U: Fn(f64, f64, f64) -> Complex64 + Copy + 'static,
     F: Fn(f64, f64, f64) -> Complex64 + Sync,
@@ -556,9 +551,7 @@ where
     let mut problem = HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k_complex, source);
 
     // Apply exact solution as Dirichlet BC on all boundaries
-    let bcs: Vec<DirichletBC> = (1..=4)
-        .map(|tag| DirichletBC::new(tag, exact_u))
-        .collect();
+    let bcs: Vec<DirichletBC> = (1..=4).map(|tag| DirichletBC::new(tag, exact_u)).collect();
 
     apply_dirichlet(&mut problem, mesh, &bcs);
 
@@ -587,15 +580,12 @@ fn test_mms_sin_cos() {
     let k = 1.5;
 
     // Manufactured solution: u = sin(πx) * cos(πy)
-    let exact_u = |x: f64, y: f64, _z: f64| {
-        Complex64::new((PI * x).sin() * (PI * y).cos(), 0.0)
-    };
+    let exact_u = |x: f64, y: f64, _z: f64| Complex64::new((PI * x).sin() * (PI * y).cos(), 0.0);
 
     // Source term: f = (2π² - k²) * sin(πx) * cos(πy)
     let coef = 2.0 * PI * PI - k * k;
-    let source = move |x: f64, y: f64, _z: f64| {
-        Complex64::new(coef * (PI * x).sin() * (PI * y).cos(), 0.0)
-    };
+    let source =
+        move |x: f64, y: f64, _z: f64| Complex64::new(coef * (PI * x).sin() * (PI * y).cos(), 0.0);
 
     // Test on a single mesh first
     let mesh = unit_square_triangles(16);
@@ -615,14 +605,11 @@ fn test_mms_sin_cos() {
 fn test_mms_sin_cos_convergence() {
     let k = 1.5;
 
-    let exact_u = |x: f64, y: f64, _z: f64| {
-        Complex64::new((PI * x).sin() * (PI * y).cos(), 0.0)
-    };
+    let exact_u = |x: f64, y: f64, _z: f64| Complex64::new((PI * x).sin() * (PI * y).cos(), 0.0);
 
     let coef = 2.0 * PI * PI - k * k;
-    let source = move |x: f64, y: f64, _z: f64| {
-        Complex64::new(coef * (PI * x).sin() * (PI * y).cos(), 0.0)
-    };
+    let source =
+        move |x: f64, y: f64, _z: f64| Complex64::new(coef * (PI * x).sin() * (PI * y).cos(), 0.0);
 
     let mesh_sizes = [4, 8, 16, 32];
     let mut errors = Vec::new();
@@ -652,7 +639,8 @@ fn test_mms_sin_cos_convergence() {
     // The average rate should be closer to 2.0
     let avg_rate: f64 = (1..errors.len())
         .map(|i| (errors[i - 1] / errors[i]).log2() / (h_values[i - 1] / h_values[i]).log2())
-        .sum::<f64>() / (errors.len() - 1) as f64;
+        .sum::<f64>()
+        / (errors.len() - 1) as f64;
     assert!(
         avg_rate > 1.7,
         "Average convergence rate {} should be > 1.7",
@@ -679,9 +667,8 @@ fn test_mms_sin_sin_2pi() {
 
     // Higher frequency: u = sin(2πx) * sin(2πy)
     // ∆u = -4π²sin(2πx)sin(2πy) - 4π²sin(2πx)sin(2πy) = -8π²u
-    let exact_u = |x: f64, y: f64, _z: f64| {
-        Complex64::new((2.0 * PI * x).sin() * (2.0 * PI * y).sin(), 0.0)
-    };
+    let exact_u =
+        |x: f64, y: f64, _z: f64| Complex64::new((2.0 * PI * x).sin() * (2.0 * PI * y).sin(), 0.0);
 
     // f = (8π² - k²) * sin(2πx) * sin(2πy)
     let coef = 8.0 * PI * PI - k * k;
@@ -725,9 +712,7 @@ fn test_mms_polynomial() {
     // ∂²u/∂x² = -2 * y(1-y)
     // ∂²u/∂y² = -2 * x(1-x)
     // ∆u = -2[x(1-x) + y(1-y)]
-    let exact_u = |x: f64, y: f64, _z: f64| {
-        Complex64::new(x * (1.0 - x) * y * (1.0 - y), 0.0)
-    };
+    let exact_u = |x: f64, y: f64, _z: f64| Complex64::new(x * (1.0 - x) * y * (1.0 - y), 0.0);
 
     // f = -∆u - k²u = 2[x(1-x) + y(1-y)] - k² * x(1-x) * y(1-y)
     let source = move |x: f64, y: f64, _z: f64| {
@@ -771,15 +756,12 @@ fn test_mms_exp_sin() {
     // ∂²u/∂x² = exp(x) * sin(πy) = u
     // ∂²u/∂y² = -π² * exp(x) * sin(πy) = -π²u
     // ∆u = (1 - π²) * u
-    let exact_u = |x: f64, y: f64, _z: f64| {
-        Complex64::new(x.exp() * (PI * y).sin(), 0.0)
-    };
+    let exact_u = |x: f64, y: f64, _z: f64| Complex64::new(x.exp() * (PI * y).sin(), 0.0);
 
     // f = -∆u - k²u = -(1 - π²)u - k²u = (π² - 1 - k²) * u
     let coef = PI * PI - 1.0 - k * k;
-    let source = move |x: f64, y: f64, _z: f64| {
-        Complex64::new(coef * x.exp() * (PI * y).sin(), 0.0)
-    };
+    let source =
+        move |x: f64, y: f64, _z: f64| Complex64::new(coef * x.exp() * (PI * y).sin(), 0.0);
 
     let mesh_sizes = [4, 8, 16, 32];
     let mut errors = Vec::new();
@@ -817,15 +799,11 @@ fn test_mms_complex_valued() {
 
     // u = (1+i) * sin(πx) * sin(πy)
     // ∆u = -2π² * (1+i) * sin(πx) * sin(πy) = -2π² * u
-    let exact_u = move |x: f64, y: f64, _z: f64| {
-        amp * (PI * x).sin() * (PI * y).sin()
-    };
+    let exact_u = move |x: f64, y: f64, _z: f64| amp * (PI * x).sin() * (PI * y).sin();
 
     // f = (2π² - k²) * (1+i) * sin(πx) * sin(πy)
     let coef = 2.0 * PI * PI - k * k;
-    let source = move |x: f64, y: f64, _z: f64| {
-        amp * coef * (PI * x).sin() * (PI * y).sin()
-    };
+    let source = move |x: f64, y: f64, _z: f64| amp * coef * (PI * x).sin() * (PI * y).sin();
 
     let mesh_sizes = [4, 8, 16, 32];
     let mut errors = Vec::new();
@@ -859,14 +837,11 @@ fn test_mms_convergence_rates_detailed() {
     let k = 1.5;
 
     // u = sin(πx) * sin(πy) - classic choice with homogeneous BCs
-    let exact_u = |x: f64, y: f64, _z: f64| {
-        Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
-    };
+    let exact_u = |x: f64, y: f64, _z: f64| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0);
 
     let coef = 2.0 * PI * PI - k * k;
-    let source = move |x: f64, y: f64, _z: f64| {
-        Complex64::new(coef * (PI * x).sin() * (PI * y).sin(), 0.0)
-    };
+    let source =
+        move |x: f64, y: f64, _z: f64| Complex64::new(coef * (PI * x).sin() * (PI * y).sin(), 0.0);
 
     let mesh_sizes = [4, 8, 16, 32, 64];
     let mut errors = Vec::new();
@@ -913,9 +888,8 @@ fn test_mms_varying_wavenumber() {
     let wavenumbers = [0.5, 1.0, 2.0, 4.0];
 
     for &k in &wavenumbers {
-        let exact_u = |x: f64, y: f64, _z: f64| {
-            Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0)
-        };
+        let exact_u =
+            |x: f64, y: f64, _z: f64| Complex64::new((PI * x).sin() * (PI * y).sin(), 0.0);
 
         let coef = 2.0 * PI * PI - k * k;
         let source = move |x: f64, y: f64, _z: f64| {
@@ -953,16 +927,14 @@ fn test_mms_rectangle() {
     let kx = PI / lx;
     let ky = PI / ly;
 
-    let exact_u = move |x: f64, y: f64, _z: f64| {
-        Complex64::new((kx * x).sin() * (ky * y).sin(), 0.0)
-    };
+    let exact_u =
+        move |x: f64, y: f64, _z: f64| Complex64::new((kx * x).sin() * (ky * y).sin(), 0.0);
 
     // f = [(π/lx)² + (π/ly)² - k²] * u
     let laplacian_coef = kx * kx + ky * ky;
     let coef = laplacian_coef - k * k;
-    let source = move |x: f64, y: f64, _z: f64| {
-        Complex64::new(coef * (kx * x).sin() * (ky * y).sin(), 0.0)
-    };
+    let source =
+        move |x: f64, y: f64, _z: f64| Complex64::new(coef * (kx * x).sin() * (ky * y).sin(), 0.0);
 
     let mesh_sizes = [4, 8, 16, 32];
     let mut errors = Vec::new();

@@ -173,7 +173,7 @@ impl AmgConfig {
     /// requiring adjusted thresholds.
     pub fn for_bem() -> Self {
         Self {
-            strong_threshold: 0.5, // Higher for denser BEM matrices
+            strong_threshold: 0.5,           // Higher for denser BEM matrices
             coarsening: AmgCoarsening::Pmis, // Better parallel scalability
             smoother: AmgSmoother::L1Jacobi, // More robust for BEM
             max_interp_elements: 6,
@@ -430,8 +430,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                     }
                 }
 
-                let threshold =
-                    T::Real::from_f64(theta).unwrap() * max_off_diag;
+                let threshold = T::Real::from_f64(theta).unwrap() * max_off_diag;
 
                 // Collect strong connections
                 let mut row_strong = Vec::new();
@@ -531,10 +530,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
     }
 
     /// Parallel Modified Independent Set (PMIS) coarsening
-    fn coarsen_pmis(
-        matrix: &CsrMatrix<T>,
-        strong: &[Vec<usize>],
-    ) -> (Vec<PointType>, Vec<usize>) {
+    fn coarsen_pmis(matrix: &CsrMatrix<T>, strong: &[Vec<usize>]) -> (Vec<PointType>, Vec<usize>) {
         let n = matrix.num_rows;
         let mut point_types = vec![PointType::Undecided; n];
 
@@ -614,9 +610,8 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                     }
 
                     // Check if any strong neighbor is already C
-                    let has_c_neighbor = strong[i]
-                        .iter()
-                        .any(|&j| old_types[j] == PointType::Coarse);
+                    let has_c_neighbor =
+                        strong[i].iter().any(|&j| old_types[j] == PointType::Coarse);
 
                     if has_c_neighbor {
                         point_types[i] = PointType::Fine;
@@ -713,8 +708,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
 
                                 let tol = T::Real::from_f64(1e-15).unwrap();
                                 if sum_weights.norm() > tol && weak_sum.norm() > tol {
-                                    let scale =
-                                        T::one() + weak_sum * (a_ii * sum_weights).inv();
+                                    let scale = T::one() + weak_sum * (a_ii * sum_weights).inv();
                                     for (_, w) in &mut weights {
                                         *w *= scale;
                                     }
@@ -723,12 +717,12 @@ impl<T: ComplexField> AmgPreconditioner<T> {
 
                             // Truncate small weights if configured
                             if config.trunc_factor > 0.0 {
-                                let max_w = weights
-                                    .iter()
-                                    .map(|(_, w)| w.norm())
-                                    .fold(T::Real::from_f64(0.0).unwrap(), |a, b| {
+                                let max_w = weights.iter().map(|(_, w)| w.norm()).fold(
+                                    T::Real::from_f64(0.0).unwrap(),
+                                    |a, b| {
                                         if a > b { a } else { b }
-                                    });
+                                    },
+                                );
                                 let threshold =
                                     T::Real::from_f64(config.trunc_factor).unwrap() * max_w;
                                 weights.retain(|(_, w)| w.norm() >= threshold);
@@ -777,8 +771,7 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                                 for &j in &strong[k] {
                                     if point_types[j] == PointType::Coarse {
                                         let a_kj = matrix.get(k, j);
-                                        let w = T::zero()
-                                            - a_ik * a_kj * (a_ii * a_kk).inv();
+                                        let w = T::zero() - a_ik * a_kj * (a_ii * a_kk).inv();
 
                                         let coarse_j = fine_to_coarse[j];
                                         if let Some((_, existing)) =
@@ -793,9 +786,8 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                             }
 
                             if weights.len() > config.max_interp_elements {
-                                weights.sort_by(|a, b| {
-                                    b.1.norm().partial_cmp(&a.1.norm()).unwrap()
-                                });
+                                weights
+                                    .sort_by(|a, b| b.1.norm().partial_cmp(&a.1.norm()).unwrap());
                                 weights.truncate(config.max_interp_elements);
                             }
 
@@ -927,7 +919,11 @@ impl<T: ComplexField> AmgPreconditioner<T> {
                     sum += val.norm();
                 }
                 let tol = T::Real::from_f64(1e-15).unwrap();
-                if sum > tol { sum } else { T::Real::from_f64(1.0).unwrap() }
+                if sum > tol {
+                    sum
+                } else {
+                    T::Real::from_f64(1.0).unwrap()
+                }
             })
             .collect();
 
@@ -1194,11 +1190,7 @@ mod tests {
         let config = AmgConfig::default();
         let amg = AmgPreconditioner::from_csr(&matrix, config);
 
-        let r = Array1::from_vec(
-            (0..50)
-                .map(|i| Complex64::new(i as f64, 0.0))
-                .collect(),
-        );
+        let r = Array1::from_vec((0..50).map(|i| Complex64::new(i as f64, 0.0)).collect());
 
         let z = amg.apply(&r);
 
@@ -1223,11 +1215,7 @@ mod tests {
     #[test]
     fn test_amg_different_smoothers() {
         let matrix = create_1d_laplacian(50);
-        let r = Array1::from_vec(
-            (0..50)
-                .map(|i| Complex64::new(i as f64, 0.0))
-                .collect(),
-        );
+        let r = Array1::from_vec((0..50).map(|i| Complex64::new(i as f64, 0.0)).collect());
 
         for smoother in [
             AmgSmoother::Jacobi,

@@ -133,7 +133,7 @@ pub use ilu_preconditioner::{IluMethod, IluPreconditioner, IluScanningDegree, Il
 
 // AMG preconditioner (portable, better parallel scalability than ILU)
 pub use amg_preconditioner::{
-    AmgConfig, AmgCoarsening, AmgCycle, AmgDiagnostics, AmgInterpolation, AmgPreconditioner,
+    AmgCoarsening, AmgConfig, AmgCycle, AmgDiagnostics, AmgInterpolation, AmgPreconditioner,
     AmgSmoother,
 };
 

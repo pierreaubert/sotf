@@ -18,7 +18,7 @@ mod ilu_parallel;
 mod schwarz;
 
 pub use amg::{
-    AmgConfig, AmgCoarsening, AmgCycle, AmgDiagnostics, AmgInterpolation, AmgPreconditioner,
+    AmgCoarsening, AmgConfig, AmgCycle, AmgDiagnostics, AmgInterpolation, AmgPreconditioner,
     AmgSmoother,
 };
 pub use diagonal::DiagonalPreconditioner;

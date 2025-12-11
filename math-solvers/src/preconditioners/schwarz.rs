@@ -130,9 +130,23 @@ impl<T: ComplexField> AdditiveSchwarzPreconditioner<T> {
     /// Get statistics about the domain decomposition
     pub fn stats(&self) -> (usize, usize, usize, f64) {
         let num_subdomains = self.subdomains.len();
-        let min_size = self.subdomains.iter().map(|s| s.global_indices.len()).min().unwrap_or(0);
-        let max_size = self.subdomains.iter().map(|s| s.global_indices.len()).max().unwrap_or(0);
-        let avg_size = self.subdomains.iter().map(|s| s.global_indices.len()).sum::<usize>() as f64
+        let min_size = self
+            .subdomains
+            .iter()
+            .map(|s| s.global_indices.len())
+            .min()
+            .unwrap_or(0);
+        let max_size = self
+            .subdomains
+            .iter()
+            .map(|s| s.global_indices.len())
+            .max()
+            .unwrap_or(0);
+        let avg_size = self
+            .subdomains
+            .iter()
+            .map(|s| s.global_indices.len())
+            .sum::<usize>() as f64
             / num_subdomains as f64;
         (num_subdomains, min_size, max_size, avg_size)
     }
@@ -189,7 +203,10 @@ fn extend_partition(
 }
 
 /// Build a subdomain with extracted local matrix and ILU factorization
-fn build_subdomain<T: ComplexField>(matrix: &CsrMatrix<T>, global_indices: Vec<usize>) -> Subdomain<T> {
+fn build_subdomain<T: ComplexField>(
+    matrix: &CsrMatrix<T>,
+    global_indices: Vec<usize>,
+) -> Subdomain<T> {
     let local_n = global_indices.len();
 
     // Build global-to-local index mapping
@@ -241,7 +258,15 @@ fn ilu_factorize<T: ComplexField>(
     col_indices: &[usize],
     row_ptrs: &[usize],
     n: usize,
-) -> (Vec<T>, Vec<usize>, Vec<usize>, Vec<T>, Vec<usize>, Vec<usize>, Vec<T>) {
+) -> (
+    Vec<T>,
+    Vec<usize>,
+    Vec<usize>,
+    Vec<T>,
+    Vec<usize>,
+    Vec<usize>,
+    Vec<T>,
+) {
     // Copy values for in-place factorization
     let mut values = values.to_vec();
 
@@ -315,7 +340,15 @@ fn ilu_factorize<T: ComplexField>(
         u_row_ptrs.push(u_values.len());
     }
 
-    (l_values, l_col_indices, l_row_ptrs, u_values, u_col_indices, u_row_ptrs, u_diag)
+    (
+        l_values,
+        l_col_indices,
+        l_row_ptrs,
+        u_values,
+        u_col_indices,
+        u_row_ptrs,
+        u_diag,
+    )
 }
 
 impl<T: ComplexField> Subdomain<T> {
@@ -372,11 +405,7 @@ impl<T: ComplexField + Send + Sync> AdditiveSchwarzPreconditioner<T> {
 
         for subdomain in &self.subdomains {
             // Extract local RHS
-            let local_rhs: Vec<T> = subdomain
-                .global_indices
-                .iter()
-                .map(|&i| r[i])
-                .collect();
+            let local_rhs: Vec<T> = subdomain.global_indices.iter().map(|&i| r[i]).collect();
 
             // Solve local system
             let local_solution = subdomain.solve(&local_rhs);
@@ -439,7 +468,7 @@ impl<T: ComplexField + Send + Sync> AdditiveSchwarzPreconditioner<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::iterative::{gmres_preconditioned, GmresConfig};
+    use crate::iterative::{GmresConfig, gmres_preconditioned};
     use num_complex::Complex64;
 
     fn create_test_matrix() -> CsrMatrix<Complex64> {

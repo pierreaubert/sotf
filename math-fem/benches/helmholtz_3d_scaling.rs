@@ -14,12 +14,10 @@
 //!   RAYON_NUM_THREADS=1 cargo bench -p math-fem --bench helmholtz_3d_scaling -- --verbose
 //!   RAYON_NUM_THREADS=4 cargo bench -p math-fem --bench helmholtz_3d_scaling -- --verbose
 
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use fem::assembly::HelmholtzProblem;
 use fem::basis::PolynomialDegree;
-use fem::boundary::{apply_dirichlet, DirichletBC};
+use fem::boundary::{DirichletBC, apply_dirichlet};
 use fem::mesh::unit_cube_tetrahedra;
 use ndarray::Array1;
 use num_complex::Complex64;
@@ -80,8 +78,7 @@ fn bench_assembly(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("helmholtz", n), &mesh, |b, mesh| {
             b.iter(|| {
-                let problem =
-                    HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k, source);
+                let problem = HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k, source);
                 black_box(problem)
             });
         });
@@ -110,8 +107,7 @@ fn bench_dirichlet_bc(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("apply", n), &mesh, |b, mesh| {
             b.iter_batched(
                 || {
-                    let problem =
-                        HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k, source);
+                    let problem = HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k, source);
                     problem
                 },
                 |mut problem| {
@@ -142,10 +138,7 @@ fn bench_gmres_solve(c: &mut Criterion) {
     let k_val = 1.0;
     let coef = 3.0 * PI * PI - k_val * k_val;
     let source = move |x: f64, y: f64, z: f64| {
-        Complex64::new(
-            coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(),
-            0.0,
-        )
+        Complex64::new(coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(), 0.0)
     };
 
     let exact_u = |x: f64, y: f64, z: f64| {
@@ -165,8 +158,7 @@ fn bench_gmres_solve(c: &mut Criterion) {
 
         // Pre-assemble the problem
         let k = Complex64::new(k_val, 0.0);
-        let mut problem =
-            HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, source);
+        let mut problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k, source);
 
         let bcs: Vec<DirichletBC> = (1..=6).map(|tag| DirichletBC::new(tag, exact_u)).collect();
         apply_dirichlet(&mut problem, &mesh, &bcs);
@@ -203,10 +195,7 @@ fn bench_full_pipeline(c: &mut Criterion) {
     // MMS problem
     let coef = 3.0 * PI * PI - 1.0;
     let source = move |x: f64, y: f64, z: f64| {
-        Complex64::new(
-            coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(),
-            0.0,
-        )
+        Complex64::new(coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(), 0.0)
     };
 
     let exact_u = |x: f64, y: f64, z: f64| {
@@ -269,10 +258,7 @@ fn print_scaling_info() {
     let k = Complex64::new(1.0, 0.0);
     let coef = 3.0 * PI * PI - 1.0;
     let source = move |x: f64, y: f64, z: f64| {
-        Complex64::new(
-            coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(),
-            0.0,
-        )
+        Complex64::new(coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(), 0.0)
     };
     let exact_u = |x: f64, y: f64, z: f64| {
         Complex64::new((PI * x).sin() * (PI * y).sin() * (PI * z).sin(), 0.0)

@@ -139,7 +139,7 @@ impl AmgPreconditioner {
     /// Returns an AmgConfig suitable for BEM problems.
     pub fn config_for_bem() -> AmgConfig {
         AmgConfig {
-            strong_threshold: 0.5, // Higher for denser BEM matrices
+            strong_threshold: 0.5,           // Higher for denser BEM matrices
             coarsening: AmgCoarsening::Pmis, // Better parallel scalability
             smoother: AmgSmoother::L1Jacobi, // More robust for BEM
             max_interp_elements: 6,

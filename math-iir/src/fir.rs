@@ -565,7 +565,7 @@ fn design_fir_lowpass(
     // Apply window
     let window_coeffs = generate_window(n, window, kaiser_beta);
     for (i, h_val) in h.iter_mut().enumerate() {
-         *h_val *= window_coeffs[i];
+        *h_val *= window_coeffs[i];
     }
 
     // Normalize to unit gain at DC
@@ -636,7 +636,7 @@ fn design_fir_bandpass(
     // Apply window
     let window_coeffs = generate_window(n, window, kaiser_beta);
     for (i, h_val) in h.iter_mut().enumerate() {
-         *h_val *= window_coeffs[i];
+        *h_val *= window_coeffs[i];
     }
 
     h

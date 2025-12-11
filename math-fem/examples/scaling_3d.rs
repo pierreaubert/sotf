@@ -11,11 +11,11 @@
 
 use fem::assembly::HelmholtzProblem;
 use fem::basis::PolynomialDegree;
-use fem::boundary::{apply_dirichlet, DirichletBC};
+use fem::boundary::{DirichletBC, apply_dirichlet};
 use fem::mesh::unit_cube_tetrahedra;
 use ndarray::Array1;
 use num_complex::Complex64;
-use solvers::{gmres, CsrMatrix, GmresConfig};
+use solvers::{CsrMatrix, GmresConfig, gmres};
 use std::f64::consts::PI;
 use std::time::Instant;
 
@@ -60,10 +60,7 @@ fn main() {
     // f = -∆u - k²u = (3π² - k²)u
     let coef = 3.0 * PI * PI - 1.0;
     let source = move |x: f64, y: f64, z: f64| {
-        Complex64::new(
-            coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(),
-            0.0,
-        )
+        Complex64::new(coef * (PI * x).sin() * (PI * y).sin() * (PI * z).sin(), 0.0)
     };
 
     let exact_u = |x: f64, y: f64, z: f64| {
@@ -80,7 +77,15 @@ fn main() {
     // Header
     println!(
         "{:>4} {:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>12}",
-        "n", "DOFs", "Elements", "Mesh(ms)", "Asm(ms)", "BC(ms)", "Solve(ms)", "Total(ms)", "Status"
+        "n",
+        "DOFs",
+        "Elements",
+        "Mesh(ms)",
+        "Asm(ms)",
+        "BC(ms)",
+        "Solve(ms)",
+        "Total(ms)",
+        "Status"
     );
     println!("{}", "-".repeat(100));
 
@@ -134,7 +139,6 @@ fn main() {
             total_time.as_secs_f64() * 1000.0,
             status
         );
-
     }
 
     println!();
