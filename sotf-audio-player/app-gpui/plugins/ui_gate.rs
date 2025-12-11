@@ -53,9 +53,9 @@ pub fn render_gate_plugin(
         theme.error
     };
     let gate_glow = if gate_open {
-        rgba(0x22c55e33)
+        Theme::opacity_20pct(theme.success)
     } else {
-        rgba(0xef444433)
+        Theme::opacity_20pct(theme.error)
     };
     let input_bar_color = gate_color;
     let gr_color = if simulated_gr.abs() > 1.0 {

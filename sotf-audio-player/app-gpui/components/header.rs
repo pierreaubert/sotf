@@ -256,7 +256,7 @@ impl PlayerView {
         let selected_index = match current_screen {
             Screen::Library => 0,
             Screen::Queue => 1,
-            Screen::Settings | Screen::DirectoryManager | Screen::Spectrum => 0, // Default to library for other screens
+            Screen::Settings | Screen::DirectoryManager | Screen::Spectrum | Screen::Recording => 0, // Default to library for other screens
         };
 
         // Get a weak handle for the state to use in the callback

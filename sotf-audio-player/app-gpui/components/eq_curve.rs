@@ -54,14 +54,36 @@ pub struct EQCurveColors {
 
 impl Default for EQCurveColors {
     fn default() -> Self {
+        // Uses theme colors from dark theme by default
+        // The theme's eq_curve_colors should be used when a theme is available
         Self {
             background: rgb(0x1a1a1a),
-            grid: rgba(0xffffff20),
+            grid: Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.125,
+            }, // ~12.5% opacity
             curve_boost: rgb(0x22c55e),
             curve_cut: rgb(0xef4444),
-            fill_boost: rgba(0x22c55e40),
-            fill_cut: rgba(0xef444440),
-            zero_line: rgba(0xffffff40),
+            fill_boost: Rgba {
+                r: 0.133,
+                g: 0.773,
+                b: 0.369,
+                a: 0.251,
+            }, // ~25% opacity
+            fill_cut: Rgba {
+                r: 0.939,
+                g: 0.267,
+                b: 0.267,
+                a: 0.251,
+            }, // ~25% opacity
+            zero_line: Rgba {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 0.251,
+            }, // ~25% opacity
         }
     }
 }

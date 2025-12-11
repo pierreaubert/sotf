@@ -11,16 +11,16 @@ pub mod legend;
 
 use crate::theme::Theme;
 use autoeq_iir::Biquad;
-use d3rs::axis::{AxisConfig, AxisTheme, render_axis};
+use d3rs::axis::{render_axis, AxisConfig, AxisTheme};
 use d3rs::color::D3Color;
-use d3rs::grid::{GridConfig as D3GridConfig, render_grid};
+use d3rs::grid::{render_grid, GridConfig as D3GridConfig};
 use d3rs::scale::{LinearScale, LogScale, Scale};
-use d3rs::shape::{LineConfig, LinePoint, render_line};
+use d3rs::shape::{render_line, LineConfig, LinePoint};
 use gpui::prelude::*;
 use gpui::*;
 use legend::{
-    LegendConfig, LegendEntry, LegendPosition, legend_dimensions, render_legend_below,
-    render_legend_right,
+    legend_dimensions, render_legend_below, render_legend_right, LegendConfig, LegendEntry,
+    LegendPosition,
 };
 use sotf_audio_player::EQFilter;
 
@@ -139,21 +139,13 @@ impl GraphConfig {
     }
 }
 
-/// Color palette for filter bands
-pub fn band_color(index: usize, _theme: &Theme) -> Rgba {
-    let colors = [
-        rgb(0xef4444), // Red
-        rgb(0xf97316), // Orange
-        rgb(0xeab308), // Yellow
-        rgb(0x22c55e), // Green
-        rgb(0x14b8a6), // Teal
-        rgb(0x3b82f6), // Blue
-        rgb(0x8b5cf6), // Violet
-        rgb(0xec4899), // Pink
-        rgb(0x6366f1), // Indigo
-        rgb(0x06b6d4), // Cyan
-    ];
-    colors.get(index).copied().unwrap_or(rgb(0x9ca3af))
+/// Color palette for filter bands - uses theme band_colors
+pub fn band_color(index: usize, theme: &Theme) -> Rgba {
+    theme
+        .band_colors
+        .get(index)
+        .copied()
+        .unwrap_or(theme.text_muted)
 }
 
 /// Format frequency value for display

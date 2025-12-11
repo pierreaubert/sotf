@@ -343,7 +343,7 @@ impl PlayerView {
             .flex_col()
             .items_center()
             .gap_0() // No gap - we use explicit margins
-            .py_0() // Padding above/below
+            .pt(px(8.0)) // Top padding to push transport down from border
             .flex_1()
             .max_w(px(600.0))
             // Transport controls row
@@ -475,13 +475,16 @@ impl PlayerView {
                     .items_center()
                     .gap_0()
                     .w_full()
-                    .mt(px(28.0)) // Move waveform down to align with time labels
-                    // Current position
+                    .mt(px(12.0)) // Space between transport and waveform row
+                    // Current position (vertically centered with waveform)
                     .child(
                         div()
                             .text_xs()
                             .text_color(text_muted)
                             .min_w(px(40.0))
+                            .h(px(24.0)) // Match waveform height for vertical centering
+                            .flex()
+                            .items_center()
                             .child(position_str),
                     )
                     // Waveform visualization from track data
@@ -519,13 +522,16 @@ impl PlayerView {
                                 bounds_ref,
                             )),
                     )
-                    // Total duration
+                    // Total duration (vertically centered with waveform)
                     .child(
                         div()
                             .text_xs()
                             .text_color(text_muted)
                             .min_w(px(40.0))
-                            .text_right()
+                            .h(px(24.0)) // Match waveform height for vertical centering
+                            .flex()
+                            .items_center()
+                            .justify_end()
                             .child(duration_str),
                     ),
             )

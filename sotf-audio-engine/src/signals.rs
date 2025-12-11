@@ -281,9 +281,9 @@ pub fn interleave_per_channel(per_channel: &[Vec<f32>]) -> Vec<f32> {
     let mut interleaved = Vec::with_capacity(n_frames * n_channels);
 
     for frame in 0..n_frames {
-    for channel_data in per_channel.iter().take(n_channels) {
-        interleaved.push(channel_data[frame]);
-    }
+        for channel_data in per_channel.iter().take(n_channels) {
+            interleaved.push(channel_data[frame]);
+        }
     }
 
     interleaved

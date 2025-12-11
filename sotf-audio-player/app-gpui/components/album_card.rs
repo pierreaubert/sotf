@@ -11,9 +11,31 @@ use gpui::*;
 use sotf_audio_player::Album;
 use std::sync::Arc;
 
-/// Create an image from JPEG thumbnail bytes
+/// Create an image from thumbnail bytes
+///
+/// Thumbnails are stored as PNG in the database for optimal rendering.
+/// This function handles both PNG (new format) and JPEG (legacy format) for backward compatibility.
 fn image_from_jpeg_bytes(bytes: &[u8]) -> Arc<Image> {
-    Arc::new(Image::from_bytes(ImageFormat::Jpeg, bytes.to_vec()))
+    use image::ImageFormat as ExternalImageFormat;
+
+    // Try PNG first (new default format)
+    if let Ok(_img) = image::load_from_memory_with_format(bytes, ExternalImageFormat::Png) {
+        return Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()));
+    }
+
+    // Fallback: try JPEG (legacy format) and convert to PNG
+    if let Ok(img) = image::load_from_memory_with_format(bytes, ExternalImageFormat::Jpeg) {
+        let mut png_bytes = Vec::new();
+        if img
+            .write_to(&mut std::io::Cursor::new(&mut png_bytes), ExternalImageFormat::Png)
+            .is_ok()
+        {
+            return Arc::new(Image::from_bytes(ImageFormat::Png, png_bytes));
+        }
+    }
+
+    // Last resort: pass through as-is
+    Arc::new(Image::from_bytes(ImageFormat::Png, bytes.to_vec()))
 }
 
 /// Album card display mode

@@ -8612,6 +8612,7 @@ dependencies = [
  "gpui-px",
  "gpui-ui-kit",
  "id3",
+ "image",
  "log",
  "metaflac",
  "ndarray 0.17.1",

@@ -1692,7 +1692,13 @@ fn find_album_art_in_subdir(dir: &Path) -> Option<PathBuf> {
 /// Thumbnail size in pixels (160x160 for crisp display on high-DPI screens)
 const THUMBNAIL_SIZE: u32 = 160;
 
-/// Generate a JPEG thumbnail from an image file
+/// Generate a PNG thumbnail from an image file
+///
+/// PNG format is used instead of JPEG for several reasons:
+/// - Lossless compression preserves quality
+/// - Standardized format ensures consistent stride/pitch for rendering
+/// - Better compatibility with GPUI's image rendering pipeline
+/// - Supports alpha channel if needed
 fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
     use image::ImageReader;
     use std::io::Cursor;
@@ -1715,12 +1721,9 @@ fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
     // Resize to thumbnail size using Lanczos3 for quality
     let thumbnail = img.thumbnail(THUMBNAIL_SIZE, THUMBNAIL_SIZE);
 
-    // Convert to RGB8 (JPEG doesn't support alpha)
-    let rgb_thumbnail = thumbnail.to_rgb8();
-
-    // Encode as JPEG
+    // Encode as PNG (lossless, standardized format)
     let mut buffer = Cursor::new(Vec::new());
-    if let Err(e) = rgb_thumbnail.write_to(&mut buffer, image::ImageFormat::Jpeg) {
+    if let Err(e) = thumbnail.write_to(&mut buffer, image::ImageFormat::Png) {
         log::warn!(
             "Failed to encode thumbnail for {}: {}",
             image_path.display(),

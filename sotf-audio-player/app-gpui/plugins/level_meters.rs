@@ -12,7 +12,7 @@ use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
 use std::panic;
 
-use super::{MeterTheme, TickConfig, render_tick_row};
+use super::{render_tick_row, MeterTheme, TickConfig};
 use crate::app::{App as AppState, ChannelGroup, ChannelInfo};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -63,13 +63,15 @@ pub struct MeterColors {
 
 impl Default for MeterColors {
     fn default() -> Self {
+        // These defaults match the dark theme meter colors.
+        // When rendering, use Theme::meter_colors for theme-aware colors.
         Self {
-            background: rgb(0x1e1e1e),
-            green: rgb(0x22c55e),
-            yellow: rgb(0xf59e0b),
-            red: rgb(0xdc2626),
-            peak: rgb(0xffffff),
-            text: rgb(0x999999),
+            background: rgb(0x1a1a1a), // theme.surface
+            green: rgb(0x22c55e),      // theme.meter_normal
+            yellow: rgb(0xf59e0b),     // theme.meter_warning
+            red: rgb(0xdc2626),        // theme.meter_clip
+            peak: rgb(0xffffff),       // White peak indicator
+            text: rgb(0x999999),       // theme.text_secondary
         }
     }
 }
@@ -335,7 +337,7 @@ pub fn render_gr_meter(
     max_db: f64,            // e.g., -30.0 (max gain reduction to display)
     theme: &Theme,
 ) -> impl IntoElement {
-    use super::ticks::{TickConfig, render_tick_row};
+    use super::ticks::{render_tick_row, TickConfig};
 
     let gr_abs = gain_reduction_db.abs();
     let tick_config = TickConfig::gain_reduction(max_db);

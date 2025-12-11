@@ -483,7 +483,11 @@ pub fn normalize_hrtf_gains(
         );
 
         // Apply normalization to all HRTFs
-        for (ch, hrtf_samples) in hrtf_filters_freq.iter_mut().enumerate().take(input_channels) {
+        for (ch, hrtf_samples) in hrtf_filters_freq
+            .iter_mut()
+            .enumerate()
+            .take(input_channels)
+        {
             // Skip LFE channels (they don't use HRTFs)
             if lfe_channels.contains(&ch) {
                 continue;

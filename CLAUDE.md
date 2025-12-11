@@ -1,6 +1,11 @@
 # CLAUDE.md
 
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Interaction Rules
+- **Verify Compilation**: Always ensure the code compiles (`cargo check` or `cargo build`) before submitting an answer or marking a task as complete.
+
 
 ## Project Overview
 

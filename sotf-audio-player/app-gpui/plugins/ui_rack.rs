@@ -3,6 +3,7 @@
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
 use crate::plugins::actions::ToggleUpmixerConfig;
+use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -29,7 +30,12 @@ impl Render for PluginDragInfo {
             .rounded_lg()
             .border_2()
             .border_color(self.color)
-            .bg(rgba(0x1e1e2edd)) // Semi-transparent dark background
+            .bg(Theme::opacity_20pct(Rgba {
+                r: 0.118,
+                g: 0.118,
+                b: 0.180,
+                a: 1.0,
+            })) // Semi-transparent dark background (theme.surface with opacity)
             .shadow_lg()
             .opacity(0.9)
             // Top bar with color
@@ -51,7 +57,7 @@ impl Render for PluginDragInfo {
                     .px_2()
                     .pb_1()
                     .text_xs()
-                    .text_color(rgb(0xffffff))
+                    .text_color(rgb(0xffffff)) // text_on_accent color
                     .font_weight(FontWeight::MEDIUM)
                     .overflow_hidden()
                     .text_ellipsis()
@@ -60,21 +66,21 @@ impl Render for PluginDragInfo {
     }
 }
 
-// Plugin color scheme for different types
-fn plugin_color(plugin_type: &PluginType) -> Rgba {
+// Plugin color scheme for different types - uses theme colors
+fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
     match plugin_type {
-        PluginType::EQ => rgb(0x2563eb),                   // Blue - EQ
-        PluginType::Gain => rgb(0x059669),                 // Green - Gain
-        PluginType::Upmixer => rgb(0x7c3aed),              // Purple - Upmixer
-        PluginType::Compressor => rgb(0xdc2626),           // Red - Compressor
-        PluginType::Limiter => rgb(0xea580c),              // Orange - Limiter
-        PluginType::Gate => rgb(0xca8a04),                 // Yellow - Gate
-        PluginType::LoudnessCompensation => rgb(0x0891b2), // Cyan - Loudness
-        PluginType::BinauralDecoder => rgb(0xdb2777),      // Pink - Binaural
-        PluginType::Convolution => rgb(0x4f46e5),          // Indigo - Convolution
-        PluginType::LoudnessMonitor => rgb(0x14b8a6),      // Teal - Monitor
-        PluginType::SpectrumAnalyzer => rgb(0x8b5cf6),     // Violet - Spectrum
-        PluginType::ChannelMuteSolo => rgb(0x6366f1),      // Blue-violet - Mute/Solo
+        PluginType::EQ => theme.plugin_colors.eq,
+        PluginType::Gain => theme.plugin_colors.gain,
+        PluginType::Upmixer => theme.plugin_colors.upmixer,
+        PluginType::Compressor => theme.plugin_colors.compressor,
+        PluginType::Limiter => theme.plugin_colors.limiter,
+        PluginType::Gate => theme.plugin_colors.gate,
+        PluginType::LoudnessCompensation => theme.plugin_colors.loudness,
+        PluginType::BinauralDecoder => theme.plugin_colors.binaural,
+        PluginType::Convolution => theme.plugin_colors.convolution,
+        PluginType::LoudnessMonitor => theme.plugin_colors.monitor,
+        PluginType::SpectrumAnalyzer => theme.plugin_colors.spectrum,
+        PluginType::ChannelMuteSolo => theme.plugin_colors.mute_solo,
     }
 }
 
@@ -209,7 +215,7 @@ impl PlayerView {
             .map(|(idx, (pt, enabled, name))| {
                 (
                     idx,
-                    plugin_color(pt),
+                    plugin_color(pt, &theme),
                     plugin_icon(pt),
                     name.clone(),
                     *enabled,
@@ -489,11 +495,13 @@ impl PlayerView {
     }
 
     /// Render a side level meter group for the detail panel
+    /// Matches the style of the queue screen meters with vertical dB legend
     fn render_side_meter(
         &self,
         cx: &mut Context<Self>,
         channels: usize,
         label: &str,
+        legend_on_left: bool,
     ) -> impl IntoElement {
         let (theme, loudness) = {
             let state = self.state.read(cx);
@@ -503,67 +511,144 @@ impl PlayerView {
         let theme_c = theme.clone();
         let label = label.to_string();
 
+        // Pre-compute channel data
+        let channel_data: Vec<_> = (0..channels)
+            .map(|i| {
+                let val_db = if let Some(l) = &loudness {
+                    let peak = l.channel_peaks.get(i).copied().unwrap_or(0.0);
+                    if peak > 0.0001 {
+                        20.0 * peak.log10()
+                    } else {
+                        -60.0
+                    }
+                } else {
+                    -60.0
+                };
+
+                let fill_ratio = db_to_position(val_db);
+                let yellow_threshold = db_to_position(-6.0);
+                let red_threshold = db_to_position(-1.0);
+                let name = match i {
+                    0 => "L",
+                    1 => "R",
+                    2 => "C",
+                    3 => "LFE",
+                    4 => "Ls",
+                    5 => "Rs",
+                    6 => "Sl",
+                    7 => "Sr",
+                    8 => "Tfl",
+                    9 => "Tfr",
+                    10 => "Trl",
+                    11 => "Trr",
+                    _ => ".",
+                };
+                (fill_ratio, yellow_threshold, red_threshold, name.to_string())
+            })
+            .collect();
+
         div()
             .flex()
             .flex_col()
-            .items_center()
             .h_full()
             .py_4()
             .px_2()
             .bg(theme.background_secondary)
             .border_x_1()
             .border_color(theme.border)
+            // Label at top
             .child(
                 div()
                     .text_xs()
-                    .text_color(theme.text_muted)
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(theme.text_secondary)
                     .mb_2()
+                    .text_align(TextAlign::Center)
                     .child(label),
             )
+            // Meters with legend
             .child(
                 div()
                     .flex()
-                    .gap(px(2.0))
+                    .gap(px(0.0))
+                    .flex_1()
                     .h_full()
-                    .child(div().flex().gap(px(2.0)).children((0..channels).map(|i| {
-                        let val_db = if let Some(l) = &loudness {
-                            let peak = l.channel_peaks.get(i).copied().unwrap_or(0.0);
-                            if peak > 0.0001 {
-                                20.0 * peak.log10()
-                            } else {
-                                -60.0
-                            }
+                    // Legend on left side if requested
+                    .when(legend_on_left, |d| {
+                        d.child(Self::render_side_meter_legend(&theme, false))
+                    })
+                    // Channel meters
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(1.0))
+                            .flex_1()
+                            .h_full()
+                            .p(px(2.0))
+                            .bg(theme_c.background_secondary)
+                            .children(channel_data.into_iter().map(
+                                |(fill_ratio, yellow_threshold, red_threshold, name)| {
+                                    render_gradient_meter(
+                                        fill_ratio,
+                                        yellow_threshold,
+                                        red_threshold,
+                                        name,
+                                        &theme_c,
+                                    )
+                                },
+                            )),
+                    )
+                    // Legend on right side if not on left
+                    .when(!legend_on_left, |d| {
+                        d.child(Self::render_side_meter_legend(&theme, true))
+                    }),
+            )
+    }
+
+    /// Render vertical dB legend for side meters (simplified version without M/S/D spacers)
+    fn render_side_meter_legend(theme: &crate::theme::Theme, align_right: bool) -> impl IntoElement {
+        let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
+        let theme = theme.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .h_full()
+            .p(px(2.0))
+            // Ticks area
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .w(px(24.0))
+                    .children(ticks.into_iter().map(move |db| {
+                        let pos = db_to_position(db as f64);
+                        let label = div()
+                            .text_size(px(9.0))
+                            .text_color(theme.text_muted)
+                            .child(format!("{}", db));
+
+                        let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
+
+                        let container = div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(pos)))
+                            .flex()
+                            .items_center()
+                            .justify_between();
+
+                        if align_right {
+                            container.child(label).child(tick)
                         } else {
-                            -60.0
-                        };
-
-                        let fill_ratio = db_to_position(val_db);
-                        let yellow_threshold = db_to_position(-6.0);
-                        let red_threshold = db_to_position(-1.0);
-                        let name = match i {
-                            0 => "L",
-                            1 => "R",
-                            2 => "C",
-                            3 => "LFE",
-                            4 => "Ls",
-                            5 => "Rs",
-                            6 => "Sl",
-                            7 => "Sr",
-                            8 => "Tfl",
-                            9 => "Tfr",
-                            10 => "Trl",
-                            11 => "Trr",
-                            _ => ".",
-                        };
-
-                        render_gradient_meter(
-                            fill_ratio,
-                            yellow_threshold,
-                            red_threshold,
-                            name.to_string(),
-                            &theme_c,
-                        )
-                    }))),
+                            container.child(tick).child(label)
+                        }
+                    })),
+            )
+            // Spacer for channel name (to align with render_gradient_meter)
+            .child(
+                div().text_xs().mt_1().opacity(0.0).child("X"), // Invisible spacer
             )
     }
 
@@ -611,7 +696,7 @@ impl PlayerView {
                     return None;
                 }
 
-                let color = plugin_color(&pt);
+                let color = plugin_color(&pt, &theme);
                 let name = short_name(&pt);
                 let theme_c = theme.clone();
 
@@ -672,7 +757,7 @@ impl PlayerView {
                 let plugin = plugin_data.clone().unwrap();
                 let plugin_type = plugin.plugin_type().clone();
                 let plugin_name = plugin_type.name().to_string();
-                let color = plugin_color(&plugin_type);
+                let color = plugin_color(&plugin_type, &theme);
                 let is_editing = editing_idx.is_some();
                 let plugin_enabled = plugin.enabled;
 
@@ -720,8 +805,8 @@ impl PlayerView {
                         .flex_1()
                         .flex()
                         .min_h(px(0.0)) // Allow shrinking
-                        // Left: Input Meter
-                        .child(self.render_side_meter(cx, 2, "IN"))
+                        // Left: Input Meter (legend on right side, facing center)
+                        .child(self.render_side_meter(cx, 2, "IN", false))
                         // Center: Plugin Content
                         .child(
                             div()
@@ -753,7 +838,7 @@ impl PlayerView {
                                     }
                                 }
                             }
-                            self.render_side_meter(cx, channels, "OUT")
+                            self.render_side_meter(cx, channels, "OUT", true)
                         }),
                 )
             })

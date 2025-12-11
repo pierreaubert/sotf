@@ -133,11 +133,11 @@ pub fn render_gain_plugin(
                                 .py_2()
                                 .rounded_full()
                                 .bg(if is_boost {
-                                    rgba(0x22c55e33)
+                                    Theme::opacity_20pct(theme.success)
                                 } else if is_cut {
-                                    rgba(0xef444433)
+                                    Theme::opacity_20pct(theme.error)
                                 } else {
-                                    rgba(0x6366f133)
+                                    Theme::opacity_20pct(theme.info)
                                 })
                                 .text_sm()
                                 .font_weight(FontWeight::BOLD)

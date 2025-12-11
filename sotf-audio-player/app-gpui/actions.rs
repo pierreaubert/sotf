@@ -24,6 +24,7 @@ actions!(
         SwitchToRoomEQ,
         SwitchToSpectrum,
         SwitchToSettings,
+        SwitchToRecording,
         OpenConfig, // Menu bar: open config (cmd-,)
         QuitApp,    // Menu bar: quit app (cmd-q)
         CycleTheme,

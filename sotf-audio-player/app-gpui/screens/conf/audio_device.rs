@@ -166,11 +166,17 @@ fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
     if lower_name.contains("mac") || lower_name.contains("apple") {
         return Some("brands/apple-mac-mini.jpg");
     }
-    if lower_name.contains("phonum") || lower_name.contains("bayerdynamic") {
+    if lower_name.contains("phonum") || lower_name.contains("beyerdynamic") {
         return Some("brands/bayerdynamic-phonum.jpg");
+    }
+    if lower_name.contains("blackhole") {
+        return Some("brands/blackhole.jpeg");
     }
     if lower_name.contains("dolby") {
         return Some("brands/dolby-audio.png");
+    }
+    if lower_name.contains("focusrite") || lower_name.contains("scarlett") {
+        return Some("brands/focusrite.webp");
     }
     if lower_name.contains("kef") || lower_name.contains("ls60") {
         return Some("brands/kef-ls60.jpg");
@@ -178,7 +184,7 @@ fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
     if lower_name.contains("lg") {
         return Some("brands/lg.png");
     }
-    if lower_name.contains("rme") {
+    if lower_name.contains("rme") || lower_name.contains("fireface") {
         return Some("brands/rme.jpg");
     }
     if lower_name.contains("samsung") {

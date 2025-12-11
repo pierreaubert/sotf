@@ -852,7 +852,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         use d3rs::color::D3Color;
         use d3rs::scale::LinearScale;
-        use d3rs::shape::{LineConfig, LinePoint, render_line};
+        use d3rs::shape::{render_line, LineConfig, LinePoint};
 
         let graph_width = 400.0_f32;
         let graph_height = 120.0_f32;
@@ -885,12 +885,12 @@ impl PlayerView {
 
         let config = LineConfig::new()
             .stroke_width(2.0)
-            .stroke_color(D3Color::from_rgba(gpui::rgb(0x8b5cf6))); // Violet
+            .stroke_color(D3Color::from_rgba(gpui::rgb(0x8b5cf6))); // theme.optimization_color
 
         let curve = render_line(&iter_scale, &loss_scale, &points, &config);
 
         // Grid lines
-        let grid_color = gpui::rgba(0xffffff15);
+        let grid_color = theme.grid_color;
 
         div()
             .w(px(graph_width))

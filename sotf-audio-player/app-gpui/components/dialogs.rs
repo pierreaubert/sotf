@@ -19,6 +19,7 @@ impl PlayerView {
             Screen::Queue => "Queue",
             Screen::Spectrum => "Spectrum",
             Screen::Settings => "Settings",
+            Screen::Recording => "Recording",
         };
 
         // Get keybindings for current screen
@@ -139,7 +140,12 @@ impl PlayerView {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn render_keybinding(&self, key: &str, description: &str) -> impl IntoElement {
+    pub(crate) fn render_keybinding(
+        &self,
+        key: &str,
+        description: &str,
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
         div()
             .flex()
             .gap_4()
@@ -149,13 +155,13 @@ impl PlayerView {
                     .w(Rems(12.0))
                     .text_sm()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(rgb(0x569cd6))
+                    .text_color(theme.info)
                     .child(format!("  {}", key)),
             )
             .child(
                 div()
                     .text_sm()
-                    .text_color(rgb(0xcccccc))
+                    .text_color(theme.text_secondary)
                     .child(description.to_string()),
             )
     }
@@ -673,6 +679,10 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         ],
         Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
         Screen::Settings => vec![("T", "Cycle theme"), ("Alt-L", "Cycle language")],
+        Screen::Recording => vec![
+            ("Back/Close", "Navigate between steps"),
+            ("Next/Finish", "Proceed to next step or finish"),
+        ],
     }
 }
 

@@ -120,7 +120,7 @@ fn theme_to_toggle_theme(theme: &Theme) -> ToggleTheme {
     ToggleTheme {
         checked_bg: theme.accent,
         unchecked_bg: theme.surface,
-        knob: rgba(0xffffffff),
+        knob: theme.text_on_accent,
         label: theme.text_secondary,
         accent: theme.accent,
         accent_muted: theme.accent_muted,

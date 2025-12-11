@@ -6,41 +6,50 @@
 //! 3. Error curve (deviation - filter response)
 //! 4. Response with/without filter and target
 
-use crate::autoeq::HeadphoneOptimizationResult;
 use crate::autoeq::speaker_eq::SpeakerOptimizationResult;
+use crate::autoeq::HeadphoneOptimizationResult;
 use crate::components::graphs::{band_color, format_frequency};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use d3rs::color::D3Color;
 use d3rs::scale::{LinearScale, LogScale, Scale};
-use d3rs::shape::{LineConfig, LinePoint, render_line};
+use d3rs::shape::{render_line, LineConfig, LinePoint};
 use gpui::prelude::*;
 use gpui::*;
 
 /// Color palette for the plots
 mod colors {
-    use gpui::rgb;
+    use crate::theme::Theme;
 
-    pub fn input() -> gpui::Rgba {
-        rgb(0x6366f1) // Indigo - input/original
+    pub fn input(theme: &Theme) -> gpui::Rgba {
+        theme.graph_colors.input // Indigo - input/original
     }
-    pub fn target() -> gpui::Rgba {
-        rgb(0x22c55e) // Green - target
+    pub fn target(theme: &Theme) -> gpui::Rgba {
+        theme.success // Green - target
     }
-    pub fn filter() -> gpui::Rgba {
-        rgb(0xf59e0b) // Amber - filter response
+    pub fn filter(theme: &Theme) -> gpui::Rgba {
+        theme.warning // Amber - filter response
     }
-    pub fn corrected() -> gpui::Rgba {
-        rgb(0x3b82f6) // Blue - corrected
+    pub fn corrected(theme: &Theme) -> gpui::Rgba {
+        theme.info // Blue - corrected
     }
-    pub fn error() -> gpui::Rgba {
-        rgb(0xef4444) // Red - error
+    pub fn error(theme: &Theme) -> gpui::Rgba {
+        theme.error // Red - error
     }
-    pub fn deviation() -> gpui::Rgba {
-        rgb(0x8b5cf6) // Violet - deviation
+    pub fn deviation(theme: &Theme) -> gpui::Rgba {
+        theme.graph_colors.deviation // Violet - deviation
     }
-    pub fn grid() -> gpui::Rgba {
-        gpui::rgba(0xffffff15) // Subtle white for grid lines
+    pub fn grid(theme: &Theme) -> gpui::Rgba {
+        theme.grid_color // Subtle white for grid lines
+    }
+    pub fn secondary_line(theme: &Theme) -> gpui::Rgba {
+        theme.graph_colors.secondary_line // Grey for secondary lines
+    }
+    pub fn directivity_er(theme: &Theme) -> gpui::Rgba {
+        theme.graph_colors.directivity_er // Pink
+    }
+    pub fn directivity_sp(theme: &Theme) -> gpui::Rgba {
+        theme.graph_colors.directivity_sp // Purple
     }
 }
 
@@ -182,7 +191,7 @@ fn render_grid_lines(
         tick += step;
     }
 
-    let grid_color = colors::grid();
+    let grid_color = colors::grid(theme);
 
     div()
         .absolute()
@@ -378,13 +387,13 @@ fn render_filter_response_plot(
         .collect();
     let sum_config = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::filter()));
+        .stroke_color(D3Color::from_rgba(colors::filter(theme)));
     curve_elements
         .push(render_line(&freq_scale, &db_scale, &sum_points, &sum_config).into_any_element());
 
     let theme = theme.clone();
     let mut legend_with_sum = legend_items;
-    legend_with_sum.push(("Sum".to_string(), colors::filter()));
+    legend_with_sum.push(("Sum".to_string(), colors::filter(&theme)));
 
     div()
         .w(px(width))
@@ -463,17 +472,17 @@ fn render_filter_vs_deviation_plot(
 
     let config1 = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::deviation()));
+        .stroke_color(D3Color::from_rgba(colors::deviation(theme)));
     let config2 = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::filter()));
+        .stroke_color(D3Color::from_rgba(colors::filter(theme)));
 
     let curve1 = render_line(&freq_scale, &db_scale, &points1, &config1);
     let curve2 = render_line(&freq_scale, &db_scale, &points2, &config2);
 
     let legend_items = vec![
-        ("Deviation".to_string(), colors::deviation()),
-        ("Filter".to_string(), colors::filter()),
+        ("Deviation".to_string(), colors::deviation(theme)),
+        ("Filter".to_string(), colors::filter(theme)),
     ];
 
     let theme = theme.clone();
@@ -544,11 +553,11 @@ fn render_error_plot(
 
     let config = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::error()));
+        .stroke_color(D3Color::from_rgba(colors::error(theme)));
 
     let curve = render_line(&freq_scale, &db_scale, &points, &config);
 
-    let legend_items = vec![("Error".to_string(), colors::error())];
+    let legend_items = vec![("Error".to_string(), colors::error(theme))];
 
     let theme = theme.clone();
 
@@ -636,22 +645,22 @@ fn render_response_comparison_plot(
 
     let config1 = LineConfig::new()
         .stroke_width(1.5)
-        .stroke_color(D3Color::from_rgba(colors::input()));
+        .stroke_color(D3Color::from_rgba(colors::input(theme)));
     let config2 = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::corrected()));
+        .stroke_color(D3Color::from_rgba(colors::corrected(theme)));
     let config3 = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::target()));
+        .stroke_color(D3Color::from_rgba(colors::target(theme)));
 
     let curve1 = render_line(&freq_scale, &db_scale, &points1, &config1);
     let curve2 = render_line(&freq_scale, &db_scale, &points2, &config2);
     let curve3 = render_line(&freq_scale, &db_scale, &points3, &config3);
 
     let legend_items = vec![
-        ("Original".to_string(), colors::input()),
-        ("Corrected".to_string(), colors::corrected()),
-        ("Target".to_string(), colors::target()),
+        ("Original".to_string(), colors::input(theme)),
+        ("Corrected".to_string(), colors::corrected(theme)),
+        ("Target".to_string(), colors::target(theme)),
     ];
 
     let theme = theme.clone();
@@ -758,17 +767,17 @@ fn render_optimization_loss_plot(
 
     let config = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::deviation()));
+        .stroke_color(D3Color::from_rgba(colors::deviation(theme)));
 
     let curve = render_line(&iter_scale, &loss_scale, &points, &config);
 
-    let legend_items = vec![("Loss".to_string(), colors::deviation())];
+    let legend_items = vec![("Loss".to_string(), colors::deviation(theme))];
 
     let theme = theme.clone();
 
     // Custom grid lines
     let grid = {
-        let grid_color = colors::grid();
+        let grid_color = colors::grid(&theme);
         let x_ticks = vec![
             0.0,
             max_iter * 0.25,
@@ -990,22 +999,22 @@ fn render_spinorama_main_response_plot(
 
     let config_input = LineConfig::new()
         .stroke_width(1.5)
-        .stroke_color(D3Color::from_rgba(colors::input()));
+        .stroke_color(D3Color::from_rgba(colors::input(theme)));
     let config_corrected = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::corrected()));
+        .stroke_color(D3Color::from_rgba(colors::corrected(theme)));
     let config_target = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::target()));
+        .stroke_color(D3Color::from_rgba(colors::target(theme)));
 
     let curve_input = render_line(&freq_scale, &db_scale, &points_input, &config_input);
     let curve_corrected = render_line(&freq_scale, &db_scale, &points_corrected, &config_corrected);
     let curve_target = render_line(&freq_scale, &db_scale, &points_target, &config_target);
 
     let legend_items = vec![
-        ("Original".to_string(), colors::input()),
-        ("Corrected".to_string(), colors::corrected()),
-        ("Target".to_string(), colors::target()),
+        ("Original".to_string(), colors::input(theme)),
+        ("Corrected".to_string(), colors::corrected(theme)),
+        ("Target".to_string(), colors::target(theme)),
     ];
 
     let theme = theme.clone();
@@ -1076,10 +1085,10 @@ fn render_speaker_filter_response_plot(
         .collect();
     let config = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::filter()));
+        .stroke_color(D3Color::from_rgba(colors::filter(theme)));
     let curve = render_line(&freq_scale, &db_scale, &points, &config);
 
-    let legend_items = vec![("Filter Response".to_string(), colors::filter())];
+    let legend_items = vec![("Filter Response".to_string(), colors::filter(theme))];
     let theme = theme.clone();
 
     div()
@@ -1165,17 +1174,17 @@ fn render_spinorama_er_plot(
 
     let config_orig = LineConfig::new()
         .stroke_width(1.5)
-        .stroke_color(D3Color::from_rgba(gpui::rgba(0xaaaaaaff))); // Grey
+        .stroke_color(D3Color::from_rgba(colors::secondary_line(theme))); // Grey
     let config_corr = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::corrected()));
+        .stroke_color(D3Color::from_rgba(colors::corrected(theme)));
 
     let curve_orig = render_line(&freq_scale, &db_scale, &points_orig, &config_orig);
     let curve_corr = render_line(&freq_scale, &db_scale, &points_corr, &config_corr);
 
     let legend_items = vec![
-        ("Original ER".to_string(), gpui::rgba(0xaaaaaaff)),
-        ("Corrected ER".to_string(), colors::corrected()),
+        ("Original ER".to_string(), colors::secondary_line(theme)),
+        ("Corrected ER".to_string(), colors::corrected(theme)),
     ];
     let theme = theme.clone();
 
@@ -1264,17 +1273,17 @@ fn render_spinorama_sp_plot(
 
     let config_orig = LineConfig::new()
         .stroke_width(1.5)
-        .stroke_color(D3Color::from_rgba(gpui::rgba(0xaaaaaaff))); // Grey
+        .stroke_color(D3Color::from_rgba(colors::secondary_line(theme))); // Grey
     let config_corr = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::corrected()));
+        .stroke_color(D3Color::from_rgba(colors::corrected(theme)));
 
     let curve_orig = render_line(&freq_scale, &db_scale, &points_orig, &config_orig);
     let curve_corr = render_line(&freq_scale, &db_scale, &points_corr, &config_corr);
 
     let legend_items = vec![
-        ("Original SP".to_string(), gpui::rgba(0xaaaaaaff)),
-        ("Corrected SP".to_string(), colors::corrected()),
+        ("Original SP".to_string(), colors::secondary_line(theme)),
+        ("Corrected SP".to_string(), colors::corrected(theme)),
     ];
     let theme = theme.clone();
 
@@ -1355,17 +1364,23 @@ fn render_spinorama_di_plot(
 
     let config_er = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(gpui::rgba(0xf472b6ff))); // Pink
+        .stroke_color(D3Color::from_rgba(colors::directivity_er(theme))); // Pink
     let config_sp = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(gpui::rgba(0xc084fcff))); // Purple
+        .stroke_color(D3Color::from_rgba(colors::directivity_sp(theme))); // Purple
 
     let curve_er = render_line(&freq_scale, &db_scale, &points_er, &config_er);
     let curve_sp = render_line(&freq_scale, &db_scale, &points_sp, &config_sp);
 
     let legend_items = vec![
-        ("ER Directivity Index".to_string(), gpui::rgba(0xf472b6ff)),
-        ("SP Directivity Index".to_string(), gpui::rgba(0xc084fcff)),
+        (
+            "ER Directivity Index".to_string(),
+            colors::directivity_er(theme),
+        ),
+        (
+            "SP Directivity Index".to_string(),
+            colors::directivity_sp(theme),
+        ),
     ];
     let theme = theme.clone();
 
@@ -1440,17 +1455,17 @@ fn render_speaker_optimization_loss_plot(
 
     let config = LineConfig::new()
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(colors::deviation()));
+        .stroke_color(D3Color::from_rgba(colors::deviation(theme)));
 
     let curve = render_line(&iter_scale, &loss_scale, &points, &config);
 
-    let legend_items = vec![("Loss".to_string(), colors::deviation())];
+    let legend_items = vec![("Loss".to_string(), colors::deviation(theme))];
 
     let theme = theme.clone();
 
     // Custom grid lines
     let grid = {
-        let grid_color = colors::grid();
+        let grid_color = colors::grid(&theme);
         let x_ticks = vec![
             0.0,
             max_iter * 0.25,

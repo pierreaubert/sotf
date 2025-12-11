@@ -21,6 +21,8 @@ pub struct PlayerView {
     last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
     pub(crate) grid_scroll_handle: ScrollHandle,
+    /// Track if we've done initial focus (for macOS menu activation)
+    needs_initial_focus: bool,
 }
 
 impl PlayerView {
@@ -29,6 +31,7 @@ impl PlayerView {
 
         // Register plugin interactions
         // Register plugin interactions - moved to render
+
 
         // Set up periodic update timer for playback position and loudness
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
@@ -94,6 +97,7 @@ impl PlayerView {
             focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
+            needs_initial_focus: true,
         }
     }
 
@@ -239,6 +243,10 @@ impl PlayerView {
 
     fn switch_to_settings(&mut self, _: &SwitchToSettings, _: &mut Window, cx: &mut Context<Self>) {
         self.switch_screen(Screen::Settings, cx);
+    }
+
+    fn switch_to_recording(&mut self, _: &SwitchToRecording, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen(Screen::Recording, cx);
     }
 
     fn open_config(&mut self, _: &OpenConfig, _: &mut Window, cx: &mut Context<Self>) {
@@ -1703,6 +1711,14 @@ impl PlayerView {
 
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Focus view on first render to activate macOS menu bar
+        if self.needs_initial_focus {
+            self.needs_initial_focus = false;
+            self.focus_handle.focus(window);
+            window.activate_window();
+            cx.activate(true);
+        }
+
         // Update layout mode based on window height
         let window_bounds = window.bounds();
         let window_height: f32 = window_bounds.size.height.into();
@@ -1787,6 +1803,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_devices))
             .on_action(cx.listener(Self::switch_to_directory_manager))
             .on_action(cx.listener(Self::switch_to_settings))
+            .on_action(cx.listener(Self::switch_to_recording))
             .on_action(cx.listener(Self::open_config))
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))
@@ -1945,6 +1962,9 @@ impl Render for PlayerView {
                                 Screen::Settings => {
                                     self.render_settings_screen(cx).into_any_element()
                                 }
+                                Screen::Recording => {
+                                    self.render_recording_screen(cx).into_any_element()
+                                }
                                 // Default: split Library/Queue view
                                 Screen::Library | Screen::Queue => {
                                     self.render_split_view(cx).into_any_element()
@@ -1966,6 +1986,9 @@ impl Render for PlayerView {
                                 }
                                 Screen::Settings => {
                                     self.render_settings_screen(cx).into_any_element()
+                                }
+                                Screen::Recording => {
+                                    self.render_recording_screen(cx).into_any_element()
                                 }
                             }
                         }

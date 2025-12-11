@@ -100,13 +100,17 @@ fn render_eq_visualization(
         .collect();
 
     // Start building the chart with the combined response
+    let text_muted_u32 = {
+        let c = _theme.text_muted;
+        ((c.r as u32) << 16) | ((c.g as u32) << 8) | (c.b as u32)
+    };
     let mut chart_builder = line(&freq_points, &combined_response)
         .x_scale(ScaleType::Log)
         .y_scale(ScaleType::Linear)
         .x_label("Frequency")
         .y_label("SPL")
         .size(width, 300.0)
-        .color(0x1f1f1f) // Dark gray for combined
+        .color(text_muted_u32) // Dark gray for combined from theme.text_muted
         .stroke_width(2.5)
         .label("Combined");
 
@@ -129,13 +133,8 @@ fn render_eq_visualization(
             filter.frequency as i32
         );
 
-        chart_builder = chart_builder.add_series(
-            &band_response,
-            Some(label),
-            color,
-            stroke,
-            opacity,
-        );
+        chart_builder =
+            chart_builder.add_series(&band_response, Some(label), color, stroke, opacity);
     }
 
     // Build and return the chart
@@ -354,13 +353,13 @@ fn render_filter_type_selector(
 ) -> impl IntoElement {
     // Define all filter types with 2-letter abbreviations
     let filter_types: Vec<(usize, &'static str)> = vec![
-        (0, "PK"),   // Peak
-        (1, "LS"),   // Low Shelf
-        (2, "HS"),   // High Shelf
-        (3, "LP"),   // Low Pass
-        (4, "HP"),   // High Pass
-        (5, "BP"),   // Band Pass
-        (6, "NO"),   // Notch
+        (0, "PK"), // Peak
+        (1, "LS"), // Low Shelf
+        (2, "HS"), // High Shelf
+        (3, "LP"), // Low Pass
+        (4, "HP"), // High Pass
+        (5, "BP"), // Band Pass
+        (6, "NO"), // Notch
     ];
 
     let current_index = get_filter_type_index(current_type);
@@ -381,8 +380,7 @@ fn render_filter_type_selector(
                 .rounded_sm()
                 .cursor_pointer()
                 .when(is_active, |d| {
-                    d.bg(theme.accent)
-                        .text_color(theme.text_primary)
+                    d.bg(theme.accent).text_color(theme.text_primary)
                 })
                 .when(!is_active, |d| {
                     d.bg(theme.background_secondary)
@@ -391,7 +389,9 @@ fn render_filter_type_selector(
                 })
                 .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                     entity_clone.update(cx, |state, _| {
-                        state.app.set_plugin_param(plugin_idx, param_idx, idx as f64);
+                        state
+                            .app
+                            .set_plugin_param(plugin_idx, param_idx, idx as f64);
                     });
                 })
                 .child(abbrev)

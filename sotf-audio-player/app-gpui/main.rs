@@ -13,10 +13,15 @@ use std::sync::Arc;
 
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 
-/// Embedded assets including Lucide SVG icons
+/// Embedded assets including Lucide SVG icons and brand images
 #[derive(RustEmbed)]
 #[folder = "../assets"]
 #[include = "icons/*.svg"]
+#[include = "fonts/*.ttf"]
+#[include = "brands/*.jpg"]
+#[include = "brands/*.jpeg"]
+#[include = "brands/*.png"]
+#[include = "brands/*.webp"]
 #[include = "sotf.jpg"]
 struct Assets;
 
@@ -47,7 +52,24 @@ fn main() {
     log::info!("SOTF GPUI Player starting...");
 
     gpui::Application::new().with_assets(Assets).run(move |cx| {
-        cx.activate(true);
+        // Load custom fonts
+        let fonts = vec![
+            "fonts/DMSerifDisplay-Regular.ttf",
+            "fonts/DMSerifDisplay-Italic.ttf",
+        ];
+        
+        let mut font_data = Vec::new();
+        for path in fonts {
+            if let Some(file) = Assets::get(path) {
+                font_data.push(file.data);
+            } else {
+                log::warn!("Failed to load font: {}", path);
+            }
+        }
+        
+        if !font_data.is_empty() {
+            cx.text_system().add_fonts(font_data).unwrap();
+        }
 
         cx.set_menus(vec![
             Menu {
@@ -92,7 +114,7 @@ fn main() {
             .unwrap_or_default();
 
         // Create window with app state
-        let _ = cx.open_window(
+        let window = cx.open_window(
             WindowOptions {
                 app_id: Some("org.spinorama.sotf".into()),
                 window_bounds: Some(WindowBounds::Windowed(Bounds {
@@ -157,6 +179,10 @@ fn main() {
                 cx.new(|cx| ui::PlayerView::new(app_state.clone(), cx))
             },
         );
+
+        // Note: Window activation is handled in PlayerView::render on first frame
+        // to ensure macOS menu bar is properly active
+        let _ = window;
     });
 }
 

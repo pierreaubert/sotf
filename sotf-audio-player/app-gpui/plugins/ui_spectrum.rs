@@ -30,11 +30,13 @@ pub struct SpectrumColors {
 
 impl Default for SpectrumColors {
     fn default() -> Self {
+        // These defaults match the dark theme spectrum colors.
+        // When rendering, use Theme::spectrum_colors for theme-aware colors.
         Self {
-            background: rgb(0x000000),
-            low: rgb(0x22c55e),  // Green for bass
-            mid: rgb(0xeab308),  // Yellow for mids
-            high: rgb(0xef4444), // Red for highs
+            background: rgb(0x1a1a1a), // Dark background from theme.surface
+            low: rgb(0x22c55e),        // Green for bass (theme.success)
+            mid: rgb(0xeab308),        // Yellow for mids (theme.warning)
+            high: rgb(0xef4444),       // Red for highs (theme.error)
         }
     }
 }

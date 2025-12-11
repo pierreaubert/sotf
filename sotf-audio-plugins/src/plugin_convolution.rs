@@ -296,14 +296,12 @@ impl ConvolutionPlugin {
                     }
                     AudioBufferRef::S32(buf) => {
                         for i in 0..duration {
-                            sample_vec
-                                .push(<f32 as FromSample<i32>>::from_sample(buf.chan(ch)[i]));
+                            sample_vec.push(<f32 as FromSample<i32>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
                     AudioBufferRef::S16(buf) => {
                         for i in 0..duration {
-                            sample_vec
-                                .push(<f32 as FromSample<i16>>::from_sample(buf.chan(ch)[i]));
+                            sample_vec.push(<f32 as FromSample<i16>>::from_sample(buf.chan(ch)[i]));
                         }
                     }
                     AudioBufferRef::U8(buf) => {

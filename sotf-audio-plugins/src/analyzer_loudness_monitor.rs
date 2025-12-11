@@ -140,7 +140,11 @@ impl LoudnessMonitor {
 
         // Get true peaks per channel from ebur128
         let mut true_peaks_dbtp = vec![f64::NEG_INFINITY; self.channels as usize];
-        for (ch, peak_db) in true_peaks_dbtp.iter_mut().enumerate().take(self.channels as usize) {
+        for (ch, peak_db) in true_peaks_dbtp
+            .iter_mut()
+            .enumerate()
+            .take(self.channels as usize)
+        {
             match ebur.true_peak(ch as u32) {
                 Ok(true_peak_linear) => {
                     // Convert to dBTP (dB True Peak)
@@ -167,7 +171,11 @@ impl LoudnessMonitor {
 
         // Get current peak levels by scanning the buffer
         for frame_idx in 0..num_frames {
-            for (ch, channel_peak) in new_channel_peaks.iter_mut().enumerate().take(self.channels as usize) {
+            for (ch, channel_peak) in new_channel_peaks
+                .iter_mut()
+                .enumerate()
+                .take(self.channels as usize)
+            {
                 let sample_idx = frame_idx * self.channels as usize + ch;
                 let sample_abs = samples[sample_idx].abs() as f64;
                 *channel_peak = f64::max(*channel_peak, sample_abs);
