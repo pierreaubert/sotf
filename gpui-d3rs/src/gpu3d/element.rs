@@ -5,7 +5,7 @@ use super::config::Surface3DConfig;
 use super::data::SurfaceData;
 use super::mesh::SurfaceMesh;
 use super::renderer::Surface3DRenderer;
-use crate::surface3d::config::SurfacePlotType;
+use super::config::SurfacePlotType;
 use crate::text::{measure_text_width, paint_vector_text_at};
 use gpui::*;
 use image::{Frame, RgbaImage};

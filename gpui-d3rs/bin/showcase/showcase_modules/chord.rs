@@ -3,7 +3,7 @@ use d3rs::chord::{ChordLayout, RibbonGenerator};
 use gpui::*;
 use std::f64::consts::PI;
 
-pub fn render(_app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
+pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
     let matrix = vec![
         vec![11975.0, 5871.0, 8916.0, 2868.0],
         vec![1951.0, 10048.0, 2060.0, 6171.0],

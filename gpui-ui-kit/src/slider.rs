@@ -207,6 +207,8 @@ impl Slider {
     }
 
     /// Helper to snap a value to the step size
+    /// Note: Currently unused, kept for potential future use
+    #[allow(dead_code)]
     fn snap_value(&self, value: f32) -> f32 {
         if let Some(step) = self.step {
             let steps = ((value - self.min) / step).round();

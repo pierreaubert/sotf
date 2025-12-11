@@ -19,6 +19,7 @@ pub fn get_world_data(use_large: bool) -> &'static GeoJsonGeometry {
 }
 
 // Kept for compatibility if needed, but demos should move to get_world_data
+#[allow(dead_code)]
 pub fn world_continents() -> GeoJsonGeometry {
     generate_small_data()
 }

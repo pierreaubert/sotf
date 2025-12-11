@@ -4,7 +4,7 @@ use d3rs::geo::{
 };
 use gpui::*;
 
-use super::world_data::{get_world_data, world_continents};
+use super::world_data::get_world_data;
 use super::ShowcaseApp;
 use crate::GeoProjectionType;
 
@@ -481,7 +481,7 @@ fn project_point(
     lon: f64,
     lat: f64,
     proj_type: GeoProjectionType,
-    map_width: f64,
+    _map_width: f64,
     map_height: f64,
     center_x: f64,
     center_y: f64,

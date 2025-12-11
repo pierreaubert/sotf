@@ -9,7 +9,7 @@ use glam::Mat4;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
-use crate::surface3d::SurfacePlotType;
+use super::config::SurfacePlotType;
 
 /// Uniform buffer data (must match shader layout)
 #[repr(C)]

@@ -51,6 +51,7 @@ impl HierarchyNode {
     }
 
     /// Get the depth of the tree
+    #[allow(dead_code)]
     pub fn depth(&self) -> usize {
         if self.children.is_empty() {
             0
@@ -60,6 +61,7 @@ impl HierarchyNode {
     }
 
     /// Count total number of leaf nodes
+    #[allow(dead_code)]
     pub fn leaf_count(&self) -> usize {
         if self.is_leaf() {
             1

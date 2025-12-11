@@ -435,6 +435,8 @@ fn render_named_color(code: &'static str, color: D3Color) -> Div {
 use super::ShowcaseApp;
 
 /// Render a chromatic scale row
+/// TODO: Fix type inference for function pointers to enable usage
+#[allow(dead_code)]
 fn render_chromatic_row(label: &'static str, scale_fn: fn(f64) -> D3Color) -> Div {
     div()
         .flex()

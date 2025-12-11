@@ -287,6 +287,9 @@ impl NumberInput {
     }
 
     /// Format the current value for display
+    /// Note: Currently unused due to ownership constraints in render closures.
+    /// Logic is duplicated inline where needed.
+    #[allow(dead_code)]
     fn format_value(&self) -> String {
         let formatted = format!("{:.prec$}", self.value, prec = self.decimals);
         if let Some(ref unit) = self.unit {
@@ -297,6 +300,9 @@ impl NumberInput {
     }
 
     /// Parse a string to a value, respecting bounds
+    /// Note: Currently unused due to ownership constraints in render closures.
+    /// Logic is duplicated inline where needed.
+    #[allow(dead_code)]
     fn parse_value(&self, text: &str) -> Option<f64> {
         // Remove unit suffix if present
         let text = if let Some(ref unit) = self.unit {
@@ -465,11 +471,7 @@ impl RenderOnce for NumberInput {
         }
 
         // Apply font size
-        value_field = match self.size {
-            NumberInputSize::Sm => value_field.text_xs(),
-            NumberInputSize::Md => value_field.text_sm(),
-            NumberInputSize::Lg => value_field,
-        };
+        value_field = value_field.text_size(px(self.size.font_size()));
 
         if !disabled && !editing {
             // Click to start editing

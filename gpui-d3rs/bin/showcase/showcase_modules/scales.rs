@@ -1,7 +1,7 @@
 use d3rs::prelude::*;
 use gpui::*;
 
-pub fn render(app: &ShowcaseApp) -> Div {
+pub fn render(_app: &ShowcaseApp) -> Div {
     let linear = LinearScale::new().domain(0.0, 100.0).range(0.0, 500.0);
     let log_scale = LogScale::new().domain(20.0, 20000.0).range(0.0, 1.0);
 

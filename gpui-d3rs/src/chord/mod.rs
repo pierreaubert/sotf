@@ -205,13 +205,9 @@ impl RibbonGenerator {
 
         let sx0 = cx + r * sa0.cos();
         let sy0 = cy + r * sa0.sin();
-        let sx1 = cx + r * sa1.cos();
-        let sy1 = cy + r * sa1.sin();
 
         let tx0 = cx + r * ta0.cos();
         let ty0 = cy + r * ta0.sin();
-        let tx1 = cx + r * ta1.cos();
-        let ty1 = cy + r * ta1.sin();
 
         PathBuilder::new()
             .move_to(sx0, sy0)

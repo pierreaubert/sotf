@@ -367,7 +367,9 @@ impl Potentiometer {
         }
     }
 
-    /// Format the value display
+    /// Format the value display (with unit suffix)
+    /// Note: Currently unused, kept for potential future use
+    #[allow(dead_code)]
     fn format_value(&self) -> String {
         let value = self.value.clamp(self.min, self.max);
         let unit = self.unit.to_string();

@@ -65,7 +65,9 @@ pub struct TreemapRect {
     pub x1: f64,
     pub y1: f64,
     pub name: String,
+    #[allow(dead_code)] // Reserved for tooltip display
     pub value: u64,
+    #[allow(dead_code)] // Reserved for depth-based styling
     pub depth: usize,
     pub category_index: usize, // Index of top-level category for coloring
 }
@@ -386,9 +388,7 @@ fn find_best_row(
 
         // Calculate the worst aspect ratio in this row
         let mut worst_ratio = 0.0f64;
-        let mut check_sum = 0.0;
         for (_, v) in children.iter().take(count + 1) {
-            check_sum += *v;
             let rect_size = *v * scale / row_length;
             let ratio = if rect_size > row_length {
                 rect_size / row_length
