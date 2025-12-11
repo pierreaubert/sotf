@@ -168,21 +168,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Combine lighting with color
     let final_color = base_color * lighting;
-    
+
     // Isolines on surface
     // Every 3dB. Assuming normalized value 0..1 maps to range (e.g. 50dB).
     // 3dB is approx 0.06 normalized units.
     let step = 0.06;
     let line_width = 0.001;
     let feather = 0.0005;
-    
+
     let dist = abs(fract(in.normalized_value / step) - 0.5) * step;
-    
+
     var color = final_color;
-    
+
     // Anti-aliased line
     let line_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist);
-    
+
     if (line_alpha > 0.0) {
         // Blend black line
         color = mix(color, vec3<f32>(0.0, 0.0, 0.0), line_alpha * 0.5);
@@ -230,12 +230,12 @@ fn fs_projection(in: VertexOutput) -> @location(0) vec4<f32> {
     let step = 0.06;
     let line_width = 0.001;
     let feather = 0.0005;
-    
+
     let dist = abs(fract(value / step) - 0.5) * step;
-    
+
     // Anti-aliased line
     let line_alpha = 1.0 - smoothstep(line_width - feather, line_width + feather, dist);
-    
+
     if (line_alpha > 0.0) {
         return vec4<f32>(0.0, 0.0, 0.0, line_alpha * 0.8); // Black isolines
     } else {
@@ -287,12 +287,12 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
     // Grid lines
     let major_steps = 5.0;
     let minor_steps = 25.0;
-    
+
     // Analytic AA using derivatives
     // Compute screen-space change of u and v
     let du = fwidth(u);
     let dv = fwidth(v);
-    
+
     // Line width in UV space (approx 1.5 pixels)
     // We use max(du, dv) as a conservative estimate or individual widths
     let line_width_u = du * 1.0;
@@ -304,7 +304,7 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
     // We want a solid distinct border frame
     let dist_u_border = min(u, 1.0 - u);
     let dist_v_border = min(v, 1.0 - v);
-    
+
     // Logarithmic X axis support
     // If is_log_x is true, and we are on a face where U corresponds to X (XY, XZ),
     // we should modify u-grid lines.
@@ -312,7 +312,7 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
     // XY (Front/Back): u maps to X.
     // XZ (Bottom/Top): u maps to X.
     // YZ (Left/Right): u maps to Z. Log X doesn't affect Z lines.
-    
+
     var is_log_u = false;
     if (uniforms.is_log_x > 0.5) {
         // Check if we are on XY or XZ plane
@@ -330,7 +330,7 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Distance to nearest major grid line (interior lines)
     var dist_u_maj = 0.0;
-    
+
     if (is_log_u) {
         // Logarithmic grid lines at decades (10^k)
         // u = (log(x) - log(min)) / (log(max) - log(min))
@@ -339,7 +339,7 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
         // u = (k - log(min)) / range
         // k = u * range + log(min)
         // We want k to be integer.
-        
+
         let k = u * uniforms.x_range_log + uniforms.x_min_log;
         // Distance to nearest integer k
         let k_dist = abs(fract(k + 0.5) - 0.5);
@@ -354,7 +354,7 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
     let dist_v_maj = abs(fract(v * major_steps + 0.5) - 0.5) / major_steps;
     let border_width_u = du * 2.0; // Slightly thicker border
     let border_width_v = dv * 2.0;
-    
+
     // Smoothstep for AA
     let border_u_alpha = 1.0 - smoothstep(border_width_u - du, border_width_u + du, dist_u_border);
     let border_v_alpha = 1.0 - smoothstep(border_width_v - dv, border_width_v + dv, dist_v_border);
@@ -369,7 +369,7 @@ fn fs_grid(in: VertexOutput) -> @location(0) vec4<f32> {
     // Light blue grid color
     let grid_color = vec3<f32>(0.8, 0.85, 0.95);
     let border_color = vec3<f32>(0.0, 0.0, 0.0); // Black border
-    
+
     let major_alpha = 0.8;
     let minor_alpha = 0.4;
 

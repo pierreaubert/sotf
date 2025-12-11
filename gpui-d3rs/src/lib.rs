@@ -69,7 +69,7 @@ pub mod shape;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod surface;
 #[cfg(feature = "gpu-3d")]
-pub mod surface3d;
+pub mod gpu3d;
 #[cfg(feature = "gpui")]
 pub mod text;
 pub mod timer;
