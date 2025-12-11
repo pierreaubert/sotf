@@ -457,7 +457,8 @@ pub fn identify_wall_surface(
                 Some(crate::WallSurface::Floor)
             } else if (element_center.z - l.height).abs() < tolerance {
                 Some(crate::WallSurface::Ceiling)
-            } else if ((element_center.x - l.width1).abs() < tolerance && element_center.y < l.depth1)
+            } else if ((element_center.x - l.width1).abs() < tolerance
+                && element_center.y < l.depth1)
                 || ((element_center.x - l.width2).abs() < tolerance && element_center.y > l.depth1)
             {
                 Some(crate::WallSurface::Right)
