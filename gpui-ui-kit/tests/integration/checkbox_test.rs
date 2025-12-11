@@ -1,8 +1,11 @@
 //! Integration test for Checkbox component
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
 use gpui_ui_kit::checkbox::Checkbox;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 struct CheckboxTestView {
     checked: Arc<AtomicBool>,
@@ -23,7 +26,7 @@ impl Render for CheckboxTestView {
                 .checked(false)
                 .on_change(move |new_state, _window, _cx| {
                     checked_clone.store(new_state, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -31,7 +34,5 @@ impl Render for CheckboxTestView {
 #[gpui::test]
 async fn test_checkbox_renders(cx: &mut TestAppContext) {
     let checked = Arc::new(AtomicBool::new(false));
-    let _window = cx.add_window(|_window, _cx| {
-        CheckboxTestView::new(checked)
-    });
+    let _window = cx.add_window(|_window, _cx| CheckboxTestView::new(checked));
 }

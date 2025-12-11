@@ -34,9 +34,9 @@ use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 
 // Re-export types for FFI
-pub use sotf_audio_player::EQFilter;
 use autoeq_iir::BiquadFilterType;
 use gpui_ui_kit::Theme;
+pub use sotf_audio_player::EQFilter;
 
 /// Embedded assets for the AU plugin UI
 /// Currently unused - prepared for when GPUI window creation works
@@ -122,15 +122,12 @@ impl Render for AUEqView {
             )
             .child(
                 // Band controls
-                div()
-                    .mt_4()
-                    .flex()
-                    .gap_2()
-                    .children(
-                        filters.iter().enumerate().map(|(i, filter)| {
-                            self.render_band_control(i, filter, &theme)
-                        }),
-                    ),
+                div().mt_4().flex().gap_2().children(
+                    filters
+                        .iter()
+                        .enumerate()
+                        .map(|(i, filter)| self.render_band_control(i, filter, &theme)),
+                ),
             )
     }
 }
@@ -166,7 +163,12 @@ impl AUEqView {
             )
     }
 
-    fn render_band_control(&self, idx: usize, filter: &EQFilter, theme: &Theme) -> impl IntoElement {
+    fn render_band_control(
+        &self,
+        idx: usize,
+        filter: &EQFilter,
+        theme: &Theme,
+    ) -> impl IntoElement {
         let is_selected = idx == self.selected_band && self.is_editing;
 
         div()

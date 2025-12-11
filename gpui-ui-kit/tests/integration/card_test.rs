@@ -1,16 +1,13 @@
 //! Integration test for Card component
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
 use gpui_ui_kit::card::Card;
 
 struct CardTestView;
 
 impl Render for CardTestView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(
-            Card::new()
-                .content("Card content")
-        )
+        div().child(Card::new().content("Card content"))
     }
 }
 

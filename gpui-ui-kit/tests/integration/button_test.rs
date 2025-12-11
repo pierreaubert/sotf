@@ -2,9 +2,12 @@
 //!
 //! These tests verify that Button can be rendered in a real GPUI window.
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
 use gpui_ui_kit::button::Button;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 // Simple test view that renders a button
 struct ButtonTestView {
@@ -53,9 +56,7 @@ async fn test_context_creation(cx: &mut TestAppContext) {
 /// Test that a window can be created with a button
 #[gpui::test]
 async fn test_button_renders_in_window(cx: &mut TestAppContext) {
-    let _window = cx.add_window(|_window, _cx| {
-        ButtonTestView::new("Click Me")
-    });
+    let _window = cx.add_window(|_window, _cx| ButtonTestView::new("Click Me"));
 
     // If we got here without crashing, the window was created successfully
 }
@@ -67,8 +68,7 @@ async fn test_button_click_handler(cx: &mut TestAppContext) {
     let clicked_clone = clicked.clone();
 
     let _window = cx.add_window(|_window, _cx| {
-        ButtonTestView::new("Click Me")
-            .with_click_handler(clicked_clone)
+        ButtonTestView::new("Click Me").with_click_handler(clicked_clone)
     });
 
     // Note: Actually triggering the click in a test would require

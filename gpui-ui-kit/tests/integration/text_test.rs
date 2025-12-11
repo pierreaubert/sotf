@@ -1,7 +1,7 @@
 //! Integration test for Text components
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
-use gpui_ui_kit::text::{Text, Heading};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
+use gpui_ui_kit::text::{Heading, Text};
 
 struct TextTestView;
 

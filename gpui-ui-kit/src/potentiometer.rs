@@ -150,7 +150,14 @@ impl PotentiometerScale {
     /// Compute new value after stepping in normalized space
     /// `direction`: 1.0 for increase, -1.0 for decrease
     /// `step_percent`: step size as fraction (e.g., 0.05 for 5%)
-    fn step_value(self, current: f64, min: f64, max: f64, direction: f64, step_percent: f64) -> f64 {
+    fn step_value(
+        self,
+        current: f64,
+        min: f64,
+        max: f64,
+        direction: f64,
+        step_percent: f64,
+    ) -> f64 {
         let current_norm = self.value_to_normalized(current, min, max);
         let new_norm = (current_norm + step_percent * direction).clamp(0.0, 1.0);
         self.normalized_to_value(new_norm, min, max)

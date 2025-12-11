@@ -1,6 +1,6 @@
 //! Integration test for Select component
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
 use gpui_ui_kit::select::{Select, SelectOption};
 
 struct SelectTestView;
@@ -13,7 +13,7 @@ impl Render for SelectTestView {
                 .options(vec![
                     SelectOption::new("1", "Option 1"),
                     SelectOption::new("2", "Option 2"),
-                ])
+                ]),
         )
     }
 }

@@ -1,7 +1,7 @@
 //! Integration test for Tabs component
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
-use gpui_ui_kit::tabs::{Tabs, TabItem};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
+use gpui_ui_kit::tabs::{TabItem, Tabs};
 
 struct TabsTestView;
 
@@ -13,7 +13,7 @@ impl Render for TabsTestView {
                     TabItem::new("tab1", "Tab 1"),
                     TabItem::new("tab2", "Tab 2"),
                 ])
-                .selected_index(0)
+                .selected_index(0),
         )
     }
 }

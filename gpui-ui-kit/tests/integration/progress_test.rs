@@ -1,6 +1,6 @@
 //! Integration test for Progress component
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
 use gpui_ui_kit::progress::Progress;
 
 struct ProgressTestView;

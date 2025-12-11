@@ -415,7 +415,7 @@ impl Select {
                 .absolute()
                 .top_full()
                 .left_0()
-                .right_0()
+                .min_w_full() // Ensure dropdown is at least as wide as trigger
                 .mt_1()
                 .bg(theme.dropdown_bg)
                 .opacity(1.0)
@@ -471,10 +471,12 @@ impl Select {
                     // Add click handler for non-disabled, non-selected options
                     if let Some(ref handler) = on_change_rc {
                         let handler_click = handler.clone();
-                        option_el =
-                            option_el.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                        option_el = option_el.on_mouse_down(
+                            MouseButton::Left,
+                            move |_event, window, cx| {
                                 handler_click(&option_value, window, cx);
-                            });
+                            },
+                        );
                     }
                 }
 

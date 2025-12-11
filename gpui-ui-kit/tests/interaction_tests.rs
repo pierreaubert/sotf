@@ -3,16 +3,16 @@
 //! Tests that verify components support mouse and keyboard events.
 //! This ensures that all stateful components are properly interactive.
 
+use gpui_ui_kit::accordion::{Accordion, AccordionItem, AccordionMode};
 use gpui_ui_kit::button::{Button, ButtonVariant};
 use gpui_ui_kit::checkbox::Checkbox;
 use gpui_ui_kit::icon_button::IconButton;
+use gpui_ui_kit::input::Input;
+use gpui_ui_kit::menu::{Menu, MenuItem};
 use gpui_ui_kit::select::Select;
 use gpui_ui_kit::slider::Slider;
+use gpui_ui_kit::tabs::{TabItem, Tabs};
 use gpui_ui_kit::toggle::Toggle;
-use gpui_ui_kit::accordion::{Accordion, AccordionItem, AccordionMode};
-use gpui_ui_kit::tabs::{Tabs, TabItem};
-use gpui_ui_kit::menu::{Menu, MenuItem};
-use gpui_ui_kit::input::Input;
 
 /// Test that Button supports mouse click events
 #[test]

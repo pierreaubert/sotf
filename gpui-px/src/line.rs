@@ -373,7 +373,46 @@ impl LineChart {
             0.0
         };
 
-        let plot_width = (self.width as f64 - margin_left - margin_right).max(0.0);
+        // Calculate legend width first (needed for plot width calculation)
+        // Formula: color_indicator_width + gap + estimated_text_width + padding
+        // Color indicator: 16px, gap: 8px (gap_2), padding: 8px (p_2 on both sides)
+        let legend_gap = 20.0; // Gap between chart and legend
+        let legend_width = if self.show_legend {
+            // Collect legend items to determine if we have any
+            let mut has_legend_items = false;
+            let mut max_label_len = 0;
+
+            if self.label.is_some() {
+                has_legend_items = true;
+                max_label_len = max_label_len.max(self.label.as_ref().unwrap().len());
+            }
+
+            for series in &self.series {
+                if series.label.is_some() {
+                    has_legend_items = true;
+                    max_label_len = max_label_len.max(series.label.as_ref().unwrap().len());
+                }
+            }
+
+            if has_legend_items {
+                // Estimate ~7 pixels per character for text_xs font
+                let estimated_text_width = (max_label_len as f32) * 7.0;
+                16.0 + 8.0 + estimated_text_width + 16.0 // color + gap + text + padding
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        // Calculate plot width, accounting for legend if present
+        let width_for_legend = if legend_width > 0.0 {
+            legend_width + legend_gap
+        } else {
+            0.0
+        };
+        let plot_width =
+            (self.width as f64 - margin_left - margin_right - width_for_legend as f64).max(0.0);
         let plot_height =
             (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
@@ -396,7 +435,10 @@ impl LineChart {
         let (y_min, y_max) = if self.y_scale_type == ScaleType::Log {
             // For log scale, use multiplicative padding
             let min = all_y_values.iter().copied().fold(f64::INFINITY, f64::min);
-            let max = all_y_values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let max = all_y_values
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
             let padding_factor = 1.0 + DEFAULT_PADDING_FRACTION;
             (min / padding_factor, max * padding_factor)
         } else {
@@ -475,11 +517,21 @@ impl LineChart {
 
                 // Render all additional series first (so primary is on top)
                 for (series_data, series_config) in &series_data_configs {
-                    plot_area = plot_area.child(render_line(&x_scale, &y_scale, series_data, series_config));
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        series_data,
+                        series_config,
+                    ));
                 }
 
                 // Render primary series on top
-                plot_area = plot_area.child(render_line(&x_scale, &y_scale, &primary_data, &primary_config));
+                plot_area = plot_area.child(render_line(
+                    &x_scale,
+                    &y_scale,
+                    &primary_data,
+                    &primary_config,
+                ));
 
                 // Create axis configs with labels
                 let mut y_axis_config = AxisConfig::left().with_label_font_size(8.0);
@@ -502,24 +554,16 @@ impl LineChart {
                         plot_height as f32,
                         &axis_theme,
                     ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(plot_area)
-                            .child(render_axis(
-                                &x_scale,
-                                &x_axis_config,
-                                plot_width as f32,
-                                &axis_theme,
-                            )),
-                    )
+                    .child(div().flex().flex_col().child(plot_area).child(render_axis(
+                        &x_scale,
+                        &x_axis_config,
+                        plot_width as f32,
+                        &axis_theme,
+                    )))
                     .into_any_element()
             }
             (ScaleType::Log, ScaleType::Linear) => {
-                let x_scale = LogScale::new()
-                    .domain(x_min, x_max)
-                    .range(0.0, plot_width);
+                let x_scale = LogScale::new().domain(x_min, x_max).range(0.0, plot_width);
                 let y_scale = LinearScale::new()
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
@@ -541,11 +585,21 @@ impl LineChart {
 
                 // Render all additional series first
                 for (series_data, series_config) in &series_data_configs {
-                    plot_area = plot_area.child(render_line(&x_scale, &y_scale, series_data, series_config));
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        series_data,
+                        series_config,
+                    ));
                 }
 
                 // Render primary series on top
-                plot_area = plot_area.child(render_line(&x_scale, &y_scale, &primary_data, &primary_config));
+                plot_area = plot_area.child(render_line(
+                    &x_scale,
+                    &y_scale,
+                    &primary_data,
+                    &primary_config,
+                ));
 
                 // Create axis configs with labels and angled X labels for log scale
                 let mut y_axis_config = AxisConfig::left().with_label_font_size(8.0);
@@ -572,27 +626,19 @@ impl LineChart {
                         plot_height as f32,
                         &axis_theme,
                     ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(plot_area)
-                            .child(render_axis(
-                                &x_scale,
-                                &x_axis_config,
-                                plot_width as f32,
-                                &axis_theme,
-                            )),
-                    )
+                    .child(div().flex().flex_col().child(plot_area).child(render_axis(
+                        &x_scale,
+                        &x_axis_config,
+                        plot_width as f32,
+                        &axis_theme,
+                    )))
                     .into_any_element()
             }
             (ScaleType::Linear, ScaleType::Log) => {
                 let x_scale = LinearScale::new()
                     .domain(x_min, x_max)
                     .range(0.0, plot_width);
-                let y_scale = LogScale::new()
-                    .domain(y_min, y_max)
-                    .range(plot_height, 0.0);
+                let y_scale = LogScale::new().domain(y_min, y_max).range(plot_height, 0.0);
 
                 // Build plot area with grid and all lines
                 let mut plot_area = div()
@@ -611,11 +657,21 @@ impl LineChart {
 
                 // Render all additional series first
                 for (series_data, series_config) in &series_data_configs {
-                    plot_area = plot_area.child(render_line(&x_scale, &y_scale, series_data, series_config));
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        series_data,
+                        series_config,
+                    ));
                 }
 
                 // Render primary series on top
-                plot_area = plot_area.child(render_line(&x_scale, &y_scale, &primary_data, &primary_config));
+                plot_area = plot_area.child(render_line(
+                    &x_scale,
+                    &y_scale,
+                    &primary_data,
+                    &primary_config,
+                ));
 
                 // Create axis configs with labels
                 // Generate smart tick values for log Y axis to prevent collision
@@ -643,27 +699,17 @@ impl LineChart {
                         plot_height as f32,
                         &axis_theme,
                     ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(plot_area)
-                            .child(render_axis(
-                                &x_scale,
-                                &x_axis_config,
-                                plot_width as f32,
-                                &axis_theme,
-                            )),
-                    )
+                    .child(div().flex().flex_col().child(plot_area).child(render_axis(
+                        &x_scale,
+                        &x_axis_config,
+                        plot_width as f32,
+                        &axis_theme,
+                    )))
                     .into_any_element()
             }
             (ScaleType::Log, ScaleType::Log) => {
-                let x_scale = LogScale::new()
-                    .domain(x_min, x_max)
-                    .range(0.0, plot_width);
-                let y_scale = LogScale::new()
-                    .domain(y_min, y_max)
-                    .range(plot_height, 0.0);
+                let x_scale = LogScale::new().domain(x_min, x_max).range(0.0, plot_width);
+                let y_scale = LogScale::new().domain(y_min, y_max).range(plot_height, 0.0);
 
                 // Build plot area with grid and all lines
                 let mut plot_area = div()
@@ -682,11 +728,21 @@ impl LineChart {
 
                 // Render all additional series first
                 for (series_data, series_config) in &series_data_configs {
-                    plot_area = plot_area.child(render_line(&x_scale, &y_scale, series_data, series_config));
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        series_data,
+                        series_config,
+                    ));
                 }
 
                 // Render primary series on top
-                plot_area = plot_area.child(render_line(&x_scale, &y_scale, &primary_data, &primary_config));
+                plot_area = plot_area.child(render_line(
+                    &x_scale,
+                    &y_scale,
+                    &primary_data,
+                    &primary_config,
+                ));
 
                 // Create axis configs with labels and angled X labels for log scale
                 // Generate smart tick values for both log axes to prevent collision
@@ -717,25 +773,19 @@ impl LineChart {
                         plot_height as f32,
                         &axis_theme,
                     ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .child(plot_area)
-                            .child(render_axis(
-                                &x_scale,
-                                &x_axis_config,
-                                plot_width as f32,
-                                &axis_theme,
-                            )),
-                    )
+                    .child(div().flex().flex_col().child(plot_area).child(render_axis(
+                        &x_scale,
+                        &x_axis_config,
+                        plot_width as f32,
+                        &axis_theme,
+                    )))
                     .into_any_element()
             }
         };
 
-        // Collect legend items if enabled
+        // Collect legend items if enabled (legend_width already calculated above)
         let mut legend_items = Vec::new();
-        if self.show_legend {
+        if self.show_legend && legend_width > 0.0 {
             // Add primary series to legend if it has a label
             if let Some(label) = &self.label {
                 legend_items.push((self.color, label.clone()));
@@ -749,22 +799,6 @@ impl LineChart {
             }
         }
 
-        // Calculate legend width based on longest label
-        // Formula: color_indicator_width + gap + estimated_text_width + padding
-        // Color indicator: 16px, gap: 8px (gap_2), padding: 8px (p_2 on both sides)
-        let legend_width = if legend_items.is_empty() {
-            0.0
-        } else {
-            let max_label_len = legend_items
-                .iter()
-                .map(|(_, label)| label.len())
-                .max()
-                .unwrap_or(0);
-            // Estimate ~7 pixels per character for text_xs font
-            let estimated_text_width = (max_label_len as f32) * 7.0;
-            16.0 + 8.0 + estimated_text_width + 16.0 // color + gap + text + padding
-        };
-
         // Build container with optional title
         let mut container = div()
             .w(px(self.width))
@@ -775,8 +809,10 @@ impl LineChart {
 
         // Add title if present
         if let Some(title) = &self.title {
-            let font_config =
-                VectorFontConfig::horizontal(DEFAULT_TITLE_FONT_SIZE, self.theme.title_color.into());
+            let font_config = VectorFontConfig::horizontal(
+                DEFAULT_TITLE_FONT_SIZE,
+                self.theme.title_color.into(),
+            );
             container = container.child(
                 div()
                     .w_full()
@@ -791,11 +827,7 @@ impl LineChart {
         // Add chart content and legend side-by-side
         if !legend_items.is_empty() {
             // Build vertical legend on the right
-            let mut legend_column = div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .p_2();
+            let mut legend_column = div().flex().flex_col().gap_2().p_2();
 
             for (color, label) in legend_items {
                 legend_column = legend_column.child(
@@ -803,12 +835,7 @@ impl LineChart {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(
-                            div()
-                                .w(px(16.0))
-                                .h(px(3.0))
-                                .bg(rgb(color)),
-                        )
+                        .child(div().w(px(16.0)).h(px(3.0)).bg(rgb(color)))
                         .child(
                             div()
                                 .text_xs()
@@ -823,8 +850,8 @@ impl LineChart {
                 div()
                     .flex()
                     .flex_row()
-                    .gap(px(20.0))  // 20px gap between graph and legend
-                    .child(div().flex_1().child(chart_content))
+                    .gap(px(20.0)) // 20px gap between graph and legend
+                    .child(chart_content)
                     .child(div().w(px(legend_width)).child(legend_column)),
             );
         } else {

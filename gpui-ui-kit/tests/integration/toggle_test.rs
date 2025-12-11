@@ -1,6 +1,6 @@
 //! Integration test for Toggle component
 
-use gpui::{div, prelude::*, TestAppContext, Window, Context};
+use gpui::{Context, TestAppContext, Window, div, prelude::*};
 use gpui_ui_kit::toggle::Toggle;
 
 struct ToggleTestView;
@@ -10,7 +10,7 @@ impl Render for ToggleTestView {
         div().child(
             Toggle::new("test-toggle")
                 .label("Test Toggle")
-                .checked(true)
+                .checked(true),
         )
     }
 }
