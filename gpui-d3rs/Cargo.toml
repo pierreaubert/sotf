@@ -23,6 +23,8 @@ gpui = { workspace=true, optional = true }
 gpui-ui-kit = { version = "0.1", path = "../gpui-ui-kit", optional = true }
 regex = "1"
 delaunator = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 autoeq = { version="0.2", path = "../autoeq", optional = true }
 autoeq-cea2034 = { version="0.2", path = "../autoeq-cea2034", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }

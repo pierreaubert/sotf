@@ -1,12 +1,12 @@
 use d3rs::geo::{
     ConicEqualArea, Equirectangular, GeoPath, Graticule, Mercator, Orthographic, Projection,
-    Stereographic, Rotation,
+    Rotation, Stereographic,
 };
 use gpui::*;
 
+use super::world_data::{world_continents, get_world_data};
 use super::ShowcaseApp;
 use crate::GeoProjectionType;
-use super::world_data::world_continents;
 
 /// Famous cities with their coordinates
 const CITIES: &[(&str, f64, f64)] = &[
@@ -26,6 +26,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
     let current_projection = app.geo_projection_type;
     let rotation_lon = app.geo_rotation_lon;
     let rotation_lat = app.geo_rotation_lat;
+    let use_large_data = app.use_large_data;
 
     // Map dimensions
     let map_width = 800.0_f64;
@@ -134,8 +135,8 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     let rotation = Rotation::new().angles(rotation_lon, rotation_lat, 0.0);
 
                                     // Render simplified world
-                                    let continents = world_continents();
-                                    
+                                    let continents = get_world_data(use_large_data);
+
                                     // Helper to render path
                                     let render_path = |path_str: String, fill: Option<Rgba>, stroke: Option<Rgba>, width: f32| {
                                         // Decide whether to fill or stroke based on args (simplistic)
@@ -144,7 +145,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                         } else {
                                             PathBuilder::stroke(px(width))
                                         };
-                                        
+
                                         // Simple SVG path parser
                                         let mut chars = path_str.chars().peekable();
                                         let read_coord = |chars: &mut std::iter::Peekable<std::str::Chars>| -> Option<f32> {
@@ -156,7 +157,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                     break;
                                                 }
                                             }
-                                            
+
                                             let mut s = String::new();
                                             // Read sign
                                             if let Some(&c) = chars.peek() {
@@ -164,7 +165,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                     s.push(chars.next().unwrap());
                                                 }
                                             }
-                                            
+
                                             // Read number
                                             let mut has_dot = false;
                                             while let Some(&c) = chars.peek() {
@@ -177,14 +178,14 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                     break;
                                                 }
                                             }
-                                            
-                                            if s.is_empty() { 
-                                                None 
-                                            } else { 
+
+                                            if s.is_empty() {
+                                                None
+                                            } else {
                                                 s.parse::<f32>().ok().filter(|v| v.is_finite())
                                             }
                                         };
-                                        
+
                                         while let Some(&cmd) = chars.peek() {
                                             if cmd.is_ascii_alphabetic() {
                                                 chars.next();
@@ -207,7 +208,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                     'Z' | 'z' => {
                                                         path_builder.close();
                                                     }
-                                                    _ => {} 
+                                                    _ => {}
                                                 }
                                             } else {
                                                 // Implicit command (usually L after M)
@@ -219,7 +220,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                 }
                                             }
                                         }
-                                        
+
                                         if let Ok(path) = path_builder.build() {
                                             // Fill
                                             // Scene::paint_path is not directly available, need window.paint_path or similar
@@ -256,19 +257,19 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                     // The code I wrote replaces `path_str` generation with `continents_svg` and `grid_svg` generation blocks.
                                     // Let me double check if I left the old block in.
                                     // If `path_str` is unused, I should remove it to fix the error and cleanup.
-                                    
+
                                     // Looking at lines 316+ in previous `replace_file_content`, I see `// 1. Draw Continents (Fill)`.
                                     // So the previous block `let path_str = match ...` is likely still there and causing the ownership error even if unused?
                                     // Let's remove the redundant block if it exists.
-                                    
+
                                     // Actually, looking at the error message line numbers: 249, 264, 276...
                                     // These correspond to the FIRST match block.
                                     // I will remove this block entirely as it seems I intended to replace it with the separated rendering blocks but maybe I didn't delete it?
                                     // Or maybe I intended to keep it?
                                     // Let's replace the whole section with just the separated rendering blocks.
-                                    
+
                                      // Re-instantiate projection to separate draws
-                                     
+
                                      // 1. Draw Continents (Fill)
                                      {
                                          let continents_svg = match current_projection {
@@ -278,7 +279,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                               GeoProjectionType::Stereographic => { let p = Stereographic::new().scale(scale).translate(center_x, center_y).rotate(rotation.lambda, rotation.phi, rotation.gamma); GeoPath::new(p).render(&world_continents()) },
                                               GeoProjectionType::ConicEqualArea => { let p = ConicEqualArea::new().scale(scale).translate(center_x, center_y).center(0.0, 30.0).rotate(rotation.lambda, rotation.phi, rotation.gamma); GeoPath::new(p).render(&world_continents()) },
                                          };
-                                         
+
                                          // VERY simple M/L parser for demo purposes
                                          // In production, use a real SVG path parser or d3rs should output Path events directly
                                          // Use PathBuilder::fill() for filled shapes
@@ -317,7 +318,7 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                                                  _ => i += 1,
                                              }
                                          }
-                                         
+
                                          if let Ok(path) = builder.build() {
                                              // paint_path takes (path, color) in recent GPUI versions?
                                              // Looking at the error: unexpected argument #3 of type `gpui::Rgba`
@@ -593,7 +594,7 @@ fn project_point(
     // The previous implementation was:
     // let rotated_lon = lon + rotation_lon;
     // let rotated_lat = lat + rotation_lat;
-    
+
     // Now we use the proper Rotation helper from d3rs
     let rot = Rotation::new().angles(rotation_lon, rotation_lat, 0.0);
     let (rotated_lon, rotated_lat) = rot.rotate(lon, lat);
@@ -607,7 +608,7 @@ fn project_point(
             // Here we just check if it's "behind" the globe broadly.
             // A point is visible if dot product of normal and view vector > 0.
             // For simplicity, let's trust d3rs projection might return values, but we need to filter NaNs.
-            
+
             // The previous check was:
             // let lon_diff = rotated_lon.to_radians().cos();
             // let lat_cos = rotated_lat.to_radians().cos();
@@ -627,25 +628,34 @@ fn project_point(
     let (x, y) = match proj_type {
         GeoProjectionType::Mercator => {
             let proj = Mercator::new().scale(scale).translate(center_x, center_y);
-            // We already rotated the point, so we project directly? 
+            // We already rotated the point, so we project directly?
             // NO, `projejct` expects unrotated if the projection itself handles rotation.
             // But here we rotated MANUALLY above. So we project the rotated coords.
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::Equirectangular => {
-            let proj = Equirectangular::new().scale(scale).translate(center_x, center_y);
+            let proj = Equirectangular::new()
+                .scale(scale)
+                .translate(center_x, center_y);
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::Orthographic => {
-            let proj = Orthographic::new().scale(scale).translate(center_x, center_y);
+            let proj = Orthographic::new()
+                .scale(scale)
+                .translate(center_x, center_y);
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::Stereographic => {
-            let proj = Stereographic::new().scale(scale).translate(center_x, center_y);
+            let proj = Stereographic::new()
+                .scale(scale)
+                .translate(center_x, center_y);
             proj.project(rotated_lon, rotated_lat)
         }
         GeoProjectionType::ConicEqualArea => {
-            let proj = ConicEqualArea::new().scale(scale).translate(center_x, center_y).center(0.0, 30.0);
+            let proj = ConicEqualArea::new()
+                .scale(scale)
+                .translate(center_x, center_y)
+                .center(0.0, 30.0);
             proj.project(rotated_lon, rotated_lat)
         }
     };
@@ -683,14 +693,14 @@ fn render_cities(
             rotation_lon,
             rotation_lat,
         ) {
-            
             // Basic visibility check for Orthographic (hide points behind globe)
             if matches!(proj_type, GeoProjectionType::Orthographic) {
                 // If distance from center > radius (approx), hide
                 let dx = x - center_x;
                 let dy = y - center_y;
-                let r = map_height / 2.5; 
-                if dx*dx + dy*dy > r*r + 1.0 { // tolerance
+                let r = map_height / 2.5;
+                if dx * dx + dy * dy > r * r + 1.0 {
+                    // tolerance
                     continue;
                 }
             }

@@ -80,14 +80,14 @@ impl<T> HierarchyNode<T> {
         F: Fn(&HierarchyNode<T>, &HierarchyNode<T>) -> std::cmp::Ordering + Copy,
     {
         let mut node_borrow = node.borrow_mut();
-        
+
         if let Some(children) = &mut node_borrow.children {
             for child in children.iter() {
                 Self::sort(child.clone(), compare_fn);
             }
             children.sort_by(|a, b| compare_fn(&a.borrow(), &b.borrow()));
         }
-        
+
         drop(node_borrow);
         node
     }

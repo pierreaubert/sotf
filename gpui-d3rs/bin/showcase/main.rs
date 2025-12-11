@@ -29,6 +29,12 @@ pub enum DemoSection {
     D3KDE,
     D3Treemap,
     D3StackedBars,
+    // New D3 Demos
+    D3Versor,
+    D3Histogram,
+    D3Revenue,
+    D3Horizon,
+    D3Choropleth,
     // New Modules
     Hierarchy,
     Force,
@@ -58,6 +64,11 @@ impl DemoSection {
             Self::D3KDE,
             Self::D3Treemap,
             Self::D3StackedBars,
+            Self::D3Versor,
+            Self::D3Histogram,
+            Self::D3Revenue,
+            Self::D3Horizon,
+            Self::D3Choropleth,
         ]
     }
 
@@ -83,6 +94,11 @@ impl DemoSection {
             Self::D3KDE => "D3: KDE",
             Self::D3Treemap => "D3: Treemap",
             Self::D3StackedBars => "D3: Stacked Bars",
+            Self::D3Versor => "D3: Versor Dragging",
+            Self::D3Histogram => "D3: Histogram",
+            Self::D3Revenue => "D3: Revenue Stream",
+            Self::D3Horizon => "D3: Horizon Chart",
+            Self::D3Choropleth => "D3: Choropleth",
         }
     }
 }
@@ -188,6 +204,14 @@ pub struct ShowcaseApp {
     // Force Simulation
     pub force_simulation: d3rs::force::Simulation,
     pub force_running: bool,
+    // Horizon Chart
+    pub horizon_data: Vec<f64>,
+    pub horizon_offset: f64,
+    // Data toggle
+    pub use_large_data: bool,
+    // Dragging state
+    pub is_dragging: bool,
+    pub last_mouse_pos: Option<Point<Pixels>>,
     // Snapshot state
     pub snapshot_mode: bool,
     pub snapshot_list: Vec<DemoSection>,
@@ -196,7 +220,7 @@ pub struct ShowcaseApp {
 }
 
 impl ShowcaseApp {
-    fn new(cx: &mut Context<Self>) -> Self {
+    fn new(_cx: &mut Context<Self>) -> Self {
         let args: Vec<String> = std::env::args().collect();
         let snapshot_mode = args.iter().any(|arg| arg == "--snapshot");
 
@@ -248,32 +272,34 @@ impl ShowcaseApp {
             // Force Simulation
             force_simulation: {
                 // Initialize simulation
-                use d3rs::force::{Simulation, SimulationNode, ForceManyBody, ForceCenter};
+                use d3rs::force::{ForceCenter, ForceManyBody, Simulation, SimulationNode};
                 let width = 800.0;
                 let height = 600.0;
                 let mut nodes = Vec::new();
                 for i in 0..50 {
-                   let x = width / 2.0 + (i as f64 * 13.0 % 100.0 - 50.0);
-                   let y = height / 2.0 + (i as f64 * 17.0 % 100.0 - 50.0);
-                   nodes.push(SimulationNode::new(i, x, y));
+                    let x = width / 2.0 + (i as f64 * 13.0 % 100.0 - 50.0);
+                    let y = height / 2.0 + (i as f64 * 17.0 % 100.0 - 50.0);
+                    nodes.push(SimulationNode::new(i, x, y));
                 }
                 Simulation::new(nodes)
                     .force(Box::new(ForceManyBody::new()))
                     .force(Box::new(ForceCenter::new(width / 2.0, height / 2.0)))
             },
             force_running: false,
+            // Horizon Chart defaults
+            horizon_data: (0..200).map(|i| (i as f64 * 0.1).sin() * 20.0).collect(),
+            horizon_offset: 0.0,
+            use_large_data: false,
+            is_dragging: false,
+            last_mouse_pos: None,
             snapshot_mode,
             snapshot_list: DemoSection::all(),
             snapshot_index: 0,
             snapshot_wait_frames: 3, // Wait 60 frames initially
         };
 
-
-
         app
     }
-
-
 
     fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let current = self.current_section;
@@ -295,8 +321,44 @@ impl ShowcaseApp {
                     .text_lg()
                     .font_weight(FontWeight::BOLD)
                     .text_color(rgb(0xffffff))
-                    .mb_4()
+                    .mb_2()
                     .child("d3rs Showcase"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .mb_4()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0xaaaaaa))
+                            .child("World Data:"),
+                    )
+                    .child(
+                        div()
+                            .id("data-toggle")
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .bg(if self.use_large_data {
+                                rgb(0x448844)
+                            } else {
+                                rgb(0x444444)
+                            })
+                            .text_color(rgb(0xffffff))
+                            .text_xs()
+                            .child(if self.use_large_data {
+                                "Large (50m)"
+                            } else {
+                                "Small (Simp)"
+                            })
+                            .on_click(cx.listener(|this, _, _, _| {
+                                this.use_large_data = !this.use_large_data;
+                            })),
+                    ),
             )
             .children(DemoSection::all().into_iter().map(|section| {
                 let is_selected = section == current;
@@ -350,6 +412,15 @@ impl ShowcaseApp {
             DemoSection::D3StackedBars => {
                 showcase_modules::d3_examples::stacked_grouped_bars::render(self, cx)
             }
+            DemoSection::D3Versor => showcase_modules::d3_examples::demo_versor::render(self, cx),
+            DemoSection::D3Histogram => {
+                showcase_modules::d3_examples::demo_histogram::render(self, cx)
+            }
+            DemoSection::D3Revenue => showcase_modules::d3_examples::demo_revenue::render(self, cx),
+            DemoSection::D3Horizon => showcase_modules::d3_examples::demo_horizon::render(self, cx),
+            DemoSection::D3Choropleth => {
+                showcase_modules::d3_examples::demo_choropleth::render(self, cx)
+            }
             DemoSection::Hierarchy => showcase_modules::hierarchy::render(self, cx),
             DemoSection::Force => showcase_modules::force::render(self, cx),
             DemoSection::Chord => showcase_modules::chord::render(self, cx),
@@ -373,18 +444,23 @@ impl Render for ShowcaseApp {
             if self.snapshot_index == 0 {
                 println!("Starting snapshot automation...");
             }
-	    cx.notify(); // Request next frame
+            cx.notify(); // Request next frame
 
-	    if self.snapshot_index < self.snapshot_list.len() {
+            if self.snapshot_index < self.snapshot_list.len() {
                 // Determine output path
                 let section = self.snapshot_list[self.snapshot_index];
                 let index = self.snapshot_index;
-                let label = section.label().replace(" ", "_").replace(":", "").to_lowercase();
+                let label = section
+                    .label()
+                    .replace(" ", "_")
+                    .replace(":", "")
+                    .to_lowercase();
 
                 // Ensure output directory exists (relative to CWD)
                 let output_dir = std::path::Path::new("docs/images");
                 if !output_dir.exists() {
-                     std::fs::create_dir_all(output_dir).expect("Failed to create docs/images directory");
+                    std::fs::create_dir_all(output_dir)
+                        .expect("Failed to create docs/images directory");
                 }
 
                 let output_path = format!("docs/images/demo_{:02}_{}.png", index, label);
@@ -424,6 +500,18 @@ impl Render for ShowcaseApp {
             } else {
                 cx.quit();
             }
+        }
+
+        // Realtime animation for Horizon Chart
+        if self.current_section == DemoSection::D3Horizon {
+            self.horizon_offset += 0.1;
+            // Update data: simulate random walk or scrolling sine wave
+            let len = self.horizon_data.len();
+            for i in 0..len {
+                self.horizon_data[i] = ((i as f64 * 0.1) + self.horizon_offset).sin() * 20.0
+                    + ((i as f64 * 0.03) - self.horizon_offset * 0.5).cos() * 10.0;
+            }
+            cx.notify();
         }
 
         div()

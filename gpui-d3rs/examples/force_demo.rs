@@ -2,9 +2,9 @@
 //!
 //! Visualizes a force-directed graph simulation.
 
+use d3rs::force::{ForceCenter, ForceManyBody, Simulation, SimulationNode};
 use gpui::prelude::*;
 use gpui::*;
-use d3rs::force::{ForceCenter, ForceManyBody, Simulation, SimulationNode};
 use std::time::Duration;
 
 struct ForceDemo {
@@ -32,17 +32,17 @@ impl ForceDemo {
         let sim = Simulation::new(nodes)
             .force(Box::new(ForceManyBody::new()))
             .force(Box::new(ForceCenter::new(width / 2.0, height / 2.0)));
-            
+
         Self {
             simulation: sim,
             width,
             height,
         }
     }
-    
+
     fn tick(&mut self, cx: &mut Context<Self>) {
         self.simulation.tick();
-        cx.notify(); 
+        cx.notify();
     }
 }
 
@@ -61,7 +61,7 @@ impl Render for ForceDemo {
         */
 
         let mut elements = Vec::new();
-        
+
         // Render nodes
         for node_rc in &self.simulation.nodes {
             let n = node_rc.borrow();
@@ -72,19 +72,14 @@ impl Render for ForceDemo {
                     .top(px(n.y as f32 - 5.0))
                     .size(px(10.0))
                     .bg(rgb(0xff4444))
-                    .rounded_full()
+                    .rounded_full(),
             );
         }
 
         div()
             .size_full()
             .bg(rgb(0x1e1e1e))
-            .child(
-                div()
-                    .relative()
-                    .size_full()
-                    .children(elements)
-            )
+            .child(div().relative().size_full().children(elements))
     }
 }
 
@@ -96,11 +91,10 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            |_, cx| {
-                cx.new(|cx| ForceDemo::new(cx))
-            },
-        ).unwrap();
-        
+            |_, cx| cx.new(|cx| ForceDemo::new(cx)),
+        )
+        .unwrap();
+
         cx.activate(true);
     });
 }

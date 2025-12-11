@@ -18,10 +18,10 @@
 //! assert_eq!(bisect_right_f64(&sorted, 4.0), 3);
 //! ```
 
-mod bin;
+pub mod bin;
 mod search;
 mod sets;
-mod statistics;
+pub mod statistics;
 mod ticks;
 mod transform;
 

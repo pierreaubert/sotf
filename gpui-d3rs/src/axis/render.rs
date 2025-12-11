@@ -169,9 +169,21 @@ where
         // Title (horizontal for bottom axis)
         .when(config.title.is_some(), |el| {
             let title = config.title.clone().unwrap_or_default();
+
+            // Calculate label height accounting for angle
+            let label_height = if config.label_angle.abs() > 0.1 {
+                // Approximate height for angled text: font_size * sin(angle) + some width component
+                let angle_rad = config.label_angle.abs() * std::f32::consts::PI / 180.0;
+                // Assume average label width of ~40px for frequency labels
+                let estimated_label_width = 40.0_f32;
+                estimated_label_width * angle_rad.sin() + config.label_font_size * angle_rad.cos()
+            } else {
+                config.label_font_size
+            };
+
             let title_top = config.tick_size
                 + config.tick_padding
-                + config.label_font_size
+                + label_height
                 + config.title_padding;
             let font_config = VectorFontConfig::horizontal(
                 config.title_font_size,

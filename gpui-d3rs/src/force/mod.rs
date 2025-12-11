@@ -88,7 +88,7 @@ impl Simulation {
         // Apply velocity and update positions
         for node_rc in &self.nodes {
             let mut node = node_rc.borrow_mut();
-            
+
             if let Some(fx) = node.fx {
                 node.x = fx;
                 node.vx = 0.0;
@@ -96,7 +96,7 @@ impl Simulation {
                 node.vx *= self.velocity_decay;
                 node.x += node.vx;
             }
-            
+
             if let Some(fy) = node.fy {
                 node.y = fy;
                 node.vy = 0.0;
@@ -129,16 +129,16 @@ impl Force for ForceCenter {
         let n = nodes.len() as f64;
         let mut sx = 0.0;
         let mut sy = 0.0;
-        
+
         for node_rc in nodes {
             let node = node_rc.borrow();
             sx += node.x;
             sy += node.y;
         }
-        
+
         sx = (sx / n - self.x) * 1.0; // Strength 1.0
         sy = (sy / n - self.y) * 1.0;
-        
+
         for node_rc in nodes {
             let mut node = node_rc.borrow_mut();
             node.x -= sx;
@@ -160,34 +160,34 @@ impl ForceManyBody {
 
 impl Force for ForceManyBody {
     fn initialize(&mut self, _nodes: &[Rc<RefCell<SimulationNode>>]) {}
-    
+
     fn force(&mut self, alpha: f64, nodes: &[Rc<RefCell<SimulationNode>>]) {
         // Brute force O(n^2) for simplicity in this MVP
         // Real D3 uses Barnes-Hut (Quadtree)
-        
+
         let n = nodes.len();
         for i in 0..n {
             for j in (i + 1)..n {
                 let mut node_i = nodes[i].borrow_mut();
                 let mut node_j = nodes[j].borrow_mut();
-                
+
                 let dx = node_j.x - node_i.x;
                 let dy = node_j.y - node_i.y;
                 let mut l2 = dx * dx + dy * dy;
-                
+
                 if l2 == 0.0 {
                     l2 = 1.0; // Avoid division by zero, should use random jiggle
                 }
-                
+
                 let w = self.strength * alpha / l2;
                 // Ideally should use distance bounds, etc.
-                
+
                 let l = l2.sqrt();
                 // Apply force
-                
+
                 node_i.vx += dx / l * w;
                 node_i.vy += dy / l * w;
-                
+
                 node_j.vx -= dx / l * w;
                 node_j.vy -= dy / l * w;
             }

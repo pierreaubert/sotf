@@ -2,7 +2,7 @@ use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
 use d3rs::prelude::*;
 use gpui::*;
 
-pub fn render(app: &ShowcaseApp) -> Div {
+pub fn render(_app: &ShowcaseApp) -> Div {
     let theme = DefaultAxisTheme;
     let x_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, 400.0);
     let freq_scale = LogScale::new().domain(20.0, 20000.0).range(0.0, 400.0);

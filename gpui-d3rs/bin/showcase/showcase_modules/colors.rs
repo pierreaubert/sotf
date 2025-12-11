@@ -436,21 +436,20 @@ use super::ShowcaseApp;
 
 /// Render a chromatic scale row
 fn render_chromatic_row(label: &'static str, scale_fn: fn(f64) -> D3Color) -> Div {
-   div()
-       .flex()
-       .items_center()
-       .gap_3()
-       .child(
-           div()
-               .w(px(120.0))
-               .text_sm()
-               .text_color(rgb(0x333333))
-               .child(label),
-       )
-       .child(div().flex().children((0..50).map(|i| {
-           let t = i as f64 / 49.0;
-           let color = scale_fn(t);
-           div().w(px(8.0)).h(px(30.0)).bg(color.to_rgba())
-       })))
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .child(
+            div()
+                .w(px(120.0))
+                .text_sm()
+                .text_color(rgb(0x333333))
+                .child(label),
+        )
+        .child(div().flex().children((0..50).map(|i| {
+            let t = i as f64 / 49.0;
+            let color = scale_fn(t);
+            div().w(px(8.0)).h(px(30.0)).bg(color.to_rgba())
+        })))
 }
-

@@ -36,15 +36,15 @@ pub mod brush;
 pub mod chord;
 pub mod color;
 pub mod ease;
-pub mod format;
 pub mod force;
+pub mod format;
 pub mod hierarchy;
 pub mod interpolate;
 pub mod scale;
-pub mod time;
-pub mod zoom;
 #[cfg(test)]
 mod tests_golden;
+pub mod time;
+pub mod zoom;
 
 // Note: axis, grid, and text modules are excluded from test builds due to
 // a known gpui_macros proc macro stack overflow issue in debug compilation.

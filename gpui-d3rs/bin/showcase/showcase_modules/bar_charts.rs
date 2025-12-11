@@ -4,7 +4,7 @@ use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
 use gpui::*;
 
-pub fn render(app: &ShowcaseApp) -> Div {
+pub fn render(_app: &ShowcaseApp) -> Div {
     let theme = DefaultAxisTheme;
     let x_scale = LinearScale::new().domain(0.0, 6.0).range(0.0, 500.0);
     let y_scale = LinearScale::new().domain(0.0, 100.0).range(0.0, 250.0);
