@@ -24,6 +24,7 @@ use std::path::PathBuf;
 // Include roomeq modules
 mod crossover_optim;
 mod eq_optim;
+mod fir_optim;
 mod load;
 mod output;
 mod types;
@@ -76,6 +77,8 @@ fn run(args: Args) -> Result<()> {
 
     info!("Found {} speakers", room_config.speakers.len());
 
+    let output_dir = args.output.parent().unwrap_or(std::path::Path::new("."));
+
     // Process each speaker
     let mut channel_chains = HashMap::new();
     let mut pre_scores = Vec::new();
@@ -89,6 +92,7 @@ fn run(args: Args) -> Result<()> {
             speaker_config,
             &room_config,
             args.sample_rate,
+            output_dir,
         )?;
 
         channel_chains.insert(channel_name.to_string(), chain);
@@ -142,15 +146,16 @@ fn process_speaker(
     speaker_config: &SpeakerConfig,
     room_config: &RoomConfig,
     sample_rate: f64,
+    output_dir: &std::path::Path,
 ) -> Result<(ChannelDspChain, f64, f64)> {
     match speaker_config {
         SpeakerConfig::Single(measurement) => {
             // Simple case: single measurement
-            process_single_speaker(channel_name, measurement, room_config, sample_rate)
+            process_single_speaker(channel_name, measurement, room_config, sample_rate, output_dir)
         }
         SpeakerConfig::Group(group) => {
             // Multi-driver case: optimize crossover and EQ
-            process_speaker_group(channel_name, group, room_config, sample_rate)
+            process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)
         }
     }
 }
@@ -163,6 +168,7 @@ fn process_single_speaker(
     measurement: &types::MeasurementRef,
     room_config: &RoomConfig,
     sample_rate: f64,
+    output_dir: &std::path::Path,
 ) -> Result<(ChannelDspChain, f64, f64)> {
     // Load measurement
     let curve = load::load_measurement(measurement)
@@ -192,22 +198,102 @@ fn process_single_speaker(
     let normalized_spl = &curve.spl - mean;
     let pre_score = autoeq::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
 
-    // Optimize EQ (returns filters and post_score)
-    let (eq_filters, post_score) =
-        eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
-        .map_err(|e| anyhow!("{}", e))
-        .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
+    match room_config.optimizer.mode.as_str() {
+        "fir" => {
+            // FIR mode
+            info!("  Generating FIR filter...");
+            let coeffs = fir_optim::generate_fir_correction(
+                &curve,
+                &room_config.optimizer,
+                room_config.target_curve.as_ref(),
+                sample_rate,
+            ).map_err(|e| anyhow!("FIR generation failed: {}", e))?;
 
-    info!("  Optimized {} EQ filters", eq_filters.len());
-    info!(
-        "  Pre-score: {:.6}, Post-score: {:.6}",
-        pre_score, post_score
-    );
+            // Save WAV
+            let filename = format!("{}_fir.wav", channel_name);
+            let wav_path = output_dir.join(&filename);
+            autoeq::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
+                .map_err(|e| anyhow!("Failed to save FIR WAV: {}", e))?;
+            
+            info!("  Saved FIR filter to {}", wav_path.display());
 
-    // Build DSP chain (no gain, no crossover for simple speaker)
-    let chain = output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
+            // Build chain
+            let plugin = output::create_convolution_plugin(&filename);
+            let chain = types::ChannelDspChain {
+                channel: channel_name.to_string(),
+                plugins: vec![plugin],
+                drivers: None,
+            };
+            
+            Ok((chain, pre_score, 0.0)) 
+        },
+        "mixed" => {
+            // Mixed mode
+            // 1. Optimize IIR
+            let (mut eq_filters, post_iir_score) =
+                eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
+                .map_err(|e| anyhow!("{}", e))
+                .with_context(|| format!("IIR optimization failed for channel {}", channel_name))?;
 
-    Ok((chain, pre_score, post_score))
+            info!("  IIR stage: {} filters, score={:.6}", eq_filters.len(), post_iir_score);
+
+            // 2. Compute IIR response
+            use autoeq_iir::Biquad;
+            // Need a way to compute PEQ response in dB. 
+            let peq: Vec<(f64, Biquad)> = eq_filters.iter().map(|b| (1.0, b.clone())).collect();
+            let iir_response = autoeq_iir::compute_peq_response(&curve.freq, &peq, sample_rate);
+
+            // 3. Create residual curve (Measurement + IIR)
+            use autoeq::Curve;
+            let input_plus_iir = Curve {
+                freq: curve.freq.clone(),
+                spl: &curve.spl + &iir_response,
+                phase: curve.phase.clone(),
+            };
+
+            // 4. Generate FIR for residual
+            info!("  Generating FIR for residual...");
+            let coeffs = fir_optim::generate_fir_correction(
+                &input_plus_iir,
+                &room_config.optimizer,
+                room_config.target_curve.as_ref(),
+                sample_rate,
+            ).map_err(|e| anyhow!("FIR generation failed: {}", e))?;
+
+            // 5. Save WAV
+            let filename = format!("{}_residual_fir.wav", channel_name);
+            let wav_path = output_dir.join(&filename);
+            autoeq::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
+                .map_err(|e| anyhow!("Failed to save FIR WAV: {}", e))?;
+            
+            info!("  Saved FIR filter to {}", wav_path.display());
+
+            // 6. Build chain (IIR + Convolution)
+            let conv_plugin = output::create_convolution_plugin(&filename);
+            let mut chain = output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
+            chain.plugins.push(conv_plugin);
+
+            Ok((chain, pre_score, 0.0))
+        },
+        _ => {
+            // Default IIR mode (existing logic)
+            let (eq_filters, post_score) =
+                eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
+                .map_err(|e| anyhow!("{}", e))
+                .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
+
+            info!("  Optimized {} EQ filters", eq_filters.len());
+            info!(
+                "  Pre-score: {:.6}, Post-score: {:.6}",
+                pre_score, post_score
+            );
+
+            // Build DSP chain (no gain, no crossover for simple speaker)
+            let chain = output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
+
+            Ok((chain, pre_score, post_score))
+        }
+    }
 }
 
 /// Process a speaker group with multiple drivers and crossovers
@@ -218,6 +304,7 @@ fn process_speaker_group(
     group: &types::SpeakerGroup,
     room_config: &RoomConfig,
     sample_rate: f64,
+    _output_dir: &std::path::Path,
 ) -> Result<(ChannelDspChain, f64, f64)> {
     // Load all measurements in the group
     let mut driver_curves = Vec::new();

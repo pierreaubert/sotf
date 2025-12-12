@@ -18,6 +18,8 @@ log = { workspace = true }
 num_cpus = { workspace = true }
 num-complex = { workspace = true }
 metaheuristics-nature = { workspace = true }
+rustfft = { workspace = true }
+hound = { workspace = true }
 plotly = { workspace = true }
 rand = { workspace = true }
 rand_chacha = "0.9"

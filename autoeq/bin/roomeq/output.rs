@@ -115,6 +115,16 @@ pub fn create_delay_plugin(delay_ms: f64) -> PluginConfigWrapper {
     }
 }
 
+/// Create a convolution plugin configuration
+pub fn create_convolution_plugin(wav_path: &str) -> PluginConfigWrapper {
+    PluginConfigWrapper {
+        plugin_type: "convolution".to_string(),
+        parameters: json!({
+            "ir_file": wav_path
+        }),
+    }
+}
+
 /// Build a DSP chain for a multi-driver speaker with active crossover
 ///
 /// # Arguments

@@ -126,9 +126,28 @@ pub enum TargetCurveConfig {
     Predefined(String),
 }
 
+/// FIR filter configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirConfig {
+    /// Number of taps (coefficients)
+    #[serde(default = "default_fir_taps")]
+    pub taps: usize,
+    /// Phase response type: "linear" or "minimum"
+    #[serde(default = "default_fir_phase")]
+    pub phase: String,
+}
+
 /// Optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizerConfig {
+    /// Optimization mode: "iir" (default), "fir", "mixed"
+    #[serde(default = "default_opt_mode")]
+    pub mode: String,
+
+    /// FIR configuration (if mode is "fir" or "mixed")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fir: Option<FirConfig>,
+
     /// Loss function type ("flat" or "score")
     #[serde(default = "default_loss_type")]
     pub loss_type: String,
@@ -184,6 +203,15 @@ fn default_algorithm() -> String {
 fn default_peq_model() -> String {
     "pk".to_string()
 }
+fn default_opt_mode() -> String {
+    "iir".to_string()
+}
+fn default_fir_taps() -> usize {
+    4096
+}
+fn default_fir_phase() -> String {
+    "minimum".to_string()
+}
 fn default_num_filters() -> usize {
     10
 }
@@ -223,6 +251,8 @@ impl Default for OptimizerConfig {
             max_freq: default_max_freq(),
             max_iter: default_max_iter(),
             peq_model: default_peq_model(),
+            mode: default_opt_mode(),
+            fir: None,
         }
     }
 }

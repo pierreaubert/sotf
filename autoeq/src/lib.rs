@@ -61,6 +61,8 @@ pub mod read;
 pub mod signal;
 /// Shared workflow steps used by binaries
 pub mod workflow;
+/// FIR filter design and optimization
+pub mod fir;
 /// Mapping
 pub mod x2peq;
 
