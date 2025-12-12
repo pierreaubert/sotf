@@ -35,6 +35,7 @@ pub fn smooth_one_over_n_octave(curve: &Curve, n: usize) -> Curve {
     Curve {
         freq: curve.freq.clone(),
         spl: out,
+        phase: None,
     }
 }
 

@@ -21,7 +21,9 @@ use crate::cea2034 as score;
 use crate::read;
 use clap::ValueEnum;
 use ndarray::Array1;
+use num_complex::Complex64;
 use std::collections::HashMap;
+use std::f64::consts::PI;
 
 /// The type of loss function to use during optimization
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -393,12 +395,27 @@ pub fn curve_slope_per_octave_in_range(curve: &crate::Curve, fmin: f64, fmax: f6
     regression_slope_per_octave_in_range(&curve.freq, &curve.spl, fmin, fmax)
 }
 
-/// Compute the combined frequency response of multiple drivers with crossovers and gains
+/// Helper to compute complex response of a biquad filter
+fn biquad_complex_response(biquad: &crate::iir::Biquad, f: f64) -> Complex64 {
+    let (a1, a2, b0, b1, b2) = biquad.constants();
+    let omega = 2.0 * PI * f / biquad.srate;
+    // z^-1 = e^(-j*omega) = cos(-omega) + j*sin(-omega)
+    let z_inv = Complex64::from_polar(1.0, -omega);
+    let z_inv2 = z_inv * z_inv;
+    
+    let num = b0 + b1 * z_inv + b2 * z_inv2;
+    let den = 1.0 + a1 * z_inv + a2 * z_inv2;
+    
+    num / den
+}
+
+/// Compute the combined frequency response of multiple drivers with crossovers, gains, and delays
 ///
 /// # Arguments
 /// * `data` - DriversLossData containing driver measurements and crossover type
 /// * `gains` - Gain in dB for each driver
 /// * `crossover_freqs` - Crossover frequencies between successive driver pairs
+/// * `delays` - Optional delay in ms for each driver
 /// * `sample_rate` - Sample rate for filter design
 ///
 /// # Returns
@@ -407,10 +424,11 @@ pub fn compute_drivers_combined_response(
     data: &DriversLossData,
     gains: &[f64],
     crossover_freqs: &[f64],
+    delays: Option<&[f64]>,
     sample_rate: f64,
 ) -> Array1<f64> {
     use crate::iir::{
-        compute_peq_response, peq_butterworth_highpass, peq_butterworth_lowpass,
+        peq_butterworth_highpass, peq_butterworth_lowpass,
         peq_linkwitzriley_highpass, peq_linkwitzriley_lowpass,
     };
 
@@ -430,88 +448,87 @@ pub fn compute_drivers_combined_response(
         n_drivers,
         crossover_freqs.len()
     );
+    if let Some(d) = delays {
+        assert_eq!(d.len(), n_drivers, "Must have one delay per driver");
+    }
 
     // Interpolate each driver's response to the common frequency grid
-    // Each driver is normalized by its own passband (defined by crossover frequencies)
-    // This ensures all drivers are aligned to 0 dB in their passbands
-    let mut driver_responses = Vec::new();
+    let mut driver_curves = Vec::new();
     for (i, driver) in data.drivers.iter().enumerate() {
-        // Determine passband for this driver based on crossover frequencies
-        let passband_low = if i == 0 {
-            20.0 // First driver starts at 20 Hz
-        } else {
-            crossover_freqs[i - 1]
-        };
-        let passband_high = if i == n_drivers - 1 {
-            20000.0 // Last driver extends to 20 kHz
-        } else {
-            crossover_freqs[i]
-        };
+        let passband_low = if i == 0 { 20.0 } else { crossover_freqs[i - 1] };
+        let passband_high = if i == n_drivers - 1 { 20000.0 } else { crossover_freqs[i] };
 
         let interpolated = crate::read::normalize_and_interpolate_response_with_range(
             &data.freq_grid,
             &Curve {
                 freq: driver.freq.clone(),
                 spl: driver.spl.clone(),
+                phase: driver.phase.clone(),
             },
             passband_low,
             passband_high,
         );
-        driver_responses.push(interpolated.spl);
+        driver_curves.push(interpolated);
     }
 
-    // Apply gain and crossover filters to each driver
-    let mut filtered_responses = Vec::new();
+    // Sum complex responses
+    let mut combined_complex = Array1::<Complex64>::zeros(data.freq_grid.len());
 
     for i in 0..n_drivers {
-        let mut response = &driver_responses[i] + gains[i]; // Apply gain
+        let curve = &driver_curves[i];
+        let gain = gains[i];
+        let mag_factor = 10.0_f64.powf(gain / 20.0);
+        let delay_s = delays.map(|d| d[i]).unwrap_or(0.0) / 1000.0;
 
-        // Apply crossover filters based on position
+        // Generate filters for this driver
+        let mut filters = Vec::new();
         if i > 0 {
-            // Apply highpass from crossover with previous driver
             let xover_freq = crossover_freqs[i - 1];
-            let hp_filter = match data.crossover_type {
+            let hp_peq = match data.crossover_type {
                 CrossoverType::Butterworth2 => peq_butterworth_highpass(2, xover_freq, sample_rate),
-                CrossoverType::LinkwitzRiley2 => {
-                    peq_linkwitzriley_highpass(2, xover_freq, sample_rate)
-                }
-                CrossoverType::LinkwitzRiley4 => {
-                    peq_linkwitzriley_highpass(4, xover_freq, sample_rate)
-                }
+                CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_highpass(2, xover_freq, sample_rate),
+                CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_highpass(4, xover_freq, sample_rate),
             };
-            let hp_response = compute_peq_response(&data.freq_grid, &hp_filter, sample_rate);
-            response = response + hp_response;
+            filters.extend(hp_peq);
         }
-
         if i < n_drivers - 1 {
-            // Apply lowpass from crossover with next driver
             let xover_freq = crossover_freqs[i];
-            let lp_filter = match data.crossover_type {
+            let lp_peq = match data.crossover_type {
                 CrossoverType::Butterworth2 => peq_butterworth_lowpass(2, xover_freq, sample_rate),
-                CrossoverType::LinkwitzRiley2 => {
-                    peq_linkwitzriley_lowpass(2, xover_freq, sample_rate)
-                }
-                CrossoverType::LinkwitzRiley4 => {
-                    peq_linkwitzriley_lowpass(4, xover_freq, sample_rate)
-                }
+                CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_lowpass(2, xover_freq, sample_rate),
+                CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_lowpass(4, xover_freq, sample_rate),
             };
-            let lp_response = compute_peq_response(&data.freq_grid, &lp_filter, sample_rate);
-            response = response + lp_response;
+            filters.extend(lp_peq);
         }
 
-        filtered_responses.push(response);
+        // Add to combined response
+        for j in 0..data.freq_grid.len() {
+            let f = data.freq_grid[j];
+            let spl = curve.spl[j];
+            
+            let z_driver = if let Some(phase) = &curve.phase {
+                let phi = phase[j].to_radians();
+                let m = 10.0_f64.powf(spl / 20.0);
+                Complex64::from_polar(m, phi)
+            } else {
+                let m = 10.0_f64.powf(spl / 20.0);
+                Complex64::new(m, 0.0)
+            };
+
+            let phi_delay = -2.0 * PI * f * delay_s;
+            let z_delay = Complex64::from_polar(1.0, phi_delay);
+
+            let mut z_filters = Complex64::new(1.0, 0.0);
+            for (_, biquad) in &filters {
+                z_filters *= biquad_complex_response(biquad, f);
+            }
+
+            combined_complex[j] += z_driver * mag_factor * z_filters * z_delay;
+        }
     }
 
-    // Sum the filtered responses in linear domain (convert dB to linear, sum, convert back)
-    let mut combined_linear = Array1::zeros(data.freq_grid.len());
-    for response in &filtered_responses {
-        // Convert dB to linear amplitude
-        let linear = response.mapv(|db| 10.0_f64.powf(db / 20.0));
-        combined_linear = combined_linear + linear;
-    }
-
-    // Convert back to dB
-    combined_linear.mapv(|lin: f64| 20.0 * lin.log10())
+    // Convert back to dB SPL
+    combined_complex.mapv(|z| 20.0 * z.norm().max(1e-12).log10())
 }
 
 /// Compute the loss for multi-driver crossover optimization
@@ -530,13 +547,14 @@ pub fn drivers_flat_loss(
     data: &DriversLossData,
     gains: &[f64],
     crossover_freqs: &[f64],
+    delays: Option<&[f64]>,
     sample_rate: f64,
     min_freq: f64,
     max_freq: f64,
 ) -> f64 {
     // Compute combined response
     let combined_response =
-        compute_drivers_combined_response(data, gains, crossover_freqs, sample_rate);
+        compute_drivers_combined_response(data, gains, crossover_freqs, delays, sample_rate);
 
     // Normalize the response (subtract the mean in the evaluation range)
     let mut sum = 0.0;
@@ -711,6 +729,7 @@ pub fn headphone_loss_with_target(
     let deviation = Curve {
         freq: freqs.clone(),
         spl: &target_curve.spl - &input_curve.spl,
+        phase: None,
     };
     let smooth_deviation = if data.smooth {
         read::smooth_one_over_n_octave(&deviation, data.smooth_n)

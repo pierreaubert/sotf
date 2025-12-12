@@ -168,6 +168,10 @@ pub struct OptimizerConfig {
     /// Maximum number of iterations
     #[serde(default = "default_max_iter")]
     pub max_iter: usize,
+
+    /// PEQ model (e.g., "pk", "ls-pk-hs", "free")
+    #[serde(default = "default_peq_model")]
+    pub peq_model: String,
 }
 
 // Default values for OptimizerConfig
@@ -176,6 +180,9 @@ fn default_loss_type() -> String {
 }
 fn default_algorithm() -> String {
     "cobyla".to_string()
+}
+fn default_peq_model() -> String {
+    "pk".to_string()
 }
 fn default_num_filters() -> usize {
     10
@@ -215,6 +222,7 @@ impl Default for OptimizerConfig {
             min_freq: default_min_freq(),
             max_freq: default_max_freq(),
             max_iter: default_max_iter(),
+            peq_model: default_peq_model(),
         }
     }
 }

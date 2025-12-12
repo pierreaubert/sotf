@@ -194,7 +194,7 @@ fn process_single_speaker(
 
     // Optimize EQ (returns filters and post_score)
     let (eq_filters, post_score) =
-        eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, sample_rate)
+        eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
         .map_err(|e| anyhow!("{}", e))
         .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
 
@@ -314,22 +314,26 @@ fn process_speaker_group(
         .map(|curve| autoeq::loss::DriverMeasurement {
             freq: curve.freq.clone(),
             spl: curve.spl.clone(),
-            phase: None,
+            phase: curve.phase.clone(),
         })
         .collect();
+
+    // Initial delays
+    let initial_delays = vec![0.0; n_drivers];
 
     let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
     let pre_score = autoeq::loss::drivers_flat_loss(
         &drivers_data,
         &initial_gains,
         &initial_xover_freqs,
+        Some(&initial_delays),
         sample_rate,
         room_config.optimizer.min_freq,
         room_config.optimizer.max_freq,
     );
 
     // Optimize crossover
-    let (gains, crossover_freqs, combined_curve) = crossover_optim::optimize_crossover(
+    let (gains, delays, crossover_freqs, combined_curve) = crossover_optim::optimize_crossover(
         driver_curves,
         crossover_type,
         sample_rate,
@@ -341,13 +345,13 @@ fn process_speaker_group(
     .map_err(|e| anyhow!("Crossover optimization failed: {}", e))?;
 
     info!(
-        "  Optimized crossover: freqs={:?}, gains={:?}",
-        crossover_freqs, gains
+        "  Optimized crossover: freqs={:?}, gains={:?}, delays={:?}",
+        crossover_freqs, gains, delays
     );
 
     // Optimize EQ on the combined response (returns filters and post_score)
     let (eq_filters, post_score) =
-        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, sample_rate)
+        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
         .map_err(|e| anyhow!("{}", e))
         .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
 
@@ -357,10 +361,11 @@ fn process_speaker_group(
         pre_score, post_score
     );
 
-    // Build DSP chain (no gain, no crossover for simple speaker)
+    // Build multi-driver DSP chain with per-driver crossovers
     let chain = output::build_multidriver_dsp_chain(
         channel_name,
         &gains,
+        &delays,
         &crossover_freqs,
         crossover_optim::crossover_type_to_string(&crossover_type),
         &eq_filters,

@@ -87,11 +87,23 @@ pub fn load_frequency_response(
 /// The CSV file should have a header row with "frequency" and "spl" columns,
 /// followed by rows of frequency (Hz) and SPL (dB) values.
 pub fn read_curve_from_csv(path: &PathBuf) -> Result<Curve, Box<dyn Error>> {
-    let result = load_frequency_response(path)?;
-    Ok(crate::Curve {
-        freq: Array1::from(result.0),
-        spl: Array1::from(result.1),
-    })
+    // Try to load as driver measurement (with optional phase) first
+    match load_driver_measurement(path) {
+        Ok((freq, spl, phase)) => Ok(crate::Curve {
+            freq,
+            spl,
+            phase,
+        }),
+        Err(_) => {
+            // Fallback to load_frequency_response (handles 4-column stereo average)
+            let result = load_frequency_response(path)?;
+            Ok(crate::Curve {
+                freq: Array1::from(result.0),
+                spl: Array1::from(result.1),
+                phase: None,
+            })
+        }
+    }
 }
 
 /// Load driver measurement data from a CSV file with freq, spl, and optionally phase
@@ -163,7 +175,7 @@ pub fn load_driver_measurement(
                 frequencies.push(freq);
                 spl_values.push(spl);
             }
-        } else if detected_columns >= 3 && parts.len() >= 3 {
+        } else if detected_columns == 3 && parts.len() >= 3 {
             // 3-column format: freq, spl, phase
             if let (Ok(freq), Ok(spl), Ok(phase)) = (
                 parts[0].parse::<f64>(),
@@ -178,7 +190,7 @@ pub fn load_driver_measurement(
     }
 
     if frequencies.is_empty() {
-        return Err("No valid driver measurement data found in file".into());
+        return Err("No valid driver measurement data found in file (expected 2 or 3 columns)".into());
     }
 
     let phase = if has_phase && !phase_values.is_empty() {

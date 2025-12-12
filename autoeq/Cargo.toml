@@ -16,6 +16,7 @@ csv = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 num_cpus = { workspace = true }
+num-complex = { workspace = true }
 metaheuristics-nature = { workspace = true }
 plotly = { workspace = true }
 rand = { workspace = true }

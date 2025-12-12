@@ -37,7 +37,7 @@ pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
 /// * `max_db` - Maximum gain bound in dB
 ///
 /// # Returns
-/// * Tuple of (optimal_gains, optimal_crossover_freqs, combined_curve)
+/// * Tuple of (optimal_gains, optimal_delays, optimal_crossover_freqs, combined_curve)
 pub fn optimize_crossover(
     drivers: Vec<Curve>,
     crossover_type: CrossoverType,
@@ -46,14 +46,14 @@ pub fn optimize_crossover(
     max_freq: f64,
     min_db: f64,
     max_db: f64,
-) -> Result<(Vec<f64>, Vec<f64>, Curve), Box<dyn Error>> {
+) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>, Curve), Box<dyn Error>> {
     // Convert Curve to DriverMeasurement
     let driver_measurements: Vec<DriverMeasurement> = drivers
         .into_iter()
         .map(|curve| DriverMeasurement {
             freq: curve.freq,
             spl: curve.spl,
-            phase: None, // Curve doesn't have phase data
+            phase: curve.phase,
         })
         .collect();
 
@@ -65,158 +65,51 @@ pub fn optimize_crossover(
         n_drivers, crossover_type
     );
 
-    // Create Args structure for optimization
-    let args = Args {
-        // Number of parameters = n_drivers (gains) + (n_drivers-1) (crossovers)
-        num_filters: 0, // Not used for driver optimization
-
-        // Input data (not used)
-        curve: None,
-        target: None,
-        speaker: None,
-        version: None,
-        measurement: None,
-        curve_name: "On Axis".to_string(),
-
-        // Sample rate
-        sample_rate,
-
-        // Frequency constraints
+    // Call library workflow to perform optimization
+    let result = autoeq::workflow::optimize_drivers_crossover(
+        drivers_data.clone(),
         min_freq,
         max_freq,
-
-        // Q and gain constraints
-        min_q: 0.5,
-        max_q: 10.0,
+        sample_rate,
+        "nlopt:cobyla",
+        5000,
         min_db,
         max_db,
-
-        // Algorithm - use cobyla for simplicity
-        algo: "nlopt:cobyla".to_string(),
-        strategy: "currenttobest1bin".to_string(),
-        algo_list: false,
-        strategy_list: false,
-
-        // PEQ model
-        peq_model: PeqModel::Pk,
-        peq_model_list: false,
-
-        // Optimization parameters
-        population: 300,
-        maxeval: 5000,
-        refine: false,
-        local_algo: "cobyla".to_string(),
-
-        // Spacing and smoothing (not used)
-        min_spacing_oct: 0.0,
-        spacing_weight: 0.0,
-        smooth: false,
-        smooth_n: 1,
-
-        // Loss function
-        loss: autoeq::loss::LossType::DriversFlat,
-
-        // Optimization tuning
-        tolerance: 1e-3,
-        atolerance: 1e-4,
-        recombination: 0.9,
-        adaptive_weight_f: 0.9,
-        adaptive_weight_cr: 0.9,
-        no_parallel: false,
-
-        // Output (not used)
-        output: None,
-
-        // Multi-driver
-        driver1: None,
-        driver2: None,
-        driver3: None,
-        driver4: None,
-        crossover_type: "linkwitzriley4".to_string(),
-
-        // Parallel threads
-        parallel_threads: num_cpus::get(),
-
-        // Random seed
-        seed: None,
-
-        // QA mode (disabled)
-        qa: None,
-    };
-
-    // Setup objective data using autoeq's workflow
-    let objective_data = setup_drivers_objective_data(&args, drivers_data);
-
-    // Get bounds
-    let (lower_bounds, upper_bounds) = autoeq::workflow::setup_drivers_bounds(
-        &args,
-        objective_data.drivers_data.as_ref().unwrap(),
-    );
-
-    // Generate initial guess
-    let mut x = autoeq::workflow::drivers_initial_guess(&lower_bounds, &upper_bounds, n_drivers);
-
-    // Perform optimization
-    let opt_result = autoeq::optim::optimize_filters(
-        &mut x,
-        &lower_bounds,
-        &upper_bounds,
-        objective_data.clone(),
-        &args,
-    );
-
-    // Handle result - optimizer returns Result<(String, f64), (String, f64)>
-    let (_converged_msg, final_loss) = match opt_result {
-        Ok((msg, loss)) => (msg, loss),
-        Err((msg, loss)) => {
-            eprintln!(
-                "  Warning: crossover optimization did not fully converge: {}",
-                msg
-            );
-            (msg, loss)
-        }
-    };
-
-    // Extract results from optimized parameters
-    let gains = x[0..n_drivers].to_vec();
-    let xover_freqs_log10 = &x[n_drivers..];
-    let xover_freqs: Vec<f64> = xover_freqs_log10
-        .iter()
-        .map(|f| 10.0_f64.powf(*f))
-        .collect();
+    )?;
 
     // Compute the combined response
     let combined_response = autoeq::loss::compute_drivers_combined_response(
-        objective_data.drivers_data.as_ref().unwrap(),
-        &gains,
-        &xover_freqs,
+        &drivers_data,
+        &result.gains,
+        &result.crossover_freqs,
+        Some(&result.delays),
         sample_rate,
     );
 
     let combined_curve = Curve {
-        freq: objective_data
-            .drivers_data
-            .as_ref()
-            .unwrap()
-            .freq_grid
-            .clone(),
+        freq: drivers_data.freq_grid.clone(),
         spl: combined_response,
+        phase: None,
     };
 
     eprintln!(
-        "  Crossover optimization: gains={:?}, freqs={:?}, final loss={:.6}",
-        gains
+        "  Crossover optimization: gains={:?}, delays={:?} ms, freqs={:?}, final loss={:.6}",
+        result.gains
             .iter()
             .map(|g| format!("{:+.2}", g))
             .collect::<Vec<_>>(),
-        xover_freqs
+        result.delays
+            .iter()
+            .map(|d| format!("{:.2}", d))
+            .collect::<Vec<_>>(),
+        result.crossover_freqs
             .iter()
             .map(|f| format!("{:.0}", f))
             .collect::<Vec<_>>(),
-        final_loss
+        result.post_objective
     );
 
-    Ok((gains, xover_freqs, combined_curve))
+    Ok((result.gains, result.delays, result.crossover_freqs, combined_curve))
 }
 
 #[cfg(test)]

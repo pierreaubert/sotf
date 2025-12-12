@@ -366,9 +366,10 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
             // Multi-driver crossover optimization
             if let Some(ref drivers_data) = data.drivers_data {
                 let n_drivers = drivers_data.drivers.len();
-                // Parameter layout: [gain1, gain2, ..., gainN, xover_freq1, xover_freq2, ..., xover_freq(N-1)]
+                // Parameter layout: [gains(N), delays(N), xovers(N-1)]
                 let gains = &x[0..n_drivers];
-                let xover_freqs_log10 = &x[n_drivers..];
+                let delays = &x[n_drivers..2*n_drivers];
+                let xover_freqs_log10 = &x[2*n_drivers..];
 
                 // Convert crossover frequencies from log10 to Hz
                 let xover_freqs: Vec<f64> = xover_freqs_log10
@@ -380,6 +381,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                     drivers_data,
                     gains,
                     &xover_freqs,
+                    Some(delays),
                     data.srate,
                     data.min_freq,
                     data.max_freq,
@@ -417,6 +419,7 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 let error_curve = Curve {
                     freq: data.freqs.clone(),
                     spl: error.clone(),
+                    phase: None,
                 };
                 let s = headphone_loss(&error_curve);
                 // compute flat error

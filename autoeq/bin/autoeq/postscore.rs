@@ -41,6 +41,7 @@ pub(super) async fn compute_post_optimization_metrics(
             let deviation_after = Curve {
                 freq: standard_freq.clone(),
                 spl: &target_curve.spl - &input_curve.spl - &peq_after,
+                phase: None,
             };
             headphone_loss_val = Some(loss::headphone_loss(&deviation_after));
         }

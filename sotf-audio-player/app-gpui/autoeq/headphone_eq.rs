@@ -500,6 +500,7 @@ async fn run_optimization_task(
         let deviation_curve = autoeq::Curve {
             freq: target_curve_norm.freq.clone(),
             spl: &target_curve_norm.spl - &input_curve_norm.spl,
+            phase: None,
         };
 
         // Setup optimization arguments from params
@@ -761,7 +762,8 @@ fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
     }
 
     Ok(autoeq::Curve {
-        freq: Array1::from_vec(freq),
-        spl: Array1::from_vec(spl),
+        freq: Array1::from(freq),
+        spl: Array1::from(spl),
+        phase: None,
     })
 }

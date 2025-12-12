@@ -419,6 +419,7 @@ async fn run_one(
     let deviation_curve = autoeq::Curve {
         freq: target_curve.freq.clone(),
         spl: &target_curve.spl - &input_curve_normalized.spl,
+        phase: None,
     };
     let spin_data = spin_data_raw.map(|spin_data| {
         spin_data

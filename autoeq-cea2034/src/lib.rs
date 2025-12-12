@@ -16,6 +16,9 @@ pub struct Curve {
     pub freq: Array1<f64>,
     /// Sound Pressure Level in dB
     pub spl: Array1<f64>,
+    /// Phase in degrees (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<Array1<f64>>,
 }
 
 /// A single directivity measurement at a specific angle

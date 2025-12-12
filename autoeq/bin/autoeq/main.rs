@@ -317,6 +317,7 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
 
     // Extract results
     let gains = &result.gains;
+    let delays = &result.delays;
     let xover_freqs = &result.crossover_freqs;
 
     // Display results
@@ -325,6 +326,10 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
     info!("Driver Gains:");
     for (i, gain) in gains.iter().enumerate() {
         info!("   Driver {}: {:+.2} dB", i + 1, gain);
+    }
+    info!("Driver Delays:");
+    for (i, delay) in delays.iter().enumerate() {
+        info!("   Driver {}: {:.2} ms", i + 1, delay);
     }
     info!("Crossover Frequencies:");
     for (i, freq) in xover_freqs.iter().enumerate() {
@@ -365,6 +370,7 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
         &drivers_data,
         gains,
         xover_freqs,
+        Some(delays),
         args.sample_rate,
         &output_path,
     ) {

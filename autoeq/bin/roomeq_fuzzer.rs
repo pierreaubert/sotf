@@ -314,6 +314,7 @@ fn generate_plots_for_multi_drivers(
             &drivers_data,
             &gains,
             &crossover_freqs,
+            None,
             sample_rate,
             &plot_path,
         )?;

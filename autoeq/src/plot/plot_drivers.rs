@@ -18,6 +18,7 @@ pub fn plot_drivers(
     drivers_data: &DriversLossData,
     gains: &[f64],
     crossover_freqs: &[f64],
+    delays: Option<&[f64]>,
     sample_rate: f64,
 ) -> Plot {
     let mut plot = Plot::new();
@@ -26,7 +27,7 @@ pub fn plot_drivers(
 
     // First, compute the combined response to get a reference normalization
     let combined_response =
-        compute_drivers_combined_response(drivers_data, gains, crossover_freqs, sample_rate);
+        compute_drivers_combined_response(drivers_data, gains, crossover_freqs, delays, sample_rate);
     let combined_mean = combined_response.mean().unwrap_or(0.0);
 
     // Plot individual drivers (raw responses)
@@ -37,6 +38,7 @@ pub fn plot_drivers(
             &crate::Curve {
                 freq: driver.freq.clone(),
                 spl: driver.spl.clone(),
+                phase: driver.phase.clone(),
             },
         );
 
@@ -229,6 +231,7 @@ pub fn plot_drivers_results(
     drivers_data: &DriversLossData,
     gains: &[f64],
     crossover_freqs: &[f64],
+    delays: Option<&[f64]>,
     sample_rate: f64,
     output_path: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -236,7 +239,7 @@ pub fn plot_drivers_results(
     use std::fs::File;
     use std::io::Write;
 
-    let plot = plot_drivers(drivers_data, gains, crossover_freqs, sample_rate);
+    let plot = plot_drivers(drivers_data, gains, crossover_freqs, delays, sample_rate);
 
     let title_text = format!(
         "{}-Way Speaker Crossover Optimization",

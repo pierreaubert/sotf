@@ -116,6 +116,7 @@ pub fn build_target_curve(
                 Curve {
                     freq: freqs.clone(),
                     spl,
+                    phase: None,
                 }
             }
             "Sound Power" | "Early Reflections" | "Estimated In-Room Response" => {
@@ -139,6 +140,7 @@ pub fn build_target_curve(
                 Curve {
                     freq: freqs.clone(),
                     spl,
+                    phase: None,
                 }
             }
             _ => {
@@ -146,6 +148,7 @@ pub fn build_target_curve(
                 Curve {
                     freq: freqs.clone(),
                     spl,
+                    phase: None,
                 }
             }
         }
@@ -266,7 +269,7 @@ pub fn setup_drivers_bounds(
     drivers_data: &DriversLossData,
 ) -> (Vec<f64>, Vec<f64>) {
     let n_drivers = drivers_data.drivers.len();
-    let n_params = n_drivers + (n_drivers - 1); // N gains + (N-1) crossovers
+    let n_params = n_drivers * 2 + (n_drivers - 1); // N gains + N delays + (N-1) crossovers
 
     let mut lower_bounds = Vec::with_capacity(n_params);
     let mut upper_bounds = Vec::with_capacity(n_params);
@@ -275,6 +278,12 @@ pub fn setup_drivers_bounds(
     for _ in 0..n_drivers {
         lower_bounds.push(-args.max_db);
         upper_bounds.push(args.max_db);
+    }
+
+    // Bounds for delays: [-5.0, 5.0] ms
+    for _ in 0..n_drivers {
+        lower_bounds.push(-5.0);
+        upper_bounds.push(5.0);
     }
 
     // Bounds for crossover frequencies
@@ -325,8 +334,14 @@ pub fn drivers_initial_guess(
         x.push(0.0);
     }
 
+    // Initial delays: start with 0 ms
+    for _ in 0..n_drivers {
+        x.push(0.0);
+    }
+
     // Initial crossover frequencies: use geometric mean of bounds (in log space)
-    for i in n_drivers..lower_bounds.len() {
+    // Crossovers start at index 2*n_drivers
+    for i in (2 * n_drivers)..lower_bounds.len() {
         let xover_log10 = (lower_bounds[i] + upper_bounds[i]) / 2.0;
         x.push(xover_log10);
     }
@@ -622,6 +637,8 @@ pub fn perform_optimization_with_callback(
 pub struct DriverOptimizationResult {
     /// Optimal per-driver gains in dB
     pub gains: Vec<f64>,
+    /// Optimal per-driver delays in ms
+    pub delays: Vec<f64>,
     /// Optimal crossover frequencies in Hz (n_drivers - 1 values)
     pub crossover_freqs: Vec<f64>,
     /// Loss value before optimization
@@ -785,13 +802,15 @@ pub fn optimize_drivers_crossover(
     let post_objective = crate::optim::compute_base_fitness(&x, &objective_data);
 
     // Extract results from parameter vector
-    // Parameter layout: [gain1, gain2, ..., gainN, log10(xover1), log10(xover2), ..., log10(xoverN-1)]
+    // Parameter layout: [gains(N), delays(N), xovers(N-1)]
     let gains = x[0..n_drivers].to_vec();
-    let xover_freqs_log10 = &x[n_drivers..];
+    let delays = x[n_drivers..2*n_drivers].to_vec();
+    let xover_freqs_log10 = &x[2*n_drivers..];
     let crossover_freqs: Vec<f64> = xover_freqs_log10.iter().map(|x| 10_f64.powf(*x)).collect();
 
     Ok(DriverOptimizationResult {
         gains,
+        delays,
         crossover_freqs,
         pre_objective,
         post_objective,

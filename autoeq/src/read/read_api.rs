@@ -167,6 +167,7 @@ pub fn extract_curve_by_name(
     Ok(crate::Curve {
         freq: Array1::from(freqs),
         spl: Array1::from(spls),
+        phase: None,
     })
 }
 
@@ -402,11 +403,13 @@ pub fn extract_cea2034_curves_original(
     let er = &er_curve.spl;
     let sp = &sp_curve.spl;
     let pir = score::compute_pir_from_lw_er_sp(lw, er, sp);
+
     curves.insert(
         "Estimated In-Room Response".to_string(),
         Curve {
             freq: freq.clone(),
             spl: pir,
+            phase: None,
         },
     );
 
@@ -454,6 +457,7 @@ pub fn extract_cea2034_curves(
                     Curve {
                         freq: freq.clone(),
                         spl: interpolated.spl,
+                        phase: None,
                     },
                 );
             }
@@ -488,6 +492,7 @@ pub fn extract_cea2034_curves(
         Curve {
             freq: freq.clone(),
             spl: pir,
+            phase: None,
         },
     );
 

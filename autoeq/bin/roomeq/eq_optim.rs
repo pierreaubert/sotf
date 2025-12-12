@@ -5,16 +5,19 @@ use autoeq::cli::{Args, PeqModel};
 use autoeq::loss::LossType;
 use autoeq::workflow::setup_objective_data;
 use autoeq_iir::Biquad;
+use clap::{Parser, ValueEnum};
 use ndarray::Array1;
 use std::error::Error;
+use std::str::FromStr;
 
-use super::types::OptimizerConfig;
+use super::types::{OptimizerConfig, TargetCurveConfig};
 
 /// Optimize EQ filters for a single channel using autoeq's workflow
 ///
 /// # Arguments
 /// * `curve` - Frequency response curve to optimize (on-axis measurement)
 /// * `config` - Optimizer configuration
+/// * `target_config` - Optional target curve configuration
 /// * `sample_rate` - Sample rate for filter design
 ///
 /// # Returns
@@ -22,12 +25,36 @@ use super::types::OptimizerConfig;
 pub fn optimize_channel_eq(
     curve: &Curve,
     config: &OptimizerConfig,
+    target_config: Option<&TargetCurveConfig>,
     sample_rate: f64,
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
-    // Create flat target curve
-    let target_curve = Curve {
-        freq: curve.freq.clone(),
-        spl: Array1::zeros(curve.freq.len()),
+    // Parse PEQ model
+    let peq_model = PeqModel::from_str(&config.peq_model, true)
+        .map_err(|e| format!("Invalid PEQ model '{}': {}", config.peq_model, e))?;
+
+    // Create target curve
+    let target_curve = match target_config {
+        Some(TargetCurveConfig::Path(path)) => {
+            // Load target from file
+            let target = autoeq::read::read_curve_from_csv(path)?;
+            autoeq::read::normalize_and_interpolate_response(&curve.freq, &target)
+        }
+        Some(TargetCurveConfig::Predefined(name)) => {
+            // Generate predefined target
+            // Use dummy args to leverage existing target builder logic or re-implement
+            // For now, simpler to re-implement common targets or map to Args
+            // We can construct minimal Args with curve_name
+            let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
+            autoeq::workflow::build_target_curve(&dummy_args, &curve.freq, curve)
+        }
+        None => {
+            // Default flat target
+            Curve {
+                freq: curve.freq.clone(),
+                spl: Array1::zeros(curve.freq.len()),
+                phase: None,
+            }
+        }
     };
 
     // Parse loss type
@@ -72,7 +99,7 @@ pub fn optimize_channel_eq(
         strategy_list: false,
 
         // PEQ model
-        peq_model: PeqModel::Pk,
+        peq_model,
         peq_model_list: false,
 
         // Optimization parameters
@@ -124,6 +151,7 @@ pub fn optimize_channel_eq(
     let deviation_curve = Curve {
         freq: curve.freq.clone(),
         spl: Array1::zeros(curve.freq.len()),
+        phase: None,
     };
 
     // Setup objective data using autoeq's workflow

@@ -105,11 +105,22 @@ pub fn build_channel_dsp_chain(
     }
 }
 
+/// Create a delay plugin configuration
+pub fn create_delay_plugin(delay_ms: f64) -> PluginConfigWrapper {
+    PluginConfigWrapper {
+        plugin_type: "delay".to_string(),
+        parameters: json!({
+            "delay_ms": delay_ms
+        }),
+    }
+}
+
 /// Build a DSP chain for a multi-driver speaker with active crossover
 ///
 /// # Arguments
 /// * `channel_name` - Channel name (e.g., "left")
 /// * `gains` - Per-driver gains in dB (one per driver)
+/// * `delays` - Per-driver delays in ms (one per driver)
 /// * `crossover_freqs` - Crossover frequencies in Hz (n_drivers - 1 values)
 /// * `crossover_type` - Crossover type string (e.g., "LR24", "Butterworth12")
 /// * `eq_filters` - EQ filters for the combined response
@@ -119,6 +130,7 @@ pub fn build_channel_dsp_chain(
 pub fn build_multidriver_dsp_chain(
     channel_name: &str,
     gains: &[f64],
+    delays: &[f64],
     crossover_freqs: &[f64],
     crossover_type: &str,
     eq_filters: &[Biquad],
@@ -134,6 +146,11 @@ pub fn build_multidriver_dsp_chain(
         // Add gain plugin if non-zero
         if gains[i].abs() > 0.01 {
             driver_plugins.push(create_gain_plugin(gains[i]));
+        }
+
+        // Add delay plugin if non-zero
+        if i < delays.len() && delays[i].abs() > 0.001 {
+            driver_plugins.push(create_delay_plugin(delays[i]));
         }
 
         // Add highpass crossover from previous driver (if not first driver)

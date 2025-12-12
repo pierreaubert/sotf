@@ -62,6 +62,7 @@ pub(super) async fn load_and_prepare(
     let deviation_curve_raw = Curve {
         freq: target_curve.freq.clone(),
         spl: target_curve.spl.clone() - &input_curve.spl,
+        phase: None,
     };
     let deviation_curve = read::interpolate_log_space(&standard_freq, &deviation_curve_raw);
 

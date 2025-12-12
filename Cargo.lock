@@ -632,6 +632,7 @@ name = "autoeq"
 version = "0.2.250"
 dependencies = [
  "accelerate-src",
+ "anyhow",
  "autoeq-cea2034",
  "autoeq-de",
  "autoeq-env 0.2.4",
@@ -641,10 +642,13 @@ dependencies = [
  "chrono",
  "clap",
  "csv",
+ "env_logger 0.11.8",
  "intel-mkl-src",
+ "log",
  "metaheuristics-nature",
  "ndarray 0.17.1",
  "nlopt",
+ "num-complex",
  "num_cpus",
  "openblas-src",
  "plotly",
@@ -3573,7 +3577,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "approx",
  "autoeq",
@@ -3598,7 +3602,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "gpui",
  "gpui-d3rs",

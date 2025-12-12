@@ -40,6 +40,7 @@ pub fn normalize_and_interpolate_response(
         &Curve {
             freq: curve.freq.clone(),
             spl: spl_norm,
+            phase: curve.phase.clone(),
         },
     )
 }
@@ -61,6 +62,7 @@ pub fn normalize_and_interpolate_response_with_range(
         &Curve {
             freq: curve.freq.clone(),
             spl: spl_norm,
+            phase: curve.phase.clone(),
         },
     )
 }
