@@ -20,6 +20,7 @@ impl PlayerView {
             Screen::Spectrum => "Spectrum",
             Screen::Settings => "Settings",
             Screen::Recording => "Recording",
+            Screen::RoomEq => "Room EQ",
         };
 
         // Get keybindings for current screen
@@ -680,6 +681,10 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
         Screen::Settings => vec![("T", "Cycle theme"), ("Alt-L", "Cycle language")],
         Screen::Recording => vec![
+            ("Back/Close", "Navigate between steps"),
+            ("Next/Finish", "Proceed to next step or finish"),
+        ],
+        Screen::RoomEq => vec![
             ("Back/Close", "Navigate between steps"),
             ("Next/Finish", "Proceed to next step or finish"),
         ],

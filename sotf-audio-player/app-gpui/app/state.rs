@@ -17,8 +17,8 @@ use crate::theme::{Theme, ThemeId};
 
 use super::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode,
-    LibrarySortOrder, MeasureState, OptimizationUiState, QueueItem, RecordingState, Screen,
-    ToastMessage,
+    LibrarySortOrder, MeasureState, OptimizationUiState, QueueItem, RecordingState, RoomEqState,
+    Screen, ToastMessage,
 };
 
 #[derive(Debug)]
@@ -123,6 +123,9 @@ pub struct App {
 
     // Recording screen state
     pub recording_state: RecordingState,
+
+    // Room EQ screen state
+    pub room_eq_state: RoomEqState,
 
     // Flags
     pub should_quit: bool,
@@ -317,6 +320,7 @@ impl App {
             current_input_device_name: None,
             measure_state: None,
             recording_state: RecordingState::default(),
+            room_eq_state: RoomEqState::default(),
             should_quit: false,
             needs_rescan: false,
             scan_in_progress: false,

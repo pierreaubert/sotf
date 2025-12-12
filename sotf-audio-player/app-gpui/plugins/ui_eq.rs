@@ -11,7 +11,7 @@ use crate::theme::Theme;
 use autoeq_iir::{Biquad, BiquadFilterType};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{line, ScaleType};
+use gpui_px::{ScaleType, line};
 use sotf_audio_player::EQFilter;
 
 /// Sample rate for filter calculations

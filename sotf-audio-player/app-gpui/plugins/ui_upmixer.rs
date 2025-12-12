@@ -103,6 +103,9 @@ pub fn render_upmixer_plugin(
                                     entity.update(cx, |state, _| {
                                         state.app.set_plugin_param(plugin_idx, 0, idx as f64);
                                         state.app.upmixer_config_open = false;
+                                        state.app.needs_plugin_update = true;
+                                        // Update level meters when channel config changes
+                                        state.app.update_level_meter_groups();
                                     });
                                 }
                             }),

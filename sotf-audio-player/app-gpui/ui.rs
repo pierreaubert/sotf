@@ -32,7 +32,6 @@ impl PlayerView {
         // Register plugin interactions
         // Register plugin interactions - moved to render
 
-
         // Set up periodic update timer for playback position and loudness
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             loop {
@@ -245,7 +244,12 @@ impl PlayerView {
         self.switch_screen(Screen::Settings, cx);
     }
 
-    fn switch_to_recording(&mut self, _: &SwitchToRecording, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_recording(
+        &mut self,
+        _: &SwitchToRecording,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen(Screen::Recording, cx);
     }
 
@@ -1965,6 +1969,9 @@ impl Render for PlayerView {
                                 Screen::Recording => {
                                     self.render_recording_screen(cx).into_any_element()
                                 }
+                                Screen::RoomEq => {
+                                    self.render_room_eq_screen(cx).into_any_element()
+                                }
                                 // Default: split Library/Queue view
                                 Screen::Library | Screen::Queue => {
                                     self.render_split_view(cx).into_any_element()
@@ -1989,6 +1996,9 @@ impl Render for PlayerView {
                                 }
                                 Screen::Recording => {
                                     self.render_recording_screen(cx).into_any_element()
+                                }
+                                Screen::RoomEq => {
+                                    self.render_room_eq_screen(cx).into_any_element()
                                 }
                             }
                         }

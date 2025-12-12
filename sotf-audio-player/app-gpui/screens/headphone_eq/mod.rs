@@ -852,7 +852,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         use d3rs::color::D3Color;
         use d3rs::scale::LinearScale;
-        use d3rs::shape::{render_line, LineConfig, LinePoint};
+        use d3rs::shape::{LineConfig, LinePoint, render_line};
 
         let graph_width = 400.0_f32;
         let graph_height = 120.0_f32;

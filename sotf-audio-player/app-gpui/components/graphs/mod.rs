@@ -11,16 +11,16 @@ pub mod legend;
 
 use crate::theme::Theme;
 use autoeq_iir::Biquad;
-use d3rs::axis::{render_axis, AxisConfig, AxisTheme};
+use d3rs::axis::{AxisConfig, AxisTheme, render_axis};
 use d3rs::color::D3Color;
-use d3rs::grid::{render_grid, GridConfig as D3GridConfig};
+use d3rs::grid::{GridConfig as D3GridConfig, render_grid};
 use d3rs::scale::{LinearScale, LogScale, Scale};
-use d3rs::shape::{render_line, LineConfig, LinePoint};
+use d3rs::shape::{LineConfig, LinePoint, render_line};
 use gpui::prelude::*;
 use gpui::*;
 use legend::{
-    legend_dimensions, render_legend_below, render_legend_right, LegendConfig, LegendEntry,
-    LegendPosition,
+    LegendConfig, LegendEntry, LegendPosition, legend_dimensions, render_legend_below,
+    render_legend_right,
 };
 use sotf_audio_player::EQFilter;
 

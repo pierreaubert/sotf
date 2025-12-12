@@ -118,6 +118,23 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
     }
 }
 
+/// Convert speaker config string to output channel count
+fn speaker_config_to_channels(config: &str) -> usize {
+    match config {
+        "2.0" => 2,
+        "5.0" => 5,
+        "5.1" => 6,
+        "7.1" => 8,
+        "5.1.2" => 8,  // 5.1 + 2 height
+        "5.1.4" => 10, // 5.1 + 4 height
+        "7.1.2" => 10, // 7.1 + 2 height
+        "7.1.4" => 12, // 7.1 + 4 height
+        "9.1.4" => 14, // 9.1 + 4 height
+        "9.1.6" => 16, // 9.1 + 6 height
+        _ => 6,        // Default to 5.1 if unknown
+    }
+}
+
 impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.state.read(cx).app.theme.clone();
@@ -535,15 +552,24 @@ impl PlayerView {
                     3 => "LFE",
                     4 => "Ls",
                     5 => "Rs",
-                    6 => "Sl",
-                    7 => "Sr",
-                    8 => "Tfl",
-                    9 => "Tfr",
-                    10 => "Trl",
-                    11 => "Trr",
+                    6 => "Lb",
+                    7 => "Rb",
+                    8 => "Lw",
+                    9 => "Rw",
+                    10 => "Tfl",
+                    11 => "Tfr",
+                    12 => "Tml",
+                    13 => "Tmr",
+                    14 => "Tbl",
+                    15 => "Tbr",
                     _ => ".",
                 };
-                (fill_ratio, yellow_threshold, red_threshold, name.to_string())
+                (
+                    fill_ratio,
+                    yellow_threshold,
+                    red_threshold,
+                    name.to_string(),
+                )
             })
             .collect();
 
@@ -606,7 +632,10 @@ impl PlayerView {
     }
 
     /// Render vertical dB legend for side meters (simplified version without M/S/D spacers)
-    fn render_side_meter_legend(theme: &crate::theme::Theme, align_right: bool) -> impl IntoElement {
+    fn render_side_meter_legend(
+        theme: &crate::theme::Theme,
+        align_right: bool,
+    ) -> impl IntoElement {
         let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
         let theme = theme.clone();
 
@@ -827,12 +856,24 @@ impl PlayerView {
                         // Right: Output Meter
                         .child({
                             let state = self.state.read(cx);
-                            // Calculate output channels logic again for main view
+                            // Calculate output channels based on plugin chain
                             let mut channels = 2;
                             for p in state.app.plugin_chain.plugins() {
                                 if p.enabled {
                                     match p.plugin_type() {
-                                        PluginType::Upmixer => channels = 6,         // 5.1
+                                        PluginType::Upmixer => {
+                                            // Get actual channel count from upmixer config
+                                            if let sotf_audio_player::PluginSettings::Upmixer {
+                                                speaker_config,
+                                                ..
+                                            } = &p.settings
+                                            {
+                                                channels =
+                                                    speaker_config_to_channels(speaker_config);
+                                            } else {
+                                                channels = 6; // Default to 5.1
+                                            }
+                                        }
                                         PluginType::BinauralDecoder => channels = 2, // Stereo
                                         _ => {}
                                     }

@@ -1,12 +1,12 @@
 // Screen rendering modules
 //
+mod headphone_eq;
 pub mod library;
 pub mod queue;
 pub mod recording;
-mod headphone_eq;
 mod room_eq;
-mod speaker_eq;
 mod speaker_diy;
+mod speaker_eq;
 
 mod conf;
 
@@ -87,12 +87,7 @@ impl PlayerView {
                                 cx,
                             ))
                             .child(self.render_recording_tab(&theme, cx))
-                            .child(self.render_settings_tab(
-                                "Room EQ (alpha)",
-                                crate::app::SettingsTab::RoomEQ,
-                                &theme,
-                                cx,
-                            ))
+                            .child(self.render_room_eq_tab(&theme, cx))
                             .child(self.render_settings_tab(
                                 "Headphone (beta)",
                                 crate::app::SettingsTab::Headphone,
@@ -145,6 +140,40 @@ impl PlayerView {
             )
             .child(
                 Text::new("Recording")
+                    .size(TextSize::Sm)
+                    .weight(TextWeight::Normal)
+                    .color(theme.text_secondary),
+            )
+    }
+
+    /// Render a special tab that navigates to the Room EQ screen
+    fn render_room_eq_tab(
+        &self,
+        theme: &crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = theme.clone();
+
+        div()
+            .px_3()
+            .py_2()
+            .cursor_pointer()
+            .rounded_t_md()
+            .bg(theme.surface)
+            .text_color(theme.text_secondary)
+            .hover(|s| s.bg(theme.surface_hover).text_color(theme.text_primary))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.last_screen = state.app.current_screen;
+                        state.app.current_screen = crate::app::Screen::RoomEq;
+                    });
+                    cx.notify();
+                }),
+            )
+            .child(
+                Text::new("Room EQ")
                     .size(TextSize::Sm)
                     .weight(TextWeight::Normal)
                     .color(theme.text_secondary),
@@ -208,4 +237,3 @@ impl PlayerView {
             )
     }
 }
-

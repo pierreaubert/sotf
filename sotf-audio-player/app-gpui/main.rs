@@ -57,7 +57,7 @@ fn main() {
             "fonts/DMSerifDisplay-Regular.ttf",
             "fonts/DMSerifDisplay-Italic.ttf",
         ];
-        
+
         let mut font_data = Vec::new();
         for path in fonts {
             if let Some(file) = Assets::get(path) {
@@ -66,7 +66,7 @@ fn main() {
                 log::warn!("Failed to load font: {}", path);
             }
         }
-        
+
         if !font_data.is_empty() {
             cx.text_system().add_fonts(font_data).unwrap();
         }

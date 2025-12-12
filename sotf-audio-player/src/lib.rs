@@ -9,6 +9,7 @@
 /// - Player wrapper (`player`)
 /// - ReplayGain scanning (`replay_gain_scanner`)
 /// - Waveform scanning (`waveform_scanner`)
+/// - Room EQ optimization (`room_eq`)
 pub mod config;
 pub mod database;
 pub mod library;
@@ -16,6 +17,7 @@ pub mod library_scanner;
 pub mod player;
 pub mod plugins;
 pub mod replay_gain_scanner;
+pub mod room_eq;
 pub mod security;
 pub mod waveform_scanner;
 

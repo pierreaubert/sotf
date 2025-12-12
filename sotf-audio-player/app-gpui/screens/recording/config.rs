@@ -86,14 +86,12 @@ impl PlayerView {
                     .color(theme.accent),
             );
 
-        let device_label = VStack::new()
-            .spacing(StackSpacing::Sm)
-            .child(
-                Text::new("Output Device")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.text_secondary),
-            );
+        let device_label = VStack::new().spacing(StackSpacing::Sm).child(
+            Text::new("Output Device")
+                .size(TextSize::Sm)
+                .weight(TextWeight::Semibold)
+                .color(theme.text_secondary),
+        );
 
         let badges = HStack::new()
             .spacing(StackSpacing::Sm)
@@ -123,7 +121,9 @@ impl PlayerView {
                                 this.state.update(cx, |state, _| {
                                     state.app.recording_state.playback_config.num_channels =
                                         value as usize;
-                                    update_playback_channel_mappings(&mut state.app.recording_state);
+                                    update_playback_channel_mappings(
+                                        &mut state.app.recording_state,
+                                    );
                                 });
                                 cx.notify();
                             });
@@ -237,73 +237,70 @@ impl PlayerView {
 
         VStack::new()
             .spacing(StackSpacing::Sm)
-            .children(
-                channel_data
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, (interface_channel, group_name))| {
-                        let view = view.clone();
-                        let theme = theme.clone();
-                        let interface_ch = *interface_channel;
+            .children(channel_data.iter().enumerate().map(
+                |(idx, (interface_channel, group_name))| {
+                    let view = view.clone();
+                    let theme = theme.clone();
+                    let interface_ch = *interface_channel;
 
-                        // Render the dropdown for this channel
-                        let group_dropdown =
-                            self.render_channel_group_dropdown(cx, idx, group_name, true);
+                    // Render the dropdown for this channel
+                    let group_dropdown =
+                        self.render_channel_group_dropdown(cx, idx, group_name, true);
 
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .align(StackAlign::Center)
-                            .child(
-                                Text::new(format!("Channel {}:", idx + 1))
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_secondary),
-                            )
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .align(StackAlign::Center)
-                                    .child(
-                                        Text::new("Interface")
-                                            .size(TextSize::Xs)
-                                            .color(theme.text_muted),
-                                    )
-                                    .child({
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new(format!("Channel {}:", idx + 1))
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                        )
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new("Interface")
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_muted),
+                                )
+                                .child({
+                                    let view = view.clone();
+                                    NumberInput::new(SharedString::from(format!(
+                                        "playback_interface_{}",
+                                        idx
+                                    )))
+                                    .value((interface_ch + 1) as f64)
+                                    .min(1.0)
+                                    .max(16.0)
+                                    .step(1.0)
+                                    .size(NumberInputSize::Sm)
+                                    .on_change({
                                         let view = view.clone();
-                                        NumberInput::new(SharedString::from(format!(
-                                            "playback_interface_{}",
-                                            idx
-                                        )))
-                                        .value((interface_ch + 1) as f64)
-                                        .min(1.0)
-                                        .max(16.0)
-                                        .step(1.0)
-                                        .size(NumberInputSize::Sm)
-                                        .on_change({
-                                            let view = view.clone();
-                                            move |value, _window, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        if let Some(m) = state
-                                                            .app
-                                                            .recording_state
-                                                            .playback_config
-                                                            .channel_mappings
-                                                            .get_mut(idx)
-                                                        {
-                                                            m.interface_channel =
-                                                                (value as usize).saturating_sub(1);
-                                                        }
-                                                    });
-                                                    cx.notify();
+                                        move |value, _window, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    if let Some(m) = state
+                                                        .app
+                                                        .recording_state
+                                                        .playback_config
+                                                        .channel_mappings
+                                                        .get_mut(idx)
+                                                    {
+                                                        m.interface_channel =
+                                                            (value as usize).saturating_sub(1);
+                                                    }
                                                 });
-                                            }
-                                        })
-                                    }),
-                            )
-                            .child(group_dropdown)
-                            .into_any_element()
-                    }),
-            )
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                                }),
+                        )
+                        .child(group_dropdown)
+                        .into_any_element()
+                },
+            ))
             .into_any_element()
     }
 
@@ -334,9 +331,12 @@ impl PlayerView {
             .map(|(_, name)| *name)
             .unwrap_or("No group");
 
-        Button::new(SharedString::from(format!("group_{}_{}", is_playback, channel_idx)), current_label)
-            .variant(ButtonVariant::Secondary)
-            .size(ButtonSize::Sm)
+        Button::new(
+            SharedString::from(format!("group_{}_{}", is_playback, channel_idx)),
+            current_label,
+        )
+        .variant(ButtonVariant::Secondary)
+        .size(ButtonSize::Sm)
     }
 
     /// Render recording device configuration section
@@ -362,14 +362,12 @@ impl PlayerView {
                     .color(theme.success),
             );
 
-        let device_label = VStack::new()
-            .spacing(StackSpacing::Sm)
-            .child(
-                Text::new("Input Device")
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold)
-                    .color(theme.text_secondary),
-            );
+        let device_label = VStack::new().spacing(StackSpacing::Sm).child(
+            Text::new("Input Device")
+                .size(TextSize::Sm)
+                .weight(TextWeight::Semibold)
+                .color(theme.text_secondary),
+        );
 
         let badges = HStack::new()
             .spacing(StackSpacing::Sm)
@@ -399,7 +397,9 @@ impl PlayerView {
                                 this.state.update(cx, |state, _| {
                                     state.app.recording_state.recording_config.num_channels =
                                         value as usize;
-                                    update_recording_channel_mappings(&mut state.app.recording_state);
+                                    update_recording_channel_mappings(
+                                        &mut state.app.recording_state,
+                                    );
                                 });
                                 cx.notify();
                             });
@@ -533,32 +533,34 @@ impl PlayerView {
                                     )
                                     .child({
                                         let view = view.clone();
-                                        NumberInput::new(SharedString::from(format!("recording_interface_{}", idx)))
-                                            .value((interface_ch + 1) as f64)
-                                            .min(1.0)
-                                            .max(16.0)
-                                            .step(1.0)
-                                            .size(NumberInputSize::Sm)
-                                            .on_change({
-                                                let view = view.clone();
-                                                move |value, _window, cx| {
-                                                    view.update(cx, |this, cx| {
-                                                        this.state.update(cx, |state, _| {
-                                                            if let Some(m) = state
-                                                                .app
-                                                                .recording_state
-                                                                .recording_config
-                                                                .channel_mappings
-                                                                .get_mut(idx)
-                                                            {
-                                                                *m = (value as usize)
-                                                                    .saturating_sub(1);
-                                                            }
-                                                        });
-                                                        cx.notify();
+                                        NumberInput::new(SharedString::from(format!(
+                                            "recording_interface_{}",
+                                            idx
+                                        )))
+                                        .value((interface_ch + 1) as f64)
+                                        .min(1.0)
+                                        .max(16.0)
+                                        .step(1.0)
+                                        .size(NumberInputSize::Sm)
+                                        .on_change({
+                                            let view = view.clone();
+                                            move |value, _window, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.state.update(cx, |state, _| {
+                                                        if let Some(m) = state
+                                                            .app
+                                                            .recording_state
+                                                            .recording_config
+                                                            .channel_mappings
+                                                            .get_mut(idx)
+                                                        {
+                                                            *m = (value as usize).saturating_sub(1);
+                                                        }
                                                     });
-                                                }
-                                            })
+                                                    cx.notify();
+                                                });
+                                            }
+                                        })
                                     }),
                             )
                             .into_any_element()
@@ -604,9 +606,11 @@ impl PlayerView {
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Md)
                                 .on_click({
-                                    move |_, _cx| {
-                                        // TODO: Open file dialog for calibration file
-                                        log::info!("Browse calibration file clicked");
+                                    let view = view.clone();
+                                    move |_, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.browse_calibration_file(cx);
+                                        });
                                     }
                                 }),
                         )
@@ -638,6 +642,30 @@ impl PlayerView {
                         .color(theme.text_muted),
                 ),
         )
+    }
+
+    /// Open file dialog to browse for calibration file
+    fn browse_calibration_file(&mut self, cx: &mut Context<Self>) {
+        let state_entity = self.state.clone();
+
+        cx.spawn(async move |_, cx| {
+            // Open file dialog
+            let file = rfd::AsyncFileDialog::new()
+                .add_filter("CSV", &["csv", "txt"])
+                .add_filter("All files", &["*"])
+                .set_title("Select Microphone Calibration File")
+                .pick_file()
+                .await;
+
+            if let Some(file) = file {
+                let path = file.path().to_string_lossy().to_string();
+                log::info!("Selected calibration file: {}", path);
+                let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                    state.app.recording_state.mic_calibration_path = Some(path);
+                });
+            }
+        })
+        .detach();
     }
 }
 

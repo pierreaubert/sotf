@@ -17,6 +17,7 @@ use gpui_ui_kit::{
 
 impl PlayerView {
     /// Main recording screen renderer - dispatches to config or capture step
+
     pub(crate) fn render_recording_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, current_step) = {
             let state = self.state.read(cx);

@@ -27,7 +27,10 @@ fn image_from_jpeg_bytes(bytes: &[u8]) -> Arc<Image> {
     if let Ok(img) = image::load_from_memory_with_format(bytes, ExternalImageFormat::Jpeg) {
         let mut png_bytes = Vec::new();
         if img
-            .write_to(&mut std::io::Cursor::new(&mut png_bytes), ExternalImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut png_bytes),
+                ExternalImageFormat::Png,
+            )
             .is_ok()
         {
             return Arc::new(Image::from_bytes(ImageFormat::Png, png_bytes));

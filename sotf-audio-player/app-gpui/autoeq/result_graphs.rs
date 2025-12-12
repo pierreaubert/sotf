@@ -6,14 +6,14 @@
 //! 3. Error curve (deviation - filter response)
 //! 4. Response with/without filter and target
 
-use crate::autoeq::speaker_eq::SpeakerOptimizationResult;
 use crate::autoeq::HeadphoneOptimizationResult;
+use crate::autoeq::speaker_eq::SpeakerOptimizationResult;
 use crate::components::graphs::{band_color, format_frequency};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use d3rs::color::D3Color;
 use d3rs::scale::{LinearScale, LogScale, Scale};
-use d3rs::shape::{render_line, LineConfig, LinePoint};
+use d3rs::shape::{LineConfig, LinePoint, render_line};
 use gpui::prelude::*;
 use gpui::*;
 

@@ -12,7 +12,7 @@ use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
 use std::panic;
 
-use super::{render_tick_row, MeterTheme, TickConfig};
+use super::{MeterTheme, TickConfig, render_tick_row};
 use crate::app::{App as AppState, ChannelGroup, ChannelInfo};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -337,7 +337,7 @@ pub fn render_gr_meter(
     max_db: f64,            // e.g., -30.0 (max gain reduction to display)
     theme: &Theme,
 ) -> impl IntoElement {
-    use super::ticks::{render_tick_row, TickConfig};
+    use super::ticks::{TickConfig, render_tick_row};
 
     let gr_abs = gain_reduction_db.abs();
     let tick_config = TickConfig::gain_reduction(max_db);
