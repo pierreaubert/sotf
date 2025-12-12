@@ -22,6 +22,7 @@ pub mod tabs;
 pub mod toast;
 
 // Form components
+pub mod autoeq_form;
 pub mod checkbox;
 pub mod input;
 pub mod number_input;
@@ -46,8 +47,10 @@ pub mod tooltip;
 // Navigation
 pub mod accordion;
 pub mod breadcrumbs;
+pub mod wizard;
 
 // Layout
+pub mod pane_divider;
 pub mod stack;
 
 // Re-export commonly used types
@@ -66,12 +69,14 @@ pub use accordion::{Accordion, AccordionItem, AccordionMode, AccordionTheme};
 pub use breadcrumbs::{BreadcrumbItem, BreadcrumbSeparator, Breadcrumbs};
 pub use menu::{Menu, MenuBar, MenuBarItem, MenuItem, MenuTheme, menu_bar_button};
 pub use tabs::{TabItem, TabVariant, Tabs, TabsTheme};
+pub use wizard::{StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep, WizardTheme, WizardVariant};
 
 // Notifications
 pub use alert::{Alert, AlertVariant, InlineAlert};
 pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 
 // Form
+pub use autoeq_form::{AutoEqAlgorithm, AutoEqConfig, AutoEqField, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState};
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use input::{Input, InputSize, InputVariant};
 pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme};
@@ -93,7 +98,11 @@ pub use text::{Code, Heading, Link, Text, TextSize, TextWeight};
 pub use tooltip::{Tooltip, TooltipPlacement, WithTooltip};
 
 // Layout
-pub use stack::{Divider, HStack, Spacer, StackAlign, StackJustify, StackSpacing, VStack};
+pub use pane_divider::{CollapseDirection, PaneDivider, PaneDividerTheme};
+pub use stack::{
+    Divider, HStack, Spacer, StackAlign, StackJustify, StackOverflow, StackSize, StackSpacing,
+    VStack,
+};
 
 // Application templates
 pub use app::{MiniApp, MiniAppConfig};

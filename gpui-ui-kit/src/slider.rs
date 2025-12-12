@@ -373,25 +373,42 @@ impl RenderOnce for Slider {
         if !disabled {
             // Mouse down - start drag or handle click
             if let Some(on_drag_start) = self.on_drag_start {
+                let handler_down = on_drag_start;
                 track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                    on_drag_start(event.position.x.into(), current_value, window, cx);
+                    handler_down(event.position.x.into(), current_value, window, cx);
                 });
             } else if let Some(ref handler_rc) = on_change_rc {
-                // If no drag handler, use click to set value based on position
+                // Click to set value based on position (immediate feedback)
                 let handler_click = handler_rc.clone();
-                track = track.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                    // Simple step behavior when no drag handler
-                    let step_amount = step.unwrap_or((max - min) / 10.0);
-                    let new_value = current_value + step_amount;
-                    let snapped = if new_value > max {
-                        min
-                    } else if let Some(step) = step {
+                track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    // Calculate value from click position relative to track
+                    let x: f32 = event.position.x.into();
+                    let progress = (x / width).clamp(0.0, 1.0);
+                    let new_value = min + progress * (max - min);
+                    let snapped = if let Some(step) = step {
                         let steps = ((new_value - min) / step).round();
                         (min + steps * step).clamp(min, max)
                     } else {
                         new_value.clamp(min, max)
                     };
                     handler_click(snapped, window, cx);
+                });
+
+                // Mouse move while pressed - continue drag
+                let handler_drag = handler_rc.clone();
+                track = track.on_mouse_move(move |event, window, cx| {
+                    if event.pressed_button == Some(MouseButton::Left) {
+                        let x: f32 = event.position.x.into();
+                        let progress = (x / width).clamp(0.0, 1.0);
+                        let new_value = min + progress * (max - min);
+                        let snapped = if let Some(step) = step {
+                            let steps = ((new_value - min) / step).round();
+                            (min + steps * step).clamp(min, max)
+                        } else {
+                            new_value.clamp(min, max)
+                        };
+                        handler_drag(snapped, window, cx);
+                    }
                 });
             }
 

@@ -158,6 +158,12 @@ pub struct Showcase {
     accordion_vertical_multiple: Vec<SharedString>,
     accordion_horizontal_single: Vec<SharedString>,
     accordion_side_single: Vec<SharedString>,
+    // Pane divider states
+    pane_left_collapsed: bool,
+    pane_left_width: f32,
+    pane_dragging_left: bool,
+    pane_drag_start_x: f32,
+    pane_drag_start_width: f32,
     // Current section for navigation
     current_section: ShowcaseSection,
     // Entity for updating self
@@ -204,6 +210,11 @@ impl Showcase {
             accordion_vertical_multiple: vec!["v-multi-1".into(), "v-multi-2".into()],
             accordion_horizontal_single: vec!["h-single-1".into()],
             accordion_side_single: vec!["side-single-1".into(), "side-single-2".into()],
+            pane_left_collapsed: false,
+            pane_left_width: 200.0,
+            pane_dragging_left: false,
+            pane_drag_start_x: 0.0,
+            pane_drag_start_width: 0.0,
             current_section: ShowcaseSection::default(),
             entity: cx.entity().clone(),
             focus_handle: cx.focus_handle(),

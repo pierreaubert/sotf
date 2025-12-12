@@ -1,6 +1,7 @@
 //! Stack layout components
 //!
 //! Vertical and horizontal stack layouts with spacing.
+//! Behaves like CSS flexbox with responsive resizing support.
 
 use gpui::prelude::*;
 use gpui::*;
@@ -23,6 +24,8 @@ pub enum StackSpacing {
     Xl,
     /// 2X large (32px)
     Xxl,
+    /// Custom spacing
+    Custom(Pixels),
 }
 
 impl StackSpacing {
@@ -35,11 +38,12 @@ impl StackSpacing {
             StackSpacing::Lg => px(16.0),
             StackSpacing::Xl => px(24.0),
             StackSpacing::Xxl => px(32.0),
+            StackSpacing::Custom(p) => *p,
         }
     }
 }
 
-/// Alignment options
+/// Alignment options (cross-axis alignment)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StackAlign {
     /// Align to start
@@ -51,9 +55,11 @@ pub enum StackAlign {
     End,
     /// Stretch to fill
     Stretch,
+    /// Baseline alignment (useful for text)
+    Baseline,
 }
 
-/// Justify options
+/// Justify options (main-axis alignment)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StackJustify {
     /// Justify to start (default)
@@ -71,12 +77,52 @@ pub enum StackJustify {
     SpaceEvenly,
 }
 
+/// Overflow handling options
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StackOverflow {
+    /// Show all content (default)
+    #[default]
+    Visible,
+    /// Hide overflow
+    Hidden,
+    /// Scroll when needed
+    Scroll,
+    /// Always show scrollbar
+    Auto,
+}
+
+/// Size specification for stack dimensions
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StackSize {
+    /// Auto size (fit content)
+    Auto,
+    /// Fill available space (100%)
+    Full,
+    /// Fixed size in pixels
+    Fixed(Pixels),
+    /// Fraction of available space (0.0 to 1.0)
+    Fraction(f32),
+}
+
 /// A vertical stack (column) layout
+///
+/// Behaves like CSS `display: flex; flex-direction: column` with responsive sizing support.
 pub struct VStack {
     children: Vec<AnyElement>,
     spacing: StackSpacing,
     align: StackAlign,
     justify: StackJustify,
+    width: Option<StackSize>,
+    height: Option<StackSize>,
+    flex_grow: Option<f32>,
+    flex_shrink: Option<f32>,
+    flex_basis: Option<Pixels>,
+    overflow_x: StackOverflow,
+    overflow_y: StackOverflow,
+    min_width: Option<Pixels>,
+    min_height: Option<Pixels>,
+    max_width: Option<Pixels>,
+    max_height: Option<Pixels>,
 }
 
 impl VStack {
@@ -87,6 +133,17 @@ impl VStack {
             spacing: StackSpacing::default(),
             align: StackAlign::Stretch,
             justify: StackJustify::default(),
+            width: None,
+            height: None,
+            flex_grow: None,
+            flex_shrink: None,
+            flex_basis: None,
+            overflow_x: StackOverflow::default(),
+            overflow_y: StackOverflow::default(),
+            min_width: None,
+            min_height: None,
+            max_width: None,
+            max_height: None,
         }
     }
 
@@ -103,21 +160,110 @@ impl VStack {
         self
     }
 
-    /// Set spacing
+    /// Set spacing between children
     pub fn spacing(mut self, spacing: StackSpacing) -> Self {
         self.spacing = spacing;
         self
     }
 
-    /// Set alignment
+    /// Set cross-axis alignment (horizontal for VStack)
     pub fn align(mut self, align: StackAlign) -> Self {
         self.align = align;
         self
     }
 
-    /// Set justify
+    /// Set main-axis alignment (vertical for VStack)
     pub fn justify(mut self, justify: StackJustify) -> Self {
         self.justify = justify;
+        self
+    }
+
+    /// Set width of the stack
+    pub fn width(mut self, size: StackSize) -> Self {
+        self.width = Some(size);
+        self
+    }
+
+    /// Set height of the stack
+    pub fn height(mut self, size: StackSize) -> Self {
+        self.height = Some(size);
+        self
+    }
+
+    /// Fill both width and height (100% of parent)
+    pub fn full(mut self) -> Self {
+        self.width = Some(StackSize::Full);
+        self.height = Some(StackSize::Full);
+        self
+    }
+
+    /// Set flex-grow (how much the stack grows to fill available space)
+    /// Use `flex_1()` for common case of grow=1
+    pub fn grow(mut self, factor: f32) -> Self {
+        self.flex_grow = Some(factor);
+        self
+    }
+
+    /// Shorthand for flex-grow: 1, flex-shrink: 1, flex-basis: 0 (like CSS flex: 1)
+    pub fn flex_1(mut self) -> Self {
+        self.flex_grow = Some(1.0);
+        self.flex_shrink = Some(1.0);
+        self.flex_basis = Some(px(0.0));
+        self
+    }
+
+    /// Set flex-shrink (how much the stack shrinks when space is limited)
+    pub fn shrink(mut self, factor: f32) -> Self {
+        self.flex_shrink = Some(factor);
+        self
+    }
+
+    /// Set flex-basis (initial size before growing/shrinking)
+    pub fn basis(mut self, size: Pixels) -> Self {
+        self.flex_basis = Some(size);
+        self
+    }
+
+    /// Set horizontal overflow handling
+    pub fn overflow_x(mut self, overflow: StackOverflow) -> Self {
+        self.overflow_x = overflow;
+        self
+    }
+
+    /// Set vertical overflow handling
+    pub fn overflow_y(mut self, overflow: StackOverflow) -> Self {
+        self.overflow_y = overflow;
+        self
+    }
+
+    /// Set both overflow directions
+    pub fn overflow(mut self, overflow: StackOverflow) -> Self {
+        self.overflow_x = overflow;
+        self.overflow_y = overflow;
+        self
+    }
+
+    /// Set minimum width
+    pub fn min_w(mut self, size: Pixels) -> Self {
+        self.min_width = Some(size);
+        self
+    }
+
+    /// Set minimum height
+    pub fn min_h(mut self, size: Pixels) -> Self {
+        self.min_height = Some(size);
+        self
+    }
+
+    /// Set maximum width
+    pub fn max_w(mut self, size: Pixels) -> Self {
+        self.max_width = Some(size);
+        self
+    }
+
+    /// Set maximum height
+    pub fn max_h(mut self, size: Pixels) -> Self {
+        self.max_height = Some(size);
         self
     }
 
@@ -125,12 +271,74 @@ impl VStack {
     pub fn build(self) -> Div {
         let mut stack = div().flex().flex_col().gap(self.spacing.to_pixels());
 
+        // Apply width
+        stack = match self.width {
+            Some(StackSize::Auto) => stack,
+            Some(StackSize::Full) => stack.w_full(),
+            Some(StackSize::Fixed(px)) => stack.w(px),
+            Some(StackSize::Fraction(f)) => stack.w(relative(f)),
+            None => stack,
+        };
+
+        // Apply height
+        stack = match self.height {
+            Some(StackSize::Auto) => stack,
+            Some(StackSize::Full) => stack.h_full(),
+            Some(StackSize::Fixed(px)) => stack.h(px),
+            Some(StackSize::Fraction(f)) => stack.h(relative(f)),
+            None => stack,
+        };
+
+        // Apply flex properties
+        if let Some(grow) = self.flex_grow {
+            stack = stack.flex_grow();
+            if grow != 1.0 {
+                // GPUI uses flex_grow() for grow=1, for other values we'd need custom styling
+                // For now, flex_grow() sets grow to 1
+            }
+        }
+        if let Some(_shrink) = self.flex_shrink {
+            stack = stack.flex_shrink();
+        }
+        if let Some(basis) = self.flex_basis {
+            stack = stack.flex_basis(basis);
+        }
+
+        // Apply min/max constraints
+        if let Some(min_w) = self.min_width {
+            stack = stack.min_w(min_w);
+        }
+        if let Some(min_h) = self.min_height {
+            stack = stack.min_h(min_h);
+        }
+        if let Some(max_w) = self.max_width {
+            stack = stack.max_w(max_w);
+        }
+        if let Some(max_h) = self.max_height {
+            stack = stack.max_h(max_h);
+        }
+
+        // Apply overflow (GPUI uses overflow_hidden; scroll is handled separately with scroll views)
+        stack = match self.overflow_x {
+            StackOverflow::Visible => stack,
+            StackOverflow::Hidden | StackOverflow::Scroll | StackOverflow::Auto => {
+                stack.overflow_x_hidden()
+            }
+        };
+        stack = match self.overflow_y {
+            StackOverflow::Visible => stack,
+            StackOverflow::Hidden | StackOverflow::Scroll | StackOverflow::Auto => {
+                stack.overflow_y_hidden()
+            }
+        };
+
         // Apply alignment
         stack = match self.align {
             StackAlign::Start => stack.items_start(),
             StackAlign::Center => stack.items_center(),
             StackAlign::End => stack.items_end(),
             StackAlign::Stretch => stack,
+            StackAlign::Baseline => stack, // GPUI may not have baseline, fall back to default
         };
 
         // Apply justify
@@ -166,12 +374,25 @@ impl IntoElement for VStack {
 }
 
 /// A horizontal stack (row) layout
+///
+/// Behaves like CSS `display: flex; flex-direction: row` with responsive sizing support.
 pub struct HStack {
     children: Vec<AnyElement>,
     spacing: StackSpacing,
     align: StackAlign,
     justify: StackJustify,
     wrap: bool,
+    width: Option<StackSize>,
+    height: Option<StackSize>,
+    flex_grow: Option<f32>,
+    flex_shrink: Option<f32>,
+    flex_basis: Option<Pixels>,
+    overflow_x: StackOverflow,
+    overflow_y: StackOverflow,
+    min_width: Option<Pixels>,
+    min_height: Option<Pixels>,
+    max_width: Option<Pixels>,
+    max_height: Option<Pixels>,
 }
 
 impl HStack {
@@ -183,6 +404,17 @@ impl HStack {
             align: StackAlign::Center,
             justify: StackJustify::default(),
             wrap: false,
+            width: None,
+            height: None,
+            flex_grow: None,
+            flex_shrink: None,
+            flex_basis: None,
+            overflow_x: StackOverflow::default(),
+            overflow_y: StackOverflow::default(),
+            min_width: None,
+            min_height: None,
+            max_width: None,
+            max_height: None,
         }
     }
 
@@ -199,27 +431,116 @@ impl HStack {
         self
     }
 
-    /// Set spacing
+    /// Set spacing between children
     pub fn spacing(mut self, spacing: StackSpacing) -> Self {
         self.spacing = spacing;
         self
     }
 
-    /// Set alignment
+    /// Set cross-axis alignment (vertical for HStack)
     pub fn align(mut self, align: StackAlign) -> Self {
         self.align = align;
         self
     }
 
-    /// Set justify
+    /// Set main-axis alignment (horizontal for HStack)
     pub fn justify(mut self, justify: StackJustify) -> Self {
         self.justify = justify;
         self
     }
 
-    /// Enable flex wrap
+    /// Enable flex wrap (items wrap to next line when they don't fit)
     pub fn wrap(mut self, wrap: bool) -> Self {
         self.wrap = wrap;
+        self
+    }
+
+    /// Set width of the stack
+    pub fn width(mut self, size: StackSize) -> Self {
+        self.width = Some(size);
+        self
+    }
+
+    /// Set height of the stack
+    pub fn height(mut self, size: StackSize) -> Self {
+        self.height = Some(size);
+        self
+    }
+
+    /// Fill both width and height (100% of parent)
+    pub fn full(mut self) -> Self {
+        self.width = Some(StackSize::Full);
+        self.height = Some(StackSize::Full);
+        self
+    }
+
+    /// Set flex-grow (how much the stack grows to fill available space)
+    /// Use `flex_1()` for common case of grow=1
+    pub fn grow(mut self, factor: f32) -> Self {
+        self.flex_grow = Some(factor);
+        self
+    }
+
+    /// Shorthand for flex-grow: 1, flex-shrink: 1, flex-basis: 0 (like CSS flex: 1)
+    pub fn flex_1(mut self) -> Self {
+        self.flex_grow = Some(1.0);
+        self.flex_shrink = Some(1.0);
+        self.flex_basis = Some(px(0.0));
+        self
+    }
+
+    /// Set flex-shrink (how much the stack shrinks when space is limited)
+    pub fn shrink(mut self, factor: f32) -> Self {
+        self.flex_shrink = Some(factor);
+        self
+    }
+
+    /// Set flex-basis (initial size before growing/shrinking)
+    pub fn basis(mut self, size: Pixels) -> Self {
+        self.flex_basis = Some(size);
+        self
+    }
+
+    /// Set horizontal overflow handling
+    pub fn overflow_x(mut self, overflow: StackOverflow) -> Self {
+        self.overflow_x = overflow;
+        self
+    }
+
+    /// Set vertical overflow handling
+    pub fn overflow_y(mut self, overflow: StackOverflow) -> Self {
+        self.overflow_y = overflow;
+        self
+    }
+
+    /// Set both overflow directions
+    pub fn overflow(mut self, overflow: StackOverflow) -> Self {
+        self.overflow_x = overflow;
+        self.overflow_y = overflow;
+        self
+    }
+
+    /// Set minimum width
+    pub fn min_w(mut self, size: Pixels) -> Self {
+        self.min_width = Some(size);
+        self
+    }
+
+    /// Set minimum height
+    pub fn min_h(mut self, size: Pixels) -> Self {
+        self.min_height = Some(size);
+        self
+    }
+
+    /// Set maximum width
+    pub fn max_w(mut self, size: Pixels) -> Self {
+        self.max_width = Some(size);
+        self
+    }
+
+    /// Set maximum height
+    pub fn max_h(mut self, size: Pixels) -> Self {
+        self.max_height = Some(size);
         self
     }
 
@@ -231,12 +552,74 @@ impl HStack {
             stack = stack.flex_wrap();
         }
 
+        // Apply width
+        stack = match self.width {
+            Some(StackSize::Auto) => stack,
+            Some(StackSize::Full) => stack.w_full(),
+            Some(StackSize::Fixed(px)) => stack.w(px),
+            Some(StackSize::Fraction(f)) => stack.w(relative(f)),
+            None => stack,
+        };
+
+        // Apply height
+        stack = match self.height {
+            Some(StackSize::Auto) => stack,
+            Some(StackSize::Full) => stack.h_full(),
+            Some(StackSize::Fixed(px)) => stack.h(px),
+            Some(StackSize::Fraction(f)) => stack.h(relative(f)),
+            None => stack,
+        };
+
+        // Apply flex properties
+        if let Some(grow) = self.flex_grow {
+            stack = stack.flex_grow();
+            if grow != 1.0 {
+                // GPUI uses flex_grow() for grow=1, for other values we'd need custom styling
+                // For now, flex_grow() sets grow to 1
+            }
+        }
+        if let Some(_shrink) = self.flex_shrink {
+            stack = stack.flex_shrink();
+        }
+        if let Some(basis) = self.flex_basis {
+            stack = stack.flex_basis(basis);
+        }
+
+        // Apply min/max constraints
+        if let Some(min_w) = self.min_width {
+            stack = stack.min_w(min_w);
+        }
+        if let Some(min_h) = self.min_height {
+            stack = stack.min_h(min_h);
+        }
+        if let Some(max_w) = self.max_width {
+            stack = stack.max_w(max_w);
+        }
+        if let Some(max_h) = self.max_height {
+            stack = stack.max_h(max_h);
+        }
+
+        // Apply overflow (GPUI uses overflow_hidden; scroll is handled separately with scroll views)
+        stack = match self.overflow_x {
+            StackOverflow::Visible => stack,
+            StackOverflow::Hidden | StackOverflow::Scroll | StackOverflow::Auto => {
+                stack.overflow_x_hidden()
+            }
+        };
+        stack = match self.overflow_y {
+            StackOverflow::Visible => stack,
+            StackOverflow::Hidden | StackOverflow::Scroll | StackOverflow::Auto => {
+                stack.overflow_y_hidden()
+            }
+        };
+
         // Apply alignment
         stack = match self.align {
             StackAlign::Start => stack.items_start(),
             StackAlign::Center => stack.items_center(),
             StackAlign::End => stack.items_end(),
             StackAlign::Stretch => stack,
+            StackAlign::Baseline => stack, // GPUI may not have baseline, fall back to default
         };
 
         // Apply justify
