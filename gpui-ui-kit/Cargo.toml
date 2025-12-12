@@ -9,8 +9,8 @@ repository.workspace = true
 
 [dependencies]
 # GPUI framework
-gpui = { version="*", workspace = true }
-gpui_macros = { version="*", workspace = true }
+gpui = { workspace = true }
+gpui_macros = { workspace = true }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
