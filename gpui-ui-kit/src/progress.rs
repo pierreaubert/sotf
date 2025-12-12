@@ -69,10 +69,11 @@ pub struct Progress {
 
 impl Progress {
     /// Create a new progress bar
+    /// Value should be between 0.0 and 1.0 (or 0.0 to max if max is set)
     pub fn new(value: f32) -> Self {
         Self {
             value,
-            max: 100.0,
+            max: 1.0,
             variant: ProgressVariant::default(),
             size: ProgressSize::default(),
             show_label: false,
@@ -185,10 +186,11 @@ pub struct CircularProgress {
 
 impl CircularProgress {
     /// Create a new circular progress
+    /// Value should be between 0.0 and 1.0 (or 0.0 to max if max is set)
     pub fn new(value: f32) -> Self {
         Self {
             value,
-            max: 100.0,
+            max: 1.0,
             size: px(48.0),
             thickness: px(4.0),
             variant: ProgressVariant::default(),
@@ -228,10 +230,23 @@ impl CircularProgress {
 
     /// Build into element with theme
     /// Note: True circular progress requires canvas/SVG rendering.
-    /// This is a simplified box-based representation.
+    /// This is a simplified box-based representation where color intensity
+    /// increases with progress value.
     pub fn build_with_theme(self, theme: &Theme) -> Div {
         let percentage = (self.value / self.max * 100.0).clamp(0.0, 100.0);
-        let color = self.variant.color(theme);
+        let base_color = self.variant.color(theme);
+
+        // Interpolate color intensity based on progress (0% = surface color, 100% = full color)
+        let progress_ratio = percentage / 100.0;
+        let color = if percentage <= 0.0 {
+            theme.surface
+        } else {
+            // Blend between surface and full color based on progress
+            let r = theme.surface.r * (1.0 - progress_ratio) + base_color.r * progress_ratio;
+            let g = theme.surface.g * (1.0 - progress_ratio) + base_color.g * progress_ratio;
+            let b = theme.surface.b * (1.0 - progress_ratio) + base_color.b * progress_ratio;
+            Rgba { r, g, b, a: 1.0 }
+        };
 
         let mut container = div()
             .flex()
@@ -241,14 +256,8 @@ impl CircularProgress {
             .h(self.size)
             .rounded_full()
             .border(self.thickness)
-            .border_color(theme.surface)
+            .border_color(color)
             .relative();
-
-        // Progress arc approximation (using border color)
-        // Note: This is a simplified version - true circular progress needs SVG
-        if percentage > 0.0 {
-            container = container.border_color(color);
-        }
 
         // Center label
         if self.show_label {

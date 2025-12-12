@@ -22,3 +22,7 @@ path = "src/lib.rs"
 [[example]]
 name = "showcase"
 path = "examples/showcase.rs"
+
+[[example]]
+name = "select_debug"
+path = "examples/select_debug.rs"

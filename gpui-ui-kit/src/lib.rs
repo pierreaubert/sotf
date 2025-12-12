@@ -13,6 +13,7 @@ pub mod theme;
 
 // Core components
 pub mod button;
+pub mod button_set;
 pub mod card;
 pub mod dialog;
 pub mod icon_button;
@@ -53,6 +54,7 @@ pub mod stack;
 
 // Buttons
 pub use button::{Button, ButtonSize, ButtonTheme, ButtonVariant};
+pub use button_set::{ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSetTheme};
 pub use icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVariant};
 
 // Containers

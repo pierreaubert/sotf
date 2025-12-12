@@ -9,9 +9,11 @@
 //!   - Escape: close dropdown
 //!   - Space: toggle dropdown open/closed
 //! - Mouse support: click to toggle, hover to highlight
+//!
+//! Note: Uses `deferred()` to ensure dropdown renders on top of other content.
 
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{deferred, *};
 
 use crate::theme::{Theme, ThemeExt};
 
@@ -409,6 +411,7 @@ impl Select {
         container = container.child(trigger);
 
         // Dropdown menu (only shown when open)
+        // Use deferred() to ensure the dropdown renders on top of other content
         if self.is_open {
             let mut dropdown = div()
                 .id("select-dropdown")
@@ -418,14 +421,14 @@ impl Select {
                 .min_w_full() // Ensure dropdown is at least as wide as trigger
                 .mt_1()
                 .bg(theme.dropdown_bg)
-                .opacity(1.0)
                 .border_1()
                 .border_color(theme.dropdown_border)
                 .rounded_md()
                 .shadow_lg()
                 .max_h(px(200.0))
                 .overflow_y_scroll()
-                .py_1();
+                .py_1()
+                .occlude(); // Block mouse events from passing through
 
             for (idx, option) in self.options.iter().enumerate() {
                 let is_selected = self.selected.as_ref() == Some(&option.value);
@@ -448,7 +451,6 @@ impl Select {
                 if option.disabled {
                     option_el = option_el
                         .bg(theme.dropdown_bg)
-                        .opacity(1.0)
                         .text_color(theme.disabled_color)
                         .cursor_not_allowed();
                 } else if is_selected {
@@ -464,7 +466,6 @@ impl Select {
                     let hover_bg = theme.option_hover_bg;
                     option_el = option_el
                         .bg(theme.dropdown_bg)
-                        .opacity(1.0)
                         .text_color(theme.option_text_color)
                         .hover(move |s| s.bg(hover_bg));
 
@@ -484,7 +485,8 @@ impl Select {
                 dropdown = dropdown.child(option_el);
             }
 
-            container = container.child(dropdown);
+            // Wrap dropdown in deferred() with priority to render on top of other elements
+            container = container.child(deferred(dropdown).with_priority(1));
         }
 
         container

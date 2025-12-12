@@ -1,4 +1,5 @@
 impl Showcase {
+    #[allow(clippy::too_many_arguments)]
     fn render_form_controls_section(
         &self,
         toggle_on: bool,
@@ -16,6 +17,8 @@ impl Showcase {
         input_editing: bool,
         input_edit_text: String,
         input_selected: bool,
+        buttonset_view_mode: SharedString,
+        buttonset_alignment: SharedString,
         entity: Entity<Self>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -564,12 +567,107 @@ impl Showcase {
                         ),
                     )
             })
+            // ButtonSet (segmented control)
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("Button Set (Segmented Control)").weight(TextWeight::Medium))
+                    .child(
+                        Text::new("Mutually exclusive button group - click to select")
+                            .size(TextSize::Xs)
+                            .muted(true),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Xl)
+                            .align(StackAlign::Start)
+                            // View mode example
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(Text::new("View Mode:").size(TextSize::Xs).muted(true))
+                                    .child(
+                                        ButtonSet::new("view-mode")
+                                            .options(vec![
+                                                ButtonSetOption::new("list", "List"),
+                                                ButtonSetOption::new("grid", "Grid"),
+                                                ButtonSetOption::new("table", "Table"),
+                                            ])
+                                            .selected(buttonset_view_mode)
+                                            .size(ButtonSetSize::Md)
+                                            .on_change({
+                                                let entity = entity.clone();
+                                                move |value, _window, cx| {
+                                                    entity.update(cx, |showcase, _cx| {
+                                                        showcase.buttonset_view_mode = value.clone();
+                                                    });
+                                                }
+                                            }),
+                                    ),
+                            )
+                            // Alignment example (small size)
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(Text::new("Alignment (Sm):").size(TextSize::Xs).muted(true))
+                                    .child(
+                                        ButtonSet::new("alignment")
+                                            .options(vec![
+                                                ButtonSetOption::new("left", "L"),
+                                                ButtonSetOption::new("center", "C"),
+                                                ButtonSetOption::new("right", "R"),
+                                            ])
+                                            .selected(buttonset_alignment)
+                                            .size(ButtonSetSize::Sm)
+                                            .on_change({
+                                                let entity = entity.clone();
+                                                move |value, _window, cx| {
+                                                    entity.update(cx, |showcase, _cx| {
+                                                        showcase.buttonset_alignment = value.clone();
+                                                    });
+                                                }
+                                            }),
+                                    ),
+                            )
+                            // Large size example (static)
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(Text::new("Toggle (Lg):").size(TextSize::Xs).muted(true))
+                                    .child(
+                                        ButtonSet::new("toggle-lg")
+                                            .options(vec![
+                                                ButtonSetOption::new("on", "ON"),
+                                                ButtonSetOption::new("off", "OFF"),
+                                            ])
+                                            .selected("on")
+                                            .size(ButtonSetSize::Lg),
+                                    ),
+                            )
+                            // Disabled option example
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(Text::new("With disabled:").size(TextSize::Xs).muted(true))
+                                    .child(
+                                        ButtonSet::new("disabled-demo")
+                                            .options(vec![
+                                                ButtonSetOption::new("a", "A"),
+                                                ButtonSetOption::new("b", "B").disabled(true),
+                                                ButtonSetOption::new("c", "C"),
+                                            ])
+                                            .selected("a")
+                                            .size(ButtonSetSize::Md),
+                                    ),
+                            ),
+                    ),
+            )
             // Keyboard support summary
             .child(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
                     .child(
-                        Text::new("⌨️ Keyboard Support Summary")
+                        Text::new("Keyboard Support Summary")
                             .weight(TextWeight::Bold)
                             .size(TextSize::Lg),
                     )

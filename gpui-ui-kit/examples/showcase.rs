@@ -136,6 +136,9 @@ pub struct Showcase {
     select_value: Option<SharedString>,
     select_open: bool,
     select_highlighted: Option<usize>,
+    // ButtonSet states
+    buttonset_view_mode: SharedString,
+    buttonset_alignment: SharedString,
     // Tabs state
     selected_tab: usize,
     // Potentiometer values
@@ -184,6 +187,8 @@ impl Showcase {
             select_value: Some("apple".into()),
             select_open: false,
             select_highlighted: None,
+            buttonset_view_mode: "grid".into(),
+            buttonset_alignment: "center".into(),
             selected_tab: 0,
             pot_0: 0.0,
             pot_25: 0.25,
@@ -302,6 +307,8 @@ impl Render for Showcase {
                     self.input_editing,
                     self.input_edit_text.clone(),
                     self.input_selected,
+                    self.buttonset_view_mode.clone(),
+                    self.buttonset_alignment.clone(),
                     entity.clone(),
                     cx,
                 )
@@ -340,19 +347,29 @@ impl Render for Showcase {
                     .flex()
                     .flex_col()
                     .overflow_hidden()
-                    .p_8()
-                    .gap_6()
                     .child(
-                        // Header
+                        // Header (fixed)
                         div()
+                            .flex_shrink_0()
+                            .p_8()
+                            .pb_0()
                             .flex()
                             .flex_col()
                             .gap_2()
                             .child(Heading::h1(title))
-                            .child(Text::new(subtitle)),
+                            .child(Text::new(subtitle))
+                            .child(Divider::new().build()),
                     )
-                    .child(Divider::new().build())
-                    .child(content),
+                    .child(
+                        // Scrollable content area
+                        div()
+                            .id("content-scroll")
+                            .flex_1()
+                            .overflow_y_scroll()
+                            .p_8()
+                            .pt_4()
+                            .child(content),
+                    ),
             )
     }
 }
