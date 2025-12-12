@@ -42,15 +42,26 @@ pub struct RoomConfig {
     pub optimizer: OptimizerConfig,
 }
 
+/// Source of measurements (single file or multiple files for averaging)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MeasurementSource {
+    Single(MeasurementRef),
+    Multiple(Vec<MeasurementRef>),
+}
+
 /// Speaker configuration (can be single measurement or group)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SpeakerConfig {
-    /// Single measurement (simple case)
-    Single(MeasurementRef),
+    /// Single channel (simple case)
+    Single(MeasurementSource),
 
     /// Group of measurements (multi-driver case)
     Group(SpeakerGroup),
+
+    /// Multiple subwoofers optimization
+    MultiSub(MultiSubGroup),
 }
 
 /// Group of measurements for a single speaker (multi-driver)
@@ -60,11 +71,21 @@ pub struct SpeakerGroup {
     pub name: String,
 
     /// Measurements in this group
-    pub measurements: Vec<MeasurementRef>,
+    pub measurements: Vec<MeasurementSource>,
 
     /// Crossover configuration for this group
     #[serde(skip_serializing_if = "Option::is_none")]
     pub crossover: Option<String>, // References crossovers map
+}
+
+/// Configuration for multiple subwoofers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiSubGroup {
+    /// Name of the subwoofer group (e.g. "subs")
+    pub name: String,
+
+    /// Measurements for each subwoofer
+    pub subwoofers: Vec<MeasurementSource>,
 }
 
 /// Reference to a measurement file

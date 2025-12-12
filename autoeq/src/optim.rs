@@ -391,6 +391,25 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 process::exit(1);
             }
         }
+        LossType::MultiSubFlat => {
+            if let Some(ref drivers_data) = data.drivers_data {
+                let n_drivers = drivers_data.drivers.len();
+                let gains = &x[0..n_drivers];
+                let delays = &x[n_drivers..2*n_drivers];
+                
+                crate::loss::multisub_flat_loss(
+                    drivers_data,
+                    gains,
+                    delays,
+                    data.srate,
+                    data.min_freq,
+                    data.max_freq,
+                )
+            } else {
+                eprintln!("Error: multi-sub-flat loss requested but driver data is missing");
+                process::exit(1);
+            }
+        }
         LossType::HeadphoneFlat | LossType::SpeakerFlat => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;

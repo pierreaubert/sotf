@@ -22,6 +22,7 @@ pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
         CrossoverType::Butterworth2 => "Butterworth12",
         CrossoverType::LinkwitzRiley2 => "LR12",
         CrossoverType::LinkwitzRiley4 => "LR24",
+        CrossoverType::None => "None",
     }
 }
 

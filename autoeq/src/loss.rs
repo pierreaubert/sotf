@@ -38,6 +38,8 @@ pub enum LossType {
     HeadphoneScore,
     /// Multi-driver crossover optimization (flatten combined response)
     DriversFlat,
+    /// Multi-subwoofer optimization (flatten summed response)
+    MultiSubFlat,
 }
 
 /// Data required for computing speaker score-based loss
@@ -124,6 +126,8 @@ pub enum CrossoverType {
     LinkwitzRiley2,
     /// 4th order Linkwitz-Riley (24 dB/octave)
     LinkwitzRiley4,
+    /// No crossover filter (for multi-sub optimization)
+    None,
 }
 
 /// Measurement data for a single driver
@@ -433,30 +437,27 @@ pub fn compute_drivers_combined_response(
     };
 
     let n_drivers = data.drivers.len();
-    assert_eq!(
-        gains.len(),
-        n_drivers,
-        "Must have one gain per driver (got {} gains for {} drivers)",
-        gains.len(),
-        n_drivers
-    );
-    assert_eq!(
-        crossover_freqs.len(),
-        n_drivers - 1,
-        "Must have {} crossover frequencies for {} drivers (got {})",
-        n_drivers - 1,
-        n_drivers,
-        crossover_freqs.len()
-    );
+    assert_eq!(gains.len(), n_drivers);
+    if let CrossoverType::None = data.crossover_type {
+        // No crossover frequencies required
+    } else {
+        assert_eq!(crossover_freqs.len(), n_drivers - 1);
+    }
     if let Some(d) = delays {
-        assert_eq!(d.len(), n_drivers, "Must have one delay per driver");
+        assert_eq!(d.len(), n_drivers);
     }
 
     // Interpolate each driver's response to the common frequency grid
     let mut driver_curves = Vec::new();
     for (i, driver) in data.drivers.iter().enumerate() {
-        let passband_low = if i == 0 { 20.0 } else { crossover_freqs[i - 1] };
-        let passband_high = if i == n_drivers - 1 { 20000.0 } else { crossover_freqs[i] };
+        let (passband_low, passband_high) = if let CrossoverType::None = data.crossover_type {
+            (20.0, 20000.0)
+        } else {
+            (
+                if i == 0 { 20.0 } else { crossover_freqs[i - 1] },
+                if i == n_drivers - 1 { 20000.0 } else { crossover_freqs[i] }
+            )
+        };
 
         let interpolated = crate::read::normalize_and_interpolate_response_with_range(
             &data.freq_grid,
@@ -482,23 +483,29 @@ pub fn compute_drivers_combined_response(
 
         // Generate filters for this driver
         let mut filters = Vec::new();
-        if i > 0 {
-            let xover_freq = crossover_freqs[i - 1];
-            let hp_peq = match data.crossover_type {
-                CrossoverType::Butterworth2 => peq_butterworth_highpass(2, xover_freq, sample_rate),
-                CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_highpass(2, xover_freq, sample_rate),
-                CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_highpass(4, xover_freq, sample_rate),
-            };
-            filters.extend(hp_peq);
-        }
-        if i < n_drivers - 1 {
-            let xover_freq = crossover_freqs[i];
-            let lp_peq = match data.crossover_type {
-                CrossoverType::Butterworth2 => peq_butterworth_lowpass(2, xover_freq, sample_rate),
-                CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_lowpass(2, xover_freq, sample_rate),
-                CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_lowpass(4, xover_freq, sample_rate),
-            };
-            filters.extend(lp_peq);
+        if let CrossoverType::None = data.crossover_type {
+            // No filters
+        } else {
+            if i > 0 {
+                let xover_freq = crossover_freqs[i - 1];
+                let hp_peq = match data.crossover_type {
+                    CrossoverType::Butterworth2 => peq_butterworth_highpass(2, xover_freq, sample_rate),
+                    CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_highpass(2, xover_freq, sample_rate),
+                    CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_highpass(4, xover_freq, sample_rate),
+                    CrossoverType::None => vec![],
+                };
+                filters.extend(hp_peq);
+            }
+            if i < n_drivers - 1 {
+                let xover_freq = crossover_freqs[i];
+                let lp_peq = match data.crossover_type {
+                    CrossoverType::Butterworth2 => peq_butterworth_lowpass(2, xover_freq, sample_rate),
+                    CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_lowpass(2, xover_freq, sample_rate),
+                    CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_lowpass(4, xover_freq, sample_rate),
+                    CrossoverType::None => vec![],
+                };
+                filters.extend(lp_peq);
+            }
         }
 
         // Add to combined response
@@ -555,6 +562,48 @@ pub fn drivers_flat_loss(
     // Compute combined response
     let combined_response =
         compute_drivers_combined_response(data, gains, crossover_freqs, delays, sample_rate);
+
+    // Normalize the response (subtract the mean in the evaluation range)
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in 0..data.freq_grid.len() {
+        let freq = data.freq_grid[i];
+        if freq >= min_freq && freq <= max_freq {
+            sum += combined_response[i];
+            count += 1;
+        }
+    }
+    let mean = if count > 0 { sum / count as f64 } else { 0.0 };
+    let normalized = &combined_response - mean;
+
+    // Compute flatness loss (RMS deviation from zero)
+    flat_loss(&data.freq_grid, &normalized, min_freq, max_freq)
+}
+
+/// Compute the loss for multi-subwoofer optimization (flat summed response)
+///
+/// # Arguments
+/// * `data` - DriversLossData
+/// * `gains` - Gain in dB for each sub
+/// * `delays` - Delay in ms for each sub
+/// * `sample_rate` - Sample rate
+/// * `min_freq` - Min freq for evaluation
+/// * `max_freq` - Max freq for evaluation
+///
+/// # Returns
+/// * Loss value
+pub fn multisub_flat_loss(
+    data: &DriversLossData,
+    gains: &[f64],
+    delays: &[f64],
+    sample_rate: f64,
+    min_freq: f64,
+    max_freq: f64,
+) -> f64 {
+    // Pass empty crossover freqs (ignored because CrossoverType::None)
+    let crossover_freqs = vec![]; 
+    let combined_response =
+        compute_drivers_combined_response(data, gains, &crossover_freqs, Some(delays), sample_rate);
 
     // Normalize the response (subtract the mean in the evaluation range)
     let mut sum = 0.0;

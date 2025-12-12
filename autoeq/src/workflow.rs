@@ -866,6 +866,129 @@ pub fn load_driver_measurements_from_files(
     Ok(measurements)
 }
 
+/// Optimize multi-subwoofer configuration (gain, delay) to achieve flat summed response
+pub fn optimize_multisub(
+    drivers_data: crate::loss::DriversLossData,
+    min_freq: f64,
+    max_freq: f64,
+    sample_rate: f64,
+    algorithm: &str,
+    max_iter: usize,
+    min_db: f64,
+    max_db: f64,
+) -> Result<DriverOptimizationResult, Box<dyn std::error::Error>> {
+    let n_drivers = drivers_data.drivers.len();
+
+    // Create Args
+    let mut args = create_driver_optimization_args(
+        min_freq,
+        max_freq,
+        sample_rate,
+        algorithm,
+        max_iter,
+        min_db,
+        max_db,
+    );
+    args.loss = crate::LossType::MultiSubFlat;
+
+    // Setup objective data
+    let objective_data = setup_multisub_objective_data(&args, drivers_data.clone());
+
+    // Setup bounds (gains + delays)
+    let (lower_bounds, upper_bounds) = setup_multisub_bounds(&args, n_drivers);
+
+    // Initial guess
+    let mut x = multisub_initial_guess(n_drivers);
+
+    // Pre-objective
+    let pre_objective = crate::optim::compute_base_fitness(&x, &objective_data);
+
+    // Optimize
+    let opt_result = crate::optim::optimize_filters(
+        &mut x,
+        &lower_bounds,
+        &upper_bounds,
+        objective_data.clone(),
+        &args,
+    );
+
+    let converged = match opt_result {
+        Ok(_) => true,
+        Err(_) => false,
+    };
+
+    let post_objective = crate::optim::compute_base_fitness(&x, &objective_data);
+
+    // Extract results: [gains(N), delays(N)]
+    let gains = x[0..n_drivers].to_vec();
+    let delays = x[n_drivers..2*n_drivers].to_vec();
+    let crossover_freqs = vec![];
+
+    Ok(DriverOptimizationResult {
+        gains,
+        delays,
+        crossover_freqs,
+        pre_objective,
+        post_objective,
+        converged,
+    })
+}
+
+pub fn setup_multisub_objective_data(
+    args: &crate::cli::Args,
+    drivers_data: DriversLossData,
+) -> ObjectiveData {
+    ObjectiveData {
+        freqs: drivers_data.freq_grid.clone(),
+        target: Array1::zeros(drivers_data.freq_grid.len()),
+        deviation: Array1::zeros(drivers_data.freq_grid.len()),
+        srate: args.sample_rate,
+        min_spacing_oct: 0.0,
+        spacing_weight: 0.0,
+        max_db: args.max_db,
+        min_db: args.min_db,
+        min_freq: args.min_freq,
+        max_freq: args.max_freq,
+        peq_model: args.effective_peq_model(),
+        loss_type: crate::LossType::MultiSubFlat,
+        speaker_score_data: None,
+        headphone_score_data: None,
+        input_curve: None,
+        drivers_data: Some(drivers_data),
+        penalty_w_ceiling: 0.0,
+        penalty_w_spacing: 0.0,
+        penalty_w_mingain: 0.0,
+        integrality: None,
+    }
+}
+
+pub fn setup_multisub_bounds(
+    args: &crate::cli::Args,
+    n_drivers: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let n_params = n_drivers * 2; // gains + delays
+    let mut lower_bounds = Vec::with_capacity(n_params);
+    let mut upper_bounds = Vec::with_capacity(n_params);
+
+    // Gains
+    for _ in 0..n_drivers {
+        lower_bounds.push(-args.max_db);
+        upper_bounds.push(args.max_db);
+    }
+
+    // Delays (0 to 20ms)
+    for _ in 0..n_drivers {
+        lower_bounds.push(0.0);
+        upper_bounds.push(20.0); 
+    }
+
+    (lower_bounds, upper_bounds)
+}
+
+pub fn multisub_initial_guess(n_drivers: usize) -> Vec<f64> {
+    vec![0.0; n_drivers * 2]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

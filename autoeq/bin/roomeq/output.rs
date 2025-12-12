@@ -203,6 +203,59 @@ pub fn build_multidriver_dsp_chain(
     }
 }
 
+/// Build a DSP chain for a multi-subwoofer system
+///
+/// # Arguments
+/// * `channel_name` - Channel name (e.g., "lfe")
+/// * `group_name` - Name of the sub group
+/// * `n_subs` - Number of subwoofers
+/// * `gains` - Per-sub gains in dB
+/// * `delays` - Per-sub delays in ms
+/// * `eq_filters` - Global EQ filters
+pub fn build_multisub_dsp_chain(
+    channel_name: &str,
+    group_name: &str,
+    n_subs: usize,
+    gains: &[f64],
+    delays: &[f64],
+    eq_filters: &[Biquad],
+) -> ChannelDspChain {
+    // Build per-sub chains
+    let mut driver_chains = Vec::new();
+
+    for i in 0..n_subs {
+        let mut sub_plugins = Vec::new();
+
+        // Add gain plugin if non-zero
+        if i < gains.len() && gains[i].abs() > 0.01 {
+            sub_plugins.push(create_gain_plugin(gains[i]));
+        }
+
+        // Add delay plugin if non-zero
+        if i < delays.len() && delays[i].abs() > 0.001 {
+            sub_plugins.push(create_delay_plugin(delays[i]));
+        }
+
+        driver_chains.push(DriverDspChain {
+            name: format!("{}_{}", group_name, i + 1),
+            index: i,
+            plugins: sub_plugins,
+        });
+    }
+
+    // Build combined EQ
+    let mut combined_plugins = Vec::new();
+    if !eq_filters.is_empty() {
+        combined_plugins.push(create_eq_plugin(eq_filters));
+    }
+
+    ChannelDspChain {
+        channel: channel_name.to_string(),
+        plugins: combined_plugins,
+        drivers: Some(driver_chains),
+    }
+}
+
 /// Create complete DSP chain output
 pub fn create_dsp_chain_output(
     channels: HashMap<String, ChannelDspChain>,

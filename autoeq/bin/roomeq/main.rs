@@ -25,6 +25,7 @@ use std::path::PathBuf;
 mod crossover_optim;
 mod eq_optim;
 mod fir_optim;
+mod multisub_optim;
 mod load;
 mod output;
 mod types;
@@ -149,13 +150,17 @@ fn process_speaker(
     output_dir: &std::path::Path,
 ) -> Result<(ChannelDspChain, f64, f64)> {
     match speaker_config {
-        SpeakerConfig::Single(measurement) => {
+        SpeakerConfig::Single(source) => {
             // Simple case: single measurement
-            process_single_speaker(channel_name, measurement, room_config, sample_rate, output_dir)
+            process_single_speaker(channel_name, source, room_config, sample_rate, output_dir)
         }
         SpeakerConfig::Group(group) => {
             // Multi-driver case: optimize crossover and EQ
             process_speaker_group(channel_name, group, room_config, sample_rate, output_dir)
+        }
+        SpeakerConfig::MultiSub(group) => {
+            // Multi-subwoofer optimization
+            process_multisub_group(channel_name, group, room_config, sample_rate, output_dir)
         }
     }
 }
@@ -165,13 +170,13 @@ fn process_speaker(
 /// Returns: (DSP chain, pre_score, post_score)
 fn process_single_speaker(
     channel_name: &str,
-    measurement: &types::MeasurementRef,
+    source: &types::MeasurementSource,
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: &std::path::Path,
 ) -> Result<(ChannelDspChain, f64, f64)> {
     // Load measurement
-    let curve = load::load_measurement(measurement)
+    let curve = load::load_source(source)
         .map_err(|e| anyhow!("{}", e))
         .with_context(|| format!("Failed to load measurement for channel {}", channel_name))?;
 
@@ -308,8 +313,8 @@ fn process_speaker_group(
 ) -> Result<(ChannelDspChain, f64, f64)> {
     // Load all measurements in the group
     let mut driver_curves = Vec::new();
-    for (i, measurement) in group.measurements.iter().enumerate() {
-        let curve = load::load_measurement(measurement)
+    for (i, source) in group.measurements.iter().enumerate() {
+        let curve = load::load_source(source)
             .map_err(|e| anyhow!("{}", e))
             .with_context(|| format!("Failed to load driver {} measurement for channel {}", i, channel_name))?;
         driver_curves.push(curve);
@@ -459,4 +464,42 @@ fn process_speaker_group(
     );
 
     Ok((chain, pre_score, post_score))
+}
+
+fn process_multisub_group(
+    channel_name: &str,
+    group: &types::MultiSubGroup,
+    room_config: &RoomConfig,
+    sample_rate: f64,
+    _output_dir: &std::path::Path,
+) -> Result<(ChannelDspChain, f64, f64)> {
+    // 1. Optimize multisub integration (gain + delay)
+    let (result, combined_curve) = multisub_optim::optimize_multisub(
+        &group.subwoofers,
+        &room_config.optimizer,
+        sample_rate,
+    ).map_err(|e| anyhow!("Multi-sub optimization failed: {}", e))?;
+
+    info!(
+        "  Multi-sub optimization: gains={:?}, delays={:?} ms",
+        result.gains, result.delays
+    );
+
+    // 2. Global EQ on the combined sum
+    let (eq_filters, post_score) =
+        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
+        .map_err(|e| anyhow!("EQ optimization failed for multi-sub sum: {}", e))?;
+
+    info!("  Global EQ: {} filters, score={:.6}", eq_filters.len(), post_score);
+
+    let chain = output::build_multisub_dsp_chain(
+        channel_name,
+        &group.name,
+        group.subwoofers.len(),
+        &result.gains,
+        &result.delays,
+        &eq_filters,
+    );
+
+    Ok((chain, result.pre_objective, post_score))
 }

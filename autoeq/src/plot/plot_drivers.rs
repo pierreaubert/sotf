@@ -75,42 +75,48 @@ pub fn plot_drivers(
         let mut response = &driver.spl + gains[i];
 
         // Apply crossover filters on the driver's frequency grid
-        if i > 0 {
-            // Apply highpass from crossover with previous driver
-            let xover_freq = crossover_freqs[i - 1];
-            let hp_filter = match drivers_data.crossover_type {
-                crate::loss::CrossoverType::Butterworth2 => {
-                    crate::iir::peq_butterworth_highpass(2, xover_freq, sample_rate)
-                }
-                crate::loss::CrossoverType::LinkwitzRiley2 => {
-                    crate::iir::peq_linkwitzriley_highpass(2, xover_freq, sample_rate)
-                }
-                crate::loss::CrossoverType::LinkwitzRiley4 => {
-                    crate::iir::peq_linkwitzriley_highpass(4, xover_freq, sample_rate)
-                }
-            };
-            let hp_response =
-                crate::iir::compute_peq_response(driver_freq_grid, &hp_filter, sample_rate);
-            response = response + hp_response;
-        }
+        if let crate::loss::CrossoverType::None = drivers_data.crossover_type {
+            // No filters
+        } else {
+            if i > 0 {
+                // Apply highpass from crossover with previous driver
+                let xover_freq = crossover_freqs[i - 1];
+                let hp_filter = match drivers_data.crossover_type {
+                    crate::loss::CrossoverType::Butterworth2 => {
+                        crate::iir::peq_butterworth_highpass(2, xover_freq, sample_rate)
+                    }
+                    crate::loss::CrossoverType::LinkwitzRiley2 => {
+                        crate::iir::peq_linkwitzriley_highpass(2, xover_freq, sample_rate)
+                    }
+                    crate::loss::CrossoverType::LinkwitzRiley4 => {
+                        crate::iir::peq_linkwitzriley_highpass(4, xover_freq, sample_rate)
+                    }
+                    crate::loss::CrossoverType::None => vec![],
+                };
+                let hp_response =
+                    crate::iir::compute_peq_response(driver_freq_grid, &hp_filter, sample_rate);
+                response = response + hp_response;
+            }
 
-        if i < drivers_data.drivers.len() - 1 {
-            // Apply lowpass from crossover with next driver
-            let xover_freq = crossover_freqs[i];
-            let lp_filter = match drivers_data.crossover_type {
-                crate::loss::CrossoverType::Butterworth2 => {
-                    crate::iir::peq_butterworth_lowpass(2, xover_freq, sample_rate)
-                }
-                crate::loss::CrossoverType::LinkwitzRiley2 => {
-                    crate::iir::peq_linkwitzriley_lowpass(2, xover_freq, sample_rate)
-                }
-                crate::loss::CrossoverType::LinkwitzRiley4 => {
-                    crate::iir::peq_linkwitzriley_lowpass(4, xover_freq, sample_rate)
-                }
-            };
-            let lp_response =
-                crate::iir::compute_peq_response(driver_freq_grid, &lp_filter, sample_rate);
-            response = response + lp_response;
+            if i < drivers_data.drivers.len() - 1 {
+                // Apply lowpass from crossover with next driver
+                let xover_freq = crossover_freqs[i];
+                let lp_filter = match drivers_data.crossover_type {
+                    crate::loss::CrossoverType::Butterworth2 => {
+                        crate::iir::peq_butterworth_lowpass(2, xover_freq, sample_rate)
+                    }
+                    crate::loss::CrossoverType::LinkwitzRiley2 => {
+                        crate::iir::peq_linkwitzriley_lowpass(2, xover_freq, sample_rate)
+                    }
+                    crate::loss::CrossoverType::LinkwitzRiley4 => {
+                        crate::iir::peq_linkwitzriley_lowpass(4, xover_freq, sample_rate)
+                    }
+                    crate::loss::CrossoverType::None => vec![],
+                };
+                let lp_response =
+                    crate::iir::compute_peq_response(driver_freq_grid, &lp_filter, sample_rate);
+                response = response + lp_response;
+            }
         }
 
         // Don't subtract combined_mean - each driver shows its contribution
@@ -186,6 +192,7 @@ pub fn plot_drivers(
         crate::loss::CrossoverType::Butterworth2 => "2nd order Butterworth",
         crate::loss::CrossoverType::LinkwitzRiley2 => "2nd order Linkwitz-Riley",
         crate::loss::CrossoverType::LinkwitzRiley4 => "4th order Linkwitz-Riley",
+        crate::loss::CrossoverType::None => "No Crossover (Multi-Sub)",
     };
 
     let layout = Layout::new()
