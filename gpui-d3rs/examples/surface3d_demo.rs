@@ -10,7 +10,7 @@
 //!
 //! Run with: `cargo run --features gpu-3d --example surface3d_demo`
 
-use d3rs::surface3d::{Colormap, Surface3DConfig, Surface3DElement, Surface3DState, SurfaceData};
+use d3rs::gpu3d::{Colormap, Surface3DConfig, Surface3DElement, Surface3DState, SurfaceData};
 use gpui::*;
 use std::cell::RefCell;
 use std::rc::Rc;

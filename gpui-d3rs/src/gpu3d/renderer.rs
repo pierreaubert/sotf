@@ -26,7 +26,7 @@ struct Uniforms {
     x_min_log: f32,
     x_range_log: f32,
     is_log_x: f32,
-    padding: f32,
+    show_surface_isolines: f32,
 }
 
 impl Uniforms {
@@ -58,7 +58,7 @@ impl Uniforms {
             x_min_log: min_log,
             x_range_log: range_log,
             is_log_x: is_log,
-            padding: 0.0,
+            show_surface_isolines: if config.isolines { 1.0 } else { 0.0 },
         }
     }
 }
@@ -639,7 +639,10 @@ impl Surface3DRenderer {
             // Draw grid box first (background)
             // Use CullMode::Front (cull front, show back).
 
-            if self.config.show_axes && self.config.plot_type == SurfacePlotType::Cartesian {
+            if self.config.show_grid
+                && self.config.show_axes
+                && self.config.plot_type == SurfacePlotType::Cartesian
+            {
                 render_pass.set_pipeline(&self.grid_pipeline);
                 render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.grid_vertex_buffer.slice(..));

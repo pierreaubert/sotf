@@ -342,20 +342,48 @@ impl Element for Surface3DElement {
                         }
                     }
 
-                    // Draw label
-                    // Position label slightly past the tick
-                    let label_pos = pos + tick_vec * 1.5;
-                    if let Some(screen_pos) = to_screen(label_pos) {
-                        let screen_x = screen_pos.x + f32::from(bounds.origin.x);
-                        let screen_y = screen_pos.y + f32::from(bounds.origin.y);
+                    // Draw label with offset to avoid overlapping tick line
+                    // Position label past the tick end, then offset perpendicular in screen space
+                    let label_pos_3d = pos + tick_vec * 1.5;
+                    if let (Some(tick_start_screen), Some(tick_end_screen), Some(label_screen)) =
+                        (to_screen(pos), to_screen(tick_end), to_screen(label_pos_3d))
+                    {
                         let font_size = 8.0;
                         let text_width = measure_text_width(&label, font_size);
+
+                        // Compute tick direction in screen space
+                        let tick_dx = tick_end_screen.x - tick_start_screen.x;
+                        let tick_dy = tick_end_screen.y - tick_start_screen.y;
+                        let tick_len = (tick_dx * tick_dx + tick_dy * tick_dy).sqrt();
+
+                        // Compute perpendicular offset in screen space
+                        // This ensures label doesn't overlap tick even when viewed along tick axis
+                        let (offset_x, offset_y) = if tick_len > 0.1 {
+                            // Perpendicular to tick direction, biased downward (positive y in screen)
+                            let perp_x = -tick_dy / tick_len;
+                            let perp_y = tick_dx / tick_len;
+                            // Choose direction that moves label down/right (more readable)
+                            let offset_amount = font_size * 0.8;
+                            if perp_y >= 0.0 {
+                                (perp_x * offset_amount, perp_y * offset_amount)
+                            } else {
+                                (-perp_x * offset_amount, -perp_y * offset_amount)
+                            }
+                        } else {
+                            // Tick is very short in screen space, just offset down
+                            (0.0, font_size * 0.8)
+                        };
+
+                        let screen_x =
+                            label_screen.x + f32::from(bounds.origin.x) + offset_x - text_width / 2.0;
+                        let screen_y =
+                            label_screen.y + f32::from(bounds.origin.y) + offset_y - font_size / 2.0;
 
                         paint_vector_text_at(
                             window,
                             &label,
-                            screen_x - text_width / 2.0,
-                            screen_y - font_size / 2.0,
+                            screen_x,
+                            screen_y,
                             font_size,
                             1.0,
                             gpui::rgba(0x000000ff),
@@ -438,11 +466,11 @@ impl Element for Surface3DElement {
                 }
             }
 
-            // Angle Labels (Z axis)
+            // Angle Labels (Z axis) - 30° major ticks
             let angle_ticks = self.data.y_ticks.clone().unwrap_or_else(|| {
                 let min_angle = self.data.y_min;
                 let max_angle = self.data.y_max;
-                let step = 60.0;
+                let step = 30.0;  // 30° major ticks to match grid
                 let start = (min_angle / step).ceil() * step;
                 let mut ticks = Vec::new();
                 let mut angle = start;
@@ -533,7 +561,7 @@ impl Element for Surface3DElement {
                 }
             };
 
-            // Shared helper to draw a single tick and its label (Same as above, maybe verify if scope allows sharing or redefine)
+            // Shared helper to draw a single tick and its label
             // Re-defining for simplicity as scope is separate
             let draw_tick_and_label =
                 |window: &mut Window, pos: glam::Vec3, tick_vec: glam::Vec3, label: String| {
@@ -555,18 +583,43 @@ impl Element for Surface3DElement {
                         }
                     }
 
-                    let label_pos = pos + tick_vec * 1.5;
-                    if let Some(screen_pos) = to_screen(label_pos) {
-                        let screen_x = screen_pos.x + f32::from(bounds.origin.x);
-                        let screen_y = screen_pos.y + f32::from(bounds.origin.y);
+                    // Draw label with offset to avoid overlapping tick line
+                    let label_pos_3d = pos + tick_vec * 1.5;
+                    if let (Some(tick_start_screen), Some(tick_end_screen), Some(label_screen)) =
+                        (to_screen(pos), to_screen(tick_end), to_screen(label_pos_3d))
+                    {
                         let font_size = 8.0;
                         let text_width = measure_text_width(&label, font_size);
+
+                        // Compute tick direction in screen space
+                        let tick_dx = tick_end_screen.x - tick_start_screen.x;
+                        let tick_dy = tick_end_screen.y - tick_start_screen.y;
+                        let tick_len = (tick_dx * tick_dx + tick_dy * tick_dy).sqrt();
+
+                        // Compute perpendicular offset in screen space
+                        let (offset_x, offset_y) = if tick_len > 0.1 {
+                            let perp_x = -tick_dy / tick_len;
+                            let perp_y = tick_dx / tick_len;
+                            let offset_amount = font_size * 0.8;
+                            if perp_y >= 0.0 {
+                                (perp_x * offset_amount, perp_y * offset_amount)
+                            } else {
+                                (-perp_x * offset_amount, -perp_y * offset_amount)
+                            }
+                        } else {
+                            (0.0, font_size * 0.8)
+                        };
+
+                        let screen_x =
+                            label_screen.x + f32::from(bounds.origin.x) + offset_x - text_width / 2.0;
+                        let screen_y =
+                            label_screen.y + f32::from(bounds.origin.y) + offset_y - font_size / 2.0;
 
                         paint_vector_text_at(
                             window,
                             &label,
-                            screen_x - text_width / 2.0,
-                            screen_y - font_size / 2.0,
+                            screen_x,
+                            screen_y,
                             font_size,
                             1.0,
                             gpui::rgba(0x000000ff),

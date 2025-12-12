@@ -412,14 +412,14 @@ impl ShowcaseApp {
             DemoSection::D3StackedBars => {
                 showcase_modules::d3_examples::stacked_grouped_bars::render(self, cx)
             }
-            DemoSection::D3Versor => showcase_modules::d3_examples::demo_versor::render(self, cx),
+            DemoSection::D3Versor => showcase_modules::d3_examples::versor::render(self, cx),
             DemoSection::D3Histogram => {
-                showcase_modules::d3_examples::demo_histogram::render(self, cx)
+                showcase_modules::d3_examples::histogram::render(self, cx)
             }
-            DemoSection::D3Revenue => showcase_modules::d3_examples::demo_revenue::render(self, cx),
-            DemoSection::D3Horizon => showcase_modules::d3_examples::demo_horizon::render(self, cx),
+            DemoSection::D3Revenue => showcase_modules::d3_examples::revenue::render(self, cx),
+            DemoSection::D3Horizon => showcase_modules::d3_examples::horizon::render(self, cx),
             DemoSection::D3Choropleth => {
-                showcase_modules::d3_examples::demo_choropleth::render(self, cx)
+                showcase_modules::d3_examples::choropleth::render(self, cx)
             }
             DemoSection::Hierarchy => showcase_modules::hierarchy::render(self, cx),
             DemoSection::Force => showcase_modules::force::render(self, cx),

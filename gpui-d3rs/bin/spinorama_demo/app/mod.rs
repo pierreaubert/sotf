@@ -14,9 +14,7 @@ use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::{LinearScale, LogScale};
-use d3rs::shape::contour::{
-    render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData,
-};
+use d3rs::gpu2d::{render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData};
 // Radial shape functions could be used in future - currently using canvas-based custom rendering
 // use d3rs::shape::radial::{polar_grid_circles, polar_grid_rays, radial_line, RadialLineConfig, RadialPoint};
 use d3rs::gpu3d::{
@@ -95,8 +93,10 @@ pub struct SpinoramaApp {
     pub surface_rotation_elevation: f32,
     pub surface_state: Rc<RefCell<Surface3DState>>,
     pub surface_wireframe: bool,
+    pub surface_isolines: bool,
     pub surface_opacity: f32,
     pub surface_plot_type: SurfacePlotType,
+    pub surface_show_grid: bool,
     pub sphere_freq_idx: usize,
 
     // Polar contour plot state
@@ -156,7 +156,9 @@ impl SpinoramaApp {
             surface_rotation_elevation: 30.0,
             surface_state: Rc::new(RefCell::new(Surface3DState::new(3.5, 45.0, 30.0))),
             surface_wireframe: false,
+            surface_isolines: false,
             surface_opacity: 1.0,
+            surface_show_grid: true,
 
             // Polar contour frequency range (20Hz - 20kHz)
             surface_plot_type: SurfacePlotType::Cartesian,

@@ -60,7 +60,8 @@ impl SpinoramaApp {
             .wireframe(self.surface_wireframe)
             .background_color(1.0, 1.0, 1.0) // White background
             .opacity(self.surface_opacity)
-            .isolines(true) // Enable isolines
+            .isolines(self.surface_isolines)
+            .show_grid(self.surface_show_grid)
             .plot_type(SurfacePlotType::Cartesian) // Set plot type
             .camera_position(
                 3.5,
@@ -122,6 +123,54 @@ impl SpinoramaApp {
             .child("Wireframe")
             .on_click(cx.listener(|this, _, _window, cx| {
                 this.surface_wireframe = !this.surface_wireframe;
+                cx.notify();
+            }));
+
+        // Isolines toggle
+        let isolines_toggle = div()
+            .id("surface-isolines-toggle-3d")
+            .px_3()
+            .py_1()
+            .rounded(px(4.0))
+            .cursor_pointer()
+            .text_sm()
+            .bg(if self.surface_isolines {
+                rgb(0x3b82f6)
+            } else {
+                rgb(0xe5e7eb)
+            })
+            .text_color(if self.surface_isolines {
+                rgb(0xffffff)
+            } else {
+                rgb(0x666666)
+            })
+            .child("Isolines")
+            .on_click(cx.listener(|this, _, _window, cx| {
+                this.surface_isolines = !this.surface_isolines;
+                cx.notify();
+            }));
+
+        // Grid toggle
+        let grid_toggle = div()
+            .id("surface-grid-toggle-3d")
+            .px_3()
+            .py_1()
+            .rounded(px(4.0))
+            .cursor_pointer()
+            .text_sm()
+            .bg(if self.surface_show_grid {
+                rgb(0x3b82f6)
+            } else {
+                rgb(0xe5e7eb)
+            })
+            .text_color(if self.surface_show_grid {
+                rgb(0xffffff)
+            } else {
+                rgb(0x666666)
+            })
+            .child("Grid")
+            .on_click(cx.listener(|this, _, _window, cx| {
+                this.surface_show_grid = !this.surface_show_grid;
                 cx.notify();
             }));
 
@@ -224,14 +273,16 @@ impl SpinoramaApp {
                     .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
                     .child(colormap_selector)
                     .child(wireframe_toggle)
+                    .child(isolines_toggle)
+                    .child(grid_toggle)
                     .child(opacity_slider),
             )
             .child(
-		div()
-		    .flex()
-		    .justify_center()
-		    .child(surface_view)
-	    )
+                div()
+                    .flex()
+                    .justify_center()
+                    .child(surface_view),
+            )
 
     }
 }

@@ -739,7 +739,8 @@ static HERSHEY_FONT: LazyLock<HashMap<char, (i32, &'static [i32])>> = LazyLock::
             ] as &[i32],
         ),
     );
-    map.insert('°', (10, &[5, 0, 8, 2, 5, 5, 2, 2, 5, 0] as &[i32]));
+    // Degree sign - positioned at top of numbers (y=17-21 range)
+    map.insert('°', (10, &[5, 21, 7, 20, 7, 18, 5, 17, 3, 18, 3, 20, 5, 21] as &[i32]));
     map
 });
 

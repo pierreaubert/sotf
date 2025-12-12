@@ -191,29 +191,21 @@ impl SpinoramaApp {
                                         })
                                         // Render contour bands (for Surface mode) - filled polygons
                                         .when_some(contour_bands.clone(), |el, bands| {
-                                            el.child(
-                                                render_contour_bands(
-                                                    bands,
-                                                    &freq_scale,
-                                                    &angle_scale,
-                                                    &contour_config,
-                                                )
-                                                .value_range(spl_min, spl_max)
-                                                .height(px(chart_height)),
-                                            )
+                                            el.child(render_contour_bands(
+                                                bands,
+                                                &freq_scale,
+                                                &angle_scale,
+                                                &contour_config,
+                                            ))
                                         })
                                         // Render heatmap (for Heatmap mode) - uses quads, no anti-aliasing gaps
                                         .when_some(heatmap_data.clone(), |el, data| {
-                                            el.child(
-                                                render_heatmap(
-                                                    data,
-                                                    &freq_scale,
-                                                    &angle_scale,
-                                                    &contour_config,
-                                                )
-                                                .value_range(spl_min, spl_max)
-                                                .height(px(chart_height)),
-                                            )
+                                            el.child(render_heatmap(
+                                                data,
+                                                &freq_scale,
+                                                &angle_scale,
+                                                &contour_config,
+                                            ))
                                         })
                                         // In Surface/Heatmap mode, render grid on top
                                         .when(is_surface || is_heatmap, |el| {
@@ -229,16 +221,12 @@ impl SpinoramaApp {
                                         })
                                         // Render contour lines (for Isoline mode)
                                         .when_some(contours.clone(), |el, c| {
-                                            el.child(
-                                                render_contour(
-                                                    c,
-                                                    &freq_scale,
-                                                    &angle_scale,
-                                                    &contour_config,
-                                                )
-                                                .value_range(spl_min, spl_max)
-                                                .height(px(chart_height)),
-                                            )
+                                            el.child(render_contour(
+                                                c,
+                                                &freq_scale,
+                                                &angle_scale,
+                                                &contour_config,
+                                            ))
                                         }),
                                 ),
                         )

@@ -58,13 +58,18 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
         .domain(1973.0, 2018.0)
         .range(40.0, width - 40.0);
 
+    let min_y = series
+        .iter()
+        .flat_map(|s| s.values.iter())
+        .flat_map(|p| [p[0], p[1]])
+        .fold(f64::INFINITY, f64::min);
     let max_y = series
         .iter()
         .flat_map(|s| s.values.iter())
-        .map(|p| p[1])
-        .fold(0.0f64, f64::max);
+        .flat_map(|p| [p[0], p[1]])
+        .fold(f64::NEG_INFINITY, f64::max);
     let y_scale = LinearScale::new()
-        .domain(0.0, max_y)
+        .domain(min_y, max_y)
         .range(height - 40.0, 40.0);
 
     // Generate path strings
@@ -143,23 +148,28 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 .w(px(width as f32))
                 .h(px(height as f32))
                 .bg(rgb(0xffffff))
+                .border_1()
+                .border_color(rgb(0xcccccc))
                 .relative()
-                .child(canvas(
-                    move |bounds, _, _| {
-                        // Parse paths with bounds offset
-                        let parsed: Vec<_> = series_paths
-                            .iter()
-                            .map(|d| super::path_utils::parse_svg_path(d, bounds))
-                            .collect();
-                        parsed
-                    },
-                    move |_bounds, paths, window, _| {
-                        for (i, path_opt) in paths.into_iter().enumerate() {
-                            if let Some(path) = path_opt {
-                                window.paint_path(path, colors[i % colors.len()]);
+                .child(
+                    canvas(
+                        move |bounds, _, _| {
+                            // Parse paths with bounds offset
+                            let parsed: Vec<_> = series_paths
+                                .iter()
+                                .map(|d| super::path_utils::parse_svg_path(d, bounds))
+                                .collect();
+                            parsed
+                        },
+                        move |_bounds, paths, window, _| {
+                            for (i, path_opt) in paths.into_iter().enumerate() {
+                                if let Some(path) = path_opt {
+                                    window.paint_path(path, colors[i % colors.len()]);
+                                }
                             }
-                        }
-                    },
-                )),
+                        },
+                    )
+                    .size_full(),
+                ),
         )
 }

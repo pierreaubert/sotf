@@ -78,6 +78,8 @@ pub struct Surface3DConfig {
     pub isoline_step: f32,
     /// Plot type (Cartesian or Spherical)
     pub plot_type: SurfacePlotType,
+    /// Show grid/bounding box
+    pub show_grid: bool,
 }
 
 impl Default for Surface3DConfig {
@@ -100,6 +102,7 @@ impl Default for Surface3DConfig {
             isolines: false,
             isoline_step: 0.05,
             plot_type: SurfacePlotType::Cartesian,
+            show_grid: true,
         }
     }
 }
@@ -202,6 +205,12 @@ impl Surface3DConfig {
     /// Set plot type
     pub fn plot_type(mut self, plot_type: SurfacePlotType) -> Self {
         self.plot_type = plot_type;
+        self
+    }
+
+    /// Enable or disable grid/bounding box display
+    pub fn show_grid(mut self, enabled: bool) -> Self {
+        self.show_grid = enabled;
         self
     }
 

@@ -7,11 +7,11 @@
 //!
 //! Source examples from: https://observablehq.com/@d3
 
-pub mod demo_choropleth;
-pub mod demo_histogram;
-pub mod demo_horizon;
-pub mod demo_revenue;
-pub mod demo_versor;
+pub mod choropleth;
+pub mod histogram;
+pub mod horizon;
+pub mod revenue;
+pub mod versor;
 pub mod faithful_data;
 pub mod flare_data;
 pub mod kernel_density_estimation;
