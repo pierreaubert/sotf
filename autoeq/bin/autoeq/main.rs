@@ -2,7 +2,7 @@
 //!
 //! Copyright (C) 2025 Pierre Aubert pierre(at)spinorama(dot)org
 //!
-//! This program is free software: you can redistribute it and/or modify
+//! This program is free software: you can redistribute and/or modify
 //! it under the terms of the GNU General Public License as published by
 //! the Free Software Foundation, either version 3 of the License, or
 //! (at your option) any later version.
@@ -15,49 +15,29 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use anyhow::{Context, Result, anyhow};
 use autoeq::plot;
 use autoeq_env::DATA_GENERATED;
 use clap::Parser;
-use std::error::Error;
+use log::{error, info, warn};
 use std::path::PathBuf;
 
 // Include split modules
-#[path = "autoeq/load.rs"]
 mod load;
-#[path = "autoeq/postscore.rs"]
 mod postscore;
-#[path = "autoeq/prescore.rs"]
 mod prescore;
-#[path = "autoeq/qa.rs"]
 mod qa;
-#[path = "autoeq/runopt.rs"]
 mod runopt;
-#[path = "autoeq/save.rs"]
 mod save;
-#[path = "autoeq/spacing.rs"]
 mod spacing;
-
-/// Conditional println macro that only prints when not in QA mode
-macro_rules! qa_println {
-    ($args:expr, $($arg:tt)*) => {
-        if $args.qa.is_none() {
-            println!($($arg)*);
-        }
-    };
-}
-
-/// Conditional eprintln macro that only prints when not in QA mode
-macro_rules! qa_eprintln {
-    ($args:expr, $($arg:tt)*) => {
-        if $args.qa.is_none() {
-            eprintln!($($arg)*);
-        }
-    };
-}
 
 /// A command-line tool to find optimal IIR filters to match a frequency curve.
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<()>
+{
+    // Initialize logger
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let args = autoeq::cli::Args::parse();
 
     // Check if user wants to see algorithm list
@@ -78,6 +58,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Validate CLI arguments
     autoeq::cli::validate_args_or_exit(&args);
 
+    // Run the main logic
+    if let Err(e) = run(args).await {
+        error!("Application error: {:#}", e);
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+async fn run(args: autoeq::cli::Args) -> Result<()>
+{
     // Check if this is multi-driver mode
     if args.loss == autoeq::LossType::DriversFlat {
         return run_multi_driver_optimization(&args).await;
@@ -85,7 +76,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Load and prepare all input data
     let (standard_freq, input_curve, target_curve, deviation_curve, spin_data) =
-        load::load_and_prepare(&args).await?;
+        load::load_and_prepare(&args).await
+            .map_err(|e| anyhow!("{}", e))
+            .context("Failed to load and prepare input data")?;
 
     // Objective data
     let (objective_data, use_cea) = autoeq::workflow::setup_objective_data(
@@ -104,11 +97,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &deviation_curve,
         &spin_data,
     )
-    .await?;
+    .await
+    .map_err(|e| anyhow!("{}", e))
+    .context("Failed to compute pre-optimization metrics")?;
 
     // Optimize
-    qa_println!(args, "🚀 Starting optimization...");
-    let opt_result = runopt::perform_optimization(&args, &objective_data)?;
+    info!("🚀 Starting optimization...");
+    let opt_result = runopt::perform_optimization(&args, &objective_data)
+        .map_err(|e| anyhow!("{}", e))
+        .context("Optimization failed")?;
 
     // Compute post-optimization metrics
     let post_metrics = postscore::compute_post_optimization_metrics(
@@ -123,7 +120,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         pre_metrics.cea2034_metrics,
         pre_metrics.headphone_loss,
     )
-    .await?;
+    .await
+    .map_err(|e| anyhow!("{}", e))
+    .context("Failed to compute post-optimization metrics")?;
 
     // Print pre and post optimization scores
     postscore::print_optimization_scores(&args, &post_metrics);
@@ -169,6 +168,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
 
         // Always output the standard QA summary line for backward compatibility
+        // This uses println! because it is the "result" output for scripts
         println!(
             "Converge: {} | Spacing: {} | Pre: {} | Post: {}",
             converge_str, spacing_str, pre_str, post_str
@@ -184,7 +184,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
         qa::display_qa_analysis(&qa_result);
 
-        return Ok(());
+        return Ok(())
     }
 
     // Normal mode: plot and report
@@ -201,7 +201,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         path
     });
 
-    qa_println!(args, "📊 Generating plots: {}", output_path.display());
+    info!("📊 Generating plots: {}", output_path.display());
     if let Err(e) = plot::plot_results(
         &args,
         &opt_result.params,
@@ -213,9 +213,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     )
     .await
     {
-        qa_eprintln!(args, "⚠️ Warning: Failed to generate plots: {}", e);
+        warn!("Failed to generate plots: {}", e);
     } else {
-        qa_println!(args, "✅ Plots generated successfully");
+        info!("✅ Plots generated successfully");
     }
 
     // Save PEQ settings to APO format file
@@ -225,15 +225,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &output_path,
         &objective_data.loss_type,
     )
-    .await?;
+    .await
+    .map_err(|e| anyhow!("{}", e))
+    .context("Failed to save PEQ file")?;
 
     Ok(())
 }
 
 /// Run multi-driver crossover optimization
-async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), Box<dyn Error>> {
-    qa_println!(args, "🎵 Multi-driver crossover optimization mode");
-    qa_println!(args, "");
+async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
+{
+    info!("🎵 Multi-driver crossover optimization mode");
 
     // Collect driver file paths
     let driver_paths: Vec<_> = [&args.driver1, &args.driver2, &args.driver3, &args.driver4]
@@ -243,11 +245,13 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
         .collect();
 
     if driver_paths.len() < 2 {
-        return Err("At least 2 driver files are required for multi-driver optimization".into());
+        return Err(anyhow!("At least 2 driver files are required for multi-driver optimization"));
     }
 
     // Load driver measurements
-    let measurements = autoeq::workflow::load_driver_measurements_from_files(&driver_paths)?;
+    let measurements = autoeq::workflow::load_driver_measurements_from_files(&driver_paths)
+        .map_err(|e| anyhow!("{}", e))
+        .context("Failed to load driver measurements")?;
 
     // Parse crossover type
     let crossover_type = match args.crossover_type.as_str() {
@@ -255,28 +259,26 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
         "linkwitzriley2" => autoeq::loss::CrossoverType::LinkwitzRiley2,
         "linkwitzriley4" => autoeq::loss::CrossoverType::LinkwitzRiley4,
         other => {
-            return Err(format!(
+            return Err(anyhow!(
                 "Unknown crossover type '{}'. Valid types: butterworth2, linkwitzriley2, linkwitzriley4",
                 other
-            )
-            .into());
+            ));
         }
     };
 
     // Create DriversLossData
     let drivers_data = autoeq::loss::DriversLossData::new(measurements, crossover_type);
 
-    eprintln!(
+    info!(
         "✓ Initialized {} drivers with {:?} crossover",
         drivers_data.drivers.len(),
         drivers_data.crossover_type
     );
 
-    qa_println!(args, "📊 Drivers sorted by frequency (lowest to highest):");
+    info!("📊 Drivers sorted by frequency (lowest to highest):");
     for (i, driver) in drivers_data.drivers.iter().enumerate() {
         let (min_f, max_f) = driver.freq_range();
-        qa_println!(
-            args,
+        info!(
             "   Driver {}: {:.0} Hz - {:.0} Hz (mean: {:.0} Hz)",
             i + 1,
             min_f,
@@ -284,26 +286,22 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
             driver.mean_freq()
         );
     }
-    qa_println!(args, "");
 
-    qa_println!(args, "🎯 Optimization parameters:");
-    qa_println!(
-        args,
+    info!("🎯 Optimization parameters:");
+    info!(
         "   {} driver gains + {} crossover frequencies = {} parameters",
         drivers_data.drivers.len(),
         drivers_data.drivers.len() - 1,
         drivers_data.drivers.len() + (drivers_data.drivers.len() - 1)
     );
-    qa_println!(
-        args,
+    info!(
         "   Gain bounds: [{:.1}, {:.1}] dB",
         -args.max_db,
         args.max_db
     );
-    qa_println!(args, "");
 
     // Optimize using shared function
-    qa_println!(args, "🚀 Starting optimization...");
+    info!("🚀 Starting optimization...");
     let result = autoeq::workflow::optimize_drivers_crossover(
         drivers_data.clone(),
         args.min_freq,
@@ -313,57 +311,48 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
         args.maxeval,
         args.min_db,
         args.max_db,
-    )?;
+    )
+    .map_err(|e| anyhow!("{}", e))
+    .context("Driver optimization failed")?;
 
     // Extract results
     let gains = &result.gains;
     let xover_freqs = &result.crossover_freqs;
 
     // Display results
-    qa_println!(args, "");
-    qa_println!(args, "✅ Optimization complete!");
-    qa_println!(args, "");
-    qa_println!(args, "📊 Results:");
-    qa_println!(args, "");
-    qa_println!(args, "Driver Gains:");
+    info!("✅ Optimization complete!");
+    info!("📊 Results:");
+    info!("Driver Gains:");
     for (i, gain) in gains.iter().enumerate() {
-        qa_println!(args, "   Driver {}: {:+.2} dB", i + 1, gain);
+        info!("   Driver {}: {:+.2} dB", i + 1, gain);
     }
-    qa_println!(args, "");
-    qa_println!(args, "Crossover Frequencies:");
+    info!("Crossover Frequencies:");
     for (i, freq) in xover_freqs.iter().enumerate() {
-        qa_println!(
-            args,
+        info!(
             "   Between Driver {} and {}: {:.0} Hz",
             i + 1,
             i + 2,
             freq
         );
     }
-    qa_println!(args, "");
-    qa_println!(args, "Crossover Type: {:?}", drivers_data.crossover_type);
-    qa_println!(args, "");
+    info!("Crossover Type: {:?}", drivers_data.crossover_type);
 
     // Display pre and post objective values
-    qa_println!(args, "Loss (RMS deviation from flat):");
-    qa_println!(
-        args,
+    info!("Loss (RMS deviation from flat):");
+    info!(
         "   Before optimization: {:.6} dB",
         result.pre_objective
     );
-    qa_println!(
-        args,
+    info!(
         "   After optimization:  {:.6} dB",
         result.post_objective
     );
-    qa_println!(
-        args,
+    info!(
         "   Improvement: {:.2}%",
         (result.pre_objective - result.post_objective) / result.pre_objective * 100.0
     );
 
     // Generate plot
-    qa_println!(args, "");
     let output_path = args.output.clone().unwrap_or_else(|| {
         let mut path = std::path::PathBuf::from(autoeq_env::DATA_GENERATED);
         path.push("autoeq");
@@ -371,7 +360,7 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
         path
     });
 
-    qa_println!(args, "📊 Generating plots: {}", output_path.display());
+    info!("📊 Generating plots: {}", output_path.display());
     if let Err(e) = autoeq::plot::plot_drivers_results(
         &drivers_data,
         gains,
@@ -379,9 +368,9 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<(), B
         args.sample_rate,
         &output_path,
     ) {
-        qa_eprintln!(args, "⚠️ Warning: Failed to generate plots: {}", e);
+        warn!("Failed to generate plots: {}", e);
     } else {
-        qa_println!(args, "✅ Plots generated successfully");
+        info!("✅ Plots generated successfully");
     }
 
     // QA mode output

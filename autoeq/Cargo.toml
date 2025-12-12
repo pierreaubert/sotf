@@ -8,10 +8,13 @@ authors = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
+anyhow = { workspace = true }
 build_html = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 csv = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
 num_cpus = { workspace = true }
 metaheuristics-nature = { workspace = true }
 plotly = { workspace = true }
@@ -79,7 +82,7 @@ openblas-src = { version = "0.10", features = ["cblas", "system"] }
 
 [[bin]]
 name = "autoeq"
-path = "bin/autoeq.rs"
+path = "bin/autoeq/main.rs"
 
 [[bin]]
 name = "benchmark-autoeq-speaker"
@@ -91,7 +94,7 @@ path = "bin/autoeq_download_speaker.rs"
 
 [[bin]]
 name = "roomeq"
-path = "bin/roomeq.rs"
+path = "bin/roomeq/main.rs"
 
 [[bin]]
 name = "roomeq-fuzzer"
