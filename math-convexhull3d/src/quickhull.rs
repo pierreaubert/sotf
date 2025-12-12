@@ -3,65 +3,87 @@
 //! Based on:
 //! - Barber, C.B., Dobkin, D.P., and Huhdanpaa, H.T., "The Quickhull algorithm
 //!   for convex hulls," ACM Trans. on Mathematical Software, 22(4):469-483, 1996.
+//!
+//! Performance optimizations:
+//! - Parallel point visibility checks with rayon
+//! - Generation-based face deletion (O(1) instead of O(n))
+//! - Pre-allocated scratch buffers
+//! - Reused HashMap for horizon computation
 
 use crate::geometry::{are_coplanar, find_extreme_points};
 use crate::types::{ConvexHull3D, Face, Vertex};
 use crate::{ConvexHullError, EPSILON, Result};
-use std::collections::{HashMap, HashSet};
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 const MAX_ITERATIONS: usize = 100000;
+
+/// Threshold for parallel processing (below this, sequential is faster)
+const PARALLEL_THRESHOLD: usize = 100;
 
 /// Internal representation of a face during hull construction
 #[derive(Debug, Clone)]
 struct HullFace {
     vertices: [usize; 3],
     normal: Vertex,
-    centroid: Vertex,
+    d: f64, // Plane constant: normal.dot(v0), for faster distance computation
     outside_points: Vec<usize>,
+    deleted: bool, // Mark as deleted instead of removing
 }
 
 impl HullFace {
     fn new(v0: usize, v1: usize, v2: usize, vertices: &[Vertex]) -> Self {
         let vertices_arr = [v0, v1, v2];
-        let face = Face::new(v0, v1, v2);
-        let normal = face.normal(vertices);
-        let centroid = face.centroid(vertices);
+        let p0 = &vertices[v0];
+        let p1 = &vertices[v1];
+        let p2 = &vertices[v2];
+
+        // Compute normal
+        let e1 = p1.sub(p0);
+        let e2 = p2.sub(p0);
+        let normal = e1.cross(&e2).normalize();
+
+        // Pre-compute plane constant for faster distance calculation
+        let d = normal.dot(p0);
 
         Self {
             vertices: vertices_arr,
             normal,
-            centroid,
+            d,
             outside_points: Vec::new(),
+            deleted: false,
         }
     }
 
-    fn is_visible_from(&self, point: &Vertex, vertices: &[Vertex]) -> bool {
-        let v0 = &vertices[self.vertices[0]];
-        let to_point = point.sub(v0);
-        self.normal.dot(&to_point) > EPSILON
+    /// Fast signed distance from point to plane (positive = outside)
+    #[inline]
+    fn signed_distance(&self, point: &Vertex) -> f64 {
+        self.normal.dot(point) - self.d
+    }
+
+    #[inline]
+    fn is_visible_from(&self, point: &Vertex) -> bool {
+        self.signed_distance(point) > EPSILON
     }
 
     fn assign_point(&mut self, point_idx: usize) {
         self.outside_points.push(point_idx);
     }
 
-    fn furthest_point(&self, vertices: &[Vertex]) -> Option<usize> {
+    fn furthest_point(&self, vertices: &[Vertex]) -> Option<(usize, f64)> {
         let mut max_distance = 0.0;
         let mut max_idx = None;
 
         for &idx in &self.outside_points {
-            let point = &vertices[idx];
-            let v0 = &vertices[self.vertices[0]];
-            let to_point = point.sub(v0);
-            let distance = self.normal.dot(&to_point);
-
+            let distance = self.signed_distance(&vertices[idx]);
             if distance > max_distance {
                 max_distance = distance;
                 max_idx = Some(idx);
             }
         }
 
-        max_idx
+        max_idx.map(|idx| (idx, max_distance))
     }
 
     fn to_face(&self) -> Face {
@@ -77,6 +99,7 @@ struct Edge {
 }
 
 impl Edge {
+    #[inline]
     fn new(v0: usize, v1: usize) -> Self {
         // Normalize edge orientation for consistent hashing
         if v0 < v1 {
@@ -84,6 +107,41 @@ impl Edge {
         } else {
             Self { v0: v1, v1: v0 }
         }
+    }
+
+    /// Create with explicit orientation (don't normalize)
+    #[inline]
+    fn oriented(v0: usize, v1: usize) -> Self {
+        Self { v0, v1 }
+    }
+}
+
+/// Scratch buffers to avoid allocations in hot loop
+struct ScratchBuffers {
+    visible_face_indices: Vec<usize>,
+    orphaned_points: Vec<usize>,
+    new_faces: Vec<HullFace>,
+    edge_to_face: HashMap<Edge, usize>,
+    horizon_edges: Vec<Edge>,
+}
+
+impl ScratchBuffers {
+    fn new() -> Self {
+        Self {
+            visible_face_indices: Vec::with_capacity(64),
+            orphaned_points: Vec::with_capacity(256),
+            new_faces: Vec::with_capacity(64),
+            edge_to_face: HashMap::with_capacity(128),
+            horizon_edges: Vec::with_capacity(64),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.visible_face_indices.clear();
+        self.orphaned_points.clear();
+        self.new_faces.clear();
+        self.edge_to_face.clear();
+        self.horizon_edges.clear();
     }
 }
 
@@ -96,8 +154,8 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
     // Find initial simplex (tetrahedron)
     let initial_simplex = find_initial_simplex(vertices)?;
 
-    // Compute the centroid of the initial simplex - this is guaranteed to be inside the hull
-    let simplexcentroid = Vertex {
+    // Compute the centroid of the initial simplex - guaranteed to be inside the hull
+    let simplex_centroid = Vertex {
         x: (vertices[initial_simplex[0]].x
             + vertices[initial_simplex[1]].x
             + vertices[initial_simplex[2]].x
@@ -118,29 +176,31 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
     // Build initial hull from simplex
     let mut hull_faces = create_initial_hull(&initial_simplex, vertices);
 
-    // Track which points have been processed
-    let mut processed = HashSet::new();
+    // Track which points are in the initial simplex
+    let mut in_simplex = vec![false; vertices.len()];
     for &idx in &initial_simplex {
-        processed.insert(idx);
+        in_simplex[idx] = true;
     }
 
-    // Assign all remaining points to faces
-    // Process in single pass: for each face, collect all its visible points
+    // Collect unprocessed points
     let unprocessed_points: Vec<usize> = (0..vertices.len())
-        .filter(|i| !processed.contains(i))
+        .filter(|&i| !in_simplex[i])
         .collect();
 
-    for point_idx in unprocessed_points {
-        let vertex = &vertices[point_idx];
-        for face in &mut hull_faces {
-            if face.is_visible_from(vertex, vertices) {
-                face.assign_point(point_idx);
-                break;
-            }
-        }
+    // Initial point assignment - use parallel if enough points
+    if unprocessed_points.len() >= PARALLEL_THRESHOLD {
+        assign_points_parallel(&mut hull_faces, vertices, &unprocessed_points);
+    } else {
+        assign_points_sequential(&mut hull_faces, vertices, &unprocessed_points);
     }
 
-    // Iteratively add points to the hull
+    // Scratch buffers for the main loop
+    let mut scratch = ScratchBuffers::new();
+
+    // Active face count (faces not marked as deleted)
+    let mut active_face_count = hull_faces.len();
+
+    // Main iteration loop
     let mut iterations = 0;
     loop {
         iterations += 1;
@@ -148,109 +208,120 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
             log::error!(
                 "Max iterations exceeded after {} iterations with {} faces",
                 iterations,
-                hull_faces.len()
+                active_face_count
             );
             return Err(ConvexHullError::MaxIterationsExceeded);
         }
 
-        if iterations % 100 == 0 {
-            let total_outside_points: usize =
-                hull_faces.iter().map(|f| f.outside_points.len()).sum();
+        if iterations % 500 == 0 {
+            // Compact faces periodically to avoid too many deleted entries
+            compact_faces(&mut hull_faces);
+            active_face_count = hull_faces.len();
+
+            let total_outside_points: usize = hull_faces
+                .iter()
+                .filter(|f| !f.deleted)
+                .map(|f| f.outside_points.len())
+                .sum();
             log::debug!(
                 "Iteration {}: {} faces, {} outside points remaining",
                 iterations,
-                hull_faces.len(),
+                active_face_count,
                 total_outside_points
             );
         }
 
         // Find face with furthest outside point
-        let (face_idx, point_idx) = match find_face_with_furthest_point(&hull_faces, vertices) {
+        let (face_idx, point_idx, _) = match find_face_with_furthest_point(&hull_faces, vertices) {
             Some(result) => result,
             None => break, // No more outside points
         };
 
-        // Get the point to add
         let point = vertices[point_idx];
 
-        // Find all faces visible from the point
-        let visible_faces: Vec<usize> = hull_faces
-            .iter()
-            .enumerate()
-            .filter(|(_, face)| face.is_visible_from(&point, vertices))
-            .map(|(i, _)| i)
-            .collect();
+        // Clear scratch buffers
+        scratch.clear();
 
-        if visible_faces.is_empty() {
-            // This shouldn't happen, but handle gracefully
+        // Find all visible faces (can be parallelized for large face counts)
+        if hull_faces.len() >= PARALLEL_THRESHOLD {
+            find_visible_faces_parallel(&hull_faces, &point, &mut scratch.visible_face_indices);
+        } else {
+            for (i, face) in hull_faces.iter().enumerate() {
+                if !face.deleted && face.is_visible_from(&point) {
+                    scratch.visible_face_indices.push(i);
+                }
+            }
+        }
+
+        if scratch.visible_face_indices.is_empty() {
+            // Shouldn't happen, but handle gracefully
             hull_faces[face_idx]
                 .outside_points
                 .retain(|&p| p != point_idx);
             continue;
         }
 
-        // Find the horizon edges
-        let horizon = find_horizon(&hull_faces, &visible_faces);
+        // Find horizon edges and collect orphaned points
+        find_horizon_optimized(
+            &hull_faces,
+            &scratch.visible_face_indices,
+            &mut scratch.edge_to_face,
+            &mut scratch.horizon_edges,
+        );
 
-        // Collect all outside points from visible faces
-        let mut orphaned_points = Vec::new();
-        for &face_idx in &visible_faces {
-            orphaned_points.extend(hull_faces[face_idx].outside_points.iter().copied());
+        // Collect orphaned points from visible faces
+        for &face_idx in &scratch.visible_face_indices {
+            scratch
+                .orphaned_points
+                .extend(hull_faces[face_idx].outside_points.iter().copied());
         }
-        orphaned_points.retain(|&p| p != point_idx);
+        scratch.orphaned_points.retain(|&p| p != point_idx);
 
-        // Remove visible faces (in reverse order to maintain indices)
-        let mut visible_faces_sorted = visible_faces.clone();
-        visible_faces_sorted.sort_unstable_by(|a, b| b.cmp(a));
-        for &idx in &visible_faces_sorted {
-            hull_faces.remove(idx);
+        // Mark visible faces as deleted (O(1) per face instead of O(n) removal)
+        for &face_idx in &scratch.visible_face_indices {
+            hull_faces[face_idx].deleted = true;
+            hull_faces[face_idx].outside_points.clear(); // Free memory
+            active_face_count -= 1;
         }
 
         // Create new faces from horizon edges to the new point
-        let mut new_faces = Vec::new();
-        for edge in horizon {
-            // Create face from horizon edge + new point
-            // Try both orientations and check which one has outward-pointing normal
+        for edge in &scratch.horizon_edges {
+            // Create face with correct orientation (outward normal)
             let face1 = HullFace::new(edge.v0, edge.v1, point_idx, vertices);
-            let face2 = HullFace::new(edge.v1, edge.v0, point_idx, vertices);
 
-            // Check orientation using a point we know is inside the hull
-            // (the centroid of the initial simplex)
-            // The correct face should have its normal pointing AWAY from interior points
+            // Check orientation: normal should point away from interior
+            let to_interior = simplex_centroid.sub(&vertices[face1.vertices[0]]);
+            let dot = face1.normal.dot(&to_interior);
 
-            // Check which orientation has normal pointing away from interior
-            let v0 = &vertices[face1.vertices[0]];
-            let to_interior1 = simplexcentroid.sub(v0);
-            let dot1 = face1.normal.dot(&to_interior1);
-
-            // If dot product is negative, normal points away from interior (correct)
-            // If dot product is positive, normal points toward interior (incorrect)
-            if dot1 < 0.0 {
-                new_faces.push(face1);
+            if dot < 0.0 {
+                scratch.new_faces.push(face1);
             } else {
-                new_faces.push(face2);
+                // Flip orientation
+                scratch
+                    .new_faces
+                    .push(HullFace::new(edge.v1, edge.v0, point_idx, vertices));
             }
         }
 
-        // Reassign orphaned points to new faces
-        for point_idx in orphaned_points {
-            let point = vertices[point_idx];
+        // Reassign orphaned points to new faces first, then existing faces
+        for &orphan_idx in &scratch.orphaned_points {
+            let orphan = &vertices[orphan_idx];
             let mut assigned = false;
 
-            // First try new faces (most likely to be visible)
-            for face in &mut new_faces {
-                if face.is_visible_from(&point, vertices) {
-                    face.assign_point(point_idx);
+            // Try new faces first (most likely)
+            for face in &mut scratch.new_faces {
+                if face.is_visible_from(orphan) {
+                    face.assign_point(orphan_idx);
                     assigned = true;
                     break;
                 }
             }
 
-            // If not visible from any new face, try existing faces
+            // If not assigned, try existing non-deleted faces
             if !assigned {
-                for face in &mut hull_faces {
-                    if face.is_visible_from(&point, vertices) {
-                        face.assign_point(point_idx);
+                for face in hull_faces.iter_mut().filter(|f| !f.deleted) {
+                    if face.is_visible_from(orphan) {
+                        face.assign_point(orphan_idx);
                         break;
                     }
                 }
@@ -258,16 +329,86 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
         }
 
         // Add new faces to hull
-        hull_faces.extend(new_faces);
-
-        // Mark point as processed
-        processed.insert(point_idx);
+        active_face_count += scratch.new_faces.len();
+        hull_faces.append(&mut scratch.new_faces);
     }
 
-    // Convert hull faces to final format
+    // Final compaction - remove all deleted faces
+    compact_faces(&mut hull_faces);
+
+    // Convert to final format
     let faces: Vec<Face> = hull_faces.iter().map(|f| f.to_face()).collect();
 
     Ok(ConvexHull3D::new(vertices.to_vec(), faces))
+}
+
+/// Assign points to faces in parallel
+fn assign_points_parallel(hull_faces: &mut [HullFace], vertices: &[Vertex], points: &[usize]) {
+    // For each point, find which face (if any) it's visible from
+    // Use atomic counter to track assigned points per face
+    let face_assignments: Vec<AtomicUsize> = (0..hull_faces.len())
+        .map(|_| AtomicUsize::new(0))
+        .collect();
+
+    // Parallel: find face index for each point
+    let assignments: Vec<Option<usize>> = points
+        .par_iter()
+        .map(|&point_idx| {
+            let vertex = &vertices[point_idx];
+            for (face_idx, face) in hull_faces.iter().enumerate() {
+                if face.is_visible_from(vertex) {
+                    face_assignments[face_idx].fetch_add(1, Ordering::Relaxed);
+                    return Some(face_idx);
+                }
+            }
+            None
+        })
+        .collect();
+
+    // Pre-allocate outside_points vectors based on counts
+    for (face_idx, count) in face_assignments.iter().enumerate() {
+        let c = count.load(Ordering::Relaxed);
+        if c > 0 {
+            hull_faces[face_idx].outside_points.reserve(c);
+        }
+    }
+
+    // Sequential: actually assign points (to maintain deterministic order)
+    for (i, &point_idx) in points.iter().enumerate() {
+        if let Some(face_idx) = assignments[i] {
+            hull_faces[face_idx].outside_points.push(point_idx);
+        }
+    }
+}
+
+/// Assign points to faces sequentially
+fn assign_points_sequential(hull_faces: &mut [HullFace], vertices: &[Vertex], points: &[usize]) {
+    for &point_idx in points {
+        let vertex = &vertices[point_idx];
+        for face in hull_faces.iter_mut() {
+            if face.is_visible_from(vertex) {
+                face.assign_point(point_idx);
+                break;
+            }
+        }
+    }
+}
+
+/// Find visible faces in parallel
+fn find_visible_faces_parallel(hull_faces: &[HullFace], point: &Vertex, result: &mut Vec<usize>) {
+    let visible: Vec<usize> = hull_faces
+        .par_iter()
+        .enumerate()
+        .filter_map(|(i, face)| {
+            if !face.deleted && face.is_visible_from(point) {
+                Some(i)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    result.extend(visible);
 }
 
 /// Find the initial simplex (tetrahedron) to start the algorithm
@@ -381,13 +522,13 @@ fn create_initial_hull(simplex: &[usize; 4], vertices: &[Vertex]) -> Vec<HullFac
     };
 
     for face in &mut faces {
-        let v0 = &vertices[face.vertices[0]];
-        let tocentroid = centroid.sub(v0);
+        let to_centroid = centroid.sub(&vertices[face.vertices[0]]);
 
         // If normal points inward, flip the face
-        if face.normal.dot(&tocentroid) > 0.0 {
+        if face.normal.dot(&to_centroid) > 0.0 {
             face.vertices.swap(1, 2);
             face.normal = face.normal.scale(-1.0);
+            face.d = -face.d;
         }
     }
 
@@ -398,74 +539,82 @@ fn create_initial_hull(simplex: &[usize; 4], vertices: &[Vertex]) -> Vec<HullFac
 fn find_face_with_furthest_point(
     hull_faces: &[HullFace],
     vertices: &[Vertex],
-) -> Option<(usize, usize)> {
+) -> Option<(usize, usize, f64)> {
     let mut max_distance = 0.0;
     let mut result = None;
 
     for (face_idx, face) in hull_faces.iter().enumerate() {
-        if let Some(point_idx) = face.furthest_point(vertices) {
-            let point = &vertices[point_idx];
-            let v0 = &vertices[face.vertices[0]];
-            let to_point = point.sub(v0);
-            let distance = face.normal.dot(&to_point);
+        if face.deleted {
+            continue;
+        }
 
-            if distance > max_distance {
-                max_distance = distance;
-                result = Some((face_idx, point_idx));
-            }
+        if let Some((point_idx, distance)) = face.furthest_point(vertices)
+            && distance > max_distance
+        {
+            max_distance = distance;
+            result = Some((face_idx, point_idx, distance));
         }
     }
 
     result
 }
 
-/// Find the horizon edges from a set of visible faces
-fn find_horizon(hull_faces: &[HullFace], visible_faces: &[usize]) -> Vec<Edge> {
-    // Collect oriented edges and track which face they came from
-    let mut edge_to_faces: HashMap<Edge, Vec<usize>> = HashMap::new(); // normalized edge -> [face_idx]
+/// Find horizon edges with optimized HashMap usage
+fn find_horizon_optimized(
+    hull_faces: &[HullFace],
+    visible_faces: &[usize],
+    edge_to_face: &mut HashMap<Edge, usize>,
+    horizon: &mut Vec<Edge>,
+) {
+    edge_to_face.clear();
+    horizon.clear();
 
+    // Collect edges from visible faces
     for &face_idx in visible_faces {
         let face = &hull_faces[face_idx];
-        let oriented_edges = [
+        let edges = [
             (face.vertices[0], face.vertices[1]),
             (face.vertices[1], face.vertices[2]),
             (face.vertices[2], face.vertices[0]),
         ];
 
-        for (v0, v1) in oriented_edges {
+        for (v0, v1) in edges {
             let normalized = Edge::new(v0, v1);
-            edge_to_faces.entry(normalized).or_default().push(face_idx);
-        }
-    }
-
-    // Horizon edges are shared by exactly one visible face and one (or more) non-visible faces
-    // Since we only look at visible faces, they appear exactly once in our collection
-    let mut horizon = Vec::new();
-    for (normalized_edge, face_list) in edge_to_faces {
-        if face_list.len() == 1 {
-            // This is a horizon edge
-            let face_idx = face_list[0];
-            let face = &hull_faces[face_idx];
-
-            // Find the actual oriented edge as it appears in the visible face
-            let oriented_edges = [
-                (face.vertices[0], face.vertices[1]),
-                (face.vertices[1], face.vertices[2]),
-                (face.vertices[2], face.vertices[0]),
-            ];
-
-            for (v0, v1) in oriented_edges {
-                if Edge::new(v0, v1) == normalized_edge {
-                    // Found the edge - use its orientation from the visible face
-                    // We keep the same orientation as in the visible face
-                    horizon.push(Edge { v0, v1 });
-                    break;
+            match edge_to_face.entry(normalized) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(face_idx);
+                }
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    // Edge is shared by two visible faces - not a horizon edge
+                    e.remove();
                 }
             }
         }
     }
 
-    horizon
+    // Remaining edges are horizon edges
+    for (&normalized_edge, &face_idx) in edge_to_face.iter() {
+        let face = &hull_faces[face_idx];
+
+        // Find the actual oriented edge
+        let edges = [
+            (face.vertices[0], face.vertices[1]),
+            (face.vertices[1], face.vertices[2]),
+            (face.vertices[2], face.vertices[0]),
+        ];
+
+        for (v0, v1) in edges {
+            if Edge::new(v0, v1) == normalized_edge {
+                horizon.push(Edge::oriented(v0, v1));
+                break;
+            }
+        }
+    }
+}
+
+/// Remove deleted faces from the vector
+fn compact_faces(hull_faces: &mut Vec<HullFace>) {
+    hull_faces.retain(|f| !f.deleted);
 }
 
 #[cfg(test)]

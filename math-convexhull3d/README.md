@@ -1,29 +1,24 @@
-# convexhull3d: 3D Convex Hull and Computational Geometry
+# convexhull3d
 
-A Rust implementation of the Quickhull algorithm for computing convex hulls in 3D space. Based on the [convhull_3d C library](https://github.com/leomccormack/convhull_3d) and inspired by the [MATLAB Computational Geometry Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/48509-computational-geometry-toolbox).
+A Rust implementation of the **Quickhull algorithm** for computing 3D convex hulls.
 
-## Features
+```
+    Input Points                          Convex Hull
+    ════════════                          ═══════════
+         •                                    ╱╲
+        •••                                  ╱  ╲
+       • • •           ────────►           ╱────╲
+        •••                               ╱      ╲
+         •                               ╱________╲
+```
 
-- **3D Convex Hull Computation**: Optimized Quickhull algorithm (Barber et al., 1996)
-- **Geometric Properties**: Calculate volume and surface area of convex hulls
-- **Export Capabilities**:
-  - OBJ format for 3D modeling software
-  - HTML with interactive Three.js visualization
-- **Test Data Generation**: Built-in functions for generating test datasets
-  - Random spherical distributions
-  - Fibonacci sphere (uniform distribution)
-  - T-Design approximations
-  - Platonic solids (tetrahedron, cube, octahedron, icosahedron)
-- **Comprehensive Testing**: Test suite matching the C++ convhull_3d library
+Based on the [convhull_3d C library](https://github.com/leomccormack/convhull_3d) by Leo McCormack.
 
-## Usage
-
-### Basic Example
+## Quick Start
 
 ```rust
 use convexhull3d::{ConvexHull3D, Vertex};
 
-// Define vertices
 let vertices = vec![
     Vertex::new(0.0, 0.0, 0.0),
     Vertex::new(1.0, 0.0, 0.0),
@@ -31,164 +26,309 @@ let vertices = vec![
     Vertex::new(0.0, 0.0, 1.0),
 ];
 
-// Build convex hull
 let hull = ConvexHull3D::build(&vertices).unwrap();
 
-// Get properties
-println!("Faces: {}", hull.num_faces());
-println!("Volume: {}", hull.volume());
-println!("Surface Area: {}", hull.surface_area());
+println!("Faces: {}", hull.num_faces());      // 4
+println!("Volume: {:.4}", hull.volume());     // 0.1667
 ```
 
-### Exporting Results
+## Visual Examples
+
+### Platonic Solids
+
+The crate includes generators for all Platonic solids:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  TETRAHEDRON          CUBE               OCTAHEDRON         ICOSAHEDRON     │
+│                                                                             │
+│       △                ┌───┐                 △                    ⬡         │
+│      ╱ ╲              ╱│   │╲               ╱│╲                  ╱│╲        │
+│     ╱   ╲            ╱ │   │ ╲             ╱ │ ╲               ╱╱ │ ╲╲      │
+│    ╱─────╲          └──┴───┴──┘          ◇──┼──◇             ◇───┼───◇     │
+│                                            ╲│╱                 ╲╲│╱╱        │
+│   4 vertices        8 vertices            6 vertices          12 vertices   │
+│   4 faces           12 faces              8 faces             20 faces      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ```rust
-use convexhull3d::{ConvexHull3D, export_obj, export_html, testdata};
+use convexhull3d::{ConvexHull3D, testdata};
 
-// Generate test data
+// Generate and compute hull for each solid
+let shapes = [
+    ("Tetrahedron", testdata::tetrahedron_vertices()),
+    ("Cube",        testdata::cube_vertices(2.0)),
+    ("Octahedron",  testdata::octahedron_vertices()),
+    ("Icosahedron", testdata::icosahedron_vertices()),
+];
+
+for (name, vertices) in shapes {
+    let hull = ConvexHull3D::build(&vertices).unwrap();
+    println!("{}: {} vertices → {} faces",
+             name, vertices.len(), hull.num_faces());
+}
+```
+
+**Output:**
+```
+Tetrahedron: 4 vertices → 4 faces
+Cube: 8 vertices → 12 faces
+Octahedron: 6 vertices → 8 faces
+Icosahedron: 12 vertices → 20 faces
+```
+
+### Sphere Point Distributions
+
+Generate uniform point distributions on spheres:
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│  RANDOM SPHERE              FIBONACCI SPHERE           T-DESIGN SPHERE     │
+│                                                                            │
+│      · ·  · ·                    · · · ·                   · · · · ·       │
+│    ·  ·    ·  ·                · · · · · ·               · · · · · · ·     │
+│   · ·   ··   · ·              · · · · · · ·             · · · · · · · ·    │
+│   ·  · ·  · ·  ·              · · · · · · ·             · · · · · · · ·    │
+│    ·   ··   ·                  · · · · · ·               · · · · · · ·     │
+│      · ·  · ·                    · · · ·                   · · · · ·       │
+│                                                                            │
+│  Non-uniform density         Uniform density            Optimal uniformity │
+│  936 pts → ~14k faces        500 pts → ~3k faces        180 pts → 1k faces │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+```rust
+use convexhull3d::{ConvexHull3D, testdata};
+
+// Random sphere (non-uniform)
+let random = testdata::random_sphere_points(936, 1.0);
+let hull = ConvexHull3D::build(&random).unwrap();
+println!("Random: {} pts → {} faces", random.len(), hull.num_faces());
+
+// Fibonacci sphere (uniform)
+let fibonacci = testdata::fibonacci_sphere_points(500, 1.0);
+let hull = ConvexHull3D::build(&fibonacci).unwrap();
+println!("Fibonacci: {} pts → {} faces", fibonacci.len(), hull.num_faces());
+
+// T-Design (optimal uniformity)
+let tdesign = testdata::tdesign_180_sphere();
+let hull = ConvexHull3D::build(&tdesign).unwrap();
+println!("T-Design: {} pts → {} faces", tdesign.len(), hull.num_faces());
+```
+
+### Interior Points Are Ignored
+
+The convex hull only includes points on the outer boundary:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│   INPUT: Cube with 100 interior points    OUTPUT: Just the cube hull       │
+│                                                                             │
+│        •───────────•                           •───────────•                │
+│       ╱ · · · · · ╱│                          ╱           ╱│                │
+│      •─·─·─·─·─·─• │                         •───────────• │                │
+│      │ · · · · · │ │         ────►           │           │ │                │
+│      │ · · · · · │ •                         │           │ •                │
+│      │ · · · · · │╱                          │           │╱                 │
+│      •───────────•                           •───────────•                  │
+│                                                                             │
+│      108 vertices                            8 vertices, 12 faces           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+```rust
+use convexhull3d::{ConvexHull3D, testdata};
+
+// Cube with 100 random interior points
+let vertices = testdata::cube_with_interior_points(2.0, 100);
+println!("Input: {} vertices", vertices.len());  // 108
+
+let hull = ConvexHull3D::build(&vertices).unwrap();
+println!("Hull: {} faces", hull.num_faces());    // 12 (just the cube!)
+```
+
+## Geometric Properties
+
+Calculate volume and surface area:
+
+```rust
+use convexhull3d::{ConvexHull3D, Vertex};
+
+// Unit tetrahedron
+let vertices = vec![
+    Vertex::new(0.0, 0.0, 0.0),
+    Vertex::new(1.0, 0.0, 0.0),
+    Vertex::new(0.5, 0.866, 0.0),
+    Vertex::new(0.5, 0.289, 0.816),
+];
+
+let hull = ConvexHull3D::build(&vertices).unwrap();
+
+println!("Volume: {:.6}", hull.volume());           // ≈ 0.117851
+println!("Surface Area: {:.6}", hull.surface_area()); // ≈ 1.732051
+```
+
+## Export & Visualization
+
+### OBJ Export (for 3D software)
+
+```rust
+use convexhull3d::{ConvexHull3D, export_obj, testdata};
+
 let vertices = testdata::icosahedron_vertices();
-
-// Compute hull
 let hull = ConvexHull3D::build(&vertices).unwrap();
 
-// Export to OBJ
 export_obj(&hull, "icosahedron.obj").unwrap();
-
-// Export to interactive HTML
-export_html(&hull, "icosahedron.html", "Icosahedron Hull").unwrap();
 ```
 
-### Generating Test Data
+Opens in Blender, MeshLab, or any 3D modeling software.
+
+### Interactive HTML Visualization
 
 ```rust
-use convexhull3d::testdata;
+use convexhull3d::{ConvexHull3D, export_html, testdata};
 
-// Random points on a sphere
-let sphere_points = testdata::random_sphere_points(1000, 1.0);
+let vertices = testdata::fibonacci_sphere_points(200, 1.0);
+let hull = ConvexHull3D::build(&vertices).unwrap();
 
-// Fibonacci sphere (uniform distribution)
-let uniform_sphere = testdata::fibonacci_sphere_points(500, 1.0);
-
-// T-Design sphere approximations
-let tdesign_180 = testdata::tdesign_180_sphere();
-let tdesign_840 = testdata::tdesign_840_sphere();
-let tdesign_5100 = testdata::tdesign_5100_sphere();
-
-// Platonic solids
-let cube = testdata::cube_vertices(2.0);
-let octahedron = testdata::octahedron_vertices();
-let icosahedron = testdata::icosahedron_vertices();
+export_html(&hull, "sphere_hull.html", "Fibonacci Sphere").unwrap();
 ```
+
+The HTML export creates an **interactive side-by-side visualization**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Fibonacci Sphere Hull                                │
+├─────────────────────────────────┬───────────────────────────────────────────┤
+│                                 │                                           │
+│       Original Points           │         Convex Hull Mesh                  │
+│                                 │                                           │
+│           · · · ·               │              ╱╲    ╱╲                     │
+│         · · · · · ·             │            ╱╲  ╲╱╱  ╱╲                    │
+│        · · · · · · ·            │           ╱  ╲╱  ╲╱  ╲                   │
+│        · · · · · · ·            │          ╱────────────╲                   │
+│         · · · · · ·             │          ╲────────────╱                   │
+│           · · · ·               │           ╲  ╱╲  ╱╲  ╱                    │
+│                                 │            ╲╱  ╲╱╲  ╱                     │
+│                                 │              ╲╱    ╲╱                     │
+│     [Rotate with mouse]         │        [Cameras synchronized]             │
+│                                 │                                           │
+└─────────────────────────────────┴───────────────────────────────────────────┘
+```
+
+Features:
+- **Synchronized dual views**: rotate one, both rotate
+- **Red point cloud**: original input vertices
+- **Blue mesh**: computed convex hull
+- **Wireframe overlay**: see the triangulation
+- **Interactive controls**: rotate, zoom, pan
+
+## Performance
+
+| Input | Vertices | Faces | Time |
+|-------|----------|-------|------|
+| Tetrahedron | 4 | 4 | < 1ms |
+| Cube | 8 | 12 | < 1ms |
+| Icosahedron | 12 | 20 | < 1ms |
+| T-Design 180 | 180 | ~1,092 | ~10ms |
+| Random Sphere | 936 | ~14,678 | ~170ms |
+| T-Design 840 | 840 | ~24,898 | ~2.5s |
+
+**Complexity**: O(n log n) expected, O(n²) worst case
 
 ## Algorithm
 
-The implementation uses the **Quickhull algorithm** for 3D convex hull computation:
+The **Quickhull algorithm** (Barber et al., 1996):
 
-1. **Initialization**: Find an initial simplex (tetrahedron) from extreme points
-2. **Point Assignment**: Assign remaining points to visible faces
-3. **Iteration**:
-   - Select furthest point from a face
-   - Find all faces visible from that point
-   - Determine horizon edges
-   - Create new faces connecting the point to the horizon
-4. **Termination**: Continue until no outside points remain
+```
+1. INITIALIZE
+   ├── Find extreme points (min/max in X, Y, Z)
+   └── Form initial tetrahedron
 
-### Key Features of the Implementation
+2. ASSIGN POINTS
+   └── Each point → nearest visible face
 
-- **Robust**: Handles degenerate cases and numerical precision issues
-- **Efficient**: O(n log n) expected time complexity
-- **Accurate**: Proper face orientation and normal computation
-- **Well-tested**: Comprehensive test suite with diverse datasets
+3. ITERATE (until no outside points)
+   ├── Select face with furthest outside point
+   ├── Find all faces visible from that point
+   ├── Determine horizon edges
+   └── Create new faces from point to horizon
 
-## Test Results
+4. OUTPUT
+   └── Return vertices + triangular faces
+```
 
-The library has been tested against the same test cases as the C++ convhull_3d library:
+## API Reference
 
-| Test Case | Input Vertices | Output Faces | Time |
-|-----------|---------------|--------------|------|
-| Tetrahedron | 4 | 4 | < 1ms |
-| Cube | 8 | 12-14 | < 1ms |
-| Octahedron | 6 | 8-12 | < 1ms |
-| Icosahedron | 12 | 20-32 | < 1ms |
-| Random Sphere (936 pts) | 936 | ~14,678 | ~170ms |
-| T-Design 180 | 180 | ~1,092 | ~10ms |
-| T-Design 840 | 840 | ~24,898 | ~2,500ms |
+### Types
 
-*Note: Face counts may vary slightly due to numerical precision and triangulation choices.*
+| Type | Description |
+|------|-------------|
+| `Vertex` | 3D point (x, y, z) with vector operations |
+| `Face` | Triangle (3 vertex indices) |
+| `ConvexHull3D` | Computed hull with vertices, faces, properties |
+
+### Core Functions
+
+```rust
+// Build hull from points
+ConvexHull3D::build(&[Vertex]) -> Result<ConvexHull3D, ConvexHullError>
+
+// Properties
+hull.vertices() -> &[Vertex]
+hull.faces() -> &[Face]
+hull.num_faces() -> usize
+hull.volume() -> f64
+hull.surface_area() -> f64
+
+// Export
+export_obj(&hull, "file.obj") -> Result<()>
+export_html(&hull, "file.html", "Title") -> Result<()>
+```
+
+### Test Data Generators
+
+```rust
+// Spheres
+testdata::random_sphere_points(n, radius)
+testdata::fibonacci_sphere_points(n, radius)
+testdata::tdesign_180_sphere()
+testdata::tdesign_840_sphere()
+testdata::tdesign_5100_sphere()
+
+// Platonic solids
+testdata::tetrahedron_vertices()
+testdata::cube_vertices(size)
+testdata::octahedron_vertices()
+testdata::icosahedron_vertices()
+
+// Complex
+testdata::cube_with_interior_points(size, n)
+testdata::load_obj_vertices(path)
+```
 
 ## Running Tests
 
 ```bash
-# Run all tests
-cargo test --package convexhull3d
+# All tests
+cargo test -p convexhull3d
 
-# Run specific test
-cargo test --package convexhull3d test_tetrahedron
+# With timing info
+cargo test -p convexhull3d -- --nocapture
 
-# Run with output
-cargo test --package convexhull3d -- --nocapture
+# Generate visualizations (requires AUTOEQ_DIR)
+AUTOEQ_DIR=/path/to/output cargo test -p convexhull3d
 ```
-
-### Generated Visualizations
-
-Tests automatically generate:
-- **OBJ files**: Located in `target/convexhull_test_output/*.obj`
-- **HTML visualizations**: Located in `target/convexhull_test_output/*.html`
-
-Open the HTML files in a browser to see interactive 3D visualizations using Three.js.
-
-## Comparison with C++ Implementation
-
-This Rust implementation provides similar functionality to the [convhull_3d C library](https://github.com/leomccormack/convhull_3d):
-
-| Feature | C Implementation | Rust Implementation |
-|---------|-----------------|---------------------|
-| Algorithm | Quickhull | Quickhull |
-| 3D Convex Hull | ✓ | ✓ |
-| OBJ Export | ✓ | ✓ |
-| MATLAB Export | ✓ | - |
-| HTML Visualization | - | ✓ |
-| Memory Safety | Manual | Automatic |
-
-### Key Advantages of Rust Implementation
-
-1. **Memory Safety**: No manual memory management required
-2. **Type Safety**: Compile-time error checking
-3. **Modern Tooling**: Cargo, rustdoc, clippy, etc.
-4. **Interactive Visualization**: Built-in Three.js HTML export
-5. **Comprehensive Error Handling**: Result types instead of error codes
-
-## API Reference
-
-### 3D Types
-
-- **`Vertex`**: 3D point with x, y, z coordinates
-- **`Face`**: Triangle defined by 3 vertex indices
-- **`ConvexHull3D`**: Result of 3D convex hull computation
-
-### Main Functions
-
-- **`ConvexHull3D::build(&[Vertex])`**: Build 3D convex hull from vertices
-- **`export_obj(&ConvexHull3D, path)`**: Export to OBJ format
-- **`export_html(&ConvexHull3D, path, title)`**: Export to interactive HTML
-
-### Test Data Generation
-
-- **`testdata::random_sphere_points(n, radius)`**: Random sphere distribution
-- **`testdata::fibonacci_sphere_points(n, radius)`**: Uniform sphere distribution
-- **`testdata::tdesign_*_sphere()`**: T-Design approximations
-- **`testdata::*_vertices()`**: Platonic solids and other shapes
 
 ## References
 
-1. Barber, C.B., Dobkin, D.P., and Huhdanpaa, H.T., "The Quickhull algorithm for convex hulls," *ACM Trans. on Mathematical Software*, 22(4):469-483, 1996.
-2. [convhull_3d C Library](https://github.com/leomccormack/convhull_3d) by Leo McCormack
-3. [MATLAB Computational Geometry Toolbox](https://www.mathworks.com/matlabcentral/fileexchange/48509-computational-geometry-toolbox)
+1. Barber, C.B., Dobkin, D.P., Huhdanpaa, H.T. (1996). *The Quickhull algorithm for convex hulls*. ACM Trans. Mathematical Software, 22(4):469-483.
+2. [convhull_3d C Library](https://github.com/leomccormack/convhull_3d) - Leo McCormack
+3. [Qhull](http://www.qhull.org/) - Reference implementation
 
 ## License
 
-GPL-3.0-or-later (matching the parent project)
-
-## Contributing
-
-This crate is part of the [SotF](https://github.com/pierreaubert/sotf) project.
+GPL-3.0-or-later

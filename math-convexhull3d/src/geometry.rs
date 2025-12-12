@@ -2,13 +2,11 @@
 
 use crate::types::Vertex;
 
-/// Compute the determinant of a 3x3 matrix
-/*
-pub fn det3(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> f64 {
-    a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
-        + a[2] * (b[0] * c[1] - b[1] * c[0])
-}
-*/
+// Compute the determinant of a 3x3 matrix
+// pub fn det3(a: &[f64; 3], b: &[f64; 3], c: &[f64; 3]) -> f64 {
+//     a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+//         + a[2] * (b[0] * c[1] - b[1] * c[0])
+// }
 
 /// Compute the volume of a tetrahedron formed by 4 points
 pub fn tetrahedron_volume(p0: &Vertex, p1: &Vertex, p2: &Vertex, p3: &Vertex) -> f64 {
@@ -24,29 +22,27 @@ pub fn are_coplanar(p0: &Vertex, p1: &Vertex, p2: &Vertex, p3: &Vertex, epsilon:
     tetrahedron_volume(p0, p1, p2, p3) < epsilon
 }
 
-/// Find the point furthest from a plane defined by a point and normal
-/*
-pub fn furthest_point_from_plane(
-    points: &[Vertex],
-    plane_point: &Vertex,
-    plane_normal: &Vertex,
-) -> Option<(usize, f64)> {
-    let mut max_distance = 0.0;
-    let mut max_index = None;
-
-    for (i, point) in points.iter().enumerate() {
-        let to_point = point.sub(plane_point);
-        let distance = plane_normal.dot(&to_point);
-
-        if distance > max_distance {
-            max_distance = distance;
-            max_index = Some(i);
-        }
-    }
-
-    max_index.map(|i| (i, max_distance))
-}
-*/
+// Find the point furthest from a plane defined by a point and normal
+// pub fn furthest_point_from_plane(
+//     points: &[Vertex],
+//     plane_point: &Vertex,
+//     plane_normal: &Vertex,
+// ) -> Option<(usize, f64)> {
+//     let mut max_distance = 0.0;
+//     let mut max_index = None;
+//
+//     for (i, point) in points.iter().enumerate() {
+//         let to_point = point.sub(plane_point);
+//         let distance = plane_normal.dot(&to_point);
+//
+//         if distance > max_distance {
+//             max_distance = distance;
+//             max_index = Some(i);
+//         }
+//     }
+//
+//     max_index.map(|i| (i, max_distance))
+// }
 
 /// Find the extreme points (min/max in each dimension)
 pub fn find_extreme_points(vertices: &[Vertex]) -> [usize; 6] {
@@ -83,16 +79,14 @@ pub fn find_extreme_points(vertices: &[Vertex]) -> [usize; 6] {
     ]
 }
 
-/// Compute the centroid of a set of vertices
-/*
-pub fn centroid(vertices: &[Vertex]) -> Vertex {
-    let n = vertices.len() as f64;
-    let sum = vertices
-        .iter()
-        .fold(Vertex::new(0.0, 0.0, 0.0), |acc, v| acc.add(v));
-    sum.scale(1.0 / n)
-}
-*/
+// Compute the centroid of a set of vertices
+// pub fn centroid(vertices: &[Vertex]) -> Vertex {
+//     let n = vertices.len() as f64;
+//     let sum = vertices
+//         .iter()
+//         .fold(Vertex::new(0.0, 0.0, 0.0), |acc, v| acc.add(v));
+//     sum.scale(1.0 / n)
+// }
 
 #[cfg(test)]
 mod tests {
