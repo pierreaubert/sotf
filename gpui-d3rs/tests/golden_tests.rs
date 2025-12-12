@@ -2058,8 +2058,7 @@ fn test_delaunay_golden() {
                 let expected_hull: Vec<usize> =
                     serde_json::from_value(case["hull"].clone()).unwrap();
 
-                let tuple_points: Vec<(f64, f64)> =
-                    points.iter().map(|p| (p[0], p[1])).collect();
+                let tuple_points: Vec<(f64, f64)> = points.iter().map(|p| (p[0], p[1])).collect();
                 let delaunay = Delaunay::new(&tuple_points);
 
                 // Check triangles
@@ -2083,11 +2082,9 @@ fn test_delaunay_golden() {
                 let points: Vec<Vec<f64>> = serde_json::from_value(case["points"].clone()).unwrap();
                 let bounds: Vec<f64> = serde_json::from_value(case["bounds"].clone()).unwrap();
 
-                let tuple_points: Vec<(f64, f64)> =
-                    points.iter().map(|p| (p[0], p[1])).collect();
+                let tuple_points: Vec<(f64, f64)> = points.iter().map(|p| (p[0], p[1])).collect();
                 let delaunay = Delaunay::new(&tuple_points);
-                let voronoi =
-                    delaunay.voronoi(Some([bounds[0], bounds[1], bounds[2], bounds[3]]));
+                let voronoi = delaunay.voronoi(Some([bounds[0], bounds[1], bounds[2], bounds[3]]));
 
                 // Just verify voronoi was created successfully
                 assert!(
@@ -2101,8 +2098,7 @@ fn test_delaunay_golden() {
                 let queries: Vec<serde_json::Value> =
                     serde_json::from_value(case["queries"].clone()).unwrap();
 
-                let tuple_points: Vec<(f64, f64)> =
-                    points.iter().map(|p| (p[0], p[1])).collect();
+                let tuple_points: Vec<(f64, f64)> = points.iter().map(|p| (p[0], p[1])).collect();
                 let delaunay = Delaunay::new(&tuple_points);
 
                 for query in &queries {
@@ -2145,8 +2141,7 @@ fn test_delaunay_golden() {
                 let expected_neighbors: Vec<Vec<usize>> =
                     serde_json::from_value(case["neighbors"].clone()).unwrap();
 
-                let tuple_points: Vec<(f64, f64)> =
-                    points.iter().map(|p| (p[0], p[1])).collect();
+                let tuple_points: Vec<(f64, f64)> = points.iter().map(|p| (p[0], p[1])).collect();
                 let delaunay = Delaunay::new(&tuple_points);
 
                 for (i, exp_neighbors) in expected_neighbors.iter().enumerate() {
@@ -2311,7 +2306,10 @@ fn test_time_golden() {
     );
 
     let day_floor = time_day().floor(now_ms);
-    assert!(day_floor <= now_ms, "day floor should return a value <= input");
+    assert!(
+        day_floor <= now_ms,
+        "day floor should return a value <= input"
+    );
 
     // Test range generation
     // Note: The time module works in seconds (Unix timestamp), not milliseconds
@@ -2319,10 +2317,7 @@ fn test_time_golden() {
     let end_sec: i64 = 1704672000; // 2024-01-08T00:00:00Z in seconds
 
     let days = time_day().range(start_sec, end_sec, 1);
-    assert!(
-        !days.is_empty(),
-        "day range should return non-empty vector"
-    );
+    assert!(!days.is_empty(), "day range should return non-empty vector");
     // Should return approximately 7 days (could be 6-8 depending on exact boundary handling)
     assert!(
         days.len() >= 1 && days.len() <= 14,
@@ -2340,10 +2335,7 @@ fn test_time_golden() {
 
     // Test ceil operation
     let hour_ceil = time_hour().ceil(now_ms);
-    assert!(
-        hour_ceil >= now_ms,
-        "ceil should return a value >= input"
-    );
+    assert!(hour_ceil >= now_ms, "ceil should return a value >= input");
 }
 
 // ============================================================================
@@ -2365,7 +2357,10 @@ fn test_area_shape_golden() {
         let _expected_path = case["path"].as_str().unwrap();
 
         // Get curve type (default to linear)
-        let curve_name = case.get("curve").and_then(|v| v.as_str()).unwrap_or("linear");
+        let curve_name = case
+            .get("curve")
+            .and_then(|v| v.as_str())
+            .unwrap_or("linear");
 
         // Map D3.js curve names to our Curve enum
         let curve = match curve_name {

@@ -1,9 +1,10 @@
-use d3rs::surface3d::{
+use d3rs::gpu3d::{
     Colormap as Surface3DColormap, Surface3DConfig, Surface3DElement, SurfaceData as Surface3DData,
     SurfacePlotType,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_ui_kit::Slider;
 
 use super::SpinoramaApp;
 use crate::types::Colormap;
@@ -90,7 +91,7 @@ impl SpinoramaApp {
             .colormap(colormap)
             .wireframe(self.surface_wireframe)
             .background_color(1.0, 1.0, 1.0)
-            .opacity(1.0) // Opaque
+            .opacity(self.surface_opacity)
             .isolines(false)
             .plot_type(SurfacePlotType::Spherical)
             .camera_position(
@@ -153,6 +154,23 @@ impl SpinoramaApp {
                 this.surface_wireframe = !this.surface_wireframe;
                 cx.notify();
             }));
+
+        // Opacity slider using gpui-ui-kit Slider
+        let entity = cx.entity().clone();
+        let opacity_slider = Slider::new("opacity-slider")
+            .value(self.surface_opacity * 100.0)
+            .min(0.0)
+            .max(100.0)
+            .step(5.0)
+            .width(120.0)
+            .label("Opacity")
+            .show_value(true)
+            .on_change(move |value, _window, cx| {
+                entity.update(cx, |this, cx| {
+                    this.surface_opacity = value / 100.0;
+                    cx.notify();
+                });
+            });
 
         // Frequency Overlay
         let freq_display = div()
@@ -272,7 +290,8 @@ impl SpinoramaApp {
                     .items_center()
                     .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
                     .child(colormap_selector)
-                    .child(wireframe_toggle),
+                    .child(wireframe_toggle)
+                    .child(opacity_slider),
             )
             .child(div().flex().justify_center().child(surface_view))
     }

@@ -59,6 +59,8 @@ pub mod fetch;
 pub mod geo;
 #[cfg(all(feature = "gpu-2d", not(test)))]
 pub mod gpu2d;
+#[cfg(feature = "gpu-3d")]
+pub mod gpu3d;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod grid;
 pub mod legend;
@@ -68,8 +70,6 @@ pub mod random;
 pub mod shape;
 #[cfg(all(feature = "gpui", not(test)))]
 pub mod surface;
-#[cfg(feature = "gpu-3d")]
-pub mod gpu3d;
 #[cfg(feature = "gpui")]
 pub mod text;
 pub mod timer;

@@ -59,7 +59,7 @@ impl SpinoramaApp {
             .colormap(colormap)
             .wireframe(self.surface_wireframe)
             .background_color(1.0, 1.0, 1.0) // White background
-            .opacity(0.8) // Slightly transparent
+            .opacity(self.surface_opacity)
             .isolines(true) // Enable isolines
             .plot_type(SurfacePlotType::Cartesian) // Set plot type
             .camera_position(
@@ -125,7 +125,22 @@ impl SpinoramaApp {
                 cx.notify();
             }));
 
-
+        // Opacity slider using gpui-ui-kit Slider
+        let entity = cx.entity().clone();
+        let opacity_slider = gpui_ui_kit::Slider::new("opacity-slider-3d")
+            .value(self.surface_opacity * 100.0)
+            .min(0.0)
+            .max(100.0)
+            .step(5.0)
+            .width(120.0)
+            .label("Opacity")
+            .show_value(true)
+            .on_change(move |value, _window, cx| {
+                entity.update(cx, |this, cx| {
+                    this.surface_opacity = value / 100.0;
+                    cx.notify();
+                });
+            });
 
         // Interactive container for the 3D view
         let surface_view = div()
@@ -208,7 +223,8 @@ impl SpinoramaApp {
                     .items_center()
                     .child(div().text_sm().text_color(rgb(0x666666)).child("Colormap:"))
                     .child(colormap_selector)
-                    .child(wireframe_toggle),
+                    .child(wireframe_toggle)
+                    .child(opacity_slider),
             )
             .child(
 		div()

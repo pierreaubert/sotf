@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::surface3d::camera::Camera3D;
+    use crate::gpu3d::camera::Camera3D;
     use glam::Vec3;
 
     #[test]

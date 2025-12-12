@@ -486,10 +486,9 @@ impl Surface3DRenderer {
         self.index_count = mesh.index_count as u32;
 
         // Create wireframe indices if needed
-        if self.config.wireframe {
-            let x_count = ((mesh.vertex_count as f64).sqrt() as usize).max(2);
-            let y_count = mesh.vertex_count / x_count;
-            let wireframe_indices = super::mesh::generate_wireframe_indices(x_count, y_count);
+        if self.config.wireframe && mesh.x_count >= 2 && mesh.y_count >= 2 {
+            let wireframe_indices =
+                super::mesh::generate_wireframe_indices(mesh.x_count, mesh.y_count);
 
             self.wireframe_index_buffer = Some(self.device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {

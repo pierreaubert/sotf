@@ -2,10 +2,10 @@
 
 use super::camera::{Camera3D, OrbitControls};
 use super::config::Surface3DConfig;
+use super::config::SurfacePlotType;
 use super::data::SurfaceData;
 use super::mesh::SurfaceMesh;
 use super::renderer::Surface3DRenderer;
-use super::config::SurfacePlotType;
 use crate::text::{measure_text_width, paint_vector_text_at};
 use gpui::*;
 use image::{Frame, RgbaImage};
