@@ -26,6 +26,7 @@ rand_chacha = "0.9"
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+schemars = "0.8"
 strsim = { workspace = true }
 tokio = { workspace = true }
 urlencoding = { workspace = true }

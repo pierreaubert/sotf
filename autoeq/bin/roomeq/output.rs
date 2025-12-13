@@ -323,7 +323,11 @@ pub fn create_dsp_chain_output(
     channels: HashMap<String, ChannelDspChain>,
     metadata: Option<OptimizationMetadata>,
 ) -> DspChainOutput {
-    DspChainOutput { channels, metadata }
+    DspChainOutput {
+        version: super::types::default_config_version(),
+        channels,
+        metadata,
+    }
 }
 
 /// Save DSP chain to JSON file

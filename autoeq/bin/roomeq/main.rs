@@ -18,6 +18,7 @@
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use log::{debug, info, warn};
+use schemars::schema_for;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -38,12 +39,12 @@ use types::{ChannelDspChain, OptimizationMetadata, RoomConfig, SpeakerConfig};
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// Path to room configuration JSON file
-    #[arg(short, long)]
-    config: PathBuf,
+    #[arg(short, long, required_unless_present = "schema")]
+    config: Option<PathBuf>,
 
     /// Output DSP chain JSON file
-    #[arg(short, long)]
-    output: PathBuf,
+    #[arg(short, long, required_unless_present = "schema")]
+    output: Option<PathBuf>,
 
     /// Sample rate for filter design (default: 48000 Hz)
     #[arg(long, default_value_t = 48000.0)]
@@ -52,6 +53,10 @@ struct Args {
     /// Verbose output (deprecated, use RUST_LOG env var)
     #[arg(short, long)]
     verbose: bool,
+
+    /// Dump JSON schema for the output format
+    #[arg(long)]
+    schema: bool,
 }
 
 fn main() -> Result<()> {
@@ -60,26 +65,36 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    if args.schema {
+        let schema = schema_for!(types::DspChainOutput);
+        println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+        return Ok(());
+    }
+
     if args.verbose {
         warn!("The --verbose flag is deprecated. Use RUST_LOG=debug instead.");
     }
 
-    run(args)
+    // Unwrap required args (safe because of required_unless_present)
+    let config_path = args.config.ok_or_else(|| anyhow!("Config file is required"))?;
+    let output_path = args.output.ok_or_else(|| anyhow!("Output file is required"))?;
+
+    run(args.sample_rate, config_path, output_path)
 }
 
-fn run(args: Args) -> Result<()> {
+fn run(sample_rate: f64, config_path: PathBuf, output_path: PathBuf) -> Result<()> {
     // Load room configuration
-    info!("Loading room configuration from {:?}", args.config);
+    info!("Loading room configuration from {:?}", config_path);
 
-    let config_json = std::fs::read_to_string(&args.config)
-        .with_context(|| format!("Failed to read config file: {:?}", args.config))?;
+    let config_json = std::fs::read_to_string(&config_path)
+        .with_context(|| format!("Failed to read config file: {:?}", config_path))?;
 
     let room_config: RoomConfig = serde_json::from_str(&config_json)
         .with_context(|| "Failed to parse room configuration JSON")?;
 
     info!("Found {} speakers", room_config.speakers.len());
 
-    let output_dir = args.output.parent().unwrap_or(std::path::Path::new("."));
+    let output_dir = output_path.parent().unwrap_or(std::path::Path::new("."));
 
     // Process each speaker
     let mut channel_chains = HashMap::new();
@@ -93,7 +108,7 @@ fn run(args: Args) -> Result<()> {
             channel_name,
             speaker_config,
             &room_config,
-            args.sample_rate,
+            sample_rate,
             output_dir,
         )?;
 
@@ -132,11 +147,11 @@ fn run(args: Args) -> Result<()> {
     );
 
     // Save output
-    info!("Saving DSP chain to {:?}", args.output);
+    info!("Saving DSP chain to {:?}", output_path);
 
-    output::save_dsp_chain(&dsp_output, &args.output)
+    output::save_dsp_chain(&dsp_output, &output_path)
         .map_err(|e| anyhow!("{}", e))
-        .with_context(|| format!("Failed to save DSP chain to {:?}", args.output))?;
+        .with_context(|| format!("Failed to save DSP chain to {:?}", output_path))?;
 
     info!("Done!");
 

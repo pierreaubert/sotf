@@ -16,6 +16,7 @@
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 pub use autoeq::MeasurementSource;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -25,8 +26,12 @@ use std::path::PathBuf;
 // ============================================================================
 
 /// Complete room configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RoomConfig {
+    /// Configuration version (semantic versioning, e.g., "1.0.0")
+    #[serde(default = "default_config_version")]
+    pub version: String,
+
     /// Map of channel name to speaker configuration
     pub speakers: HashMap<String, SpeakerConfig>,
 
@@ -43,8 +48,12 @@ pub struct RoomConfig {
     pub optimizer: OptimizerConfig,
 }
 
+pub fn default_config_version() -> String {
+    "1.0.0".to_string()
+}
+
 /// Speaker configuration (can be single measurement or group)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum SpeakerConfig {
     /// Single channel (simple case)
@@ -61,7 +70,7 @@ pub enum SpeakerConfig {
 }
 
 /// Group of measurements for a single speaker (multi-driver)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SpeakerGroup {
     /// Name of the group
     pub name: String,
@@ -75,7 +84,7 @@ pub struct SpeakerGroup {
 }
 
 /// Configuration for multiple subwoofers
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultiSubGroup {
     /// Name of the subwoofer group (e.g. "subs")
     pub name: String,
@@ -85,7 +94,7 @@ pub struct MultiSubGroup {
 }
 
 /// Configuration for Double Bass Array (DBA)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DBAConfig {
     /// Name of the DBA system
     pub name: String,
@@ -98,7 +107,7 @@ pub struct DBAConfig {
 }
 
 /// Crossover configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CrossoverConfig {
     /// Crossover type (e.g., "LR24", "LR48", "Butterworth24")
     #[serde(rename = "type")]
@@ -114,7 +123,7 @@ pub struct CrossoverConfig {
 }
 
 /// Target curve configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum TargetCurveConfig {
     /// Path to CSV file (freq, spl columns)
@@ -125,7 +134,7 @@ pub enum TargetCurveConfig {
 }
 
 /// FIR filter configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FirConfig {
     /// Number of taps (coefficients)
     #[serde(default = "default_fir_taps")]
@@ -136,7 +145,7 @@ pub struct FirConfig {
 }
 
 /// Optimizer configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizerConfig {
     /// Optimization mode: "iir" (default), "fir", "mixed"
     #[serde(default = "default_opt_mode")]
@@ -260,8 +269,12 @@ impl Default for OptimizerConfig {
 // ============================================================================
 
 /// DSP chain output (AudioEngine PluginConfig format)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DspChainOutput {
+    /// Output version
+    #[serde(default = "default_config_version")]
+    pub version: String,
+
     /// Per-channel DSP chains
     pub channels: HashMap<String, ChannelDspChain>,
 
@@ -271,7 +284,7 @@ pub struct DspChainOutput {
 }
 
 /// DSP chain for a single channel
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ChannelDspChain {
     /// Channel name
     pub channel: String,
@@ -285,7 +298,7 @@ pub struct ChannelDspChain {
 }
 
 /// DSP chain for an individual driver in a multi-driver speaker
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DriverDspChain {
     /// Driver name (e.g., "woofer", "tweeter")
     pub name: String,
@@ -298,14 +311,14 @@ pub struct DriverDspChain {
 }
 
 /// Wrapper for AudioEngine PluginConfig (re-exported from src-audio)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct PluginConfigWrapper {
     pub plugin_type: String,
     pub parameters: serde_json::Value,
 }
 
 /// Optimization metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizationMetadata {
     /// Pre-optimization score
     pub pre_score: f64,

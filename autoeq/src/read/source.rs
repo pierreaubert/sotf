@@ -3,12 +3,13 @@
 use crate::Curve;
 use crate::read::{interpolate_log_space, read_curve_from_csv};
 use ndarray::Array1;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::path::PathBuf;
 
 /// Reference to a measurement file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum MeasurementRef {
     /// Path to CSV file (freq, spl, phase columns)
@@ -39,7 +40,7 @@ impl MeasurementRef {
 }
 
 /// Source of measurements (single file or multiple files for averaging)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum MeasurementSource {
     Single(MeasurementRef),
