@@ -230,7 +230,20 @@ fn run_playback_thread(
                 }
             })
             .cloned()
-            // Then try partial match
+            // Then try partial match (starts with)
+            .or_else(|| {
+                devices
+                    .iter()
+                    .find(|d| {
+                        if let Ok(name) = d.name() {
+                            name.to_lowercase().starts_with(&target_pattern)
+                        } else {
+                            false
+                        }
+                    })
+                    .cloned()
+            })
+            // Finally try partial match (contains)
             .or_else(|| {
                 devices
                     .iter()

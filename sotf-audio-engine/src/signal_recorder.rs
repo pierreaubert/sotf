@@ -673,13 +673,28 @@ fn find_device_by_name(
         }
     }
 
-    // Second pass: try partial match (contains)
+    // Second pass: try partial match (starts with) - strictly better than contains
+    for device in &devices_vec {
+        if let Ok(name) = device.name()
+            && name.to_lowercase().starts_with(&target_pattern)
+        {
+            log::info!(
+                "[find_device_by_name] Found {} device (starts with): {} (matched by '{}')",
+                device_type,
+                name,
+                device_name
+            );
+            return Ok(device.clone());
+        }
+    }
+
+    // Third pass: try partial match (contains)
     for device in &devices_vec {
         if let Ok(name) = device.name()
             && name.to_lowercase().contains(&target_pattern)
         {
             log::info!(
-                "[find_device_by_name] Found {} device (partial match): {} (matched by '{}')",
+                "[find_device_by_name] Found {} device (contains): {} (matched by '{}')",
                 device_type,
                 name,
                 device_name
