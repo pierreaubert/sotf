@@ -646,6 +646,8 @@ impl PlayerView {
         let theme = state.app.theme.clone();
         let progress = state.app.room_eq_state.overall_progress;
         let status_msg = &state.app.room_eq_state.status_message;
+        let is_running = state.app.room_eq_state.is_optimizing();
+        let is_completed = state.app.room_eq_state.is_optimization_complete();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -666,8 +668,43 @@ impl PlayerView {
                         VStack::new()
                             .spacing(StackSpacing::Md)
                             .child(
-                                Text::new(format!("Progress: {:.0}%", progress * 100.0))
-                                    .size(TextSize::Sm),
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .align(StackAlign::Center)
+                                    .child(
+                                        Text::new(format!("Progress: {:.0}%", progress * 100.0))
+                                            .size(TextSize::Sm)
+                                            .weight(TextWeight::Semibold),
+                                    )
+                                    .when(is_running, |stack| {
+                                        stack.child(
+                                            Text::new("●")
+                                                .size(TextSize::Sm)
+                                                .color(theme.info),
+                                        )
+                                    })
+                                    .when(is_completed, |stack| {
+                                        stack.child(
+                                            Text::new("✓")
+                                                .size(TextSize::Sm)
+                                                .color(theme.success),
+                                        )
+                                    }),
+                            )
+                            .child(
+                                // Progress bar
+                                div()
+                                    .w_full()
+                                    .h(px(8.0))
+                                    .bg(theme.background_secondary)
+                                    .rounded_md()
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .w(relative(progress))
+                                            .h_full()
+                                            .bg(if is_completed { theme.success } else { theme.info }),
+                                    ),
                             )
                             .child(
                                 Text::new(status_msg.clone())
@@ -675,8 +712,9 @@ impl PlayerView {
                                     .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("start_optimization", "Start Optimization")
+                                Button::new("start_optimization", if is_running { "Optimizing..." } else { "Start Optimization" })
                                     .variant(ButtonVariant::Primary)
+                                    .disabled(is_running)
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -1173,17 +1211,33 @@ impl PlayerView {
 
         // Clone state for the async task
         let state_clone = self.state.clone();
+        let state_for_progress = self.state.clone();
         let crossover_types: HashMap<String, _> = configs
             .iter()
             .map(|(k, v)| (k.clone(), v.crossover_type.unwrap_or_default()))
             .collect();
 
-        // Spawn the optimization task (without progress channel for simplicity)
+        // Create progress channel
+        let (progress_tx, mut progress_rx) =
+            tokio::sync::mpsc::channel::<sotf_audio_player::room_eq::OptimizationProgress>(100);
+
+        // Spawn a task to listen to progress updates
         cx.spawn(async move |_view, cx| {
-            // Run the optimization without progress updates
-            // (Progress channel requires tokio which isn't available in GPUI context)
+            while let Some(progress) = progress_rx.recv().await {
+                let _ = state_for_progress.update(cx, |state, cx| {
+                    state.app.room_eq_state.overall_progress = progress.overall_progress;
+                    state.app.room_eq_state.status_message = progress.message.clone();
+                    cx.notify(); // Trigger UI update
+                });
+            }
+        })
+        .detach();
+
+        // Spawn the optimization task with progress channel
+        cx.spawn(async move |_view, cx| {
+            // Run the optimization with progress updates
             let result = optimizer
-                .optimize_all_channels(channels, configs, None)
+                .optimize_all_channels(channels, configs, Some(progress_tx))
                 .await;
 
             // Process result

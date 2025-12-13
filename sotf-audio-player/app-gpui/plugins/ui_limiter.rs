@@ -13,6 +13,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Divider, HStack, StackAlign, StackSpacing, Text, TextSize, VStack};
+use sotf_audio_player::param_specs::limiter::*;
 
 /// State for rendering the Limiter plugin
 pub struct LimiterRenderState {
@@ -98,8 +99,8 @@ pub fn render_limiter_plugin(
                                     plugin_idx,
                                     "Ceiling",
                                     state.threshold_db,
-                                    -12.0,
-                                    0.0,
+                                    THRESHOLD_MIN as f64,
+                                    THRESHOLD_MAX as f64,
                                     "dB",
                                     0,
                                     state.selected_param,
@@ -112,8 +113,8 @@ pub fn render_limiter_plugin(
                                     plugin_idx,
                                     "Release",
                                     state.release_ms,
-                                    10.0,
-                                    1000.0,
+                                    RELEASE_MIN as f64,
+                                    RELEASE_MAX as f64,
                                     "ms",
                                     1,
                                     state.selected_param,
@@ -126,8 +127,8 @@ pub fn render_limiter_plugin(
                                     plugin_idx,
                                     "Mix",
                                     state.mix,
-                                    0.0,
-                                    1.0,
+                                    MIX_MIN as f64,
+                                    MIX_MAX as f64,
                                     "%",
                                     2,
                                     state.selected_param,

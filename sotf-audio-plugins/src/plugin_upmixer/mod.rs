@@ -15,6 +15,7 @@
 //
 // Output channel mapping depends on selected configuration
 
+use super::param_specs::upmixer::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
@@ -537,104 +538,104 @@ impl Plugin for UpmixerPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_int("speaker_config", "Configuration", 0, 0, 9).with_description(
+            Parameter::new_int("speaker_config", "Configuration", SPEAKER_CONFIG_DEFAULT, SPEAKER_CONFIG_MIN, SPEAKER_CONFIG_MAX).with_description(
                 "Speaker configuration index.
 0=5.1 (default), 1=7.1, 2=5.1.2, 3=5.1.4,
 4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6,
 8=2.0, 9=5.0.
 Controls output layout and number of channels.",
             ),
-            Parameter::new_float("gain_front_direct", "Front Direct Gain", 1.0, 0.0, 2.0)
+            Parameter::new_float("gain_front_direct", "Front Direct Gain", GAIN_FRONT_DIRECT_DEFAULT, GAIN_FRONT_DIRECT_MIN, GAIN_FRONT_DIRECT_MAX)
                 .with_description(
                     "Front direct gain for non-height front speakers.
 Range: 0.0-2.0, default 1.0.
 Higher values make the front image more focused and dry;
 lower values rely more on ambient and surround energy.",
                 ),
-            Parameter::new_float("gain_front_ambient", "Front Ambient Gain", 0.5, 0.0, 2.0)
+            Parameter::new_float("gain_front_ambient", "Front Ambient Gain", GAIN_FRONT_AMBIENT_DEFAULT, GAIN_FRONT_AMBIENT_MIN, GAIN_FRONT_AMBIENT_MAX)
                 .with_description(
                     "Decorrelated ambient gain routed to front speakers.
 Range: 0.0-2.0, default 0.5.
 Increase to widen and enliven the front stage;
 decrease for a more center-focused, direct front.",
                 ),
-            Parameter::new_float("gain_rear_ambient", "Rear Ambient Gain", 1.0, 0.0, 2.0)
+            Parameter::new_float("gain_rear_ambient", "Rear Ambient Gain", GAIN_REAR_AMBIENT_DEFAULT, GAIN_REAR_AMBIENT_MIN, GAIN_REAR_AMBIENT_MAX)
                 .with_description(
                     "Ambient gain for surround and rear channels.
 Range: 0.0-2.0, default 1.0.
 Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
                 ),
-            Parameter::new_float("height_gain", "Height Gain", 1.0, 0.0, 2.0).with_description(
+            Parameter::new_float("height_gain", "Height Gain", HEIGHT_GAIN_DEFAULT, HEIGHT_GAIN_MIN, HEIGHT_GAIN_MAX).with_description(
                 "Gain for height/overhead channels (elevation > 0).
 Range: 0.0-2.0, default 1.0.
 0.0 disables height channels; higher values raise the contribution
 of height speakers relative to the bed layer.",
             ),
-            Parameter::new_float("lfe_gain", "LFE Gain", 1.0, 0.0, 2.0).with_description(
+            Parameter::new_float("lfe_gain", "LFE Gain", LFE_GAIN_DEFAULT, LFE_GAIN_MIN, LFE_GAIN_MAX).with_description(
                 "Gain for LFE/subwoofer channel.
 Range: 0.0-2.0, default 1.0.
 Controls overall subwoofer level after the mains/LFE crossover.",
             ),
-            Parameter::new_float("lfe_cutoff_hz", "LFE Cutoff (Hz)", 120.0, 20.0, 180.0)
+            Parameter::new_float("lfe_cutoff_hz", "LFE Cutoff (Hz)", LFE_CUTOFF_HZ_DEFAULT, LFE_CUTOFF_HZ_MIN, LFE_CUTOFF_HZ_MAX)
                 .with_description(
                     "Linkwitz-Riley crossover frequency between mains and LFE.
 Range: 20-180 Hz, default 120 Hz.
 Lower values keep more bass in mains; higher values route
 more low-frequency energy into the subwoofer.",
                 ),
-            Parameter::new_float("stereo_width", "Stereo Width", 0.5, 0.0, 1.0).with_description(
+            Parameter::new_float("stereo_width", "Stereo Width", STEREO_WIDTH_DEFAULT, STEREO_WIDTH_MIN, STEREO_WIDTH_MAX).with_description(
                 "Controls front stereo width for the direct component.
 Range: 0.0-1.0, default 0.5.
 0.0 keeps L/R wide; 1.0 collapses toward mono/center;
 intermediate values balance width and center focus.",
             ),
-            Parameter::new_float("center_spread", "Center Spread", 0.0, 0.0, 1.0).with_description(
+            Parameter::new_float("center_spread", "Center Spread", CENTER_SPREAD_DEFAULT, CENTER_SPREAD_MIN, CENTER_SPREAD_MAX).with_description(
                 "Controls how much direct energy is focused in the physical center vs L/R.
 Range: 0.0-1.0, default 0.0.
 0.0 sends coherent center energy to the C speaker;
 1.0 moves it into a phantom center across L/R.",
             ),
-            Parameter::new_float("bandpass_hz", "Upmix Crossover (Hz)", 250.0, 150.0, 350.0)
+            Parameter::new_float("bandpass_hz", "Upmix Crossover (Hz)", BANDPASS_HZ_DEFAULT, BANDPASS_HZ_MIN, BANDPASS_HZ_MAX)
                 .with_description(
                     "Frequency above which upmixing to surrounds/height is applied.
 Range: 150-350 Hz, default 250 Hz.
 Below this frequency content stays mainly in fronts + LFE;
 above it participates in the direct/ambient upmix.",
                 ),
-            Parameter::new_bool("enable_subharmonic_synth", "Sub-Harmonic Synth", false)
+            Parameter::new_bool("enable_subharmonic_synth", "Sub-Harmonic Synth", ENABLE_SUBHARMONIC_SYNTH_DEFAULT)
                 .with_description(
                     "Enables optional sub-harmonic synthesis on the LFE.
 Default: off. When enabled, a low-frequency tone is added to the
 subwoofer, driven by the LFE envelope for extra rumble.",
                 ),
-            Parameter::new_float("subharmonic_gain", "Sub-Harmonic Gain", 0.5, 0.0, 1.0)
+            Parameter::new_float("subharmonic_gain", "Sub-Harmonic Gain", SUBHARMONIC_GAIN_DEFAULT, SUBHARMONIC_GAIN_MIN, SUBHARMONIC_GAIN_MAX)
                 .with_description(
                     "Gain for synthesized sub-harmonics when enabled.
 Range: 0.0-1.0, default 0.5.
 Controls how loud the synthesized low-frequency component is
 relative to the original LFE signal.",
                 ),
-            Parameter::new_bool("enable_hr_direct", "Multi-Resolution Analysis", true)
+            Parameter::new_bool("enable_hr_direct", "Multi-Resolution Analysis", ENABLE_HR_DIRECT_DEFAULT)
                 .with_description(
                     "Enables multi-resolution analysis for optimal time/frequency resolution.
 Default: ON. Uses short FFT (512 samples) for transients and long FFT (2048) for ambient.
 Adaptively blends based on transient detection for sharper attacks and smooth ambience.",
                 ),
-            Parameter::new_float("hr_sharpen", "HR Sharpen", 1.0, 0.0, 1.0).with_description(
+            Parameter::new_float("hr_sharpen", "HR Sharpen", HR_SHARPEN_DEFAULT, HR_SHARPEN_MIN, HR_SHARPEN_MAX).with_description(
                 "Depth control for the high-resolution direct path.
 Range: 0.0-1.0, default 1.0.
 0.0 effectively disables the HR contribution even if enabled;
 1.0 applies the full transient-driven HR emphasis and ducking
 of the main front field.",
             ),
-            Parameter::new_float("safety_cap_db", "Safety Cap (dB)", 3.0, 0.0, 3.0)
+            Parameter::new_float("safety_cap_db", "Safety Cap (dB)", SAFETY_CAP_DB_DEFAULT, SAFETY_CAP_DB_MIN, SAFETY_CAP_DB_MAX)
                 .with_description(
                     "Peak safety cap for the upmixer output.
 Range: 0.0-3.0 dB, default 3.0 dB.
 If a block's peak level after upmixing would exceed this value
 above unity, the block is scaled down to stay within the cap.",
                 ),
-            Parameter::new_int("decorrelation_mode", "Decorrelation Mode", 0, 0, 1)
+            Parameter::new_int("decorrelation_mode", "Decorrelation Mode", DECORRELATION_MODE_DEFAULT, DECORRELATION_MODE_MIN, DECORRELATION_MODE_MAX)
                 .with_description(
                     "Mode for ambient decorrelation.
 0 = Velvet Noise (Static, smooth, no artifacts) - Default

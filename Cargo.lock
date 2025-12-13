@@ -8802,6 +8802,7 @@ dependencies = [
  "symphonia-format-riff",
  "symphonia-metadata",
  "tempfile",
+ "tokio",
  "walkdir",
 ]
 

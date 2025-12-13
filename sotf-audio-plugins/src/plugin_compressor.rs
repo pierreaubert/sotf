@@ -16,6 +16,7 @@
 // - link_channels: Use a shared detector across channels to avoid image shifts
 // - sidechain_hpf_hz: High-pass filter cutoff for the detector sidechain (Hz)
 
+use super::param_specs::compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
@@ -26,43 +27,43 @@ use std::f32::consts::PI;
 // ============================================================================
 
 fn default_threshold_db() -> f32 {
-    -20.0
+    THRESHOLD_DEFAULT
 }
 
 fn default_ratio() -> f32 {
-    4.0
+    RATIO_DEFAULT
 }
 
 fn default_attack_ms() -> f32 {
-    5.0
+    ATTACK_DEFAULT
 }
 
 fn default_release_ms() -> f32 {
-    50.0
+    RELEASE_DEFAULT
 }
 
 fn default_knee_db() -> f32 {
-    6.0
+    KNEE_DEFAULT
 }
 
 fn default_makeup_gain_db() -> f32 {
-    0.0
+    MAKEUP_GAIN_DEFAULT
 }
 
 fn default_mix() -> f32 {
-    1.0
+    MIX_DEFAULT
 }
 
 pub fn default_auto_makeup() -> bool {
-    false
+    AUTO_MAKEUP_DEFAULT
 }
 
 pub fn default_link_channels() -> bool {
-    true
+    LINK_CHANNELS_DEFAULT
 }
 
 pub fn default_sidechain_hpf_hz() -> f32 {
-    80.0
+    SIDECHAIN_HPF_HZ_DEFAULT
 }
 
 /// Configuration parameters for CompressorPlugin
@@ -335,25 +336,25 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("threshold", "Threshold", -20.0, -60.0, 0.0)
+            Parameter::new_float("threshold", "Threshold", THRESHOLD_DEFAULT, THRESHOLD_MIN, THRESHOLD_MAX)
                 .with_description("Level above which compression starts (dB)"),
-            Parameter::new_float("ratio", "Ratio", 4.0, 1.0, 20.0)
+            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
                 .with_description("Compression ratio (1:1 to 20:1)"),
-            Parameter::new_float("attack", "Attack", 5.0, 0.1, 100.0)
+            Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
                 .with_description("Attack time (ms)"),
-            Parameter::new_float("release", "Release", 50.0, 10.0, 1000.0)
+            Parameter::new_float("release", "Release", RELEASE_DEFAULT, RELEASE_MIN, RELEASE_MAX)
                 .with_description("Release time (ms)"),
-            Parameter::new_float("knee", "Knee", 6.0, 0.0, 20.0)
+            Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
                 .with_description("Soft knee width (dB)"),
-            Parameter::new_float("makeup_gain", "Makeup Gain", 0.0, -24.0, 24.0)
+            Parameter::new_float("makeup_gain", "Makeup Gain", MAKEUP_GAIN_DEFAULT, MAKEUP_GAIN_MIN, MAKEUP_GAIN_MAX)
                 .with_description("Output gain compensation (dB)"),
-            Parameter::new_float("mix", "Mix", 1.0, 0.0, 1.0)
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
                 .with_description("Dry/wet mix (0 = dry, 1 = compressed)"),
-            Parameter::new_bool("auto_makeup", "Auto Makeup", false)
+            Parameter::new_bool("auto_makeup", "Auto Makeup", AUTO_MAKEUP_DEFAULT)
                 .with_description("Automatically compensate for gain reduction"),
-            Parameter::new_bool("link_channels", "Link Channels", true)
+            Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
                 .with_description("Use linked sidechain for all channels"),
-            Parameter::new_float("sidechain_hpf_hz", "Sidechain HPF", 80.0, 0.0, 200.0)
+            Parameter::new_float("sidechain_hpf_hz", "Sidechain HPF", SIDECHAIN_HPF_HZ_DEFAULT, SIDECHAIN_HPF_HZ_MIN, SIDECHAIN_HPF_HZ_MAX)
                 .with_description("High-pass filter frequency for sidechain (Hz)"),
         ]
     }

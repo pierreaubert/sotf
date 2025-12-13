@@ -12,6 +12,7 @@
 // - soft: Enable soft limiting with saturation curve (more musical)
 // - mix: Dry/wet mix between unprocessed and limited signal (0.0 = dry, 1.0 = limited)
 
+use super::param_specs::limiter::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
@@ -22,23 +23,23 @@ use std::collections::VecDeque;
 // ============================================================================
 
 fn default_threshold_db() -> f32 {
-    -1.0
+    THRESHOLD_DEFAULT
 }
 
 fn default_release_ms() -> f32 {
-    50.0
+    RELEASE_DEFAULT
 }
 
 fn default_lookahead_ms() -> f32 {
-    5.0
+    LOOKAHEAD_DEFAULT
 }
 
 fn default_soft() -> bool {
-    true
+    SOFT_DEFAULT
 }
 
 fn default_mix() -> f32 {
-    1.0
+    MIX_DEFAULT
 }
 
 /// Configuration parameters for LimiterPlugin
@@ -203,15 +204,15 @@ impl InPlacePlugin for LimiterPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("threshold", "Threshold", -0.1, -20.0, 0.0)
+            Parameter::new_float("threshold", "Threshold", THRESHOLD_DEFAULT, THRESHOLD_MIN, THRESHOLD_MAX)
                 .with_description("Maximum output level (dB)"),
-            Parameter::new_float("release", "Release", 50.0, 10.0, 1000.0)
+            Parameter::new_float("release", "Release", RELEASE_DEFAULT, RELEASE_MIN, RELEASE_MAX)
                 .with_description("Release time (ms)"),
-            Parameter::new_float("lookahead", "Lookahead", 5.0, 0.0, 20.0)
+            Parameter::new_float("lookahead", "Lookahead", LOOKAHEAD_DEFAULT, LOOKAHEAD_MIN, LOOKAHEAD_MAX)
                 .with_description("Lookahead time for predictive limiting (ms)"),
-            Parameter::new_bool("soft", "Soft", false)
+            Parameter::new_bool("soft", "Soft", SOFT_DEFAULT)
                 .with_description("Enable soft limiting with saturation curve (more musical)"),
-            Parameter::new_float("mix", "Mix", 1.0, 0.0, 1.0)
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
                 .with_description("Dry/wet mix (0 = dry, 1 = limited)"),
         ]
     }

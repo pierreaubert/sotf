@@ -12,6 +12,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{Divider, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack};
+use sotf_audio_player::param_specs::gate::*;
 
 /// State for rendering the Gate plugin
 pub struct GateRenderState {
@@ -174,8 +175,8 @@ pub fn render_gate_plugin(
                                     plugin_idx,
                                     "Threshold",
                                     state.threshold_db,
-                                    -60.0,
-                                    0.0,
+                                    THRESHOLD_MIN as f64,
+                                    THRESHOLD_MAX as f64,
                                     "dB",
                                     0,
                                     state.selected_param,
@@ -188,8 +189,8 @@ pub fn render_gate_plugin(
                                     plugin_idx,
                                     "Ratio",
                                     state.ratio,
-                                    1.0,
-                                    10.0,
+                                    RATIO_MIN as f64,
+                                    RATIO_MAX as f64,
                                     ":1",
                                     1,
                                     state.selected_param,
@@ -202,8 +203,8 @@ pub fn render_gate_plugin(
                                     plugin_idx,
                                     "Attack",
                                     state.attack_ms,
-                                    0.1,
-                                    50.0,
+                                    ATTACK_MIN as f64,
+                                    ATTACK_MAX as f64,
                                     "ms",
                                     2,
                                     state.selected_param,
@@ -216,8 +217,8 @@ pub fn render_gate_plugin(
                                     plugin_idx,
                                     "Release",
                                     state.release_ms,
-                                    10.0,
-                                    500.0,
+                                    RELEASE_MIN as f64,
+                                    RELEASE_MAX as f64,
                                     "ms",
                                     3,
                                     state.selected_param,
@@ -230,8 +231,8 @@ pub fn render_gate_plugin(
                                     plugin_idx,
                                     "Mix",
                                     state.mix,
-                                    0.0,
-                                    1.0,
+                                    MIX_MIN as f64,
+                                    MIX_MAX as f64,
                                     "%",
                                     4,
                                     state.selected_param,

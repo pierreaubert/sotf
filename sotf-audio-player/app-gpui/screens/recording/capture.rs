@@ -477,8 +477,56 @@ impl PlayerView {
             .domain(20.0, 20000.0)
             .range(0.0, plot_width as f64);
 
-        // Find magnitude range from all results
-        let (min_db, max_db) = results
+        // Compute normalization offset from first curve (100 Hz - 10 kHz mean)
+        let normalization_offset = if let Some((_, first_result)) = results.first() {
+            let mut sum = 0.0_f32;
+            let mut count = 0;
+
+            for (&freq, &mag) in first_result.frequencies.iter().zip(first_result.magnitude_db.iter()) {
+                if freq >= 100.0 && freq <= 10000.0 {
+                    sum += mag;
+                    count += 1;
+                }
+            }
+
+            if count > 0 {
+                let mean = sum / count as f32;
+                log::info!(
+                    "[render_frequency_response_chart] Normalization: mean of first curve (100Hz-10kHz) = {:.2} dB",
+                    mean
+                );
+                mean
+            } else {
+                log::warn!("[render_frequency_response_chart] No data in 100Hz-10kHz range for normalization");
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        // Normalize all results by subtracting the offset, then invert
+        // Inversion: positive dB = room is quiet (needs boost), negative dB = room is loud (needs cut)
+        let normalized_results: Vec<(String, RecordingResult)> = results
+            .iter()
+            .map(|(name, result)| {
+                let normalized_magnitude: Vec<f32> = result
+                    .magnitude_db
+                    .iter()
+                    .map(|&mag| -(mag - normalization_offset))
+                    .collect();
+
+                (
+                    name.clone(),
+                    RecordingResult {
+                        magnitude_db: normalized_magnitude,
+                        ..result.clone()
+                    }
+                )
+            })
+            .collect();
+
+        // Find magnitude range from normalized results
+        let (min_db, max_db) = normalized_results
             .iter()
             .flat_map(|(_, r)| r.magnitude_db.iter())
             .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), &v| {
@@ -530,8 +578,8 @@ impl PlayerView {
             D3Color::from_hex(0x00bcd4), // Cyan
         ];
 
-        // Build line elements for each channel
-        let line_elements: Vec<_> = results
+        // Build line elements for each channel (using normalized data)
+        let line_elements: Vec<_> = normalized_results
             .iter()
             .enumerate()
             .map(|(idx, (name, result))| {
@@ -562,7 +610,7 @@ impl PlayerView {
             .collect();
 
         // Build legend
-        let legend_items: Vec<_> = results
+        let legend_items: Vec<_> = normalized_results
             .iter()
             .enumerate()
             .map(|(idx, (name, _))| {

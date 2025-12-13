@@ -10,6 +10,7 @@
 // Typical use: Boost bass and treble at low listening volumes to compensate
 // for the Fletcher-Munson equal-loudness contours.
 
+use super::param_specs::loudness_compensation::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use autoeq_iir::{Biquad, BiquadFilterType};
@@ -69,19 +70,19 @@ impl LoudnessCompensation {
 // ============================================================================
 
 fn default_low_freq() -> f32 {
-    100.0
+    LOW_FREQ_DEFAULT
 }
 
 fn default_low_gain() -> f32 {
-    6.0
+    LOW_GAIN_DEFAULT
 }
 
 fn default_high_freq() -> f32 {
-    10000.0
+    HIGH_FREQ_DEFAULT
 }
 
 fn default_high_gain() -> f32 {
-    6.0
+    HIGH_GAIN_DEFAULT
 }
 
 /// Configuration parameters for LoudnessCompensationPlugin
@@ -288,21 +289,21 @@ impl Plugin for LoudnessCompensationPlugin {
                 "low_freq",
                 "Low-shelf Frequency",
                 self.low_freq,
-                20.0,
-                500.0,
+                LOW_FREQ_MIN,
+                LOW_FREQ_MAX,
             )
             .with_description("Frequency for bass boost (Hz)"),
-            Parameter::new_float("low_gain", "Low-shelf Gain", self.low_gain, -20.0, 20.0)
+            Parameter::new_float("low_gain", "Low-shelf Gain", self.low_gain, LOW_GAIN_MIN, LOW_GAIN_MAX)
                 .with_description("Bass boost amount (dB)"),
             Parameter::new_float(
                 "high_freq",
                 "High-shelf Frequency",
                 self.high_freq,
-                2000.0,
-                20000.0,
+                HIGH_FREQ_MIN,
+                HIGH_FREQ_MAX,
             )
             .with_description("Frequency for treble boost (Hz)"),
-            Parameter::new_float("high_gain", "High-shelf Gain", self.high_gain, -20.0, 20.0)
+            Parameter::new_float("high_gain", "High-shelf Gain", self.high_gain, HIGH_GAIN_MIN, HIGH_GAIN_MAX)
                 .with_description("Treble boost amount (dB)"),
         ]
     }

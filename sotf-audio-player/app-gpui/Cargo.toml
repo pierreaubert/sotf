@@ -28,6 +28,9 @@ autoeq-roomsim = { path = "../../autoeq-roomsim" }
 # Synchronous mutex (faster than std::sync::Mutex)
 parking_lot = { workspace = true }
 
+# Async runtime
+tokio = { workspace = true }
+
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }

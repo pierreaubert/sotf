@@ -2,6 +2,7 @@
 // Convolution Plugin - FFT-based convolution for reverb and IR processing
 // ============================================================================
 
+use super::param_specs::convolution::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use rustfft::FftPlanner;
@@ -24,11 +25,11 @@ fn default_ir_file() -> String {
 }
 
 fn default_mix() -> f32 {
-    1.0
+    MIX_DEFAULT
 }
 
 fn default_gain_db() -> f32 {
-    0.0
+    GAIN_DB_DEFAULT
 }
 
 /// Configuration parameters for ConvolutionPlugin
@@ -489,9 +490,9 @@ impl Plugin for ConvolutionPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("mix", "Mix", 1.0, 0.0, 1.0)
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
                 .with_description("Dry/wet mix (0.0 = dry, 1.0 = wet)"),
-            Parameter::new_float("gain_db", "Gain", 0.0, -20.0, 20.0)
+            Parameter::new_float("gain_db", "Gain", GAIN_DB_DEFAULT, GAIN_DB_MIN, GAIN_DB_MAX)
                 .with_description("Output gain in dB"),
         ]
     }

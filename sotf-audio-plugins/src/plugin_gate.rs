@@ -15,6 +15,7 @@
 // - link_channels: Link channels for stereo detection (true = linked, false = unlinked)
 // - sidechain_hpf_hz: Sidechain high-pass filter cutoff frequency (Hz)
 
+use super::param_specs::gate::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
@@ -25,35 +26,35 @@ use std::f32::consts::PI;
 // ============================================================================
 
 fn default_threshold_db() -> f32 {
-    -40.0
+    THRESHOLD_DEFAULT
 }
 
 fn default_ratio() -> f32 {
-    10.0
+    RATIO_DEFAULT
 }
 
 fn default_attack_ms() -> f32 {
-    1.0
+    ATTACK_DEFAULT
 }
 
 fn default_hold_ms() -> f32 {
-    10.0
+    HOLD_DEFAULT
 }
 
 fn default_release_ms() -> f32 {
-    100.0
+    RELEASE_DEFAULT
 }
 
 fn default_mix() -> f32 {
-    1.0
+    MIX_DEFAULT
 }
 
 fn default_link_channels() -> bool {
-    true
+    LINK_CHANNELS_DEFAULT
 }
 
 fn default_sidechain_hpf_hz() -> f32 {
-    0.0
+    SIDECHAIN_HPF_HZ_DEFAULT
 }
 
 /// Configuration parameters for GatePlugin
@@ -268,21 +269,21 @@ impl InPlacePlugin for GatePlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("threshold", "Threshold", -40.0, -80.0, 0.0)
+            Parameter::new_float("threshold", "Threshold", THRESHOLD_DEFAULT, THRESHOLD_MIN, THRESHOLD_MAX)
                 .with_description("Level below which gate closes (dB)"),
-            Parameter::new_float("ratio", "Ratio", 10.0, 1.0, 100.0)
+            Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
                 .with_description("Gate depth ratio (higher = more attenuation)"),
-            Parameter::new_float("attack", "Attack", 1.0, 0.1, 50.0)
+            Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
                 .with_description("Time to open gate (ms)"),
-            Parameter::new_float("hold", "Hold", 10.0, 0.0, 1000.0)
+            Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
                 .with_description("Time to keep gate open after signal drops (ms)"),
-            Parameter::new_float("release", "Release", 100.0, 10.0, 2000.0)
+            Parameter::new_float("release", "Release", RELEASE_DEFAULT, RELEASE_MIN, RELEASE_MAX)
                 .with_description("Time to close gate (ms)"),
-            Parameter::new_float("mix", "Mix", 1.0, 0.0, 1.0)
+            Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
                 .with_description("Dry/wet mix (0 = dry, 1 = gated)"),
-            Parameter::new_bool("link_channels", "Link Channels", true)
+            Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
                 .with_description("Use linked sidechain for all channels"),
-            Parameter::new_float("sidechain_hpf_hz", "Sidechain HPF", 0.0, 0.0, 200.0)
+            Parameter::new_float("sidechain_hpf_hz", "Sidechain HPF", SIDECHAIN_HPF_HZ_DEFAULT, SIDECHAIN_HPF_HZ_MIN, SIDECHAIN_HPF_HZ_MAX)
                 .with_description("High-pass filter frequency for sidechain (Hz)"),
         ]
     }
