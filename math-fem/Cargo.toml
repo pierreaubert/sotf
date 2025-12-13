@@ -24,6 +24,8 @@ math-xem-common = { path = "../math-xem-common", version = "0.1" }
 
 # Solver infrastructure
 math-solvers = { path = "../math-solvers", version = "0.1" }
+math-wave = { path = "../math-wave" }
+spec_math = { workspace = true }
 
 # Core numerical computing
 ndarray = { version = "0.17", features = ["serde"] }
@@ -35,6 +37,7 @@ rayon = { workspace = true, optional = true }
 
 # Error handling
 thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -55,9 +58,12 @@ chrono = { workspace = true }
 [dev-dependencies]
 approx = "0.5"
 rand = { workspace = true }
-math-wave = { path = "../math-wave" }
-spec_math = { workspace = true }
 criterion = "0.5"
+
+[[bin]]
+name = "qa-suite"
+path = "bin/qa_suite.rs"
+required-features = ["cli", "native"]
 
 [[bench]]
 name = "helmholtz_3d_scaling"
