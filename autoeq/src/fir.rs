@@ -4,9 +4,9 @@
 //! with support for linear and minimum phase.
 
 use crate::Curve;
-use ndarray::{Array1, Array2};
+use ndarray::Array1;
+use num_complex::Complex64;
 use rustfft::FftPlanner;
-use num_complex::{Complex, Complex64};
 use rustfft::num_traits::Zero;
 use std::f64::consts::PI;
 
@@ -39,22 +39,22 @@ pub fn generate_fir_from_response(
     // FFT size should be at least n_taps, preferably power of 2
     let fft_size = (n_taps * 8).next_power_of_two().max(4096);
     let n_bins = fft_size / 2 + 1;
-    
+
     // Create linear frequency grid (0 to Nyquist)
     let freq_step = sample_rate / fft_size as f64;
     let linear_freqs = Array1::from_shape_fn(n_bins, |i| i as f64 * freq_step);
-    
+
     // Interpolate target curve to this grid
     // Note: read::interpolate assumes log interpolation which is fine for magnitude
     let interpolated = crate::read::interpolate(&linear_freqs, target_curve);
     let magnitude_db = interpolated.spl;
-    
+
     // Convert dB to linear magnitude
     let magnitude = magnitude_db.mapv(|db| 10.0_f64.powf(db / 20.0));
 
     // 2. Construct complex spectrum based on phase type
     let mut spectrum = vec![Complex64::zero(); n_bins];
-    
+
     match phase_type {
         FirPhase::Linear => {
             // Linear phase = magnitude + linear phase shift to center the impulse
@@ -72,12 +72,13 @@ pub fn generate_fir_from_response(
             // 3. Window Cepstrum (causal part)
             // 4. FFT -> Analytic Signal (Complex Log Magnitude)
             // 5. Exp -> Minimum Phase Spectrum
-            
+
             // Step 1: Log Magnitude (avoid log(0))
-            let log_mag: Vec<Complex64> = magnitude.iter()
+            let log_mag: Vec<Complex64> = magnitude
+                .iter()
                 .map(|&m| Complex64::new(m.max(1e-9).ln(), 0.0))
                 .collect();
-            
+
             // Construct full symmetric spectrum for IFFT
             let mut full_log_mag = vec![Complex64::zero(); fft_size];
             full_log_mag[0] = log_mag[0];
@@ -87,7 +88,7 @@ pub fn generate_fir_from_response(
                 full_log_mag[fft_size - i] = log_mag[i].conj();
             }
             // Nyquist
-            if fft_size % 2 == 0 {
+            if fft_size.is_multiple_of(2) {
                 full_log_mag[n_bins - 1] = log_mag[n_bins - 1]; // Make sure it's real
             }
 
@@ -96,7 +97,7 @@ pub fn generate_fir_from_response(
             let ifft = planner.plan_fft_inverse(fft_size);
             let mut cepstrum = full_log_mag.clone();
             ifft.process(&mut cepstrum);
-            
+
             // Normalize IFFT
             for x in &mut cepstrum {
                 *x /= fft_size as f64;
@@ -107,18 +108,18 @@ pub fn generate_fir_from_response(
             let mut causal_cepstrum = vec![Complex64::zero(); fft_size];
             causal_cepstrum[0] = cepstrum[0]; // DC
             // Positive frequencies (1 to N/2 - 1) -> multiply by 2
-            for i in 1..fft_size/2 {
+            for i in 1..fft_size / 2 {
                 causal_cepstrum[i] = cepstrum[i] * 2.0;
             }
             // Nyquist
-            causal_cepstrum[fft_size/2] = cepstrum[fft_size/2];
+            causal_cepstrum[fft_size / 2] = cepstrum[fft_size / 2];
             // Negative frequencies (N/2 + 1 to N) -> zero
-            
+
             // Step 4: FFT back
             let fft = planner.plan_fft_forward(fft_size);
             let mut analytic_log_spectrum = causal_cepstrum;
             fft.process(&mut analytic_log_spectrum);
-            
+
             // Step 5: Exponentiate to get Min Phase Spectrum
             for i in 0..n_bins {
                 spectrum[i] = analytic_log_spectrum[i].exp();
@@ -135,7 +136,7 @@ pub fn generate_fir_from_response(
         full_spectrum[fft_size - i] = spectrum[i].conj();
     }
     // Nyquist must be real
-    if fft_size % 2 == 0 {
+    if fft_size.is_multiple_of(2) {
         // Force Nyquist to be real (using magnitude)
         full_spectrum[n_bins - 1] = Complex64::new(spectrum[n_bins - 1].norm(), 0.0);
     }
@@ -157,28 +158,28 @@ pub fn generate_fir_from_response(
         // We need to shift it to the middle of our desired n_taps.
         // But n_taps << fft_size usually.
         // We center the window around index 0 (circularly).
-        
+
         let center = n_taps / 2;
         let mut final_ir = vec![0.0; n_taps];
-        
+
         // Copy from end of buffer to start of final_ir (negative time)
         // Copy from start of buffer to end of final_ir (positive time)
         // Actually, easiest is to just grab indices [-center .. center] modulo fft_size
-        
-        for i in 0..n_taps {
-            // i goes from 0 to n_taps-1. 
+
+        for (i, val) in final_ir.iter_mut().enumerate().take(n_taps) {
+            // i goes from 0 to n_taps-1.
             // We want index 'center' to map to IR index 0.
             // i = center => ir_idx = 0.
             // i = 0 => ir_idx = -center.
-            
+
             let shift = i as isize - center as isize;
             let ir_idx = if shift < 0 {
                 fft_size as isize + shift
             } else {
                 shift
             };
-            
-            final_ir[i] = ir[ir_idx as usize];
+
+            *val = ir[ir_idx as usize];
         }
         ir = final_ir;
     } else {
@@ -190,23 +191,25 @@ pub fn generate_fir_from_response(
     // Use crate::math_iir::fir logic or implement simple window
     // I'll implement a simple Blackman window
     let window = make_blackman_window(n_taps);
-    for i in 0..n_taps {
-        ir[i] *= window[i];
+    for (x, w) in ir.iter_mut().zip(window.iter()) {
+        *x *= w;
     }
 
     ir
 }
 
 fn make_blackman_window(size: usize) -> Vec<f64> {
-    (0..size).map(|i| {
-        let alpha = 0.42;
-        let beta = 0.5;
-        let gamma = 0.08;
-        let n = i as f64;
-        let m = (size - 1) as f64;
-        let p = 2.0 * PI * n / m;
-        alpha - beta * p.cos() + gamma * (2.0 * p).cos()
-    }).collect()
+    (0..size)
+        .map(|i| {
+            let alpha = 0.42;
+            let beta = 0.5;
+            let gamma = 0.08;
+            let n = i as f64;
+            let m = (size - 1) as f64;
+            let p = 2.0 * PI * n / m;
+            alpha - beta * p.cos() + gamma * (2.0 * p).cos()
+        })
+        .collect()
 }
 
 /// Save FIR coefficients to a WAV file (32-bit float mono)
@@ -221,12 +224,12 @@ pub fn save_fir_to_wav(
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
-    
+
     let mut writer = hound::WavWriter::create(path, spec)?;
     for &sample in coeffs {
         writer.write_sample(sample as f32)?;
     }
     writer.finalize()?;
-    
+
     Ok(())
 }

@@ -20,7 +20,6 @@ use autoeq_env::get_data_generated_dir;
 use clap::Parser;
 use plotly::common::Mode;
 use plotly::{Plot, Scatter};
-use serde_json;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -96,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deviation = Curve {
         freq: freqs.clone(),
         spl: deviation_spl,
+        phase: None,
     };
     let smooth_deviation = if args.smooth {
         smooth_one_over_n_octave(&deviation, args.smooth_n)

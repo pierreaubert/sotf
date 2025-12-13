@@ -72,9 +72,9 @@ mod init_sobol_tests {
         let val3 = van_der_corput(3, 2);
 
         // Should be in [0, 1)
-        assert!(val1 >= 0.0 && val1 < 1.0);
-        assert!(val2 >= 0.0 && val2 < 1.0);
-        assert!(val3 >= 0.0 && val3 < 1.0);
+        assert!((0.0..1.0).contains(&val1));
+        assert!((0.0..1.0).contains(&val2));
+        assert!((0.0..1.0).contains(&val3));
 
         // Should be different values
         assert_ne!(val1, val2);
@@ -90,9 +90,9 @@ mod init_sobol_tests {
         for sample in &samples {
             assert_eq!(sample.len(), 3);
             // Check bounds
-            assert!(sample[0] >= 0.0 && sample[0] <= 10.0);
-            assert!(sample[1] >= 0.1 && sample[1] <= 5.0);
-            assert!(sample[2] >= -12.0 && sample[2] <= 12.0);
+            assert!((0.0..=10.0).contains(&sample[0]));
+            assert!((0.1..=5.0).contains(&sample[1]));
+            assert!((-12.0..=12.0).contains(&sample[2]));
         }
     }
 }

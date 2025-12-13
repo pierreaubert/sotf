@@ -5,8 +5,8 @@ use autoeq::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use autoeq::workflow::DriverOptimizationResult;
 use std::error::Error;
 
-use super::load;
 use super::types::{MeasurementSource, OptimizerConfig};
+use autoeq::read as load;
 
 /// Optimize multi-subwoofer configuration
 ///
@@ -51,7 +51,7 @@ pub fn optimize_multisub(
     let combined_response = autoeq::loss::compute_drivers_combined_response(
         &drivers_data,
         &result.gains,
-        &vec![], // no crossovers
+        &[], // no crossovers
         Some(&result.delays),
         sample_rate,
     );

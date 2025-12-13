@@ -89,11 +89,7 @@ pub fn load_frequency_response(
 pub fn read_curve_from_csv(path: &PathBuf) -> Result<Curve, Box<dyn Error>> {
     // Try to load as driver measurement (with optional phase) first
     match load_driver_measurement(path) {
-        Ok((freq, spl, phase)) => Ok(crate::Curve {
-            freq,
-            spl,
-            phase,
-        }),
+        Ok((freq, spl, phase)) => Ok(crate::Curve { freq, spl, phase }),
         Err(_) => {
             // Fallback to load_frequency_response (handles 4-column stereo average)
             let result = load_frequency_response(path)?;
@@ -118,6 +114,7 @@ pub fn read_curve_from_csv(path: &PathBuf) -> Result<Curve, Box<dyn Error>> {
 /// Expected formats:
 /// - 2 columns: frequency, spl
 /// - 3 columns: frequency, spl, phase
+#[allow(clippy::type_complexity)]
 pub fn load_driver_measurement(
     path: &PathBuf,
 ) -> Result<(Array1<f64>, Array1<f64>, Option<Array1<f64>>), Box<dyn std::error::Error>> {
@@ -190,7 +187,9 @@ pub fn load_driver_measurement(
     }
 
     if frequencies.is_empty() {
-        return Err("No valid driver measurement data found in file (expected 2 or 3 columns)".into());
+        return Err(
+            "No valid driver measurement data found in file (expected 2 or 3 columns)".into(),
+        );
     }
 
     let phase = if has_phase && !phase_values.is_empty() {

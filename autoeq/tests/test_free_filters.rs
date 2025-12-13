@@ -17,13 +17,13 @@ fn test_params_per_filter() {
 #[test]
 fn test_num_filters() {
     // Fixed filter types: 3 params per filter
-    assert_eq!(param_utils::num_filters(&vec![0.0; 9], PeqModel::Pk), 3);
-    assert_eq!(param_utils::num_filters(&vec![0.0; 15], PeqModel::HpPk), 5);
+    assert_eq!(param_utils::num_filters(&[0.0; 9], PeqModel::Pk), 3);
+    assert_eq!(param_utils::num_filters(&[0.0; 15], PeqModel::HpPk), 5);
 
     // Free filter types: 4 params per filter
-    assert_eq!(param_utils::num_filters(&vec![0.0; 12], PeqModel::Free), 3);
+    assert_eq!(param_utils::num_filters(&[0.0; 12], PeqModel::Free), 3);
     assert_eq!(
-        param_utils::num_filters(&vec![0.0; 20], PeqModel::FreePkFree),
+        param_utils::num_filters(&[0.0; 20], PeqModel::FreePkFree),
         5
     );
 }

@@ -292,24 +292,24 @@ mod tests {
         // 2 filters × 3 params each = 6 total params
         // Pattern: [true, false, false] repeated (freq indexed, Q continuous, gain continuous)
         assert_eq!(constraints.len(), 6);
-        assert_eq!(constraints[0], true); // Frequency (indexed)
-        assert_eq!(constraints[1], false); // Q factor (continuous)
-        assert_eq!(constraints[2], false); // Gain (continuous)
+        assert!(constraints[0]); // Frequency (indexed)
+        assert!(!constraints[1]); // Q factor (continuous)
+        assert!(!constraints[2]); // Gain (continuous)
 
         // Second filter
-        assert_eq!(constraints[3], true); // Frequency (indexed)
-        assert_eq!(constraints[4], false); // Q factor (continuous)
-        assert_eq!(constraints[5], false); // Gain (continuous)
+        assert!(constraints[3]); // Frequency (indexed)
+        assert!(!constraints[4]); // Q factor (continuous)
+        assert!(!constraints[5]); // Gain (continuous)
 
         // Test continuous frequency case
         let constraints_continuous = generate_integrality_constraints(2, false);
         assert_eq!(constraints_continuous.len(), 6);
-        assert_eq!(constraints_continuous[0], false); // Frequency (continuous)
-        assert_eq!(constraints_continuous[1], false); // Q factor (continuous)
-        assert_eq!(constraints_continuous[2], false); // Gain (continuous)
-        assert_eq!(constraints_continuous[3], false); // Frequency (continuous)
-        assert_eq!(constraints_continuous[4], false); // Q factor (continuous)
-        assert_eq!(constraints_continuous[5], false); // Gain (continuous)
+        assert!(!constraints_continuous[0]); // Frequency (continuous)
+        assert!(!constraints_continuous[1]); // Q factor (continuous)
+        assert!(!constraints_continuous[2]); // Gain (continuous)
+        assert!(!constraints_continuous[3]); // Frequency (continuous)
+        assert!(!constraints_continuous[4]); // Q factor (continuous)
+        assert!(!constraints_continuous[5]); // Gain (continuous)
     }
 
     #[test]

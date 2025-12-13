@@ -50,9 +50,9 @@ pub fn generate_fir_correction(
     // We want the filter H such that H * Measurement = Target
     // In dB: H_db = Target_db - Measurement_db
     let correction_spl = &target_curve.spl - &measurement.spl;
-    
+
     // Create correction curve object
-    // Note: We ignore measurement phase here and assume minimum phase correction 
+    // Note: We ignore measurement phase here and assume minimum phase correction
     // or linear phase correction based on magnitude only.
     // If we wanted to correct excess phase, we'd need complex division.
     // For now, magnitude-based FIR generation is standard.

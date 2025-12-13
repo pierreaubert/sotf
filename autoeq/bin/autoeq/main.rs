@@ -33,8 +33,7 @@ mod spacing;
 
 /// A command-line tool to find optimal IIR filters to match a frequency curve.
 #[tokio::main]
-async fn main() -> Result<()>
-{
+async fn main() -> Result<()> {
     // Initialize logger
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
@@ -67,8 +66,7 @@ async fn main() -> Result<()>
     Ok(())
 }
 
-async fn run(args: autoeq::cli::Args) -> Result<()>
-{
+async fn run(args: autoeq::cli::Args) -> Result<()> {
     // Check if this is multi-driver mode
     if args.loss == autoeq::LossType::DriversFlat {
         return run_multi_driver_optimization(&args).await;
@@ -76,7 +74,8 @@ async fn run(args: autoeq::cli::Args) -> Result<()>
 
     // Load and prepare all input data
     let (standard_freq, input_curve, target_curve, deviation_curve, spin_data) =
-        load::load_and_prepare(&args).await
+        load::load_and_prepare(&args)
+            .await
             .map_err(|e| anyhow!("{}", e))
             .context("Failed to load and prepare input data")?;
 
@@ -136,7 +135,7 @@ async fn run(args: autoeq::cli::Args) -> Result<()>
             post_metrics.pre_cea2034.as_ref().map(|m| m.pref_score),
             post_metrics.cea2034_metrics.as_ref().map(|m| m.pref_score),
         ),
-        autoeq::LossType::DriversFlat => {
+        autoeq::LossType::DriversFlat | autoeq::LossType::MultiSubFlat => {
             // Unreachable: DriversFlat mode uses a separate code path
             unreachable!("DriversFlat mode should not reach this point");
         }
@@ -184,7 +183,7 @@ async fn run(args: autoeq::cli::Args) -> Result<()>
         );
         qa::display_qa_analysis(&qa_result);
 
-        return Ok(())
+        return Ok(());
     }
 
     // Normal mode: plot and report
@@ -233,8 +232,7 @@ async fn run(args: autoeq::cli::Args) -> Result<()>
 }
 
 /// Run multi-driver crossover optimization
-async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
-{
+async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()> {
     info!("🎵 Multi-driver crossover optimization mode");
 
     // Collect driver file paths
@@ -245,7 +243,9 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
         .collect();
 
     if driver_paths.len() < 2 {
-        return Err(anyhow!("At least 2 driver files are required for multi-driver optimization"));
+        return Err(anyhow!(
+            "At least 2 driver files are required for multi-driver optimization"
+        ));
     }
 
     // Load driver measurements
@@ -296,8 +296,7 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
     );
     info!(
         "   Gain bounds: [{:.1}, {:.1}] dB",
-        -args.max_db,
-        args.max_db
+        -args.max_db, args.max_db
     );
 
     // Optimize using shared function
@@ -333,25 +332,14 @@ async fn run_multi_driver_optimization(args: &autoeq::cli::Args) -> Result<()>
     }
     info!("Crossover Frequencies:");
     for (i, freq) in xover_freqs.iter().enumerate() {
-        info!(
-            "   Between Driver {} and {}: {:.0} Hz",
-            i + 1,
-            i + 2,
-            freq
-        );
+        info!("   Between Driver {} and {}: {:.0} Hz", i + 1, i + 2, freq);
     }
     info!("Crossover Type: {:?}", drivers_data.crossover_type);
 
     // Display pre and post objective values
     info!("Loss (RMS deviation from flat):");
-    info!(
-        "   Before optimization: {:.6} dB",
-        result.pre_objective
-    );
-    info!(
-        "   After optimization:  {:.6} dB",
-        result.post_objective
-    );
+    info!("   Before optimization: {:.6} dB", result.pre_objective);
+    info!("   After optimization:  {:.6} dB", result.post_objective);
     info!(
         "   Improvement: {:.2}%",
         (result.pre_objective - result.post_objective) / result.pre_objective * 100.0
@@ -446,6 +434,7 @@ mod tests {
         let curve = autoeq::Curve {
             freq: freqs.clone(),
             spl,
+            phase: None,
         };
 
         let target_curve = autoeq::workflow::build_target_curve(&args, &freqs, &curve);

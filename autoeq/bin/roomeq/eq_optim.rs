@@ -8,7 +8,6 @@ use autoeq_iir::Biquad;
 use clap::{Parser, ValueEnum};
 use ndarray::Array1;
 use std::error::Error;
-use std::str::FromStr;
 
 use super::types::{OptimizerConfig, TargetCurveConfig};
 

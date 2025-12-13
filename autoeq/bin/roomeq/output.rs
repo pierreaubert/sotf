@@ -295,7 +295,7 @@ pub fn build_dba_dsp_chain(
     let mut rear_plugins = Vec::new();
     // Always add gain plugin to handle inversion even if gain is 0
     rear_plugins.push(create_gain_plugin_with_invert(gains[1], true));
-    
+
     if delays[1].abs() > 0.001 {
         rear_plugins.push(create_delay_plugin(delays[1]));
     }

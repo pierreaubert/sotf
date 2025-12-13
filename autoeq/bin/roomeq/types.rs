@@ -15,6 +15,7 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+pub use autoeq::MeasurementSource;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -42,14 +43,6 @@ pub struct RoomConfig {
     pub optimizer: OptimizerConfig,
 }
 
-/// Source of measurements (single file or multiple files for averaging)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum MeasurementSource {
-    Single(MeasurementRef),
-    Multiple(Vec<MeasurementRef>),
-}
-
 /// Speaker configuration (can be single measurement or group)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -64,7 +57,7 @@ pub enum SpeakerConfig {
     MultiSub(MultiSubGroup),
 
     /// Double Bass Array (DBA) optimization
-    DBA(DBAConfig),
+    Dba(DBAConfig),
 }
 
 /// Group of measurements for a single speaker (multi-driver)
@@ -102,38 +95,6 @@ pub struct DBAConfig {
 
     /// Measurements for the rear array
     pub rear: Vec<MeasurementSource>,
-}
-
-/// Reference to a measurement file
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum MeasurementRef {
-    /// Path to CSV file (freq, spl, phase columns)
-    Path(PathBuf),
-
-    /// Named measurement with optional metadata
-    Named {
-        path: PathBuf,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        name: Option<String>,
-    },
-}
-
-impl MeasurementRef {
-    pub fn path(&self) -> &PathBuf {
-        match self {
-            MeasurementRef::Path(p) => p,
-            MeasurementRef::Named { path, .. } => path,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn name(&self) -> Option<&str> {
-        match self {
-            MeasurementRef::Path(_) => None,
-            MeasurementRef::Named { name, .. } => name.as_deref(),
-        }
-    }
 }
 
 /// Crossover configuration
@@ -385,7 +346,9 @@ mod tests {
         let mut speakers = HashMap::new();
         speakers.insert(
             "left".to_string(),
-            SpeakerConfig::Single(MeasurementRef::Path(PathBuf::from("left.csv"))),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementRef::Path(
+                PathBuf::from("left.csv"),
+            ))),
         );
 
         let config = RoomConfig {
@@ -405,8 +368,8 @@ mod tests {
         let group = SpeakerGroup {
             name: "2-Way Speaker".to_string(),
             measurements: vec![
-                MeasurementRef::Path(PathBuf::from("woofer.csv")),
-                MeasurementRef::Path(PathBuf::from("tweeter.csv")),
+                MeasurementSource::Single(MeasurementRef::Path(PathBuf::from("woofer.csv"))),
+                MeasurementSource::Single(MeasurementRef::Path(PathBuf::from("tweeter.csv"))),
             ],
             crossover: Some("default_lr24".to_string()),
         };

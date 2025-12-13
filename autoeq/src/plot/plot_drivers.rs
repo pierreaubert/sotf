@@ -26,8 +26,13 @@ pub fn plot_drivers(
     let freq_grid = &drivers_data.freq_grid;
 
     // First, compute the combined response to get a reference normalization
-    let combined_response =
-        compute_drivers_combined_response(drivers_data, gains, crossover_freqs, delays, sample_rate);
+    let combined_response = compute_drivers_combined_response(
+        drivers_data,
+        gains,
+        crossover_freqs,
+        delays,
+        sample_rate,
+    );
     let combined_mean = combined_response.mean().unwrap_or(0.0);
 
     // Plot individual drivers (raw responses)

@@ -28,8 +28,7 @@ fn interpolate_log_space_vals(
             if n_in >= 2 {
                 let slope = (vals_in[n_in - 1] - vals_in[n_in - 2])
                     / (log_freq_in[n_in - 1] - log_freq_in[n_in - 2]);
-                vals_out[i] =
-                    vals_in[n_in - 1] + slope * (target_log_freq - log_freq_in[n_in - 1]);
+                vals_out[i] = vals_in[n_in - 1] + slope * (target_log_freq - log_freq_in[n_in - 1]);
             } else {
                 vals_out[i] = vals_in[n_in - 1];
             }
@@ -59,16 +58,17 @@ fn interpolate_log_space_vals(
 /// * Interpolated SPL values on the target grid
 pub fn interpolate_log_space(freq_out: &Array1<f64>, curve: &Curve) -> Curve {
     let freq_in = &curve.freq;
-    
+
     // Convert to log space for interpolation
     let log_freq_in: Vec<f64> = freq_in.iter().map(|f| f.ln()).collect();
     let log_freq_out: Vec<f64> = freq_out.iter().map(|f| f.ln()).collect();
 
     let spl_out = interpolate_log_space_vals(&log_freq_out, &log_freq_in, &curve.spl);
-    
-    let phase_out = curve.phase.as_ref().map(|p| {
-        interpolate_log_space_vals(&log_freq_out, &log_freq_in, p)
-    });
+
+    let phase_out = curve
+        .phase
+        .as_ref()
+        .map(|p| interpolate_log_space_vals(&log_freq_out, &log_freq_in, p));
 
     Curve {
         freq: freq_out.clone(),

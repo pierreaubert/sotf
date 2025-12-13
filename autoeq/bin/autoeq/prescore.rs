@@ -36,7 +36,7 @@ pub(super) async fn compute_pre_optimization_metrics(
                 cea2034_metrics = Some(metrics);
             }
         }
-        autoeq::LossType::DriversFlat => {
+        autoeq::LossType::DriversFlat | autoeq::LossType::MultiSubFlat => {
             // Unreachable: DriversFlat mode uses a separate code path
             unreachable!("DriversFlat mode should not reach this point");
         }

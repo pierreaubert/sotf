@@ -330,14 +330,10 @@ pub fn drivers_initial_guess(
     let mut x = Vec::new();
 
     // Initial gains: start with 0 dB for all drivers
-    for _ in 0..n_drivers {
-        x.push(0.0);
-    }
+    x.extend(vec![0.0; n_drivers]);
 
     // Initial delays: start with 0 ms
-    for _ in 0..n_drivers {
-        x.push(0.0);
-    }
+    x.extend(vec![0.0; n_drivers]);
 
     // Initial crossover frequencies: use geometric mean of bounds (in log space)
     // Crossovers start at index 2*n_drivers
@@ -748,6 +744,7 @@ fn create_driver_optimization_args(
 /// println!("Gains: {:?}", result.gains);
 /// println!("Crossover freqs: {:?}", result.crossover_freqs);
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn optimize_drivers_crossover(
     drivers_data: crate::loss::DriversLossData,
     min_freq: f64,
@@ -804,8 +801,8 @@ pub fn optimize_drivers_crossover(
     // Extract results from parameter vector
     // Parameter layout: [gains(N), delays(N), xovers(N-1)]
     let gains = x[0..n_drivers].to_vec();
-    let delays = x[n_drivers..2*n_drivers].to_vec();
-    let xover_freqs_log10 = &x[2*n_drivers..];
+    let delays = x[n_drivers..2 * n_drivers].to_vec();
+    let xover_freqs_log10 = &x[2 * n_drivers..];
     let crossover_freqs: Vec<f64> = xover_freqs_log10.iter().map(|x| 10_f64.powf(*x)).collect();
 
     Ok(DriverOptimizationResult {
@@ -867,6 +864,7 @@ pub fn load_driver_measurements_from_files(
 }
 
 /// Optimize multi-subwoofer configuration (gain, delay) to achieve flat summed response
+#[allow(clippy::too_many_arguments)]
 pub fn optimize_multisub(
     drivers_data: crate::loss::DriversLossData,
     min_freq: f64,
@@ -912,16 +910,13 @@ pub fn optimize_multisub(
         &args,
     );
 
-    let converged = match opt_result {
-        Ok(_) => true,
-        Err(_) => false,
-    };
+    let converged = opt_result.is_ok();
 
     let post_objective = crate::optim::compute_base_fitness(&x, &objective_data);
 
     // Extract results: [gains(N), delays(N)]
     let gains = x[0..n_drivers].to_vec();
-    let delays = x[n_drivers..2*n_drivers].to_vec();
+    let delays = x[n_drivers..2 * n_drivers].to_vec();
     let crossover_freqs = vec![];
 
     Ok(DriverOptimizationResult {
@@ -962,10 +957,7 @@ pub fn setup_multisub_objective_data(
     }
 }
 
-pub fn setup_multisub_bounds(
-    args: &crate::cli::Args,
-    n_drivers: usize,
-) -> (Vec<f64>, Vec<f64>) {
+pub fn setup_multisub_bounds(args: &crate::cli::Args, n_drivers: usize) -> (Vec<f64>, Vec<f64>) {
     let n_params = n_drivers * 2; // gains + delays
     let mut lower_bounds = Vec::with_capacity(n_params);
     let mut upper_bounds = Vec::with_capacity(n_params);
@@ -979,7 +971,7 @@ pub fn setup_multisub_bounds(
     // Delays (0 to 20ms)
     for _ in 0..n_drivers {
         lower_bounds.push(0.0);
-        upper_bounds.push(20.0); 
+        upper_bounds.push(20.0);
     }
 
     (lower_bounds, upper_bounds)
@@ -1000,6 +992,7 @@ mod tests {
         Curve {
             freq: Array1::from(freqs),
             spl: Array1::zeros(n),
+            phase: None,
         }
     }
 
@@ -1022,9 +1015,7 @@ mod tests {
         let freqs = Array1::from(vec![100.0, 1000.0, 10000.0]);
         let target_curve = super::build_target_curve(&args, &freqs, &curve);
         let inv_smooth = target_curve.clone();
-        let smoothed_some = Some(target_curve);
-        assert!(smoothed_some.is_some());
-        let s = smoothed_some.unwrap();
+        let s = target_curve;
         assert_eq!(s.spl.len(), inv_smooth.spl.len());
     }
 
@@ -1040,10 +1031,12 @@ mod tests {
         let target = Curve {
             freq: input_curve.freq.clone(),
             spl: Array1::zeros(input_curve.freq.len()),
+            phase: None,
         };
         let deviation = Curve {
             freq: input_curve.freq.clone(),
             spl: Array1::zeros(input_curve.freq.len()),
+            phase: None,
         };
 
         // Build minimal spin data with required keys

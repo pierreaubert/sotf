@@ -368,8 +368,8 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
                 let n_drivers = drivers_data.drivers.len();
                 // Parameter layout: [gains(N), delays(N), xovers(N-1)]
                 let gains = &x[0..n_drivers];
-                let delays = &x[n_drivers..2*n_drivers];
-                let xover_freqs_log10 = &x[2*n_drivers..];
+                let delays = &x[n_drivers..2 * n_drivers];
+                let xover_freqs_log10 = &x[2 * n_drivers..];
 
                 // Convert crossover frequencies from log10 to Hz
                 let xover_freqs: Vec<f64> = xover_freqs_log10
@@ -395,8 +395,8 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
             if let Some(ref drivers_data) = data.drivers_data {
                 let n_drivers = drivers_data.drivers.len();
                 let gains = &x[0..n_drivers];
-                let delays = &x[n_drivers..2*n_drivers];
-                
+                let delays = &x[n_drivers..2 * n_drivers];
+
                 crate::loss::multisub_flat_loss(
                     drivers_data,
                     gains,

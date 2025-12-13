@@ -573,6 +573,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -580,6 +581,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -587,6 +589,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -594,6 +597,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl.clone(),
+                phase: None,
             },
         );
 
@@ -637,6 +641,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -644,6 +649,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -651,6 +657,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -658,6 +665,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
 
@@ -667,6 +675,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -674,6 +683,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
+                phase: None,
             },
         );
 
@@ -713,6 +723,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -720,6 +731,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -727,6 +739,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -734,6 +747,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_primary.clone(),
+                phase: None,
             },
         );
         // DI
@@ -742,6 +756,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
+                phase: None,
             },
         );
         curves.insert(
@@ -749,6 +764,7 @@ mod tests {
             crate::Curve {
                 freq: freq.clone(),
                 spl: spl_di.clone(),
+                phase: None,
             },
         );
 

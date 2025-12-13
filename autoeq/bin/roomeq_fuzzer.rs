@@ -109,7 +109,7 @@ struct SyntheticSpeaker {
 #[derive(Debug, Clone)]
 struct MultiDriverGroupInfo {
     channel_name: String,
-    measurement_paths: Vec<PathBuf>,
+    measurement_sources: Vec<MeasurementSource>,
     crossover_type: String,
 }
 
@@ -124,16 +124,44 @@ struct RoomConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-enum SpeakerConfig {
+enum MeasurementSource {
     Single(String),
+    Multiple(Vec<String>),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum SpeakerConfig {
+    Single(MeasurementSource),
     Group(SpeakerGroup),
+    MultiSub(MultiSubGroup),
+    Dba(DBAConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SpeakerGroup {
     name: String,
-    measurements: Vec<String>,
+    measurements: Vec<MeasurementSource>,
     crossover: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MultiSubGroup {
+    name: String,
+    subwoofers: Vec<MeasurementSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DBAConfig {
+    name: String,
+    front: Vec<MeasurementSource>,
+    rear: Vec<MeasurementSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FirConfig {
+    taps: usize,
+    phase: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +182,19 @@ struct OptimizerConfig {
     min_db: f64,
     max_db: f64,
     loss_type: String,
+    #[serde(default = "default_peq_model")]
+    peq_model: String,
+    #[serde(default = "default_mode")]
+    mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fir: Option<FirConfig>,
+}
+
+fn default_peq_model() -> String {
+    "pk".to_string()
+}
+fn default_mode() -> String {
+    "iir".to_string()
 }
 
 impl Default for OptimizerConfig {
@@ -169,6 +210,9 @@ impl Default for OptimizerConfig {
             min_db: -12.0,
             max_db: 12.0,
             loss_type: "flat".to_string(),
+            peq_model: "pk".to_string(),
+            mode: "iir".to_string(),
+            fir: None,
         }
     }
 }
@@ -245,11 +289,11 @@ fn generate_plots_for_multi_drivers(
                     if let Some(gain_db) = plugin.parameters.get("gain_db") {
                         driver_gain = gain_db.as_f64().unwrap_or(0.0);
                     }
-                } else if plugin.plugin_type == "crossover" {
-                    if let Some(freq) = plugin.parameters.get("frequency") {
-                        // Collect all crossover frequencies (may have duplicates)
-                        all_crossover_freqs.push(freq.as_f64().unwrap_or(1000.0));
-                    }
+                } else if plugin.plugin_type == "crossover"
+                    && let Some(freq) = plugin.parameters.get("frequency")
+                {
+                    // Collect all crossover frequencies (may have duplicates)
+                    all_crossover_freqs.push(freq.as_f64().unwrap_or(1000.0));
                 }
             }
 
@@ -284,12 +328,27 @@ fn generate_plots_for_multi_drivers(
 
         // Load measurements
         let mut driver_measurements = Vec::new();
-        for path in &group.measurement_paths {
-            let curve = autoeq::read::read_curve_from_csv(path)?;
+        for source in &group.measurement_sources {
+            // Convert fuzzer source to lib source
+            let lib_source = match source {
+                MeasurementSource::Single(path) => autoeq::MeasurementSource::Single(
+                    autoeq::MeasurementRef::Path(PathBuf::from(path)),
+                ),
+                MeasurementSource::Multiple(paths) => autoeq::MeasurementSource::Multiple(
+                    paths
+                        .iter()
+                        .map(|p| autoeq::MeasurementRef::Path(PathBuf::from(p)))
+                        .collect(),
+                ),
+            };
+
+            // Load and average
+            let curve = autoeq::load_source(&lib_source)?;
+
             driver_measurements.push(autoeq::loss::DriverMeasurement {
                 freq: curve.freq,
                 spl: curve.spl,
-                phase: None,
+                phase: curve.phase,
             });
         }
 
@@ -408,10 +467,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         args.sample_rate,
                         args.verbose,
                     );
-                    if let Err(e) = plot_result {
-                        if args.verbose {
-                            println!("  Warning: Failed to generate plots: {}", e);
-                        }
+                    if let Err(e) = plot_result
+                        && args.verbose
+                    {
+                        println!("  Warning: Failed to generate plots: {}", e);
                     }
                 }
             }
@@ -460,6 +519,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 /// Generate random room configuration
+#[allow(clippy::type_complexity)]
 fn generate_random_config(
     rng: &mut ChaCha8Rng,
     output_dir: &Path,
@@ -490,12 +550,20 @@ fn generate_random_config(
         }
         .to_string();
 
-        // 30% chance of multi-driver group
-        if rng.random_bool(0.3) {
-            let num_drivers = rng.random_range(2..=4);
-            let mut driver_paths = Vec::new();
-            let mut driver_csv_paths = Vec::new();
+        let config_type = rng.random_range(0..100);
 
+        if config_type < 60 {
+            // Single speaker
+            if verbose {
+                println!("    {}: single speaker", channel_name);
+            }
+            let (source, paths) =
+                generate_random_source(rng, output_dir, test_idx, &channel_name, "driver", 0, 1)?;
+            measurement_files.extend(paths);
+            speakers.insert(channel_name, SpeakerConfig::Single(source));
+        } else if config_type < 80 {
+            // Multi-driver group
+            let num_drivers = rng.random_range(2..=4);
             if verbose {
                 println!(
                     "    {}: multi-driver group ({} drivers)",
@@ -503,21 +571,23 @@ fn generate_random_config(
                 );
             }
 
-            for driver_idx in 0..num_drivers {
-                let speaker_config = generate_random_speaker(rng);
-                let csv_path = output_dir.join(format!(
-                    "test_{}_{}_driver_{}.csv",
-                    test_idx, channel_name, driver_idx
-                ));
-                generate_measurement_csv(&csv_path, &speaker_config, driver_idx, num_drivers)?;
-                driver_paths.push(csv_path.to_string_lossy().to_string());
-                driver_csv_paths.push(csv_path.clone());
-                measurement_files.push(csv_path);
-            }
+            let mut measurements = Vec::new();
+            let mut group_paths = Vec::new();
 
-            // Normalize driver measurements to have similar mean SPLs
-            // This ensures crossover optimizer can balance drivers with ±12 dB gains
-            normalize_driver_measurements(&driver_csv_paths, 85.0)?;
+            for driver_idx in 0..num_drivers {
+                let (source, paths) = generate_random_source(
+                    rng,
+                    output_dir,
+                    test_idx,
+                    &channel_name,
+                    "driver",
+                    driver_idx,
+                    num_drivers,
+                )?;
+                measurement_files.extend(paths.clone());
+                group_paths.extend(paths);
+                measurements.push(source);
+            }
 
             let crossover_name = format!("{}_crossover", channel_name);
             let crossover_type = "LR24".to_string();
@@ -531,33 +601,122 @@ fn generate_random_config(
             speakers.insert(
                 channel_name.clone(),
                 SpeakerConfig::Group(SpeakerGroup {
-                    name: format!("{} Speaker Group", channel_name),
-                    measurements: driver_paths,
+                    name: format!("{} Group", channel_name),
+                    measurements: measurements.clone(),
                     crossover: Some(crossover_name),
                 }),
             );
 
-            // Store multi-driver group info for plotting
             multi_driver_groups.push(MultiDriverGroupInfo {
                 channel_name: channel_name.clone(),
-                measurement_paths: driver_csv_paths,
+                measurement_sources: measurements.clone(),
                 crossover_type,
             });
-        } else {
+        } else if config_type < 90 {
+            // MultiSub
+            let num_subs = rng.random_range(2..=4);
             if verbose {
-                println!("    {}: single speaker", channel_name);
+                println!("    {}: multi-sub ({} subs)", channel_name, num_subs);
             }
 
-            let speaker_config = generate_random_speaker(rng);
-            let csv_path = output_dir.join(format!("test_{}_{}.csv", test_idx, channel_name));
-            generate_measurement_csv(&csv_path, &speaker_config, 0, 1)?;
+            let mut sub_sources = Vec::new();
+            for i in 0..num_subs {
+                let (source, paths) = generate_random_source(
+                    rng,
+                    output_dir,
+                    test_idx,
+                    &channel_name,
+                    "sub",
+                    i,
+                    num_subs,
+                )?;
+                measurement_files.extend(paths);
+                sub_sources.push(source);
+            }
+
             speakers.insert(
                 channel_name,
-                SpeakerConfig::Single(csv_path.to_string_lossy().to_string()),
+                SpeakerConfig::MultiSub(MultiSubGroup {
+                    name: "subs".to_string(),
+                    subwoofers: sub_sources,
+                }),
             );
-            measurement_files.push(csv_path);
+        } else {
+            // DBA
+            if verbose {
+                println!("    {}: DBA", channel_name);
+            }
+            let num_front = rng.random_range(2..=4);
+            let num_rear = rng.random_range(2..=4);
+
+            let mut front_sources = Vec::new();
+            for i in 0..num_front {
+                let (source, paths) = generate_random_source(
+                    rng,
+                    output_dir,
+                    test_idx,
+                    &channel_name,
+                    "front",
+                    i,
+                    num_front,
+                )?;
+                measurement_files.extend(paths);
+                front_sources.push(source);
+            }
+
+            let mut rear_sources = Vec::new();
+            for i in 0..num_rear {
+                let (source, paths) = generate_random_source(
+                    rng,
+                    output_dir,
+                    test_idx,
+                    &channel_name,
+                    "rear",
+                    i,
+                    num_rear,
+                )?;
+                measurement_files.extend(paths);
+                rear_sources.push(source);
+            }
+
+            speakers.insert(
+                channel_name,
+                SpeakerConfig::Dba(DBAConfig {
+                    name: "dba".to_string(),
+                    front: front_sources,
+                    rear: rear_sources,
+                }),
+            );
         }
     }
+
+    // Randomize optimizer config
+    let mode = match rng.random_range(0..3) {
+        0 => "iir",
+        1 => "fir",
+        _ => "mixed",
+    }
+    .to_string();
+
+    let peq_model = match rng.random_range(0..3) {
+        0 => "pk",
+        1 => "ls-pk-hs",
+        _ => "free",
+    }
+    .to_string();
+
+    let fir_config = if mode != "iir" {
+        Some(FirConfig {
+            taps: 1024,
+            phase: if rng.random_bool(0.5) {
+                "linear".to_string()
+            } else {
+                "minimum".to_string()
+            },
+        })
+    } else {
+        None
+    };
 
     let room_config = RoomConfig {
         speakers,
@@ -566,10 +725,59 @@ fn generate_random_config(
         } else {
             Some(crossovers)
         },
-        optimizer: OptimizerConfig::default(),
+        optimizer: OptimizerConfig {
+            peq_model,
+            mode,
+            fir: fir_config,
+            ..OptimizerConfig::default()
+        },
     };
 
     Ok((room_config, measurement_files, multi_driver_groups))
+}
+
+/// Helper to generate random source (single file or multiple files)
+fn generate_random_source(
+    rng: &mut ChaCha8Rng,
+    output_dir: &Path,
+    test_idx: usize,
+    channel: &str,
+    role: &str,
+    idx: usize,
+    count: usize,
+) -> Result<(MeasurementSource, Vec<PathBuf>), Box<dyn Error>> {
+    let mut paths = Vec::new();
+    let is_multiple = rng.random_bool(0.1); // 10% chance of multiple measurements
+    let num_files = if is_multiple {
+        rng.random_range(2..=3)
+    } else {
+        1
+    };
+
+    let mut file_strings = Vec::new();
+
+    for i in 0..num_files {
+        let speaker_config = generate_random_speaker(rng);
+        let filename = if is_multiple {
+            format!(
+                "test_{}_{}_{}_{}_pos{}.csv",
+                test_idx, channel, role, idx, i
+            )
+        } else {
+            format!("test_{}_{}_{}_{}.csv", test_idx, channel, role, idx)
+        };
+        let path = output_dir.join(filename);
+        generate_measurement_csv(&path, &speaker_config, idx, count)?;
+
+        file_strings.push(path.to_string_lossy().to_string());
+        paths.push(path);
+    }
+
+    if is_multiple {
+        Ok((MeasurementSource::Multiple(file_strings), paths))
+    } else {
+        Ok((MeasurementSource::Single(file_strings[0].clone()), paths))
+    }
 }
 
 /// Generate random speaker configuration
@@ -614,7 +822,7 @@ fn generate_measurement_csv(
     let log_min = min_freq.ln();
     let log_max = max_freq.ln();
 
-    let mut csv_content = String::from("freq,spl\n");
+    let mut csv_content = String::from("freq,spl,phase\n");
 
     // Get driver type for multi-driver systems
     let driver_type = if num_drivers > 1 {
@@ -622,6 +830,9 @@ fn generate_measurement_csv(
     } else {
         None
     };
+
+    // Generate delay for phase simulation (0-5 ms)
+    let delay_ms = rng.random_range(0.0..5.0);
 
     for i in 0..num_points {
         let t = i as f64 / (num_points - 1) as f64;
@@ -694,81 +905,15 @@ fn generate_measurement_csv(
         let noise = rng.random_range(-noise_level..noise_level);
         spl += noise;
 
-        csv_content.push_str(&format!("{:.2},{:.2}\n", freq, spl));
+        // Generate phase (delay + noise)
+        let phase_delay = -360.0 * freq * (delay_ms / 1000.0);
+        let phase_noise = rng.random_range(-10.0..10.0);
+        let phase = (phase_delay + phase_noise) % 360.0;
+
+        csv_content.push_str(&format!("{:.2},{:.2},{:.2}\n", freq, spl, phase));
     }
 
     fs::write(path, csv_content)?;
-    Ok(())
-}
-
-/// Normalize driver measurements so each driver's passband mean is at 0 dB
-/// This ensures all drivers are aligned to a common reference (0 dB) regardless
-/// of their frequency range, making the optimizer's job easier and the results
-/// more interpretable.
-fn normalize_driver_measurements(
-    measurement_paths: &[PathBuf],
-    _target_peak_spl: f64, // kept for API compatibility, not used
-) -> Result<(), Box<dyn Error>> {
-    let num_drivers = measurement_paths.len();
-
-    for (driver_idx, path) in measurement_paths.iter().enumerate() {
-        // Determine passband for this driver
-        let driver_type = DriverType::for_index(driver_idx, num_drivers);
-        let (passband_low, passband_high) = driver_type.freq_range();
-
-        // Read the CSV file
-        let content = fs::read_to_string(path)?;
-        let lines: Vec<&str> = content.lines().collect();
-
-        if lines.len() < 2 {
-            continue; // Skip empty or header-only files
-        }
-
-        // Calculate mean SPL in the driver's passband
-        let mut sum = 0.0;
-        let mut count = 0;
-        for line in &lines[1..] {
-            // Skip header
-            if let Some((freq_str, spl_str)) = line.split_once(',') {
-                if let (Ok(freq), Ok(spl)) = (
-                    freq_str.trim().parse::<f64>(),
-                    spl_str.trim().parse::<f64>(),
-                ) {
-                    // Only consider frequencies in the driver's passband
-                    if freq >= passband_low && freq <= passband_high {
-                        sum += spl;
-                        count += 1;
-                    }
-                }
-            }
-        }
-
-        if count == 0 {
-            continue; // No points in passband
-        }
-
-        let passband_mean = sum / count as f64;
-        // Normalize to 0 dB: subtract the passband mean so passband centers at 0
-        let offset = -passband_mean;
-
-        // Apply offset to all SPL values
-        let header = lines[0];
-        let mut new_content = format!("{}\n", header);
-
-        for line in &lines[1..] {
-            if let Some((freq_str, spl_str)) = line.split_once(',') {
-                if let Ok(spl) = spl_str.trim().parse::<f64>() {
-                    let new_spl = spl + offset;
-                    new_content.push_str(&format!("{},{:.2}\n", freq_str.trim(), new_spl));
-                } else {
-                    new_content.push_str(&format!("{}\n", line));
-                }
-            }
-        }
-
-        fs::write(path, new_content)?;
-    }
-
     Ok(())
 }
 

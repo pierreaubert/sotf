@@ -406,10 +406,10 @@ fn biquad_complex_response(biquad: &crate::iir::Biquad, f: f64) -> Complex64 {
     // z^-1 = e^(-j*omega) = cos(-omega) + j*sin(-omega)
     let z_inv = Complex64::from_polar(1.0, -omega);
     let z_inv2 = z_inv * z_inv;
-    
+
     let num = b0 + b1 * z_inv + b2 * z_inv2;
     let den = 1.0 + a1 * z_inv + a2 * z_inv2;
-    
+
     num / den
 }
 
@@ -432,8 +432,8 @@ pub fn compute_drivers_combined_response(
     sample_rate: f64,
 ) -> Array1<f64> {
     use crate::iir::{
-        peq_butterworth_highpass, peq_butterworth_lowpass,
-        peq_linkwitzriley_highpass, peq_linkwitzriley_lowpass,
+        peq_butterworth_highpass, peq_butterworth_lowpass, peq_linkwitzriley_highpass,
+        peq_linkwitzriley_lowpass,
     };
 
     let n_drivers = data.drivers.len();
@@ -455,7 +455,11 @@ pub fn compute_drivers_combined_response(
         } else {
             (
                 if i == 0 { 20.0 } else { crossover_freqs[i - 1] },
-                if i == n_drivers - 1 { 20000.0 } else { crossover_freqs[i] }
+                if i == n_drivers - 1 {
+                    20000.0
+                } else {
+                    crossover_freqs[i]
+                },
             )
         };
 
@@ -489,9 +493,15 @@ pub fn compute_drivers_combined_response(
             if i > 0 {
                 let xover_freq = crossover_freqs[i - 1];
                 let hp_peq = match data.crossover_type {
-                    CrossoverType::Butterworth2 => peq_butterworth_highpass(2, xover_freq, sample_rate),
-                    CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_highpass(2, xover_freq, sample_rate),
-                    CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_highpass(4, xover_freq, sample_rate),
+                    CrossoverType::Butterworth2 => {
+                        peq_butterworth_highpass(2, xover_freq, sample_rate)
+                    }
+                    CrossoverType::LinkwitzRiley2 => {
+                        peq_linkwitzriley_highpass(2, xover_freq, sample_rate)
+                    }
+                    CrossoverType::LinkwitzRiley4 => {
+                        peq_linkwitzriley_highpass(4, xover_freq, sample_rate)
+                    }
                     CrossoverType::None => vec![],
                 };
                 filters.extend(hp_peq);
@@ -499,9 +509,15 @@ pub fn compute_drivers_combined_response(
             if i < n_drivers - 1 {
                 let xover_freq = crossover_freqs[i];
                 let lp_peq = match data.crossover_type {
-                    CrossoverType::Butterworth2 => peq_butterworth_lowpass(2, xover_freq, sample_rate),
-                    CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_lowpass(2, xover_freq, sample_rate),
-                    CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_lowpass(4, xover_freq, sample_rate),
+                    CrossoverType::Butterworth2 => {
+                        peq_butterworth_lowpass(2, xover_freq, sample_rate)
+                    }
+                    CrossoverType::LinkwitzRiley2 => {
+                        peq_linkwitzriley_lowpass(2, xover_freq, sample_rate)
+                    }
+                    CrossoverType::LinkwitzRiley4 => {
+                        peq_linkwitzriley_lowpass(4, xover_freq, sample_rate)
+                    }
                     CrossoverType::None => vec![],
                 };
                 filters.extend(lp_peq);
@@ -512,7 +528,7 @@ pub fn compute_drivers_combined_response(
         for j in 0..data.freq_grid.len() {
             let f = data.freq_grid[j];
             let spl = curve.spl[j];
-            
+
             let z_driver = if let Some(phase) = &curve.phase {
                 let phi = phase[j].to_radians();
                 let m = 10.0_f64.powf(spl / 20.0);
@@ -601,7 +617,7 @@ pub fn multisub_flat_loss(
     max_freq: f64,
 ) -> f64 {
     // Pass empty crossover freqs (ignored because CrossoverType::None)
-    let crossover_freqs = vec![]; 
+    let crossover_freqs = vec![];
     let combined_response =
         compute_drivers_combined_response(data, gains, &crossover_freqs, Some(delays), sample_rate);
 
@@ -812,6 +828,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: on.clone(),
+                phase: None,
             },
         );
         spin.insert(
@@ -819,6 +836,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: lw.clone(),
+                phase: None,
             },
         );
         spin.insert(
@@ -826,6 +844,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: sp.clone(),
+                phase: None,
             },
         );
         spin.insert(
@@ -833,6 +852,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: pir.clone(),
+                phase: None,
             },
         );
 
@@ -956,6 +976,7 @@ mod tests {
         let curve = Curve {
             freq: freq.clone(),
             spl: deviation,
+            phase: None,
         };
         let score = headphone_loss(&curve);
 
@@ -979,6 +1000,7 @@ mod tests {
         let curve = Curve {
             freq: freq.clone(),
             spl: deviation,
+            phase: None,
         };
         let score = headphone_loss(&curve);
 
@@ -1007,6 +1029,7 @@ mod tests {
         let curve = Curve {
             freq: freq.clone(),
             spl: deviation,
+            phase: None,
         };
         let score = headphone_loss(&curve);
 
@@ -1031,10 +1054,12 @@ mod tests {
         let response_curve = Curve {
             freq: freq.clone(),
             spl: response,
+            phase: None,
         };
         let target_curve = Curve {
             freq: freq.clone(),
             spl: target,
+            phase: None,
         };
         let data = HeadphoneLossData::new(false, 2);
         let score = headphone_loss_with_target(&data, &response_curve, &target_curve);
@@ -1068,6 +1093,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: on,
+                phase: None,
             },
         );
         spin.insert(
@@ -1075,6 +1101,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: lw,
+                phase: None,
             },
         );
         spin.insert(
@@ -1082,6 +1109,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: sp,
+                phase: None,
             },
         );
         spin.insert(
@@ -1089,6 +1117,7 @@ mod tests {
             Curve {
                 freq: freq.clone(),
                 spl: pir,
+                phase: None,
             },
         );
 
@@ -1234,6 +1263,7 @@ mod tests {
         let curve = Curve {
             freq: freq.clone(),
             spl: zero_deviation,
+            phase: None,
         };
         let score = headphone_loss(&curve);
 
@@ -1260,10 +1290,12 @@ mod tests {
         let curve_pos = Curve {
             freq: freq.clone(),
             spl: deviation_positive,
+            phase: None,
         };
         let curve_neg = Curve {
             freq: freq.clone(),
             spl: deviation_negative,
+            phase: None,
         };
 
         let score_pos = headphone_loss(&curve_pos);
@@ -1288,10 +1320,12 @@ mod tests {
         let perfect_curve = Curve {
             freq: freq.clone(),
             spl: zero_deviation,
+            phase: None,
         };
         let imperfect_curve = Curve {
             freq: freq.clone(),
             spl: nonzero_deviation,
+            phase: None,
         };
 
         let perfect_score = headphone_loss(&perfect_curve);

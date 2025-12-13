@@ -129,7 +129,7 @@ fn test_mh_callback_receives_progress_data() {
 
             // Verify data looks reasonable
             assert!(intermediate.iter > 0, "Iteration should be positive");
-            assert!(intermediate.x.len() > 0, "Parameters should not be empty");
+            assert!(!intermediate.x.is_empty(), "Parameters should not be empty");
             assert!(intermediate.fun.is_finite(), "Fitness should be finite");
         }
         CallbackAction::Continue

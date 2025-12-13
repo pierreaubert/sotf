@@ -1,9 +1,7 @@
 //! Crossover optimization for multi-driver groups
 
 use autoeq::Curve;
-use autoeq::cli::{Args, PeqModel};
 use autoeq::loss::{CrossoverType, DriverMeasurement, DriversLossData};
-use autoeq::workflow::setup_drivers_objective_data;
 use std::error::Error;
 
 /// Parse crossover type from string
@@ -39,6 +37,7 @@ pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
 ///
 /// # Returns
 /// * Tuple of (optimal_gains, optimal_delays, optimal_crossover_freqs, combined_curve)
+#[allow(clippy::type_complexity)]
 pub fn optimize_crossover(
     drivers: Vec<Curve>,
     crossover_type: CrossoverType,
@@ -95,22 +94,30 @@ pub fn optimize_crossover(
 
     eprintln!(
         "  Crossover optimization: gains={:?}, delays={:?} ms, freqs={:?}, final loss={:.6}",
-        result.gains
+        result
+            .gains
             .iter()
             .map(|g| format!("{:+.2}", g))
             .collect::<Vec<_>>(),
-        result.delays
+        result
+            .delays
             .iter()
             .map(|d| format!("{:.2}", d))
             .collect::<Vec<_>>(),
-        result.crossover_freqs
+        result
+            .crossover_freqs
             .iter()
             .map(|f| format!("{:.0}", f))
             .collect::<Vec<_>>(),
         result.post_objective
     );
 
-    Ok((result.gains, result.delays, result.crossover_freqs, combined_curve))
+    Ok((
+        result.gains,
+        result.delays,
+        result.crossover_freqs,
+        combined_curve,
+    ))
 }
 
 #[cfg(test)]

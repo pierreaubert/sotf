@@ -49,16 +49,14 @@ pub fn optimize_filters_nlopt(
 
     // Prepare crossover monotonicity constraint for multi-driver optimization
     let crossover_monotonicity_data = if objective_data.loss_type == LossType::DriversFlat {
-        if let Some(ref drivers_data) = objective_data.drivers_data {
-            Some(CrossoverMonotonicityConstraintData {
+        objective_data.drivers_data.as_ref().map(|drivers_data| {
+            CrossoverMonotonicityConstraintData {
                 n_drivers: drivers_data.drivers.len(),
                 // Require at least 0.15 in log10 space (about 40% frequency separation)
                 // This ensures crossover frequencies don't converge to the same value
                 min_log_separation: 0.15,
-            })
-        } else {
-            None
-        }
+            }
+        })
     } else {
         None
     };

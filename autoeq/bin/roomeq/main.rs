@@ -26,8 +26,8 @@ mod crossover_optim;
 mod dba_optim;
 mod eq_optim;
 mod fir_optim;
+use autoeq::read as load;
 mod multisub_optim;
-mod load;
 mod output;
 mod types;
 
@@ -59,7 +59,7 @@ fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let args = Args::parse();
-    
+
     if args.verbose {
         warn!("The --verbose flag is deprecated. Use RUST_LOG=debug instead.");
     }
@@ -73,7 +73,7 @@ fn run(args: Args) -> Result<()> {
 
     let config_json = std::fs::read_to_string(&args.config)
         .with_context(|| format!("Failed to read config file: {:?}", args.config))?;
-    
+
     let room_config: RoomConfig = serde_json::from_str(&config_json)
         .with_context(|| "Failed to parse room configuration JSON")?;
 
@@ -114,7 +114,10 @@ fn run(args: Args) -> Result<()> {
         0.0
     };
 
-    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre_score, avg_post_score);
+    info!(
+        "Average pre-score: {:.4}, post-score: {:.4}",
+        avg_pre_score, avg_post_score
+    );
 
     // Create DSP chain output
     let dsp_output = output::create_dsp_chain_output(
@@ -163,7 +166,7 @@ fn process_speaker(
             // Multi-subwoofer optimization
             process_multisub_group(channel_name, group, room_config, sample_rate, output_dir)
         }
-        SpeakerConfig::DBA(config) => {
+        SpeakerConfig::Dba(config) => {
             // DBA optimization
             process_dba(channel_name, config, room_config, sample_rate, output_dir)
         }
@@ -217,14 +220,15 @@ fn process_single_speaker(
                 &room_config.optimizer,
                 room_config.target_curve.as_ref(),
                 sample_rate,
-            ).map_err(|e| anyhow!("FIR generation failed: {}", e))?;
+            )
+            .map_err(|e| anyhow!("FIR generation failed: {}", e))?;
 
             // Save WAV
             let filename = format!("{}_fir.wav", channel_name);
             let wav_path = output_dir.join(&filename);
             autoeq::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
                 .map_err(|e| anyhow!("Failed to save FIR WAV: {}", e))?;
-            
+
             info!("  Saved FIR filter to {}", wav_path.display());
 
             // Build chain
@@ -234,22 +238,30 @@ fn process_single_speaker(
                 plugins: vec![plugin],
                 drivers: None,
             };
-            
-            Ok((chain, pre_score, 0.0)) 
-        },
+
+            Ok((chain, pre_score, 0.0))
+        }
         "mixed" => {
             // Mixed mode
             // 1. Optimize IIR
-            let (mut eq_filters, post_iir_score) =
-                eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
-                .map_err(|e| anyhow!("{}", e))
-                .with_context(|| format!("IIR optimization failed for channel {}", channel_name))?;
+            let (eq_filters, post_iir_score) = eq_optim::optimize_channel_eq(
+                &curve,
+                &room_config.optimizer,
+                room_config.target_curve.as_ref(),
+                sample_rate,
+            )
+            .map_err(|e| anyhow!("{}", e))
+            .with_context(|| format!("IIR optimization failed for channel {}", channel_name))?;
 
-            info!("  IIR stage: {} filters, score={:.6}", eq_filters.len(), post_iir_score);
+            info!(
+                "  IIR stage: {} filters, score={:.6}",
+                eq_filters.len(),
+                post_iir_score
+            );
 
             // 2. Compute IIR response
             use autoeq_iir::Biquad;
-            // Need a way to compute PEQ response in dB. 
+            // Need a way to compute PEQ response in dB.
             let peq: Vec<(f64, Biquad)> = eq_filters.iter().map(|b| (1.0, b.clone())).collect();
             let iir_response = autoeq_iir::compute_peq_response(&curve.freq, &peq, sample_rate);
 
@@ -268,29 +280,35 @@ fn process_single_speaker(
                 &room_config.optimizer,
                 room_config.target_curve.as_ref(),
                 sample_rate,
-            ).map_err(|e| anyhow!("FIR generation failed: {}", e))?;
+            )
+            .map_err(|e| anyhow!("FIR generation failed: {}", e))?;
 
             // 5. Save WAV
             let filename = format!("{}_residual_fir.wav", channel_name);
             let wav_path = output_dir.join(&filename);
             autoeq::fir::save_fir_to_wav(&coeffs, sample_rate as u32, &wav_path)
                 .map_err(|e| anyhow!("Failed to save FIR WAV: {}", e))?;
-            
+
             info!("  Saved FIR filter to {}", wav_path.display());
 
             // 6. Build chain (IIR + Convolution)
             let conv_plugin = output::create_convolution_plugin(&filename);
-            let mut chain = output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
+            let mut chain =
+                output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
             chain.plugins.push(conv_plugin);
 
             Ok((chain, pre_score, 0.0))
-        },
+        }
         _ => {
             // Default IIR mode (existing logic)
-            let (eq_filters, post_score) =
-                eq_optim::optimize_channel_eq(&curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
-                .map_err(|e| anyhow!("{}", e))
-                .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
+            let (eq_filters, post_score) = eq_optim::optimize_channel_eq(
+                &curve,
+                &room_config.optimizer,
+                room_config.target_curve.as_ref(),
+                sample_rate,
+            )
+            .map_err(|e| anyhow!("{}", e))
+            .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
 
             info!("  Optimized {} EQ filters", eq_filters.len());
             info!(
@@ -299,7 +317,8 @@ fn process_single_speaker(
             );
 
             // Build DSP chain (no gain, no crossover for simple speaker)
-            let chain = output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
+            let chain =
+                output::build_channel_dsp_chain(channel_name, None, Vec::new(), &eq_filters);
 
             Ok((chain, pre_score, post_score))
         }
@@ -321,7 +340,12 @@ fn process_speaker_group(
     for (i, source) in group.measurements.iter().enumerate() {
         let curve = load::load_source(source)
             .map_err(|e| anyhow!("{}", e))
-            .with_context(|| format!("Failed to load driver {} measurement for channel {}", i, channel_name))?;
+            .with_context(|| {
+                format!(
+                    "Failed to load driver {} measurement for channel {}",
+                    i, channel_name
+                )
+            })?;
         driver_curves.push(curve);
     }
 
@@ -338,10 +362,9 @@ fn process_speaker_group(
     for driver in &driver_curves {
         let mut peak_spl = f64::NEG_INFINITY;
         for j in 0..driver.freq.len() {
-            if driver.freq[j] >= min_freq && driver.freq[j] <= max_freq {
-                if driver.spl[j] > peak_spl {
-                    peak_spl = driver.spl[j];
-                }
+            if driver.freq[j] >= min_freq && driver.freq[j] <= max_freq && driver.spl[j] > peak_spl
+            {
+                peak_spl = driver.spl[j];
             }
         }
         peaks.push(peak_spl);
@@ -447,10 +470,14 @@ fn process_speaker_group(
     );
 
     // Optimize EQ on the combined response (returns filters and post_score)
-    let (eq_filters, post_score) =
-        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
-        .map_err(|e| anyhow!("{}", e))
-        .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
+    let (eq_filters, post_score) = eq_optim::optimize_channel_eq(
+        &combined_curve,
+        &room_config.optimizer,
+        room_config.target_curve.as_ref(),
+        sample_rate,
+    )
+    .map_err(|e| anyhow!("{}", e))
+    .with_context(|| format!("EQ optimization failed for channel {}", channel_name))?;
 
     info!("  Optimized {} EQ filters", eq_filters.len());
     info!(
@@ -479,11 +506,9 @@ fn process_multisub_group(
     _output_dir: &std::path::Path,
 ) -> Result<(ChannelDspChain, f64, f64)> {
     // 1. Optimize multisub integration (gain + delay)
-    let (result, combined_curve) = multisub_optim::optimize_multisub(
-        &group.subwoofers,
-        &room_config.optimizer,
-        sample_rate,
-    ).map_err(|e| anyhow!("Multi-sub optimization failed: {}", e))?;
+    let (result, combined_curve) =
+        multisub_optim::optimize_multisub(&group.subwoofers, &room_config.optimizer, sample_rate)
+            .map_err(|e| anyhow!("Multi-sub optimization failed: {}", e))?;
 
     info!(
         "  Multi-sub optimization: gains={:?}, delays={:?} ms",
@@ -491,11 +516,19 @@ fn process_multisub_group(
     );
 
     // 2. Global EQ on the combined sum
-    let (eq_filters, post_score) =
-        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
-        .map_err(|e| anyhow!("EQ optimization failed for multi-sub sum: {}", e))?;
+    let (eq_filters, post_score) = eq_optim::optimize_channel_eq(
+        &combined_curve,
+        &room_config.optimizer,
+        room_config.target_curve.as_ref(),
+        sample_rate,
+    )
+    .map_err(|e| anyhow!("EQ optimization failed for multi-sub sum: {}", e))?;
 
-    info!("  Global EQ: {} filters, score={:.6}", eq_filters.len(), post_score);
+    info!(
+        "  Global EQ: {} filters, score={:.6}",
+        eq_filters.len(),
+        post_score
+    );
 
     let chain = output::build_multisub_dsp_chain(
         channel_name,
@@ -517,11 +550,9 @@ fn process_dba(
     _output_dir: &std::path::Path,
 ) -> Result<(ChannelDspChain, f64, f64)> {
     // 1. Optimize DBA
-    let (result, combined_curve) = dba_optim::optimize_dba(
-        dba_config,
-        &room_config.optimizer,
-        sample_rate,
-    ).map_err(|e| anyhow!("DBA optimization failed: {}", e))?;
+    let (result, combined_curve) =
+        dba_optim::optimize_dba(dba_config, &room_config.optimizer, sample_rate)
+            .map_err(|e| anyhow!("DBA optimization failed: {}", e))?;
 
     info!(
         "  DBA Optimization: Front Gain={:.2}dB, Rear Gain={:.2}dB, Rear Delay={:.2}ms",
@@ -529,19 +560,23 @@ fn process_dba(
     );
 
     // 2. Global EQ
-    let (eq_filters, post_score) =
-        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
-        .map_err(|e| anyhow!("EQ optimization failed for DBA sum: {}", e))?;
+    let (eq_filters, post_score) = eq_optim::optimize_channel_eq(
+        &combined_curve,
+        &room_config.optimizer,
+        room_config.target_curve.as_ref(),
+        sample_rate,
+    )
+    .map_err(|e| anyhow!("EQ optimization failed for DBA sum: {}", e))?;
 
-    info!("  Global EQ: {} filters, score={:.6}", eq_filters.len(), post_score);
+    info!(
+        "  Global EQ: {} filters, score={:.6}",
+        eq_filters.len(),
+        post_score
+    );
 
     // 3. Build Chain
-    let chain = output::build_dba_dsp_chain(
-        channel_name,
-        &result.gains,
-        &result.delays,
-        &eq_filters,
-    );
+    let chain =
+        output::build_dba_dsp_chain(channel_name, &result.gains, &result.delays, &eq_filters);
 
     Ok((chain, result.pre_objective, post_score))
 }

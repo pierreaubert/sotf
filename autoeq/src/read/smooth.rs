@@ -120,6 +120,7 @@ mod tests {
         let curve = Curve {
             freq: freqs,
             spl: vals.clone(),
+            phase: None,
         };
         let out = smooth_one_over_n_octave(&curve, 24);
         // Expect no drastic change

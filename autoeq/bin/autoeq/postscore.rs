@@ -12,6 +12,7 @@ pub(super) struct PostOptMetrics {
 }
 
 /// Compute post-optimization metrics and compare with pre-optimization
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn compute_post_optimization_metrics(
     args: &autoeq::cli::Args,
     objective_data: &autoeq::optim::ObjectiveData,
@@ -63,7 +64,7 @@ pub(super) async fn compute_post_optimization_metrics(
                 cea2034_metrics = Some(metrics);
             }
         }
-        autoeq::LossType::DriversFlat => {
+        autoeq::LossType::DriversFlat | autoeq::LossType::MultiSubFlat => {
             // Unreachable: DriversFlat mode uses a separate code path
             unreachable!("DriversFlat mode should not reach this point");
         }
@@ -112,7 +113,7 @@ pub(super) fn print_optimization_scores(args: &autoeq::cli::Args, post: &PostOpt
                 );
             }
         }
-        autoeq::LossType::DriversFlat => {
+        autoeq::LossType::DriversFlat | autoeq::LossType::MultiSubFlat => {
             // Unreachable: DriversFlat mode uses a separate code path
             unreachable!("DriversFlat mode should not reach this point");
         }

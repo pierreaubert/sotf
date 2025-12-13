@@ -36,6 +36,8 @@ pub use autoeq_cea2034::{Curve, DirectivityCurve, DirectivityData};
 pub mod cli;
 /// Constraint functions for optimization
 pub mod constraints;
+/// FIR filter design and optimization
+pub mod fir;
 /// Sobol initialisation
 pub mod init_sobol;
 /// Smart initial guess generation
@@ -61,8 +63,6 @@ pub mod read;
 pub mod signal;
 /// Shared workflow steps used by binaries
 pub mod workflow;
-/// FIR filter design and optimization
-pub mod fir;
 /// Mapping
 pub mod x2peq;
 
