@@ -154,15 +154,16 @@ impl PhysicsParams {
     /// Automatically selects the optimal β scale based on ka (dimensionless frequency).
     /// Empirically determined from testing against Mie analytical solutions:
     ///
-    /// | ka range | Optimal β scale | Typical error |
-    /// |----------|-----------------|---------------|
-    /// | < 0.85   | 32.0            | 0.4-27%       |
-    /// | 0.85-0.92| 8.0             | 0.2-7%        |
-    /// | 0.92-1.2 | 4.0             | 1.8-4%        |
-    /// | 1.2-1.8  | 8.0             | 3-10%         |
-    /// | > 1.8    | 16.0            | 3-10%         |
+    /// | ka range | Optimal β scale | formulation |
+    /// |----------|-----------------|-------------|
+    /// | < 0.5    | 1.0             | Fixed (+K)  |
+    /// | 0.5-0.92 | 4.0             | Orig (-K)   |
+    /// | 0.92-1.2 | 4.0             | Orig (-K)   |
+    /// | 1.2-1.8  | 8.0             | Orig (-K)   |
+    /// | > 1.8    | 16.0            | Orig (-K)   |
     ///
-    /// This provides up to **20x better accuracy** than fixed β=4 across the audio range.
+    /// This provides stability at low frequencies (where +K formulation is used)
+    /// and accuracy at resonances (where -K formulation is used).
     ///
     /// # Arguments
     /// * `radius` - Characteristic size of the scatterer (e.g., sphere radius)
@@ -179,12 +180,10 @@ impl PhysicsParams {
 
         // Select optimal scale based on ka
         // These values were empirically determined from Mie solution comparisons
-        let scale = if ka < 0.85 {
-            32.0 // Low frequencies need very high β
-        } else if ka < 0.92 {
-            8.0 // Transition region around ka=0.9
+        let scale = if ka < 0.5 {
+            1.0 // Low frequencies with Fixed Formulation (+K) are stable, standard beta works best
         } else if ka < 1.2 {
-            4.0 // Sweet spot around ka=1
+            4.0 // Transition region / Sweet spot around ka=1
         } else if ka < 1.8 {
             8.0 // Intermediate range
         } else {

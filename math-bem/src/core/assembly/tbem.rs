@@ -105,6 +105,21 @@ pub fn build_tbem_system_with_beta(
     let gamma = Complex64::new(physics.gamma(), 0.0);
     let tau = Complex64::new(physics.tau, 0.0);
 
+    // Calculate approximate ka based on mesh bounding box
+    let mut avg_radius = 0.0;
+    let n_calc = elements.len().min(100);
+    for element in elements.iter().take(n_calc) {
+        let r = element.center.dot(&element.center).sqrt();
+        avg_radius += r;
+    }
+    if n_calc > 0 { avg_radius /= n_calc as f64; }
+    let ka = physics.wave_number * avg_radius;
+    
+    // Switch between formulations based on frequency
+    // Low freq (ka < 0.5): Use Modified formulation (+K) for stability
+    // High freq (ka >= 0.5): Use Standard formulation (-K) for accuracy
+    let dg_dn_sign = if ka < 0.5 { 1.0 } else { -1.0 };
+
     // Loop over source elements
     for (iel, source_elem) in elements.iter().enumerate() {
         // Skip evaluation elements (property == 2)
@@ -147,7 +162,7 @@ pub fn build_tbem_system_with_beta(
             let compute_rhs = has_nonzero_bc(&field_bc_values);
 
             // Compute integrals
-            let result = if jel == iel {
+            let mut result = if jel == iel {
                 // Singular integration (self-element)
                 singular_integration(
                     source_point,
@@ -181,6 +196,9 @@ pub fn build_tbem_system_with_beta(
                     compute_rhs,
                 )
             };
+
+            // Apply sign switch for stability/accuracy trade-off
+            result.dg_dn_integral *= dg_dn_sign;
 
             // Assemble contributions to matrix and RHS
             assemble_tbem(
@@ -341,6 +359,21 @@ pub fn build_tbem_system_parallel(
     let tau = Complex64::new(physics.tau, 0.0);
     let beta = physics.burton_miller_beta();
 
+    // Heuristic for formulation switch
+    // Calculate approximate ka based on mesh bounding box
+    let mut avg_radius = 0.0;
+    // We can't access elements[i] easily before loop? Yes we can.
+    let n_calc = elements.len().min(100); 
+    for i in 0..n_calc {
+        let r = elements[i].center.dot(&elements[i].center).sqrt();
+        avg_radius += r;
+    }
+    if n_calc > 0 { avg_radius /= n_calc as f64; }
+    let ka = physics.wave_number * avg_radius;
+    
+    // Switch between formulations based on frequency
+    let dg_dn_sign = if ka < 0.5 { 1.0 } else { -1.0 };
+
     // Process source elements in parallel
     elements
         .par_iter()
@@ -385,7 +418,7 @@ pub fn build_tbem_system_parallel(
                     get_bc_type_and_value(&field_elem.boundary_condition);
                 let compute_rhs = has_nonzero_bc(&field_bc_values);
 
-                let result = if jel == iel {
+                let mut result = if jel == iel {
                     singular_integration(
                         source_point,
                         source_normal,
@@ -417,6 +450,9 @@ pub fn build_tbem_system_parallel(
                         compute_rhs,
                     )
                 };
+
+                // Apply sign switch
+                result.dg_dn_integral *= dg_dn_sign;
 
                 let coeff = match field_bc_type {
                     // Velocity BC: K' + βH for direct formulation

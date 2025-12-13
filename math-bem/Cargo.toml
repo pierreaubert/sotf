@@ -18,6 +18,11 @@ name = "roomsim"
 path = "bin/room_simulator_bem.rs"
 required-features = ["cli", "native", "parallel", "memory-optimized", "out-of-core"]
 
+[[bin]]
+name = "qa-suite"
+path = "bin/qa_suite.rs"
+required-features = ["native", "cli", "parallel"]
+
 [dependencies]
 # Common types shared with FEM
 math-xem-common = { path = "../math-xem-common", version = "0.1" }

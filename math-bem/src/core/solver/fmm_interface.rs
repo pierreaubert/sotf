@@ -239,6 +239,10 @@ pub struct SparseNearfieldIlu {
 }
 
 impl SparseNearfieldIlu {
+    /// Creates a new `SparseNearfieldIlu` preconditioner from an SLFMM system.
+    ///
+    /// This uses a placeholder diagonal approximation based on the diagonal elements
+    /// of the near-field blocks.
     #[cfg(any(feature = "native", feature = "wasm"))]
     pub fn from_slfmm(
         near_blocks: &[super::super::assembly::slfmm::NearFieldBlock],
@@ -286,15 +290,19 @@ impl Preconditioner<Complex64> for SparseNearfieldIlu {
 #[derive(Debug, Clone)]
 pub struct HierarchicalFmmPreconditioner {
     /// LU factors for each cluster's diagonal block
+    #[allow(dead_code)]
     block_lu: Vec<Array2<Complex64>>,
     /// Global DOF indices for each cluster
+    #[allow(dead_code)]
     cluster_dof_indices: Vec<Vec<usize>>,
     /// Total number of DOFs
+    #[allow(dead_code)]
     num_dofs: usize,
 }
 
 #[cfg(any(feature = "native", feature = "wasm"))]
 impl HierarchicalFmmPreconditioner {
+    /// Creates a new `HierarchicalFmmPreconditioner` from an `SlfmmSystem`.
     pub fn from_slfmm(system: &SlfmmSystem) -> Self {
          Self::from_slfmm_blocks(
             &system.near_matrix,
@@ -303,8 +311,11 @@ impl HierarchicalFmmPreconditioner {
         )
     }
 
+    /// Creates a new `HierarchicalFmmPreconditioner` from near-field blocks and cluster DOF indices.
+    ///
+    /// This is a placeholder implementation that currently only initializes identity blocks.
     pub fn from_slfmm_blocks(
-        near_blocks: &[super::super::assembly::slfmm::NearFieldBlock],
+        _near_blocks: &[super::super::assembly::slfmm::NearFieldBlock],
         cluster_dof_indices: &[Vec<usize>],
         num_dofs: usize,
     ) -> Self {
@@ -337,6 +348,7 @@ impl Preconditioner<Complex64> for HierarchicalFmmPreconditioner {
 // Solver Wrappers
 // ============================================================================
 
+/// Solves a linear system using the Conjugate Gradient Squared (CGS) method.
 pub fn solve_cgs<O: LinearOperator<Complex64>>(
     operator: &O,
     b: &Array1<Complex64>,
@@ -345,6 +357,7 @@ pub fn solve_cgs<O: LinearOperator<Complex64>>(
     cgs(operator, b, config)
 }
 
+/// Solves a linear system using the Biconjugate Gradient Stabilized (BiCGSTAB) method.
 pub fn solve_bicgstab<O: LinearOperator<Complex64>>(
     operator: &O,
     b: &Array1<Complex64>,
@@ -353,6 +366,7 @@ pub fn solve_bicgstab<O: LinearOperator<Complex64>>(
     bicgstab(operator, b, config)
 }
 
+/// Solves a linear system using the Generalized Minimum Residual (GMRES) method.
 pub fn solve_gmres<O: LinearOperator<Complex64>>(
     operator: &O,
     b: &Array1<Complex64>,
@@ -361,6 +375,9 @@ pub fn solve_gmres<O: LinearOperator<Complex64>>(
     gmres(operator, b, config)
 }
 
+/// Solves a linear system with an ILU preconditioner.
+///
+/// Note: Current implementation falls back to unpreconditioned CGS.
 pub fn solve_with_ilu(
     matrix: &Array2<Complex64>,
     b: &Array1<Complex64>,
@@ -370,7 +387,7 @@ pub fn solve_with_ilu(
     // This is expensive but necessary if using math-solvers ILU which requires CSR
     // For TBEM, we might want to avoid this or add Dense ILU to math-solvers
     let csr = solvers::sparse::CsrMatrix::from_dense(matrix, 1e-15);
-    let precond = IluPreconditioner::from_csr(&csr);
+    let _precond = IluPreconditioner::from_csr(&csr);
     let op = DenseOperator::new(matrix.clone());
     
     // cgs_preconditioned doesn't exist in math-solvers iterative exports directly?
@@ -389,15 +406,28 @@ pub fn solve_with_ilu(
     cgs(&op, b, config)
 }
 
+/// Solves a linear system with a given operator and an ILU preconditioner (placeholder, currently not used).
 pub fn solve_with_ilu_operator<O: LinearOperator<Complex64>>(
     operator: &O,
-    nearfield_matrix: &Array2<Complex64>,
+    _nearfield_matrix: &Array2<Complex64>,
     b: &Array1<Complex64>,
     config: &CgsConfig<f64>,
 ) -> CgsSolution<Complex64> {
     cgs(operator, b, config)
 }
 
+/// Solve a TBEM system (dense matrix) using CGS with an ILU preconditioner.
+///
+/// This function acts as a wrapper around `solve_with_ilu` specifically for
+/// dense TBEM matrices.
+///
+/// # Arguments
+/// * `matrix` - The dense TBEM matrix to solve.
+/// * `b` - The right-hand side vector.
+/// * `config` - Configuration for the CGS solver.
+///
+/// # Returns
+/// The CGS solution including the solution vector, iterations, and residual.
 pub fn solve_tbem_with_ilu(
     matrix: &Array2<Complex64>,
     b: &Array1<Complex64>,
@@ -406,6 +436,7 @@ pub fn solve_tbem_with_ilu(
     solve_with_ilu(matrix, b, config)
 }
 
+/// Solves a linear system using GMRES with an ILU preconditioner derived from a dense matrix.
 pub fn gmres_solve_with_ilu(
     matrix: &Array2<Complex64>,
     b: &Array1<Complex64>,
@@ -417,6 +448,7 @@ pub fn gmres_solve_with_ilu(
     solvers::iterative::gmres_preconditioned(&op, &precond, b, config)
 }
 
+/// Solves a linear system using GMRES with an ILU preconditioner derived from a nearfield matrix for a given operator.
 pub fn gmres_solve_with_ilu_operator<O: LinearOperator<Complex64>>(
     operator: &O,
     nearfield_matrix: &Array2<Complex64>,
@@ -428,6 +460,10 @@ pub fn gmres_solve_with_ilu_operator<O: LinearOperator<Complex64>>(
     solvers::iterative::gmres_preconditioned(operator, &precond, b, config)
 }
 
+/// Solves a TBEM system (dense matrix) using GMRES with an ILU preconditioner.
+///
+/// This function acts as a wrapper around `gmres_solve_with_ilu` specifically for
+/// dense TBEM matrices.
 pub fn gmres_solve_tbem_with_ilu(
     matrix: &Array2<Complex64>,
     b: &Array1<Complex64>,
@@ -436,6 +472,10 @@ pub fn gmres_solve_tbem_with_ilu(
     gmres_solve_with_ilu(matrix, b, config)
 }
 
+/// Solves a linear system using GMRES with a hierarchical FMM preconditioner.
+///
+/// This function constructs an `SlfmmOperator` from the `fmm_system` and a
+/// `HierarchicalFmmPreconditioner` to solve the system.
 #[cfg(any(feature = "native", feature = "wasm"))]
 pub fn gmres_solve_with_hierarchical_precond(
     fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
@@ -447,6 +487,10 @@ pub fn gmres_solve_with_hierarchical_precond(
     solvers::iterative::gmres_preconditioned(&op, &precond, b, config)
 }
 
+/// Solves a linear system using GMRES with a hierarchical FMM preconditioner.
+///
+/// This function uses an existing `SlfmmOperator` and constructs a
+/// `HierarchicalFmmPreconditioner` from its underlying system.
 #[cfg(any(feature = "native", feature = "wasm"))]
 pub fn gmres_solve_fmm_hierarchical(
     fmm_operator: &SlfmmOperator,
@@ -457,6 +501,7 @@ pub fn gmres_solve_fmm_hierarchical(
     solvers::iterative::gmres_preconditioned(fmm_operator, &precond, b, config)
 }
 
+/// Solves a linear system using GMRES with a batched FMM operator (unpreconditioned).
 #[cfg(feature = "native")]
 pub fn gmres_solve_fmm_batched(
     fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
@@ -467,6 +512,7 @@ pub fn gmres_solve_fmm_batched(
     gmres(&op, b, config)
 }
 
+/// Solves a linear system using GMRES with a batched FMM operator and an ILU preconditioner.
 #[cfg(feature = "native")]
 pub fn gmres_solve_fmm_batched_with_ilu(
     fmm_system: &crate::core::assembly::slfmm::SlfmmSystem,
