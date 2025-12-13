@@ -23,6 +23,7 @@ use std::path::PathBuf;
 
 // Include roomeq modules
 mod crossover_optim;
+mod dba_optim;
 mod eq_optim;
 mod fir_optim;
 mod multisub_optim;
@@ -161,6 +162,10 @@ fn process_speaker(
         SpeakerConfig::MultiSub(group) => {
             // Multi-subwoofer optimization
             process_multisub_group(channel_name, group, room_config, sample_rate, output_dir)
+        }
+        SpeakerConfig::DBA(config) => {
+            // DBA optimization
+            process_dba(channel_name, config, room_config, sample_rate, output_dir)
         }
     }
 }
@@ -496,6 +501,43 @@ fn process_multisub_group(
         channel_name,
         &group.name,
         group.subwoofers.len(),
+        &result.gains,
+        &result.delays,
+        &eq_filters,
+    );
+
+    Ok((chain, result.pre_objective, post_score))
+}
+
+fn process_dba(
+    channel_name: &str,
+    dba_config: &types::DBAConfig,
+    room_config: &RoomConfig,
+    sample_rate: f64,
+    _output_dir: &std::path::Path,
+) -> Result<(ChannelDspChain, f64, f64)> {
+    // 1. Optimize DBA
+    let (result, combined_curve) = dba_optim::optimize_dba(
+        dba_config,
+        &room_config.optimizer,
+        sample_rate,
+    ).map_err(|e| anyhow!("DBA optimization failed: {}", e))?;
+
+    info!(
+        "  DBA Optimization: Front Gain={:.2}dB, Rear Gain={:.2}dB, Rear Delay={:.2}ms",
+        result.gains[0], result.gains[1], result.delays[1]
+    );
+
+    // 2. Global EQ
+    let (eq_filters, post_score) =
+        eq_optim::optimize_channel_eq(&combined_curve, &room_config.optimizer, room_config.target_curve.as_ref(), sample_rate)
+        .map_err(|e| anyhow!("EQ optimization failed for DBA sum: {}", e))?;
+
+    info!("  Global EQ: {} filters, score={:.6}", eq_filters.len(), post_score);
+
+    // 3. Build Chain
+    let chain = output::build_dba_dsp_chain(
+        channel_name,
         &result.gains,
         &result.delays,
         &eq_filters,

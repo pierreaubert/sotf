@@ -28,6 +28,17 @@ pub fn create_gain_plugin(gain_db: f64) -> PluginConfigWrapper {
     }
 }
 
+/// Create a gain plugin configuration with polarity inversion
+pub fn create_gain_plugin_with_invert(gain_db: f64, invert: bool) -> PluginConfigWrapper {
+    PluginConfigWrapper {
+        plugin_type: "gain".to_string(),
+        parameters: json!({
+            "gain_db": gain_db,
+            "invert": invert
+        }),
+    }
+}
+
 /// Create an EQ plugin configuration from Biquad filters
 pub fn create_eq_plugin(filters: &[Biquad]) -> PluginConfigWrapper {
     let filter_configs: Vec<serde_json::Value> = filters.iter().map(biquad_to_json).collect();
@@ -244,6 +255,57 @@ pub fn build_multisub_dsp_chain(
     }
 
     // Build combined EQ
+    let mut combined_plugins = Vec::new();
+    if !eq_filters.is_empty() {
+        combined_plugins.push(create_eq_plugin(eq_filters));
+    }
+
+    ChannelDspChain {
+        channel: channel_name.to_string(),
+        plugins: combined_plugins,
+        drivers: Some(driver_chains),
+    }
+}
+
+/// Build a DSP chain for a DBA system
+pub fn build_dba_dsp_chain(
+    channel_name: &str,
+    gains: &[f64],
+    delays: &[f64],
+    eq_filters: &[Biquad],
+) -> ChannelDspChain {
+    // 2 "drivers": Front and Rear
+    let mut driver_chains = Vec::new();
+
+    // Front (Index 0)
+    let mut front_plugins = Vec::new();
+    if gains[0].abs() > 0.01 {
+        front_plugins.push(create_gain_plugin(gains[0]));
+    }
+    if delays[0].abs() > 0.001 {
+        front_plugins.push(create_delay_plugin(delays[0]));
+    }
+    driver_chains.push(DriverDspChain {
+        name: "Front Array".to_string(),
+        index: 0,
+        plugins: front_plugins,
+    });
+
+    // Rear (Index 1) - Inverted
+    let mut rear_plugins = Vec::new();
+    // Always add gain plugin to handle inversion even if gain is 0
+    rear_plugins.push(create_gain_plugin_with_invert(gains[1], true));
+    
+    if delays[1].abs() > 0.001 {
+        rear_plugins.push(create_delay_plugin(delays[1]));
+    }
+    driver_chains.push(DriverDspChain {
+        name: "Rear Array".to_string(),
+        index: 1,
+        plugins: rear_plugins,
+    });
+
+    // Combined EQ
     let mut combined_plugins = Vec::new();
     if !eq_filters.is_empty() {
         combined_plugins.push(create_eq_plugin(eq_filters));

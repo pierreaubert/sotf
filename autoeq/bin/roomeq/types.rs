@@ -62,6 +62,9 @@ pub enum SpeakerConfig {
 
     /// Multiple subwoofers optimization
     MultiSub(MultiSubGroup),
+
+    /// Double Bass Array (DBA) optimization
+    DBA(DBAConfig),
 }
 
 /// Group of measurements for a single speaker (multi-driver)
@@ -86,6 +89,19 @@ pub struct MultiSubGroup {
 
     /// Measurements for each subwoofer
     pub subwoofers: Vec<MeasurementSource>,
+}
+
+/// Configuration for Double Bass Array (DBA)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DBAConfig {
+    /// Name of the DBA system
+    pub name: String,
+
+    /// Measurements for the front array
+    pub front: Vec<MeasurementSource>,
+
+    /// Measurements for the rear array
+    pub rear: Vec<MeasurementSource>,
 }
 
 /// Reference to a measurement file
