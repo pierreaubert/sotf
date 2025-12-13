@@ -35,6 +35,12 @@ and you are set up. See this [README](autoeq/README.md) for instructions on how 
 
 ## Toolkit
 
+Overall you can group the crates:
+- math-*: all modelisation related things
+- autoeq-*: all automatique equalisation related things
+- gpui-*: utilities to build app with gpui
+- soft-*: the audio engine, plugins and players. it also integrate the room correction system.
+
 ### math-testfunctions
 
 A [set of functions](math-testfunctions/README.md) for testing non linear optimisation algorithms used in the next crate.
@@ -64,11 +70,11 @@ A set of functions to compute know analytical solution of the wave equation.
 
 Status: correct.
 
-### math-bem and math-fem
+### math-bem, math-fem and math-xem
 
-Implement BEM and FEM for the Helmotz and wave equations. Support multigrid for both system.
+Implement BEM and FEM for the Helmotz and wave equations. Support multigrid for both systems. XEM holds the common code.
 
-Status: unknown, results match analytical results on simple mesh. Needs more testing esp. for the advance features.
+Status: unknown, results match analytical results on simple mesh. Needs more testing especially for the advance features.
 
 ### autoeq-cea2034
 
@@ -132,6 +138,18 @@ cargo run --release --bin px-showcase
 ```
 
 Status: getting ok, not everything is GPU accelerated yet!
+
+#### gpui-au
+
+A bridge to allow building AUv3 plugins with the rust audio engine. It does not work *yet* with the frontend part of the plugin.
+
+Status: experimental
+
+#### gpui-themes
+
+A theme editor
+
+Status: experimental
 
 ### sotf-audio-*
 

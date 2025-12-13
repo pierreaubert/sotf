@@ -121,15 +121,7 @@ pub enum BemSolverMethod {
     GmresHierarchical,
 }
 
-/// ILU preconditioner method
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IluMethod {
-    #[default]
-    ZeroOrder,
-    FirstOrder,
-    SecondOrder,
-}
+
 
 /// FMM configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,9 +208,7 @@ pub struct BemConfig {
     /// FMM configuration
     #[serde(default)]
     pub fmm_config: FmmConfig,
-    /// ILU method for preconditioning
-    #[serde(default)]
-    pub ilu_method: IluMethod,
+
     /// Use adaptive mesh refinement
     #[serde(default = "default_use_adaptive_mesh")]
     pub use_adaptive_mesh: bool,
@@ -270,7 +260,7 @@ impl Default for BemConfig {
             min_elements_per_meter: default_min_elements_per_meter(),
             max_elements: default_max_elements(),
             fmm_config: FmmConfig::default(),
-            ilu_method: IluMethod::default(),
+
             use_adaptive_mesh: default_use_adaptive_mesh(),
             use_burton_miller: default_use_burton_miller(),
             beta_scale: default_beta_scale(),
@@ -844,11 +834,9 @@ fn solve_bem_fmm_ilu(
     speed_of_sound: f64,
     config: &BemConfig,
 ) -> Result<BemResult, String> {
-    use bem::core::solver::{IluMethod as BemIluMethod, IluScanningDegree};
     use bem::room_acoustics::{
         calculate_field_pressure_bem_parallel, solve_bem_fmm_gmres_ilu_with_result,
     };
-
     let bem_sources: Vec<BemSource> = sources.iter().map(to_bem_source).collect();
     let k = 2.0 * PI * frequency / speed_of_sound;
     let num_elements = mesh.elements.len();
@@ -864,8 +852,6 @@ fn solve_bem_fmm_ilu(
         config.max_iterations,
         config.restart,
         config.tolerance,
-        BemIluMethod::Slfmm, // Use SLFMM pattern for near-field ILU
-        IluScanningDegree::Fine,
     )?;
 
     // Evaluate field at listening position

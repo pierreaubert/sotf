@@ -326,6 +326,7 @@ pub struct OptimizationMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use autoeq::MeasurementRef;
 
     #[test]
     fn test_measurement_ref_path() {
