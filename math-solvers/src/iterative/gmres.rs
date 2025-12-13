@@ -423,6 +423,163 @@ where
     }
 }
 
+/// GMRES solver with preconditioner and initial guess
+///
+/// Solves Ax = b using left preconditioning: M⁻¹Ax = M⁻¹b
+/// with an optional initial guess x0.
+pub fn gmres_preconditioned_with_guess<T, A, P>(
+    operator: &A,
+    precond: &P,
+    b: &Array1<T>,
+    x0: Option<&Array1<T>>,
+    config: &GmresConfig<T::Real>,
+) -> GmresSolution<T>
+where
+    T: ComplexField,
+    A: LinearOperator<T>,
+    P: Preconditioner<T>,
+{
+    let n = b.len();
+    let m = config.restart;
+
+    // Initialize solution vector from initial guess or zero
+    let mut x = match x0 {
+        Some(guess) => guess.clone(),
+        None => Array1::from_elem(n, T::zero()),
+    };
+
+    // Compute preconditioned RHS norm
+    let pb = precond.apply(b);
+    let b_norm = vector_norm(&pb);
+    let tol_threshold = T::Real::from_f64(1e-15).unwrap();
+    if b_norm < tol_threshold {
+        return GmresSolution {
+            x,
+            iterations: 0,
+            restarts: 0,
+            residual: T::Real::zero(),
+            converged: true,
+        };
+    }
+
+    let mut total_iterations = 0;
+    let mut restarts = 0;
+
+    for _outer in 0..config.max_iterations {
+        // Compute preconditioned residual r = M⁻¹(b - Ax)
+        let ax = operator.apply(&x);
+        let residual: Array1<T> = b - &ax;
+        let r = precond.apply(&residual);
+        let beta = vector_norm(&r);
+
+        let rel_residual = beta / b_norm;
+        if rel_residual < config.tolerance {
+            return GmresSolution {
+                x,
+                iterations: total_iterations,
+                restarts,
+                residual: rel_residual,
+                converged: true,
+            };
+        }
+
+        let mut v: Vec<Array1<T>> = Vec::with_capacity(m + 1);
+        v.push(r.mapv(|ri| ri * T::from_real(T::Real::one() / beta)));
+
+        let mut h: Array2<T> = Array2::from_elem((m + 1, m), T::zero());
+        let mut cs: Vec<T> = Vec::with_capacity(m);
+        let mut sn: Vec<T> = Vec::with_capacity(m);
+
+        let mut g: Array1<T> = Array1::from_elem(m + 1, T::zero());
+        g[0] = T::from_real(beta);
+
+        let mut inner_converged = false;
+
+        for j in 0..m {
+            total_iterations += 1;
+
+            // w = M⁻¹ * A * v_j
+            let av = operator.apply(&v[j]);
+            let mut w = precond.apply(&av);
+
+            // Modified Gram-Schmidt
+            for i in 0..=j {
+                h[[i, j]] = inner_product(&v[i], &w);
+                let h_ij = h[[i, j]];
+                w = &w - &v[i].mapv(|vi| vi * h_ij);
+            }
+
+            let w_norm = vector_norm(&w);
+            h[[j + 1, j]] = T::from_real(w_norm);
+
+            let breakdown_tol = T::Real::from_f64(1e-14).unwrap();
+            if w_norm < breakdown_tol {
+                inner_converged = true;
+            } else {
+                v.push(w.mapv(|wi| wi * T::from_real(T::Real::one() / w_norm)));
+            }
+
+            // Apply previous Givens rotations
+            for i in 0..j {
+                let temp = cs[i].conj() * h[[i, j]] + sn[i].conj() * h[[i + 1, j]];
+                h[[i + 1, j]] = T::zero() - sn[i] * h[[i, j]] + cs[i] * h[[i + 1, j]];
+                h[[i, j]] = temp;
+            }
+
+            let (c, s) = givens_rotation(h[[j, j]], h[[j + 1, j]]);
+            cs.push(c);
+            sn.push(s);
+
+            h[[j, j]] = c.conj() * h[[j, j]] + s.conj() * h[[j + 1, j]];
+            h[[j + 1, j]] = T::zero();
+
+            let temp = c.conj() * g[j] + s.conj() * g[j + 1];
+            g[j + 1] = T::zero() - s * g[j] + c * g[j + 1];
+            g[j] = temp;
+
+            let rel_residual = g[j + 1].norm() / b_norm;
+
+            if rel_residual < config.tolerance || inner_converged {
+                let y = solve_upper_triangular(&h, &g, j + 1);
+
+                for (i, &yi) in y.iter().enumerate() {
+                    x = &x + &v[i].mapv(|vi| vi * yi);
+                }
+
+                return GmresSolution {
+                    x,
+                    iterations: total_iterations,
+                    restarts,
+                    residual: rel_residual,
+                    converged: true,
+                };
+            }
+        }
+
+        // Restart
+        let y = solve_upper_triangular(&h, &g, m);
+        for (i, &yi) in y.iter().enumerate() {
+            x = &x + &v[i].mapv(|vi| vi * yi);
+        }
+
+        restarts += 1;
+    }
+
+    // Final residual
+    let ax = operator.apply(&x);
+    let residual: Array1<T> = b - &ax;
+    let r = precond.apply(&residual);
+    let rel_residual = vector_norm(&r) / b_norm;
+
+    GmresSolution {
+        x,
+        iterations: total_iterations,
+        restarts,
+        residual: rel_residual,
+        converged: false,
+    }
+}
+
 /// Compute inner product (x, y) = Σ conj(x_i) * y_i
 #[inline]
 fn inner_product<T: ComplexField>(x: &Array1<T>, y: &Array1<T>) -> T {

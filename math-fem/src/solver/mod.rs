@@ -12,7 +12,7 @@
 use crate::assembly::HelmholtzProblem;
 use ndarray::Array1;
 use num_complex::Complex64;
-use solvers::iterative::{gmres_pipelined, gmres_preconditioned};
+use solvers::iterative::{gmres_pipelined, gmres_preconditioned, gmres_preconditioned_with_guess};
 use solvers::{
     AdditiveSchwarzPreconditioner, AmgConfig, AmgPreconditioner, CsrMatrix, DiagonalPreconditioner,
     GmresConfig, IdentityPreconditioner, IluColoringPreconditioner, IluFixedPointPreconditioner,
@@ -777,12 +777,291 @@ fn solve_gmres_pipelined_amg(
     })
 }
 
+// ========== Solver variants with initial guess support ==========
+
+/// Solve using GMRES without preconditioning, with optional initial guess
+fn solve_gmres_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    // Build identity preconditioner for consistent interface
+    let precond = IdentityPreconditioner;
+    let result = gmres_preconditioned_with_guess(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with ILU(0) preconditioning, with optional initial guess
+fn solve_gmres_ilu_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let precond = IluPreconditioner::from_csr(csr);
+    let result = gmres_preconditioned_with_guess(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with Jacobi preconditioning, with optional initial guess
+fn solve_gmres_jacobi_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let precond = DiagonalPreconditioner::from_csr(csr);
+    let result = gmres_preconditioned_with_guess(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with ILU coloring, with optional initial guess
+fn solve_gmres_ilu_coloring_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let precond = IluColoringPreconditioner::from_csr(csr);
+    let result = gmres_preconditioned_with_guess(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with ILU fixed-point, with optional initial guess
+fn solve_gmres_ilu_fixedpoint_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    const FP_ITERATIONS: usize = 10;
+    let precond = IluFixedPointPreconditioner::from_csr(csr, FP_ITERATIONS);
+    let result = gmres_preconditioned_with_guess(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with Schwarz preconditioning, with optional initial guess
+fn solve_gmres_schwarz_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let precond = AdditiveSchwarzPreconditioner::from_csr(
+        csr,
+        config.schwarz_subdomains,
+        config.schwarz_overlap,
+    );
+    let result = gmres_preconditioned_with_guess(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using GMRES with AMG preconditioning, with optional initial guess
+fn solve_gmres_amg_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let amg_config = AmgConfig::for_parallel();
+    let precond = AmgPreconditioner::from_csr(csr, amg_config);
+    let result = gmres_preconditioned_with_guess(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using pipelined GMRES without preconditioning, with optional initial guess
+fn solve_gmres_pipelined_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let precond = IdentityPreconditioner;
+    let result = gmres_pipelined(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using pipelined GMRES with ILU preconditioning, with optional initial guess
+fn solve_gmres_pipelined_ilu_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let precond = IluPreconditioner::from_csr(csr);
+    let result = gmres_pipelined(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve using pipelined GMRES with AMG preconditioning, with optional initial guess
+fn solve_gmres_pipelined_amg_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    let amg_config = AmgConfig::for_parallel();
+    let precond = AmgPreconditioner::from_csr(csr, amg_config);
+    let result = gmres_pipelined(csr, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
 /// Solve a Helmholtz problem directly from CSR matrix and RHS
 ///
 /// This is useful when you have pre-assembled sparse matrices.
 pub fn solve_csr(
     csr: &CsrMatrix<Complex64>,
     rhs: &Array1<Complex64>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    solve_csr_with_guess(csr, rhs, None, config)
+}
+
+/// Solve a Helmholtz problem directly from CSR matrix and RHS with optional initial guess
+///
+/// Providing an initial guess can significantly reduce iterations when solving
+/// problems at nearby frequencies (warm starting).
+///
+/// # Arguments
+/// * `csr` - System matrix in CSR format
+/// * `rhs` - Right-hand side vector
+/// * `x0` - Optional initial guess (if None, starts from zero)
+/// * `config` - Solver configuration
+pub fn solve_csr_with_guess(
+    csr: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
     config: &SolverConfig,
 ) -> Result<Solution, SolverError> {
     if csr.num_rows != rhs.len() {
@@ -792,18 +1071,33 @@ pub fn solve_csr(
         });
     }
 
+    if let Some(guess) = x0 {
+        if guess.len() != rhs.len() {
+            return Err(SolverError::DimensionMismatch {
+                expected: rhs.len(),
+                actual: guess.len(),
+            });
+        }
+    }
+
     match config.solver_type {
         SolverType::Direct => solve_direct(csr, rhs, config),
-        SolverType::Gmres => solve_gmres(csr, rhs, config),
-        SolverType::GmresIlu => solve_gmres_ilu(csr, rhs, config),
-        SolverType::GmresJacobi => solve_gmres_jacobi(csr, rhs, config),
-        SolverType::GmresIluColoring => solve_gmres_ilu_coloring(csr, rhs, config),
-        SolverType::GmresIluFixedPoint => solve_gmres_ilu_fixedpoint(csr, rhs, config),
-        SolverType::GmresSchwarz => solve_gmres_schwarz(csr, rhs, config),
-        SolverType::GmresAmg => solve_gmres_amg(csr, rhs, config),
-        SolverType::GmresPipelined => solve_gmres_pipelined(csr, rhs, config),
-        SolverType::GmresPipelinedIlu => solve_gmres_pipelined_ilu(csr, rhs, config),
-        SolverType::GmresPipelinedAmg => solve_gmres_pipelined_amg(csr, rhs, config),
+        SolverType::Gmres => solve_gmres_with_guess(csr, rhs, x0, config),
+        SolverType::GmresIlu => solve_gmres_ilu_with_guess(csr, rhs, x0, config),
+        SolverType::GmresJacobi => solve_gmres_jacobi_with_guess(csr, rhs, x0, config),
+        SolverType::GmresIluColoring => solve_gmres_ilu_coloring_with_guess(csr, rhs, x0, config),
+        SolverType::GmresIluFixedPoint => {
+            solve_gmres_ilu_fixedpoint_with_guess(csr, rhs, x0, config)
+        }
+        SolverType::GmresSchwarz => solve_gmres_schwarz_with_guess(csr, rhs, x0, config),
+        SolverType::GmresAmg => solve_gmres_amg_with_guess(csr, rhs, x0, config),
+        SolverType::GmresPipelined => solve_gmres_pipelined_with_guess(csr, rhs, x0, config),
+        SolverType::GmresPipelinedIlu => {
+            solve_gmres_pipelined_ilu_with_guess(csr, rhs, x0, config)
+        }
+        SolverType::GmresPipelinedAmg => {
+            solve_gmres_pipelined_amg_with_guess(csr, rhs, x0, config)
+        }
     }
 }
 
