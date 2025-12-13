@@ -7,11 +7,7 @@
 
 #[cfg(feature = "pure-rust")]
 fn main() {
-    use bem::core::assembly::tbem::build_tbem_system;
     use bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use bem::core::types::{BoundaryCondition, PhysicsParams};
-    use ndarray::Array1;
-    use num_complex::Complex64;
     use std::f64::consts::PI;
 
     let radius = 0.1;
@@ -62,7 +58,8 @@ fn test_e_constant(
 
     // Apply matrix to constant vector p = [1, 1, ..., 1]
     // A * [1] = row sums of A
-    let ones = Array1::from_vec(vec![Complex64::new(1.0, 0.0); n]);
+    let n = mesh.elements.len();
+    println!("Matrix size: {}x{}", n, n);
     let mut a_times_one = Array1::zeros(n);
     for i in 0..n {
         for j in 0..n {

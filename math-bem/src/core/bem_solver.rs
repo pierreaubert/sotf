@@ -40,7 +40,7 @@ use crate::core::assembly::tbem::build_tbem_system_with_beta;
 use crate::core::incident::IncidentField;
 use crate::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
 use crate::core::postprocess::pressure::{FieldPoint, compute_total_field};
-use crate::core::solver::direct::direct_solve;
+use solvers::direct::lu_solve;
 use crate::core::types::{BoundaryCondition, Element, Mesh, PhysicsParams};
 
 /// Solver method for the linear system
@@ -414,14 +414,7 @@ impl BemSolver {
         match self.solver_method {
             SolverMethod::Direct => {
                 // Uses BLAS when native feature is enabled, pure Rust fallback otherwise
-                let solution = direct_solve(matrix, rhs);
-                if solution.success {
-                    Ok(solution.x)
-                } else {
-                    Err(BemError::SolverFailed(
-                        "LU decomposition failed".to_string(),
-                    ))
-                }
+                lu_solve(matrix, rhs).map_err(|e| BemError::SolverFailed(e.to_string()))
             }
             SolverMethod::Cgs | SolverMethod::BiCgStab => {
                 // Iterative solvers not yet integrated

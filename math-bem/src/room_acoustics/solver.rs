@@ -415,7 +415,7 @@ pub fn solve_bem_system(
     k: f64,
     frequency: f64,
 ) -> Result<Array1<Complex64>, String> {
-    use crate::core::solver::gmres::{GmresConfig, gmres_solve as core_gmres_solve};
+    use crate::core::solver::{GmresConfig, solve_gmres};
 
     // Build BEM matrix using double-layer potential formulation
     let matrix = build_bem_matrix_parallel(mesh, k);
@@ -431,9 +431,13 @@ pub fn solve_bem_system(
         print_interval: 0,
     };
 
-    // Create matvec closure for dense matrix
-    let matvec = |x: &Array1<Complex64>| matrix.dot(x);
-    let solution = core_gmres_solve(matvec, &rhs, None, &config);
+    // Create matvec closure for dense matrix (implement LinearOperator or use wrapper)
+    // solve_gmres expects a LinearOperator.
+    // We can use DenseOperator from core::solver
+    use crate::core::solver::DenseOperator;
+    let op = DenseOperator::new(matrix);
+    
+    let solution = solve_gmres(&op, &rhs, &config);
 
     Ok(solution.x)
 }
@@ -750,7 +754,7 @@ pub fn calculate_field_pressure_bem_parallel(
 use crate::core::assembly::slfmm::{SlfmmSystem, build_slfmm_system};
 use crate::core::mesh::octree::Octree;
 use crate::core::solver::{
-    GmresConfig, GmresSolution, IluMethod, IluScanningDegree, SlfmmOperator,
+    GmresConfig, GmresSolution, SlfmmOperator,
     gmres_solve_with_ilu_operator,
 };
 use crate::core::types::{
@@ -978,8 +982,6 @@ pub fn solve_bem_fmm_gmres_ilu(
     gmres_max_iter: usize,
     gmres_restart: usize,
     gmres_tolerance: f64,
-    ilu_method: IluMethod,
-    ilu_degree: IluScanningDegree,
 ) -> Result<Array1<Complex64>, String> {
     // Build FMM system
     let (system, _elements, _nodes) = build_fmm_system(mesh, sources, k, frequency, fmm_config)?;
@@ -1014,8 +1016,6 @@ pub fn solve_bem_fmm_gmres_ilu(
         &fmm_operator,
         &nearfield_matrix,
         &rhs,
-        ilu_method,
-        ilu_degree,
         &gmres_config,
     );
 
@@ -1105,9 +1105,7 @@ pub fn solve_bem_fmm_gmres_ilu_with_result(
     gmres_max_iter: usize,
     gmres_restart: usize,
     gmres_tolerance: f64,
-    ilu_method: IluMethod,
-    ilu_degree: IluScanningDegree,
-) -> Result<GmresSolution, String> {
+) -> Result<GmresSolution<Complex64>, String> {
     // Build FMM system
     let (system, _elements, _nodes) = build_fmm_system(mesh, sources, k, frequency, fmm_config)?;
 
@@ -1140,8 +1138,6 @@ pub fn solve_bem_fmm_gmres_ilu_with_result(
         &fmm_operator,
         &nearfield_matrix,
         &rhs,
-        ilu_method,
-        ilu_degree,
         &gmres_config,
     );
 

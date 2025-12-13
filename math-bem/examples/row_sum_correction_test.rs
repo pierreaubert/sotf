@@ -6,6 +6,7 @@
 fn main() {
     use bem::analytical::sphere_scattering_3d;
     use bem::core::assembly::tbem::{apply_row_sum_correction, build_tbem_system};
+
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
@@ -96,6 +97,8 @@ fn main() {
             rhs[i] = p_inc[i] + beta * dpdn_inc[i];
         }
 
+
+
         // Solve uncorrected system
         let p_uncorrected = solve_system(&system_uncorrected.matrix, &rhs);
         let avg_p_uncorrected: f64 = p_uncorrected.iter().map(|p| p.norm()).sum::<f64>() / n as f64;
@@ -126,6 +129,8 @@ fn main() {
             "    Row sum after correction: avg = {:.2e}+{:.2e}i (should be ~0)",
             avg_row_sum_after.re, avg_row_sum_after.im
         );
+
+
 
         // Solve corrected system
         let p_corrected = solve_system(&system_corrected.matrix, &rhs);

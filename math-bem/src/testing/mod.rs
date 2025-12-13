@@ -3,7 +3,7 @@
 //! Tools for comparing BEM results with analytical solutions,
 //! computing error metrics, and exporting to JSON for visualization.
 
-use crate::analytical::AnalyticalSolution;
+use math_wave::analytical::AnalyticalSolution;
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 use std::path::Path;

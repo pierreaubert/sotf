@@ -13,13 +13,13 @@
 #![warn(clippy::all)]
 #![allow(clippy::too_many_arguments)] // Scientific code often has many parameters
 
-pub mod analytical;
+// pub mod analytical; // Removed - use math_wave::analytical instead
 pub mod core;
 pub mod room_acoustics;
 pub mod testing;
 
 // Re-exports
-pub use analytical::*;
+pub use math_wave::analytical;
 pub use testing::*;
 
 /// Library version

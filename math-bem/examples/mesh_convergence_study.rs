@@ -13,7 +13,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -113,10 +113,9 @@ fn main() {
                 rhs[i] = p_inc[i] + beta * dpdn_inc[i];
             }
 
-            // Solve
-            let solution = direct_solve(&system.matrix, &rhs);
-            let bem_avg: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
-            let error_pct = 100.0 * (bem_avg - mie_avg).abs() / mie_avg;
+                    // Solve
+                    let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+                    let bem_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;            let error_pct = 100.0 * (bem_avg - mie_avg).abs() / mie_avg;
 
             errors.push((*subdivision, error_pct, epw));
         }

@@ -7,7 +7,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::Array2;
     use num_complex::Complex64;
@@ -41,7 +41,7 @@ fn analyze_system(
 ) {
     use bem::core::assembly::tbem::build_tbem_system;
     use bem::core::incident::IncidentField;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -125,12 +125,15 @@ fn analyze_system(
         println!("    rhs[{}] = {:.4} + {:.4}i", i, r.re, r.im);
     }
 
-    // Solve
-    let solution = direct_solve(&system.matrix, &total_rhs);
+        // Solve
+        let solution_x = lu_solve(&system.matrix, &total_rhs).expect("Solver failed");
+
+        // Verify solution
+        let ax = system.matrix.dot(&solution_x);
 
     println!("\n  Solution (first 3):");
     for i in 0..3.min(n) {
-        let p = solution.x[i];
+        let p = solution_x[i];
         println!(
             "    p[{}] = {:.4} + {:.4}i (|.| = {:.4})",
             i,
@@ -145,7 +148,7 @@ fn analyze_system(
     for i in 0..n {
         residual[i] = total_rhs[i];
         for j in 0..n {
-            residual[i] -= system.matrix[[i, j]] * solution.x[j];
+            residual[i] -= system.matrix[[i, j]] * solution_x[j];
         }
     }
     let residual_norm: f64 = residual.iter().map(|r| r.norm_sqr()).sum::<f64>().sqrt();
@@ -157,8 +160,8 @@ fn analyze_system(
     );
 
     // Solution statistics
-    let p_avg: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
-    let p_max = solution.x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
+    let p_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+    let p_max = solution_x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
     println!("  Solution |p|: avg={:.4}, max={:.4}", p_avg, p_max);
 
     // Row sums (total coupling from all elements to each collocation point)

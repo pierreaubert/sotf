@@ -9,8 +9,8 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::cgs::{CgsConfig, cgs_solve};
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::{CgsConfig, solve_cgs};
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, Cluster, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -82,7 +82,7 @@ fn main() {
         let tbem_asm_time = start.elapsed();
 
         let start = Instant::now();
-        let tbem_solution = direct_solve(&tbem_system.matrix, &rhs);
+        let tbem_x = lu_solve(&tbem_system.matrix, &rhs).expect("TBEM solve failed");
         let tbem_solve_time = start.elapsed();
 
         // === SLFMM: Build clusters and system ===
@@ -108,20 +108,23 @@ fn main() {
 
         // SLFMM solve using CGS (matrix-free)
         let start = Instant::now();
-        let matvec = |x: &Array1<Complex64>| slfmm_system.matvec(x);
+        
+        // Wrap FMM system in operator
+        use bem::core::solver::SlfmmOperator;
+        let op = SlfmmOperator::new(slfmm_system.clone());
+        
         let config = CgsConfig {
             tolerance: 1e-8,
             max_iterations: 1000,
             print_interval: 0, // 0 means no printing
         };
-        let slfmm_solution = cgs_solve(&matvec, &rhs, None, &config);
+        let slfmm_solution = solve_cgs(&op, &rhs, &config);
         let slfmm_solve_time = start.elapsed();
 
         // Compare solutions
-        let diff: Array1<Complex64> = &tbem_solution.x - &slfmm_solution.x;
+        let diff: Array1<Complex64> = &tbem_x - &slfmm_solution.x;
         let diff_norm: f64 = diff.iter().map(|d| d.norm_sqr()).sum::<f64>().sqrt();
-        let tbem_norm: f64 = tbem_solution
-            .x
+        let tbem_norm: f64 = tbem_x
             .iter()
             .map(|x| x.norm_sqr())
             .sum::<f64>()
@@ -174,7 +177,7 @@ fn main() {
 
     // Solve TBEM
     let tbem_system = build_tbem_system_scaled(&elements, &mesh.nodes, &physics, scale);
-    let tbem_solution = direct_solve(&tbem_system.matrix, &rhs);
+    let tbem_x = lu_solve(&tbem_system.matrix, &rhs).expect("TBEM solve failed");
 
     // Solve SLFMM
     let mut cluster = Cluster::new(Array1::from_vec(vec![0.0, 0.0, 0.0]));
@@ -183,20 +186,24 @@ fn main() {
     let clusters = vec![cluster];
 
     let slfmm_system = build_slfmm_system(&elements, &mesh.nodes, &clusters, &physics, 8, 16, 10);
-    let matvec = |x: &Array1<Complex64>| slfmm_system.matvec(x);
+    
+    // Wrap FMM system in operator
+    use bem::core::solver::SlfmmOperator;
+    let op = SlfmmOperator::new(slfmm_system.clone());
+    
     let config = CgsConfig {
         tolerance: 1e-10,
         max_iterations: 1000,
         print_interval: 0,
     };
-    let slfmm_solution = cgs_solve(&matvec, &rhs, None, &config);
+    let slfmm_solution = solve_cgs(&op, &rhs, &config);
 
     // Mie reference
     let num_terms = (ka as usize + 30).max(50);
     let mie = sphere_scattering_3d(k, radius, num_terms, vec![radius], vec![0.0, PI / 2.0, PI]);
     let mie_avg = (mie.pressure[0].norm() + mie.pressure[1].norm() + mie.pressure[2].norm()) / 3.0;
 
-    let tbem_avg: f64 = tbem_solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+    let tbem_avg: f64 = tbem_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
     let slfmm_avg: f64 = slfmm_solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
     let tbem_error = 100.0 * (tbem_avg - mie_avg).abs() / mie_avg;

@@ -99,20 +99,30 @@ impl DirectivityPattern {
 /// Crossover filter for frequency-limited sources
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum CrossoverFilter {
-    /// Full range (no filtering)
+    /// Full range (no filter)
     #[default]
     FullRange,
-    /// Lowpass filter (for subwoofers)
+    /// Low-pass filter (Butterworth)
     Lowpass {
+        /// Cutoff frequency (Hz)
         cutoff_freq: f64,
-        order: u32, // Filter order (2, 4, 6, 8)
+        /// Filter order (e.g., 2, 4)
+        order: u32,
     },
-    /// Highpass filter (for tweeters/small speakers)
-    Highpass { cutoff_freq: f64, order: u32 },
-    /// Bandpass filter
+    /// High-pass filter (Butterworth)
+    Highpass {
+        /// Cutoff frequency (Hz)
+        cutoff_freq: f64,
+        /// Filter order (e.g., 2, 4)
+        order: u32,
+    },
+    /// Band-pass filter (combined Lowpass and Highpass)
     Bandpass {
+        /// Low cutoff frequency (Hz)
         low_cutoff: f64,
+        /// High cutoff frequency (Hz)
         high_cutoff: f64,
+        /// Filter order
         order: u32,
     },
 }

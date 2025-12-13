@@ -34,13 +34,27 @@ pub struct RoomConfig {
 #[serde(tag = "type")]
 pub enum RoomGeometryConfig {
     #[serde(rename = "rectangular")]
-    Rectangular { width: f64, depth: f64, height: f64 },
+    /// Rectangular room geometry
+    Rectangular {
+        /// Width (x-dimension)
+        width: f64,
+        /// Depth (y-dimension)
+        depth: f64,
+        /// Height (z-dimension)
+        height: f64,
+    },
     #[serde(rename = "lshaped")]
+    /// L-shaped room geometry
     LShaped {
+        /// Width of the main section
         width1: f64,
+        /// Depth of the main section
         depth1: f64,
+        /// Width of the extension
         width2: f64,
+        /// Depth of the extension
         depth2: f64,
+        /// Height of the room
         height: f64,
     },
 }
@@ -72,8 +86,11 @@ impl RoomGeometryConfig {
 /// 3D point configuration
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Point3DConfig {
+    /// X coordinate
     pub x: f64,
+    /// Y coordinate
     pub y: f64,
+    /// Z coordinate
     pub z: f64,
 }
 
@@ -140,8 +157,11 @@ pub enum DirectivityConfig {
     /// Custom directivity from measured data
     #[serde(rename = "custom")]
     Custom {
+        /// Horizontal angles (degrees)
         horizontal_angles: Vec<f64>,
+        /// Vertical angles (degrees)
         vertical_angles: Vec<f64>,
+        /// Magnitude data (matrix)
         magnitude: Vec<Vec<f64>>,
     },
 }
@@ -201,17 +221,34 @@ impl DirectivityConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum CrossoverConfig {
+    /// Full range (no filter)
     #[serde(rename = "fullrange")]
     #[default]
     FullRange,
+    /// Low-pass filter
     #[serde(rename = "lowpass")]
-    Lowpass { cutoff_freq: f64, order: u32 },
+    Lowpass {
+        /// Cutoff frequency (Hz)
+        cutoff_freq: f64,
+        /// Filter order (e.g., 2, 4)
+        order: u32,
+    },
+    /// High-pass filter
     #[serde(rename = "highpass")]
-    Highpass { cutoff_freq: f64, order: u32 },
+    Highpass {
+        /// Cutoff frequency (Hz)
+        cutoff_freq: f64,
+        /// Filter order (e.g., 2, 4)
+        order: u32,
+    },
+    /// Band-pass filter
     #[serde(rename = "bandpass")]
     Bandpass {
+        /// Low cutoff frequency (Hz)
         low_cutoff: f64,
+        /// High cutoff frequency (Hz)
         high_cutoff: f64,
+        /// Filter order
         order: u32,
     },
 }
@@ -326,10 +363,13 @@ fn default_adaptive_integration() -> bool {
 /// GMRES solver configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GmresConfig {
+    /// Maximum number of iterations
     #[serde(default = "default_max_iter")]
     pub max_iter: usize,
+    /// Restart parameter
     #[serde(default = "default_restart")]
     pub restart: usize,
+    /// Convergence tolerance
     #[serde(default = "default_tolerance")]
     pub tolerance: f64,
 }
@@ -359,10 +399,13 @@ fn default_tolerance() -> f64 {
 /// ILU preconditioner configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IluConfig {
+    /// ILU method (e.g., "tbem", "slfmm")
     #[serde(default = "default_ilu_method")]
     pub method: String,
+    /// Scanning degree (e.g., "fine", "coarse")
     #[serde(default = "default_scanning_degree")]
     pub scanning_degree: String,
+    /// Whether to use hierarchical preconditioning
     #[serde(default)]
     pub use_hierarchical: bool,
 }
@@ -388,10 +431,13 @@ fn default_scanning_degree() -> String {
 /// FMM configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FmmConfig {
+    /// FMM type (e.g., "slfmm", "mlfmm")
     #[serde(default = "default_fmm_type")]
     pub fmm_type: String,
+    /// Expansion order
     #[serde(default = "default_expansion_order")]
     pub expansion_order: usize,
+    /// Maximum particles per leaf in the octree
     #[serde(default = "default_max_particles")]
     pub max_particles_per_leaf: usize,
 }
@@ -421,10 +467,13 @@ fn default_max_particles() -> usize {
 /// Visualization configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VisualizationConfig {
+    /// Whether to generate field slices
     #[serde(default = "default_generate_slices")]
     pub generate_slices: bool,
+    /// Resolution of the slices (points per side)
     #[serde(default = "default_slice_resolution")]
     pub slice_resolution: usize,
+    /// Indices of frequencies to visualize (empty for all)
     #[serde(default)]
     pub slice_frequency_indices: Vec<usize>,
 }
@@ -450,10 +499,13 @@ fn default_slice_resolution() -> usize {
 /// Simulation metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataConfig {
+    /// Simulation description
     #[serde(default)]
     pub description: String,
+    /// Author name
     #[serde(default)]
     pub author: String,
+    /// Simulation date
     #[serde(default)]
     pub date: String,
 }

@@ -14,7 +14,7 @@ fn main() {
     use bem::core::assembly::tbem::{build_tbem_system, build_tbem_system_with_beta};
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_sphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::Array2;
     use num_complex::Complex64;
@@ -82,7 +82,7 @@ fn main() {
         let total_rhs = &system.rhs + &incident_rhs;
 
         // Solve
-        let solution = direct_solve(&system.matrix, &total_rhs);
+        let solution = lu_solve(&system.matrix, &total_rhs).expect("Solver failed");
 
         // Group elements by theta angle (z-axis is the incident direction)
         // theta = 0° is forward (z = +r), theta = 180° is backward (z = -r)
@@ -119,7 +119,7 @@ fn main() {
             // Average BEM pressure in this angular bin
             let avg_p: Complex64 = elements_in_bin
                 .iter()
-                .map(|(idx, _)| solution.x[*idx])
+                .map(|(idx, _)| solution[*idx])
                 .sum::<Complex64>()
                 / elements_in_bin.len() as f64;
             let bem_mag = avg_p.norm();
@@ -190,7 +190,7 @@ fn main() {
     let system_trad = build_tbem_system(&elements, &mesh.nodes, &physics);
     let incident_rhs_trad = incident.compute_rhs(&centers, &normals, &physics, true);
     let total_rhs_trad = &system_trad.rhs + &incident_rhs_trad;
-    let solution_trad = direct_solve(&system_trad.matrix, &total_rhs_trad);
+    let solution_trad = lu_solve(&system_trad.matrix, &total_rhs_trad).expect("Solver failed");
 
     // Floored β
     let edge_e_magnitude = 70.0;
@@ -201,7 +201,7 @@ fn main() {
     let incident_rhs_floored =
         incident.compute_rhs_with_beta(&centers, &normals, &physics, beta_floored);
     let total_rhs_floored = &system_floored.rhs + &incident_rhs_floored;
-    let solution_floored = direct_solve(&system_floored.matrix, &total_rhs_floored);
+    let solution_floored = lu_solve(&system_floored.matrix, &total_rhs_floored).expect("Solver failed");
 
     // Analytical
     let theta_degrees: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0).collect();
@@ -239,13 +239,13 @@ fn main() {
 
         let avg_trad: f64 = indices
             .iter()
-            .map(|idx| solution_trad.x[*idx].norm())
+            .map(|idx| solution_trad[*idx].norm())
             .sum::<f64>()
             / indices.len() as f64;
 
         let avg_floor: f64 = indices
             .iter()
-            .map(|idx| solution_floored.x[*idx].norm())
+            .map(|idx| solution_floored[*idx].norm())
             .sum::<f64>()
             / indices.len() as f64;
 

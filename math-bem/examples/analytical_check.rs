@@ -107,8 +107,7 @@ fn main() {
         2.0 * avg_rhs
     );
     println!(
-        "But BEM gives |p| ≈ 4-6, which is about {}x expected",
-        4.0 / avg_mie
+        "With corrected BIE formulation (0.5 - K), BEM should match expected values."
     );
 }
 

@@ -8,7 +8,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_with_beta;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -72,8 +72,9 @@ fn main() {
                 rhs[i] = p_inc[i] + beta * dpdn_inc[i];
             }
 
-            let solution = direct_solve(&system.matrix, &rhs);
-            let avg_p: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Linear solver failed");
+
+        let avg_p: f64 = solution_x.iter().map(|p| p.norm()).sum::<f64>() / n as f64;
             let error = 100.0 * (avg_p - mie_avg).abs() / mie_avg;
 
             let marker = if error < 20.0 {

@@ -43,7 +43,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -165,7 +165,9 @@ fn main() {
         }
 
         // Solve
-        let solution = direct_solve(&system.matrix, &rhs);
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+        let p_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let p_max = solution_x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
 
         // Compute regional averages from BEM
         let mut front_p: Vec<f64> = Vec::new();
@@ -176,11 +178,11 @@ fn main() {
             let z = elem.center[2];
             let cos_theta = z / radius;
             if cos_theta > 0.7 {
-                front_p.push(solution.x[i].norm());
+                front_p.push(solution_x[i].norm());
             } else if cos_theta < -0.7 {
-                back_p.push(solution.x[i].norm());
+                back_p.push(solution_x[i].norm());
             } else if cos_theta.abs() < 0.3 {
-                side_p.push(solution.x[i].norm());
+                side_p.push(solution_x[i].norm());
             }
         }
 
@@ -201,7 +203,7 @@ fn main() {
         };
 
         // Compute average over ALL elements (same as original example)
-        let bem_all_avg: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let bem_all_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
         let error_pct = 100.0 * (bem_all_avg - mie_avg).abs() / mie_avg;
 
         let status = if error_pct < 5.0 {

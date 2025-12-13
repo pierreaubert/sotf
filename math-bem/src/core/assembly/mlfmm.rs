@@ -20,7 +20,7 @@
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
-use crate::core::greens::spherical::spherical_hankel_first_kind;
+use math_wave::special::spherical_hankel_first_kind;
 use crate::core::integration::{regular_integration, singular_integration, unit_sphere_quadrature};
 use crate::core::types::{Cluster, ClusterLevel, Element, PhysicsParams};
 
@@ -830,7 +830,7 @@ fn build_d_matrices_level(
             let kr = k * r;
 
             // Compute translation operator using multipole expansion
-            let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
+            let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr);
 
             // D-matrix is diagonal: D[p,p] = h_0(kr) * ik
             // Store only the diagonal (all entries are the same in this simplified model)

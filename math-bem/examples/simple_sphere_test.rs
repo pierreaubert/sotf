@@ -7,7 +7,7 @@ use bem::analytical::sphere_scattering_3d;
 use bem::core::assembly::tbem::build_tbem_system_with_beta;
 use bem::core::incident::IncidentField;
 use bem::core::mesh::generators::generate_icosphere_mesh;
-use bem::core::solver::direct::direct_solve;
+use bem::core::solver::direct::lu_solve;
 use bem::core::types::{BoundaryCondition, PhysicsParams};
 use ndarray::Array2;
 use num_complex::Complex64;
@@ -182,21 +182,23 @@ fn main() {
 
     // Solve the system
     println!("Solving linear system...");
-    let solution = direct_solve(&system.matrix, &rhs);
-
-    if !solution.success {
-        println!("ERROR: Linear solver failed!");
-        return;
-    }
+    let result = lu_solve(&system.matrix, &rhs);
+    let x = match result {
+        Ok(x) => x,
+        Err(e) => {
+            eprintln!("Direct solver failed: {}", e);
+            return;
+        }
+    };
 
     println!("Solution found!");
     println!(
         "  Max |p_surface|: {:.6}",
-        solution.x.iter().map(|z| z.norm()).fold(0.0, f64::max)
+        x.iter().map(|z| z.norm()).fold(0.0, f64::max)
     );
     println!(
         "  Min |p_surface|: {:.6}",
-        solution.x.iter().map(|z| z.norm()).fold(f64::MAX, f64::min)
+        x.iter().map(|z| z.norm()).fold(f64::MAX, f64::min)
     );
     println!();
 
@@ -211,7 +213,7 @@ fn main() {
         let z = elem.center[2];
         let theta = (z / radius).acos();
 
-        let p_bem = solution.x[i].norm();
+        let p_bem = x[i].norm();
 
         // Get analytical at same theta, at surface (r = radius)
         let analytical = sphere_scattering_3d(k, radius, 50, vec![radius * 1.001], vec![theta]);

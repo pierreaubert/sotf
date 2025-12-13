@@ -14,7 +14,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_sphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -394,7 +394,7 @@ fn investigate_solution(
     use bem::analytical::sphere_scattering_3d;
     use bem::core::assembly::tbem::{build_tbem_system, build_tbem_system_with_beta};
     use bem::core::incident::IncidentField;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::BoundaryCondition;
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -447,33 +447,30 @@ fn investigate_solution(
     let total_rhs_cbie = &system_cbie.rhs + &incident_rhs_cbie;
 
     // Solve all systems
-    let solution_trad = direct_solve(&system_traditional.matrix, &total_rhs_trad);
-    let solution_floored = direct_solve(&system_floored.matrix, &total_rhs_floored);
-    let solution_cbie = direct_solve(&system_cbie.matrix, &total_rhs_cbie);
+    let solution_trad = lu_solve(&system_traditional.matrix, &total_rhs_trad).expect("Solver failed");
+    let solution_floored = lu_solve(&system_floored.matrix, &total_rhs_floored).expect("Solver failed");
+    let solution_cbie = lu_solve(&system_cbie.matrix, &total_rhs_cbie).expect("Solver failed");
 
     // Traditional solution statistics
     let p_max_trad = solution_trad
-        .x
         .iter()
         .map(|x| x.norm())
         .fold(0.0f64, f64::max);
-    let p_avg_trad: f64 = solution_trad.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+    let p_avg_trad: f64 = solution_trad.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
     // Floored solution statistics
     let p_max_floored = solution_floored
-        .x
         .iter()
         .map(|x| x.norm())
         .fold(0.0f64, f64::max);
-    let p_avg_floored: f64 = solution_floored.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+    let p_avg_floored: f64 = solution_floored.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
     // CBIE-only solution statistics
     let p_max_cbie = solution_cbie
-        .x
         .iter()
         .map(|x| x.norm())
         .fold(0.0f64, f64::max);
-    let p_avg_cbie: f64 = solution_cbie.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+    let p_avg_cbie: f64 = solution_cbie.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
     println!("  CBIE-only (β=0, no hypersingular):");
     println!(

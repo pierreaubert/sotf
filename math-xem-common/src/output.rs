@@ -10,25 +10,35 @@ use serde::{Deserialize, Serialize};
 /// Result of room simulation at one frequency
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrequencyResult {
+    /// Frequency (Hz)
     pub frequency: f64,
+    /// SPL values at each listening position
     pub spl_at_lp: Vec<f64>,
 }
 
 /// Complete simulation results
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimulationResults {
+    /// List of frequencies simulated
     pub frequencies: Vec<f64>,
+    /// Frequency response at each listening position
     pub lp_frequency_responses: Vec<Vec<f64>>,
+    /// Horizontal slice data (if generated)
     pub horizontal_slice: Option<SliceData>,
+    /// Vertical slice data (if generated)
     pub vertical_slice: Option<SliceData>,
 }
 
 /// Pressure field data on a 2D slice
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SliceData {
+    /// X coordinates
     pub x: Vec<f64>,
+    /// Y or Z coordinates
     pub y: Vec<f64>,
+    /// SPL grid data
     pub spl: Array2<f64>,
+    /// Frequency of the slice
     pub frequency: f64,
 }
 

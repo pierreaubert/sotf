@@ -11,10 +11,7 @@
 //!   cargo run --release --bin room_simulator_bem -- --config configs/example_multi_source.json
 //!   cargo run --release --bin room_simulator_bem -- --help
 
-use bem::core::solver::{
-    GmresConfig, IluMethod, IluScanningDegree, gmres_solve_fmm_batched_with_ilu,
-    gmres_solve_with_ilu,
-};
+use bem::core::solver::{GmresConfig, gmres_solve_fmm_batched_with_ilu, gmres_solve_with_ilu};
 use bem::room_acoustics::*;
 // Re-import FMM solver types from room_acoustics (they're re-exported from solver.rs)
 // FmmSolverConfig, solve_bem_fmm_gmres_ilu are available via bem::room_acoustics
@@ -309,22 +306,6 @@ fn run_gmres_with_ilu(
         mesh.elements.len()
     );
 
-    // Parse ILU configuration
-    let ilu_method = match config.solver.ilu.method.to_lowercase().as_str() {
-        "slfmm" => IluMethod::Slfmm,
-        "mlfmm" => IluMethod::Mlfmm,
-        _ => IluMethod::Tbem,
-    };
-
-    let ilu_degree = match config.solver.ilu.scanning_degree.to_lowercase().as_str() {
-        "coarse" => IluScanningDegree::Coarse,
-        "medium" => IluScanningDegree::Medium,
-        "finest" => IluScanningDegree::Finest,
-        _ => IluScanningDegree::Fine,
-    };
-
-    println!("ILU configuration: {:?}, {:?}", ilu_method, ilu_degree);
-
     // GMRES configuration
     let gmres_config = GmresConfig {
         max_iterations: config.solver.gmres.max_iter,
@@ -376,7 +357,7 @@ fn run_gmres_with_ilu(
             println!("  Solving with GMRES+ILU...");
         }
 
-        let solution = gmres_solve_with_ilu(&matrix, &rhs, ilu_method, ilu_degree, &gmres_config);
+        let solution = gmres_solve_with_ilu(&matrix, &rhs, &gmres_config);
 
         // Compute SPL at listening position
         let lp_pressure = calculate_field_pressure_bem_parallel(
@@ -457,26 +438,6 @@ fn run_fmm_gmres_ilu(
         mesh.elements.len()
     );
 
-    // Parse ILU configuration
-    let ilu_method = match config.solver.ilu.method.to_lowercase().as_str() {
-        "slfmm" => IluMethod::Slfmm,
-        "mlfmm" => IluMethod::Mlfmm,
-        _ => IluMethod::Tbem,
-    };
-
-    let ilu_degree = match config.solver.ilu.scanning_degree.to_lowercase().as_str() {
-        "coarse" => IluScanningDegree::Coarse,
-        "medium" => IluScanningDegree::Medium,
-        "finest" => IluScanningDegree::Finest,
-        _ => IluScanningDegree::Fine,
-    };
-
-    if config.solver.ilu.use_hierarchical {
-        println!("Preconditioner: Hierarchical FMM (block diagonal)");
-    } else {
-        println!("Preconditioner: ILU ({:?}, {:?})", ilu_method, ilu_degree);
-    }
-
     // FMM configuration
     let fmm_config = FmmSolverConfig::default();
     println!("FMM configuration:");
@@ -538,8 +499,6 @@ fn run_fmm_gmres_ilu(
                 config.solver.gmres.max_iter,
                 config.solver.gmres.restart,
                 config.solver.gmres.tolerance,
-                ilu_method,
-                ilu_degree,
             )
             .map_err(|e| format!("FMM solve (ILU) failed: {}", e))?
         };
@@ -620,25 +579,6 @@ fn run_fmm_batched(
         mesh.elements.len()
     );
 
-    // Parse ILU configuration
-    let ilu_method = match config.solver.ilu.method.to_lowercase().as_str() {
-        "slfmm" => IluMethod::Slfmm,
-        "mlfmm" => IluMethod::Mlfmm,
-        _ => IluMethod::Tbem,
-    };
-
-    let ilu_degree = match config.solver.ilu.scanning_degree.to_lowercase().as_str() {
-        "coarse" => IluScanningDegree::Coarse,
-        "medium" => IluScanningDegree::Medium,
-        "finest" => IluScanningDegree::Finest,
-        _ => IluScanningDegree::Fine,
-    };
-
-    println!(
-        "Preconditioner: ILU ({:?}, {:?}) with batched BLAS",
-        ilu_method, ilu_degree
-    );
-
     // FMM configuration
     let fmm_config = FmmSolverConfig::default();
     println!("FMM configuration:");
@@ -699,8 +639,6 @@ fn run_fmm_batched(
         let solution_result = gmres_solve_fmm_batched_with_ilu(
             &fmm_system,
             &fmm_system.rhs,
-            ilu_method,
-            ilu_degree,
             &gmres_config,
         );
 

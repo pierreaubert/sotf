@@ -12,7 +12,7 @@ fn main() {
     use bem::core::assembly::tbem::{build_tbem_system, build_tbem_system_scaled};
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::Array2;
     use num_complex::Complex64;
@@ -105,7 +105,7 @@ fn test_mesh(
     use bem::analytical::sphere_scattering_3d;
     use bem::core::assembly::tbem::{build_tbem_system, build_tbem_system_scaled};
     use bem::core::incident::IncidentField;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::Array2;
     use num_complex::Complex64;
@@ -153,11 +153,11 @@ fn test_mesh(
     }
 
     // Solve
-    let solution = direct_solve(&system.matrix, &total_rhs);
+    let solution_x = lu_solve(&system.matrix, &total_rhs).expect("Solver failed");
 
     // Statistics
-    let p_avg: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
-    let p_max = solution.x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
+    let p_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+    let p_max = solution_x.iter().map(|x| x.norm()).fold(0.0f64, f64::max);
 
     // Get analytical reference
     let theta_refs: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0 * PI / 180.0).collect();
@@ -197,7 +197,7 @@ fn test_mesh(
 
         let bem_avg: f64 = matching_elements
             .iter()
-            .map(|&i| solution.x[i].norm())
+            .map(|&i| solution_x[i].norm())
             .sum::<f64>()
             / matching_elements.len() as f64;
 

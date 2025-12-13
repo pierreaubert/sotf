@@ -8,7 +8,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -75,10 +75,10 @@ fn main() {
             rhs[i] = p_inc[i] + beta * dpdn_inc[i];
         }
 
-        let solution = direct_solve(&system.matrix, &rhs);
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
 
         // Compute average and regional pressures
-        let avg_p: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let avg_p: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
         let mut front_p: Vec<f64> = Vec::new();
         let mut back_p: Vec<f64> = Vec::new();
@@ -86,9 +86,9 @@ fn main() {
             let z = elem.center[2];
             let cos_theta = z / radius;
             if cos_theta > 0.8 {
-                front_p.push(solution.x[i].norm());
+                front_p.push(solution_x[i].norm());
             } else if cos_theta < -0.8 {
-                back_p.push(solution.x[i].norm());
+                back_p.push(solution_x[i].norm());
             }
         }
 
@@ -162,9 +162,9 @@ fn main() {
             rhs[i] = p_inc[i] + beta * dpdn_inc[i];
         }
 
-        let solution = direct_solve(&system.matrix, &rhs);
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
 
-        let avg_p: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let avg_p: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
         let mut front_p: Vec<f64> = Vec::new();
         let mut back_p: Vec<f64> = Vec::new();
@@ -172,9 +172,9 @@ fn main() {
             let z = elem.center[2];
             let cos_theta = z / radius;
             if cos_theta > 0.8 {
-                front_p.push(solution.x[i].norm());
+                front_p.push(solution_x[i].norm());
             } else if cos_theta < -0.8 {
-                back_p.push(solution.x[i].norm());
+                back_p.push(solution_x[i].norm());
             }
         }
 

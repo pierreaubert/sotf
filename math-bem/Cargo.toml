@@ -24,6 +24,7 @@ math-xem-common = { path = "../math-xem-common", version = "0.1" }
 
 # Shared solver infrastructure (AMG preconditioner, etc.)
 math-solvers = { path = "../math-solvers", version = "0.1", default-features = false }
+math-wave = { path = "../math-wave", version = "0.1" }
 
 # Core numerical computing
 # Note: We don't use workspace = true for ndarray because workspace has "blas" and "rayon" features

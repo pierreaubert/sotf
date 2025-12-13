@@ -35,12 +35,10 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::cgs::{CgsConfig, cgs_solve};
-    use bem::core::solver::direct::direct_solve;
-    use bem::core::solver::ilu_preconditioner::{
-        IluMethod, IluPreconditioner, IluScanningDegree, IluSetup,
-    };
-    use bem::core::solver::preconditioner::Preconditioner;
+    use bem::core::solver::{CgsConfig, solve_cgs, solve_with_ilu};
+    use bem::core::solver::direct::lu_solve;
+    use bem::core::solver::IluPreconditioner;
+    use bem::core::solver::Preconditioner;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -126,63 +124,13 @@ fn main() {
         // === Build TBEM system ===
         let tbem_system = build_tbem_system_scaled(&elements, &mesh.nodes, &physics, scale);
 
-        // === Direct solve (baseline) ===
-        let direct_solution = direct_solve(&tbem_system.matrix, &rhs);
-        let direct_avg: f64 = direct_solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        // TBEM direct solve (reference)
+        let tbem_solution_x = lu_solve(&tbem_system.matrix, &rhs).expect("Solver failed");
+        let direct_avg: f64 = tbem_solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
         let direct_err = 100.0 * (direct_avg - mie_avg).abs() / mie_avg;
 
         // === CGS with ILU preconditioner ===
-        // Setup ILU with scaled system (critical for convergence!)
-        // NOTE: NumCalc's thresholds (0.6-1.2) are for sparse FMM near-field.
-        // For dense TBEM, we need a MUCH lower threshold to keep more entries.
-        let ilu_setup = IluPreconditioner::setup_system_with_threshold(
-            &tbem_system.matrix,
-            0.0, // Full ILU - keeps ALL entries (equivalent to full LU)
-        );
-
-        // Scale the RHS to match the scaled matrix
-        let scaled_rhs = &ilu_setup.row_scale * &rhs;
-
-        // === DIAGNOSTIC: Check ILU quality ===
-        // Compute ||M⁻¹ * A - I|| for a few test vectors
-        if ka == ka_values[0] {
-            println!("\n  ILU diagnostic:");
-            println!(
-                "    Fill ratio: {:.2}%",
-                ilu_setup.preconditioner.fill_ratio() * 100.0
-            );
-
-            // Test: M⁻¹ * A * e_1 should be close to e_1 if M ≈ A
-            let mut e1 = Array1::zeros(n);
-            e1[0] = Complex64::new(1.0, 0.0);
-            let a_e1 = ilu_setup.scaled_matrix.dot(&e1);
-            let minv_a_e1 = ilu_setup.preconditioner.apply(&a_e1);
-            let error1 = (&minv_a_e1 - &e1)
-                .iter()
-                .map(|x| x.norm_sqr())
-                .sum::<f64>()
-                .sqrt();
-            println!("    ||M⁻¹ * A * e_1 - e_1|| = {:.2e}", error1);
-
-            // Test with random-ish vector
-            let mut test_vec: Array1<Complex64> = Array1::from_iter(
-                (0..n).map(|i| Complex64::new((i as f64 * 0.1).sin(), (i as f64 * 0.2).cos())),
-            );
-            let a_test = ilu_setup.scaled_matrix.dot(&test_vec);
-            let minv_a_test = ilu_setup.preconditioner.apply(&a_test);
-            let error_test = (&minv_a_test - &test_vec)
-                .iter()
-                .map(|x| x.norm_sqr())
-                .sum::<f64>()
-                .sqrt();
-            let test_norm = test_vec.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
-            println!(
-                "    ||M⁻¹ * A * v - v|| / ||v|| = {:.2e}",
-                error_test / test_norm
-            );
-            println!();
-        }
-
+        
         // CGS solver config - enable progress output for first frequency only
         let print_interval = if ka == ka_values[0] { 100 } else { 0 };
         let cgs_config = CgsConfig {
@@ -191,17 +139,8 @@ fn main() {
             print_interval,
         };
 
-        // Preconditioned matvec using SCALED matrix: M⁻¹ * A_scaled * x
-        let matvec = |x: &Array1<Complex64>| {
-            let ax = ilu_setup.scaled_matrix.dot(x);
-            ilu_setup.preconditioner.apply(&ax)
-        };
-
-        // Precondition the scaled RHS: M⁻¹ * b_scaled
-        let precond_rhs = ilu_setup.preconditioner.apply(&scaled_rhs);
-
-        // Solve preconditioned system
-        let cgs_solution = cgs_solve(&matvec, &precond_rhs, None, &cgs_config);
+        // Solve with ILU(0) preconditioner
+        let cgs_solution = solve_with_ilu(&tbem_system.matrix, &rhs, &cgs_config);
 
         let cgs_avg: f64 = cgs_solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
         let cgs_err = 100.0 * (cgs_avg - mie_avg).abs() / mie_avg;

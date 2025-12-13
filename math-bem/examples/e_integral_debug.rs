@@ -5,9 +5,8 @@
 #[cfg(feature = "pure-rust")]
 fn main() {
     use bem::core::integration::{regular_integration, singular_integration};
-    use bem::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
-    use bem::core::types::{BoundaryCondition, PhysicsParams};
-    use ndarray::Array1;
+    use bem::core::mesh::generators::generate_icosphere_mesh;
+    use bem::core::types::PhysicsParams;
     use num_complex::Complex64;
     use std::f64::consts::PI;
 
@@ -48,7 +47,6 @@ fn main() {
     // Compute all E integrals for this row
     let mut total_e = Complex64::new(0.0, 0.0);
     let mut total_k = Complex64::new(0.0, 0.0); // Double-layer K
-    let mut self_e = Complex64::new(0.0, 0.0);
     let mut off_diag_e = Complex64::new(0.0, 0.0);
 
     for (j, field_elem) in mesh.elements.iter().enumerate() {
@@ -85,7 +83,7 @@ fn main() {
         total_k += result.dg_dn_integral;
 
         if j == source_idx {
-            self_e = result.d2g_dnxdny_integral;
+            let self_e = result.d2g_dnxdny_integral;
             println!(
                 "\nSelf-element E: {:.4}+{:.4}i (|.|={:.4})",
                 self_e.re,

@@ -8,7 +8,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::Array2;
     use num_complex::Complex64;
@@ -80,7 +80,8 @@ fn main() {
         }
 
         // Solve
-        let solution = direct_solve(&system.matrix, &rhs);
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+        let bem_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
         // Find elements near key angles
         let mut front_p: Vec<f64> = Vec::new();
@@ -93,15 +94,15 @@ fn main() {
 
             // Front: cos(theta) > 0.9 (within ~25 degrees of front)
             if cos_theta > 0.9 {
-                front_p.push(solution.x[i].norm());
+                front_p.push(solution_x[i].norm());
             }
             // Side: |cos(theta)| < 0.2 (within ~10 degrees of equator)
             else if cos_theta.abs() < 0.2 {
-                side_p.push(solution.x[i].norm());
+                side_p.push(solution_x[i].norm());
             }
             // Back: cos(theta) < -0.9 (within ~25 degrees of back)
             else if cos_theta < -0.9 {
-                back_p.push(solution.x[i].norm());
+                back_p.push(solution_x[i].norm());
             }
         }
 
@@ -176,7 +177,9 @@ fn main() {
             rhs[i] = p_inc[i] + beta * dpdn_inc[i];
         }
 
-        let solution = direct_solve(&system.matrix, &rhs);
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+
+        let avg_p: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
         let mut front_p: Vec<f64> = Vec::new();
         let mut side_p: Vec<f64> = Vec::new();
@@ -187,11 +190,11 @@ fn main() {
             let cos_theta = z / radius;
 
             if cos_theta > 0.9 {
-                front_p.push(solution.x[i].norm());
+                front_p.push(solution_x[i].norm());
             } else if cos_theta.abs() < 0.2 {
-                side_p.push(solution.x[i].norm());
+                side_p.push(solution_x[i].norm());
             } else if cos_theta < -0.9 {
-                back_p.push(solution.x[i].norm());
+                back_p.push(solution_x[i].norm());
             }
         }
 

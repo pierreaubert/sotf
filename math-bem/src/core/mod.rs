@@ -8,7 +8,7 @@
 //!
 //! - `types`: Core data structures (Mesh, Element, PhysicsParams)
 //! - `constants`: Physical and integration constants
-//! - `greens`: Green's function computations (Helmholtz kernel)
+//! - `greens`: Green's function computations (via math-wave)
 //! - `mesh`: Mesh loading, element operations, and mesh generators
 //! - `integration`: Numerical quadrature (Gauss-Legendre, singular)
 //! - `assembly`: BEM matrix assembly (TBEM, SLFMM, MLFMM)
@@ -20,11 +20,11 @@
 //! - `algebra`: Pure Rust linear algebra fallbacks for WASM portability
 //! - `parallel`: Portable parallel iteration (works with native, WASM, or sequential)
 
-pub mod algebra;
+
 pub mod assembly;
 pub mod bem_solver;
 pub mod constants;
-pub mod greens;
+// pub mod greens; // Removed - use math_wave::greens instead
 pub mod incident;
 pub mod integration;
 pub mod io;

@@ -34,10 +34,10 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::cgs::{CgsConfig, cgs_solve};
-    use bem::core::solver::direct::direct_solve;
-    use bem::core::solver::ilu_preconditioner::IluPreconditioner;
-    use bem::core::solver::preconditioner::Preconditioner;
+    use bem::core::solver::{CgsConfig, solve_cgs, solve_with_ilu};
+    use bem::core::solver::direct::lu_solve;
+    use bem::core::solver::IluPreconditioner;
+    use bem::core::solver::Preconditioner;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -113,10 +113,10 @@ fn main() {
         println!("\n  --- Direct TBEM Solve ---");
         let tbem_start = std::time::Instant::now();
         let tbem_system = build_tbem_system_scaled(&elements, &mesh.nodes, &physics, scale);
-        let direct_solution = direct_solve(&tbem_system.matrix, &rhs);
+        let direct_x = lu_solve(&tbem_system.matrix, &rhs).expect("Direct solve failed");
         let tbem_time = tbem_start.elapsed();
 
-        let direct_avg: f64 = direct_solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let direct_avg: f64 = direct_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
         let direct_err = 100.0 * (direct_avg - mie_avg).abs() / mie_avg;
         println!("    Time: {:?}", tbem_time);
         println!("    BEM avg: {:.4}, Error: {:.1}%", direct_avg, direct_err);
@@ -126,31 +126,15 @@ fn main() {
         let ilu_start = std::time::Instant::now();
 
         // For dense TBEM, use very low threshold (or 0 for full LU)
-        let ilu_threshold = 0.01;
-        let ilu_setup =
-            IluPreconditioner::setup_system_with_threshold(&tbem_system.matrix, ilu_threshold);
-
-        println!("    ILU threshold: {}", ilu_threshold);
-        println!(
-            "    Fill ratio: {:.1}%",
-            ilu_setup.preconditioner.fill_ratio() * 100.0
-        );
-
-        let scaled_rhs = &ilu_setup.row_scale * &rhs;
-        let precond_rhs = ilu_setup.preconditioner.apply(&scaled_rhs);
-
+        // Note: solve_with_ilu uses ILU(0) from math-solvers
+        
         let cgs_config = CgsConfig {
             max_iterations: 200,
             tolerance: 1e-6,
             print_interval: 0,
         };
 
-        let matvec = |x: &Array1<Complex64>| {
-            let ax = ilu_setup.scaled_matrix.dot(x);
-            ilu_setup.preconditioner.apply(&ax)
-        };
-
-        let cgs_solution = cgs_solve(&matvec, &precond_rhs, None, &cgs_config);
+        let cgs_solution = solve_with_ilu(&tbem_system.matrix, &rhs, &cgs_config);
         let ilu_time = ilu_start.elapsed();
 
         let cgs_avg: f64 = cgs_solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;

@@ -14,5 +14,9 @@
 //! ```
 
 mod helmholtz;
+mod legendre;
+mod spherical;
 
 pub use helmholtz::*;
+pub use legendre::*;
+pub use spherical::*;

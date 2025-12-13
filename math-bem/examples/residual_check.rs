@@ -9,7 +9,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -59,14 +59,17 @@ fn main() {
     }
 
     // Solve
-    let solution = direct_solve(&system.matrix, &rhs);
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+
+        // Verify residual
+        let ax = system.matrix.dot(&solution_x);
 
     // Compute residual Ap - b
     let mut residual = Array1::<Complex64>::zeros(n);
     for i in 0..n {
         let mut ax_i = Complex64::new(0.0, 0.0);
         for j in 0..n {
-            ax_i += system.matrix[[i, j]] * solution.x[j];
+            ax_i += system.matrix[[i, j]] * solution_x[j];
         }
         residual[i] = ax_i - rhs[i];
     }
@@ -74,7 +77,7 @@ fn main() {
     // Compute norms
     let residual_norm: f64 = residual.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
     let rhs_norm: f64 = rhs.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
-    let solution_norm: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+    let solution_norm: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
 
     println!("ka = {:.2}, {} elements, β = {:.4}i", ka_target, n, beta.im);
     println!();
@@ -95,7 +98,7 @@ fn main() {
             residual[i].re,
             residual[i].im,
             rhs[i].norm(),
-            solution.x[i].norm()
+            solution_x[i].norm()
         );
     }
 
@@ -119,9 +122,9 @@ fn main() {
     for (i, elem) in elements.iter().enumerate() {
         let z = elem.center[2];
         if z > 0.05 * radius {
-            front_bem.push(solution.x[i].norm());
+            front_bem.push(solution_x[i].norm());
         } else if z < -0.05 * radius {
-            back_bem.push(solution.x[i].norm());
+            back_bem.push(solution_x[i].norm());
         }
     }
     let front_avg = front_bem.iter().sum::<f64>() / front_bem.len() as f64;

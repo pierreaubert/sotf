@@ -28,7 +28,7 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::direct::direct_solve;
+    use bem::core::solver::direct::lu_solve;
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -127,10 +127,10 @@ fn main() {
             }
 
             // Solve
-            let solution = direct_solve(&system.matrix, &rhs);
+            let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
 
             // Compute error
-            let bem_avg: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+            let bem_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
             let error_pct = 100.0 * (bem_avg - mie_avg).abs() / mie_avg;
 
             if error_pct < best_error {
@@ -180,8 +180,9 @@ fn main() {
             rhs[i] = p_inc[i] + beta * dpdn_inc[i];
         }
 
-        let solution = direct_solve(&system.matrix, &rhs);
-        let bem_avg: f64 = solution.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+
+        let bem_avg: f64 = solution_x.iter().map(|p| p.norm()).sum::<f64>() / n as f64;
         let error_pct = 100.0 * (bem_avg - mie_avg).abs() / mie_avg;
 
         let status = if error_pct < 5.0 {
@@ -232,8 +233,8 @@ fn main() {
             rhs_fixed[i] = p_inc[i] + beta_fixed * dpdn_inc[i];
         }
 
-        let solution_fixed = direct_solve(&system_fixed.matrix, &rhs_fixed);
-        let bem_avg_fixed: f64 = solution_fixed.x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+        let solution_fixed = lu_solve(&system_fixed.matrix, &rhs_fixed).expect("Solver failed");
+        let bem_avg_fixed: f64 = solution_fixed.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
         let fixed_error = 100.0 * (bem_avg_fixed - mie_avg).abs() / mie_avg;
 
         let improvement = if fixed_error > adaptive_error {

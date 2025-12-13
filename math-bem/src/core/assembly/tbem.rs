@@ -307,7 +307,7 @@ fn assemble_tbem(
             // Burton-Miller: (c + K' + βH)[p] = p_inc + β*∂p_inc/∂n
             // K' = ∫ ∂G/∂n_y dS = dg_dn_integral (double-layer transpose)
             // H = ∫ ∂²G/(∂n_x∂n_y) dS = d2g_dnxdny_integral (hypersingular)
-            -result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta
+            result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta
         }
         1 => {
             // Pressure BC (Dirichlet): unknown is surface velocity v

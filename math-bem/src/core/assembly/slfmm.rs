@@ -22,11 +22,12 @@ use num_complex::Complex64;
 
 use crate::core::parallel::{parallel_enumerate_filter_map, parallel_flat_map, parallel_map};
 
-use crate::core::greens::spherical::spherical_hankel_first_kind;
+use math_wave::special::spherical_hankel_first_kind;
 use crate::core::integration::{regular_integration, singular_integration, unit_sphere_quadrature};
 use crate::core::types::{BoundaryCondition, Cluster, Element, PhysicsParams};
 
 /// Result of SLFMM assembly
+#[derive(Clone)]
 pub struct SlfmmSystem {
     /// Near-field coefficient matrix (sparse, stored as dense blocks)
     pub near_matrix: Vec<NearFieldBlock>,
@@ -682,7 +683,7 @@ fn build_d_matrices(
         let kr = k * r;
 
         // Compute translation using spherical Hankel functions
-        let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
+        let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr);
 
         // D-matrix is diagonal: D[p,p] = h_0(kr) * ik
         // Store only the diagonal (all entries are the same in this simplified model)
