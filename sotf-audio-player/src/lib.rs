@@ -45,3 +45,6 @@ pub use autoeq_iir::BiquadFilterType;
 
 // Re-export analyzer types
 pub use sotf_plugins::{LoudnessData, LoudnessInfo, SpectrumData, SpectrumInfo};
+
+// Re-export parameter specifications for UI components
+pub use sotf_plugins::param_specs;

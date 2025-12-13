@@ -24,6 +24,7 @@ mod analyzer_loudness_monitor;
 mod analyzer_spectrum;
 mod host;
 mod parameters;
+pub mod param_specs;
 mod plugin;
 mod plugin_binaural;
 mod plugin_channel_mute_solo;

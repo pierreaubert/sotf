@@ -10,6 +10,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
+use sotf_audio_player::param_specs::gain::*;
 
 /// State for rendering the Gain plugin
 pub struct GainRenderState {
@@ -66,8 +67,8 @@ pub fn render_gain_plugin(
                             plugin_idx,
                             "Gain",
                             state.gain_db,
-                            -24.0,
-                            24.0,
+                            GAIN_DB_MIN as f64,
+                            GAIN_DB_MAX as f64,
                             "dB",
                             0,
                             state.selected_param,
@@ -195,7 +196,7 @@ pub fn render_gain_plugin(
                                 // Gain bar (from center)
                                 .child(if state.gain_db >= 0.0 {
                                     // Boost - bar goes right from center
-                                    let width = (state.gain_db / 24.0).clamp(0.0, 1.0) as f32 * 0.5;
+                                    let width = (state.gain_db / GAIN_DB_MAX as f64).clamp(0.0, 1.0) as f32 * 0.5;
                                     div()
                                         .absolute()
                                         .left(relative(0.5))
@@ -206,7 +207,7 @@ pub fn render_gain_plugin(
                                 } else {
                                     // Cut - bar goes left from center
                                     let width =
-                                        (-state.gain_db / 24.0).clamp(0.0, 1.0) as f32 * 0.5;
+                                        (-state.gain_db / -GAIN_DB_MIN as f64).clamp(0.0, 1.0) as f32 * 0.5;
                                     div()
                                         .absolute()
                                         .right(relative(0.5))
@@ -222,9 +223,9 @@ pub fn render_gain_plugin(
                                 .justify_between()
                                 .text_xs()
                                 .text_color(theme.text_muted)
-                                .child("-24 dB")
+                                .child(format!("{:.0} dB", GAIN_DB_MIN))
                                 .child("0 dB")
-                                .child("+24 dB"),
+                                .child(format!("{:+.0} dB", GAIN_DB_MAX)),
                         ),
                 ),
         )

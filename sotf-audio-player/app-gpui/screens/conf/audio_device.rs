@@ -164,7 +164,7 @@ impl PlayerView {
 fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
     let lower_name = device_name.to_lowercase();
     if lower_name.contains("mac") || lower_name.contains("apple") {
-        return Some("brands/apple-mac-mini.jpg");
+        return Some("brands/apple-mac-mini.png");
     }
     if lower_name.contains("phonum") || lower_name.contains("beyerdynamic") {
         return Some("brands/bayerdynamic-phonum.jpg");
@@ -176,7 +176,7 @@ fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
         return Some("brands/dolby-audio.png");
     }
     if lower_name.contains("focusrite") || lower_name.contains("scarlett") {
-        return Some("brands/focusrite.webp");
+        return Some("brands/focusrite.png");
     }
     if lower_name.contains("kef") || lower_name.contains("ls60") {
         return Some("brands/kef-ls60.jpg");
@@ -188,7 +188,7 @@ fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
         return Some("brands/rme.jpg");
     }
     if lower_name.contains("adam") {
-        return Some("brands/adam.jpg");
+        return Some("brands/adam.png");
     }
     if lower_name.contains("samsung") {
         return Some("brands/samsung-q9.png");

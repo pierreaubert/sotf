@@ -5,8 +5,7 @@
 //! - Rotary knobs for gains and frequency controls
 //! - Toggles for processing modes
 
-use super::actions::ToggleUpmixerConfig;
-use super::common::{render_edit_hints, render_knob, render_param_row, render_toggle};
+use super::common::{render_knob, render_param_row, render_toggle};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;

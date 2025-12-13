@@ -152,7 +152,7 @@ impl PlayerView {
     /// Render navigation buttons (Back/Next)
     fn render_recording_nav_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let _theme = state.app.theme.clone();
         let current_step = state.app.recording_state.step;
         let all_recorded = state.app.recording_state.all_channels_recorded();
         let is_recording = state.app.recording_state.is_recording();

@@ -13,7 +13,7 @@ use d3rs::shape::{render_line, LineConfig, LinePoint};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput,
+    Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput,
     NumberInputSize, Progress, ProgressSize, ProgressVariant, Select, SelectOption, StackAlign,
     StackJustify, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
@@ -102,7 +102,7 @@ impl PlayerView {
                                 .decimals(0)
                                 .unit("dB")
                                 .size(NumberInputSize::Sm)
-                                .width(Some(100.0))
+                                .width(100.0)
                                 .on_change(move |val, _window, cx| {
                                     view.update(cx, |this, cx| {
                                         this.state.update(cx, |state, _| {
@@ -119,7 +119,7 @@ impl PlayerView {
     /// Render signal type dropdown
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let _theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -165,7 +165,7 @@ impl PlayerView {
     /// Render duration dropdown
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let _theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -398,6 +398,21 @@ impl PlayerView {
 
         let has_results = !results.is_empty();
 
+        // Debug: Log what we found
+        if has_results {
+            log::info!("[render_frequency_response_plot] Found {} channel results", results.len());
+            for (name, result) in &results {
+                log::info!(
+                    "[render_frequency_response_plot]   {}: {} frequency points, {} magnitude points",
+                    name,
+                    result.frequencies.len(),
+                    result.magnitude_db.len()
+                );
+            }
+        } else {
+            log::info!("[render_frequency_response_plot] No results to display");
+        }
+
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Md)
@@ -466,13 +481,29 @@ impl PlayerView {
         let (min_db, max_db) = results
             .iter()
             .flat_map(|(_, r)| r.magnitude_db.iter())
-            .fold((0.0_f32, -100.0_f32), |(min, max), &v| {
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), &v| {
                 (min.min(v), max.max(v))
             });
 
-        // Add some padding to the range
-        let y_min = (min_db - 5.0).max(-60.0);
-        let y_max = (max_db + 5.0).min(20.0);
+        // Add some padding to the range, with sensible defaults if no data
+        let y_min = if min_db.is_finite() {
+            min_db - 5.0
+        } else {
+            -60.0
+        };
+        let y_max = if max_db.is_finite() {
+            max_db + 5.0
+        } else {
+            20.0
+        };
+
+        log::info!(
+            "[render_frequency_response_chart] Y-axis range: {:.2} dB to {:.2} dB (raw: {:.2} to {:.2})",
+            y_min,
+            y_max,
+            min_db,
+            max_db
+        );
 
         let y_scale = LinearScale::new()
             .domain(y_min as f64, y_max as f64)
@@ -503,7 +534,7 @@ impl PlayerView {
         let line_elements: Vec<_> = results
             .iter()
             .enumerate()
-            .map(|(idx, (_name, result))| {
+            .map(|(idx, (name, result))| {
                 let color = colors[idx % colors.len()];
 
                 // Convert frequency/magnitude data to LinePoint
@@ -514,6 +545,12 @@ impl PlayerView {
                     .filter(|&(&f, _)| f >= 20.0 && f <= 20000.0)
                     .map(|(&f, &m)| LinePoint { x: f as f64, y: m as f64 })
                     .collect();
+
+                log::info!(
+                    "[render_frequency_response_chart] Channel '{}': {} plot points",
+                    name,
+                    points.len()
+                );
 
                 let line_config = LineConfig::new()
                     .stroke_color(color)
@@ -863,6 +900,7 @@ impl PlayerView {
 
         // Spawn background task for recording
         let state_entity = self.state.clone();
+        let view_entity = cx.entity().clone();
         let reference_signal = signal.clone();
         let temp_wav_path = temp_wav.path().to_path_buf();
 
@@ -899,8 +937,8 @@ impl PlayerView {
             );
 
             // Parse results and update state
-            let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                match result {
+            let (should_auto_continue, next_channel_idx) = state_entity.update(&mut cx.clone(), |state, _| {
+                let should_continue = match result {
                     Ok(()) => {
                         // Parse the CSV file to get frequency response data
                         if let Ok(csv_data) = std::fs::read_to_string(&csv_path) {
@@ -944,8 +982,7 @@ impl PlayerView {
                                 format!("Channel {} recording complete", channel_name);
 
                             // Check if we should auto-record the next channel
-                            let should_continue = state.app.recording_state.auto_record_remaining;
-                            should_continue
+                            state.app.recording_state.auto_record_remaining
                         } else {
                             false
                         }
@@ -973,7 +1010,7 @@ impl PlayerView {
                 state.app.recording_state.recording_progress = 1.0;
 
                 // Find next channel to record if in auto-record mode
-                let next_channel_idx = if should_auto_continue {
+                let next_channel_idx = if should_continue {
                     state
                         .app
                         .recording_state
@@ -986,8 +1023,8 @@ impl PlayerView {
                     None
                 };
 
-                (should_auto_continue, next_channel_idx)
-            });
+                (should_continue, next_channel_idx)
+            }).ok().unwrap_or((false, None));
 
             // If we should continue auto-recording, start the next channel
             if should_auto_continue {

@@ -2,6 +2,7 @@
 // Gain Plugin - Simple example plugin for testing
 // ============================================================================
 
+use super::param_specs::gain::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 fn default_gain_db() -> f32 {
-    0.0
+    GAIN_DB_DEFAULT
 }
 
 /// Configuration parameters for GainPlugin
@@ -117,7 +118,7 @@ impl InPlacePlugin for GainPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("gain_db", "Gain (dB)", 0.0, -60.0, 20.0).with_description(
+            Parameter::new_float("gain_db", "Gain (dB)", GAIN_DB_DEFAULT, GAIN_DB_MIN, GAIN_DB_MAX).with_description(
                 "Gain in decibels. 0dB = unity gain, negative = attenuation, positive = boost",
             ),
         ]

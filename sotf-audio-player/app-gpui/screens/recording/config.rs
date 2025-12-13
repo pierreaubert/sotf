@@ -31,7 +31,7 @@ impl PlayerView {
     pub(crate) fn render_recording_config_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let _recording_state = &state.app.recording_state;
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -152,7 +152,7 @@ impl PlayerView {
     /// Render playback device dropdown
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let _theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -245,7 +245,7 @@ impl PlayerView {
 
                     // Render the dropdown for this channel
                     let group_dropdown =
-                        self.render_channel_group_dropdown(cx, idx, group_name, true);
+                        self.render_channel_group_dropdown(cx, idx, group_name);
 
                     HStack::new()
                         .spacing(StackSpacing::Md)
@@ -304,17 +304,16 @@ impl PlayerView {
             .into_any_element()
     }
 
-    /// Render channel group dropdown for a specific channel
+    /// Render channel group dropdown for a specific channel (playback only)
     fn render_channel_group_dropdown(
         &self,
         cx: &mut Context<Self>,
         channel_idx: usize,
         current_group: &str,
-        is_playback: bool,
     ) -> impl IntoElement {
         let view = cx.entity().clone();
         let current_group = current_group.to_string();
-        let dropdown_id = format!("channel_group_{}_{}", is_playback, channel_idx);
+        let dropdown_id = format!("channel_group_playback_{}", channel_idx);
 
         // Create a menu with all options
         div()
@@ -327,19 +326,19 @@ impl PlayerView {
                     .value(current_group.clone())
                     .placeholder("Type or select...")
                     .size(InputSize::Sm)
-                    .width(Some(120.0))
                     .on_change({
                         let view = view.clone();
                         move |value, _window, cx| {
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    let mappings = if is_playback {
-                                        &mut state.app.recording_state.playback_config.channel_mappings
-                                    } else {
-                                        &mut state.app.recording_state.recording_config.channel_mappings
-                                    };
-                                    if let Some(mapping) = mappings.get_mut(channel_idx) {
-                                        mapping.group_name = value.clone();
+                                    if let Some(mapping) = state
+                                        .app
+                                        .recording_state
+                                        .playback_config
+                                        .channel_mappings
+                                        .get_mut(channel_idx)
+                                    {
+                                        mapping.group_name = value.to_string();
                                     }
                                 });
                                 cx.notify();
@@ -372,12 +371,13 @@ impl PlayerView {
                             move |_, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        let mappings = if is_playback {
-                                            &mut state.app.recording_state.playback_config.channel_mappings
-                                        } else {
-                                            &mut state.app.recording_state.recording_config.channel_mappings
-                                        };
-                                        if let Some(mapping) = mappings.get_mut(channel_idx) {
+                                        if let Some(mapping) = state
+                                            .app
+                                            .recording_state
+                                            .playback_config
+                                            .channel_mappings
+                                            .get_mut(channel_idx)
+                                        {
                                             mapping.group_name = id.clone();
                                         }
                                     });
@@ -478,7 +478,7 @@ impl PlayerView {
     /// Render recording device dropdown
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let _theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 

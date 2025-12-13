@@ -491,6 +491,7 @@ pub fn analyze_recording(
             }
 
             // Compute transfer function: H(f) = recorded / reference
+            // This gives the system response (for loopback, should be ~1.0 or 0 dB)
             let transfer_function = rec_spectrum[k] / ref_spectrum[k];
             let magnitude = transfer_function.norm();
 
@@ -518,6 +519,16 @@ pub fn analyze_recording(
         // Convert to dB
         let db = 20.0 * avg_magnitude.max(1e-10).log10();
 
+        // Debug: log first few points to see what's happening
+        if frequencies.len() < 5 {
+            log::info!(
+                "[FFT Analysis] freq={:.1} Hz: avg_magnitude={:.6}, dB={:.2}",
+                target_freq,
+                avg_magnitude,
+                db
+            );
+        }
+
         // Average phase using circular mean
         let avg_phase_rad = sum_sin.atan2(sum_cos);
         let phase = avg_phase_rad * 180.0 / PI;
@@ -536,6 +547,16 @@ pub fn analyze_recording(
         skipped_count,
         num_output_points
     );
+
+    if !spl_db.is_empty() {
+        let min_spl = spl_db.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+        let max_spl = spl_db.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        log::info!(
+            "[FFT Analysis] SPL range: {:.2} dB to {:.2} dB",
+            min_spl,
+            max_spl
+        );
+    }
 
     if frequencies.is_empty() {
         log::info!("[FFT Analysis] WARNING: No frequency points generated!");
@@ -979,7 +1000,7 @@ mod tests {
 
             // Magnitude from recorded signal
             // Compute transfer function: H(f) = recorded / reference
-            // This gives us the system response (for loopback, should be ~1.0 or 0 dB)
+            // This gives the system response (for loopback, should be ~1.0 or 0 dB)
             let transfer_function = rec_spectrum[k] / ref_spectrum[k];
             let magnitude = transfer_function.norm();
 
