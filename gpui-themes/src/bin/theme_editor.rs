@@ -13,6 +13,6 @@ fn main() {
             .size(1200.0, 800.0)
             .scrollable(false)
             .with_theme(false), // Editor manages its own theme
-        |cx| cx.new(|cx| ThemeEditor::new(cx)),
+        |cx| cx.new(ThemeEditor::new),
     );
 }
