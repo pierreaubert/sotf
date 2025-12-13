@@ -12,13 +12,14 @@ use gpui_ui_kit::{
 impl PlayerView {
     /// Render the application menu bar with dropdown menus
     pub(crate) fn render_menu_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, active_menu, scan_in_progress, scan_progress_tracks) = {
+        let (theme, active_menu, scan_in_progress, scan_progress_tracks, translations) = {
             let state = self.state.read(cx);
             (
                 state.app.theme.clone(),
                 state.app.active_menu,
                 state.app.scan_in_progress,
                 state.app.scan_progress_tracks,
+                state.app.translations.clone(),
             )
         };
 
@@ -30,21 +31,21 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Xs)
                     .child(self.render_menu_button(
-                        "File",
+                        translations.menu_file,
                         ActiveMenu::File,
                         active_menu,
                         theme.clone(),
                         cx,
                     ))
                     .child(self.render_menu_button(
-                        "View",
+                        translations.menu_view,
                         ActiveMenu::View,
                         active_menu,
                         theme.clone(),
                         cx,
                     ))
                     .child(self.render_menu_button(
-                        "Help",
+                        translations.menu_help,
                         ActiveMenu::Help,
                         active_menu,
                         theme.clone(),
@@ -61,7 +62,11 @@ impl PlayerView {
                     .text_color(theme.text_muted)
                     .when(scan_in_progress, |el| {
                         el.child(LoadingDots::new().color(theme.accent))
-                            .child(format!("Scanning: {} files", scan_progress_tracks))
+                            .child(format!(
+                                "{}: {} files",
+                                translations.library_scanning,
+                                scan_progress_tracks
+                            ))
                     }),
             )
             .build()
@@ -135,14 +140,17 @@ impl PlayerView {
     }
 
     /// Render File menu dropdown
-    fn render_file_dropdown(&self, theme: Theme, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_file_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         // Create a weak reference to self for the callback
         let state = self.state.clone();
+        let translations = self.state.read(cx).app.translations.clone();
 
         Menu::new(vec![
-            MenuItem::new("settings", "Settings").with_shortcut("⌘,"),
+            MenuItem::new("settings", translations.screen_settings).with_shortcut("⌘,"),
             MenuItem::separator(),
-            MenuItem::new("quit", "Quit").with_shortcut("⌘Q").danger(),
+            MenuItem::new("quit", translations.menu_quit)
+                .with_shortcut("⌘Q")
+                .danger(),
         ])
         .theme(theme.to_menu_theme())
         .on_select(move |id, window, cx| {
@@ -169,7 +177,11 @@ impl PlayerView {
 
     /// Render View menu dropdown
     fn render_view_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
-        let layout_mode = self.state.read(cx).app.layout_mode;
+        let app_state = self.state.read(cx);
+        let layout_mode = app_state.app.layout_mode;
+        let translations = app_state.app.translations.clone();
+        drop(app_state);
+
         let state = self.state.clone();
 
         let layout_label = format!(
@@ -181,10 +193,10 @@ impl PlayerView {
         );
 
         Menu::new(vec![
-            MenuItem::new("library", "Library").with_shortcut("1"),
-            MenuItem::new("queue", "Queue").with_shortcut("2"),
+            MenuItem::new("library", translations.screen_library).with_shortcut("1"),
+            MenuItem::new("queue", translations.screen_queue).with_shortcut("2"),
             MenuItem::separator(),
-            MenuItem::new("settings", "Settings").with_shortcut("3"),
+            MenuItem::new("settings", translations.screen_settings).with_shortcut("3"),
             MenuItem::separator(),
             MenuItem::new("layout-info", layout_label).disabled(true),
         ])
@@ -207,13 +219,14 @@ impl PlayerView {
     }
 
     /// Render Help menu dropdown
-    fn render_help_dropdown(&self, theme: Theme, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_help_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.clone();
+        let translations = self.state.read(cx).app.translations.clone();
 
         Menu::new(vec![
-            MenuItem::new("shortcuts", "Keyboard Shortcuts").with_shortcut("?"),
+            MenuItem::new("shortcuts", translations.menu_keyboard_shortcuts).with_shortcut("?"),
             MenuItem::separator(),
-            MenuItem::new("about", "About"),
+            MenuItem::new("about", translations.menu_about),
         ])
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
@@ -238,12 +251,13 @@ impl PlayerView {
 
     /// Render the tab bar header (for compact mode)
     pub(crate) fn render_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, layout_mode, current_screen) = {
+        let (theme, layout_mode, current_screen, translations) = {
             let state = self.state.read(cx);
             (
                 state.app.theme.clone(),
                 state.app.layout_mode,
                 state.app.current_screen,
+                state.app.translations.clone(),
             )
         };
 
@@ -260,7 +274,8 @@ impl PlayerView {
             | Screen::DirectoryManager
             | Screen::Spectrum
             | Screen::Recording
-            | Screen::RoomEq => 0, // Default to library for other screens
+            | Screen::RoomEq
+            | Screen::HeadphoneEq => 0, // Default to library for other screens
         };
 
         // Get a weak handle for the state to use in the callback
@@ -278,13 +293,13 @@ impl PlayerView {
                 div()
                     .text_xl()
                     .font_weight(FontWeight::BOLD)
-                    .child("SOTF Audio Player"),
+                    .child(translations.app_title),
             )
             .child(
                 Tabs::new()
                     .tabs(vec![
-                        TabItem::new("library", "Library"),
-                        TabItem::new("queue", "Queue"),
+                        TabItem::new("library", translations.screen_library),
+                        TabItem::new("queue", translations.screen_queue),
                     ])
                     .selected_index(selected_index)
                     .variant(TabVariant::Pills)

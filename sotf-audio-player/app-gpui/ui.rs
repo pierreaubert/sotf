@@ -45,6 +45,7 @@ impl PlayerView {
                     view.state.update(cx, |state, _| {
                         state.app.waveform_manager.update();
                         state.app.replay_gain_manager.update();
+                        state.app.bliss_manager.update();
                         state.app.update_library_scan();
                     });
 
@@ -251,6 +252,19 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.switch_screen(Screen::Recording, cx);
+    }
+
+    fn switch_to_room_eq(&mut self, _: &SwitchToRoomEQ, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen(Screen::RoomEq, cx);
+    }
+
+    fn switch_to_headphone_eq(
+        &mut self,
+        _: &SwitchToHeadphoneEQ,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.switch_screen(Screen::HeadphoneEq, cx);
     }
 
     fn open_config(&mut self, _: &OpenConfig, _: &mut Window, cx: &mut Context<Self>) {
@@ -1808,6 +1822,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_directory_manager))
             .on_action(cx.listener(Self::switch_to_settings))
             .on_action(cx.listener(Self::switch_to_recording))
+            .on_action(cx.listener(Self::switch_to_room_eq))
+            .on_action(cx.listener(Self::switch_to_headphone_eq))
             .on_action(cx.listener(Self::open_config))
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))
@@ -1972,6 +1988,9 @@ impl Render for PlayerView {
                                 Screen::RoomEq => {
                                     self.render_room_eq_screen(cx).into_any_element()
                                 }
+                                Screen::HeadphoneEq => {
+                                    self.render_headphone_eq_screen(cx).into_any_element()
+                                }
                                 // Default: split Library/Queue view
                                 Screen::Library | Screen::Queue => {
                                     self.render_split_view(cx).into_any_element()
@@ -1999,6 +2018,9 @@ impl Render for PlayerView {
                                 }
                                 Screen::RoomEq => {
                                     self.render_room_eq_screen(cx).into_any_element()
+                                }
+                                Screen::HeadphoneEq => {
+                                    self.render_headphone_eq_screen(cx).into_any_element()
                                 }
                             }
                         }

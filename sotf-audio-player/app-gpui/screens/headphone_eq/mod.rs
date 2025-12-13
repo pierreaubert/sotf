@@ -1,12 +1,20 @@
-//! Headphone settings content
+//! Headphone EQ Screen
+//!
+//! Multi-step wizard for headphone EQ optimization:
+//! 1. Select Files - Choose measurement and target curve
+//! 2. Configure - Set optimization parameters
+//! 3. Optimize - Run the optimization
+//! 4. Apply - Review results and apply/export
 
+use crate::app::types::{AutoEqField, HeadphoneEqStep, RoomEqAlgorithm};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Accordion, AccordionItem, AccordionMode, AccordionTheme, Button, ButtonSize, ButtonTheme,
-    ButtonVariant, Card, HStack, Progress, ProgressSize, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Accordion, AccordionItem, AccordionMode, AccordionTheme, AutoEqAlgorithm as UiAutoEqAlgorithm,
+    AutoEqConfig, AutoEqField as UiAutoEqField, AutoEqForm, AutoEqFormUiState, Button, ButtonSize,
+    ButtonTheme, ButtonVariant, Card, HStack, Progress, ProgressSize, StackAlign, StackSpacing,
+    Text, TextSize, TextWeight, VStack,
 };
 
 /// Target curve options for headphone EQ
@@ -19,6 +27,963 @@ pub const TARGET_CURVE_OPTIONS: &[(&str, &str)] = &[
 ];
 
 impl PlayerView {
+    // ========================================================================
+    // Headphone EQ Wizard Screen
+    // ========================================================================
+
+    /// Main Headphone EQ screen entry point (wizard)
+    pub(crate) fn render_headphone_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let current_step = state.app.headphone_eq_state.step;
+
+        // Content for current step
+        let content = match current_step {
+            HeadphoneEqStep::SelectFiles => {
+                self.render_headphone_eq_select_files(cx).into_any_element()
+            }
+            HeadphoneEqStep::Configure => {
+                self.render_headphone_eq_configure(cx).into_any_element()
+            }
+            HeadphoneEqStep::Optimize => self.render_headphone_eq_optimize(cx).into_any_element(),
+            HeadphoneEqStep::Apply => self.render_headphone_eq_apply(cx).into_any_element(),
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(theme.background)
+            .child(self.render_headphone_eq_header(cx))
+            .child(
+                div()
+                    .id("headphone-eq-content")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .p_4()
+                    .child(content),
+            )
+    }
+
+    /// Render the headphone EQ screen header with step indicators
+    fn render_headphone_eq_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let current_step = state.app.headphone_eq_state.step;
+
+        // Helper function to build step indicator
+        let build_step_indicator =
+            |step: HeadphoneEqStep, label: &'static str, number: u8, theme: &crate::theme::Theme| {
+                let is_active = current_step == step;
+                let is_past = current_step.index() > step.index();
+
+                let (bg_color, text_color, border_color) = if is_active {
+                    (theme.accent, theme.text_on_accent, theme.accent)
+                } else if is_past {
+                    (theme.success, theme.text_on_accent, theme.success)
+                } else {
+                    (theme.surface, theme.text_muted, theme.border)
+                };
+
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(
+                        div()
+                            .w(px(28.0))
+                            .h(px(28.0))
+                            .rounded_full()
+                            .bg(bg_color)
+                            .border_2()
+                            .border_color(border_color)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Text::new(number.to_string())
+                                    .size(TextSize::Sm)
+                                    .weight(TextWeight::Bold)
+                                    .color(text_color),
+                            ),
+                    )
+                    .child(
+                        Text::new(label)
+                            .size(TextSize::Sm)
+                            .weight(if is_active {
+                                TextWeight::Bold
+                            } else {
+                                TextWeight::Normal
+                            })
+                            .color(if is_active {
+                                theme.text_primary
+                            } else {
+                                theme.text_muted
+                            }),
+                    )
+            };
+
+        // Build step connector
+        let connector = |from: HeadphoneEqStep, theme: &crate::theme::Theme| {
+            let is_completed = current_step.index() > from.index();
+            div().w(px(32.0)).h(px(2.0)).bg(if is_completed {
+                theme.success
+            } else {
+                theme.border
+            })
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_6()
+            .py_4()
+            .bg(theme.background_secondary)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .align(StackAlign::Center)
+                    .child(
+                        Text::new("Headphone EQ")
+                            .size(TextSize::Xl)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    )
+                    .child(div().w(px(1.0)).h(px(24.0)).bg(theme.border))
+                    .child(build_step_indicator(
+                        HeadphoneEqStep::SelectFiles,
+                        "Select Files",
+                        1,
+                        &theme,
+                    ))
+                    .child(connector(HeadphoneEqStep::SelectFiles, &theme))
+                    .child(build_step_indicator(
+                        HeadphoneEqStep::Configure,
+                        "Configure",
+                        2,
+                        &theme,
+                    ))
+                    .child(connector(HeadphoneEqStep::Configure, &theme))
+                    .child(build_step_indicator(
+                        HeadphoneEqStep::Optimize,
+                        "Optimize",
+                        3,
+                        &theme,
+                    ))
+                    .child(connector(HeadphoneEqStep::Optimize, &theme))
+                    .child(build_step_indicator(
+                        HeadphoneEqStep::Apply,
+                        "Apply",
+                        4,
+                        &theme,
+                    )),
+            )
+            .child(self.render_headphone_eq_nav_buttons(cx))
+    }
+
+    /// Render navigation buttons (Close/Back and Next/Finish)
+    fn render_headphone_eq_nav_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let current_step = state.app.headphone_eq_state.step;
+        let can_go_next = state.app.headphone_eq_state.can_advance();
+        let is_busy = state.app.headphone_eq_state.is_optimizing();
+        let view = cx.entity().clone();
+
+        let back_label = match current_step {
+            HeadphoneEqStep::SelectFiles => "Close",
+            _ => "Back",
+        };
+        let next_label = match current_step {
+            HeadphoneEqStep::Apply => "Finish",
+            _ => "Next",
+        };
+
+        HStack::new()
+            .spacing(StackSpacing::Md)
+            .child(
+                Button::new("back", back_label)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Md)
+                    .disabled(is_busy)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    match state.app.headphone_eq_state.step {
+                                        HeadphoneEqStep::SelectFiles => {
+                                            // Go back to previous screen
+                                            state.app.current_screen = state.app.last_screen;
+                                        }
+                                        _ => {
+                                            // Go back to previous step
+                                            if let Some(prev) =
+                                                state.app.headphone_eq_state.step.previous()
+                                            {
+                                                state.app.headphone_eq_state.step = prev;
+                                            }
+                                        }
+                                    }
+                                });
+                                cx.notify();
+                            });
+                        }
+                    }),
+            )
+            .child(
+                Button::new("next", next_label)
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Md)
+                    .disabled(!can_go_next || is_busy)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    match state.app.headphone_eq_state.step {
+                                        HeadphoneEqStep::Apply => {
+                                            // Finish - go back
+                                            state.app.current_screen = state.app.last_screen;
+                                        }
+                                        _ => {
+                                            // Go to next step
+                                            if let Some(next) =
+                                                state.app.headphone_eq_state.step.next()
+                                            {
+                                                state.app.headphone_eq_state.step = next;
+                                            }
+                                        }
+                                    }
+                                });
+                                cx.notify();
+                            });
+                        }
+                    }),
+            )
+    }
+
+    // ========================================================================
+    // Step 1: Select Files
+    // ========================================================================
+
+    fn render_headphone_eq_select_files(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let headphone_eq = &state.app.headphone_eq_state;
+
+        let measurement_path = headphone_eq
+            .measurement_path
+            .clone()
+            .unwrap_or_default();
+        let target_preset = headphone_eq.target_preset.clone();
+        let custom_target_path = headphone_eq
+            .custom_target_path
+            .clone()
+            .unwrap_or_default();
+
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(
+                Text::new("Select Measurement & Target")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Lg),
+            )
+            .child(
+                Text::new("Choose your headphone measurement file and target curve.")
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .child(
+                Card::new()
+                    .header(Text::new("Measurement File").weight(TextWeight::Semibold))
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new("Select a CSV file with your headphone's frequency response measurement.")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .px_3()
+                                            .py_2()
+                                            .rounded_md()
+                                            .bg(theme.background_secondary)
+                                            .text_sm()
+                                            .text_color(if measurement_path.is_empty() {
+                                                theme.text_muted
+                                            } else {
+                                                theme.text_primary
+                                            })
+                                            .child(if measurement_path.is_empty() {
+                                                "No file selected".to_string()
+                                            } else {
+                                                measurement_path.clone()
+                                            }),
+                                    )
+                                    .child(
+                                        Button::new("browse-measurement", "Browse...")
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Md)
+                                            .build()
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(|view, _, _, cx| {
+                                                    view.browse_headphone_eq_measurement(cx);
+                                                }),
+                                            ),
+                                    ),
+                            ),
+                    ),
+            )
+            .child(
+                Card::new()
+                    .header(Text::new("Target Curve").weight(TextWeight::Semibold))
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new("Select a target curve for your headphone EQ.")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .wrap(true)
+                                    .children(TARGET_CURVE_OPTIONS.iter().map(|(value, label)| {
+                                        let is_selected = target_preset == *value;
+                                        let value = value.to_string();
+                                        let is_custom = value == "custom";
+
+                                        Button::new(
+                                            SharedString::from(format!("hp-target-{}", value)),
+                                            *label,
+                                        )
+                                        .variant(if is_selected {
+                                            ButtonVariant::Primary
+                                        } else {
+                                            ButtonVariant::Secondary
+                                        })
+                                        .size(ButtonSize::Sm)
+                                        .build()
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, _, _, cx| {
+                                                if is_custom {
+                                                    view.browse_headphone_eq_target(cx);
+                                                } else {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.headphone_eq_state.target_preset =
+                                                            value.clone();
+                                                    });
+                                                    cx.notify();
+                                                }
+                                            }),
+                                        )
+                                    })),
+                            )
+                            .when(target_preset == "custom", |vstack| {
+                                let theme = theme.clone();
+                                vstack.child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .px_3()
+                                                .py_2()
+                                                .rounded_md()
+                                                .bg(theme.background_secondary)
+                                                .text_sm()
+                                                .text_color(theme.text_muted)
+                                                .child(if custom_target_path.is_empty() {
+                                                    "No custom target file selected".to_string()
+                                                } else {
+                                                    custom_target_path.clone()
+                                                }),
+                                        )
+                                        .child(
+                                            Button::new("browse-custom-target", "Change")
+                                                .variant(ButtonVariant::Secondary)
+                                                .size(ButtonSize::Sm)
+                                                .build()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|view, _, _, cx| {
+                                                        view.browse_headphone_eq_target(cx);
+                                                    }),
+                                                ),
+                                        ),
+                                )
+                            }),
+                    ),
+            )
+    }
+
+    // ========================================================================
+    // Step 2: Configure
+    // ========================================================================
+
+    fn render_headphone_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let headphone_eq = &state.app.headphone_eq_state;
+
+        // Build AutoEqConfig from our HeadphoneEqOptimizerConfig
+        let autoeq_config = AutoEqConfig {
+            algorithm: match headphone_eq.optimizer_config.algorithm {
+                RoomEqAlgorithm::Cobyla => UiAutoEqAlgorithm::Cobyla,
+                RoomEqAlgorithm::DifferentialEvolution => UiAutoEqAlgorithm::DifferentialEvolution,
+                RoomEqAlgorithm::NelderMead => UiAutoEqAlgorithm::NelderMead,
+            },
+            num_filters: headphone_eq.optimizer_config.num_filters,
+            min_q: headphone_eq.optimizer_config.min_q,
+            max_q: headphone_eq.optimizer_config.max_q,
+            min_db: headphone_eq.optimizer_config.min_db,
+            max_db: headphone_eq.optimizer_config.max_db,
+            min_freq: headphone_eq.optimizer_config.min_freq,
+            max_freq: headphone_eq.optimizer_config.max_freq,
+            max_iter: headphone_eq.optimizer_config.max_iter,
+        };
+
+        // Build AutoEqFormUiState from our dropdowns
+        let autoeq_ui_state = AutoEqFormUiState {
+            algorithm_open: headphone_eq.dropdowns.algorithm_open,
+            editing_field: headphone_eq.dropdowns.autoeq_editing_field.map(|f| match f {
+                AutoEqField::NumFilters => UiAutoEqField::NumFilters,
+                AutoEqField::MinQ => UiAutoEqField::MinQ,
+                AutoEqField::MaxQ => UiAutoEqField::MaxQ,
+                AutoEqField::MinDb => UiAutoEqField::MinDb,
+                AutoEqField::MaxDb => UiAutoEqField::MaxDb,
+                AutoEqField::MinFreq => UiAutoEqField::MinFreq,
+                AutoEqField::MaxFreq => UiAutoEqField::MaxFreq,
+                AutoEqField::MaxIter => UiAutoEqField::MaxIter,
+            }),
+            edit_text: headphone_eq.dropdowns.autoeq_edit_text.clone(),
+        };
+
+        // Build the AutoEQ form with handlers
+        let autoeq_form = AutoEqForm::new("headphone-eq-optimizer-form")
+            .config(autoeq_config)
+            .ui_state(autoeq_ui_state)
+            .on_algorithm_change({
+                let state = self.state.clone();
+                move |alg, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.algorithm = match alg {
+                            UiAutoEqAlgorithm::Cobyla => RoomEqAlgorithm::Cobyla,
+                            UiAutoEqAlgorithm::DifferentialEvolution => {
+                                RoomEqAlgorithm::DifferentialEvolution
+                            }
+                            UiAutoEqAlgorithm::NelderMead => RoomEqAlgorithm::NelderMead,
+                        };
+                        state.app.headphone_eq_state.dropdowns.algorithm_open = false;
+                    });
+                }
+            })
+            .on_algorithm_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.algorithm_open = open;
+                    });
+                }
+            })
+            .on_num_filters_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.num_filters = value;
+                    });
+                }
+            })
+            .on_min_q_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.min_q = value;
+                    });
+                }
+            })
+            .on_max_q_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.max_q = value;
+                    });
+                }
+            })
+            .on_min_db_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.min_db = value;
+                    });
+                }
+            })
+            .on_max_db_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.max_db = value;
+                    });
+                }
+            })
+            .on_min_freq_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.min_freq = value;
+                    });
+                }
+            })
+            .on_max_freq_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.max_freq = value;
+                    });
+                }
+            })
+            .on_max_iter_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.max_iter = value;
+                    });
+                }
+            })
+            .on_field_edit_start({
+                let state = self.state.clone();
+                move |field, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        let local_field = match field {
+                            UiAutoEqField::NumFilters => AutoEqField::NumFilters,
+                            UiAutoEqField::MinQ => AutoEqField::MinQ,
+                            UiAutoEqField::MaxQ => AutoEqField::MaxQ,
+                            UiAutoEqField::MinDb => AutoEqField::MinDb,
+                            UiAutoEqField::MaxDb => AutoEqField::MaxDb,
+                            UiAutoEqField::MinFreq => AutoEqField::MinFreq,
+                            UiAutoEqField::MaxFreq => AutoEqField::MaxFreq,
+                            UiAutoEqField::MaxIter => AutoEqField::MaxIter,
+                        };
+                        state.app.headphone_eq_state.dropdowns.autoeq_editing_field =
+                            Some(local_field);
+                        // Initialize edit text with current value
+                        let config = &state.app.headphone_eq_state.optimizer_config;
+                        state.app.headphone_eq_state.dropdowns.autoeq_edit_text = match field {
+                            UiAutoEqField::NumFilters => config.num_filters.to_string(),
+                            UiAutoEqField::MinQ => format!("{:.1}", config.min_q),
+                            UiAutoEqField::MaxQ => format!("{:.1}", config.max_q),
+                            UiAutoEqField::MinDb => format!("{:.1}", config.min_db),
+                            UiAutoEqField::MaxDb => format!("{:.1}", config.max_db),
+                            UiAutoEqField::MinFreq => format!("{:.0}", config.min_freq),
+                            UiAutoEqField::MaxFreq => format!("{:.0}", config.max_freq),
+                            UiAutoEqField::MaxIter => config.max_iter.to_string(),
+                        };
+                    });
+                }
+            })
+            .on_field_edit_end({
+                let state = self.state.clone();
+                move |_window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.autoeq_editing_field = None;
+                        state
+                            .app
+                            .headphone_eq_state
+                            .dropdowns
+                            .autoeq_edit_text
+                            .clear();
+                    });
+                }
+            })
+            .on_edit_text_change({
+                let state = self.state.clone();
+                move |text, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.autoeq_edit_text = text;
+                    });
+                }
+            });
+
+        // Loss function selection
+        let current_loss = headphone_eq.optimizer_config.loss.clone();
+
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(
+                Text::new("Configure Optimization")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Lg),
+            )
+            .child(
+                Text::new("Set the optimization parameters for your headphone EQ.")
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .child(
+                Card::new()
+                    .header(Text::new("Optimization Goal").weight(TextWeight::Semibold))
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new("Choose what the optimizer should optimize for.")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .child({
+                                        let is_selected = current_loss == "headphone-score";
+                                        Button::new("loss-score", "Harman Score")
+                                            .variant(if is_selected {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Secondary
+                                            })
+                                            .size(ButtonSize::Sm)
+                                            .build()
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(|view, _, _, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state
+                                                            .app
+                                                            .headphone_eq_state
+                                                            .optimizer_config
+                                                            .loss =
+                                                            "headphone-score".to_string();
+                                                    });
+                                                    cx.notify();
+                                                }),
+                                            )
+                                    })
+                                    .child({
+                                        let is_selected = current_loss == "headphone-flat";
+                                        Button::new("loss-flat", "Target Flat")
+                                            .variant(if is_selected {
+                                                ButtonVariant::Primary
+                                            } else {
+                                                ButtonVariant::Secondary
+                                            })
+                                            .size(ButtonSize::Sm)
+                                            .build()
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(|view, _, _, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state
+                                                            .app
+                                                            .headphone_eq_state
+                                                            .optimizer_config
+                                                            .loss = "headphone-flat".to_string();
+                                                    });
+                                                    cx.notify();
+                                                }),
+                                            )
+                                    }),
+                            ),
+                    ),
+            )
+            .child(
+                Card::new()
+                    .header(Text::new("EQ Parameters").weight(TextWeight::Semibold))
+                    .content(autoeq_form),
+            )
+    }
+
+    // ========================================================================
+    // Step 3: Optimize
+    // ========================================================================
+
+    fn render_headphone_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let headphone_eq = &state.app.headphone_eq_state;
+        let progress = headphone_eq.progress;
+        let status_msg = &headphone_eq.status_message;
+        let is_optimizing = headphone_eq.is_optimizing();
+
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(
+                Text::new("Run Optimization")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Lg),
+            )
+            .child(
+                Text::new("Generate the optimal EQ curve for your headphones.")
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .child(
+                Card::new()
+                    .header(Text::new("Optimization").weight(TextWeight::Semibold))
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new(format!("Progress: {:.0}%", progress * 100.0))
+                                    .size(TextSize::Sm),
+                            )
+                            .child(Progress::new(progress * 100.0).size(ProgressSize::Md))
+                            .child(
+                                Text::new(status_msg.clone())
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                Button::new(
+                                    "start_optimization",
+                                    if is_optimizing {
+                                        "Optimizing..."
+                                    } else {
+                                        "Start Optimization"
+                                    },
+                                )
+                                .variant(ButtonVariant::Primary)
+                                .disabled(is_optimizing)
+                                .build()
+                                .when(!is_optimizing, |btn| {
+                                    btn.on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _, _, cx| {
+                                            view.start_headphone_eq_optimization(cx);
+                                        }),
+                                    )
+                                }),
+                            ),
+                    ),
+            )
+    }
+
+    // ========================================================================
+    // Step 4: Apply
+    // ========================================================================
+
+    fn render_headphone_eq_apply(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let headphone_eq = &state.app.headphone_eq_state;
+        let result = headphone_eq.result.as_ref();
+        let export_format = headphone_eq.export_format.clone();
+
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(
+                Text::new("Apply & Export")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Lg),
+            )
+            .child(
+                Text::new("Review results and apply or export the EQ.")
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .when_some(result, |vstack, result| {
+                vstack
+                    .child(
+                        Card::new()
+                            .header(Text::new("Results").weight(TextWeight::Semibold))
+                            .content(
+                                VStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .child(
+                                        HStack::new()
+                                            .spacing(StackSpacing::Lg)
+                                            .child(Text::new(format!(
+                                                "Before: {:.2}",
+                                                result.pre_score
+                                            )))
+                                            .child(Text::new(format!(
+                                                "After: {:.2}",
+                                                result.post_score
+                                            )))
+                                            .child(
+                                                Text::new(format!(
+                                                    "Improvement: {:.2}",
+                                                    result.pre_score - result.post_score
+                                                ))
+                                                .color(if result.post_score < result.pre_score {
+                                                    theme.success
+                                                } else {
+                                                    theme.error
+                                                }),
+                                            ),
+                                    )
+                                    .child(
+                                        Text::new(format!("{} filters", result.biquads.len()))
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    ),
+                            ),
+                    )
+                    .child(
+                        Card::new()
+                            .header(Text::new("Actions").weight(TextWeight::Semibold))
+                            .content(
+                                VStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .child(
+                                        HStack::new()
+                                            .spacing(StackSpacing::Sm)
+                                            .child(
+                                                Button::new(
+                                                    "apply-to-playback",
+                                                    "Apply to Playback",
+                                                )
+                                                .variant(ButtonVariant::Primary)
+                                                .size(ButtonSize::Md)
+                                                .build()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|view, _, _, cx| {
+                                                        view.apply_headphone_eq_result(cx);
+                                                    }),
+                                                ),
+                                            )
+                                            .child(
+                                                Button::new("clear-eq", "Clear EQ")
+                                                    .variant(ButtonVariant::Secondary)
+                                                    .size(ButtonSize::Md)
+                                                    .build()
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(|view, _, _, cx| {
+                                                            view.clear_headphone_eq_from_playback(
+                                                                cx,
+                                                            );
+                                                        }),
+                                                    ),
+                                            ),
+                                    )
+                                    .child(
+                                        HStack::new()
+                                            .spacing(StackSpacing::Sm)
+                                            .wrap(true)
+                                            .children(
+                                                crate::autoeq::EQ_EXPORT_FORMAT_OPTIONS.iter().map(
+                                                    |(value, label, _ext)| {
+                                                        let is_selected = export_format == *value;
+                                                        let value = value.to_string();
+
+                                                        Button::new(
+                                                            SharedString::from(format!(
+                                                                "export-format-{}",
+                                                                value
+                                                            )),
+                                                            *label,
+                                                        )
+                                                        .variant(if is_selected {
+                                                            ButtonVariant::Primary
+                                                        } else {
+                                                            ButtonVariant::Secondary
+                                                        })
+                                                        .size(ButtonSize::Sm)
+                                                        .build()
+                                                        .on_mouse_up(
+                                                            MouseButton::Left,
+                                                            cx.listener(
+                                                                move |view, _, _, cx| {
+                                                                    view.state.update(
+                                                                        cx,
+                                                                        |state, _cx| {
+                                                                            state
+                                                                    .app
+                                                                    .headphone_eq_state
+                                                                    .export_format = value.clone();
+                                                                        },
+                                                                    );
+                                                                    cx.notify();
+                                                                },
+                                                            ),
+                                                        )
+                                                    },
+                                                ),
+                                            ),
+                                    )
+                                    .child(
+                                        Button::new("save-eq", "Save EQ File")
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Md)
+                                            .build()
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(|view, _, _, cx| {
+                                                    view.save_headphone_eq_result(cx);
+                                                }),
+                                            ),
+                                    ),
+                            ),
+                    )
+            })
+            .when(result.is_none(), |vstack| {
+                vstack.child(
+                    Card::new()
+                        .header(Text::new("No Results").weight(TextWeight::Semibold))
+                        .content(
+                            Text::new("Run optimization first to see results.")
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                        ),
+                )
+            })
+    }
+
+    // ========================================================================
+    // Action Handlers
+    // ========================================================================
+
+    fn browse_headphone_eq_measurement(&mut self, _cx: &mut Context<Self>) {
+        // TODO: Open file dialog and load CSV
+        log::info!("TODO: Browse headphone EQ measurement file");
+    }
+
+    fn browse_headphone_eq_target(&mut self, cx: &mut Context<Self>) {
+        // TODO: Open file dialog for custom target
+        log::info!("TODO: Browse headphone EQ target file");
+        self.state.update(cx, |state, _cx| {
+            state.app.headphone_eq_state.target_preset = "custom".to_string();
+        });
+        cx.notify();
+    }
+
+    fn start_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
+        // TODO: Spawn async optimization task
+        log::info!("TODO: Start headphone EQ optimization");
+        self.state.update(cx, |state, _cx| {
+            state.app.headphone_eq_state.optimization_status =
+                crate::app::types::OptimizationStatus::Running;
+            state.app.headphone_eq_state.status_message = "Starting optimization...".to_string();
+        });
+        cx.notify();
+    }
+
+    fn apply_headphone_eq_result(&mut self, _cx: &mut Context<Self>) {
+        // TODO: Apply result to player's plugin chain
+        log::info!("TODO: Apply headphone EQ result to playback");
+    }
+
+    fn save_headphone_eq_result(&mut self, _cx: &mut Context<Self>) {
+        // TODO: Save result to file
+        log::info!("TODO: Save headphone EQ result");
+    }
+
+    // ========================================================================
+    // Settings Content (legacy, kept for settings tab)
+    // ========================================================================
+
     pub(crate) fn render_headphone_settings_content(
         &self,
         cx: &mut Context<Self>,

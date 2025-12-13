@@ -24,9 +24,11 @@ impl PlayerView {
             channel_filter,
             filter_menu_open,
             theme,
+            translations,
             (min_year, max_year, genres_count, stereo_count, multichannel_count),
         ) = {
             let state = self.state.read(cx);
+            let translations = state.app.translations.clone();
 
             // Count unique artists, tracks, and composers
             let mut artists: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -60,6 +62,7 @@ impl PlayerView {
                 state.app.channel_filter,
                 state.app.filter_menu_open,
                 state.app.theme.clone(),
+                translations,
                 // New stats
                 {
                     let mut min_year = 9999;
@@ -129,7 +132,7 @@ impl PlayerView {
                     .mb_2()
                     // Box 1: Years (clickable, sorts by Year)
                     .child(self.render_sortable_stat_box(
-                        "Years",
+                        translations.library_years,
                         format!(
                             "{} - {}",
                             if min_year > 0 {
@@ -151,7 +154,7 @@ impl PlayerView {
                     ))
                     // Box 2: Genres (clickable, sorts by Genre)
                     .child(self.render_sortable_stat_box(
-                        "Genres",
+                        translations.library_genres,
                         genres_count.to_string(),
                         IconName::Folder,
                         crate::app::LibrarySortOrder::Genre,
@@ -161,7 +164,7 @@ impl PlayerView {
                     ))
                     // Box 3: Artists (clickable, sorts by Artist)
                     .child(self.render_sortable_stat_box(
-                        "Artists",
+                        translations.library_artists,
                         artists_count.to_string(),
                         IconName::User,
                         crate::app::LibrarySortOrder::Artist,
@@ -171,7 +174,7 @@ impl PlayerView {
                     ))
                     // Box 4: Albums (clickable, sorts by Album title)
                     .child(self.render_sortable_stat_box(
-                        "Albums",
+                        translations.library_albums,
                         albums_count.to_string(),
                         IconName::Album,
                         crate::app::LibrarySortOrder::Album,
@@ -181,7 +184,7 @@ impl PlayerView {
                     ))
                     // Box 5: Tracks (clickable, sorts by track count)
                     .child(self.render_sortable_stat_box(
-                        "Tracks",
+                        translations.library_tracks,
                         tracks_count.to_string(),
                         IconName::Music,
                         crate::app::LibrarySortOrder::Tracks,
@@ -191,7 +194,7 @@ impl PlayerView {
                     ))
                     // Box 6: Composers (clickable, sorts by Composer)
                     .child(self.render_sortable_stat_box(
-                        "Composers",
+                        translations.library_composers,
                         composers_count.to_string(),
                         IconName::PenTool,
                         crate::app::LibrarySortOrder::Composer,
@@ -204,11 +207,18 @@ impl PlayerView {
                         stereo_count,
                         multichannel_count,
                         channel_filter,
+                        translations.library_stereo_multi,
                         &theme,
                         cx,
                     ))
                     // Box 8: Search icon box
-                    .child(self.render_search_box(&theme, is_search_mode, cx)),
+                    .child(self.render_search_box(
+                        translations.library_search,
+                        translations.library_albums,
+                        &theme,
+                        is_search_mode,
+                        cx,
+                    )),
             )
             // Search bar (only visible when in search mode)
             .when(is_search_mode, |el| {
@@ -447,6 +457,7 @@ impl PlayerView {
         stereo_count: usize,
         multichannel_count: usize,
         _current_filter: crate::app::ChannelFilter,
+        label: &'static str,
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -504,7 +515,7 @@ impl PlayerView {
                                         .color(text_primary),
                                     )
                                     .child(
-                                        Text::new("Stereo / Multi")
+                                        Text::new(label)
                                             .size(TextSize::Xs)
                                             .color(text_secondary),
                                     )
@@ -526,6 +537,8 @@ impl PlayerView {
     /// Render the search icon box
     fn render_search_box(
         &self,
+        search_label: &'static str,
+        albums_label: &'static str,
         theme: &crate::theme::Theme,
         is_active: bool,
         cx: &mut Context<Self>,
@@ -572,13 +585,13 @@ impl PlayerView {
                                 VStack::new()
                                     .spacing(StackSpacing::None)
                                     .child(
-                                        Text::new("Search")
+                                        Text::new(search_label)
                                             .size(TextSize::Md)
                                             .weight(TextWeight::Bold)
                                             .color(text_secondary),
                                     )
                                     .child(
-                                        Text::new("Albums")
+                                        Text::new(albums_label)
                                             .size(TextSize::Xs)
                                             .color(text_secondary),
                                     )

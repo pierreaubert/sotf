@@ -92,8 +92,10 @@ fn main() {
                     MenuItem::action("Settings", SwitchToSettings),
                     MenuItem::action("Devices", SwitchToDevices),
                     MenuItem::action("Plugins", SwitchToPlugins),
-                    MenuItem::action("HeadphoneEQ", SwitchToHeadphoneEQ),
-                    MenuItem::action("RoomEQ", SwitchToRoomEQ),
+                    MenuItem::separator(),
+                    MenuItem::action("Recording", SwitchToRecording),
+                    MenuItem::action("Room EQ", SwitchToRoomEQ),
+                    MenuItem::action("Headphone EQ", SwitchToHeadphoneEQ),
                 ],
             },
             Menu {

@@ -16,6 +16,7 @@ pub enum Screen {
     Settings,
     Recording,
     RoomEq,
+    HeadphoneEq,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1010,5 +1011,249 @@ impl RoomEqState {
             self.channel_results.iter().map(|r| r.post_score).sum::<f64>()
                 / self.channel_results.len() as f64
         }
+    }
+}
+
+// ============================================================================
+// Headphone EQ Screen Types
+// ============================================================================
+
+/// Headphone EQ workflow step
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HeadphoneEqStep {
+    /// Step 1: Select measurement file and target curve
+    #[default]
+    SelectFiles,
+    /// Step 2: Configure optimization parameters
+    Configure,
+    /// Step 3: Run optimization
+    Optimize,
+    /// Step 4: Review and apply/export
+    Apply,
+}
+
+impl HeadphoneEqStep {
+    /// Get all steps in order
+    pub fn all() -> &'static [HeadphoneEqStep] {
+        &[
+            HeadphoneEqStep::SelectFiles,
+            HeadphoneEqStep::Configure,
+            HeadphoneEqStep::Optimize,
+            HeadphoneEqStep::Apply,
+        ]
+    }
+
+    /// Get step index (0-based)
+    pub fn index(&self) -> usize {
+        match self {
+            HeadphoneEqStep::SelectFiles => 0,
+            HeadphoneEqStep::Configure => 1,
+            HeadphoneEqStep::Optimize => 2,
+            HeadphoneEqStep::Apply => 3,
+        }
+    }
+
+    /// Get step label
+    pub fn label(&self) -> &'static str {
+        match self {
+            HeadphoneEqStep::SelectFiles => "Select Files",
+            HeadphoneEqStep::Configure => "Configure",
+            HeadphoneEqStep::Optimize => "Optimize",
+            HeadphoneEqStep::Apply => "Apply",
+        }
+    }
+
+    /// Get next step
+    pub fn next(&self) -> Option<HeadphoneEqStep> {
+        match self {
+            HeadphoneEqStep::SelectFiles => Some(HeadphoneEqStep::Configure),
+            HeadphoneEqStep::Configure => Some(HeadphoneEqStep::Optimize),
+            HeadphoneEqStep::Optimize => Some(HeadphoneEqStep::Apply),
+            HeadphoneEqStep::Apply => None,
+        }
+    }
+
+    /// Get previous step
+    pub fn previous(&self) -> Option<HeadphoneEqStep> {
+        match self {
+            HeadphoneEqStep::SelectFiles => None,
+            HeadphoneEqStep::Configure => Some(HeadphoneEqStep::SelectFiles),
+            HeadphoneEqStep::Optimize => Some(HeadphoneEqStep::Configure),
+            HeadphoneEqStep::Apply => Some(HeadphoneEqStep::Optimize),
+        }
+    }
+}
+
+/// Headphone EQ optimizer configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeadphoneEqOptimizerConfig {
+    /// Optimization algorithm
+    pub algorithm: RoomEqAlgorithm,
+    /// Number of PEQ filters
+    pub num_filters: usize,
+    /// Minimum Q factor
+    pub min_q: f64,
+    /// Maximum Q factor
+    pub max_q: f64,
+    /// Minimum gain in dB
+    pub min_db: f64,
+    /// Maximum gain in dB
+    pub max_db: f64,
+    /// Minimum frequency in Hz
+    pub min_freq: f64,
+    /// Maximum frequency in Hz
+    pub max_freq: f64,
+    /// Maximum number of iterations
+    pub max_iter: usize,
+    /// Loss function
+    pub loss: String,
+}
+
+impl Default for HeadphoneEqOptimizerConfig {
+    fn default() -> Self {
+        Self {
+            algorithm: RoomEqAlgorithm::Cobyla,
+            num_filters: 10,
+            min_q: 0.5,
+            max_q: 10.0,
+            min_db: -12.0,
+            max_db: 12.0,
+            min_freq: 20.0,
+            max_freq: 20000.0,
+            max_iter: 10000,
+            loss: "headphone-score".to_string(),
+        }
+    }
+}
+
+/// UI state for Headphone EQ dropdowns
+#[derive(Debug, Clone, Default)]
+pub struct HeadphoneEqDropdowns {
+    pub target_open: bool,
+    pub algorithm_open: bool,
+    pub export_format_open: bool,
+    /// AutoEQ form editing state
+    pub autoeq_editing_field: Option<AutoEqField>,
+    /// AutoEQ form edit text
+    pub autoeq_edit_text: String,
+}
+
+/// Complete Headphone EQ screen state
+#[derive(Debug, Clone)]
+pub struct HeadphoneEqState {
+    /// Current step in the workflow
+    pub step: HeadphoneEqStep,
+
+    // === Step 1: Select Files ===
+    /// Path to headphone measurement file (CSV)
+    pub measurement_path: Option<String>,
+    /// Target curve selection (preset name or "custom")
+    pub target_preset: String,
+    /// Path to custom target file (if target_preset == "custom")
+    pub custom_target_path: Option<String>,
+
+    // === Step 2: Configuration ===
+    /// Optimizer configuration
+    pub optimizer_config: HeadphoneEqOptimizerConfig,
+
+    // === Step 3: Optimization ===
+    /// Current optimization status
+    pub optimization_status: OptimizationStatus,
+    /// Progress (0.0 - 1.0)
+    pub progress: f32,
+    /// Progress history for loss curve (iteration, loss)
+    pub progress_history: Vec<(usize, f64)>,
+
+    // === Step 4: Apply ===
+    /// Optimization result (biquads, etc.)
+    pub result: Option<HeadphoneEqResult>,
+    /// Export format selection
+    pub export_format: String,
+    /// EQ preset name for saving
+    pub save_name: String,
+
+    // === UI State ===
+    pub dropdowns: HeadphoneEqDropdowns,
+    pub status_message: String,
+    pub error_message: Option<String>,
+    /// Expanded accordion sections
+    pub expanded_sections: Vec<gpui::SharedString>,
+}
+
+/// Result of headphone EQ optimization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeadphoneEqResult {
+    /// Optimized biquad filters
+    pub biquads: Vec<HeadphoneEqBiquad>,
+    /// Pre-optimization score
+    pub pre_score: f64,
+    /// Post-optimization score
+    pub post_score: f64,
+    /// Original frequency response (for plotting)
+    pub original_response: Option<Vec<(f64, f64)>>,
+    /// Corrected frequency response (for plotting)
+    pub corrected_response: Option<Vec<(f64, f64)>>,
+    /// Target curve (for plotting)
+    pub target_response: Option<Vec<(f64, f64)>>,
+}
+
+/// Biquad filter for headphone EQ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeadphoneEqBiquad {
+    pub filter_type: String,
+    pub freq: f64,
+    pub q: f64,
+    pub db_gain: f64,
+}
+
+impl Default for HeadphoneEqState {
+    fn default() -> Self {
+        Self {
+            step: HeadphoneEqStep::SelectFiles,
+            measurement_path: None,
+            target_preset: "harman-over-ear-2018".to_string(),
+            custom_target_path: None,
+            optimizer_config: HeadphoneEqOptimizerConfig::default(),
+            optimization_status: OptimizationStatus::Idle,
+            progress: 0.0,
+            progress_history: Vec::new(),
+            result: None,
+            export_format: "json".to_string(),
+            save_name: String::new(),
+            dropdowns: HeadphoneEqDropdowns::default(),
+            status_message: String::new(),
+            error_message: None,
+            expanded_sections: vec![
+                "measurement".into(),
+                "target".into(),
+                "eq-design".into(),
+            ],
+        }
+    }
+}
+
+impl HeadphoneEqState {
+    /// Check if we can proceed from the current step
+    pub fn can_advance(&self) -> bool {
+        match self.step {
+            HeadphoneEqStep::SelectFiles => self.measurement_path.is_some(),
+            HeadphoneEqStep::Configure => true,
+            HeadphoneEqStep::Optimize => self.optimization_status == OptimizationStatus::Completed,
+            HeadphoneEqStep::Apply => true,
+        }
+    }
+
+    /// Check if optimization is running
+    pub fn is_optimizing(&self) -> bool {
+        self.optimization_status == OptimizationStatus::Running
+    }
+
+    /// Reset optimization state
+    pub fn reset_optimization(&mut self) {
+        self.optimization_status = OptimizationStatus::Idle;
+        self.progress = 0.0;
+        self.progress_history.clear();
+        self.result = None;
+        self.error_message = None;
     }
 }

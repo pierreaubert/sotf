@@ -28,7 +28,7 @@ download-sofa:
 	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
 
 test-generate-audio-tests: prod-generate-audio-tests
-	cargo run --bin prod-generate-audio-tests --release
+	cargo run --bin generate-audio-tests --release
 
 test-rust:
 	# Exclude packages that crash due to gpui_macros stack overflow during compilation
@@ -73,7 +73,7 @@ prod: prod-workspace prod-autoeq prod-sotf-player prod-sotf-recorder prod-genera
 	cargo build --release --bin run-autoeq-de
 
 prod-generate-audio-tests:
-	cargo build --release --bin generate-audio-tests
+	cargo build --release --bin generate-audio-tests -p sotf-audio-engine
 
 prod-workspace:
 	cargo build --release --workspace

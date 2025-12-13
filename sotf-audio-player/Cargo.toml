@@ -16,6 +16,10 @@ testing = []
 name = "sotf_audio_player"
 path = "src/lib.rs"
 
+[[bin]]
+name = "sotf-bliss-scan"
+path = "src/bin/bliss_scan.rs"
+
 [dependencies]
 # Audio engine
 sotf-audio-plugins = { path = "../sotf-audio-plugins" }
@@ -58,6 +62,14 @@ symphonia-format-riff = { workspace = true }
 symphonia-format-ogg = { workspace = true }
 symphonia-format-isomp4 = { workspace = true }
 ebur128 = { workspace = true }
+
+# bliss audio analysis (no ffmpeg, we use our own Symphonia decoder)
+bliss-audio = { workspace = true }
+rubato = { workspace = true }
+num_cpus = { workspace = true }
+
+# CLI for bliss scanner
+clap = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -9,7 +9,9 @@
 /// - Player wrapper (`player`)
 /// - ReplayGain scanning (`replay_gain_scanner`)
 /// - Waveform scanning (`waveform_scanner`)
+/// - Bliss audio analysis (`bliss`)
 /// - Room EQ optimization (`room_eq`)
+pub mod bliss;
 pub mod config;
 pub mod database;
 pub mod library;
@@ -33,6 +35,7 @@ pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
 pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformScanner};
+pub use bliss::{BlissAnalysis, BlissScanManager, BlissScanMessage, BlissScanner};
 
 // Re-export measurement functionality
 pub use sotf_audio::signal_recorder;

@@ -161,6 +161,21 @@ impl App {
         }
     }
 
+    /// Scan for Bliss audio analysis (tempo, features for similarity)
+    pub fn scan_bliss(&mut self) {
+        match self.bliss_manager.start_scan() {
+            Ok(msg) => {
+                self.toast_message = Some(ToastMessage::info(msg));
+            }
+            Err(e) => {
+                self.toast_message = Some(ToastMessage::error(format!(
+                    "Failed to start bliss analysis scan: {}",
+                    e
+                )));
+            }
+        }
+    }
+
     /// Remove the selected directory from the library
     pub fn remove_selected_directory(&mut self) {
         // We need to map from tree index to actual directory index

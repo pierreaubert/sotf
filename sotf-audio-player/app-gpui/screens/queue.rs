@@ -18,6 +18,7 @@ impl PlayerView {
     pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let translations = state.app.translations.clone();
 
         // Use ratios for panel widths (layout will compute actual sizes)
         let queue_list_ratio = state.app.queue_list_ratio;
@@ -46,13 +47,18 @@ impl PlayerView {
                             HStack::new()
                                 .spacing(StackSpacing::Md)
                                 .child(
-                                    Text::new(format!("Queue ({} albums)", state.app.queue.len()))
-                                        .size(TextSize::Lg)
-                                        .weight(TextWeight::Bold)
-                                        .color(theme.text_primary),
+                                    Text::new(format!(
+                                        "{} ({} {})",
+                                        translations.queue_title,
+                                        state.app.queue.len(),
+                                        translations.queue_albums
+                                    ))
+                                    .size(TextSize::Lg)
+                                    .weight(TextWeight::Bold)
+                                    .color(theme.text_primary),
                                 )
                                 .child(
-                                    Button::new("clear-queue-btn", "Clear")
+                                    Button::new("clear-queue-btn", translations.queue_clear)
                                         .variant(ButtonVariant::Ghost)
                                         .size(ButtonSize::Xs)
                                         .theme(button_theme)
@@ -190,7 +196,7 @@ impl PlayerView {
             )
             // Center panel: Now playing info
             .child(
-                self.render_now_playing_info(cx)
+                self.render_now_playing_info(&translations, cx)
             )
             // Separator 2 (Center <-> Right)
             .child(
@@ -258,11 +264,16 @@ impl PlayerView {
     // are now in ui/components/plugins/level_meters.rs
 
     /// Render the now playing information panel (center)
-    pub(crate) fn render_now_playing_info(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_now_playing_info(
+        &self,
+        translations: &crate::i18n::Translations,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         // Clone theme for use in closures (moved into flat_map)
         let theme_for_closure = theme.clone();
+        let translations = translations.clone();
 
         // Get current queue item with all album info
         let queue_item = state
@@ -300,7 +311,7 @@ impl PlayerView {
                 .flex_1()
                 .child(
                     div().mb_3().child(
-                        Text::new("Now Playing")
+                        Text::new(translations.queue_now_playing)
                             .size(TextSize::Lg)
                             .weight(TextWeight::Bold)
                             .color(theme.text_primary),
@@ -376,7 +387,7 @@ impl PlayerView {
                                             div()
                                                 .text_xs()
                                                 .text_color(theme.text_muted)
-                                                .child("ReplayGain:"),
+                                                .child(translations.queue_replay_gain),
                                         )
                                         .child(
                                             div()
@@ -404,7 +415,7 @@ impl PlayerView {
                                             div()
                                                 .text_xs()
                                                 .text_color(theme.text_muted)
-                                                .child("Channels:"),
+                                                .child(translations.queue_channels),
                                         )
                                         .child(
                                             div()
@@ -416,18 +427,24 @@ impl PlayerView {
                                 ),
                         ),
                 )
-                .child(self.render_track_list(&disc_map, current_track_idx, &theme_for_closure, cx))
+                .child(self.render_track_list(
+                    &disc_map,
+                    current_track_idx,
+                    &translations,
+                    &theme_for_closure,
+                    cx,
+                ))
                 .into_any_element()
         } else {
             VStack::new()
                 .spacing(StackSpacing::Sm)
                 .child(
-                    Text::new("No track playing")
+                    Text::new(translations.queue_no_track_playing)
                         .size(TextSize::Lg)
                         .color(theme.text_muted),
                 )
                 .child(
-                    Text::new("Select an album from the queue")
+                    Text::new(translations.queue_select_album)
                         .size(TextSize::Sm)
                         .color(theme.text_muted),
                 )
@@ -461,6 +478,7 @@ impl PlayerView {
         &self,
         disc_map: &BTreeMap<u32, Vec<(usize, Track)>>,
         current_track_idx: usize,
+        translations: &crate::i18n::Translations,
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -479,7 +497,7 @@ impl PlayerView {
                         .text_xs()
                         .font_weight(FontWeight::BOLD)
                         .text_color(theme.text_secondary)
-                        .child(format!("Disc {}", disc_num))
+                        .child(format!("{} {}", translations.queue_disc, disc_num))
                         .into_any_element(),
                 );
             }
@@ -569,7 +587,8 @@ impl PlayerView {
             .overflow_hidden()
             .child(
                 Text::new(format!(
-                    "Tracks ({})",
+                    "{} ({})",
+                    translations.queue_tracks,
                     disc_map.values().map(|v| v.len()).sum::<usize>()
                 ))
                 .size(TextSize::Sm)

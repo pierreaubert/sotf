@@ -297,6 +297,51 @@ impl PlayerView {
                         )
                     )
             )
+            // Audio Analysis Section (Bliss)
+            .child(
+                div()
+                    .mt_4()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(div().text_sm().font_weight(FontWeight::BOLD).child("Audio Analysis"))
+                    .child(
+                        div()
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .p_4()
+                        .bg(theme.background_secondary)
+                        .rounded_md()
+                        .border_1()
+                        .border_color(theme.border)
+                        .child(
+                             HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_1()
+                                        .flex_col()
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Compute Bliss Analysis"))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child("Extract tempo, spectral features for music similarity"))
+                                )
+                                .child(
+                                     Button::new("bliss-scan-btn", "Compute")
+                                        .variant(ButtonVariant::Secondary)
+                                        .size(ButtonSize::Sm)
+                                        .disabled(scan_in_progress)
+                                        .theme(theme.to_button_theme())
+                                        .build()
+                                        .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.scan_bliss();
+                                            });
+                                        }))
+                                )
+                        )
+                    )
+            )
              // Progress Indicator
             .when(scan_in_progress, |el| {
                 el.child(

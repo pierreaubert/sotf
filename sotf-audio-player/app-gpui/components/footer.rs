@@ -155,6 +155,7 @@ impl PlayerView {
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = &state.app.theme;
+        let translations = state.app.translations.clone();
 
         let bg_surface = theme.surface;
         let border_color = theme.border;
@@ -168,11 +169,11 @@ impl PlayerView {
                     .justify(StackJustify::SpaceBetween)
                     .align(StackAlign::Center)
                     // Left section: Track info
-                    .child(self.render_footer_left(cx))
+                    .child(self.render_footer_left(&translations, cx))
                     // Center section: Transport + waveform
                     .child(self.render_footer_center(cx))
                     // Right section: Device + Volume
-                    .child(self.render_footer_right(cx))
+                    .child(self.render_footer_right(&translations, cx))
                     .build()
                     .h(px(100.0))
                     .px_4(),
@@ -184,9 +185,14 @@ impl PlayerView {
     }
 
     /// Left section: Album artwork + track info
-    fn render_footer_left(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_footer_left(
+        &self,
+        translations: &crate::i18n::Translations,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = &state.app.theme;
+        let no_track_label = translations.playback_no_track;
 
         // Get current track info and album art from queue
         let (title, album_name, artist, album_art_path) =
@@ -258,7 +264,7 @@ impl PlayerView {
                             .text_ellipsis()
                             .whitespace_nowrap()
                             .child(if title.is_empty() {
-                                "No track playing".to_string()
+                                no_track_label.to_string()
                             } else {
                                 title
                             }),
@@ -538,7 +544,13 @@ impl PlayerView {
     }
 
     /// Right section: Device selection + Volume
-    fn render_footer_right(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_footer_right(
+        &self,
+        translations: &crate::i18n::Translations,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let default_device_label = translations.playback_default_device;
+        let studio_label = translations.playback_studio;
         let (
             volume,
             muted,
@@ -558,7 +570,7 @@ impl PlayerView {
                     .app
                     .current_output_device_name
                     .clone()
-                    .unwrap_or_else(|| "Default".to_string()),
+                    .unwrap_or_else(|| default_device_label.to_string()),
                 theme.text_secondary,
                 theme.surface_hover,
                 theme.clone(),
@@ -631,7 +643,7 @@ impl PlayerView {
                                     .text_xs()
                                     .text_color(text_secondary)
                                     .text_center()
-                                    .child("Studio"),
+                                    .child(studio_label),
                             ),
                     ),
             )
@@ -681,14 +693,18 @@ impl PlayerView {
             )
             // Device popup (renders above the button)
             .when(show_device_popup, |el| {
-                el.child(self.render_device_popup(cx))
+                el.child(self.render_device_popup(translations.playback_output_devices, cx))
             })
             // Round volume button
             .child(self.render_volume_button(volume, muted, theme_clone, cx))
     }
 
     /// Render the device selection popup
-    fn render_device_popup(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_device_popup(
+        &self,
+        header_label: &'static str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let (devices, selected_index, theme) = {
             let state = self.state.read(cx);
             (
@@ -722,7 +738,7 @@ impl PlayerView {
                     .text_color(theme.text_muted)
                     .border_b_1()
                     .border_color(theme.border)
-                    .child("Output Devices"),
+                    .child(header_label),
             )
             // Device list
             .children(devices.iter().enumerate().map(|(idx, device)| {

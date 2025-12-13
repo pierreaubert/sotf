@@ -16,9 +16,9 @@ use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
 
 use super::types::{
-    ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, InputMode, LayoutMode,
-    LibrarySortOrder, MeasureState, OptimizationUiState, QueueItem, RecordingState, RoomEqState,
-    Screen, ToastMessage,
+    ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, HeadphoneEqState, InputMode,
+    LayoutMode, LibrarySortOrder, MeasureState, OptimizationUiState, QueueItem, RecordingState,
+    RoomEqState, Screen, ToastMessage,
 };
 
 #[derive(Debug)]
@@ -127,6 +127,9 @@ pub struct App {
     // Room EQ screen state
     pub room_eq_state: RoomEqState,
 
+    // Headphone EQ screen state
+    pub headphone_eq_state: HeadphoneEqState,
+
     // Flags
     pub should_quit: bool,
     pub needs_rescan: bool,
@@ -205,6 +208,9 @@ pub struct App {
 
     // ReplayGain scanner manager
     pub replay_gain_manager: sotf_audio_player::ReplayGainScanManager,
+
+    // Bliss audio analysis scanner manager
+    pub bliss_manager: sotf_audio_player::BlissScanManager,
 
     // Parameter editing state
     pub editing_param: Option<String>,
@@ -321,6 +327,7 @@ impl App {
             measure_state: None,
             recording_state: RecordingState::default(),
             room_eq_state: RoomEqState::default(),
+            headphone_eq_state: HeadphoneEqState::default(),
             should_quit: false,
             needs_rescan: false,
             scan_in_progress: false,
@@ -364,6 +371,7 @@ impl App {
             expanded_settings_sections: vec!["library".to_string()],
             waveform_manager: sotf_audio_player::WaveformScanManager::new(),
             replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
+            bliss_manager: sotf_audio_player::BlissScanManager::new(),
             editing_param: None,
             editing_value: String::new(),
             replay_gain_enabled: true,

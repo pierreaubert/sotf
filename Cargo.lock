@@ -40,6 +40,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "adler32"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aae1277d39aeec15cb388266ecc24b11c80469deae6067e17a1a7aa9e5c1f234"
+
+[[package]]
 name = "aes"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -629,7 +635,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.2.250"
+version = "0.2.251"
 dependencies = [
  "accelerate-src",
  "anyhow",
@@ -643,6 +649,7 @@ dependencies = [
  "clap",
  "csv",
  "env_logger 0.11.8",
+ "hound",
  "intel-mkl-src",
  "log",
  "metaheuristics-nature",
@@ -656,6 +663,7 @@ dependencies = [
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "reqwest 0.12.24",
+ "rustfft",
  "serde",
  "serde_json",
  "signal-hook-tokio",
@@ -864,6 +872,28 @@ dependencies = [
 
 [[package]]
 name = "bindgen"
+version = "0.64.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4243e6031260db77ede97ad86c27e501d646a27ab57b59a574f725d98ab1fb4"
+dependencies = [
+ "bitflags 1.3.2",
+ "cexpr",
+ "clang-sys",
+ "lazy_static",
+ "lazycell",
+ "log",
+ "peeking_take_while",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash 1.1.0",
+ "shlex",
+ "syn 1.0.109",
+ "which 4.4.2",
+]
+
+[[package]]
+name = "bindgen"
 version = "0.71.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f58bf3d7db68cfbac37cfc485a8d711e87e064c3d0fe0435b92f7a407f9d6b3"
@@ -1009,6 +1039,45 @@ dependencies = [
  "accelerate-src",
  "intel-mkl-src",
  "openblas-src",
+]
+
+[[package]]
+name = "bliss-audio"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e25d00981bd1350578d7a3d3908eaee8c3e3985f8d6643778a28480c48a5a68f"
+dependencies = [
+ "adler32",
+ "bliss-audio-aubio-rs",
+ "extended-isolation-forest",
+ "log",
+ "ndarray 0.16.1",
+ "ndarray-stats",
+ "noisy_float",
+ "rcue",
+ "rustfft",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "bliss-audio-aubio-rs"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a1eb88c6ac3439669d67bd728acf23b770c11e4587fe90d0d25be216d988172"
+dependencies = [
+ "bliss-audio-aubio-sys",
+]
+
+[[package]]
+name = "bliss-audio-aubio-sys"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "639b6615d1d573e3722884e9b762930c5c9e139c8ce40c48391c18b980df9182"
+dependencies = [
+ "bindgen 0.64.0",
+ "cc",
 ]
 
 [[package]]
@@ -1679,6 +1748,7 @@ dependencies = [
  "log",
  "ndarray 0.16.1",
  "rand 0.9.2",
+ "rayon",
  "serde",
  "serde_json",
  "tempfile",
@@ -2767,6 +2837,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
+name = "extended-isolation-forest"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db5193a74618ae2f7ea9c7feda2772192e0e3c04d9cbd2beb5ee9b0916d7eb3f"
+dependencies = [
+ "num-traits",
+ "rand 0.8.5",
+ "rand_distr",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3608,6 +3689,17 @@ dependencies = [
  "gpui-d3rs",
  "gpui-ui-kit",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "gpui-themes"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-ui-kit",
+ "gpui_macros",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4831,6 +4923,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lazycell"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
+
+[[package]]
 name = "leak"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5158,7 +5256,6 @@ dependencies = [
  "anyhow",
  "approx",
  "autoeq-env 0.2.3",
- "cc",
  "chrono",
  "clap",
  "criterion",
@@ -5183,7 +5280,6 @@ dependencies = [
  "toml 0.8.23",
  "wasm-bindgen",
  "wasm-bindgen-rayon",
- "which 8.0.0",
 ]
 
 [[package]]
@@ -5653,6 +5749,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndarray-stats"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17ebbe97acce52d06aebed4cd4a87c0941f4b2519b59b82b4feb5bd0ce003dfd"
+dependencies = [
+ "indexmap 2.12.1",
+ "itertools 0.13.0",
+ "ndarray 0.16.1",
+ "noisy_float",
+ "num-integer",
+ "num-traits",
+ "rand 0.8.5",
+]
+
+[[package]]
 name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5764,6 +5875,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c6347753a7143118e8477544749322f5f23c8b63e485e9663dde696bdf425bf0"
 dependencies = [
  "cmake",
+]
+
+[[package]]
+name = "noisy_float"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978fe6e6ebc0bf53de533cd456ca2d9de13de13856eda1518a285d7705a213af"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
@@ -6561,6 +6681,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "peeking_take_while"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
+
+[[package]]
 name = "pem-rfc7468"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7306,6 +7432,12 @@ name = "rb"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56cf8381505b60ae18a4097f1d0be093287ca3bf4fbb23d36ac5ad3bba335daa"
+
+[[package]]
+name = "rcue"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fca1481d62f18158646de2ec552dd63f8bdc5be6448389b192ba95c939df997e"
 
 [[package]]
 name = "read-fonts"
@@ -8486,7 +8618,9 @@ dependencies = [
  "autoeq-cea2034",
  "autoeq-iir",
  "autoeq-roomsim",
+ "bliss-audio",
  "chrono",
+ "clap",
  "directories",
  "ebur128",
  "env_logger 0.11.8",
@@ -8495,7 +8629,9 @@ dependencies = [
  "ndarray 0.17.1",
  "ndarray-linalg",
  "num-complex",
+ "num_cpus",
  "parking_lot",
+ "rubato",
  "rusqlite",
  "serde",
  "serde_json",
@@ -10773,6 +10909,18 @@ dependencies = [
  "bitflags 2.10.0",
  "js-sys",
  "web-sys",
+]
+
+[[package]]
+name = "which"
+version = "4.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
+dependencies = [
+ "either",
+ "home",
+ "once_cell",
+ "rustix 0.38.44",
 ]
 
 [[package]]

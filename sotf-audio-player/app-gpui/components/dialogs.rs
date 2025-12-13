@@ -21,6 +21,7 @@ impl PlayerView {
             Screen::Settings => "Settings",
             Screen::Recording => "Recording",
             Screen::RoomEq => "Room EQ",
+            Screen::HeadphoneEq => "Headphone EQ",
         };
 
         // Get keybindings for current screen
@@ -685,6 +686,10 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("Next/Finish", "Proceed to next step or finish"),
         ],
         Screen::RoomEq => vec![
+            ("Back/Close", "Navigate between steps"),
+            ("Next/Finish", "Proceed to next step or finish"),
+        ],
+        Screen::HeadphoneEq => vec![
             ("Back/Close", "Navigate between steps"),
             ("Next/Finish", "Proceed to next step or finish"),
         ],

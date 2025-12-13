@@ -20,6 +20,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let active_tab = state.app.active_settings_tab;
+        let translations = state.app.translations.clone();
 
         // Content area based on active tab
         let content = match active_tab {
@@ -63,39 +64,47 @@ impl PlayerView {
                         HStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(self.render_settings_tab(
-                                "Library",
+                                translations.settings_tab_library,
                                 crate::app::SettingsTab::Library,
                                 &theme,
                                 cx,
                             ))
                             .child(self.render_settings_tab(
-                                "Appearance",
+                                translations.settings_tab_appearance,
                                 crate::app::SettingsTab::Appearance,
                                 &theme,
                                 cx,
                             ))
                             .child(self.render_settings_tab(
-                                "Audio Device",
+                                translations.settings_tab_audio_device,
                                 crate::app::SettingsTab::AudioDevice,
                                 &theme,
                                 cx,
                             ))
                             .child(self.render_settings_tab(
-                                "Plugins",
+                                translations.settings_tab_plugins,
                                 crate::app::SettingsTab::Plugins,
                                 &theme,
                                 cx,
                             ))
-                            .child(self.render_recording_tab(&theme, cx))
-                            .child(self.render_room_eq_tab(&theme, cx))
+                            .child(self.render_recording_tab(
+                                translations.settings_tab_recording,
+                                &theme,
+                                cx,
+                            ))
+                            .child(self.render_room_eq_tab(
+                                translations.settings_tab_room_eq,
+                                &theme,
+                                cx,
+                            ))
                             .child(self.render_settings_tab(
-                                "Headphone (beta)",
+                                translations.settings_tab_headphone,
                                 crate::app::SettingsTab::Headphone,
                                 &theme,
                                 cx,
                             ))
                             .child(self.render_settings_tab(
-                                "Spinorama (alpha)",
+                                translations.settings_tab_spinorama,
                                 crate::app::SettingsTab::Spinorama,
                                 &theme,
                                 cx,
@@ -115,6 +124,7 @@ impl PlayerView {
     /// Render a special tab that navigates to the Recording screen
     fn render_recording_tab(
         &self,
+        label: &'static str,
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -139,7 +149,7 @@ impl PlayerView {
                 }),
             )
             .child(
-                Text::new("Recording")
+                Text::new(label)
                     .size(TextSize::Sm)
                     .weight(TextWeight::Normal)
                     .color(theme.text_secondary),
@@ -149,6 +159,7 @@ impl PlayerView {
     /// Render a special tab that navigates to the Room EQ screen
     fn render_room_eq_tab(
         &self,
+        label: &'static str,
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -173,7 +184,7 @@ impl PlayerView {
                 }),
             )
             .child(
-                Text::new("Room EQ")
+                Text::new(label)
                     .size(TextSize::Sm)
                     .weight(TextWeight::Normal)
                     .color(theme.text_secondary),

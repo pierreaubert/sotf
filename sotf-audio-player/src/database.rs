@@ -117,7 +117,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 13;
+        const LATEST_VERSION: i64 = 14;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -1022,6 +1022,77 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 14: Add bliss audio analysis columns to tracks table
+        migrations.insert(
+            14,
+            Migration {
+                description: "Add bliss audio analysis columns for music similarity",
+                apply: |db| {
+                    // Add bliss_tempo column (BPM)
+                    let has_bliss_tempo = db
+                        .conn
+                        .prepare("SELECT bliss_tempo FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_bliss_tempo {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN bliss_tempo REAL", [])?;
+                        log::info!("Added bliss_tempo column to tracks table");
+                    }
+
+                    // Add bliss_zcr column (zero-crossing rate)
+                    let has_bliss_zcr = db
+                        .conn
+                        .prepare("SELECT bliss_zcr FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_bliss_zcr {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN bliss_zcr REAL", [])?;
+                        log::info!("Added bliss_zcr column to tracks table");
+                    }
+
+                    // Add bliss_loudness column (mean loudness)
+                    let has_bliss_loudness = db
+                        .conn
+                        .prepare("SELECT bliss_loudness FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_bliss_loudness {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN bliss_loudness REAL", [])?;
+                        log::info!("Added bliss_loudness column to tracks table");
+                    }
+
+                    // Add bliss_features column (BLOB storing full feature vector)
+                    let has_bliss_features = db
+                        .conn
+                        .prepare("SELECT bliss_features FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_bliss_features {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN bliss_features BLOB", [])?;
+                        log::info!("Added bliss_features column to tracks table");
+                    }
+
+                    // Add bliss_analyzed_at column (timestamp of analysis)
+                    let has_bliss_analyzed_at = db
+                        .conn
+                        .prepare("SELECT bliss_analyzed_at FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_bliss_analyzed_at {
+                        db.conn
+                            .execute("ALTER TABLE tracks ADD COLUMN bliss_analyzed_at INTEGER", [])?;
+                        log::info!("Added bliss_analyzed_at column to tracks table");
+                    }
+
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -1550,6 +1621,70 @@ impl MusicDatabase {
             .collect::<SqlResult<Vec<_>>>()?;
 
         Ok(paths)
+    }
+
+    /// Update bliss audio analysis values for a track
+    pub fn update_bliss(
+        &self,
+        path: &Path,
+        analysis: &crate::bliss::BlissAnalysis,
+    ) -> SqlResult<()> {
+        let now = current_timestamp();
+        let features_blob = analysis.to_bytes();
+
+        self.conn.execute(
+            "UPDATE tracks SET
+                bliss_tempo = ?1,
+                bliss_zcr = ?2,
+                bliss_loudness = ?3,
+                bliss_features = ?4,
+                bliss_analyzed_at = ?5
+             WHERE path = ?6",
+            params![
+                analysis.tempo as f64,
+                analysis.zcr as f64,
+                analysis.loudness_mean as f64,
+                features_blob,
+                now,
+                path.to_str().unwrap()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get tracks that don't have bliss analysis yet
+    pub fn get_tracks_without_bliss(&self) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT path FROM tracks WHERE bliss_analyzed_at IS NULL")?;
+
+        let paths = stmt
+            .query_map([], |row| {
+                let path_str: String = row.get(0)?;
+                Ok(PathBuf::from(path_str))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
+    /// Get bliss analysis for a track by path
+    pub fn get_bliss_analysis(&self, path: &Path) -> SqlResult<Option<crate::bliss::BlissAnalysis>> {
+        let path_str = path.to_string_lossy();
+        let mut stmt = self.conn.prepare(
+            "SELECT bliss_features FROM tracks WHERE path = ?1 AND bliss_features IS NOT NULL",
+        )?;
+
+        let result = stmt.query_row(params![path_str.as_ref()], |row| {
+            let features_blob: Vec<u8> = row.get(0)?;
+            Ok(features_blob)
+        });
+
+        match result {
+            Ok(blob) => Ok(crate::bliss::BlissAnalysis::from_bytes(&blob)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// Get all track paths from the database

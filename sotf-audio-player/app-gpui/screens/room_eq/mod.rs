@@ -13,8 +13,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     AutoEqAlgorithm as UiAutoEqAlgorithm, AutoEqConfig, AutoEqField as UiAutoEqField, AutoEqForm,
-    AutoEqFormUiState, Button, ButtonVariant, Card, HStack, StackSpacing, StepStatus, Text,
-    TextSize, TextWeight, VStack, WizardHeader, WizardNavigation, WizardStep, WizardTheme,
+    AutoEqFormUiState, Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing,
+    Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -23,36 +23,6 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let current_step = state.app.room_eq_state.step;
-
-        // Map our domain steps to wizard steps
-        let steps = vec![
-            WizardStep::new("load_data", "Load Data"),
-            WizardStep::new("configure", "Configure"),
-            WizardStep::new("optimize", "Optimize"),
-            WizardStep::new("review", "Review"),
-            WizardStep::new("export", "Export"),
-        ];
-
-        let current_step_index = self.room_eq_step_index(&current_step);
-        let total_steps = steps.len();
-
-        // Build step statuses
-        let step_statuses: Vec<StepStatus> = (0..total_steps)
-            .map(|i| {
-                if i < current_step_index {
-                    StepStatus::Completed
-                } else if i == current_step_index {
-                    StepStatus::Active
-                } else {
-                    StepStatus::NotVisited
-                }
-            })
-            .collect();
-
-        // Determine navigation state
-        let can_go_back = current_step_index > 0;
-        let can_go_next = self.room_eq_can_advance(cx);
-        let is_busy = state.app.room_eq_state.is_optimizing();
 
         // Content for current step
         let content = match current_step {
@@ -63,31 +33,12 @@ impl PlayerView {
             RoomEqStep::Export => self.render_room_eq_export(cx).into_any_element(),
         };
 
-        let wizard_theme = WizardTheme {
-            step_bg: theme.background_secondary,
-            step_completed_bg: theme.success,
-            step_active_bg: theme.accent,
-            step_error_bg: theme.error,
-            step_text: theme.text_primary,
-            label_text: theme.text_secondary,
-            label_active_text: theme.text_primary,
-            connector_color: theme.border,
-            connector_completed_color: theme.success,
-            step_border: theme.border,
-        };
-
         div()
             .flex()
             .flex_col()
             .size_full()
             .bg(theme.background)
-            .child(
-                WizardHeader::new()
-                    .steps(steps)
-                    .step_statuses(step_statuses)
-                    .current_step(current_step_index)
-                    .theme(wizard_theme.clone()),
-            )
+            .child(self.render_room_eq_header(cx))
             .child(
                 div()
                     .id("room-eq-content")
@@ -96,47 +47,208 @@ impl PlayerView {
                     .p_4()
                     .child(content),
             )
+    }
+
+    /// Render the room EQ screen header with step indicators
+    fn render_room_eq_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let current_step = state.app.room_eq_state.step;
+
+        // Helper function to build step indicator
+        let build_step_indicator =
+            |step: RoomEqStep, label: &'static str, number: u8, theme: &crate::theme::Theme| {
+                let is_active = current_step == step;
+                let is_past = current_step.index() > step.index();
+
+                let (bg_color, text_color, border_color) = if is_active {
+                    (theme.accent, theme.text_on_accent, theme.accent)
+                } else if is_past {
+                    (theme.success, theme.text_on_accent, theme.success)
+                } else {
+                    (theme.surface, theme.text_muted, theme.border)
+                };
+
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(
+                        div()
+                            .w(px(28.0))
+                            .h(px(28.0))
+                            .rounded_full()
+                            .bg(bg_color)
+                            .border_2()
+                            .border_color(border_color)
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Text::new(number.to_string())
+                                    .size(TextSize::Sm)
+                                    .weight(TextWeight::Bold)
+                                    .color(text_color),
+                            ),
+                    )
+                    .child(
+                        Text::new(label)
+                            .size(TextSize::Sm)
+                            .weight(if is_active {
+                                TextWeight::Bold
+                            } else {
+                                TextWeight::Normal
+                            })
+                            .color(if is_active {
+                                theme.text_primary
+                            } else {
+                                theme.text_muted
+                            }),
+                    )
+            };
+
+        // Build step connector
+        let connector = |from: RoomEqStep, theme: &crate::theme::Theme| {
+            let is_completed = current_step.index() > from.index();
+            div().w(px(32.0)).h(px(2.0)).bg(if is_completed {
+                theme.success
+            } else {
+                theme.border
+            })
+        };
+
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_6()
+            .py_4()
+            .bg(theme.background_secondary)
+            .border_b_1()
+            .border_color(theme.border)
             .child(
-                WizardNavigation::new(current_step_index, total_steps)
-                    .back_disabled(!can_go_back)
-                    .next_disabled(!can_go_next)
-                    .is_busy(is_busy)
-                    .show_cancel(true)
-                    .theme(wizard_theme)
-                    .on_back({
-                        let state = self.state.clone();
-                        move |_step, _window, cx| {
-                            state.update(cx, |state, _cx| {
-                                if let Some(prev) = state.app.room_eq_state.step.previous() {
-                                    state.app.room_eq_state.step = prev;
-                                }
+                HStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .align(StackAlign::Center)
+                    .child(
+                        Text::new("Room EQ")
+                            .size(TextSize::Xl)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    )
+                    .child(div().w(px(1.0)).h(px(24.0)).bg(theme.border))
+                    .child(build_step_indicator(
+                        RoomEqStep::LoadData,
+                        "Load Data",
+                        1,
+                        &theme,
+                    ))
+                    .child(connector(RoomEqStep::LoadData, &theme))
+                    .child(build_step_indicator(
+                        RoomEqStep::Configure,
+                        "Configure",
+                        2,
+                        &theme,
+                    ))
+                    .child(connector(RoomEqStep::Configure, &theme))
+                    .child(build_step_indicator(
+                        RoomEqStep::Optimize,
+                        "Optimize",
+                        3,
+                        &theme,
+                    ))
+                    .child(connector(RoomEqStep::Optimize, &theme))
+                    .child(build_step_indicator(
+                        RoomEqStep::Review,
+                        "Review",
+                        4,
+                        &theme,
+                    ))
+                    .child(connector(RoomEqStep::Review, &theme))
+                    .child(build_step_indicator(
+                        RoomEqStep::Export,
+                        "Export",
+                        5,
+                        &theme,
+                    )),
+            )
+            .child(self.render_room_eq_nav_buttons(cx))
+    }
+
+    /// Render navigation buttons (Close/Back and Next/Finish)
+    fn render_room_eq_nav_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let current_step = state.app.room_eq_state.step;
+        let can_go_next = self.room_eq_can_advance(cx);
+        let is_busy = state.app.room_eq_state.is_optimizing();
+        let view = cx.entity().clone();
+
+        let back_label = match current_step {
+            RoomEqStep::LoadData => "Close",
+            _ => "Back",
+        };
+        let next_label = match current_step {
+            RoomEqStep::Export => "Finish",
+            _ => "Next",
+        };
+
+        HStack::new()
+            .spacing(StackSpacing::Md)
+            .child(
+                Button::new("back", back_label)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Md)
+                    .disabled(is_busy)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    match state.app.room_eq_state.step {
+                                        RoomEqStep::LoadData => {
+                                            // Go back to previous screen
+                                            state.app.current_screen = state.app.last_screen;
+                                        }
+                                        _ => {
+                                            // Go back to previous step
+                                            if let Some(prev) =
+                                                state.app.room_eq_state.step.previous()
+                                            {
+                                                state.app.room_eq_state.step = prev;
+                                            }
+                                        }
+                                    }
+                                });
+                                cx.notify();
                             });
                         }
-                    })
-                    .on_next({
-                        let state = self.state.clone();
-                        move |_step, _window, cx| {
-                            state.update(cx, |state, _cx| {
-                                if let Some(next) = state.app.room_eq_state.step.next() {
-                                    state.app.room_eq_state.step = next;
-                                }
-                            });
-                        }
-                    })
-                    .on_cancel({
-                        let state = self.state.clone();
-                        move |_window, cx| {
-                            state.update(cx, |state, _cx| {
-                                state.app.current_screen = crate::app::types::Screen::Library;
-                            });
-                        }
-                    })
-                    .on_finish({
-                        let state = self.state.clone();
-                        move |_window, cx| {
-                            // TODO: Actually apply/save the DSP chain
-                            state.update(cx, |state, _cx| {
-                                state.app.current_screen = crate::app::types::Screen::Library;
+                    }),
+            )
+            .child(
+                Button::new("next", next_label)
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Md)
+                    .disabled(!can_go_next || is_busy)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    match state.app.room_eq_state.step {
+                                        RoomEqStep::Export => {
+                                            // Finish - apply and go back
+                                            // TODO: Apply DSP chain
+                                            state.app.current_screen = state.app.last_screen;
+                                        }
+                                        _ => {
+                                            // Go to next step
+                                            if let Some(next) = state.app.room_eq_state.step.next()
+                                            {
+                                                state.app.room_eq_state.step = next;
+                                            }
+                                        }
+                                    }
+                                });
+                                cx.notify();
                             });
                         }
                     }),
