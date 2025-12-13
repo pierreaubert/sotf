@@ -126,6 +126,8 @@ pub struct App {
 
     // Room EQ screen state
     pub room_eq_state: RoomEqState,
+    /// Applied room EQ plugins (ready to be sent to audio engine)
+    pub room_eq_applied_plugins: Option<Vec<sotf_audio::PluginConfig>>,
 
     // Headphone EQ screen state
     pub headphone_eq_state: HeadphoneEqState,
@@ -327,6 +329,7 @@ impl App {
             measure_state: None,
             recording_state: RecordingState::default(),
             room_eq_state: RoomEqState::default(),
+            room_eq_applied_plugins: None,
             headphone_eq_state: HeadphoneEqState::default(),
             should_quit: false,
             needs_rescan: false,

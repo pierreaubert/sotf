@@ -181,11 +181,14 @@ fn get_brand_image_path(device_name: &str) -> Option<&'static str> {
     if lower_name.contains("kef") || lower_name.contains("ls60") {
         return Some("brands/kef-ls60.jpg");
     }
-    if lower_name.contains("lg") {
+    if lower_name.contains("lg") || lower_name.contains("ultrafine") {
         return Some("brands/lg.png");
     }
     if lower_name.contains("rme") || lower_name.contains("fireface") {
         return Some("brands/rme.jpg");
+    }
+    if lower_name.contains("adam") {
+        return Some("brands/adam.jpg");
     }
     if lower_name.contains("samsung") {
         return Some("brands/samsung-q9.png");

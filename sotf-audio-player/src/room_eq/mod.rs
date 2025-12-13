@@ -66,7 +66,7 @@ pub use optimizer::{run_optimization_task, RoomEqOptimizer};
 pub use output::{load_dsp_chain, save_dsp_chain};
 pub use types::{
     Algorithm, ChannelConfig, ChannelDspChain, ChannelMeasurements, ChannelOptimizationResult,
-    ChannelOptStatus, CrossoverType, DspChainOutput, DspPluginConfig, DriverDspChain,
+    ChannelOptStatus, CrossoverType, Curve, DspChainOutput, DspPluginConfig, DriverDspChain,
     EqFilterResult, Measurement, OptimizationMetadata, OptimizationProgress, OptimizerConfig,
     SpeakerConfigType,
 };

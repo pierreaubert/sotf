@@ -13,9 +13,9 @@ use d3rs::shape::{render_line, LineConfig, LinePoint};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Card, HStack, Progress, ProgressSize,
-    ProgressVariant, Select, SelectOption, StackAlign, StackJustify, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput,
+    NumberInputSize, Progress, ProgressSize, ProgressVariant, Select, SelectOption, StackAlign,
+    StackJustify, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -53,7 +53,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let signal_level_db = state.app.recording_state.signal_level_db;
-        drop(state);
+        let _ = state;
 
         Card::new().content(
             HStack::new()
@@ -92,10 +92,26 @@ impl PlayerView {
                                 .size(TextSize::Sm)
                                 .color(theme.text_secondary),
                         )
-                        .child(
-                            Badge::new(format!("{:.0} dB", signal_level_db))
-                                .variant(BadgeVariant::Info),
-                        ),
+                        .child({
+                            let view = cx.entity().clone();
+                            NumberInput::new("signal_level")
+                                .value(signal_level_db as f64)
+                                .min(-60.0)
+                                .max(6.0)
+                                .step(1.0)
+                                .decimals(0)
+                                .unit("dB")
+                                .size(NumberInputSize::Sm)
+                                .width(Some(100.0))
+                                .on_change(move |val, _window, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.state.update(cx, |state, _| {
+                                            state.app.recording_state.signal_level_db = val as f32;
+                                        });
+                                        cx.notify();
+                                    });
+                                })
+                        }),
                 ),
         )
     }
@@ -676,8 +692,15 @@ impl PlayerView {
 
     /// Start recording all channels sequentially
     fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
+        // Enable auto-record mode
+        self.state.update(cx, |state, _| {
+            state.app.recording_state.auto_record_remaining = true;
+        });
+
         // Start with the first channel
         self.start_recording_channel(0, cx);
+
+        log::info!("Starting auto-record mode - all channels will be recorded sequentially");
     }
 
     /// Start recording a single channel
@@ -919,6 +942,12 @@ impl PlayerView {
                             }
                             state.app.recording_state.status_message =
                                 format!("Channel {} recording complete", channel_name);
+
+                            // Check if we should auto-record the next channel
+                            let should_continue = state.app.recording_state.auto_record_remaining;
+                            should_continue
+                        } else {
+                            false
                         }
                     }
                     Err(e) => {
@@ -933,11 +962,53 @@ impl PlayerView {
                         }
                         state.app.recording_state.status_message =
                             format!("Recording error: {}", e);
+
+                        // Stop auto-recording on error
+                        state.app.recording_state.auto_record_remaining = false;
+                        false
                     }
-                }
+                };
+
                 state.app.recording_state.current_recording_channel = None;
                 state.app.recording_state.recording_progress = 1.0;
+
+                // Find next channel to record if in auto-record mode
+                let next_channel_idx = if should_auto_continue {
+                    state
+                        .app
+                        .recording_state
+                        .channel_recordings
+                        .iter()
+                        .enumerate()
+                        .find(|(_, r)| r.state == ChannelRecordingState::Empty)
+                        .map(|(idx, _)| idx)
+                } else {
+                    None
+                };
+
+                (should_auto_continue, next_channel_idx)
             });
+
+            // If we should continue auto-recording, start the next channel
+            if should_auto_continue {
+                if let Some(next_idx) = next_channel_idx {
+                    log::info!("Auto-recording: starting next channel {}", next_idx);
+                    let _ = view_entity.update(cx, |view, cx| {
+                        view.start_recording_channel(next_idx, cx);
+                    });
+                } else {
+                    // No more channels to record - auto-record complete
+                    log::info!("Auto-recording complete - all channels recorded");
+                    let _ = view_entity.update(cx, |view, cx| {
+                        view.state.update(cx, |state, _| {
+                            state.app.recording_state.auto_record_remaining = false;
+                            state.app.recording_state.status_message =
+                                "All channels recorded successfully!".to_string();
+                        });
+                        cx.notify();
+                    });
+                }
+            }
 
             // Clean up temp file (it will be dropped automatically)
             drop(temp_wav);
@@ -953,6 +1024,7 @@ impl PlayerView {
             state.app.recording_state.current_recording_channel = None;
             state.app.recording_state.recording_progress = 0.0;
             state.app.recording_state.status_message = "Recording stopped".to_string();
+            state.app.recording_state.auto_record_remaining = false; // Disable auto-record mode
 
             // Reset any channels that were recording back to empty
             for recording in &mut state.app.recording_state.channel_recordings {
@@ -963,7 +1035,7 @@ impl PlayerView {
         });
         cx.notify();
 
-        log::info!("Recording stopped");
+        log::info!("Recording stopped - auto-record mode disabled");
     }
 
     /// Reset all recordings to empty state
@@ -976,6 +1048,7 @@ impl PlayerView {
             state.app.recording_state.current_recording_channel = None;
             state.app.recording_state.recording_progress = 0.0;
             state.app.recording_state.status_message = String::new();
+            state.app.recording_state.auto_record_remaining = false;
         });
         cx.notify();
 
@@ -984,12 +1057,32 @@ impl PlayerView {
 
     /// Save recordings to a JSON file
     fn save_recordings(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::ChannelRecording;
+        use crate::app::types::{ChannelMeasurement, RoomEqMeasurementsFile};
 
-        // Get recordings to save
-        let recordings: Vec<ChannelRecording> = {
+        // Get recordings and convert to RoomEqMeasurementsFile format
+        let measurements_file = {
             let state = self.state.read(cx);
-            state.app.recording_state.channel_recordings.clone()
+            let recordings = &state.app.recording_state.channel_recordings;
+
+            // Convert ChannelRecording to ChannelMeasurement
+            let channels: Vec<ChannelMeasurement> = recordings
+                .iter()
+                .filter_map(|rec| {
+                    rec.result.as_ref().map(|result| ChannelMeasurement {
+                        channel_name: rec.channel_name.clone(),
+                        measurement: result.clone(),
+                        is_group: false,
+                        group_drivers: Vec::new(),
+                    })
+                })
+                .collect();
+
+            if channels.is_empty() {
+                log::warn!("No completed recordings to save");
+                return;
+            }
+
+            RoomEqMeasurementsFile::new(channels)
         };
 
         let state_entity = self.state.clone();
@@ -1003,8 +1096,8 @@ impl PlayerView {
                 .await;
 
             if let Some(file) = file {
-                // Serialize recordings to JSON
-                match serde_json::to_string_pretty(&recordings) {
+                // Serialize to RoomEqMeasurementsFile format
+                match serde_json::to_string_pretty(&measurements_file) {
                     Ok(json) => {
                         // Write to file
                         if let Err(e) = std::fs::write(file.path(), json) {

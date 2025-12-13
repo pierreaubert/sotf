@@ -50,7 +50,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let current_step = state.app.recording_state.step;
-        drop(state);
+        let _ = state;
 
         // Helper function to build step indicator
         let build_step_indicator =

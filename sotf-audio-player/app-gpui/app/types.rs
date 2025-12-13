@@ -419,6 +419,7 @@ pub struct RecordingState {
     pub current_recording_channel: Option<usize>,
     pub recording_progress: f32,
     pub status_message: String,
+    pub auto_record_remaining: bool, // Whether to automatically record all remaining channels
 
     // === UI State ===
     pub playback_device_dropdown_open: bool,
@@ -441,6 +442,7 @@ impl Default for RecordingState {
             current_recording_channel: None,
             recording_progress: 0.0,
             status_message: String::new(),
+            auto_record_remaining: false,
             playback_device_dropdown_open: false,
             recording_device_dropdown_open: false,
             signal_type_dropdown_open: false,
@@ -573,6 +575,26 @@ impl Default for RoomEqDataSource {
     }
 }
 
+/// File format for saving/loading room EQ measurements
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomEqMeasurementsFile {
+    /// File format version
+    pub version: u32,
+    /// Channel measurements
+    pub channels: Vec<ChannelMeasurement>,
+}
+
+impl RoomEqMeasurementsFile {
+    pub const CURRENT_VERSION: u32 = 1;
+
+    pub fn new(channels: Vec<ChannelMeasurement>) -> Self {
+        Self {
+            version: Self::CURRENT_VERSION,
+            channels,
+        }
+    }
+}
+
 /// Measurement data for a single channel (may have multiple drivers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMeasurement {
@@ -695,6 +717,48 @@ impl RoomEqAlgorithm {
             RoomEqAlgorithm::Cobyla => "cobyla",
             RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
             RoomEqAlgorithm::NelderMead => "nelder-mead",
+        }
+    }
+}
+
+// === Type conversions for room_eq library ===
+
+impl From<SpeakerConfigType> for sotf_audio_player::room_eq::SpeakerConfigType {
+    fn from(val: SpeakerConfigType) -> Self {
+        match val {
+            SpeakerConfigType::Single => sotf_audio_player::room_eq::SpeakerConfigType::Single,
+            SpeakerConfigType::MultiDriver => {
+                sotf_audio_player::room_eq::SpeakerConfigType::MultiDriver
+            }
+        }
+    }
+}
+
+impl From<CrossoverType> for sotf_audio_player::room_eq::CrossoverType {
+    fn from(val: CrossoverType) -> Self {
+        match val {
+            CrossoverType::LR12 => sotf_audio_player::room_eq::CrossoverType::LR12,
+            CrossoverType::LR24 => sotf_audio_player::room_eq::CrossoverType::LR24,
+            CrossoverType::LR48 => sotf_audio_player::room_eq::CrossoverType::LR48,
+            CrossoverType::Butterworth12 => {
+                sotf_audio_player::room_eq::CrossoverType::Butterworth12
+            }
+            CrossoverType::Butterworth24 => {
+                // Map to closest available - Butterworth12 (LR24 is closer behavior)
+                sotf_audio_player::room_eq::CrossoverType::LR24
+            }
+        }
+    }
+}
+
+impl From<RoomEqAlgorithm> for sotf_audio_player::room_eq::Algorithm {
+    fn from(val: RoomEqAlgorithm) -> Self {
+        match val {
+            RoomEqAlgorithm::Cobyla => sotf_audio_player::room_eq::Algorithm::Cobyla,
+            RoomEqAlgorithm::DifferentialEvolution => {
+                sotf_audio_player::room_eq::Algorithm::DifferentialEvolution
+            }
+            RoomEqAlgorithm::NelderMead => sotf_audio_player::room_eq::Algorithm::NelderMead,
         }
     }
 }

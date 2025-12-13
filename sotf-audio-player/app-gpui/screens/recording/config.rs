@@ -312,31 +312,81 @@ impl PlayerView {
         current_group: &str,
         is_playback: bool,
     ) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
         let view = cx.entity().clone();
+        let current_group = current_group.to_string();
+        let dropdown_id = format!("channel_group_{}_{}", is_playback, channel_idx);
 
-        let options: Vec<SelectOption> = std::iter::once(SelectOption::new("", "No group"))
-            .chain(
-                CHANNEL_GROUPS
-                    .iter()
-                    .map(|(id, name)| SelectOption::new(*id, *name)),
+        // Create a menu with all options
+        div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .child(
+                // Input field for typing custom names
+                Input::new(SharedString::from(format!("{}_input", dropdown_id)))
+                    .value(current_group.clone())
+                    .placeholder("Type or select...")
+                    .size(InputSize::Sm)
+                    .width(Some(120.0))
+                    .on_change({
+                        let view = view.clone();
+                        move |value, _window, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let mappings = if is_playback {
+                                        &mut state.app.recording_state.playback_config.channel_mappings
+                                    } else {
+                                        &mut state.app.recording_state.recording_config.channel_mappings
+                                    };
+                                    if let Some(mapping) = mappings.get_mut(channel_idx) {
+                                        mapping.group_name = value.clone();
+                                    }
+                                });
+                                cx.notify();
+                            });
+                        }
+                    }),
             )
-            .collect();
-
-        // Simple dropdown using Button + list for now since Select requires Entity state
-        let current_label = CHANNEL_GROUPS
-            .iter()
-            .find(|(id, _)| *id == current_group)
-            .map(|(_, name)| *name)
-            .unwrap_or("No group");
-
-        Button::new(
-            SharedString::from(format!("group_{}_{}", is_playback, channel_idx)),
-            current_label,
-        )
-        .variant(ButtonVariant::Secondary)
-        .size(ButtonSize::Sm)
+            .child(
+                // Dropdown button showing common options
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_px()
+                    .children(CHANNEL_GROUPS.iter().take(3).map(|(id, name)| {
+                        let view = view.clone();
+                        let id_str = id.to_string();
+                        Button::new(
+                            SharedString::from(format!("{}_{}", dropdown_id, id)),
+                            *name,
+                        )
+                        .variant(if current_group == id_str {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Ghost
+                        })
+                        .size(ButtonSize::Xs)
+                        .on_click({
+                            let view = view.clone();
+                            let id = id_str.clone();
+                            move |_, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.state.update(cx, |state, _| {
+                                        let mappings = if is_playback {
+                                            &mut state.app.recording_state.playback_config.channel_mappings
+                                        } else {
+                                            &mut state.app.recording_state.recording_config.channel_mappings
+                                        };
+                                        if let Some(mapping) = mappings.get_mut(channel_idx) {
+                                            mapping.group_name = id.clone();
+                                        }
+                                    });
+                                    cx.notify();
+                                });
+                            }
+                        })
+                    }))
+            )
     }
 
     /// Render recording device configuration section

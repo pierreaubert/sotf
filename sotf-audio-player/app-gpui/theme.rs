@@ -2,6 +2,9 @@
 //!
 //! Provides color definitions for different UI themes.
 
+// Allow approximate math constants in color values
+#![allow(clippy::approx_constant)]
+
 use gpui::{Rgba, SharedString};
 use serde::{Deserialize, Serialize};
 
