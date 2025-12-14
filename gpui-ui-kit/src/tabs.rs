@@ -83,6 +83,8 @@ pub enum TabVariant {
     Enclosed,
     /// Pill-shaped tabs
     Pills,
+    /// Vertical card style: icon on top, label in middle, badge below
+    VerticalCard,
 }
 
 /// A single tab item
@@ -225,7 +227,14 @@ impl Tabs {
             TabVariant::Pills => {
                 container = container.gap_2().p_1().bg(theme.container_bg).rounded_lg();
             }
+            TabVariant::VerticalCard => {
+                container = container.gap_2().p_1().bg(theme.container_bg).rounded_lg();
+            }
         }
+
+        // Wrap callbacks in Rc for safe sharing across closures
+        let on_change_rc = self.on_change.map(|f| std::rc::Rc::new(f));
+        let on_close_rc = self.on_close.map(|f| std::rc::Rc::new(f));
 
         for (index, tab) in self.tabs.into_iter().enumerate() {
             let is_selected = index == self.selected_index;
@@ -237,10 +246,8 @@ impl Tabs {
             let disabled = tab.disabled;
             let closeable = tab.closeable;
 
-            let on_change: Option<*const dyn Fn(usize, &mut Window, &mut App)> =
-                self.on_change.as_ref().map(|f| f.as_ref() as *const _);
-            let on_close: Option<*const dyn Fn(&SharedString, &mut Window, &mut App)> =
-                self.on_close.as_ref().map(|f| f.as_ref() as *const _);
+            let on_change = on_change_rc.clone();
+            let on_close = on_close_rc.clone();
 
             // For Underline variant, we wrap the tab content and underline in a flex column
             let tab_element = if self.variant == TabVariant::Underline {
@@ -268,12 +275,13 @@ impl Tabs {
                 } else {
                     tab_content = tab_content.cursor_pointer();
 
-                    if let Some(handler_ptr) = on_change {
+                    if let Some(ref handler) = on_change {
                         let idx = index;
-                        tab_content = tab_content.on_mouse_up(
+                        let handler = handler.clone();
+                        tab_content = tab_content.on_mouse_down(
                             MouseButton::Left,
-                            move |_event, window, cx| unsafe {
-                                (*handler_ptr)(idx, window, cx);
+                            move |_event, window, cx| {
+                                handler(idx, window, cx);
                             },
                         );
                     }
@@ -313,11 +321,12 @@ impl Tabs {
                         .text_color(close_color)
                         .hover(move |s| s.text_color(close_hover));
 
-                    if let Some(handler_ptr) = on_close {
-                        close_btn = close_btn.on_mouse_up(
+                    if let Some(ref handler) = on_close {
+                        let handler = handler.clone();
+                        close_btn = close_btn.on_mouse_down(
                             MouseButton::Left,
-                            move |_event, window, cx| unsafe {
-                                (*handler_ptr)(&id, window, cx);
+                            move |_event, window, cx| {
+                                handler(&id, window, cx);
                             },
                         );
                     }
@@ -339,6 +348,88 @@ impl Tabs {
                     .flex_col()
                     .child(tab_content)
                     .child(underline)
+            } else if self.variant == TabVariant::VerticalCard {
+                // VerticalCard variant: icon on left (spanning 2 rows), title + number on right
+                // +---------------+
+                // | ICON | Title  |
+                // |      | Number |
+                // +---------------+
+                let mut tab_el = div()
+                    .id(SharedString::from(format!("tab-{}", tab_id)))
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_2()
+                    .min_w(px(90.0));
+
+                if is_selected {
+                    tab_el = tab_el
+                        .bg(theme.accent)
+                        .rounded_lg()
+                        .text_color(theme.text_selected);
+                } else {
+                    let hover_bg = theme.selected_bg;
+                    let hover_text = theme.text_hover;
+                    tab_el = tab_el
+                        .bg(theme.selected_bg)
+                        .rounded_lg()
+                        .text_color(theme.text_unselected)
+                        .hover(move |s| s.bg(hover_bg).text_color(hover_text));
+                }
+
+                if disabled {
+                    tab_el = tab_el.opacity(0.5).cursor_not_allowed();
+                } else {
+                    tab_el = tab_el.cursor_pointer();
+
+                    if let Some(ref handler) = on_change {
+                        let idx = index;
+                        let handler = handler.clone();
+                        tab_el = tab_el.on_mouse_down(
+                            MouseButton::Left,
+                            move |_event, window, cx| {
+                                handler(idx, window, cx);
+                            },
+                        );
+                    }
+                }
+
+                // Icon on left (large, spans both rows visually)
+                if let Some(custom_icon) = custom_icon {
+                    tab_el = tab_el.child(div().flex().items_center().child(custom_icon));
+                } else if let Some(icon) = icon {
+                    tab_el = tab_el.child(div().flex().items_center().text_xl().child(icon));
+                }
+
+                // Right side: Title on top, Number below
+                let mut right_col = div().flex().flex_col().gap(px(1.0));
+
+                // Title
+                right_col = right_col.child(
+                    div()
+                        .text_xs()
+                        .font_weight(if is_selected {
+                            FontWeight::SEMIBOLD
+                        } else {
+                            FontWeight::NORMAL
+                        })
+                        .child(label),
+                );
+
+                // Number/badge below title
+                if let Some(badge) = badge {
+                    right_col = right_col.child(
+                        div()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .child(badge),
+                    );
+                }
+
+                tab_el = tab_el.child(right_col);
+
+                tab_el
             } else {
                 // Non-underline variants (Enclosed, Pills)
                 let mut tab_el = div()
@@ -379,7 +470,7 @@ impl Tabs {
                                 .hover(move |s| s.bg(hover_bg).text_color(hover_text));
                         }
                     }
-                    TabVariant::Underline => unreachable!(),
+                    TabVariant::Underline | TabVariant::VerticalCard => unreachable!(),
                 }
 
                 if disabled {
@@ -387,12 +478,13 @@ impl Tabs {
                 } else {
                     tab_el = tab_el.cursor_pointer();
 
-                    if let Some(handler_ptr) = on_change {
+                    if let Some(ref handler) = on_change {
                         let idx = index;
-                        tab_el = tab_el.on_mouse_up(
+                        let handler = handler.clone();
+                        tab_el = tab_el.on_mouse_down(
                             MouseButton::Left,
-                            move |_event, window, cx| unsafe {
-                                (*handler_ptr)(idx, window, cx);
+                            move |_event, window, cx| {
+                                handler(idx, window, cx);
                             },
                         );
                     }
@@ -432,11 +524,12 @@ impl Tabs {
                         .text_color(close_color)
                         .hover(move |s| s.text_color(close_hover));
 
-                    if let Some(handler_ptr) = on_close {
-                        close_btn = close_btn.on_mouse_up(
+                    if let Some(ref handler) = on_close {
+                        let handler = handler.clone();
+                        close_btn = close_btn.on_mouse_down(
                             MouseButton::Left,
-                            move |_event, window, cx| unsafe {
-                                (*handler_ptr)(&id, window, cx);
+                            move |_event, window, cx| {
+                                handler(&id, window, cx);
                             },
                         );
                     }
