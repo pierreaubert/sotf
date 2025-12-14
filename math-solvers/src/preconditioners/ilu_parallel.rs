@@ -217,7 +217,7 @@ impl<T: ComplexField + Send + Sync> Preconditioner<T> for IluColoringPreconditio
     fn apply(&self, r: &Array1<T>) -> Array1<T> {
         #[cfg(feature = "rayon")]
         {
-            if self.n >= 1000 {
+            if self.n >= 246 {
                 return self.apply_parallel(r);
             }
         }
@@ -498,7 +498,7 @@ impl<T: ComplexField + Send + Sync> Preconditioner<T> for IluFixedPointPrecondit
     fn apply(&self, r: &Array1<T>) -> Array1<T> {
         #[cfg(feature = "rayon")]
         {
-            if self.n >= 1000 {
+            if self.n >= 246 {
                 return self.apply_parallel(r);
             }
         }

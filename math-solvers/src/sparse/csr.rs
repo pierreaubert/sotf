@@ -244,7 +244,7 @@ impl<T: ComplexField> CsrMatrix<T> {
         #[cfg(feature = "rayon")]
         {
             // Only parallelize if we have enough rows to benefit
-            if self.num_rows >= 1000 {
+            if self.num_rows >= 246 {
                 return self.matvec_parallel(x);
             }
         }
