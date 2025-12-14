@@ -114,7 +114,7 @@ struct TreemapRect {
     y1: f64,
     name: String,
     value: f64,
-    depth: usize,
+    _depth: usize,
     category_index: usize,
 }
 
@@ -445,7 +445,7 @@ fn compute_treemap(
             y1: py1,
             name: node.name.clone(),
             value: node.value,
-            depth,
+            _depth: depth,
             category_index,
         });
     } else {
