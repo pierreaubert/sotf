@@ -27,7 +27,6 @@
 //! ```
 
 pub mod analytical;
-pub mod greens;
 pub mod special;
 
 // Re-export main types at crate root

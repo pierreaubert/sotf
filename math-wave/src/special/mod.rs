@@ -13,7 +13,11 @@
 //! - FMM translation operators
 
 mod bessel;
+mod spherical;
+mod helmholtz;
 mod legendre;
 
 pub use bessel::*;
+// pub use spherical::*; // Removed to avoid ambiguity with bessel.rs
+pub use helmholtz::*;
 pub use legendre::*;
