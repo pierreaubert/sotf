@@ -1,52 +1,15 @@
-//! Headphone EQ optimization and management
+//! Headphone EQ optimization and management - GPUI frontend
+//!
+//! This module provides GPUI-specific UI interactions for headphone EQ optimization.
+//! The actual optimization logic is in sotf_audio_player::autoeq::headphone.
 
 use crate::app::types::PluginUpdateType;
 use crate::ui::PlayerView;
 use gpui::*;
 use std::path::PathBuf;
 
-/// Bundled target curve data
-mod target_curves {
-    pub const HARMAN_OVER_EAR_2018: &str =
-        include_str!("../../../data_tests/targets/harman-over-ear-2018.csv");
-    pub const HARMAN_OVER_EAR_2015: &str =
-        include_str!("../../../data_tests/targets/harman-over-ear-2015.csv");
-    pub const HARMAN_OVER_EAR_2013: &str =
-        include_str!("../../../data_tests/targets/harman-over-ear-2013.csv");
-    pub const HARMAN_IN_EAR_2019: &str =
-        include_str!("../../../data_tests/targets/harman-in-ear-2019.csv");
-}
-
-/// Result of headphone EQ optimization with all curves for visualization
-#[derive(Clone, Debug)]
-pub struct HeadphoneOptimizationResult {
-    /// Optimized biquad filters
-    pub biquads: Vec<autoeq_iir::Biquad>,
-    /// Frequency points (Hz) - log-spaced
-    pub frequencies: Vec<f64>,
-    /// Input headphone measurement curve (dB)
-    pub input_curve: Vec<f64>,
-    /// Target curve (dB)
-    pub target_curve: Vec<f64>,
-    /// Deviation from target = target - input (dB)
-    pub deviation_curve: Vec<f64>,
-    /// Combined filter response (dB)
-    pub filter_response: Vec<f64>,
-    /// Error = deviation - filter_response (dB)
-    pub error_curve: Vec<f64>,
-    /// Corrected response = input + filter_response (dB)
-    pub corrected_curve: Vec<f64>,
-    /// Individual filter responses (each filter's dB response)
-    pub individual_filter_responses: Vec<Vec<f64>>,
-    /// Path where results were saved
-    pub output_path: String,
-    /// Optimization history (iteration, loss)
-    pub optimization_history: Vec<(usize, f64)>,
-    /// Initial loss value
-    pub initial_loss: f64,
-    /// Final loss value
-    pub final_loss: f64,
-}
+// Re-export the result type from the common library
+pub use sotf_audio_player::autoeq::HeadphoneOptimizationResult;
 
 impl PlayerView {
     /// Open file dialog to select headphone measurement file
@@ -144,20 +107,72 @@ impl PlayerView {
         // Clone state for background task
         let state_clone = self.state.clone();
 
+        // Clone values needed after the closure
+        let target_for_save = target.clone();
+        let export_format_for_save = export_format.clone();
+
         // Spawn background task for optimization
         cx.spawn(async move |_view, cx| {
-            // Run optimization
-            let result = run_optimization_task(
-                curve_path,
-                target,
-                target_custom_path,
-                params,
-                export_format,
-            )
+            // Run optimization using the common library
+            let result = smol::unblock(move || {
+                sotf_audio_player::autoeq::run_headphone_optimization(
+                    &curve_path,
+                    &target,
+                    &target_custom_path,
+                    &params,
+                    &export_format,
+                )
+            })
             .await;
 
             match result {
-                Ok(optimization_result) => {
+                Ok(mut optimization_result) => {
+                    // Save to EQ directory
+                    if let Some(eq_dir) = sotf_audio_player::config::get_eq_dir() {
+                        let _ = std::fs::create_dir_all(&eq_dir);
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+                        let target_name = if target_for_save == "custom" {
+                            "custom"
+                        } else {
+                            &target_for_save
+                        };
+                        let extension =
+                            sotf_audio_player::autoeq::get_export_extension(&export_format_for_save);
+                        let filename =
+                            format!("headphone_{}_{}{}", target_name, timestamp, extension);
+                        let output_path = eq_dir.join(&filename);
+
+                        // Convert biquads to Peq format for export functions
+                        let peq: autoeq_iir::Peq = optimization_result
+                            .biquads
+                            .iter()
+                            .map(|b| (b.freq, b.clone()))
+                            .collect();
+
+                        // Generate output content based on selected format
+                        let content = match export_format_for_save.as_str() {
+                            "apo" => {
+                                let comment = format!("# Headphone EQ for {}", target_name);
+                                autoeq_iir::peq_format_apo(&comment, &peq)
+                            }
+                            "rme-channel" => autoeq_iir::peq_format_rme_channel(&peq),
+                            "rme-room" => autoeq_iir::peq_format_rme_room(&peq, &peq),
+                            "aupreset" => {
+                                let name = format!("Headphone EQ - {}", target_name);
+                                autoeq_iir::peq_format_aupreset(&peq, &name)
+                            }
+                            _ => serde_json::to_string_pretty(&optimization_result.biquads)
+                                .unwrap_or_default(),
+                        };
+
+                        if std::fs::write(&output_path, content).is_ok() {
+                            optimization_result.output_path = output_path.display().to_string();
+                        }
+                    }
+
                     let output_path = optimization_result.output_path.clone();
                     // Update state with success and results
                     let _ = state_clone.update(cx, |state, _cx| {
@@ -286,7 +301,7 @@ impl PlayerView {
         }
 
         // Generate filename - use custom name if provided, otherwise use timestamp
-        let extension = crate::autoeq::get_export_extension(&export_format);
+        let extension = sotf_audio_player::autoeq::get_export_extension(&export_format);
         let filename = if save_name.trim().is_empty() {
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -467,304 +482,4 @@ impl PlayerView {
         });
         cx.notify();
     }
-}
-
-/// Run optimization in background task
-async fn run_optimization_task(
-    curve_path: String,
-    target: String,
-    target_custom_path: String,
-    params: crate::optimization_params::OptimizationParams,
-    export_format: String,
-) -> Result<HeadphoneOptimizationResult, String> {
-    // Run optimization on background thread (blocking operation)
-    smol::unblock(move || {
-        use std::path::PathBuf;
-
-        // Load headphone curve from CSV file
-        let input_curve = autoeq::read_curve_from_csv(&PathBuf::from(&curve_path))
-            .map_err(|e| format!("Failed to read curve file: {}", e))?;
-
-        // Load target curve
-        let target_curve = load_target_curve(&target, &target_custom_path)?;
-
-        // Create standard frequency grid (200 points, 20 Hz to 20 kHz)
-        let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
-
-        // Normalize and interpolate curves
-        let input_curve_norm =
-            autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
-        let target_curve_norm =
-            autoeq::normalize_and_interpolate_response(&standard_freq, &target_curve);
-
-        // Create deviation curve
-        let deviation_curve = autoeq::Curve {
-            freq: target_curve_norm.freq.clone(),
-            spl: &target_curve_norm.spl - &input_curve_norm.spl,
-            phase: None,
-        };
-
-        // Setup optimization arguments from params
-        let args = autoeq::Args {
-            num_filters: params.num_filters,
-            sample_rate: params.sample_rate as f64,
-            loss: if params.loss == "headphone-flat" {
-                autoeq::LossType::HeadphoneFlat
-            } else {
-                autoeq::LossType::HeadphoneScore
-            },
-            algo: params.algo.clone(),
-            population: params.population,
-            maxeval: params.maxeval,
-            strategy: params.strategy.clone(),
-            min_db: params.min_db,
-            max_db: params.max_db,
-            min_q: params.min_q,
-            max_q: params.max_q,
-            min_freq: params.min_freq,
-            max_freq: params.max_freq,
-            min_spacing_oct: params.min_spacing_oct,
-            spacing_weight: params.spacing_weight,
-            smooth: params.smooth,
-            smooth_n: params.smooth_n,
-            refine: params.refine,
-            local_algo: params.local_algo.clone(),
-            tolerance: params.tolerance,
-            atolerance: params.abs_tolerance,
-            recombination: params.de_cr,
-            adaptive_weight_f: params.adaptive_weight_f,
-            adaptive_weight_cr: params.adaptive_weight_cr,
-            peq_model: match params.peq_model.as_str() {
-                "hp-pk" => autoeq::cli::PeqModel::HpPk,
-                "hp-pk-lp" => autoeq::cli::PeqModel::HpPkLp,
-                "ls-pk" => autoeq::cli::PeqModel::LsPk,
-                "ls-pk-hs" => autoeq::cli::PeqModel::LsPkHs,
-                "free-pk-free" => autoeq::cli::PeqModel::FreePkFree,
-                "free" => autoeq::cli::PeqModel::Free,
-                _ => autoeq::cli::PeqModel::Pk,
-            },
-            curve: None,
-            target: None,
-            output: None,
-            speaker: None,
-            version: None,
-            measurement: None,
-            curve_name: params.curve_name.clone(),
-            peq_model_list: false,
-            algo_list: false,
-            strategy_list: false,
-            no_parallel: false,
-            parallel_threads: 0,
-            seed: None,
-            qa: None,
-            driver1: None,
-            driver2: None,
-            driver3: None,
-            driver4: None,
-            crossover_type: "linkwitzriley4".to_string(),
-        };
-
-        // Setup objective data
-        let (objective_data, _use_cea) = autoeq::workflow::setup_objective_data(
-            &args,
-            &input_curve_norm,
-            &target_curve_norm,
-            &deviation_curve,
-            &None,
-        );
-
-        // Run optimization with history tracking
-        let history: Vec<(usize, f64)> = Vec::new();
-        let history_ptr = std::sync::Arc::new(std::sync::Mutex::new(history));
-        let history_callback = history_ptr.clone();
-
-        let filter_params = autoeq::workflow::perform_optimization_with_callback(
-            &args,
-            &objective_data,
-            Box::new(move |intermediate| {
-                if let Ok(mut h) = history_callback.lock() {
-                    // Check fields of intermediate
-                    h.push((intermediate.iter, intermediate.fun));
-                }
-                autoeq::de::CallbackAction::Continue
-            }),
-        )
-        .map_err(|e| format!("Optimization failed: {}", e))?;
-
-        // Retrieve history
-        let history = history_ptr
-            .lock()
-            .map_err(|_| "Failed to lock history")?
-            .clone();
-        let initial_loss = history.first().map(|x| x.1).unwrap_or(0.0);
-        let final_loss = history.last().map(|x| x.1).unwrap_or(0.0);
-
-        // Convert to biquad filters (x2peq returns Vec<(f64, Biquad)>)
-        let peq = autoeq::x2peq::x2peq(&filter_params, args.sample_rate, args.peq_model);
-        // Extract just the biquads from the (frequency, biquad) tuples
-        let biquads: Vec<autoeq_iir::Biquad> = peq.into_iter().map(|(_, b)| b).collect();
-
-        // Calculate all the curves for visualization
-        let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
-        let input_curve_vec: Vec<f64> = input_curve_norm.spl.iter().copied().collect();
-        let target_curve_vec: Vec<f64> = target_curve_norm.spl.iter().copied().collect();
-        let deviation_curve_vec: Vec<f64> = deviation_curve.spl.iter().copied().collect();
-
-        // Calculate combined filter response
-        let filter_response: Vec<f64> = frequencies
-            .iter()
-            .map(|&freq| biquads.iter().map(|b| b.log_result(freq)).sum())
-            .collect();
-
-        // Calculate individual filter responses
-        let individual_filter_responses: Vec<Vec<f64>> = biquads
-            .iter()
-            .map(|biquad| {
-                frequencies
-                    .iter()
-                    .map(|&freq| biquad.log_result(freq))
-                    .collect()
-            })
-            .collect();
-
-        // Error = deviation - filter_response (what we still need to correct)
-        let error_curve: Vec<f64> = deviation_curve_vec
-            .iter()
-            .zip(filter_response.iter())
-            .map(|(d, f)| d - f)
-            .collect();
-
-        // Corrected response = input + filter_response
-        let corrected_curve: Vec<f64> = input_curve_vec
-            .iter()
-            .zip(filter_response.iter())
-            .map(|(i, f)| i + f)
-            .collect();
-
-        // Save to EQ directory
-        let eq_dir = sotf_audio_player::config::get_eq_dir()
-            .ok_or_else(|| "Could not determine EQ directory".to_string())?;
-
-        // Ensure directory exists
-        std::fs::create_dir_all(&eq_dir)
-            .map_err(|e| format!("Failed to create EQ directory: {}", e))?;
-
-        // Generate filename from target and timestamp
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        // Use a descriptive name based on target
-        let target_name = match target.as_str() {
-            "custom" => "custom",
-            other => other,
-        };
-
-        // Get file extension for the selected format
-        let extension = crate::autoeq::get_export_extension(&export_format);
-        let filename = format!("headphone_{}_{}{}", target_name, timestamp, extension);
-        let output_path = eq_dir.join(&filename);
-
-        // Convert biquads to Peq format for export functions
-        let peq: autoeq_iir::Peq = biquads.iter().map(|b| (b.freq, b.clone())).collect();
-
-        // Generate output content based on selected format
-        let content = match export_format.as_str() {
-            "apo" => {
-                let comment = format!("# Headphone EQ for {}", target_name);
-                autoeq_iir::peq_format_apo(&comment, &peq)
-            }
-            "rme-channel" => autoeq_iir::peq_format_rme_channel(&peq),
-            "rme-room" => {
-                // For room EQ, use same filters for left and right
-                autoeq_iir::peq_format_rme_room(&peq, &peq)
-            }
-            "aupreset" => {
-                let name = format!("Headphone EQ - {}", target_name);
-                autoeq_iir::peq_format_aupreset(&peq, &name)
-            }
-            _ => {
-                // Default to JSON
-                serde_json::to_string_pretty(&biquads)
-                    .map_err(|e| format!("Failed to serialize biquads: {}", e))?
-            }
-        };
-
-        std::fs::write(&output_path, content)
-            .map_err(|e| format!("Failed to write EQ file: {}", e))?;
-
-        Ok(HeadphoneOptimizationResult {
-            biquads,
-            frequencies,
-            input_curve: input_curve_vec,
-            target_curve: target_curve_vec,
-            deviation_curve: deviation_curve_vec,
-            filter_response,
-            error_curve,
-            corrected_curve,
-            individual_filter_responses,
-            output_path: output_path.display().to_string(),
-            optimization_history: history,
-            initial_loss,
-            final_loss,
-        })
-    })
-    .await
-}
-
-/// Load target curve from bundled data or custom file
-fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq::Curve, String> {
-    match target {
-        "harman-over-ear-2018" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2018),
-        "harman-over-ear-2015" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2015),
-        "harman-over-ear-2013" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2013),
-        "harman-in-ear-2019" => parse_csv_curve(target_curves::HARMAN_IN_EAR_2019),
-        "custom" => {
-            // Load from custom file path
-            autoeq::read_curve_from_csv(&PathBuf::from(custom_path))
-                .map_err(|e| format!("Failed to read custom target curve: {}", e))
-        }
-        _ => {
-            // Load from custom file path
-            autoeq::read_curve_from_csv(&PathBuf::from(custom_path))
-                .map_err(|e| format!("A target curve is required for headphone: {}", e))
-        }
-    }
-}
-
-/// Parse a CSV string into a Curve
-fn parse_csv_curve(csv_data: &str) -> Result<autoeq::Curve, String> {
-    use ndarray::Array1;
-
-    let mut freq = Vec::new();
-    let mut spl = Vec::new();
-
-    for (i, line) in csv_data.lines().enumerate() {
-        // Skip header line
-        if i == 0 && line.contains("frequency") {
-            continue;
-        }
-
-        let parts: Vec<&str> = line.split(',').collect();
-        if parts.len() >= 2 {
-            if let (Ok(f), Ok(s)) = (
-                parts[0].trim().parse::<f64>(),
-                parts[1].trim().parse::<f64>(),
-            ) {
-                freq.push(f);
-                spl.push(s);
-            }
-        }
-    }
-
-    if freq.is_empty() {
-        return Err("No valid data found in CSV".to_string());
-    }
-
-    Ok(autoeq::Curve {
-        freq: Array1::from(freq),
-        spl: Array1::from(spl),
-        phase: None,
-    })
 }

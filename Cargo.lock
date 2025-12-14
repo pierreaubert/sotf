@@ -8642,6 +8642,7 @@ name = "sotf-audio-player"
 version = "0.5.4"
 dependencies = [
  "anyhow",
+ "autoeq",
  "autoeq-cea2034",
  "autoeq-iir",
  "autoeq-roomsim",

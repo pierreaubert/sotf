@@ -27,6 +27,7 @@ sotf-audio-engine = { path = "../sotf-audio-engine" }
 autoeq-iir = { path = "../math-iir" }
 autoeq-cea2034 = { path = "../autoeq-cea2034" }
 autoeq-roomsim = { path = "../autoeq-roomsim" }
+autoeq = { path = "../autoeq" }
 ndarray = { workspace = true }
 ndarray-linalg = { workspace = true }
 num-complex = { workspace = true }

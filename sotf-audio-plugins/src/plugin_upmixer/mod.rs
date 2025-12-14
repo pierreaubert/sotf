@@ -2,7 +2,7 @@
 // Upmixer Plugin - Stereo to Multi-Channel Surround
 // ============================================================================
 //
-// This plugin converts stereo (2 channels) to multi-channel surround sound
+// This plugin converts stereo (2 channels) to multichannel surround sound
 // using FFT-based Direct/Ambient decomposition and VBAP panning.
 //
 // Supports multiple configurations: 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6

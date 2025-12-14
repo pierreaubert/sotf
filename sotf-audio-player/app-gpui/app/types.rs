@@ -1098,63 +1098,63 @@ impl RoomEqState {
 pub enum HeadphoneEqStep {
     /// Step 1: Select measurement file and target curve
     #[default]
-    SelectFiles,
-    /// Step 2: Configure optimization parameters
-    Configure,
-    /// Step 3: Run optimization
-    Optimize,
-    /// Step 4: Review and apply/export
-    Apply,
+    MeasurementTarget,
+    /// Step 2: EQ design, fine tuning, and generate EQ
+    Optimization,
+    /// Step 3: Preview and apply EQ to playback
+    Listen,
+    /// Step 4: Export format selection and save
+    Save,
 }
 
 impl HeadphoneEqStep {
     /// Get all steps in order
     pub fn all() -> &'static [HeadphoneEqStep] {
         &[
-            HeadphoneEqStep::SelectFiles,
-            HeadphoneEqStep::Configure,
-            HeadphoneEqStep::Optimize,
-            HeadphoneEqStep::Apply,
+            HeadphoneEqStep::MeasurementTarget,
+            HeadphoneEqStep::Optimization,
+            HeadphoneEqStep::Listen,
+            HeadphoneEqStep::Save,
         ]
     }
 
     /// Get step index (0-based)
     pub fn index(&self) -> usize {
         match self {
-            HeadphoneEqStep::SelectFiles => 0,
-            HeadphoneEqStep::Configure => 1,
-            HeadphoneEqStep::Optimize => 2,
-            HeadphoneEqStep::Apply => 3,
+            HeadphoneEqStep::MeasurementTarget => 0,
+            HeadphoneEqStep::Optimization => 1,
+            HeadphoneEqStep::Listen => 2,
+            HeadphoneEqStep::Save => 3,
         }
     }
 
     /// Get step label
     pub fn label(&self) -> &'static str {
         match self {
-            HeadphoneEqStep::SelectFiles => "Select Files",
-            HeadphoneEqStep::Configure => "Configure",
-            HeadphoneEqStep::Optimize => "Optimize",
-            HeadphoneEqStep::Apply => "Apply",
+            HeadphoneEqStep::MeasurementTarget => "Measurement",
+            HeadphoneEqStep::Optimization => "Optimization",
+            HeadphoneEqStep::Listen => "Listen",
+            HeadphoneEqStep::Save => "Save",
         }
     }
 
     /// Get next step
     pub fn next(&self) -> Option<HeadphoneEqStep> {
         match self {
-            HeadphoneEqStep::SelectFiles => Some(HeadphoneEqStep::Configure),
-            HeadphoneEqStep::Configure => Some(HeadphoneEqStep::Optimize),
-            HeadphoneEqStep::Optimize => Some(HeadphoneEqStep::Apply),
-            HeadphoneEqStep::Apply => None,
+            HeadphoneEqStep::MeasurementTarget => Some(HeadphoneEqStep::Optimization),
+            HeadphoneEqStep::Optimization => Some(HeadphoneEqStep::Listen),
+            HeadphoneEqStep::Listen => Some(HeadphoneEqStep::Save),
+            HeadphoneEqStep::Save => None,
         }
     }
 
     /// Get previous step
     pub fn previous(&self) -> Option<HeadphoneEqStep> {
         match self {
-            HeadphoneEqStep::SelectFiles => None,
-            HeadphoneEqStep::Configure => Some(HeadphoneEqStep::SelectFiles),
-            HeadphoneEqStep::Optimize => Some(HeadphoneEqStep::Configure),
-            HeadphoneEqStep::Apply => Some(HeadphoneEqStep::Optimize),
+            HeadphoneEqStep::MeasurementTarget => None,
+            HeadphoneEqStep::Optimization => Some(HeadphoneEqStep::MeasurementTarget),
+            HeadphoneEqStep::Listen => Some(HeadphoneEqStep::Optimization),
+            HeadphoneEqStep::Save => Some(HeadphoneEqStep::Listen),
         }
     }
 }
@@ -1284,7 +1284,7 @@ pub struct HeadphoneEqBiquad {
 impl Default for HeadphoneEqState {
     fn default() -> Self {
         Self {
-            step: HeadphoneEqStep::SelectFiles,
+            step: HeadphoneEqStep::MeasurementTarget,
             measurement_path: None,
             target_preset: "harman-over-ear-2018".to_string(),
             custom_target_path: None,
@@ -1311,10 +1311,12 @@ impl HeadphoneEqState {
     /// Check if we can proceed from the current step
     pub fn can_advance(&self) -> bool {
         match self.step {
-            HeadphoneEqStep::SelectFiles => self.measurement_path.is_some(),
-            HeadphoneEqStep::Configure => true,
-            HeadphoneEqStep::Optimize => self.optimization_status == OptimizationStatus::Completed,
-            HeadphoneEqStep::Apply => true,
+            HeadphoneEqStep::MeasurementTarget => self.measurement_path.is_some(),
+            HeadphoneEqStep::Optimization => {
+                self.optimization_status == OptimizationStatus::Completed
+            }
+            HeadphoneEqStep::Listen => self.result.is_some(),
+            HeadphoneEqStep::Save => true,
         }
     }
 

@@ -10,7 +10,7 @@
 /// - ReplayGain scanning (`replay_gain_scanner`)
 /// - Waveform scanning (`waveform_scanner`)
 /// - Bliss audio analysis (`bliss`)
-/// - Room EQ optimization (`room_eq`)
+/// - AutoEQ optimization (`autoeq`, also aliased as `room_eq` for backward compatibility)
 pub mod bliss;
 pub mod config;
 pub mod database;
@@ -19,7 +19,9 @@ pub mod library_scanner;
 pub mod player;
 pub mod plugins;
 pub mod replay_gain_scanner;
-pub mod room_eq;
+pub mod autoeq;
+// Backward compatibility alias
+pub use autoeq as room_eq;
 pub mod security;
 pub mod waveform_scanner;
 

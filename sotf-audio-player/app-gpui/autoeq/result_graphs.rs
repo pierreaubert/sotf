@@ -6,8 +6,7 @@
 //! 3. Error curve (deviation - filter response)
 //! 4. Response with/without filter and target
 
-use crate::autoeq::HeadphoneOptimizationResult;
-use crate::autoeq::speaker_eq::SpeakerOptimizationResult;
+use crate::autoeq::{HeadphoneOptimizationResult, SpeakerOptimizationResult};
 use crate::components::graphs::{band_color, format_frequency};
 use crate::theme::Theme;
 use crate::ui::PlayerView;

@@ -1,10 +1,10 @@
 //! Headphone EQ Screen
 //!
 //! Multi-step wizard for headphone EQ optimization:
-//! 1. Select Files - Choose measurement and target curve
-//! 2. Configure - Set optimization parameters
-//! 3. Optimize - Run the optimization
-//! 4. Apply - Review results and apply/export
+//! 1. Measurement & Target - Choose measurement file and target curve
+//! 2. Optimization - EQ design, fine tuning, and generate EQ
+//! 3. Listen - Preview and apply EQ to playback
+//! 4. Save - Export format selection and save
 
 use crate::app::types::{AutoEqField, HeadphoneEqStep, RoomEqAlgorithm};
 use crate::ui::PlayerView;
@@ -39,14 +39,15 @@ impl PlayerView {
 
         // Content for current step
         let content = match current_step {
-            HeadphoneEqStep::SelectFiles => {
-                self.render_headphone_eq_select_files(cx).into_any_element()
+            HeadphoneEqStep::MeasurementTarget => {
+                self.render_headphone_eq_measurement_target(cx)
+                    .into_any_element()
             }
-            HeadphoneEqStep::Configure => {
-                self.render_headphone_eq_configure(cx).into_any_element()
+            HeadphoneEqStep::Optimization => {
+                self.render_headphone_eq_optimization(cx).into_any_element()
             }
-            HeadphoneEqStep::Optimize => self.render_headphone_eq_optimize(cx).into_any_element(),
-            HeadphoneEqStep::Apply => self.render_headphone_eq_apply(cx).into_any_element(),
+            HeadphoneEqStep::Listen => self.render_headphone_eq_listen(cx).into_any_element(),
+            HeadphoneEqStep::Save => self.render_headphone_eq_save(cx).into_any_element(),
         };
 
         div()
@@ -153,29 +154,29 @@ impl PlayerView {
                     )
                     .child(div().w(px(1.0)).h(px(24.0)).bg(theme.border))
                     .child(build_step_indicator(
-                        HeadphoneEqStep::SelectFiles,
-                        "Select Files",
+                        HeadphoneEqStep::MeasurementTarget,
+                        "Measurement",
                         1,
                         &theme,
                     ))
-                    .child(connector(HeadphoneEqStep::SelectFiles, &theme))
+                    .child(connector(HeadphoneEqStep::MeasurementTarget, &theme))
                     .child(build_step_indicator(
-                        HeadphoneEqStep::Configure,
-                        "Configure",
+                        HeadphoneEqStep::Optimization,
+                        "Optimization",
                         2,
                         &theme,
                     ))
-                    .child(connector(HeadphoneEqStep::Configure, &theme))
+                    .child(connector(HeadphoneEqStep::Optimization, &theme))
                     .child(build_step_indicator(
-                        HeadphoneEqStep::Optimize,
-                        "Optimize",
+                        HeadphoneEqStep::Listen,
+                        "Listen",
                         3,
                         &theme,
                     ))
-                    .child(connector(HeadphoneEqStep::Optimize, &theme))
+                    .child(connector(HeadphoneEqStep::Listen, &theme))
                     .child(build_step_indicator(
-                        HeadphoneEqStep::Apply,
-                        "Apply",
+                        HeadphoneEqStep::Save,
+                        "Save",
                         4,
                         &theme,
                     )),
@@ -192,11 +193,11 @@ impl PlayerView {
         let view = cx.entity().clone();
 
         let back_label = match current_step {
-            HeadphoneEqStep::SelectFiles => "Close",
+            HeadphoneEqStep::MeasurementTarget => "Close",
             _ => "Back",
         };
         let next_label = match current_step {
-            HeadphoneEqStep::Apply => "Finish",
+            HeadphoneEqStep::Save => "Finish",
             _ => "Next",
         };
 
@@ -213,7 +214,7 @@ impl PlayerView {
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
                                     match state.app.headphone_eq_state.step {
-                                        HeadphoneEqStep::SelectFiles => {
+                                        HeadphoneEqStep::MeasurementTarget => {
                                             // Go back to previous screen
                                             state.app.current_screen = state.app.last_screen;
                                         }
@@ -243,7 +244,7 @@ impl PlayerView {
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
                                     match state.app.headphone_eq_state.step {
-                                        HeadphoneEqStep::Apply => {
+                                        HeadphoneEqStep::Save => {
                                             // Finish - go back
                                             state.app.current_screen = state.app.last_screen;
                                         }
@@ -265,10 +266,10 @@ impl PlayerView {
     }
 
     // ========================================================================
-    // Step 1: Select Files
+    // Step 1: Measurement & Target
     // ========================================================================
 
-    fn render_headphone_eq_select_files(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_headphone_eq_measurement_target(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let headphone_eq = &state.app.headphone_eq_state;
@@ -429,10 +430,10 @@ impl PlayerView {
     }
 
     // ========================================================================
-    // Step 2: Configure
+    // Step 2: Optimization (EQ Design, Fine Tuning, Generate)
     // ========================================================================
 
-    fn render_headphone_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_headphone_eq_optimization(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let headphone_eq = &state.app.headphone_eq_state;
@@ -701,58 +702,29 @@ impl PlayerView {
                     .header(Text::new("EQ Parameters").weight(TextWeight::Semibold))
                     .content(autoeq_form),
             )
-    }
-
-    // ========================================================================
-    // Step 3: Optimize
-    // ========================================================================
-
-    fn render_headphone_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let headphone_eq = &state.app.headphone_eq_state;
-        let progress = headphone_eq.progress;
-        let status_msg = &headphone_eq.status_message;
-        let is_optimizing = headphone_eq.is_optimizing();
-
-        VStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(
-                Text::new("Run Optimization")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
-            )
-            .child(
-                Text::new("Generate the optimal EQ curve for your headphones.")
-                    .size(TextSize::Sm)
-                    .color(theme.text_secondary),
-            )
+            // Generate EQ section
             .child(
                 Card::new()
-                    .header(Text::new("Optimization").weight(TextWeight::Semibold))
-                    .content(
+                    .header(Text::new("Generate Headphone EQ").weight(TextWeight::Semibold))
+                    .content({
+                        let progress = headphone_eq.progress;
+                        let status_msg = headphone_eq.status_message.clone();
+                        let is_optimizing = headphone_eq.is_optimizing();
+
                         VStack::new()
                             .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new(format!("Progress: {:.0}%", progress * 100.0))
-                                    .size(TextSize::Sm),
-                            )
-                            .child(Progress::new(progress * 100.0).size(ProgressSize::Md))
-                            .child(
-                                Text::new(status_msg.clone())
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_secondary),
-                            )
                             .child(
                                 Button::new(
                                     "start_optimization",
                                     if is_optimizing {
                                         "Optimizing..."
                                     } else {
-                                        "Start Optimization"
+                                        "Generate Headphone EQ"
                                     },
                                 )
                                 .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Lg)
+                                .full_width(true)
                                 .disabled(is_optimizing)
                                 .build()
                                 .when(!is_optimizing, |btn| {
@@ -763,39 +735,55 @@ impl PlayerView {
                                         }),
                                     )
                                 }),
-                            ),
-                    ),
+                            )
+                            .when(is_optimizing || progress > 0.0, |vstack| {
+                                vstack
+                                    .child(
+                                        Text::new(format!("Progress: {:.0}%", progress * 100.0))
+                                            .size(TextSize::Sm),
+                                    )
+                                    .child(Progress::new(progress * 100.0).size(ProgressSize::Md))
+                                    .child(
+                                        Text::new(status_msg)
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    )
+                            })
+                    }),
             )
     }
 
     // ========================================================================
-    // Step 4: Apply
+    // Step 3: Listen
     // ========================================================================
 
-    fn render_headphone_eq_apply(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_headphone_eq_listen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let headphone_eq = &state.app.headphone_eq_state;
         let result = headphone_eq.result.as_ref();
-        let export_format = headphone_eq.export_format.clone();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
             .child(
-                Text::new("Apply & Export")
+                Text::new("Listen & Preview")
                     .weight(TextWeight::Bold)
                     .size(TextSize::Lg),
             )
             .child(
-                Text::new("Review results and apply or export the EQ.")
+                Text::new("Preview the optimized EQ and apply it to your playback.")
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
             )
             .when_some(result, |vstack, result| {
+                let theme = theme.clone();
+                let num_filters = result.biquads.len();
+                let biquads = result.biquads.clone();
+
                 vstack
                     .child(
                         Card::new()
-                            .header(Text::new("Results").weight(TextWeight::Semibold))
+                            .header(Text::new("Optimization Results").weight(TextWeight::Semibold))
                             .content(
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
@@ -823,7 +811,7 @@ impl PlayerView {
                                             ),
                                     )
                                     .child(
-                                        Text::new(format!("{} filters", result.biquads.len()))
+                                        Text::new(format!("{} filters generated", num_filters))
                                             .size(TextSize::Sm)
                                             .color(theme.text_secondary),
                                     ),
@@ -831,10 +819,94 @@ impl PlayerView {
                     )
                     .child(
                         Card::new()
-                            .header(Text::new("Actions").weight(TextWeight::Semibold))
+                            .header(Text::new("EQ Filters").weight(TextWeight::Semibold))
+                            .content(
+                                div()
+                                    .id("filter-list-scroll")
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .p_2()
+                                    .rounded_md()
+                                    .bg(theme.surface)
+                                    .max_h(px(200.0))
+                                    .overflow_y_scroll()
+                                    .children(biquads.iter().enumerate().map(|(i, biquad)| {
+                                        let filter_type = format!("{:?}", biquad.filter_type);
+                                        let freq = biquad.freq;
+                                        let q = biquad.q;
+                                        let gain = biquad.db_gain;
+
+                                        div()
+                                            .flex()
+                                            .justify_between()
+                                            .items_center()
+                                            .px_2()
+                                            .py_1()
+                                            .rounded(px(4.0))
+                                            .bg(theme.background)
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.accent)
+                                                            .child(format!("#{}", i + 1)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.text_secondary)
+                                                            .child(filter_type),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_3()
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.text_primary)
+                                                            .child(format!("{:.0} Hz", freq)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(theme.text_muted)
+                                                            .child(format!("Q {:.2}", q)),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(if gain >= 0.0 {
+                                                                theme.success
+                                                            } else {
+                                                                theme.error
+                                                            })
+                                                            .child(format!("{:+.1} dB", gain)),
+                                                    ),
+                                            )
+                                    })),
+                            ),
+                    )
+                    .child(
+                        Card::new()
+                            .header(Text::new("Playback Preview").weight(TextWeight::Semibold))
                             .content(
                                 VStack::new()
                                     .spacing(StackSpacing::Md)
+                                    .child(
+                                        Text::new(
+                                            "Apply the EQ to your current playback to hear the difference.",
+                                        )
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_secondary),
+                                    )
                                     .child(
                                         HStack::new()
                                             .spacing(StackSpacing::Sm)
@@ -867,6 +939,58 @@ impl PlayerView {
                                                         }),
                                                     ),
                                             ),
+                                    ),
+                            ),
+                    )
+            })
+            .when(result.is_none(), |vstack| {
+                vstack.child(
+                    Card::new()
+                        .header(Text::new("No Results").weight(TextWeight::Semibold))
+                        .content(
+                            Text::new("Go back and run optimization to generate an EQ curve.")
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                        ),
+                )
+            })
+    }
+
+    // ========================================================================
+    // Step 4: Save
+    // ========================================================================
+
+    fn render_headphone_eq_save(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let headphone_eq = &state.app.headphone_eq_state;
+        let result = headphone_eq.result.as_ref();
+        let export_format = headphone_eq.export_format.clone();
+
+        VStack::new()
+            .spacing(StackSpacing::Lg)
+            .child(
+                Text::new("Save EQ")
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Lg),
+            )
+            .child(
+                Text::new("Choose an export format and save your EQ configuration.")
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .when_some(result, |vstack, _result| {
+                vstack
+                    .child(
+                        Card::new()
+                            .header(Text::new("Export Format").weight(TextWeight::Semibold))
+                            .content(
+                                VStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .child(
+                                        Text::new("Select the format for your EQ file.")
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
                                     )
                                     .child(
                                         HStack::new()
@@ -900,9 +1024,10 @@ impl PlayerView {
                                                                         cx,
                                                                         |state, _cx| {
                                                                             state
-                                                                    .app
-                                                                    .headphone_eq_state
-                                                                    .export_format = value.clone();
+                                                                                .app
+                                                                                .headphone_eq_state
+                                                                                .export_format =
+                                                                                value.clone();
                                                                         },
                                                                     );
                                                                     cx.notify();
@@ -912,11 +1037,20 @@ impl PlayerView {
                                                     },
                                                 ),
                                             ),
-                                    )
+                                    ),
+                            ),
+                    )
+                    .child(
+                        Card::new()
+                            .header(Text::new("Save").weight(TextWeight::Semibold))
+                            .content(
+                                VStack::new()
+                                    .spacing(StackSpacing::Md)
                                     .child(
                                         Button::new("save-eq", "Save EQ File")
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Md)
+                                            .variant(ButtonVariant::Primary)
+                                            .size(ButtonSize::Lg)
+                                            .full_width(true)
                                             .build()
                                             .on_mouse_up(
                                                 MouseButton::Left,
@@ -924,6 +1058,13 @@ impl PlayerView {
                                                     view.save_headphone_eq_result(cx);
                                                 }),
                                             ),
+                                    )
+                                    .child(
+                                        Text::new(
+                                            "Your EQ will be saved to ~/Library/Application Support/org.spinorama.sotf/EQ",
+                                        )
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_muted),
                                     ),
                             ),
                     )
@@ -933,7 +1074,7 @@ impl PlayerView {
                     Card::new()
                         .header(Text::new("No Results").weight(TextWeight::Semibold))
                         .content(
-                            Text::new("Run optimization first to see results.")
+                            Text::new("Go back and run optimization to generate an EQ curve.")
                                 .size(TextSize::Sm)
                                 .color(theme.text_secondary),
                         ),
