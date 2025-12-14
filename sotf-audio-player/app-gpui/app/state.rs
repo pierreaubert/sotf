@@ -84,9 +84,11 @@ pub struct App {
     // Plugin system
     pub plugin_chain: PluginChain,
     pub plugin_chain_modified: bool, // Track if plugins changed since last save
-    pub needs_plugin_update: bool,
+    /// Pending plugin update to sync to audio engine (None = no update needed)
+    pub pending_plugin_update: Option<super::types::PluginUpdateType>,
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize, // Which parameter is selected in edit mode
+    pub selected_eq_band: usize, // Currently selected EQ band for display (0-indexed)
 
     // Playback state
     pub is_playing: bool,
@@ -294,6 +296,7 @@ impl App {
             selected_preset_index: 0,
             selected_album_index: 0,
             selected_plugin_index: 0,
+            selected_eq_band: 0,
             library_sort_order: LibrarySortOrder::Album,
             channel_filter: ChannelFilter::All,
             library_items_per_page: 50, // Show 50 items per page
@@ -305,7 +308,7 @@ impl App {
                 chain
             },
             plugin_chain_modified: false,
-            needs_plugin_update: false,
+            pending_plugin_update: None,
             editing_plugin_index: None,
             plugin_param_selection: 0,
             is_playing: false,
@@ -457,7 +460,8 @@ impl App {
             // Load the preset file
             match self.plugin_chain.load_from_file(&preset_name) {
                 Ok(_) => {
-                    self.needs_plugin_update = true;
+                    self.pending_plugin_update =
+                        Some(super::types::PluginUpdateType::Structural);
                     log::info!("Restored plugin preset: {}", preset_name);
                 }
                 Err(e) => {

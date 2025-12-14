@@ -4,7 +4,9 @@
 
 use sotf_audio_player::PluginSettings;
 
-use crate::app::{App, InputMode, ToastMessage};
+use crate::app::types::PluginUpdateType;
+use crate::app::{App, ToastMessage};
+use crate::plugins::common::param_index_to_engine_param;
 
 impl App {
     // Plugin management methods
@@ -12,14 +14,14 @@ impl App {
         let new_index = self.plugin_chain.add_plugin(plugin_type);
         self.selected_plugin_index = new_index;
         self.plugin_chain.update_binaural_decoder_channels();
-        self.needs_plugin_update = true;
+        self.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
 
     pub fn toggle_plugin(&mut self, index: usize) {
         self.plugin_chain.toggle_plugin(index);
         // Update BinauralDecoder input channels after toggle
         self.plugin_chain.update_binaural_decoder_channels();
-        self.needs_plugin_update = true;
+        self.pending_plugin_update = Some(PluginUpdateType::Structural);
     }
 
     pub fn move_plugin_up(&mut self, index: usize) {
@@ -28,7 +30,7 @@ impl App {
             self.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
             self.plugin_chain.update_binaural_decoder_channels();
-            self.needs_plugin_update = true;
+            self.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
 
@@ -38,7 +40,7 @@ impl App {
             self.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
             self.plugin_chain.update_binaural_decoder_channels();
-            self.needs_plugin_update = true;
+            self.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
 
@@ -63,7 +65,7 @@ impl App {
             self.plugin_chain.remove_plugin(index);
             // Update BinauralDecoder input channels after removal
             self.plugin_chain.update_binaural_decoder_channels();
-            self.needs_plugin_update = true;
+            self.pending_plugin_update = Some(PluginUpdateType::Structural);
             // Adjust selection
             if self.selected_plugin_index >= self.plugin_chain.len()
                 && self.selected_plugin_index > 0
@@ -74,20 +76,6 @@ impl App {
     }
 
     // Plugin editing methods
-    pub fn enter_plugin_edit_mode(&mut self) {
-        if self.selected_plugin_index < self.plugin_chain.len() {
-            self.editing_plugin_index = Some(self.selected_plugin_index);
-            self.plugin_param_selection = 0;
-            self.input_mode = InputMode::EditPlugin;
-        }
-    }
-
-    pub fn exit_plugin_edit_mode(&mut self) {
-        self.editing_plugin_index = None;
-        self.plugin_param_selection = 0;
-        self.input_mode = InputMode::Normal;
-    }
-
     pub fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
         self.editing_plugin_index
             .and_then(|idx| self.plugin_chain.get_plugin(idx))
@@ -353,20 +341,25 @@ impl App {
                     _ => false,
                 },
                 PluginSettings::LoudnessCompensation {
-                    target_lufs,
-                    min_gain_db,
-                    max_gain_db,
+                    low_freq,
+                    low_gain,
+                    high_freq,
+                    high_gain,
                 } => match param_idx {
                     0 => {
-                        *target_lufs = (*target_lufs + delta as f64).max(-40.0).min(0.0);
+                        *low_freq = (*low_freq + delta as f64).max(20.0).min(500.0);
                         true
                     }
                     1 => {
-                        *min_gain_db = (*min_gain_db + delta as f64).max(-20.0).min(0.0);
+                        *low_gain = (*low_gain + delta as f64).max(-20.0).min(20.0);
                         true
                     }
                     2 => {
-                        *max_gain_db = (*max_gain_db + delta as f64).max(0.0).min(20.0);
+                        *high_freq = (*high_freq + delta as f64 * 100.0).max(2000.0).min(20000.0);
+                        true
+                    }
+                    3 => {
+                        *high_gain = (*high_gain + delta as f64).max(-20.0).min(20.0);
                         true
                     }
                     _ => false,
@@ -524,7 +517,27 @@ impl App {
         }
 
         if result {
-            self.needs_plugin_update = true;
+            // Determine update type based on whether this parameter supports individual updates
+            let update_type = if channel_count_changed {
+                // Channel count changes always require structural update
+                PluginUpdateType::Structural
+            } else if let Some(plugin_idx) = self.editing_plugin_index {
+                if let Some(plugin) = self.plugin_chain.get_plugin(plugin_idx) {
+                    if param_index_to_engine_param(&plugin.settings, param_idx).is_some() {
+                        PluginUpdateType::Parameter {
+                            plugin_index: plugin_idx,
+                            param_index: param_idx,
+                        }
+                    } else {
+                        PluginUpdateType::Structural
+                    }
+                } else {
+                    PluginUpdateType::Structural
+                }
+            } else {
+                PluginUpdateType::Structural
+            };
+            self.pending_plugin_update = Some(update_type);
         }
 
         result
@@ -691,6 +704,32 @@ impl App {
                         update_needed = true;
                     }
                 }
+                PluginSettings::LoudnessCompensation {
+                    low_freq,
+                    low_gain,
+                    high_freq,
+                    high_gain,
+                } => {
+                    match param_idx {
+                        0 => {
+                            *low_freq = value.clamp(20.0, 500.0);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *low_gain = value.clamp(-20.0, 20.0);
+                            update_needed = true;
+                        }
+                        2 => {
+                            *high_freq = value.clamp(2000.0, 20000.0);
+                            update_needed = true;
+                        }
+                        3 => {
+                            *high_gain = value.clamp(-20.0, 20.0);
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
         }
@@ -700,7 +739,23 @@ impl App {
         }
 
         if update_needed {
-            self.needs_plugin_update = true;
+            // Determine update type based on whether this parameter supports individual updates
+            let update_type = if channel_count_changed {
+                // Channel count changes always require structural update
+                PluginUpdateType::Structural
+            } else if let Some(plugin) = self.plugin_chain.get_plugin(plugin_idx) {
+                if param_index_to_engine_param(&plugin.settings, param_idx).is_some() {
+                    PluginUpdateType::Parameter {
+                        plugin_index: plugin_idx,
+                        param_index: param_idx,
+                    }
+                } else {
+                    PluginUpdateType::Structural
+                }
+            } else {
+                PluginUpdateType::Structural
+            };
+            self.pending_plugin_update = Some(update_type);
         }
     }
 
@@ -801,7 +856,7 @@ impl App {
         if let Some(plugin) = self.get_editing_plugin_mut() {
             if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                 plugin.settings = PluginSettings::EQ { filters };
-                self.needs_plugin_update = true;
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())
@@ -832,7 +887,7 @@ impl App {
             } = plugin.settings
             {
                 *sofa_file = sofa_file_path;
-                self.needs_plugin_update = true;
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not a Binaural Decoder".to_string())
@@ -967,7 +1022,7 @@ impl App {
                     "Loaded preset: {}",
                     filename
                 )));
-                self.needs_plugin_update = true;
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
                 self.last_loaded_preset = Some(filename);
             }
             Err(e) => {
@@ -999,7 +1054,7 @@ impl App {
                         preset_filename,
                         self.plugin_chain.len()
                     )));
-                    self.needs_plugin_update = true;
+                    self.pending_plugin_update = Some(PluginUpdateType::Structural);
                     self.last_loaded_preset = Some(preset_filename);
                 }
                 Err(e) => {
@@ -1039,7 +1094,7 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 3, // threshold, release, mix
-        PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
+        PluginSettings::LoudnessCompensation { .. } => 4, // low_freq, low_gain, high_freq, high_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 0,     // No adjustable params for now
         PluginSettings::LoudnessMonitor => 0,        // No parameters

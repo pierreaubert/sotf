@@ -13,7 +13,7 @@ mod conf;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackSpacing, Text, TextSize, TextWeight};
+use gpui_ui_kit::{HStack, StackSpacing};
 
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -45,6 +45,8 @@ impl PlayerView {
                 .into_any_element(),
         };
 
+        // Tabs are now custom-rendered to avoid context issues
+
         div()
             .id("settings-screen")
             .flex()
@@ -63,52 +65,86 @@ impl PlayerView {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Sm)
-                            .child(self.render_settings_tab(
-                                translations.settings_tab_library,
-                                crate::app::SettingsTab::Library,
-                                &theme,
-                                cx,
-                            ))
-                            .child(self.render_settings_tab(
-                                translations.settings_tab_appearance,
-                                crate::app::SettingsTab::Appearance,
-                                &theme,
-                                cx,
-                            ))
-                            .child(self.render_settings_tab(
-                                translations.settings_tab_audio_device,
-                                crate::app::SettingsTab::AudioDevice,
-                                &theme,
-                                cx,
-                            ))
-                            .child(self.render_settings_tab(
-                                translations.settings_tab_plugins,
-                                crate::app::SettingsTab::Plugins,
-                                &theme,
-                                cx,
-                            ))
-                            .child(self.render_recording_tab(
-                                translations.settings_tab_recording,
-                                &theme,
-                                cx,
-                            ))
-                            .child(self.render_room_eq_tab(
-                                translations.settings_tab_room_eq,
-                                &theme,
-                                cx,
-                            ))
-                            .child(self.render_settings_tab(
-                                translations.settings_tab_headphone,
-                                crate::app::SettingsTab::Headphone,
-                                &theme,
-                                cx,
-                            ))
-                            .child(self.render_settings_tab(
-                                translations.settings_tab_spinorama,
-                                crate::app::SettingsTab::Spinorama,
-                                &theme,
-                                cx,
-                            )),
+                            .child({
+                                // Custom tab rendering to avoid context issues
+                                let state_entity = self.state.clone();
+                                let tab_data = [
+                                    (translations.settings_tab_library, crate::app::SettingsTab::Library),
+                                    (translations.settings_tab_appearance, crate::app::SettingsTab::Appearance),
+                                    (translations.settings_tab_audio_device, crate::app::SettingsTab::AudioDevice),
+                                    (translations.settings_tab_plugins, crate::app::SettingsTab::Plugins),
+                                    (translations.settings_tab_room_eq, crate::app::SettingsTab::RoomEQ),
+                                    (translations.settings_tab_headphone, crate::app::SettingsTab::Headphone),
+                                    (translations.settings_tab_spinorama, crate::app::SettingsTab::Spinorama),
+                                ];
+
+                                let mut tabs_container = div().flex().items_center();
+
+                                for (label, tab_variant) in tab_data {
+                                    let is_selected = active_tab == tab_variant;
+                                    let entity_clone = state_entity.clone();
+                                    let accent = theme.accent;
+                                    let border = theme.border;
+                                    let text_selected = theme.text_primary;
+                                    let text_unselected = theme.text_muted;
+                                    let text_hover = theme.text_secondary;
+
+                                    let tab = div()
+                                        .id(SharedString::from(format!("settings-tab-{:?}", tab_variant)))
+                                        .flex()
+                                        .flex_col()
+                                        .cursor_pointer()
+                                        .child(
+                                            div()
+                                                .flex()
+                                                .items_center()
+                                                .gap_2()
+                                                .px_4()
+                                                .py_2()
+                                                .text_sm()
+                                                .text_color(if is_selected { text_selected } else { text_unselected })
+                                                .when(!is_selected, |d| d.hover(move |s| s.text_color(text_hover)))
+                                                .when(is_selected, |d| d.font_weight(FontWeight::SEMIBOLD))
+                                                .child(label)
+                                        )
+                                        .child(
+                                            div()
+                                                .h(if is_selected { px(2.0) } else { px(1.0) })
+                                                .w_full()
+                                                .bg(if is_selected { accent } else { border })
+                                        )
+                                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                            entity_clone.update(cx, |state, _cx| {
+                                                state.app.active_settings_tab = tab_variant;
+                                            });
+                                        });
+
+                                    tabs_container = tabs_container.child(tab);
+                                }
+
+                                tabs_container
+                            })
+                            // Recording navigation button
+                            .child({
+                                let theme = theme.clone();
+                                div()
+                                    .px_3()
+                                    .py_2()
+                                    .cursor_pointer()
+                                    .text_color(theme.text_secondary)
+                                    .hover(|s| s.text_color(theme.text_primary))
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                            view.state.update(cx, |state, _cx| {
+                                                state.app.last_screen = state.app.current_screen;
+                                                state.app.current_screen = crate::app::Screen::Recording;
+                                            });
+                                            cx.notify();
+                                        }),
+                                    )
+                                    .child(format!("→ {}", translations.settings_tab_recording))
+                            }),
                     ),
             )
             // Content
@@ -118,133 +154,6 @@ impl PlayerView {
                     .flex_1()
                     .p_4()
                     .child(content),
-            )
-    }
-
-    /// Render a special tab that navigates to the Recording screen
-    fn render_recording_tab(
-        &self,
-        label: &'static str,
-        theme: &crate::theme::Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let theme = theme.clone();
-
-        div()
-            .px_3()
-            .py_2()
-            .cursor_pointer()
-            .rounded_t_md()
-            .bg(theme.surface)
-            .text_color(theme.text_secondary)
-            .hover(|s| s.bg(theme.surface_hover).text_color(theme.text_primary))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        state.app.last_screen = state.app.current_screen;
-                        state.app.current_screen = crate::app::Screen::Recording;
-                    });
-                    cx.notify();
-                }),
-            )
-            .child(
-                Text::new(label)
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Normal)
-                    .color(theme.text_secondary),
-            )
-    }
-
-    /// Render a special tab that navigates to the Room EQ screen
-    fn render_room_eq_tab(
-        &self,
-        label: &'static str,
-        theme: &crate::theme::Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let theme = theme.clone();
-
-        div()
-            .px_3()
-            .py_2()
-            .cursor_pointer()
-            .rounded_t_md()
-            .bg(theme.surface)
-            .text_color(theme.text_secondary)
-            .hover(|s| s.bg(theme.surface_hover).text_color(theme.text_primary))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        state.app.last_screen = state.app.current_screen;
-                        state.app.current_screen = crate::app::Screen::RoomEq;
-                    });
-                    cx.notify();
-                }),
-            )
-            .child(
-                Text::new(label)
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Normal)
-                    .color(theme.text_secondary),
-            )
-    }
-
-    fn render_settings_tab(
-        &self,
-        label: &str,
-        tab: crate::app::SettingsTab,
-        theme: &crate::theme::Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let is_active = state.app.active_settings_tab == tab;
-        let theme = theme.clone();
-
-        div()
-            .px_3()
-            .py_2()
-            .cursor_pointer()
-            .rounded_t_md()
-            .when(is_active, |style| {
-                style
-                    .bg(theme.background)
-                    .border_t_1()
-                    .border_l_1()
-                    .border_r_1()
-                    .border_color(theme.border)
-                    .pb_2() // Overlap bottom border
-                    .mb_neg_px() // Shift down to cover border
-            })
-            .when(!is_active, |style| {
-                style
-                    .bg(theme.surface)
-                    .text_color(theme.text_secondary)
-                    .hover(|s| s.bg(theme.surface_hover).text_color(theme.text_primary))
-            })
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        state.app.active_settings_tab = tab;
-                    });
-                    cx.notify();
-                }),
-            )
-            .child(
-                Text::new(label.to_string())
-                    .size(TextSize::Sm)
-                    .weight(if is_active {
-                        TextWeight::Bold
-                    } else {
-                        TextWeight::Normal
-                    })
-                    .color(if is_active {
-                        theme.accent
-                    } else {
-                        theme.text_secondary
-                    }),
             )
     }
 }

@@ -1,5 +1,6 @@
 //! Headphone EQ optimization and management
 
+use crate::app::types::PluginUpdateType;
 use crate::ui::PlayerView;
 use gpui::*;
 use std::path::PathBuf;
@@ -429,7 +430,7 @@ impl PlayerView {
                 plugin.settings = sotf_audio_player::PluginSettings::EQ { filters };
             }
 
-            state.app.needs_plugin_update = true;
+            state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
             state.app.toast_message = Some(crate::app::ToastMessage::success(
                 "Applied headphone EQ to playback",
             ));
@@ -459,7 +460,7 @@ impl PlayerView {
                 state.app.plugin_chain.remove_plugin(idx);
             }
 
-            state.app.needs_plugin_update = true;
+            state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
             state.app.toast_message = Some(crate::app::ToastMessage::success(
                 "Cleared EQ from playback",
             ));

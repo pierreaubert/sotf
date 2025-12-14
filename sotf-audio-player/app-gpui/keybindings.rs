@@ -168,7 +168,6 @@ fn default_bindings() -> Vec<KeyBinding> {
         // Plugin controls
         KeyBinding::new("u", actions::MovePluginUp, Some("PlayerView")),
         KeyBinding::new("shift-n", actions::MovePluginDown, None),
-        KeyBinding::new("e", actions::EditPlugin, Some("PlayerView")),
         // Directory management
         KeyBinding::new("shift-a", actions::AddDirectory, None),
         KeyBinding::new("shift-s", actions::ScanLibrary, None),
@@ -235,7 +234,6 @@ fn vim_bindings() -> Vec<KeyBinding> {
         // Plugin controls - Vim style
         KeyBinding::new("K", actions::MovePluginUp, None),
         KeyBinding::new("J", actions::MovePluginDown, None),
-        KeyBinding::new("i", actions::EditPlugin, Some("PlayerView")),
         // Directory management
         KeyBinding::new("g a", actions::AddDirectory, None),
         KeyBinding::new("g s", actions::ScanLibrary, None),
@@ -302,7 +300,6 @@ fn emacs_bindings() -> Vec<KeyBinding> {
         // Plugin controls
         KeyBinding::new("alt-up", actions::MovePluginUp, None),
         KeyBinding::new("alt-down", actions::MovePluginDown, None),
-        KeyBinding::new("ctrl-x e", actions::EditPlugin, None),
         // Directory management - Emacs style
         KeyBinding::new("ctrl-x d", actions::AddDirectory, None),
         KeyBinding::new("ctrl-x s", actions::ScanLibrary, None),
@@ -367,8 +364,6 @@ fn vscode_bindings() -> Vec<KeyBinding> {
         // Plugin controls - VSCode style
         KeyBinding::new("alt-up", actions::MovePluginUp, None),
         KeyBinding::new("alt-down", actions::MovePluginDown, None),
-        KeyBinding::new("F2", actions::EditPlugin, None),
-        KeyBinding::new("ctrl-.", actions::EditPlugin, None),
         // Directory management - VSCode style
         KeyBinding::new("ctrl-shift-a", actions::AddDirectory, None),
         KeyBinding::new("ctrl-shift-r", actions::ScanLibrary, None),
@@ -581,11 +576,6 @@ fn default_documented_keybindings() -> Vec<DocumentedKeybinding> {
             category: KeybindingCategory::Plugins,
         },
         DocumentedKeybinding {
-            key: "e",
-            description: "Edit plugin",
-            category: KeybindingCategory::Plugins,
-        },
-        DocumentedKeybinding {
             key: "! @ # $ % ^ &",
             description: "Quick add plugins",
             category: KeybindingCategory::Plugins,
@@ -779,11 +769,6 @@ fn vim_documented_keybindings() -> Vec<DocumentedKeybinding> {
             category: KeybindingCategory::Plugins,
         },
         DocumentedKeybinding {
-            key: "i",
-            description: "Edit plugin",
-            category: KeybindingCategory::Plugins,
-        },
-        DocumentedKeybinding {
             key: "! @ # $ % ^ &",
             description: "Quick add plugins",
             category: KeybindingCategory::Plugins,
@@ -964,11 +949,6 @@ fn emacs_documented_keybindings() -> Vec<DocumentedKeybinding> {
         DocumentedKeybinding {
             key: "Alt+↓",
             description: "Move plugin down",
-            category: KeybindingCategory::Plugins,
-        },
-        DocumentedKeybinding {
-            key: "Ctrl+X E",
-            description: "Edit plugin",
             category: KeybindingCategory::Plugins,
         },
         // Level meters
@@ -1152,11 +1132,6 @@ fn vscode_documented_keybindings() -> Vec<DocumentedKeybinding> {
         DocumentedKeybinding {
             key: "Alt+↓",
             description: "Move plugin down",
-            category: KeybindingCategory::Plugins,
-        },
-        DocumentedKeybinding {
-            key: "F2 / Ctrl+.",
-            description: "Edit plugin",
             category: KeybindingCategory::Plugins,
         },
         DocumentedKeybinding {

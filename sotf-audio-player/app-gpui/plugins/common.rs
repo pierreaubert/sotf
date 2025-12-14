@@ -1,13 +1,103 @@
 //! Common utilities for plugin UI components
 
-use crate::app::{AppState, InputMode};
+use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Potentiometer, PotentiometerTheme, Toggle, ToggleStyle, ToggleTheme, VerticalSlider,
+    Potentiometer, PotentiometerScale, PotentiometerSize, Toggle, ToggleStyle, VerticalSlider,
     VerticalSliderTheme,
 };
+use sotf_audio_player::PluginSettings;
+
+/// Map a UI parameter index to the engine parameter ID and formatted value string.
+/// Returns None if this parameter requires a Structural update (e.g., EQ, channel count changes).
+///
+/// This enables zero-dropout parameter updates for plugins that support it.
+pub fn param_index_to_engine_param(
+    settings: &PluginSettings,
+    param_idx: usize,
+) -> Option<(String, String)> {
+    match settings {
+        PluginSettings::Gain { gain_db } => match param_idx {
+            0 => Some(("gain_db".to_string(), format!("{}", gain_db))),
+            _ => None,
+        },
+        PluginSettings::Compressor {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            makeup_gain_db,
+            mix,
+            auto_makeup,
+            link_channels,
+            sidechain_hpf_hz,
+        } => match param_idx {
+            0 => Some(("threshold".to_string(), format!("{}", threshold_db))),
+            1 => Some(("ratio".to_string(), format!("{}", ratio))),
+            2 => Some(("attack".to_string(), format!("{}", attack_ms))),
+            3 => Some(("release".to_string(), format!("{}", release_ms))),
+            4 => Some(("knee".to_string(), format!("{}", knee_db))),
+            5 => Some(("makeup_gain".to_string(), format!("{}", makeup_gain_db))),
+            6 => Some(("mix".to_string(), format!("{}", mix))),
+            7 => Some(("auto_makeup".to_string(), auto_makeup.to_string())),
+            8 => Some(("link_channels".to_string(), link_channels.to_string())),
+            9 => Some(("sidechain_hpf_hz".to_string(), format!("{}", sidechain_hpf_hz))),
+            _ => None,
+        },
+        PluginSettings::Upmixer {
+            speaker_config: _,
+            gain_front_direct,
+            gain_front_ambient,
+            gain_rear_ambient,
+            lfe_cutoff_hz,
+            stereo_width,
+            bandpass_hz,
+            height_gain,
+            lfe_gain,
+            enable_subharmonic_synth,
+            subharmonic_gain,
+            enable_hr_direct,
+            hr_sharpen,
+            safety_cap_db,
+            decorrelation_mode,
+        } => match param_idx {
+            // param 0 = speaker_config: requires Structural (changes channel count)
+            0 => None,
+            1 => Some(("gain_front_direct".to_string(), format!("{}", gain_front_direct))),
+            2 => Some(("gain_front_ambient".to_string(), format!("{}", gain_front_ambient))),
+            3 => Some(("gain_rear_ambient".to_string(), format!("{}", gain_rear_ambient))),
+            4 => Some(("lfe_cutoff_hz".to_string(), format!("{}", lfe_cutoff_hz))),
+            5 => Some(("stereo_width".to_string(), format!("{}", stereo_width))),
+            6 => Some(("bandpass_hz".to_string(), format!("{}", bandpass_hz))),
+            7 => Some(("height_gain".to_string(), format!("{}", height_gain))),
+            8 => Some(("lfe_gain".to_string(), format!("{}", lfe_gain))),
+            9 => Some((
+                "enable_subharmonic_synth".to_string(),
+                enable_subharmonic_synth.to_string(),
+            )),
+            10 => Some(("subharmonic_gain".to_string(), format!("{}", subharmonic_gain))),
+            11 => Some(("enable_hr_direct".to_string(), enable_hr_direct.to_string())),
+            12 => Some(("hr_sharpen".to_string(), format!("{}", hr_sharpen))),
+            13 => Some(("safety_cap_db".to_string(), format!("{}", safety_cap_db))),
+            14 => Some(("decorrelation_mode".to_string(), format!("{}", decorrelation_mode))),
+            _ => None,
+        },
+        PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {
+            // param 0 = ir_file: requires Structural (file path change)
+            0 => None,
+            1 => Some(("mix".to_string(), format!("{}", mix))),
+            2 => Some(("gain_db".to_string(), format!("{}", gain_db))),
+            _ => None,
+        },
+        // EQ doesn't support individual parameter updates
+        PluginSettings::EQ { .. } => None,
+        // Other plugins: use Structural for now
+        _ => None,
+    }
+}
 
 /// Render a parameter row with name and value
 pub fn render_param_row(
@@ -115,24 +205,7 @@ pub fn render_edit_hints(theme: &Theme) -> impl IntoElement {
         .child("Enter: Done")
 }
 
-/// Convert Theme to ToggleTheme for gpui-ui-kit Toggle
-fn theme_to_toggle_theme(theme: &Theme) -> ToggleTheme {
-    ToggleTheme {
-        checked_bg: theme.accent,
-        unchecked_bg: theme.surface,
-        knob: theme.text_on_accent,
-        label: theme.text_secondary,
-        accent: theme.accent,
-        accent_muted: theme.accent_muted,
-        success: theme.success,
-        border: theme.border,
-        text_on_accent: theme.text_on_accent,
-        text_muted: theme.text_muted,
-    }
-}
-
-/// Render a toggle button with [OFF | ON] display
-/// The active state is highlighted, inactive is dimmed
+/// Render a toggle button using gpui-ui-kit Toggle component
 /// Uses Entity<AppState> for direct state updates
 pub fn render_toggle(
     entity: Entity<AppState>,
@@ -149,84 +222,19 @@ pub fn render_toggle(
     Toggle::new(("toggle", plugin_idx * 1000 + idx))
         .checked(enabled)
         .label(label.to_string())
-        .selected(is_selected)
         .style(ToggleStyle::Segmented)
-        .theme(theme_to_toggle_theme(theme))
-        .on_change(move |new_checked, _, cx| {
-            entity.update(cx, |state, _| {
-                state
-                    .app
-                    .set_plugin_param(plugin_idx, idx, if new_checked { 1.0 } else { 0.0 });
-            });
+        .selected(is_selected)
+        .theme(theme.to_toggle_theme())
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, idx, if new_value { 1.0 } else { 0.0 });
+                });
+            }
         })
-}
-
-/// Render just the toggle switch part: [OFF | ON]
-/// Can be used standalone without label
-pub fn render_toggle_switch(enabled: bool, theme: &Theme) -> impl IntoElement {
-    div()
-        .flex()
-        .rounded_md()
-        .border_1()
-        .border_color(theme.border)
-        .overflow_hidden()
-        // OFF button
-        .child(
-            div()
-                .px_2()
-                .py_1()
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .bg(if !enabled {
-                    theme.surface_hover
-                } else {
-                    theme.background
-                })
-                .text_color(if !enabled {
-                    theme.text_primary
-                } else {
-                    theme.text_muted
-                })
-                .child("OFF"),
-        )
-        // Separator
-        .child(div().w(px(1.0)).h_full().bg(theme.border))
-        // ON button
-        .child(
-            div()
-                .px_2()
-                .py_1()
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .bg(if enabled {
-                    theme.success
-                } else {
-                    theme.background
-                })
-                .text_color(if enabled {
-                    theme.text_on_accent
-                } else {
-                    theme.text_muted
-                })
-                .child("ON"),
-        )
-}
-
-/// Render a compact toggle button (just the switch, no row styling)
-pub fn render_compact_toggle(label: &str, enabled: bool, theme: &Theme) -> impl IntoElement {
-    div()
-        .flex()
-        .items_center()
-        .gap_2()
-        // Label
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme.text_secondary)
-                .child(label.to_string()),
-        )
-        // Toggle switch
-        .child(render_toggle_switch(enabled, theme))
 }
 
 /// Render a value with unit and color coding
@@ -348,7 +356,6 @@ pub fn render_vertical_slider(
                 entity.update(cx, |state, _| {
                     state.app.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_param_selection = idx;
-                    state.app.input_mode = InputMode::EditPlugin;
                 });
             }
         })
@@ -454,25 +461,8 @@ pub fn render_transfer_curve(
         )
 }
 
-/// Convert Theme to PotentiometerTheme for gpui-ui-kit Potentiometer
-fn theme_to_potentiometer_theme(theme: &Theme) -> PotentiometerTheme {
-    PotentiometerTheme {
-        surface: theme.surface,
-        surface_hover: theme.surface_hover,
-        knob_bg: theme.background,
-        accent: theme.accent,
-        accent_muted: theme.accent_muted,
-        border: theme.border,
-        text_secondary: theme.text_secondary,
-        text_primary: theme.text_primary,
-        text_muted: theme.text_muted,
-        text_on_accent: theme.text_on_accent,
-        background_secondary: theme.background_secondary,
-    }
-}
-
-/// Render a rotary knob control with drag support and enhanced visual feedback
-/// Uses Entity<AppState> for direct state updates instead of action dispatch
+/// Render a rotary knob control using gpui-ui-kit Potentiometer
+/// Uses Entity<AppState> for direct state updates
 pub fn render_knob(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -489,14 +479,23 @@ pub fn render_knob(
 ) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
+    // Determine scale type based on unit (Hz parameters use logarithmic scale)
+    let scale = if unit == "Hz" {
+        PotentiometerScale::Logarithmic
+    } else {
+        PotentiometerScale::Linear
+    };
+
     let mut knob = Potentiometer::new(("knob", plugin_idx * 1000 + idx))
         .value(value)
         .min(min)
         .max(max)
         .unit(unit.to_string())
         .label(label.to_string())
+        .size(PotentiometerSize::Md)
+        .scale(scale)
         .selected(is_selected)
-        .theme(theme_to_potentiometer_theme(theme))
+        .theme(theme.to_potentiometer_theme())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -525,7 +524,6 @@ pub fn render_knob(
                 entity.update(cx, |state, _| {
                     state.app.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_param_selection = idx;
-                    state.app.input_mode = InputMode::EditPlugin;
                 });
             }
         })

@@ -81,3 +81,9 @@ path = "lib.rs"
 [[bin]]
 name = "sotf-gpui"
 path = "main.rs"
+
+[dev-dependencies]
+autoeq-iir = { path = "../../math-iir" }
+cpal.workspace = true
+hound.workspace = true
+sotf-audio-engine = { path = "../../sotf-audio-engine" }

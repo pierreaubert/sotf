@@ -11,8 +11,10 @@ use crate::theme::Theme;
 use autoeq_iir::{Biquad, BiquadFilterType};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{ScaleType, line};
+use gpui_px::{ChartTheme, ScaleType, line};
+// Tabs are now custom-rendered to avoid context issues
 use sotf_audio_player::EQFilter;
+use sotf_audio_player::param_specs::eq::*;
 
 /// Sample rate for filter calculations
 const SAMPLE_RATE: f64 = 48000.0;
@@ -22,6 +24,7 @@ pub struct EqRenderState<'a> {
     pub filters: &'a [EQFilter],
     pub is_editing: bool,
     pub selected_param: usize,
+    pub selected_band_idx: usize,
 }
 
 /// Calculate the combined response in dB at a given frequency
@@ -33,7 +36,7 @@ fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
         .iter()
         .map(|f| {
             let biquad = Biquad::new(
-                f.filter_type.clone(),
+                f.filter_type,
                 f.frequency,
                 SAMPLE_RATE,
                 f.q,
@@ -61,7 +64,7 @@ const BAND_COLORS: [u32; 10] = [
 /// Calculate single band response at a frequency
 fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
     let biquad = Biquad::new(
-        filter.filter_type.clone(),
+        filter.filter_type,
         filter.frequency,
         SAMPLE_RATE,
         filter.q,
@@ -76,7 +79,7 @@ fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
 fn render_eq_visualization(
     filters: &[EQFilter],
     selected_band: Option<usize>,
-    _theme: &Theme,
+    theme: &Theme,
     width: f32,
 ) -> impl IntoElement {
     // Generate frequency points (logarithmically spaced from 20Hz to 20kHz)
@@ -99,10 +102,20 @@ fn render_eq_visualization(
         .map(|&freq| calculate_response_at_freq(filters, freq))
         .collect();
 
-    // Start building the chart with the combined response
+    // Create chart theme from app theme
+    let chart_theme = ChartTheme {
+        plot_background: theme.eq_curve_colors.background,
+        grid_color: theme.eq_curve_colors.grid,
+        axis_line_color: theme.graph_colors.grid,
+        axis_label_color: theme.text_secondary,
+        title_color: theme.text_primary,
+        legend_text_color: theme.text_secondary,
+    };
+
+    // Convert combined line color to u32
     let text_muted_u32 = {
-        let c = _theme.text_muted;
-        ((c.r as u32) << 16) | ((c.g as u32) << 8) | (c.b as u32)
+        let c = theme.text_muted;
+        ((c.r * 255.0) as u32) << 16 | ((c.g * 255.0) as u32) << 8 | (c.b * 255.0) as u32
     };
     let mut chart_builder = line(&freq_points, &combined_response)
         .x_scale(ScaleType::Log)
@@ -110,9 +123,10 @@ fn render_eq_visualization(
         .x_label("Frequency")
         .y_label("SPL")
         .size(width, 300.0)
-        .color(text_muted_u32) // Dark gray for combined from theme.text_muted
+        .color(text_muted_u32) // Combined response line
         .stroke_width(2.5)
-        .label("Combined");
+        .label("Combined")
+        .theme(chart_theme);
 
     // Add each filter band as an additional series
     for (i, filter) in filters.iter().enumerate() {
@@ -146,6 +160,8 @@ fn render_eq_visualization(
             .flex()
             .items_center()
             .justify_center()
+            .bg(theme.eq_curve_colors.background)
+            .text_color(theme.text_secondary)
             .child("Unable to render chart")
             .into_any_element(),
     }
@@ -158,173 +174,223 @@ pub fn render_eq_plugin(
     state: EqRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let selected_band_idx = if state.is_editing {
-        // Determine which band is selected based on the selected_param
-        // Each band has 4 parameters (Freq, Q, Gain, Type - though Type isn't a knob)
-        // So, param_idx / 4 gives the band index.
-        Some(state.selected_param / 4)
+    // Clamp selected band to valid range
+    let selected_band_idx = state.selected_band_idx.min(state.filters.len().saturating_sub(1));
+    let num_bands = state.filters.len();
+
+    // Determine layout mode based on available width
+    // For now, we'll default to horizontal layout
+    let use_horizontal_layout = true;
+
+    // Get the selected filter
+    let selected_filter = if num_bands > 0 {
+        Some(&state.filters[selected_band_idx])
     } else {
         None
     };
 
-    div()
+    // Compute selected param for editing mode
+    let highlight_band_idx = if state.is_editing {
+        Some(state.selected_param / 4)
+    } else {
+        Some(selected_band_idx)
+    };
+
+    // Build the UI
+    let graph_section = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .child(render_eq_visualization(
+            state.filters,
+            highlight_band_idx,
+            theme,
+            if use_horizontal_layout { 500.0 } else { 700.0 },
+        ));
+
+    let controls_section = div()
         .flex()
         .flex_col()
         .gap_2()
-        // EQ Graph section
-        .child(
-            div()
+        .when(use_horizontal_layout, |d| d.min_w(px(300.0)))
+        .when(!use_horizontal_layout, |d| d.w_full())
+        // Band selector tabs (custom rendering to avoid context issues)
+        .child({
+            let mut tabs_container = div()
                 .flex()
-                .flex_col()
-                .gap_1()
-                // Title
-                .child(
+                .items_center()
+                .gap_2()
+                .p_1()
+                .bg(theme.surface)
+                .rounded_lg();
+
+            // Build each band tab manually
+            for band_idx in 0..num_bands {
+                let is_selected = band_idx == selected_band_idx;
+                let entity_clone = entity.clone();
+                let accent = theme.accent;
+                let text_primary = theme.text_primary;
+                let text_secondary = theme.text_secondary;
+                let bg_secondary = theme.background_secondary;
+                let surface_hover = theme.surface_hover;
+
+                let tab = div()
+                    .id(SharedString::from(format!("eq-band-{}", band_idx)))
+                    .px_4()
+                    .py_2()
+                    .text_sm()
+                    .rounded_md()
+                    .cursor_pointer()
+                    .when(is_selected, |d| {
+                        d.bg(accent)
+                            .text_color(text_primary)
+                            .font_weight(FontWeight::SEMIBOLD)
+                    })
+                    .when(!is_selected, |d| {
+                        d.bg(bg_secondary)
+                            .text_color(text_secondary)
+                            .hover(move |s| s.bg(surface_hover))
+                    })
+                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        entity_clone.update(cx, |state, _| {
+                            state.app.selected_eq_band = band_idx;
+                        });
+                    })
+                    .child(format!("{}", band_idx + 1));
+
+                tabs_container = tabs_container.child(tab);
+            }
+
+            tabs_container
+                // Add band button
+                .child({
+                    let entity_clone = entity.clone();
                     div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .mb_1()
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme.text_primary)
-                                .child("FREQUENCY RESPONSE"),
-                        )
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child(format!("{} bands", state.filters.len())),
-                        ),
-                )
-                // Graph (self-contained with axes) - full width
-                .child(div().w_full().child(render_eq_visualization(
-                    state.filters,
-                    selected_band_idx,
-                    theme,
-                    700.0, // Increased width for better visibility
-                ))),
-        )
-        // Band controls section
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                // Title
-                .child(
-                    div()
+                        .px_3()
+                        .py_1p5()
                         .text_sm()
                         .font_weight(FontWeight::BOLD)
-                        .text_color(theme.text_primary)
-                        .mb_1()
-                        .child("FILTER BANDS"),
-                )
-                // Band controls in a grid
-                .child(div().flex().flex_wrap().gap_2().children(
-                    state.filters.iter().enumerate().map(|(i, filter)| {
-                        // Each filter has 4 params: Type (idx 3), Freq (idx 0), Q (idx 1), Gain (idx 2)
-                        let base_param_idx = i * 4;
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .bg(theme.success)
+                        .text_color(theme.text_on_accent)
+                        .hover(|s| s.opacity(0.8))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            entity_clone.update(cx, |_state, _| {
+                                // TODO: Implement add band functionality
+                                // This would need to call a method on the player to add a new EQ filter
+                            });
+                        })
+                        .child("+")
+                })
+        })
+        // Selected band controls
+        .when(selected_filter.is_some(), |d| {
+            let filter = selected_filter.unwrap();
+            let base_param_idx = selected_band_idx * 4;
 
+            d.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .p_3()
+                    .bg(theme.background_secondary)
+                    .rounded_md()
+                    // Filter type selector
+                    .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .p_2()
-                            .bg(theme.background_secondary)
-                            .min_w(px(220.0))
-                            // Band header with selector in one row
                             .child(
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .mb_1()
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .font_weight(FontWeight::BOLD)
-                                            .text_color(theme.text_secondary)
-                                            .child(format!("#{}", i + 1)),
-                                    )
-                                    .child(render_filter_type_selector(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        &filter.filter_type,
-                                        i,
-                                        base_param_idx + 3,
-                                        None,
-                                        theme,
-                                    )),
+                                    .text_xs()
+                                    .text_color(theme.text_muted)
+                                    .child("Type")
                             )
-                            // Parameters row
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_1()
-                                    .child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "Freq",
-                                        filter.frequency,
-                                        20.0,
-                                        20000.0,
-                                        "Hz",
-                                        base_param_idx,
-                                        state.selected_param,
-                                        state.is_editing,
-                                        None,
-                                        theme,
-                                    ))
-                                    .child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "Q",
-                                        filter.q,
-                                        0.1,
-                                        10.0,
-                                        "",
-                                        base_param_idx + 1,
-                                        state.selected_param,
-                                        state.is_editing,
-                                        None,
-                                        theme,
-                                    ))
-                                    .child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "Gain",
-                                        filter.gain_db,
-                                        -24.0,
-                                        24.0,
-                                        "dB",
-                                        base_param_idx + 2,
-                                        state.selected_param,
-                                        state.is_editing,
-                                        None,
-                                        theme,
-                                    )),
-                            )
-                    }),
-                )),
-        )
-        // Edit mode hint
-        .when(state.is_editing, |d| {
-            d.child(
-                div()
-                    .p_2()
-                    .bg(theme.accent_muted)
-                    .flex()
-                    .gap_3()
-                    .text_xs()
-                    .text_color(theme.text_secondary)
-                    .child("↑/↓: Select")
-                    .child("←/→: Adjust")
-                    .child("[/]: Step")
-                    .child("Enter: Done"),
+                            .child(render_filter_type_selector(
+                                entity.clone(),
+                                plugin_idx,
+                                &filter.filter_type,
+                                selected_band_idx,
+                                base_param_idx + 3,
+                                None,
+                                theme,
+                            ))
+                    )
+                    // Knobs row
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .justify_around()
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Freq",
+                                filter.frequency,
+                                FREQUENCY_MIN,
+                                FREQUENCY_MAX,
+                                "Hz",
+                                base_param_idx,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            ))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Q",
+                                filter.q,
+                                Q_MIN,
+                                Q_MAX,
+                                "",
+                                base_param_idx + 1,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            ))
+                            .child(render_knob(
+                                entity.clone(),
+                                plugin_idx,
+                                "Gain",
+                                filter.gain_db,
+                                GAIN_DB_MIN,
+                                GAIN_DB_MAX,
+                                "dB",
+                                base_param_idx + 2,
+                                state.selected_param,
+                                state.is_editing,
+                                None,
+                                theme,
+                            ))
+                    )
             )
-        })
+        });
+
+    // Combine sections based on layout mode
+    let main_container = if use_horizontal_layout {
+        // Horizontal: graph on left, controls on right
+        div()
+            .flex()
+            .flex_row()
+            .gap_3()
+            .child(graph_section)
+            .child(controls_section)
+    } else {
+        // Vertical: graph on top, controls below
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(graph_section)
+            .child(controls_section)
+    };
+
+    main_container
 }
 
 /// Get the index of a filter type in the standard ordering

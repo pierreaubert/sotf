@@ -2,6 +2,7 @@
 
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
+use crate::app::types::PluginUpdateType;
 use crate::plugins::actions::ToggleUpmixerConfig;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -23,8 +24,8 @@ impl Render for PluginDragInfo {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         // Drag preview - a smaller version of the plugin module
         div()
-            .w(px(90.0))
-            .h(px(70.0))
+            .w(px(70.0))
+            .h(px(60.0))
             .flex()
             .flex_col()
             .rounded_lg()
@@ -105,16 +106,16 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
     match plugin_type {
         PluginType::EQ => "EQ",
         PluginType::Gain => "Gain",
-        PluginType::Upmixer => "Upmixer",
-        PluginType::Compressor => "Compressor",
-        PluginType::Limiter => "Limiter",
+        PluginType::Upmixer => "Upmix",
+        PluginType::Compressor => "Comp",
+        PluginType::Limiter => "Lim",
         PluginType::Gate => "Gate",
-        PluginType::LoudnessCompensation => "Loudness",
-        PluginType::BinauralDecoder => "Binaural",
-        PluginType::Convolution => "Convolution",
-        PluginType::LoudnessMonitor => "Monitoring",
-        PluginType::SpectrumAnalyzer => "Spectrum",
-        PluginType::ChannelMuteSolo => "Mixer",
+        PluginType::LoudnessCompensation => "Loud",
+        PluginType::BinauralDecoder => "Bin",
+        PluginType::Convolution => "Conv",
+        PluginType::LoudnessMonitor => "Mon",
+        PluginType::SpectrumAnalyzer => "Spectr",
+        PluginType::ChannelMuteSolo => "Mix",
     }
 }
 
@@ -175,9 +176,9 @@ impl PlayerView {
                         let new_value = (start_value + value_delta).clamp(min, max);
 
                         // Update the parameter value via the plugin editing system
+                        // (set_plugin_param already sets pending_plugin_update)
                         view.state.update(cx, |state, _cx| {
                             state.app.set_plugin_param(plugin_idx, param_idx, new_value);
-                            state.app.needs_plugin_update = true;
                         });
                         cx.notify();
                     }
@@ -237,6 +238,7 @@ impl PlayerView {
                     name.clone(),
                     *enabled,
                     selected_idx == idx,
+                    pt.clone(), // Include plugin type for short_name
                 )
             })
             .collect();
@@ -293,7 +295,7 @@ impl PlayerView {
                     // Input Meter removed from rack strip (moved to detail panel)
                     // Plugin modules - inline creation with drag-and-drop
                     .children(modules_info.into_iter().map(
-                        |(idx, color, icon, name, enabled, is_selected)| {
+                        |(idx, color, icon, name, enabled, is_selected, plugin_type)| {
 
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
@@ -317,8 +319,8 @@ impl PlayerView {
                                     div()
                                         .id(SharedString::from(format!("plugin-module-{}", idx)))
                                         .group("plugin-module")
-                                        .w(px(100.0))
-                                        .h(px(110.0))
+                                        .w(px(80.0))
+                                        .h(px(90.0))
                                         .flex()
                                         .flex_col()
                                         .rounded_lg()
@@ -351,7 +353,8 @@ impl PlayerView {
                                                             .plugin_chain
                                                             .move_plugin(source, target);
                                                         state.app.selected_plugin_index = target;
-                                                        state.app.needs_plugin_update = true;
+                                                        state.app.pending_plugin_update =
+                                                            Some(PluginUpdateType::Structural);
                                                         state.app.update_level_meter_groups(); // Reconfigure metering
                                                     });
                                                     cx.notify();
@@ -405,13 +408,49 @@ impl PlayerView {
                                                      if state.app.selected_plugin_index >= state.app.plugin_chain.len() && state.app.plugin_chain.len() > 0 {
                                                          state.app.selected_plugin_index = state.app.plugin_chain.len() - 1;
                                                      }
-                                                     state.app.needs_plugin_update = true;
+                                                     state.app.pending_plugin_update =
+                                                         Some(PluginUpdateType::Structural);
                                                      state.app.update_level_meter_groups(); // Reconfigure metering
                                                 });
                                                 cx.notify();
                                             }),
                                         )
                                         .child("×")
+                                )
+                                // Power indicator (top left)
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top(px(8.0))
+                                        .left(px(4.0))
+                                        .w(px(12.0))
+                                        .h(px(12.0))
+                                        .rounded_full()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .cursor_pointer()
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
+                                                cx.stop_propagation();
+                                                view.state.update(cx, |state, _cx| {
+                                                    state.app.plugin_chain.toggle_plugin(idx);
+                                                    state.app.pending_plugin_update =
+                                                        Some(PluginUpdateType::Structural);
+                                                    state.app.update_level_meter_groups(); // Reconfigure metering
+                                                });
+                                                cx.notify();
+                                            })
+                                        )
+                                        .bg(if enabled {
+                                            theme_c.success
+                                        } else {
+                                            theme_c.error
+                                        })
+                                        .text_size(px(8.0))
+                                        .text_color(rgb(0xffffff))
+                                        .child(if enabled { "●" } else { "○" }),
                                 )
                                 // Icon
                                 .child(
@@ -420,7 +459,7 @@ impl PlayerView {
                                         .flex()
                                         .items_center()
                                         .justify_center()
-                                        .text_2xl()
+                                        .text_xl()
                                         .text_color(color)
                                         .child(icon),
                                 )
@@ -428,61 +467,14 @@ impl PlayerView {
                                 .child(
                                     div()
                                         .px_2()
+                                        .pb_2()
                                         .text_xs()
                                         .text_color(theme_c.text_primary)
                                         .font_weight(FontWeight::MEDIUM)
+                                        .text_align(TextAlign::Center)
                                         .overflow_hidden()
                                         .text_ellipsis()
-                                        .child(name),
-                                )
-                                // Bottom controls
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_between()
-                                        .items_center()
-                                        .px_2()
-                                        .py_1()
-                                        .border_t_1()
-                                        .border_color(theme_c.border)
-                                        // Power indicator
-                                        .child(
-                                            div()
-                                                .w(px(16.0))
-                                                .h(px(16.0))
-                                                .rounded_full()
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .cursor_pointer()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
-                                                        cx.stop_propagation();
-                                                        view.state.update(cx, |state, _cx| {
-                                                            state.app.plugin_chain.toggle_plugin(idx);
-                                                            state.app.needs_plugin_update = true;
-                                                            state.app.update_level_meter_groups(); // Reconfigure metering
-                                                        });
-                                                        cx.notify();
-                                                    })
-                                                )
-                                                .bg(if enabled {
-                                                    theme_c.success
-                                                } else {
-                                                    theme_c.error
-                                                })
-                                                .text_xs()
-                                                .text_color(rgb(0xffffff))
-                                                .child(if enabled { "●" } else { "○" }),
-                                        )
-                                        // Index indicator
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(theme_c.text_muted)
-                                                .child(format!("{}", idx + 1)),
-                                        ),
+                                        .child(short_name(&plugin_type)),
                                 )
                                 )
                                 // Connection line after
@@ -747,7 +739,8 @@ impl PlayerView {
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     state.app.plugin_chain.add_plugin(&pt);
-                                    state.app.needs_plugin_update = true;
+                                    state.app.pending_plugin_update =
+                                        Some(PluginUpdateType::Structural);
                                     state.app.update_level_meter_groups(); // Reconfigure metering
                                 });
                                 cx.notify();
@@ -801,6 +794,7 @@ impl PlayerView {
                         .bg(theme.background_secondary)
                         .border_b_1()
                         .border_color(theme.border)
+/* row with infos but not useful
                         .child(
                             div()
                                 .flex()
@@ -821,13 +815,16 @@ impl PlayerView {
                                         )
                                         .child(div().text_xs().text_color(theme.text_muted).child(
                                             format!(
-                                                "Slot {} • {}",
+                                                "[{}] {} - Slot {} - {}",
+                                                selected_idx + 1,
+                                                short_name(&plugin_type),
                                                 selected_idx + 1,
                                                 if plugin_enabled { "Active" } else { "Bypassed" }
                                             ),
                                         )),
                                 ),
                         ),
+*/
                 )
                 .child(
                     div()
@@ -851,6 +848,8 @@ impl PlayerView {
                                     param_selection,
                                     &theme,
                                     self.state.read(cx).app.upmixer_config_open,
+                                    self.state.read(cx).app.selected_eq_band,
+                                    self.state.read(cx).app.loudness_info.clone(),
                                 )),
                         )
                         // Right: Output Meter

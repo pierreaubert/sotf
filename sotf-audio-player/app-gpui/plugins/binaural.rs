@@ -6,7 +6,8 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Potentiometer, PotentiometerTheme};
+use gpui_ui_kit::Potentiometer;
+use sotf_audio_player::param_specs::binaural::*;
 
 /// State for rendering the Binaural Decoder plugin
 pub struct BinauralRenderState<'a> {
@@ -315,8 +316,8 @@ pub fn render_binaural_plugin(
                                     let entity = entity.clone();
                                     Potentiometer::new(3)
                                         .value(state.externalization)
-                                        .min(0.0)
-                                        .max(1.0)
+                                        .min(EXTERNALIZATION_MIN as f64)
+                                        .max(EXTERNALIZATION_MAX as f64)
                                         .unit("%".to_string())
                                         .label("Ext".to_string()) // compact label
                                         .selected(state.selected_param == 3 && state.is_editing)
@@ -325,19 +326,7 @@ pub fn render_binaural_plugin(
                                                 state.app.set_plugin_param(plugin_idx, 3, v);
                                             });
                                         })
-                                        .theme(PotentiometerTheme {
-                                            surface: theme.surface,
-                                            surface_hover: theme.surface_hover,
-                                            accent: theme.accent,
-                                            accent_muted: theme.accent_muted,
-                                            border: theme.border,
-                                            text_secondary: theme.text_secondary,
-                                            text_primary: theme.text_primary,
-                                            text_muted: theme.text_muted,
-                                            text_on_accent: theme.text_on_accent,
-                                            background_secondary: theme.background_secondary,
-                                            knob_bg: theme.surface,
-                                        })
+                                        .theme(theme.to_potentiometer_theme())
                                 })
                                 .child(
                                     div()
@@ -364,8 +353,8 @@ pub fn render_binaural_plugin(
                                     let entity = entity.clone();
                                     Potentiometer::new(4)
                                         .value(state.near_field_strength)
-                                        .min(0.0)
-                                        .max(1.0)
+                                        .min(NEAR_FIELD_STRENGTH_MIN as f64)
+                                        .max(NEAR_FIELD_STRENGTH_MAX as f64)
                                         .unit("%".to_string())
                                         .label("Near".to_string())
                                         .selected(state.selected_param == 4 && state.is_editing)
@@ -374,19 +363,7 @@ pub fn render_binaural_plugin(
                                                 state.app.set_plugin_param(plugin_idx, 4, v);
                                             });
                                         })
-                                        .theme(PotentiometerTheme {
-                                            surface: theme.surface,
-                                            surface_hover: theme.surface_hover,
-                                            accent: theme.accent,
-                                            accent_muted: theme.accent_muted,
-                                            border: theme.border,
-                                            text_secondary: theme.text_secondary,
-                                            text_primary: theme.text_primary,
-                                            text_muted: theme.text_muted,
-                                            text_on_accent: theme.text_on_accent,
-                                            background_secondary: theme.background_secondary,
-                                            knob_bg: theme.surface,
-                                        })
+                                        .theme(theme.to_potentiometer_theme())
                                 })
                                 .child(
                                     div()

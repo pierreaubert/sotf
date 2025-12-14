@@ -1,4 +1,6 @@
+use crate::app::types::PluginUpdateType;
 use crate::app::{AppState, Screen};
+use crate::plugins::common::param_index_to_engine_param;
 
 // Re-export modules for backward compatibility with crate::ui::components, etc.
 pub use crate::components;
@@ -6,7 +8,7 @@ pub use crate::plugins;
 pub use crate::screens;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::Divider;
+use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use std::time::Duration;
 
 // Re-export all actions for backward compatibility
@@ -523,7 +525,39 @@ impl PlayerView {
                     .child(self.render_library_screen(cx)),
             )
             // Resize handle
-            .child(self.render_horizontal_divider(theme.clone(), cx))
+            .child({
+                let library_collapsed = queue_ratio > 0.9;
+                let divider_theme = PaneDividerTheme {
+                    background: theme.background,
+                    background_hover: theme.surface_hover,
+                    background_collapsed: theme.surface,
+                    foreground: theme.text_muted,
+                    foreground_hover: theme.text_secondary,
+                    border: theme.border,
+                };
+                PaneDivider::horizontal("library-queue-divider", CollapseDirection::Up)
+                    .label("Library")
+                    .collapsed(library_collapsed)
+                    .theme(divider_theme)
+                    .on_toggle({
+                        let state = self.state.clone();
+                        move |collapsed, _window, cx| {
+                            state.update(cx, |state, _| {
+                                state.app.queue_panel_ratio = if collapsed { 0.95 } else { 0.35 };
+                                let _ = state.app.save_config();
+                            });
+                        }
+                    })
+                    .on_drag_start({
+                        let state = self.state.clone();
+                        move |_pos, _window, cx| {
+                            state.update(cx, |state, _| {
+                                state.app.is_dragging_queue_divider = true;
+                                state.app.divider_click_start = Some(std::time::Instant::now());
+                            });
+                        }
+                    })
+            })
             // Bottom section: Queue (configurable height ratio)
             .child(
                 div()
@@ -534,64 +568,6 @@ impl PlayerView {
                     .border_color(theme.border)
                     .overflow_hidden()
                     .child(self.render_queue_screen(cx)),
-            )
-    }
-
-    /// Render a horizontal divider that can be dragged to resize panels
-    /// Click to toggle library visibility
-    fn render_horizontal_divider(
-        &self,
-        theme: crate::theme::Theme,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        Divider::new()
-            .id("queue-divider")
-            .color(theme.border)
-            .hover_color(theme.accent)
-            .thickness(px(6.0))
-            .interactive()
-            .build()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        state.app.is_dragging_queue_divider = true;
-                        state.app.divider_click_start = Some(std::time::Instant::now());
-                    });
-                }),
-            )
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        // Check if this was a click (short duration, no significant drag)
-                        let was_click = state
-                            .app
-                            .divider_click_start
-                            .map(|start| start.elapsed().as_millis() < 200)
-                            .unwrap_or(false);
-
-                        if was_click && state.app.is_dragging_queue_divider {
-                            // Toggle library visibility by adjusting queue ratio
-                            if state.app.queue_panel_ratio < 0.9 {
-                                // Hide library (maximize queue)
-                                state.app.queue_panel_ratio = 0.95;
-                            } else {
-                                // Show library (restore default)
-                                state.app.queue_panel_ratio = 0.35;
-                            }
-                        }
-
-                        state.app.is_dragging_queue_divider = false;
-                        state.app.divider_click_start = None;
-
-                        // Save the new layout
-                        if let Err(e) = state.app.save_config() {
-                            log::warn!("Failed to save panel layout: {}", e);
-                        }
-                    });
-                    cx.notify();
-                }),
             )
     }
 
@@ -1001,6 +977,12 @@ impl PlayerView {
                 state.app.spectrum_info = playback_state.spectrum;
             }
 
+            // Apply pending plugin updates to audio engine
+            if let Some(update_type) = state.app.pending_plugin_update.take() {
+                log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
+                Self::apply_plugin_update(state, update_type);
+            }
+
             // Check if playback ended and auto-advance
             if state.app.is_playing
                 && !playback_state.is_playing
@@ -1026,6 +1008,51 @@ impl PlayerView {
             }
         });
         cx.notify();
+    }
+
+    /// Apply a pending plugin update to the audio engine.
+    /// Called from update_playback_state when there's a pending update.
+    fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
+        let result = match update_type {
+            PluginUpdateType::Parameter {
+                plugin_index,
+                param_index,
+            } => {
+                // Zero-dropout individual parameter update
+                if let Some(plugin) = state.app.plugin_chain.get_plugin(plugin_index) {
+                    if let Some((param_id, value)) =
+                        param_index_to_engine_param(&plugin.settings, param_index)
+                    {
+                        state
+                            .player
+                            .lock()
+                            .set_plugin_parameter(plugin_index, param_id, value)
+                    } else {
+                        // Parameter not supported for individual update, fall back to structural
+                        let sample_rate = 48000.0;
+                        let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
+                        state.player.lock().update_plugins(plugins)
+                    }
+                } else {
+                    Ok(()) // Plugin not found, ignore
+                }
+            }
+            PluginUpdateType::Structural => {
+                // Full plugin chain rebuild
+                let sample_rate = 48000.0;
+                let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
+                log::warn!(
+                    "[GPUI] Structural update: sending {} plugins to engine (expected output: {} channels)",
+                    plugins.len(),
+                    state.app.plugin_chain.output_channels()
+                );
+                state.player.lock().update_plugins(plugins)
+            }
+        };
+
+        if let Err(e) = result {
+            log::warn!("Failed to apply plugin update: {}", e);
+        }
     }
 
     fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
@@ -1187,17 +1214,6 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn edit_plugin(&mut self, _: &EditPlugin, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
-            // Block if in text input mode
-            if Self::is_text_input_mode(state.app.input_mode) {
-                return;
-            }
-            state.app.enter_plugin_edit_mode();
-        });
-        cx.notify();
-    }
-
     // Level meter actions
     fn select_next_meter_group(
         &mut self,
@@ -1256,80 +1272,6 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn handle_plugin_edit_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        // Handle key input for plugin edit mode
-        match event.keystroke.key.as_str() {
-            "up" | "k" => {
-                self.state.update(cx, |state, _cx| {
-                    state.app.select_previous_param();
-                });
-                cx.notify();
-            }
-            "down" | "j" => {
-                self.state.update(cx, |state, _cx| {
-                    state.app.select_next_param();
-                });
-                cx.notify();
-            }
-            "left" | "h" => {
-                self.state.update(cx, |state, _cx| {
-                    state.app.adjust_selected_param(-1.0);
-                });
-                cx.notify();
-            }
-            "right" | "l" => {
-                self.state.update(cx, |state, _cx| {
-                    state.app.adjust_selected_param(1.0);
-                });
-                cx.notify();
-            }
-            "a" => {
-                // Load APO file (for EQ plugins)
-                self.state.update(cx, |state, _cx| {
-                    use crate::app::InputMode;
-                    use sotf_audio_player::PluginSettings;
-                    if let Some(plugin) = state.app.get_editing_plugin() {
-                        if matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                            state.app.input_mode = InputMode::LoadApoFile;
-                            state.app.apo_file_input.clear();
-                            state.app.toast_message =
-                                Some(crate::app::ToastMessage::info("Enter path to APO file:"));
-                        } else {
-                            state.app.toast_message = Some(crate::app::ToastMessage::warning(
-                                "APO files can only be loaded for EQ plugins",
-                            ));
-                        }
-                    }
-                });
-                cx.notify();
-            }
-            "f" => {
-                // Load SOFA file (for Binaural Decoder plugins)
-                self.state.update(cx, |state, _cx| {
-                    use crate::app::InputMode;
-                    use sotf_audio_player::PluginSettings;
-                    if let Some(plugin) = state.app.get_editing_plugin() {
-                        if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
-                            state.app.input_mode = InputMode::LoadSofaFile;
-                            state.app.sofa_file_input.clear();
-                            state.app.toast_message =
-                                Some(crate::app::ToastMessage::info("Enter path to SOFA file:"));
-                        } else {
-                            state.app.toast_message = Some(crate::app::ToastMessage::warning(
-                                "SOFA files can only be loaded for Binaural Decoder plugins",
-                            ));
-                        }
-                    }
-                });
-                cx.notify();
-            }
-            "escape" => {
-                // Already handled by Cancel action
-            }
-            _ => {}
-        }
-    }
-
     fn handle_apo_file_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for APO file loading mode
         match event.keystroke.key.as_str() {
@@ -1354,7 +1296,7 @@ impl PlayerView {
                                 "APO file loaded successfully",
                             ));
                             state.app.apo_file_input.clear();
-                            state.app.input_mode = crate::app::InputMode::EditPlugin;
+                            state.app.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
                             state.app.toast_message = Some(crate::app::ToastMessage::error(
@@ -1400,7 +1342,7 @@ impl PlayerView {
                                 "SOFA file loaded successfully",
                             ));
                             state.app.sofa_file_input.clear();
-                            state.app.input_mode = crate::app::InputMode::EditPlugin;
+                            state.app.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
                             state.app.toast_message = Some(crate::app::ToastMessage::error(
@@ -1638,10 +1580,7 @@ impl PlayerView {
                     // TODO: Implement playing specific track from queue
                 }
                 Screen::Settings => {
-                    // If Plugins tab is active, enter plugin edit mode
-                    if state.app.active_settings_tab == crate::app::SettingsTab::Plugins {
-                        state.app.enter_plugin_edit_mode();
-                    }
+                    // Enter key in Settings screen - no action needed
                 }
                 _ => {}
             }
@@ -1653,6 +1592,12 @@ impl PlayerView {
         let sample_rate = 48000.0;
         let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
         let output_channels = state.app.plugin_chain.output_channels();
+
+        log::warn!(
+            "[GPUI] play_track: starting with {} plugins, output_channels={}",
+            plugins.len(),
+            output_channels
+        );
 
         if let Err(e) = state.player.lock().load_and_play(
             path,
@@ -1688,8 +1633,6 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state.app.editing_plugin_index = Some(action.plugin_idx);
             state.app.plugin_param_selection = action.param_idx;
-            // Enable edit mode so keyboard navigation works
-            state.app.input_mode = crate::app::InputMode::EditPlugin;
         });
         cx.notify();
     }
@@ -1869,7 +1812,6 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quick_add_loudness))
             .on_action(cx.listener(Self::quick_add_binaural))
             .on_action(cx.listener(Self::quick_add_binaural))
-            .on_action(cx.listener(Self::edit_plugin))
             // Plugin parameter actions
             .on_action(cx.listener(Self::on_update_plugin_param))
             .on_action(cx.listener(Self::on_select_plugin_param))
@@ -1895,10 +1837,6 @@ impl Render for PlayerView {
                     crate::app::InputMode::AddDirectory => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_directory_input(event, cx);
-                    }
-                    crate::app::InputMode::EditPlugin => {
-                        cx.stop_propagation(); // Prevent actions from processing this keystroke
-                        view.handle_plugin_edit_input(event, cx);
                     }
                     crate::app::InputMode::LoadApoFile => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
@@ -2029,9 +1967,6 @@ impl Render for PlayerView {
             .child(self.render_footer(cx))
             .when(input_mode == crate::app::InputMode::Help, |div| {
                 div.child(self.render_help_modal(cx))
-            })
-            .when(input_mode == crate::app::InputMode::EditPlugin, |div| {
-                div.child(self.render_plugin_edit_modal(cx))
             })
             .when(input_mode == crate::app::InputMode::LoadApoFile, |div| {
                 div.child(self.render_apo_file_dialog(cx))

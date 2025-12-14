@@ -997,24 +997,24 @@ impl Theme {
             text_muted: rgba(0x555555),
             text_disabled: rgba(0x333333),
 
-            // Border colors
-            border: rgba(0x333333),
+            // Border colors (white for high contrast)
+            border: rgba(0xffffff),
             border_focused: rgba(0xffffff),
 
-            // Accent colors
-            accent: rgba(0xffffff),
-            accent_hover: rgba(0xcccccc),
-            accent_muted: rgba(0x444444),
+            // Accent colors (black background with white text for buttons)
+            accent: rgba(0x000000),
+            accent_hover: rgba(0x222222),
+            accent_muted: rgba(0x333333),
 
-            // Text on accent
-            text_on_accent: rgba(0x000000),
-            text_on_accent_muted: rgba(0x222222),
+            // Text on accent (white text on black background)
+            text_on_accent: rgba(0xffffff),
+            text_on_accent_muted: rgba(0xcccccc),
 
-            // Semantic colors
-            success: rgba(0x22c55e), // Green
-            warning: rgba(0xf59e0b), // Amber
-            error: rgba(0xdc2626),   // Red
-            info: rgba(0x3b82f6),    // Blue
+            // Semantic colors (grayscale for B&W theme)
+            success: rgba(0xaaaaaa),
+            warning: rgba(0x888888),
+            error: rgba(0x666666),
+            info: rgba(0x999999),
 
             // Level meter colors
             meter_normal: rgba(0x666666),
@@ -1214,7 +1214,8 @@ impl Theme {
             accent_hover: self.accent_hover,
             surface: self.surface,
             surface_hover: self.surface_hover,
-            text_primary: self.text_primary,
+            // Use text_on_accent for primary buttons (accent background)
+            text_primary: self.text_on_accent,
             text_secondary: self.text_secondary,
             error: self.error,
             border: self.border,
@@ -1277,7 +1278,8 @@ impl Theme {
             selected_hover_bg: self.surface_hover,
             hover_bg: self.surface_hover,
             accent: self.accent,
-            text_selected: self.text_primary,
+            // Use text_on_accent for selected text since accent is used as background
+            text_selected: self.text_on_accent,
             text_unselected: self.text_secondary,
             text_hover: self.text_primary,
             badge_bg: self.surface_hover,
@@ -1298,6 +1300,39 @@ impl Theme {
             text_shortcut: self.text_muted,
             hover_bg: self.surface_hover,
             danger_hover_bg: self.error,
+        }
+    }
+
+    /// Convert to PotentiometerTheme for use with ui_kit Potentiometer component
+    pub fn to_potentiometer_theme(&self) -> gpui_ui_kit::PotentiometerTheme {
+        gpui_ui_kit::PotentiometerTheme {
+            surface: self.surface,
+            surface_hover: self.surface_hover,
+            knob_bg: self.background_secondary,
+            accent: self.accent,
+            accent_muted: self.accent_muted,
+            border: self.border,
+            text_secondary: self.text_secondary,
+            text_primary: self.text_primary,
+            text_muted: self.text_muted,
+            text_on_accent: self.text_on_accent,
+            background_secondary: self.background_secondary,
+        }
+    }
+
+    /// Convert to ToggleTheme for use with ui_kit Toggle component
+    pub fn to_toggle_theme(&self) -> gpui_ui_kit::ToggleTheme {
+        gpui_ui_kit::ToggleTheme {
+            checked_bg: self.accent,
+            unchecked_bg: self.border,
+            knob: self.text_primary,
+            label: self.text_secondary,
+            accent: self.accent,
+            accent_muted: self.accent_muted,
+            success: self.success,
+            border: self.border,
+            text_on_accent: self.text_on_accent,
+            text_muted: self.text_muted,
         }
     }
 }

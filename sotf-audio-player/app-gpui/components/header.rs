@@ -6,7 +6,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, LoadingDots, Menu, MenuItem, StackSpacing, TabItem, TabVariant, Tabs, menu_bar_button,
+    HStack, LoadingDots, Menu, MenuItem, StackSpacing, menu_bar_button,
 };
 
 impl PlayerView {
@@ -180,7 +180,7 @@ impl PlayerView {
         let app_state = self.state.read(cx);
         let layout_mode = app_state.app.layout_mode;
         let translations = app_state.app.translations.clone();
-        drop(app_state);
+        let _ = app_state;
 
         let state = self.state.clone();
 
@@ -266,20 +266,12 @@ impl PlayerView {
             return div().into_any_element();
         }
 
-        // Map screen to tab index
-        let selected_index = match current_screen {
-            Screen::Library => 0,
-            Screen::Queue => 1,
-            Screen::Settings
-            | Screen::DirectoryManager
-            | Screen::Spectrum
-            | Screen::Recording
-            | Screen::RoomEq
-            | Screen::HeadphoneEq => 0, // Default to library for other screens
-        };
-
-        // Get a weak handle for the state to use in the callback
-        let state_handle = self.state.downgrade();
+        // Custom tab rendering to avoid context issues
+        let state_entity = self.state.clone();
+        let tab_data = [
+            (translations.screen_library, Screen::Library),
+            (translations.screen_queue, Screen::Queue),
+        ];
 
         div()
             .flex()
@@ -295,28 +287,53 @@ impl PlayerView {
                     .font_weight(FontWeight::BOLD)
                     .child(translations.app_title),
             )
-            .child(
-                Tabs::new()
-                    .tabs(vec![
-                        TabItem::new("library", translations.screen_library),
-                        TabItem::new("queue", translations.screen_queue),
-                    ])
-                    .selected_index(selected_index)
-                    .variant(TabVariant::Pills)
-                    .theme(theme.to_tabs_theme())
-                    .on_change(move |index, _window, cx| {
-                        let screen = match index {
-                            0 => Screen::Library,
-                            1 => Screen::Queue,
-                            _ => Screen::Library,
-                        };
-                        if let Some(state) = state_handle.upgrade() {
-                            state.update(cx, |state, _cx| {
-                                state.app.current_screen = screen;
+            .child({
+                let mut tabs_container = div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .p_1()
+                    .bg(theme.surface)
+                    .rounded_lg();
+
+                for (label, screen_variant) in tab_data {
+                    let is_selected = current_screen == screen_variant;
+                    let entity_clone = state_entity.clone();
+                    let accent = theme.accent;
+                    let text_primary = theme.text_primary;
+                    let text_secondary = theme.text_secondary;
+                    let bg_secondary = theme.background_secondary;
+                    let surface_hover = theme.surface_hover;
+
+                    let tab = div()
+                        .id(SharedString::from(format!("nav-tab-{:?}", screen_variant)))
+                        .px_4()
+                        .py_2()
+                        .text_sm()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .when(is_selected, |d| {
+                            d.bg(accent)
+                                .text_color(text_primary)
+                                .font_weight(FontWeight::SEMIBOLD)
+                        })
+                        .when(!is_selected, |d| {
+                            d.bg(bg_secondary)
+                                .text_color(text_secondary)
+                                .hover(move |s| s.bg(surface_hover))
+                        })
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            entity_clone.update(cx, |state, _cx| {
+                                state.app.current_screen = screen_variant;
                             });
-                        }
-                    }),
-            )
+                        })
+                        .child(label);
+
+                    tabs_container = tabs_container.child(tab);
+                }
+
+                tabs_container
+            })
             .into_any_element()
     }
 }

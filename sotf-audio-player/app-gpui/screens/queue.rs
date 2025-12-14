@@ -8,7 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui::{InteractiveElement, Styled};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, CollapseDirection, HStack, PaneDivider, PaneDividerTheme,
+    StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 use sotf_audio_player::Track;
 
@@ -172,58 +173,85 @@ impl PlayerView {
                 )
             })
             // Separator 1 (Queue <-> Center)
-            .child(
-                div()
-                    .w(px(6.0))
-                    .h_full()
-                    .bg(theme.background)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_col_resize()
-                    .child(
-                        div()
-                            .w(px(1.0))
-                            .h_full()
-                            .bg(theme.border)
-                    )
-                    .on_mouse_down(MouseButton::Left, cx.listener(move |view, _, _, cx| {
-                        view.state.update(cx, |state, _| {
-                            state.app.is_dragging_queue_list_divider = true;
-                            state.app.divider_click_start = Some(std::time::Instant::now());
-                        });
-                    }))
-            )
+            .child({
+                let divider_theme = PaneDividerTheme {
+                    background: theme.background,
+                    background_hover: theme.surface_hover,
+                    background_collapsed: theme.surface,
+                    foreground: theme.text_muted,
+                    foreground_hover: theme.text_secondary,
+                    border: theme.border,
+                };
+                PaneDivider::vertical("queue-list-divider", CollapseDirection::Left)
+                    .label("Queue")
+                    .collapsed(queue_collapsed)
+                    .theme(divider_theme)
+                    .on_toggle({
+                        let state = self.state.clone();
+                        move |collapsed, _window, cx| {
+                            state.update(cx, |state, _| {
+                                state.app.queue_list_ratio = if collapsed { 0.0 } else { 0.30 };
+                                let _ = state.app.save_config();
+                            });
+                        }
+                    })
+                    .on_drag_start({
+                        let state = self.state.clone();
+                        move |_pos, _window, cx| {
+                            state.update(cx, |state, _| {
+                                state.app.is_dragging_queue_list_divider = true;
+                                state.app.divider_click_start = Some(std::time::Instant::now());
+                            });
+                        }
+                    })
+            })
             // Center panel: Now playing info
             .child(
                 self.render_now_playing_info(&translations, cx)
             )
             // Separator 2 (Center <-> Right)
-            .child(
-                div()
-                    .w(px(6.0))
-                    .h_full()
-                    .bg(theme.background)
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_col_resize()
-                    .child(
-                        div()
-                            .w(px(1.0))
-                            .h_full()
-                            .bg(theme.border)
-                    )
-                    .on_mouse_down(MouseButton::Left, cx.listener(move |view, _, _, cx| {
-                        view.state.update(cx, |state, _| {
-                            state.app.is_dragging_meters_divider = true;
-                            state.app.divider_click_start = Some(std::time::Instant::now());
-                        });
-                    }))
-            )
+            .child({
+                let divider_theme = PaneDividerTheme {
+                    background: theme.background,
+                    background_hover: theme.surface_hover,
+                    background_collapsed: theme.surface,
+                    foreground: theme.text_muted,
+                    foreground_hover: theme.text_secondary,
+                    border: theme.border,
+                };
+                PaneDivider::vertical("meters-divider", CollapseDirection::Right)
+                    .label("Meters")
+                    .collapsed(meters_collapsed)
+                    .theme(divider_theme)
+                    .on_toggle({
+                        let state = self.state.clone();
+                        move |collapsed, _window, cx| {
+                            state.update(cx, |state, _| {
+                                state.app.meters_panel_ratio = if collapsed { 0.0 } else { 0.25 };
+                                let _ = state.app.save_config();
+                            });
+                        }
+                    })
+                    .on_drag_start({
+                        let state = self.state.clone();
+                        move |_pos, _window, cx| {
+                            state.update(cx, |state, _| {
+                                state.app.is_dragging_meters_divider = true;
+                                state.app.divider_click_start = Some(std::time::Instant::now());
+                            });
+                        }
+                    })
+            })
             // Right panels: LUFS and Level meters as separate columns
             .when(!meters_collapsed, |d| {
-                let theme_sep = theme.clone();
+                let divider_theme = PaneDividerTheme {
+                    background: theme.background,
+                    background_hover: theme.surface_hover,
+                    background_collapsed: theme.surface,
+                    foreground: theme.text_muted,
+                    foreground_hover: theme.text_secondary,
+                    border: theme.border,
+                };
                 d.child(
                     div()
                         .w(relative(lufs_ratio))
@@ -232,23 +260,17 @@ impl PlayerView {
                         .h_full()
                         .child(self.render_lufs_panel(cx)),
                 )
-                .child(
-                    div()
-                        .w(px(6.0))
-                        .h_full()
-                        .bg(theme.background)
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .cursor_col_resize()
-                        .child(div().w(px(1.0)).h_full().bg(theme_sep.border))
-                        .on_mouse_down(MouseButton::Left, cx.listener(move |view, _, _, cx| {
-                            view.state.update(cx, |state, _| {
+                .child({
+                    let state = self.state.clone();
+                    PaneDivider::vertical("lufs-meters-divider", CollapseDirection::Right)
+                        .theme(divider_theme)
+                        .on_drag_start(move |_pos, _window, cx| {
+                            state.update(cx, |state, _| {
                                 state.app.is_dragging_lufs_divider = true;
                                 state.app.divider_click_start = Some(std::time::Instant::now());
                             });
-                        }))
-                )
+                        })
+                })
                 .child(
                     div()
                         .w(relative(meters_ratio))

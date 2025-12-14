@@ -30,7 +30,7 @@ pub use common::*;
 pub use editing::get_param_count;
 pub use level_meters::{
     LevelMeterElement, MeterColors, db_to_position, render_gr_meter, render_gradient_meter,
-    render_peak_meter,
+    render_lufs_with_true_peak, render_peak_meter,
 };
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
@@ -65,19 +65,25 @@ pub fn render_plugin_content(
     selected_param: usize,
     theme: &Theme,
     config_open: bool,
+    selected_band_idx: usize,
+    loudness: Option<sotf_audio_player::LoudnessData>,
 ) -> AnyElement {
     match settings {
-        PluginSettings::EQ { filters } => render_eq_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_eq::EqRenderState {
-                filters,
-                is_editing,
-                selected_param,
-            },
-            theme,
-        )
-        .into_any_element(),
+        PluginSettings::EQ { filters } => {
+            let selected_band_idx = selected_band_idx.min(filters.len().saturating_sub(1));
+            render_eq_plugin(
+                entity.clone(),
+                plugin_idx,
+                ui_eq::EqRenderState {
+                    filters,
+                    is_editing,
+                    selected_param,
+                    selected_band_idx,
+                },
+                theme,
+            )
+            .into_any_element()
+        }
         PluginSettings::Gain { gain_db } => render_gain_plugin(
             entity.clone(),
             plugin_idx,
@@ -205,16 +211,18 @@ pub fn render_plugin_content(
         )
         .into_any_element(),
         PluginSettings::LoudnessCompensation {
-            target_lufs,
-            min_gain_db,
-            max_gain_db,
+            low_freq,
+            low_gain,
+            high_freq,
+            high_gain,
         } => render_loudness_compensation_plugin(
             entity.clone(),
             plugin_idx,
             ui_loudness::LoudnessCompensationRenderState {
-                target_lufs: *target_lufs,
-                min_gain_db: *min_gain_db,
-                max_gain_db: *max_gain_db,
+                low_freq: *low_freq,
+                low_gain: *low_gain,
+                high_freq: *high_freq,
+                high_gain: *high_gain,
                 is_editing,
                 selected_param,
             },
@@ -222,7 +230,7 @@ pub fn render_plugin_content(
         )
         .into_any_element(),
         PluginSettings::LoudnessMonitor => {
-            render_loudness_monitor_plugin(entity.clone(), plugin_idx, is_editing, theme)
+            render_loudness_monitor_plugin(loudness, plugin_idx, is_editing, theme)
                 .into_any_element()
         }
         PluginSettings::BinauralDecoder {

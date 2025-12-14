@@ -30,7 +30,6 @@ pub enum InputMode {
     Normal,
     Search,
     AddDirectory,
-    EditPlugin,
     SavePlugins,
     LoadPlugins,
     LoadApoFile,
@@ -204,6 +203,18 @@ pub enum ContextMenuType {
     QueueItem,
     Plugin,
     Directory,
+}
+
+/// Type of plugin update needed for audio engine synchronization
+#[derive(Debug, Clone)]
+pub enum PluginUpdateType {
+    /// Single parameter change - use set_plugin_parameter() for zero-dropout update
+    Parameter {
+        plugin_index: usize,
+        param_index: usize,
+    },
+    /// Structural change (add/remove/reorder/toggle) - use update_plugins() for full rebuild
+    Structural,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

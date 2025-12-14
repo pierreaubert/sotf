@@ -107,10 +107,71 @@ we want to have a menu and everything else in 1 row.
     - make safety cap a potentiometer that can change from 0 to 3dB with a default at 2dB
  - N channels levels
 
+ ### EQ
+
+ If we have enough space we will put everything in 1 row if not 2 rows
+
+ [1|2|3|4] is a button set [+] add an eq, default is 3 eqs
+
+vertical mode
+
+ +------------------+
+ |                  |
+ |      graph       |
+ |                  |
+ |                  |
+ +------------------+
+ +------------------+
+ | [1|2|3|4]     [+]|
+ |                  |
+ | pot1 pot2 pot3   |
+ |                  |
+ +------------------+
+
+horizontal mode
+
+ +------------------+------------------+
+ |                  | [1|2|3|4]     [+]|
+ |      graph       |                  |
+ |                  | pot1 pot2 pot3   |
+ |                  |                  |
+ +------------------+------------------+
+
+
 ### Other plugins
 
 later on
 
 
+
+
++---------------+
+| ICON | Title  |
+|      | Number |
++---------------+
+
+
++-------------------------------------------+
+|                                           |
+|                 Library                   |
+|                                           |
++===========================================+
+| queue  || playing   ||        LUFS        |
+|        ||           ||                    |
+|        ||           ||====================+
+|        ||           ||        Levels      |
+|        ||           ||                    |
++-------------------------------------------+
+
+
++-------------------------------------------+
+|                                           |
+|                 Library                   |
+|                                           |
++===========================================+
+| queue  || playing   || LUFS || Levels     |
+|        ||           ||      ||            |
+|        ||           ||      ||            |
++-------------------------------------------+
 
 

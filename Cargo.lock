@@ -1743,7 +1743,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 
 [[package]]
 name = "convexhull3d"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "autoeq-env 0.2.4",
  "log",
@@ -3694,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-themes"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "gpui",
  "gpui-ui-kit",
@@ -3705,7 +3705,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "gpui",
  "gpui_macros",
@@ -5252,7 +5252,7 @@ dependencies = [
 
 [[package]]
 name = "math-bem"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "approx",
@@ -5286,8 +5286,9 @@ dependencies = [
 
 [[package]]
 name = "math-fem"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
+ "anyhow",
  "approx",
  "chrono",
  "clap",
@@ -5310,7 +5311,7 @@ dependencies = [
 
 [[package]]
 name = "math-solvers"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "approx",
  "log",
@@ -5328,7 +5329,7 @@ dependencies = [
 
 [[package]]
 name = "math-wave"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "approx",
  "num-complex",
@@ -5342,7 +5343,7 @@ dependencies = [
 
 [[package]]
 name = "math-xem-common"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "approx",
  "chrono",
@@ -8583,7 +8584,7 @@ checksum = "19f58d7b0190c7f12df7e8be6b79767a0836059159811b869d5ab55721fe14d0"
 
 [[package]]
 name = "sotf-audio-engine"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "autoeq-env 0.2.4",
  "autoeq-iir",
@@ -8638,7 +8639,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "autoeq-cea2034",
@@ -8681,7 +8682,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player-midi"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -8699,7 +8700,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-plugins"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "autoeq-env 0.2.4",
  "autoeq-iir",
@@ -8764,7 +8765,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -8772,11 +8773,13 @@ dependencies = [
  "autoeq-iir",
  "autoeq-roomsim",
  "clap",
+ "cpal",
  "env_logger 0.11.8",
  "gpui",
  "gpui-d3rs",
  "gpui-px",
  "gpui-ui-kit",
+ "hound",
  "id3",
  "image",
  "log",
@@ -8808,7 +8811,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "autoeq-iir",
  "chrono",
@@ -8861,7 +8864,7 @@ dependencies = [
 
 [[package]]
 name = "sotf_head_scanner"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "approx",

@@ -331,9 +331,10 @@ pub enum PluginSettings {
         sidechain_hpf_hz: f64,
     },
     LoudnessCompensation {
-        target_lufs: f64,
-        min_gain_db: f64,
-        max_gain_db: f64,
+        low_freq: f64,
+        low_gain: f64,
+        high_freq: f64,
+        high_gain: f64,
     },
     BinauralDecoder {
         sofa_file: String,
@@ -509,15 +510,17 @@ impl PluginSettings {
                 }),
             ),
             Self::LoudnessCompensation {
-                target_lufs,
-                min_gain_db,
-                max_gain_db,
+                low_freq,
+                low_gain,
+                high_freq,
+                high_gain,
             } => PluginConfig::new(
                 "loudness_compensation",
                 json!({
-                    "target_lufs": target_lufs,
-                    "min_gain_db": min_gain_db,
-                    "max_gain_db": max_gain_db,
+                    "low_freq": low_freq,
+                    "low_gain": low_gain,
+                    "high_freq": high_freq,
+                    "high_gain": high_gain,
                 }),
             ),
             Self::BinauralDecoder {
@@ -639,9 +642,10 @@ impl PluginSettings {
                 sidechain_hpf_hz: default_gate_sidechain_hpf_hz(),
             },
             PluginType::LoudnessCompensation => Self::LoudnessCompensation {
-                target_lufs: -18.0,
-                min_gain_db: -6.0,
-                max_gain_db: 6.0,
+                low_freq: 100.0,  // param_specs::loudness_compensation::LOW_FREQ_DEFAULT
+                low_gain: 6.0,    // param_specs::loudness_compensation::LOW_GAIN_DEFAULT
+                high_freq: 10000.0, // param_specs::loudness_compensation::HIGH_FREQ_DEFAULT
+                high_gain: 6.0,   // param_specs::loudness_compensation::HIGH_GAIN_DEFAULT
             },
             PluginType::BinauralDecoder => Self::BinauralDecoder {
                 sofa_file: String::new(),
@@ -771,10 +775,31 @@ impl PluginChain {
     }
 
     pub fn to_plugin_configs(&self, sample_rate: f64) -> Vec<PluginConfig> {
-        self.plugins
-            .iter()
-            .filter_map(|p| p.to_plugin_config(sample_rate))
-            .collect()
+        // Separate processing plugins from analyzer plugins
+        // Analyzers should always be at the end to measure the final output
+        let mut processing_plugins = Vec::new();
+        let mut analyzer_plugins = Vec::new();
+
+        for plugin in &self.plugins {
+            if let Some(config) = plugin.to_plugin_config(sample_rate) {
+                match plugin.plugin_type() {
+                    // Analyzer plugins go at the end
+                    PluginType::LoudnessMonitor
+                    | PluginType::SpectrumAnalyzer
+                    | PluginType::ChannelMuteSolo => {
+                        analyzer_plugins.push(config);
+                    }
+                    // Processing plugins maintain their order
+                    _ => {
+                        processing_plugins.push(config);
+                    }
+                }
+            }
+        }
+
+        // Concatenate: processing first, then analyzers
+        processing_plugins.extend(analyzer_plugins);
+        processing_plugins
     }
 
     pub fn output_channels(&self) -> usize {

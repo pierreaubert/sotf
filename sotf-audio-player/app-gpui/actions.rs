@@ -71,7 +71,6 @@ actions!(
         QuickAddLimiter,
         QuickAddLoudness,
         QuickAddBinaural,
-        EditPlugin,
         // Level meter actions
         SelectNextMeterGroup,
         SelectPrevMeterGroup,

@@ -5,15 +5,12 @@
 //! - Gain reduction meter
 //! - Rotary knob controls with keyboard shortcuts
 
-use super::common::{
-    render_edit_hints, render_knob, render_section_header, render_toggle, render_transfer_curve,
-};
+use super::common::{render_edit_hints, render_knob, render_section_header, render_toggle, render_transfer_curve};
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack};
 use sotf_audio_player::param_specs::compressor::*;
 
 /// State for rendering the Compressor plugin
@@ -46,18 +43,54 @@ pub fn render_compressor_plugin(
         0.0
     };
 
-    VStack::new()
-        .spacing(StackSpacing::Lg)
+    div()
+        .flex()
+        .flex_col()
+        .gap_4()
         // Main section - Knobs and Transfer Curve side by side
         .child(
-            HStack::new()
-                .spacing(StackSpacing::Lg)
-                .align(StackAlign::Start)
+            div()
+                .flex()
+                .gap_4()
+                .items_start()
                 // Transfer curve and options
                 .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Md)
-                        .align(StackAlign::Center)
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .items_center()
+                        .rounded_xl()
+                        .bg(theme.background_secondary)
+                        .border_1()
+                        .border_color(theme.border)
+                        .p_4()
+                        // Toggles above the graph
+                        .child(
+                            div()
+                                .flex()
+                                .gap_3()
+                                .child(render_toggle(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Auto Makeup",
+                                    state.auto_makeup,
+                                    7, // param index for auto_makeup
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                ))
+                                .child(render_toggle(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Link Channels",
+                                    state.link_channels,
+                                    8, // param index for link_channels
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                ))
+                        )
                         .child(render_transfer_curve(
                             state.threshold_db,
                             state.ratio,
@@ -71,22 +104,26 @@ pub fn render_compressor_plugin(
                                 .w_full()
                                 .child(render_gr_meter(simulated_gr, -30.0, theme)),
                         )
-                        .build()
+                )
+                // Parameters section with knobs
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .flex_1()
                         .rounded_xl()
                         .bg(theme.background_secondary)
                         .border_1()
                         .border_color(theme.border)
-                        .p_4(),
-                )
-                // Parameters section with knobs
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
+                        .p_4()
                         .child(render_section_header("DYNAMICS CONTROL", theme))
+                        // Row 1: Threshold, Ratio, Attack
                         .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Lg)
-                                .wrap(true)
+                            div()
+                                .flex()
+                                .gap_4()
+                                .justify_center()
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
@@ -129,6 +166,13 @@ pub fn render_compressor_plugin(
                                     Some('a'),
                                     theme,
                                 ))
+                        )
+                        // Row 2: Release, Knee, Makeup
+                        .child(
+                            div()
+                                .flex()
+                                .gap_4()
+                                .justify_center()
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
@@ -171,6 +215,13 @@ pub fn render_compressor_plugin(
                                     Some('m'),
                                     theme,
                                 ))
+                        )
+                        // Row 3: Mix (centered)
+                        .child(
+                            div()
+                                .flex()
+                                .gap_4()
+                                .justify_center()
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
@@ -185,112 +236,32 @@ pub fn render_compressor_plugin(
                                     Some('x'),
                                     theme,
                                 ))
-                                .build()
-                                .justify_center(),
                         )
-                        // Toggles row
+                        // Sidechain HPF display
                         .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(render_toggle(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Auto Makeup",
-                                    state.auto_makeup,
-                                    7,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                ))
-                                .child(render_toggle(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Link Channels",
-                                    state.link_channels,
-                                    8,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                ))
-                                .build()
-                                .mt_2(),
-                        )
-                        .child(
-                            // Sidechain HPF display (placeholder for now, maybe add a knob later if valid)
-                            VStack::new()
-                                .spacing(StackSpacing::Xs)
-                                .align(StackAlign::Center)
-                                .child(
-                                    Text::new("Sidechain HPF")
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
-                                )
-                                .child(
-                                    Text::new(format!("{:.0} Hz", state.sidechain_hpf_hz))
-                                        .size(TextSize::Sm)
-                                        .weight(TextWeight::Bold)
-                                        .color(theme.text_primary),
-                                )
-                                .build()
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap_1()
                                 .p_2()
                                 .rounded_lg()
-                                .bg(theme.background),
+                                .bg(theme.background)
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .child("Sidechain HPF")
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .font_weight(FontWeight::BOLD)
+                                        .text_color(theme.text_primary)
+                                        .child(format!("{:.0} Hz", state.sidechain_hpf_hz))
+                                )
                         )
-                        .build()
-                        .flex_1()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .p_4(),
-                ),
-        )
-        // Keyboard hints
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .wrap(true)
-                .child(
-                    Text::new("[T]hreshold")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
                 )
-                .child(
-                    Text::new("[R]atio")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[A]ttack")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("R[e]lease")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[K]nee")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[M]akeup")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("Mi[x]")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .build()
-                .p_3()
-                .rounded_lg()
-                .bg(theme.accent_muted)
-                .border_1()
-                .border_color(theme.accent),
         )
         .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

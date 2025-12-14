@@ -13,6 +13,7 @@ use sotf_plugins::ChannelState;
 use std::panic;
 
 use super::{MeterTheme, TickConfig, render_tick_row};
+use crate::app::types::PluginUpdateType;
 use crate::app::{App as AppState, ChannelGroup, ChannelInfo};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -588,6 +589,236 @@ pub fn render_gradient_meter(
 }
 
 // ============================================================================
+// Standalone LUFS Display Function
+// ============================================================================
+
+/// Render LUFS display with True Peak bars at top (standalone function)
+pub fn render_lufs_with_true_peak(
+    loudness: Option<&sotf_audio_player::LoudnessData>,
+    theme: &Theme,
+) -> impl IntoElement {
+    let (
+        integrated_lufs,
+        shortterm_lufs,
+        momentary_lufs,
+        true_peak_left,
+        true_peak_right,
+        stereo_width,
+    ) = if let Some(l) = loudness {
+        let tp_left = l.true_peaks_dbtp.first().copied().unwrap_or(-60.0);
+        let tp_right = l.true_peaks_dbtp.get(1).copied().unwrap_or(tp_left);
+        // Stereo width derived from correlation: +1 = mono (0), 0 = uncorrelated (0.5), -1 = out of phase (1)
+        let width = l
+            .correlation_lr
+            .map(|c| ((1.0 - c) / 2.0).clamp(0.0, 1.0))
+            .unwrap_or(0.5);
+        (
+            l.integrated_lufs,
+            l.shortterm_lufs,
+            l.momentary_lufs,
+            tp_left,
+            tp_right,
+            width,
+        )
+    } else {
+        (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5)
+    };
+
+    let meter_theme = MeterTheme::default();
+
+    div()
+        .flex()
+        .flex_col()
+        .gap_4()
+        .p_3()
+        // True Peak section (on top)
+        .child({
+            // Use TickConfig preset for True Peak (quadratic scale from -60 to +6)
+            let tick_config = TickConfig::true_peak();
+
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .mb_1()
+                        .child("True Peak"),
+                )
+                // Left channel bar (uses same scale as ticks)
+                .child(PlayerView::render_meter_bar(
+                    "L",
+                    true_peak_left,
+                    &tick_config,
+                    &meter_theme,
+                ))
+                // Right channel bar (uses same scale as ticks)
+                .child(PlayerView::render_meter_bar(
+                    "R",
+                    true_peak_right,
+                    &tick_config,
+                    &meter_theme,
+                ))
+                // Tick marks (aligned with bar using same flex layout)
+                .child(render_tick_row(
+                    &tick_config,
+                    meter_theme.label_width,
+                    meter_theme.value_width,
+                ))
+                // True Peak legend (same flex layout as bar and ticks)
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(1.0))
+                        // Label spacer
+                        .child(div().w(px(meter_theme.label_width)))
+                        // Legend area (flex-1, justify_between for labels)
+                        .child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .justify_between()
+                                .text_xs()
+                                .text_color(meter_theme.color_text_muted)
+                                .children(tick_config.major_values.iter().map(|db| {
+                                    let label = if *db > 0.0 {
+                                        format!("+{}", *db as i32)
+                                    } else {
+                                        format!("{}", *db as i32)
+                                    };
+                                    div().child(label)
+                                })),
+                        )
+                        // Value spacer
+                        .child(div().w(px(meter_theme.value_width))),
+                )
+        })
+        // LUFS section (below)
+        .child({
+            // Use TickConfig preset for LUFS (quadratic scale from -60 to 0)
+            let tick_config = TickConfig::lufs();
+
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .mb_1()
+                        .child("LUFS"),
+                )
+                // Integrated LUFS (uses same scale as ticks)
+                .child(PlayerView::render_meter_bar(
+                    "I",
+                    integrated_lufs,
+                    &tick_config,
+                    &meter_theme,
+                ))
+                // Short-term LUFS (uses same scale as ticks)
+                .child(PlayerView::render_meter_bar(
+                    "S",
+                    shortterm_lufs,
+                    &tick_config,
+                    &meter_theme,
+                ))
+                // Momentary LUFS (uses same scale as ticks)
+                .child(PlayerView::render_meter_bar(
+                    "M",
+                    momentary_lufs,
+                    &tick_config,
+                    &meter_theme,
+                ))
+                // Tick marks (aligned with bar using same flex layout)
+                .child(render_tick_row(
+                    &tick_config,
+                    meter_theme.label_width,
+                    meter_theme.value_width,
+                ))
+                // LUFS legend (same flex layout as bar and ticks)
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(4.0))
+                        // Label spacer
+                        .child(div().w(px(meter_theme.label_width)))
+                        // Legend area (flex-1, justify_between for labels)
+                        .child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .justify_between()
+                                .text_xs()
+                                .text_color(meter_theme.color_text_muted)
+                                .child(div().child("-60"))
+                                .child(div().child("-30"))
+                                .child(div().child("-10"))
+                                .child(div().child("0")),
+                        )
+                        // Value spacer
+                        .child(div().w(px(meter_theme.value_width))),
+                )
+        })
+        // Stereo Width section
+        .child({
+            // Use TickConfig preset for stereo width (linear scale 0 to 1)
+            let tick_config = TickConfig::stereo_width();
+
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .mb_1()
+                        .child("Stereo Width"),
+                )
+                // Width bar (uses same scale as ticks)
+                .child(PlayerView::render_width_bar(
+                    stereo_width,
+                    &tick_config,
+                    &meter_theme,
+                ))
+                // Tick marks (aligned with bar using same flex layout)
+                .child(render_tick_row(
+                    &tick_config,
+                    meter_theme.label_width,
+                    meter_theme.value_width,
+                ))
+                // Width legend (same flex layout as bar and ticks)
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(4.0))
+                        // Label spacer
+                        .child(div().w(px(meter_theme.label_width)))
+                        // Legend area (flex-1, justify_between for labels)
+                        .child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .justify_between()
+                                .text_xs()
+                                .text_color(meter_theme.color_text_muted)
+                                .child(div().child("Mono"))
+                                .child(div().child("50%"))
+                                .child(div().child("Wide")),
+                        )
+                        // Value spacer
+                        .child(div().w(px(meter_theme.value_width))),
+                )
+        })
+}
+
+// ============================================================================
 // PlayerView Level Meter UI Methods
 // ============================================================================
 
@@ -1007,231 +1238,14 @@ impl PlayerView {
             )
     }
 
-    /// Render LUFS display with True Peak bars at top
+    /// Render LUFS display with True Peak bars at top (wrapper method)
     pub fn render_lufs_with_true_peak(
         &self,
         loudness: Option<&sotf_audio_player::LoudnessData>,
         theme: &Theme,
     ) -> impl IntoElement {
-        let (
-            integrated_lufs,
-            shortterm_lufs,
-            momentary_lufs,
-            true_peak_left,
-            true_peak_right,
-            stereo_width,
-        ) = if let Some(l) = loudness {
-            let tp_left = l.true_peaks_dbtp.first().copied().unwrap_or(-60.0);
-            let tp_right = l.true_peaks_dbtp.get(1).copied().unwrap_or(tp_left);
-            // Stereo width derived from correlation: +1 = mono (0), 0 = uncorrelated (0.5), -1 = out of phase (1)
-            let width = l
-                .correlation_lr
-                .map(|c| ((1.0 - c) / 2.0).clamp(0.0, 1.0))
-                .unwrap_or(0.5);
-            (
-                l.integrated_lufs,
-                l.shortterm_lufs,
-                l.momentary_lufs,
-                tp_left,
-                tp_right,
-                width,
-            )
-        } else {
-            (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5)
-        };
-
-        let meter_theme = MeterTheme::default();
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_4()
-            .p_3()
-            // True Peak section (on top)
-            .child({
-                // Use TickConfig preset for True Peak (quadratic scale from -60 to +6)
-                let tick_config = TickConfig::true_peak();
-
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .mb_1()
-                            .child("True Peak"),
-                    )
-                    // Left channel bar (uses same scale as ticks)
-                    .child(Self::render_meter_bar(
-                        "L",
-                        true_peak_left,
-                        &tick_config,
-                        &meter_theme,
-                    ))
-                    // Right channel bar (uses same scale as ticks)
-                    .child(Self::render_meter_bar(
-                        "R",
-                        true_peak_right,
-                        &tick_config,
-                        &meter_theme,
-                    ))
-                    // Tick marks (aligned with bar using same flex layout)
-                    .child(render_tick_row(
-                        &tick_config,
-                        meter_theme.label_width,
-                        meter_theme.value_width,
-                    ))
-                    // True Peak legend (same flex layout as bar and ticks)
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(1.0))
-                            // Label spacer
-                            .child(div().w(px(meter_theme.label_width)))
-                            // Legend area (flex-1, justify_between for labels)
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .justify_between()
-                                    .text_xs()
-                                    .text_color(meter_theme.color_text_muted)
-                                    .children(tick_config.major_values.iter().map(|db| {
-                                        let label = if *db > 0.0 {
-                                            format!("+{}", *db as i32)
-                                        } else {
-                                            format!("{}", *db as i32)
-                                        };
-                                        div().child(label)
-                                    })),
-                            )
-                            // Value spacer
-                            .child(div().w(px(meter_theme.value_width))),
-                    )
-            })
-            // LUFS section (below)
-            .child({
-                // Use TickConfig preset for LUFS (quadratic scale from -60 to 0)
-                let tick_config = TickConfig::lufs();
-
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .mb_1()
-                            .child("LUFS"),
-                    )
-                    // Integrated LUFS (uses same scale as ticks)
-                    .child(Self::render_meter_bar(
-                        "I",
-                        integrated_lufs,
-                        &tick_config,
-                        &meter_theme,
-                    ))
-                    // Short-term LUFS (uses same scale as ticks)
-                    .child(Self::render_meter_bar(
-                        "S",
-                        shortterm_lufs,
-                        &tick_config,
-                        &meter_theme,
-                    ))
-                    // Momentary LUFS (uses same scale as ticks)
-                    .child(Self::render_meter_bar(
-                        "M",
-                        momentary_lufs,
-                        &tick_config,
-                        &meter_theme,
-                    ))
-                    // Tick marks (aligned with bar using same flex layout)
-                    .child(render_tick_row(
-                        &tick_config,
-                        meter_theme.label_width,
-                        meter_theme.value_width,
-                    ))
-                    // LUFS legend (same flex layout as bar and ticks)
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(4.0))
-                            // Label spacer
-                            .child(div().w(px(meter_theme.label_width)))
-                            // Legend area (flex-1, justify_between for labels)
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .justify_between()
-                                    .text_xs()
-                                    .text_color(meter_theme.color_text_muted)
-                                    .child(div().child("-60"))
-                                    .child(div().child("-30"))
-                                    .child(div().child("-10"))
-                                    .child(div().child("0")),
-                            )
-                            // Value spacer
-                            .child(div().w(px(meter_theme.value_width))),
-                    )
-            })
-            // Stereo Width section
-            .child({
-                // Use TickConfig preset for stereo width (linear scale 0 to 1)
-                let tick_config = TickConfig::stereo_width();
-
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .mb_1()
-                            .child("Stereo Width"),
-                    )
-                    // Width bar (uses same scale as ticks)
-                    .child(Self::render_width_bar(
-                        stereo_width,
-                        &tick_config,
-                        &meter_theme,
-                    ))
-                    // Tick marks (aligned with bar using same flex layout)
-                    .child(render_tick_row(
-                        &tick_config,
-                        meter_theme.label_width,
-                        meter_theme.value_width,
-                    ))
-                    // Width legend (same flex layout as bar and ticks)
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(4.0))
-                            // Label spacer
-                            .child(div().w(px(meter_theme.label_width)))
-                            // Legend area (flex-1, justify_between for labels)
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .flex()
-                                    .justify_between()
-                                    .text_xs()
-                                    .text_color(meter_theme.color_text_muted)
-                                    .child(div().child("Mono"))
-                                    .child(div().child("50%"))
-                                    .child(div().child("Wide")),
-                            )
-                            // Value spacer
-                            .child(div().w(px(meter_theme.value_width))),
-                    )
-            })
+        // Call the standalone function
+        render_lufs_with_true_peak(loudness, theme)
     }
 
     /// Render separate LUFS panel
@@ -2050,7 +2064,7 @@ impl AppState {
                         channel_states: channel_states.clone(),
                     };
                     // Flag that plugins need updating
-                    self.needs_plugin_update = true;
+                    self.pending_plugin_update = Some(PluginUpdateType::Structural);
                     return;
                 }
             }

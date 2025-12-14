@@ -1222,9 +1222,9 @@ impl PlayerView {
             tokio::sync::mpsc::channel::<sotf_audio_player::room_eq::OptimizationProgress>(100);
 
         // Spawn a task to listen to progress updates
-        cx.spawn(async move |_view, cx| {
+        cx.spawn(async move |_, cx| {
             while let Some(progress) = progress_rx.recv().await {
-                let _ = state_for_progress.update(cx, |state, cx| {
+                let _ = state_for_progress.update(&mut cx.clone(), |state, cx| {
                     state.app.room_eq_state.overall_progress = progress.overall_progress;
                     state.app.room_eq_state.status_message = progress.message.clone();
                     cx.notify(); // Trigger UI update
@@ -1234,7 +1234,7 @@ impl PlayerView {
         .detach();
 
         // Spawn the optimization task with progress channel
-        cx.spawn(async move |_view, cx| {
+        cx.spawn(async move |_, cx| {
             // Run the optimization with progress updates
             let result = optimizer
                 .optimize_all_channels(channels, configs, Some(progress_tx))
@@ -1283,7 +1283,7 @@ impl PlayerView {
                         .collect();
 
                     // Update state with results
-                    let _ = state_clone.update(cx, |state, _| {
+                    let _ = state_clone.update(&mut cx.clone(), |state, _| {
                         state.app.room_eq_state.optimization_status =
                             OptimizationStatus::Completed;
                         state.app.room_eq_state.status_message =
@@ -1352,7 +1352,7 @@ impl PlayerView {
                 }
                 Err(e) => {
                     log::error!("Room EQ optimization failed: {}", e);
-                    let _ = state_clone.update(cx, |state, _| {
+                    let _ = state_clone.update(&mut cx.clone(), |state, _| {
                         state.app.room_eq_state.optimization_status = OptimizationStatus::Failed;
                         state.app.room_eq_state.error_message = Some(e);
                     });

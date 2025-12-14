@@ -14,6 +14,7 @@ use gpui_ui_kit::{
     Divider, HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Text, TextSize,
     VStack,
 };
+use sotf_audio_player::param_specs::upmixer::*;
 
 /// State for rendering the Upmixer plugin
 pub struct UpmixerRenderState<'a> {
@@ -100,9 +101,9 @@ pub fn render_upmixer_plugin(
                                         .position(|&c| c == value.as_ref())
                                         .unwrap_or(0);
                                     entity.update(cx, |state, _| {
+                                        // set_plugin_param already sets pending_plugin_update
                                         state.app.set_plugin_param(plugin_idx, 0, idx as f64);
                                         state.app.upmixer_config_open = false;
-                                        state.app.needs_plugin_update = true;
                                         // Update level meters when channel config changes
                                         state.app.update_level_meter_groups();
                                     });
@@ -189,9 +190,9 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     "Center",
                     state.gain_front_ambient,
-                    -12.0,
-                    12.0,
-                    "dB",
+                    GAIN_FRONT_AMBIENT_MIN as f64,
+                    GAIN_FRONT_AMBIENT_MAX as f64,
+                    "x",
                     2, // gain_front_ambient
                     state.selected_param,
                     state.is_editing,
@@ -203,9 +204,9 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     "LFE",
                     state.lfe_gain,
-                    -12.0,
-                    12.0,
-                    "dB",
+                    LFE_GAIN_MIN as f64,
+                    LFE_GAIN_MAX as f64,
+                    "x",
                     8, // lfe_gain
                     state.selected_param,
                     state.is_editing,
@@ -217,9 +218,9 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     "Surr",
                     state.gain_rear_ambient,
-                    -12.0,
-                    12.0,
-                    "dB",
+                    GAIN_REAR_AMBIENT_MIN as f64,
+                    GAIN_REAR_AMBIENT_MAX as f64,
+                    "x",
                     3, // gain_rear_ambient
                     state.selected_param,
                     state.is_editing,
@@ -231,9 +232,9 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     "Top",
                     state.height_gain,
-                    -12.0,
-                    12.0,
-                    "dB",
+                    HEIGHT_GAIN_MIN as f64,
+                    HEIGHT_GAIN_MAX as f64,
+                    "x",
                     7, // height_gain
                     state.selected_param,
                     state.is_editing,
@@ -246,8 +247,8 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     "LFE Cut",
                     state.lfe_cutoff_hz,
-                    20.0,
-                    180.0,
+                    LFE_CUTOFF_HZ_MIN as f64,
+                    LFE_CUTOFF_HZ_MAX as f64,
                     "Hz",
                     4, // lfe_cutoff_hz
                     state.selected_param,
@@ -260,8 +261,8 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     "Bandpass",
                     state.bandpass_hz,
-                    150.0,
-                    350.0,
+                    BANDPASS_HZ_MIN as f64,
+                    BANDPASS_HZ_MAX as f64,
                     "Hz",
                     6, // bandpass_hz
                     state.selected_param,
@@ -275,8 +276,8 @@ pub fn render_upmixer_plugin(
                     plugin_idx,
                     "Safety",
                     state.safety_cap_db,
-                    0.0,
-                    3.0,
+                    SAFETY_CAP_DB_MIN as f64,
+                    SAFETY_CAP_DB_MAX as f64,
                     "dB",
                     13, // safety_cap_db
                     state.selected_param,

@@ -27,7 +27,7 @@ set -euo pipefail
 APP_NAME="SotF"
 BUNDLE_ID="org.spinorama.sotf"
 BINARY_NAME="sotf-gpui"
-VERSION="0.5.3"
+VERSION="0.5.4"
 BUILD_NUMBER="1"
 
 # Paths

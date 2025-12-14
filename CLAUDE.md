@@ -12,7 +12,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 SOTF (Sound of the Future) is a comprehensive audio optimization and playback system. The project consists of:
 
 1. **AutoEQ CLI tools** for speaker/headphone EQ optimization using measurements from spinorama.org or custom data
-2. **Tauri-based desktop application** with TypeScript frontend for user-friendly audio control
 3. **Native Audio Engine** (`sotf-audio-engine`) with multi-threaded processing, plugin system, and Symphonia for audio decoding
 4. **Audio Players**: TUI player (`sotf-audio-player-tui`), CLI tools, and experimental GPUI player
 5. **Optimization algorithms** including Differential Evolution, NLopt algorithms, and metaheuristic approaches
@@ -51,10 +50,6 @@ This is a Cargo workspace with distinct crates organized by functionality:
 **macOS-specific:**
 - **`sotf-macos-hal/`**: CoreAudio HAL driver for system-wide audio processing
 - **`sotf-macos-configbar/`**: Menubar configuration app for HAL driver
-
-**Frontend & Integration:**
-- **`sotf-tauri/`**: Tauri backend bridging Rust audio code and TypeScript frontend
-- **`sotf-ui-frontend/`**: TypeScript/Vite frontend for the desktop application
 
 **Other:**
 - **`sotf-head-scanner/`**: Experimental head scanning app for HRTF generation (not in default build)
@@ -158,23 +153,6 @@ manager.start_playback(None, plugins, 5).await?;
 - `signals.rs`: Test signal generation (sine, sweep, pink noise, white noise)
 - `replaygain.rs`: ReplayGain calculation for volume normalization
 - `devices.rs`: Audio device enumeration and management
-
-### Tauri Backend (`sotf-tauri`)
-
-The Tauri layer exposes Rust audio functionality to TypeScript frontend via commands:
-
-- `tauri_audio_streaming.rs`: File playback, seek, pause/resume using AudioStreamingManager
-- `tauri_audio_recording.rs`: Multi-channel recording via legacy AudioManager
-- `tauri_audio_spectrum.rs`: Real-time spectrum monitoring
-- `tauri_audio_loudness.rs`: Loudness measurement
-- `tauri_compute_eq.rs`: EQ response computation
-- `tauri_generate_eq.rs`: Export EQ to various formats (APO, RME, AUPreset)
-- `tauri_optim.rs`: Run AutoEQ optimization with cancellation support
-- `tauri_speakers.rs`: Query spinorama.org speaker database
-
-State management uses `tokio::sync::Mutex` wrapping `AudioManager` and `AudioStreamingManager`.
-
-**Important**: Tauri commands should use `PluginConfig` to configure audio processing, not raw parameters.
 
 ### Optimization (`autoeq`)
 
@@ -343,34 +321,7 @@ ls -lh target/*/release/sotf_player_tui*
 - Larger binary size (~15-50MB) compared to dynamic linking
 - Build time longer due to static compilation of dependencies
 
-### npm Commands (Frontend)
-
-```bash
-# Development server
-npm run dev
-
-# Build TypeScript + Vite
-npm run build
-
-# Tauri dev mode (hot reload)
-npm run tauri dev
-
-# Tauri production build
-npm run tauri build
-
-# Tests
-npm run test              # Run all tests
-npm run test:unit         # Unit tests only
-npm run test:e2e          # E2E tests only
-
-# Linting/Formatting
-npm run lint
-npm run fmt
-```
-
 ### Running Binaries
-
-**Important**: Binary names follow Rust conventions with underscores:
 
 ```bash
 # AutoEQ CLI - main optimization tool
@@ -700,3 +651,4 @@ just validate-au      # Run auval validation
 - **Workspace version bump**: Now at 0.5.3 (individual crates may vary)
 - Read @GPUI.md before working on GPUI code.
 - when adding features to the sotf-players the business logic goes into the common library sotf-audio-player/src
+- never use unsafe without asking
