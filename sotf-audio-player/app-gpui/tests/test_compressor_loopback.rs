@@ -3,7 +3,31 @@ use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use crate::common::find_device;
+
+fn find_device(name_part: &str, input: bool) -> Option<(cpal::Device, cpal::SupportedStreamConfig)> {
+    let host = cpal::default_host();
+    let devices = if input { host.input_devices().ok()? } else { host.output_devices().ok()? };
+    for device in devices {
+        if let Ok(name) = device.name() {
+            if name.contains(name_part) {
+                if input {
+                    if let Ok(configs) = device.supported_input_configs() {
+                        for config in configs {
+                            if config.channels() >= 2 { return Some((device, config.with_max_sample_rate())); }
+                        }
+                    }
+                } else {
+                    if let Ok(configs) = device.supported_output_configs() {
+                        for config in configs {
+                            if config.channels() >= 2 { return Some((device, config.with_max_sample_rate())); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
 
 #[test]
 fn test_compressor_loopback_verification() {
@@ -36,18 +60,18 @@ fn test_compressor_loopback_verification() {
     // Compressor: Threshold -20dB, Ratio 4:1
     let threshold_db = -20.0;
     let ratio = 4.0;
-
+    
     // Expected Output Calculation
-    // Output Level = Threshold + (Input - Threshold) / Ratio
-    //              = -20 + (0 - -20)/4
-    //              = -20 + 5
+    // Output Level = Threshold + (Input - Threshold) / Ratio 
+    //              = -20 + (0 - -20)/4 
+    //              = -20 + 5 
     //              = -15 dB.
     let expected_peak_db = -15.0;
-
+    
     // Generate Signal
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let amplitude = 1.0;
+    let amplitude = 1.0; 
     let mut source_signal = Vec::with_capacity(num_samples);
     for i in 0..num_samples {
         let t = i as f64 / sample_rate;
@@ -61,7 +85,7 @@ fn test_compressor_loopback_verification() {
     config.plugins = vec![
         PluginConfig::new(
             "compressor",
-            json!({
+            json!({ 
                 "threshold_db": threshold_db,
                 "ratio": ratio,
                 "attack_ms": 10.0,
@@ -138,7 +162,7 @@ fn test_compressor_loopback_verification() {
 
     // Assertions
     // Allow 1.5dB tolerance (compressors can have complex ballistics)
-    assert!((peak_db - expected_peak_db).abs() < 1.5,
+    assert!((peak_db - expected_peak_db).abs() < 1.5, 
         "Compressor output mismatch: Got {:.2} dB, Expected {:.2} dB", peak_db, expected_peak_db);
 
     println!("Test PASSED: Compressor output level verified.");

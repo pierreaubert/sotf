@@ -208,36 +208,4 @@ pub fn render_limiter_plugin(
                 .p_4()
                 .child(render_gr_meter(simulated_gr, -20.0, theme)),
         )
-        // Keyboard hints
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Lg)
-                .child(
-                    Text::new("[C]eiling")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[R]elease")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[M]ix")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("1-3: Quick select")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .build()
-                .p_3()
-                .rounded_lg()
-                .bg(theme.accent_muted)
-                .border_1()
-                .border_color(theme.accent),
-        )
-        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

@@ -1697,14 +1697,16 @@ impl App {
                     true
                 }
                 PluginSettings::LoudnessCompensation {
-                    target_lufs,
-                    min_gain_db,
-                    max_gain_db,
+                    low_freq,
+                    low_gain,
+                    high_freq,
+                    high_gain,
                 } => {
                     match param_idx {
-                        0 => *target_lufs = (*target_lufs + delta).clamp(-40.0, 0.0),
-                        1 => *min_gain_db = (*min_gain_db + delta).clamp(-20.0, 0.0),
-                        2 => *max_gain_db = (*max_gain_db + delta).clamp(0.0, 20.0),
+                        0 => *low_freq = (*low_freq + delta * 10.0).clamp(20.0, 500.0), // Adjust low_freq
+                        1 => *low_gain = (*low_gain + delta).clamp(-20.0, 20.0),        // Adjust low_gain
+                        2 => *high_freq = (*high_freq + delta * 100.0).clamp(2000.0, 20000.0), // Adjust high_freq
+                        3 => *high_gain = (*high_gain + delta).clamp(-20.0, 20.0),      // Adjust high_gain
                         _ => return false,
                     }
                     true
@@ -3559,28 +3561,32 @@ mod tests {
             .add_plugin(&PluginType::LoudnessCompensation);
         app.editing_plugin_index = Some(plugin_idx);
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
-        let (orig_target, orig_min, orig_max) = match &plugin.settings {
+        let (orig_low_freq, orig_low_gain, orig_high_freq, orig_high_gain) = match &plugin.settings
+        {
             PluginSettings::LoudnessCompensation {
-                target_lufs,
-                min_gain_db,
-                max_gain_db,
-            } => (*target_lufs, *min_gain_db, *max_gain_db),
+                low_freq,
+                low_gain,
+                high_freq,
+                high_gain,
+            } => (*low_freq, *low_gain, *high_freq, *high_gain),
             _ => panic!("Expected LoudnessCompensation plugin"),
         };
-        for idx in 0..3 {
+        for idx in 0..4 {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(1.0));
         }
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         if let PluginSettings::LoudnessCompensation {
-            target_lufs,
-            min_gain_db,
-            max_gain_db,
+            low_freq,
+            low_gain,
+            high_freq,
+            high_gain,
         } = &plugin.settings
         {
-            assert_ne!(*target_lufs, orig_target);
-            assert_ne!(*min_gain_db, orig_min);
-            assert_ne!(*max_gain_db, orig_max);
+            assert_ne!(*low_freq, orig_low_freq);
+            assert_ne!(*low_gain, orig_low_gain);
+            assert_ne!(*high_freq, orig_high_freq);
+            assert_ne!(*high_gain, orig_high_gain);
         }
     }
 

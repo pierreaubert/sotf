@@ -97,7 +97,7 @@ impl MultigridHierarchy {
         let n_levels = meshes.len();
         let mut levels = Vec::with_capacity(n_levels);
 
-        for (i, mesh) in meshes.into_iter().enumerate() {
+        for (_i, mesh) in meshes.into_iter().enumerate() {
             let n_dofs = mesh.num_nodes();
             levels.push(MultigridLevel {
                 mesh,

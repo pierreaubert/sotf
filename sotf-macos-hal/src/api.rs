@@ -243,7 +243,7 @@ mod tests {
         init_global_buffer(500, 48000, 2);
 
         // Test input reader
-        let mut reader = HalInputReader::new().expect("Failed to create reader");
+        let reader = HalInputReader::new().expect("Failed to create reader");
         let config = reader.config();
         assert_eq!(config.sample_rate, 48000);
         assert_eq!(config.channels, 2);

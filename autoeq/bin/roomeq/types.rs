@@ -366,6 +366,7 @@ mod tests {
         );
 
         let config = RoomConfig {
+            version: default_config_version(),
             speakers,
             crossovers: None,
             target_curve: None,

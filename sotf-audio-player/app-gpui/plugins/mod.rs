@@ -13,7 +13,7 @@ pub mod level_meters;
 pub mod theme;
 pub mod ticks;
 
-mod binaural;
+mod ui_binaural;
 mod ui_compressor;
 mod ui_convolution;
 mod ui_eq;
@@ -35,7 +35,7 @@ pub use level_meters::{
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
-pub use binaural::render_binaural_plugin;
+pub use ui_binaural::render_binaural_plugin;
 pub use ui_compressor::render_compressor_plugin;
 pub use ui_convolution::render_convolution_plugin;
 pub use ui_eq::render_eq_plugin;
@@ -242,7 +242,7 @@ pub fn render_plugin_content(
         } => render_binaural_plugin(
             entity.clone(),
             plugin_idx,
-            binaural::BinauralRenderState {
+            ui_binaural::BinauralRenderState {
                 sofa_file,
                 input_channels: *input_channels,
                 enable_optimization: *enable_optimization,

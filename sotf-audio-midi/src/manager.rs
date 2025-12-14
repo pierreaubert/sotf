@@ -29,7 +29,7 @@ pub struct MidiManager {
     config: MidiConfig,
 
     /// Callback for received MIDI messages
-    callback: Option<MidiCallback>,
+    _callback: Option<MidiCallback>,
 }
 
 impl MidiManager {
@@ -41,7 +41,7 @@ impl MidiManager {
             input_connection: None,
             output_connection: Arc::new(Mutex::new(None)),
             config: MidiConfig::default(),
-            callback: None,
+            _callback: None,
         })
     }
 
@@ -53,7 +53,7 @@ impl MidiManager {
             input_connection: None,
             output_connection: Arc::new(Mutex::new(None)),
             config,
-            callback: None,
+            _callback: None,
         })
     }
 

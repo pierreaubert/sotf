@@ -353,42 +353,4 @@ pub fn render_gate_plugin(
                 .p_4()
                 .child(render_gr_meter(simulated_gr, -40.0, theme)),
         )
-        // Keyboard hints
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .wrap(true)
-                .child(
-                    Text::new("[T]hreshold")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[R]atio")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[A]ttack")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("R[e]lease")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .child(
-                    Text::new("[M]ix")
-                        .size(TextSize::Xs)
-                        .color(theme.text_secondary),
-                )
-                .build()
-                .p_3()
-                .rounded_lg()
-                .bg(theme.accent_muted)
-                .border_1()
-                .border_color(theme.accent),
-        )
-        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

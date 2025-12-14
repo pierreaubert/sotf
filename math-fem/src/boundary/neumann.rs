@@ -116,73 +116,7 @@ pub fn apply_neumann(
     }
 }
 
-/// Compute boundary edge contribution for a 2D element
-fn compute_edge_contribution(
-    mesh: &Mesh,
-    nodes: &[usize],
-    flux_fn: &dyn Fn(f64, f64, f64) -> Complex64,
-    degree: PolynomialDegree,
-) -> Vec<Complex64> {
-    let quad_1d = gauss_legendre_1d(degree.degree() + 1);
-    let n_nodes = nodes.len();
-    let mut contrib = vec![Complex64::new(0.0, 0.0); n_nodes];
 
-    if n_nodes == 2 {
-        // P1 edge
-        let p0 = &mesh.nodes[nodes[0]];
-        let p1 = &mesh.nodes[nodes[1]];
-        let dx = p1.x - p0.x;
-        let dy = p1.y - p0.y;
-        let edge_len = (dx * dx + dy * dy).sqrt();
-
-        for qp in &quad_1d {
-            let t = 0.5 * (qp.xi() + 1.0);
-            let w = 0.5 * qp.weight * edge_len;
-
-            let x = p0.x + t * dx;
-            let y = p0.y + t * dy;
-            let z = p0.z + t * (p1.z - p0.z);
-
-            let h = flux_fn(x, y, z);
-            let n0 = 1.0 - t;
-            let n1 = t;
-
-            contrib[0] += h * Complex64::new(n0 * w, 0.0);
-            contrib[1] += h * Complex64::new(n1 * w, 0.0);
-        }
-    } else if n_nodes == 3 {
-        // P2 edge
-        let p0 = &mesh.nodes[nodes[0]];
-        let p1 = &mesh.nodes[nodes[1]];
-        let p2 = &mesh.nodes[nodes[2]]; // midpoint
-
-        let dx = p1.x - p0.x;
-        let dy = p1.y - p0.y;
-        let edge_len = (dx * dx + dy * dy).sqrt();
-
-        for qp in &quad_1d {
-            let t = 0.5 * (qp.xi() + 1.0);
-            let w = 0.5 * qp.weight * edge_len;
-
-            let x = p0.x + t * dx;
-            let y = p0.y + t * dy;
-            let z = p0.z + t * (p1.z - p0.z);
-
-            let h = flux_fn(x, y, z);
-
-            // P2 shape functions: N0 = (1-t)(1-2t), N1 = t(2t-1), N2 = 4t(1-t)
-            let n0 = (1.0 - t) * (1.0 - 2.0 * t);
-            let n1 = t * (2.0 * t - 1.0);
-            let n2 = 4.0 * t * (1.0 - t);
-
-            contrib[0] += h * Complex64::new(n0 * w, 0.0);
-            contrib[1] += h * Complex64::new(n1 * w, 0.0);
-            contrib[2] += h * Complex64::new(n2 * w, 0.0);
-        }
-    }
-
-    contrib
-}
 
 #[cfg(test)]
 mod tests {

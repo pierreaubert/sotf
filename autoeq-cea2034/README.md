@@ -45,18 +45,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     spinorama_data.insert("On Axis".to_string(), Curve {
         freq: frequencies.clone(),
         spl: Array1::from(vec![-2.1, -1.8, -1.2, /* ... */ -10.5]),
+        phase: None,
     });
     spinorama_data.insert("Listening Window".to_string(), Curve {
         freq: frequencies.clone(),
         spl: Array1::from(vec![-2.0, -1.7, -1.1, /* ... */ -10.3]),
+        phase: None,
     });
     spinorama_data.insert("Sound Power".to_string(), Curve {
         freq: frequencies.clone(),
         spl: Array1::from(vec![-2.5, -2.0, -1.5, /* ... */ -11.0]),
+        phase: None,
     });
     spinorama_data.insert("Estimated In-Room Response".to_string(), Curve {
         freq: frequencies.clone(),
         spl: Array1::from(vec![-2.2, -1.9, -1.3, /* ... */ -10.7]),
+        phase: None,
     });
 
     let equalized_response = Array1::from(vec![0.5, 0.3, 0.1, /* ... */ -1.0]);

@@ -803,6 +803,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: on_vals.clone(),
+                phase: None,
             },
         );
         cea2034_data.insert(
@@ -810,6 +811,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: lw_vals.clone(),
+                phase: None,
             },
         );
         cea2034_data.insert(
@@ -817,6 +819,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: sp_vals.clone(),
+                phase: None,
             },
         );
         cea2034_data.insert(
@@ -824,6 +827,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: pir_vals.clone(),
+                phase: None,
             },
         );
 
@@ -872,6 +876,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: on_vals.clone(),
+                phase: None,
             },
         );
         cea2034_data.insert(
@@ -879,6 +884,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: lw_vals.clone(),
+                phase: None,
             },
         );
         cea2034_data.insert(
@@ -886,6 +892,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: sp_vals.clone(),
+                phase: None,
             },
         );
         cea2034_data.insert(
@@ -893,6 +900,7 @@ mod pir_helpers_tests {
             Curve {
                 freq: freq.clone(),
                 spl: pir_vals.clone(),
+                phase: None,
             },
         );
 

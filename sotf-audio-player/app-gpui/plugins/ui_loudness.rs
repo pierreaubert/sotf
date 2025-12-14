@@ -169,15 +169,5 @@ pub fn render_loudness_monitor_plugin(
                 .bg(theme.background_secondary)
                 .border_1()
                 .border_color(theme.border)
-                .p_3()
-                .child(div().text_sm().text_color(theme.text_muted).child(
-                    "Real-time loudness monitoring following EBU R128 / ITU-R BS.1770 standards.",
-                ))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child("Values update during playback."),
-                ),
         )
 }

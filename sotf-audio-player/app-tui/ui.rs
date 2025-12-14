@@ -2388,16 +2388,27 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ),
         ],
         PluginSettings::LoudnessCompensation {
-            target_lufs,
-            min_gain_db,
-            max_gain_db,
+            low_freq,
+            low_gain,
+            high_freq,
+            high_gain,
         } => vec![
             (
-                "Target LUFS".to_string(),
-                format!("{:.1} LUFS", target_lufs),
+                "Low Freq".to_string(),
+                format!("{:.0} Hz", low_freq),
             ),
-            ("Min Gain".to_string(), format!("{:.1} dB", min_gain_db)),
-            ("Max Gain".to_string(), format!("{:.1} dB", max_gain_db)),
+            (
+                "Low Gain".to_string(),
+                format!("{:.1} dB", low_gain),
+            ),
+            (
+                "High Freq".to_string(),
+                format!("{:.0} Hz", high_freq),
+            ),
+            (
+                "High Gain".to_string(),
+                format!("{:.1} dB", high_gain),
+            ),
         ],
         PluginSettings::EQ { filters } => {
             let mut params = Vec::new();

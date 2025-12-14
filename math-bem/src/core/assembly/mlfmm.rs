@@ -830,7 +830,7 @@ fn build_d_matrices_level(
             let kr = k * r;
 
             // Compute translation operator using multipole expansion
-            let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr);
+            let h_funcs = spherical_hankel_first_kind(n_terms.max(2), kr, 1.0);
 
             // D-matrix is diagonal: D[p,p] = h_0(kr) * ik
             // Store only the diagonal (all entries are the same in this simplified model)
