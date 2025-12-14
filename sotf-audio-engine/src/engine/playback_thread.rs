@@ -318,6 +318,11 @@ fn run_playback_thread(
                     state.muted.store(muted, Ordering::Relaxed);
                 }
                 PlaybackCommand::UpdateChannels(new_channels) => {
+                    log::warn!(
+                        "[Playback Thread] RECEIVED UpdateChannels({}) command, current channels={}",
+                        new_channels,
+                        channels
+                    );
                     if new_channels != channels {
                         log::info!(
                             "[Playback Thread] Updating channel count: {} -> {}",
@@ -328,8 +333,12 @@ fn run_playback_thread(
                             "[Playback Thread] UpdateChannels: Draining pending frames with old channel count"
                         );
 
+                        // CRITICAL: Clear the ring buffer FIRST - it may have old channel count samples
+                        state.ring_buffer.lock().clear();
+                        log::debug!("[Playback Thread] Cleared ring buffer before channel update");
+
                         // CRITICAL: Drain all pending frames from the message queue
-                        // These frames have the OLD channel count and would cause mismatches
+                        // These frames may have the OLD channel count and would cause mismatches
                         let mut drained_count = 0;
                         while message_rx.try_recv().is_ok() {
                             drained_count += 1;
@@ -350,7 +359,38 @@ fn run_playback_thread(
 
                         let new_state = Arc::new(PlaybackState::new(buffer_frames, new_channels));
 
+                        // Continuously drain frames during rebuild - they may have wrong channel count
+                        // Use a closure to drain and count
+                        let drain_frames = || {
+                            let mut count = 0;
+                            while message_rx.try_recv().is_ok() {
+                                count += 1;
+                            }
+                            count
+                        };
+
+                        drained_count += drain_frames();
+
+                        // Stop the old stream first to prevent any race conditions
+                        // The stream.pause() ensures the audio callback stops
+                        if let Err(e) = stream.pause() {
+                            log::warn!("[Playback Thread] Failed to pause old stream: {}", e);
+                        }
+
+                        // Small delay to let audio callback finish
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+
+                        // Final drain after stopping old stream
+                        drained_count += drain_frames();
+
                         // Rebuild and start new stream
+                        log::info!(
+                            "[Playback Thread] Building new stream with config: {}ch, {}Hz (drained {} frames)",
+                            new_config.channels,
+                            new_config.sample_rate.0,
+                            drained_count
+                        );
+
                         match build_output_stream(
                             &device,
                             &new_config,
@@ -358,8 +398,9 @@ fn run_playback_thread(
                             event_tx.clone(),
                         ) {
                             Ok(new_stream) => {
+                                log::info!("[Playback Thread] Stream built, starting playback...");
                                 if let Err(e) = new_stream.play() {
-                                    log::warn!(
+                                    log::error!(
                                         "[Playback Thread] Failed to start new stream: {}",
                                         e
                                     );
@@ -375,17 +416,32 @@ fn run_playback_thread(
                                     config = new_config;
                                     state = new_state;
                                     channels = new_channels;
-                                    log::info!(
-                                        "[Playback Thread] Stream rebuilt with {} channels",
+
+                                    // Final drain - discard any frames that arrived during rebuild
+                                    // These might have wrong channel count
+                                    let mut final_drained = 0;
+                                    while message_rx.try_recv().is_ok() {
+                                        final_drained += 1;
+                                    }
+                                    if final_drained > 0 {
+                                        log::debug!(
+                                            "[Playback Thread] Drained {} additional frames after stream rebuild",
+                                            final_drained
+                                        );
+                                    }
+
+                                    log::warn!(
+                                        "[Playback Thread] STREAM REBUILT successfully with {} channels",
                                         channels
-                                    );
-                                    log::trace!(
-                                        "[Playback Thread] UpdateChannels: Channel update complete, ready for new frames"
                                     );
                                 }
                             }
                             Err(e) => {
-                                log::warn!("[Playback Thread] Failed to rebuild stream: {}", e);
+                                log::error!(
+                                    "[Playback Thread] Failed to build stream for {} channels: {}",
+                                    new_channels,
+                                    e
+                                );
                                 event_tx
                                     .send(ThreadEvent::ProcessingError(format!(
                                         "Playback stream rebuild failed for {} channels: {}",
@@ -394,6 +450,12 @@ fn run_playback_thread(
                                     .ok();
                             }
                         }
+                    } else {
+                        log::debug!(
+                            "[Playback Thread] UpdateChannels({}) - no change needed (already at {} channels)",
+                            new_channels,
+                            channels
+                        );
                     }
                 }
                 PlaybackCommand::Stop => {
@@ -430,36 +492,57 @@ fn run_playback_thread(
                 static CHANNEL_MISMATCH_COUNT: std::sync::atomic::AtomicU32 =
                     std::sync::atomic::AtomicU32::new(0);
 
-                // Validate channel count matches current configuration
-                // This prevents audio corruption during hot-reload when channel count changes
+                // Handle channel count mismatch with fallback downmix
+                // This happens when plugin chain outputs more channels than the output device supports
                 if frame.num_channels != channels {
                     let count =
                         CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-                    // Log every mismatch for first 10, then every 100th to avoid spam
-                    if count < 10 || count.is_multiple_of(100) {
+                    // Log mismatch periodically to avoid spam
+                    if count < 10 || count.is_multiple_of(1000) {
                         log::warn!(
                             "[Playback Thread] Channel mismatch #{}: frame has {} channels, \
-                             expected {} - frame discarded (check plugin chain!)",
+                             output device expects {} - downmixing (add BinauralDecoder for proper surround→stereo)",
                             count + 1,
                             frame.num_channels,
                             channels
                         );
                     }
 
-                    // After 5000 consecutive mismatches, this is clearly a stuck state
-                    // TODO: Remove this crash after the channel mismatch bug is fully fixed
-                    // Threshold is high enough to allow stress tests but catches real stuck states
-                    if count >= 5000 {
-                        panic!(
-                            "[Playback Thread] FATAL: 5000 consecutive channel mismatches. \
-                             Plugin chain likely failed to build. Frame: {}ch, Expected: {}ch. \
-                             TODO: Remove this panic once channel mismatch bugs are fixed.",
-                            frame.num_channels, channels
-                        );
+                    // Fallback: downmix to stereo by taking first two channels
+                    // This is a crude downmix - proper solution is to add BinauralDecoder to the plugin chain
+                    if frame.num_channels > channels && channels == 2 {
+                        let mut downmixed = Vec::with_capacity(frame.num_frames * 2);
+                        for i in 0..frame.num_frames {
+                            let base = i * frame.num_channels;
+                            // Simple stereo downmix: take L/R channels, mix in center at -3dB
+                            let left = frame.data.get(base).copied().unwrap_or(0.0);
+                            let right = frame.data.get(base + 1).copied().unwrap_or(0.0);
+                            // If we have a center channel (index 2), mix it into L/R
+                            let center = if frame.num_channels > 2 {
+                                frame.data.get(base + 2).copied().unwrap_or(0.0) * 0.707
+                            } else {
+                                0.0
+                            };
+                            downmixed.push(left + center);
+                            downmixed.push(right + center);
+                        }
+                        // Write downmixed audio to ring buffer
+                        let mut data_slice = &downmixed[..];
+                        while !data_slice.is_empty() {
+                            let written = state.ring_buffer.lock().write(data_slice);
+                            if written < data_slice.len() {
+                                std::thread::sleep(std::time::Duration::from_millis(
+                                    SPIN_MS_RINGBUFFER,
+                                ));
+                            }
+                            data_slice = &data_slice[written..];
+                        }
+                        continue;
                     }
 
-                    continue; // Discard this frame and wait for UpdateChannels command
+                    // For other mismatches (upsampling or non-stereo output), discard
+                    continue;
                 }
 
                 // Reset mismatch counter on successful frame

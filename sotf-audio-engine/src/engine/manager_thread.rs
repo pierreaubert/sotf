@@ -515,8 +515,8 @@ fn run_manager_thread(
         config.output_channels
     };
 
-    log::info!(
-        "[Manager Thread] Creating playback thread with {} channels",
+    log::warn!(
+        "[Manager Thread] CREATING playback thread with {} channels",
         actual_output_channels
     );
 
@@ -815,8 +815,8 @@ fn apply_plugin_update(
     config_queue: &mut ConfigUpdateQueue,
     plugins: Vec<super::PluginConfig>,
 ) -> Result<(), ConfigError> {
-    log::trace!(
-        "[Manager Thread] apply_plugin_update: Starting update with {} plugins",
+    log::warn!(
+        "[Manager Thread] apply_plugin_update: ENTERING with {} plugins",
         plugins.len()
     );
 
@@ -833,16 +833,44 @@ fn apply_plugin_update(
     log::debug!("[Manager Thread] Using adaptive timeout: {:?}", timeout);
     let start = std::time::Instant::now();
 
+    let mut loop_count = 0;
+    let mut skipped_responses = 0;
     while start.elapsed() < timeout {
+        loop_count += 1;
         if let Some(response) = processing.try_recv_response() {
-            log::trace!(
-                "[Manager Thread] apply_plugin_update: Received response after {:?}",
-                start.elapsed()
+            // Skip PluginData and Ok responses - these are from analyzers or previous operations
+            // We're specifically waiting for PluginChainUpdated or Error
+            match &response {
+                super::ProcessingResponse::PluginData(_) | super::ProcessingResponse::Ok => {
+                    skipped_responses += 1;
+                    log::debug!(
+                        "[Manager Thread] apply_plugin_update: Skipping {} response (waiting for PluginChainUpdated)",
+                        match &response {
+                            super::ProcessingResponse::PluginData(_) => "PluginData",
+                            super::ProcessingResponse::Ok => "Ok",
+                            _ => "unknown",
+                        }
+                    );
+                    continue; // Keep waiting for PluginChainUpdated
+                }
+                _ => {}
+            }
+
+            log::warn!(
+                "[Manager Thread] apply_plugin_update: GOT RESPONSE after {:?} (loop {}, skipped {}): {}",
+                start.elapsed(),
+                loop_count,
+                skipped_responses,
+                match &response {
+                    super::ProcessingResponse::PluginChainUpdated { output_channels } => format!("PluginChainUpdated({}ch)", output_channels),
+                    super::ProcessingResponse::Error(e) => format!("Error({})", e),
+                    _ => "other".to_string(),
+                }
             );
             match response {
                 super::ProcessingResponse::PluginChainUpdated { output_channels } => {
-                    log::info!(
-                        "[Manager Thread] Plugin chain updated in {:?}, output channels: {}",
+                    log::warn!(
+                        "[Manager Thread] Plugin chain updated in {:?}, output_channels={} - SENDING TO PLAYBACK",
                         start.elapsed(),
                         output_channels
                     );
@@ -1008,6 +1036,11 @@ fn apply_plugin_update(
         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
     }
 
+    log::error!(
+        "[Manager Thread] apply_plugin_update: TIMEOUT after {} loops, {:?}",
+        loop_count,
+        start.elapsed()
+    );
     Err(ConfigError::TimeoutError {
         waited_ms: timeout.as_millis() as u64,
     })
@@ -1242,14 +1275,14 @@ fn handle_command(
 
             // If a config update is already in progress, enqueue this one
             if config_queue.is_processing() {
-                log::debug!("[Manager Thread] Config update in progress, enqueuing new update");
+                log::warn!("[Manager Thread] Config update ALREADY IN PROGRESS - queuing (this may cause channel mismatch!)");
                 log::trace!(
                     "[Manager Thread] UpdatePluginChain: Queueing update (queue size before: {})",
                     config_queue.queue.len()
                 );
                 let queued = config_queue.enqueue(plugins, ConfigUpdatePriority::UserDirect);
                 if queued {
-                    log::trace!("[Manager Thread] UpdatePluginChain: Update queued successfully");
+                    log::warn!("[Manager Thread] UpdatePluginChain: Update QUEUED (not applied immediately)");
                     return ManagerResponse::Ok;
                 } else {
                     log::warn!(
@@ -1259,7 +1292,7 @@ fn handle_command(
                 }
             }
 
-            log::trace!("[Manager Thread] UpdatePluginChain: Applying update immediately");
+            log::warn!("[Manager Thread] UpdatePluginChain: Applying update immediately (not queued)");
 
             // Otherwise, apply immediately using the synchronized apply function
             match apply_plugin_update(processing, playback, state, config_queue, plugins) {

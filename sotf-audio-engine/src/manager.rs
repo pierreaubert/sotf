@@ -141,7 +141,11 @@ impl AudioEngineManager {
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
-        log::debug!("[AudioEngineManager] Starting playback");
+        log::warn!(
+            "[AudioEngineManager] start_playback called: {} plugins, requested output_channels={}",
+            plugins.len(),
+            output_channels
+        );
 
         // Create engine config
         let config = EngineConfig {
