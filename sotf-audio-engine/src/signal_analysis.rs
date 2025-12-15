@@ -5,10 +5,12 @@
 //! - Phase spectrum (compensated for latency)
 //! - Latency estimation via cross-correlation
 //! - Microphone compensation for calibrated measurements
+//! - Standalone WAV buffer analysis (wav2csv functionality)
 
 use hound::WavReader;
-use rustfft::{FftPlanner, num_complex::Complex};
+use rustfft::{num_complex::Complex, FftPlanner};
 use std::f32::consts::PI;
+use std::io::Write;
 use std::path::Path;
 
 /// Microphone compensation data (frequency response correction)
@@ -271,6 +273,413 @@ impl MicrophoneCompensation {
         s0 + t * (s1 - s0)
     }
 }
+
+// ============================================================================
+// WAV Buffer Analysis (wav2csv functionality)
+// ============================================================================
+
+/// Configuration for standalone WAV buffer analysis
+#[derive(Debug, Clone)]
+pub struct WavAnalysisConfig {
+    /// Number of output frequency points (default: 200)
+    pub num_points: usize,
+    /// Minimum frequency in Hz (default: 20)
+    pub min_freq: f32,
+    /// Maximum frequency in Hz (default: 20000)
+    pub max_freq: f32,
+    /// FFT size (if None, auto-computed based on signal length and mode)
+    pub fft_size: Option<usize>,
+    /// Window overlap ratio for Welch's method (0.0-1.0, default: 0.5)
+    pub overlap: f32,
+    /// Use single FFT instead of Welch's method (better for sweeps and impulse responses)
+    pub single_fft: bool,
+    /// Apply pink compensation (-3dB/octave) for log sweeps
+    pub pink_compensation: bool,
+    /// Use rectangular window instead of Hann
+    pub no_window: bool,
+}
+
+impl Default for WavAnalysisConfig {
+    fn default() -> Self {
+        Self {
+            num_points: 200,
+            min_freq: 20.0,
+            max_freq: 20000.0,
+            fft_size: None,
+            overlap: 0.5,
+            single_fft: false,
+            pink_compensation: false,
+            no_window: false,
+        }
+    }
+}
+
+impl WavAnalysisConfig {
+    /// Create config optimized for log sweep analysis
+    pub fn for_log_sweep() -> Self {
+        Self {
+            single_fft: true,
+            pink_compensation: true,
+            no_window: true,
+            ..Default::default()
+        }
+    }
+
+    /// Create config optimized for impulse response analysis
+    pub fn for_impulse_response() -> Self {
+        Self {
+            single_fft: true,
+            ..Default::default()
+        }
+    }
+
+    /// Create config for stationary signals (music, noise)
+    pub fn for_stationary() -> Self {
+        Self::default()
+    }
+}
+
+/// Result of standalone WAV buffer analysis
+#[derive(Debug, Clone)]
+pub struct WavAnalysisOutput {
+    /// Frequency points in Hz (log-spaced)
+    pub frequencies: Vec<f32>,
+    /// Magnitude in dB
+    pub magnitude_db: Vec<f32>,
+    /// Phase in degrees
+    pub phase_deg: Vec<f32>,
+}
+
+/// Analyze a buffer of audio samples and return frequency response
+///
+/// # Arguments
+/// * `samples` - Mono audio samples (f32, -1.0 to 1.0)
+/// * `sample_rate` - Sample rate in Hz
+/// * `config` - Analysis configuration
+///
+/// # Returns
+/// Analysis result with frequency, magnitude, and phase data
+pub fn analyze_wav_buffer(
+    samples: &[f32],
+    sample_rate: u32,
+    config: &WavAnalysisConfig,
+) -> Result<WavAnalysisOutput, String> {
+    if samples.is_empty() {
+        return Err("Signal is empty".to_string());
+    }
+
+    // Determine FFT size
+    let fft_size = if config.single_fft {
+        config
+            .fft_size
+            .unwrap_or_else(|| wav_next_power_of_two(samples.len()))
+    } else {
+        config.fft_size.unwrap_or(16384)
+    };
+
+    // Compute spectrum
+    let (freqs, magnitudes_db, phases_deg) = if config.single_fft {
+        compute_single_fft_spectrum_internal(samples, sample_rate, fft_size, config.no_window)?
+    } else {
+        compute_welch_spectrum_internal(samples, sample_rate, fft_size, config.overlap)?
+    };
+
+    // Generate logarithmically spaced frequency points
+    let log_freqs = generate_log_frequencies(config.num_points, config.min_freq, config.max_freq);
+
+    // Interpolate magnitude and phase at log frequencies
+    let mut interp_mag = interpolate_log(&freqs, &magnitudes_db, &log_freqs);
+    let interp_phase = interpolate_log(&freqs, &phases_deg, &log_freqs);
+
+    // Apply pink compensation if requested (for log sweeps)
+    if config.pink_compensation {
+        let ref_freq = 1000.0;
+        for (i, freq) in log_freqs.iter().enumerate() {
+            if *freq > 0.0 {
+                let correction = 10.0 * (freq / ref_freq).log10();
+                interp_mag[i] += correction;
+            }
+        }
+    }
+
+    Ok(WavAnalysisOutput {
+        frequencies: log_freqs,
+        magnitude_db: interp_mag,
+        phase_deg: interp_phase,
+    })
+}
+
+/// Analyze a WAV file and return frequency response
+///
+/// # Arguments
+/// * `path` - Path to WAV file
+/// * `config` - Analysis configuration
+///
+/// # Returns
+/// Analysis result with frequency, magnitude, and phase data
+pub fn analyze_wav_file(path: &Path, config: &WavAnalysisConfig) -> Result<WavAnalysisOutput, String> {
+    let (samples, sample_rate) = load_wav_mono_with_rate(path)?;
+    analyze_wav_buffer(&samples, sample_rate, config)
+}
+
+/// Load WAV file as mono and return samples with sample rate
+fn load_wav_mono_with_rate(path: &Path) -> Result<(Vec<f32>, u32), String> {
+    let mut reader =
+        WavReader::open(path).map_err(|e| format!("Failed to open WAV file: {}", e))?;
+
+    let spec = reader.spec();
+    let sample_rate = spec.sample_rate;
+    let channels = spec.channels as usize;
+
+    let samples: Result<Vec<f32>, _> = match spec.sample_format {
+        hound::SampleFormat::Float => reader.samples::<f32>().collect(),
+        hound::SampleFormat::Int => {
+            let max_val = (1_i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|s| s.map(|v| v as f32 / max_val))
+                .collect()
+        }
+    };
+
+    let samples = samples.map_err(|e| format!("Failed to read samples: {}", e))?;
+
+    // Convert to mono by averaging channels
+    let mono = if channels == 1 {
+        samples
+    } else {
+        samples
+            .chunks(channels)
+            .map(|chunk| chunk.iter().sum::<f32>() / channels as f32)
+            .collect()
+    };
+
+    Ok((mono, sample_rate))
+}
+
+/// Write WAV analysis result to CSV file
+///
+/// # Arguments
+/// * `result` - Analysis output
+/// * `path` - Path to output CSV file
+pub fn write_wav_analysis_csv(result: &WavAnalysisOutput, path: &Path) -> Result<(), String> {
+    let mut file =
+        std::fs::File::create(path).map_err(|e| format!("Failed to create CSV: {}", e))?;
+
+    writeln!(file, "frequency_hz,spl_db,phase_deg")
+        .map_err(|e| format!("Failed to write CSV header: {}", e))?;
+
+    for i in 0..result.frequencies.len() {
+        writeln!(
+            file,
+            "{:.2},{:.2},{:.2}",
+            result.frequencies[i], result.magnitude_db[i], result.phase_deg[i]
+        )
+        .map_err(|e| format!("Failed to write CSV row: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Compute spectrum using Welch's method (averaged periodograms) - internal version
+fn compute_welch_spectrum_internal(
+    signal: &[f32],
+    sample_rate: u32,
+    fft_size: usize,
+    overlap: f32,
+) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>), String> {
+    if signal.is_empty() {
+        return Err("Signal is empty".to_string());
+    }
+
+    let overlap_samples = (fft_size as f32 * overlap.clamp(0.0, 0.95)) as usize;
+    let hop_size = fft_size - overlap_samples;
+
+    let num_windows = if signal.len() >= fft_size {
+        1 + (signal.len() - fft_size) / hop_size
+    } else {
+        1
+    };
+
+    let num_bins = fft_size / 2;
+    let mut magnitude_sum = vec![0.0_f32; num_bins];
+    let mut phase_real_sum = vec![0.0_f32; num_bins];
+    let mut phase_imag_sum = vec![0.0_f32; num_bins];
+
+    // Precompute Hann window
+    let hann_window: Vec<f32> = (0..fft_size)
+        .map(|i| 0.5 * (1.0 - ((2.0 * PI * i as f32) / (fft_size as f32 - 1.0)).cos()))
+        .collect();
+
+    let window_power: f32 = hann_window.iter().map(|&w| w * w).sum();
+    let scale_factor = 2.0 / window_power;
+
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(fft_size);
+
+    for window_idx in 0..num_windows {
+        let start = window_idx * hop_size;
+        let end = (start + fft_size).min(signal.len());
+        let window_len = end - start;
+
+        let mut windowed = vec![0.0_f32; fft_size];
+        for i in 0..window_len {
+            windowed[i] = signal[start + i] * hann_window[i];
+        }
+
+        let mut buffer: Vec<Complex<f32>> =
+            windowed.iter().map(|&x| Complex::new(x, 0.0)).collect();
+
+        fft.process(&mut buffer);
+
+        for i in 0..num_bins {
+            let mag = buffer[i].norm() * scale_factor.sqrt();
+            magnitude_sum[i] += mag * mag;
+            phase_real_sum[i] += buffer[i].re;
+            phase_imag_sum[i] += buffer[i].im;
+        }
+    }
+
+    let magnitudes_db: Vec<f32> = magnitude_sum
+        .iter()
+        .map(|&mag_sq| {
+            let mag = (mag_sq / num_windows as f32).sqrt();
+            if mag > 1e-10 {
+                20.0 * mag.log10()
+            } else {
+                -200.0
+            }
+        })
+        .collect();
+
+    let phases_deg: Vec<f32> = phase_real_sum
+        .iter()
+        .zip(phase_imag_sum.iter())
+        .map(|(&re, &im)| (im / num_windows as f32).atan2(re / num_windows as f32) * 180.0 / PI)
+        .collect();
+
+    let freqs: Vec<f32> = (0..num_bins)
+        .map(|i| i as f32 * sample_rate as f32 / fft_size as f32)
+        .collect();
+
+    Ok((freqs, magnitudes_db, phases_deg))
+}
+
+/// Compute spectrum using a single FFT - internal version
+fn compute_single_fft_spectrum_internal(
+    signal: &[f32],
+    sample_rate: u32,
+    fft_size: usize,
+    no_window: bool,
+) -> Result<(Vec<f32>, Vec<f32>, Vec<f32>), String> {
+    if signal.is_empty() {
+        return Err("Signal is empty".to_string());
+    }
+
+    let mut windowed = vec![0.0_f32; fft_size];
+    let copy_len = signal.len().min(fft_size);
+    windowed[..copy_len].copy_from_slice(&signal[..copy_len]);
+
+    let window_scale_factor = if no_window {
+        1.0
+    } else {
+        let hann_window: Vec<f32> = (0..fft_size)
+            .map(|i| 0.5 * (1.0 - ((2.0 * PI * i as f32) / (fft_size as f32 - 1.0)).cos()))
+            .collect();
+
+        for (i, sample) in windowed.iter_mut().enumerate() {
+            *sample *= hann_window[i];
+        }
+
+        hann_window.iter().map(|&w| w * w).sum::<f32>()
+    };
+
+    let mut buffer: Vec<Complex<f32>> = windowed.iter().map(|&x| Complex::new(x, 0.0)).collect();
+
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(fft_size);
+    fft.process(&mut buffer);
+
+    let scale_factor = if no_window {
+        (2.0 / fft_size as f32).sqrt()
+    } else {
+        (2.0 / window_scale_factor).sqrt()
+    };
+
+    let num_bins = fft_size / 2;
+    let magnitudes_db: Vec<f32> = buffer[..num_bins]
+        .iter()
+        .map(|c| {
+            let mag = c.norm() * scale_factor;
+            if mag > 1e-10 {
+                20.0 * mag.log10()
+            } else {
+                -200.0
+            }
+        })
+        .collect();
+
+    let phases_deg: Vec<f32> = buffer[..num_bins]
+        .iter()
+        .map(|c| c.arg() * 180.0 / PI)
+        .collect();
+
+    let freqs: Vec<f32> = (0..num_bins)
+        .map(|i| i as f32 * sample_rate as f32 / fft_size as f32)
+        .collect();
+
+    Ok((freqs, magnitudes_db, phases_deg))
+}
+
+/// Next power of two for wav analysis (capped at 1M)
+fn wav_next_power_of_two(n: usize) -> usize {
+    let mut p = 1;
+    while p < n {
+        p *= 2;
+    }
+    p.min(1048576)
+}
+
+/// Generate logarithmically spaced frequencies
+fn generate_log_frequencies(num_points: usize, min_freq: f32, max_freq: f32) -> Vec<f32> {
+    let log_min = min_freq.ln();
+    let log_max = max_freq.ln();
+    let step = (log_max - log_min) / (num_points - 1) as f32;
+
+    (0..num_points)
+        .map(|i| (log_min + i as f32 * step).exp())
+        .collect()
+}
+
+/// Logarithmic interpolation
+fn interpolate_log(x: &[f32], y: &[f32], x_new: &[f32]) -> Vec<f32> {
+    x_new
+        .iter()
+        .map(|&freq| {
+            let idx = x.iter().position(|&f| f >= freq).unwrap_or(x.len() - 1);
+
+            if idx == 0 {
+                return y[0];
+            }
+
+            let x0 = x[idx - 1];
+            let x1 = x[idx];
+            let y0 = y[idx - 1];
+            let y1 = y[idx];
+
+            if x1 <= x0 {
+                return y0;
+            }
+
+            let t = (freq - x0) / (x1 - x0);
+            y0 + t * (y1 - y0)
+        })
+        .collect()
+}
+
+// ============================================================================
+// Recording Analysis (reference vs recorded comparison)
+// ============================================================================
 
 /// Result of FFT analysis
 #[derive(Debug, Clone)]
