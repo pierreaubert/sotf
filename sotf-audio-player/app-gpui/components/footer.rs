@@ -506,7 +506,7 @@ impl PlayerView {
                                 .text_xs()
                                 .text_color(text_muted)
                                 .min_w(px(40.0))
-                                .h(px(24.0)) // Match waveform height for alignment
+				.mb(px(24.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -551,7 +551,7 @@ impl PlayerView {
                                 .text_xs()
                                 .text_color(text_muted)
                                 .min_w(px(40.0))
-                                .h(px(24.0)) // Match waveform height for alignment
+				.mb(px(24.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -818,7 +818,7 @@ impl PlayerView {
                                 state.app.selected_output_device_index = idx;
                                 state.app.current_output_device_name = Some(device_name.clone());
                                 state.app.show_device_popup = false;
-                                
+
                                 // Apply the device selection to the player
                                 let mut player = state.player.lock();
                                 if let Err(e) = player.set_output_device(device_name.clone()) {
