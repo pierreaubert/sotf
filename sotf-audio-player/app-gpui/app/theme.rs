@@ -222,16 +222,16 @@ impl Theme {
             // Text colors
             text_primary: rgba(0xcccccc),
             text_secondary: rgba(0x999999),
-            text_muted: rgba(0x666666),
+            text_muted: rgba(0x999999), // Lighter for better readability
             text_disabled: rgba(0x444444),
 
             // Border colors
-            border: rgba(0x3e3e3e),
-            border_focused: rgba(0x007acc),
+            border: rgba(0x555555), // More visible border
+            border_focused: rgba(0x1c8cd9), // Brighter for hover states
 
             // Accent colors
-            accent: rgba(0x007acc),
-            accent_hover: rgba(0x1c8cd9),
+            accent: rgba(0x0a84ff), // Bolder, more saturated
+            accent_hover: rgba(0x3d9cff),
             accent_muted: rgba(0x264f78),
 
             // Text on accent
@@ -415,16 +415,16 @@ impl Theme {
             // Text colors
             text_primary: rgba(0x1e1e1e),
             text_secondary: rgba(0x555555),
-            text_muted: rgba(0x888888),
+            text_muted: rgba(0x666666), // Darker for better readability on light background
             text_disabled: rgba(0xaaaaaa),
 
             // Border colors
-            border: rgba(0xcccccc),
-            border_focused: rgba(0x0066cc),
+            border: rgba(0x999999), // More visible border
+            border_focused: rgba(0x0077ee), // Brighter for hover states
 
             // Accent colors
-            accent: rgba(0x0066cc),
-            accent_hover: rgba(0x0077ee),
+            accent: rgba(0x0074e8), // Bolder, more saturated
+            accent_hover: rgba(0x2687ff),
             accent_muted: rgba(0xb3d4fc),
 
             // Text on accent
@@ -608,16 +608,16 @@ impl Theme {
             // Text colors
             text_primary: rgba(0xc9d1d9),
             text_secondary: rgba(0x8b949e),
-            text_muted: rgba(0x6e7681),
+            text_muted: rgba(0x9ca5af), // Lighter for better readability
             text_disabled: rgba(0x484f58),
 
             // Border colors
-            border: rgba(0x30363d),
-            border_focused: rgba(0x58a6ff),
+            border: rgba(0x444c56), // More visible border
+            border_focused: rgba(0x79b8ff), // Brighter for hover states
 
             // Accent colors
-            accent: rgba(0x58a6ff),
-            accent_hover: rgba(0x79b8ff),
+            accent: rgba(0x4493f8), // Bolder, more saturated
+            accent_hover: rgba(0x6cb6ff),
             accent_muted: rgba(0x1f6feb),
 
             // Text on accent
@@ -801,16 +801,16 @@ impl Theme {
             // Text colors
             text_primary: rgba(0xd4e4d1),
             text_secondary: rgba(0xa8c4a2),
-            text_muted: rgba(0x7a9a73),
+            text_muted: rgba(0xb0cca9), // Lighter for better readability
             text_disabled: rgba(0x556b50),
 
             // Border colors
-            border: rgba(0x3a4a35),
-            border_focused: rgba(0x6abf69),
+            border: rgba(0x4a5a45), // More visible border
+            border_focused: rgba(0x7dd07c), // Brighter for hover states
 
             // Accent colors
-            accent: rgba(0x6abf69),
-            accent_hover: rgba(0x7dd07c),
+            accent: rgba(0x5cc65b), // Bolder, more saturated
+            accent_hover: rgba(0x76e075),
             accent_muted: rgba(0x3d5a3a),
 
             // Text on accent
@@ -994,21 +994,21 @@ impl Theme {
             // Text colors
             text_primary: rgba(0xffffff),
             text_secondary: rgba(0x888888),
-            text_muted: rgba(0x555555),
+            text_muted: rgba(0xaaaaaa), // Lighter for better readability
             text_disabled: rgba(0x333333),
 
             // Border colors (white for high contrast)
-            border: rgba(0xffffff),
-            border_focused: rgba(0xffffff),
+            border: rgba(0xdddddd), // Slightly softer but still visible
+            border_focused: rgba(0xffffff), // Pure white for hover states
 
-            // Accent colors (black background with white text for buttons)
-            accent: rgba(0x000000),
-            accent_hover: rgba(0x222222),
-            accent_muted: rgba(0x333333),
+            // Accent colors (white accent for high contrast)
+            accent: rgba(0xffffff), // Bold white accent
+            accent_hover: rgba(0xeeeeee),
+            accent_muted: rgba(0x888888),
 
-            // Text on accent (white text on black background)
-            text_on_accent: rgba(0xffffff),
-            text_on_accent_muted: rgba(0xcccccc),
+            // Text on accent (black text on white background)
+            text_on_accent: rgba(0x000000),
+            text_on_accent_muted: rgba(0x333333),
 
             // Semantic colors (grayscale for B&W theme)
             success: rgba(0xaaaaaa),
