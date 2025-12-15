@@ -12,6 +12,9 @@ repository.workspace = true
 gpui = { workspace = true }
 gpui_macros = { workspace = true }
 
+# Serialization for Color type
+serde = { workspace = true }
+
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 

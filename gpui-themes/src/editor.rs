@@ -5,13 +5,13 @@
 //! - Color editing with live preview via modal
 //! - Export to JSON and Rust
 
-use crate::color_picker::ColorPickerView;
 use crate::showcase::ComponentShowcase;
 use crate::theme::{Color, ColorGroup, EditorTheme};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, ColorPickerView, HStack, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 
 /// Transparent color constant

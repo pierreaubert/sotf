@@ -24,6 +24,8 @@ pub mod toast;
 // Form components
 pub mod autoeq_form;
 pub mod checkbox;
+pub mod color;
+pub mod color_picker;
 pub mod input;
 pub mod number_input;
 pub mod potentiometer;
@@ -76,8 +78,13 @@ pub use alert::{Alert, AlertVariant, InlineAlert};
 pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 
 // Form
-pub use autoeq_form::{AutoEqAlgorithm, AutoEqConfig, AutoEqField, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState};
+pub use autoeq_form::{
+    AutoEqConfig, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState, ParamLimits,
+    ALGORITHM_OPTIONS, DE_STRATEGY_OPTIONS, LOCAL_ALGO_OPTIONS, PEQ_MODEL_OPTIONS,
+};
 pub use checkbox::{Checkbox, CheckboxSize};
+pub use color::Color;
+pub use color_picker::{ColorPickerMode, ColorPickerView};
 pub use input::{Input, InputSize, InputVariant};
 pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme};
 pub use potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme};
