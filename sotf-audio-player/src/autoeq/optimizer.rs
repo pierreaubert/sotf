@@ -308,7 +308,7 @@ mod tests {
     use super::*;
     use ndarray::Array1;
 
-    fn create_test_curve() -> Curve {
+    fn _create_test_curve() -> Curve {
         let freq: Array1<f64> = Array1::linspace(20.0, 20000.0, 100);
         let mut spl: Array1<f64> = Array1::zeros(100);
         // Add some peaks and dips

@@ -669,7 +669,7 @@ mod tests {
     fn test_compute_parameters_quad() {
         let coords = make_test_quad();
 
-        let (shape, jac, normal, _pos) = compute_parameters(&coords, ElementType::Quad4, 0.0, 0.0);
+        let (shape, _jac, normal, _pos) = compute_parameters(&coords, ElementType::Quad4, 0.0, 0.0);
 
         // Shape functions should sum to 1
         let sum: f64 = shape.iter().sum();

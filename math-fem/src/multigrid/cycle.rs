@@ -362,7 +362,7 @@ mod tests {
         // Use smoother directly to test residual reduction
         // Apply Dirichlet BCs to make the system non-singular
         use crate::assembly::HelmholtzProblem;
-        use crate::boundary::{DirichletBC, apply_homogeneous_dirichlet};
+        use crate::boundary::apply_homogeneous_dirichlet;
         use crate::multigrid::smoother::{SmootherConfig, residual_norm, smooth};
 
         let mesh = unit_square_triangles(4);

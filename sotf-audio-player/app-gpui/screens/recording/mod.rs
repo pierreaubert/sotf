@@ -1,11 +1,15 @@
 //! Recording screen module
 //!
-//! Multi-channel audio recording workflow with two steps:
+//! Multi-channel audio recording workflow with four steps:
 //! 1. Config - Device selection and channel mapping
 //! 2. Capture - Record frequency response for each channel
+//! 3. Evaluating - View and analyze frequency response graphs
+//! 4. Saving - Save recordings and configuration to disk
 
 mod capture;
 mod config;
+mod evaluating;
+mod saving;
 
 use crate::app::types::RecordingStep;
 use crate::ui::PlayerView;
@@ -16,7 +20,7 @@ use gpui_ui_kit::{
 };
 
 impl PlayerView {
-    /// Main recording screen renderer - dispatches to config or capture step
+    /// Main recording screen renderer - dispatches to the appropriate step
 
     pub(crate) fn render_recording_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, current_step) = {
@@ -27,6 +31,8 @@ impl PlayerView {
         let step_content = match current_step {
             RecordingStep::Config => self.render_recording_config_step(cx).into_any_element(),
             RecordingStep::Capture => self.render_recording_capture_step(cx).into_any_element(),
+            RecordingStep::Evaluating => self.render_recording_evaluating_step(cx).into_any_element(),
+            RecordingStep::Saving => self.render_recording_saving_step(cx).into_any_element(),
         };
 
         div()
@@ -52,14 +58,21 @@ impl PlayerView {
         let current_step = state.app.recording_state.step;
         let _ = state;
 
+        // Helper to determine step order index
+        fn step_index(step: RecordingStep) -> u8 {
+            match step {
+                RecordingStep::Config => 0,
+                RecordingStep::Capture => 1,
+                RecordingStep::Evaluating => 2,
+                RecordingStep::Saving => 3,
+            }
+        }
+
         // Helper function to build step indicator
         let build_step_indicator =
             |step: RecordingStep, label: &'static str, number: u8, theme: &crate::theme::Theme| {
                 let is_active = current_step == step;
-                let is_past = matches!(
-                    (current_step, step),
-                    (RecordingStep::Capture, RecordingStep::Config)
-                );
+                let is_past = step_index(step) < step_index(current_step);
 
                 let (bg_color, text_color, border_color) = if is_active {
                     (theme.accent, theme.text_on_accent, theme.accent)
@@ -106,6 +119,16 @@ impl PlayerView {
                     )
             };
 
+        // Helper to build connector line between steps
+        let build_connector = |from_step: RecordingStep, theme: &crate::theme::Theme| {
+            let is_past = step_index(from_step) < step_index(current_step);
+            div().w(px(24.0)).h(px(2.0)).bg(if is_past {
+                theme.success
+            } else {
+                theme.border
+            })
+        };
+
         div()
             .flex()
             .items_center()
@@ -117,7 +140,7 @@ impl PlayerView {
             .border_color(theme.border)
             .child(
                 HStack::new()
-                    .spacing(StackSpacing::Lg)
+                    .spacing(StackSpacing::Md)
                     .align(StackAlign::Center)
                     .child(
                         Text::new("Recording")
@@ -126,23 +149,35 @@ impl PlayerView {
                             .color(theme.text_primary),
                     )
                     .child(div().w(px(1.0)).h(px(24.0)).bg(theme.border))
+                    // Step 1: Config
                     .child(build_step_indicator(
                         RecordingStep::Config,
-                        "Device Setup",
+                        "Setup",
                         1,
                         &theme,
                     ))
-                    .child(div().w(px(32.0)).h(px(2.0)).bg(
-                        if current_step == RecordingStep::Capture {
-                            theme.success
-                        } else {
-                            theme.border
-                        },
-                    ))
+                    .child(build_connector(RecordingStep::Config, &theme))
+                    // Step 2: Capture
                     .child(build_step_indicator(
                         RecordingStep::Capture,
                         "Capture",
                         2,
+                        &theme,
+                    ))
+                    .child(build_connector(RecordingStep::Capture, &theme))
+                    // Step 3: Evaluating
+                    .child(build_step_indicator(
+                        RecordingStep::Evaluating,
+                        "Evaluate",
+                        3,
+                        &theme,
+                    ))
+                    .child(build_connector(RecordingStep::Evaluating, &theme))
+                    // Step 4: Saving
+                    .child(build_step_indicator(
+                        RecordingStep::Saving,
+                        "Save",
+                        4,
                         &theme,
                     )),
             )
@@ -160,11 +195,19 @@ impl PlayerView {
 
         let back_label = match current_step {
             RecordingStep::Config => "Close",
-            RecordingStep::Capture => "Back",
+            RecordingStep::Capture | RecordingStep::Evaluating | RecordingStep::Saving => "Back",
         };
         let next_label = match current_step {
-            RecordingStep::Config => "Next",
-            RecordingStep::Capture => "Finish",
+            RecordingStep::Config | RecordingStep::Capture | RecordingStep::Evaluating => "Next",
+            RecordingStep::Saving => "Finish",
+        };
+
+        // Determine if next button should be disabled
+        let next_disabled = match current_step {
+            RecordingStep::Config => false,
+            RecordingStep::Capture => !all_recorded || is_recording,
+            RecordingStep::Evaluating => false,
+            RecordingStep::Saving => false,
         };
 
         HStack::new()
@@ -185,8 +228,13 @@ impl PlayerView {
                                             state.app.current_screen = state.app.last_screen;
                                         }
                                         RecordingStep::Capture => {
-                                            // Go back to config step
                                             state.app.recording_state.step = RecordingStep::Config;
+                                        }
+                                        RecordingStep::Evaluating => {
+                                            state.app.recording_state.step = RecordingStep::Capture;
+                                        }
+                                        RecordingStep::Saving => {
+                                            state.app.recording_state.step = RecordingStep::Evaluating;
                                         }
                                     }
                                 });
@@ -199,10 +247,7 @@ impl PlayerView {
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Md)
-                    .disabled(match current_step {
-                        RecordingStep::Config => false,
-                        RecordingStep::Capture => !all_recorded || is_recording,
-                    })
+                    .disabled(next_disabled)
                     .on_click({
                         let view = view.clone();
                         move |_, cx| {
@@ -215,8 +260,13 @@ impl PlayerView {
                                             state.app.recording_state.step = RecordingStep::Capture;
                                         }
                                         RecordingStep::Capture => {
+                                            state.app.recording_state.step = RecordingStep::Evaluating;
+                                        }
+                                        RecordingStep::Evaluating => {
+                                            state.app.recording_state.step = RecordingStep::Saving;
+                                        }
+                                        RecordingStep::Saving => {
                                             // Finish - go back to previous screen
-                                            // TODO: Save results and process data
                                             state.app.current_screen = state.app.last_screen;
                                         }
                                     }

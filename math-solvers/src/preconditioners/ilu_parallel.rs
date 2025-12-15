@@ -591,7 +591,6 @@ impl<T: ComplexField + Send + Sync> IluFixedPointPreconditioner<T> {
 mod tests {
     use super::*;
     use crate::iterative::{GmresConfig, gmres_preconditioned};
-    use ndarray::array;
     use num_complex::Complex64;
 
     fn create_test_matrix() -> CsrMatrix<Complex64> {

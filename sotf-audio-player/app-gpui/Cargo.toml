@@ -39,6 +39,7 @@ serde_json = { workspace = true }
 walkdir = { workspace = true }
 rfd = { workspace = true }
 clap = { workspace = true }
+chrono = { workspace = true }
 
 # Audio
 id3 = { workspace = true }

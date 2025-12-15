@@ -350,7 +350,7 @@ impl Default for TransitionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ease::{ease_cubic_in_out, ease_linear};
+    use crate::ease::ease_cubic_in_out;
 
     #[test]
     fn test_transition_linear() {

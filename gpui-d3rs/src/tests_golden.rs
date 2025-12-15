@@ -1,9 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::force::{ForceCenter, ForceManyBody, Simulation, SimulationNode};
+    use crate::force::{ForceManyBody, Simulation, SimulationNode};
     use crate::hierarchy::{HierarchyNode, TreeLayout};
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
     #[test]
     fn test_hierarchy_golden() {

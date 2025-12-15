@@ -164,7 +164,6 @@ pub fn compute_residual(
     x: &[Complex64],
     b: &[Complex64],
 ) -> Vec<Complex64> {
-    let n = matrix.dim;
     let mut r = b.to_vec();
 
     // r = b - A*x

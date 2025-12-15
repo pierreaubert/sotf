@@ -151,29 +151,46 @@ impl Element for WaveformElement {
     }
 }
 
+/// Responsive breakpoints for footer layout
+const BREAKPOINT_HIDE_WAVEFORM: f32 = 700.0;
+const BREAKPOINT_HIDE_TRACK_INFO: f32 = 550.0;
+const BREAKPOINT_HIDE_STUDIO_DEVICE: f32 = 400.0;
+
 impl PlayerView {
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = &state.app.theme;
         let translations = state.app.translations.clone();
+        let window_width = state.app.window_width;
 
         let bg_surface = theme.surface;
         let border_color = theme.border;
 
+        // Determine what to show based on width
+        let show_waveform = window_width >= BREAKPOINT_HIDE_WAVEFORM;
+        let show_track_info = window_width >= BREAKPOINT_HIDE_TRACK_INFO;
+        let show_studio_device = window_width >= BREAKPOINT_HIDE_STUDIO_DEVICE;
+
         VStack::new()
             .spacing(StackSpacing::None)
             .child(
-                // Main footer content: three-section layout
+                // Main footer content: responsive three-section layout
                 HStack::new()
                     .spacing(StackSpacing::None)
-                    .justify(StackJustify::SpaceBetween)
+                    .justify(if show_track_info {
+                        StackJustify::SpaceBetween
+                    } else {
+                        StackJustify::Center
+                    })
                     .align(StackAlign::Center)
-                    // Left section: Track info
-                    .child(self.render_footer_left(&translations, cx))
+                    // Left section: Track info (hidden on narrow screens)
+                    .when(show_track_info, |el| {
+                        el.child(self.render_footer_left(&translations, cx))
+                    })
                     // Center section: Transport + waveform
-                    .child(self.render_footer_center(cx))
-                    // Right section: Device + Volume
-                    .child(self.render_footer_right(&translations, cx))
+                    .child(self.render_footer_center(show_waveform, cx))
+                    // Right section: Device + Volume (partially hidden on narrow screens)
+                    .child(self.render_footer_right(&translations, show_studio_device, cx))
                     .build()
                     .h(px(100.0))
                     .px_4(),
@@ -296,7 +313,7 @@ impl PlayerView {
     }
 
     /// Center section: Transport controls + waveform + time
-    fn render_footer_center(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_footer_center(&self, show_waveform: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = &state.app.theme;
 
@@ -474,79 +491,97 @@ impl PlayerView {
                             ),
                     ),
             )
-            // Waveform/progress row - aligned with elapsed/total time
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_0()
-                    .w_full()
-                    .mt(px(12.0)) // Space between transport and waveform row
-                    // Current position (vertically centered with waveform)
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(text_muted)
-                            .min_w(px(40.0))
-                            .h(px(24.0)) // Match waveform height for vertical centering
-                            .flex()
-                            .items_center()
-                            .child(position_str),
-                    )
-                    // Waveform visualization from track data
-                    .child(
-                        div()
-                            .id("waveform-bar")
-                            .flex_1()
-                            .gap_0()
-                            .h(px(24.0)) // Taller waveform
-                            .cursor_pointer()
-                            .on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
-                                    if let Some(bounds) = *bounds_ref_clone.borrow() {
-                                        // Calculate relative position
-                                        let x = event.position.x - bounds.origin.x;
-                                        let width = bounds.size.width;
-                                        let ratio = (x / width).clamp(0.0, 1.0);
+            // Waveform/progress row - conditionally shown based on screen width
+            .when(show_waveform, |el| {
+                el.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .w_full()
+                        .mt(px(12.0)) // Space between transport and waveform row
+                        // Current position - vertically centered with waveform
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(text_muted)
+                                .min_w(px(40.0))
+                                .h(px(24.0)) // Match waveform height for alignment
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(position_str.clone()),
+                        )
+                        // Waveform visualization from track data
+                        .child(
+                            div()
+                                .id("waveform-bar")
+                                .flex_1()
+                                .gap_0()
+                                .h(px(24.0)) // Waveform height
+                                .cursor_pointer()
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                                        if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                            // Calculate relative position
+                                            let x = event.position.x - bounds.origin.x;
+                                            let width = bounds.size.width;
+                                            let ratio = (x / width).clamp(0.0, 1.0);
 
-                                        view.state.update(cx, |state, _cx| {
-                                            let new_pos = state.app.duration_secs * ratio as f64;
-                                            state.app.position_secs = new_pos;
-                                            // In a real implementation, we would also seek the player here
-                                            // e.g. state.player.lock().seek(new_pos);
-                                        });
-                                        cx.notify();
-                                    }
-                                }),
-                            )
-                            .child(WaveformElement::new(
-                                waveform.clone(),
-                                progress,
-                                progress_bar_fill,
-                                progress_bar_bg,
-                                bounds_ref,
-                            )),
-                    )
-                    // Total duration (vertically centered with waveform)
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(text_muted)
-                            .min_w(px(40.0))
-                            .h(px(24.0)) // Match waveform height for vertical centering
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .child(duration_str),
-                    ),
-            )
+                                            view.state.update(cx, |state, _cx| {
+                                                let new_pos = state.app.duration_secs * ratio as f64;
+                                                state.app.position_secs = new_pos;
+                                            });
+                                            cx.notify();
+                                        }
+                                    }),
+                                )
+                                .child(WaveformElement::new(
+                                    waveform.clone(),
+                                    progress,
+                                    progress_bar_fill,
+                                    progress_bar_bg,
+                                    bounds_ref,
+                                )),
+                        )
+                        // Total duration - vertically centered with waveform
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(text_muted)
+                                .min_w(px(40.0))
+                                .h(px(24.0)) // Match waveform height for alignment
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(duration_str.clone()),
+                        ),
+                )
+            })
+            // When waveform is hidden, show compact time display below transport
+            .when(!show_waveform, |el| {
+                el.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .gap_1()
+                        .mt(px(8.0))
+                        .text_xs()
+                        .text_color(text_muted)
+                        .child(position_str)
+                        .child("/")
+                        .child(duration_str),
+                )
+            })
     }
 
     /// Right section: Device selection + Volume
     fn render_footer_right(
         &self,
         translations: &crate::i18n::Translations,
+        show_studio_device: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let default_device_label = translations.playback_default_device;
@@ -554,7 +589,7 @@ impl PlayerView {
         let (
             volume,
             muted,
-            show_device_popup,
+            _show_device_popup, // Not used here anymore
             current_device,
             text_secondary,
             surface_hover,
@@ -562,15 +597,22 @@ impl PlayerView {
         ) = {
             let state = self.state.read(cx);
             let theme = &state.app.theme;
+            // Get device name and truncate to 7 characters
+            let device_name = state
+                .app
+                .current_output_device_name
+                .clone()
+                .unwrap_or_else(|| default_device_label.to_string());
+            let truncated_device = if device_name.len() > 7 {
+                device_name.chars().take(7).collect::<String>()
+            } else {
+                device_name
+            };
             (
                 state.app.volume,
                 state.app.muted,
                 state.app.show_device_popup,
-                state
-                    .app
-                    .current_output_device_name
-                    .clone()
-                    .unwrap_or_else(|| default_device_label.to_string()),
+                truncated_device,
                 theme.text_secondary,
                 theme.surface_hover,
                 theme.clone(),
@@ -581,126 +623,122 @@ impl PlayerView {
             .flex()
             .items_center()
             .gap_3()
-            .min_w(px(180.0))
+            .when(show_studio_device, |el| el.min_w(px(180.0)))
             .justify_end()
             .relative()
-            // Studio button (Plugin Rack)
-            .child(
-                div()
-                    .id("studio-button")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|style| style.bg(surface_hover))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                let is_plugins_open = state.app.current_screen
-                                    == crate::app::Screen::Settings
-                                    && state.app.active_settings_tab
-                                        == crate::app::SettingsTab::Plugins;
+            // Studio button (Plugin Rack) - hidden on narrow screens
+            .when(show_studio_device, |el| {
+                el.child(
+                    div()
+                        .id("studio-button")
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(surface_hover))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    let is_plugins_open = state.app.current_screen
+                                        == crate::app::Screen::Settings
+                                        && state.app.active_settings_tab
+                                            == crate::app::SettingsTab::Plugins;
 
-                                if is_plugins_open {
-                                    // Already open: Check if modified
-                                    if state.app.plugin_chain_modified {
-                                        // Propose to save (enter save mode)
-                                        state.app.input_mode = crate::app::InputMode::SavePlugins;
-                                        state.app.pending_studio_close = true;
+                                    if is_plugins_open {
+                                        // Already open: Check if modified
+                                        if state.app.plugin_chain_modified {
+                                            // Propose to save (enter save mode)
+                                            state.app.input_mode = crate::app::InputMode::SavePlugins;
+                                            state.app.pending_studio_close = true;
+                                        } else {
+                                            // Close: Go back to last screen
+                                            state.app.current_screen = state.app.last_screen;
+                                        }
                                     } else {
-                                        // Close: Go back to last screen
-                                        state.app.current_screen = state.app.last_screen;
-                                    }
-                                } else {
-                                    // Open Studio logic
-                                    if state.app.current_screen != crate::app::Screen::Settings {
-                                        state.app.last_screen = state.app.current_screen;
-                                        state.app.current_screen = crate::app::Screen::Settings;
-                                    }
+                                        // Open Studio logic
+                                        if state.app.current_screen != crate::app::Screen::Settings {
+                                            state.app.last_screen = state.app.current_screen;
+                                            state.app.current_screen = crate::app::Screen::Settings;
+                                        }
 
-                                    // Open plugins tab
-                                    state.app.active_settings_tab =
-                                        crate::app::SettingsTab::Plugins;
-                                }
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                Icon::new(IconName::SlidersHorizontal)
-                                    .size(IconSize::Xxl)
-                                    .color(theme_clone.text_secondary),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(text_secondary)
-                                    .text_center()
-                                    .child(studio_label),
-                            ),
-                    ),
-            )
-            // Device selection button - icon on top, name below
-            .child(
-                div()
-                    .id("device-selector")
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|style| style.bg(surface_hover))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.show_device_popup = !state.app.show_device_popup;
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_1()
-                            // Speaker icon
-                            .child(
-                                Icon::new(IconName::Speaker)
-                                    .size(IconSize::Xxl)
-                                    .color(theme_clone.text_secondary),
-                            )
-                            // Device name below
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(text_secondary)
-                                    .max_w(px(80.0))
-                                    .overflow_hidden()
-                                    .text_ellipsis()
-                                    .whitespace_nowrap()
-                                    .text_center()
-                                    .child(current_device),
-                            ),
-                    ),
-            )
-            // Device popup (renders above the button)
-            .when(show_device_popup, |el| {
-                el.child(self.render_device_popup(translations.playback_output_devices, cx))
+                                        // Open plugins tab
+                                        state.app.active_settings_tab =
+                                            crate::app::SettingsTab::Plugins;
+                                    }
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap_1()
+                                .child(
+                                    Icon::new(IconName::SlidersHorizontal)
+                                        .size(IconSize::Xxl)
+                                        .color(theme_clone.text_secondary),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(text_secondary)
+                                        .text_center()
+                                        .child(studio_label),
+                                ),
+                        ),
+                )
             })
-            // Round volume button
+            // Device selection button - hidden on narrow screens
+            .when(show_studio_device, |el| {
+                el.child(
+                    div()
+                        .id("device-selector")
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(surface_hover))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.show_device_popup = !state.app.show_device_popup;
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .gap_1()
+                                // Speaker icon
+                                .child(
+                                    Icon::new(IconName::Speaker)
+                                        .size(IconSize::Xxl)
+                                        .color(theme_clone.text_secondary),
+                                )
+                                // Device name below (truncated to 7 chars)
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(text_secondary)
+                                        .text_center()
+                                        .child(current_device),
+                                ),
+                        ),
+                )
+            })
+            // Round volume button - always visible
             .child(self.render_volume_button(volume, muted, theme_clone, cx))
     }
 
     /// Render the device selection popup
-    fn render_device_popup(
+    pub(crate) fn render_device_popup(
         &self,
         header_label: &'static str,
         cx: &mut Context<Self>,
@@ -717,8 +755,8 @@ impl PlayerView {
         div()
             .id("device-popup")
             .absolute()
-            .bottom(px(40.0))
-            .right_0()
+            .bottom(px(100.0)) // Positioned above the footer
+            .right(px(10.0))
             .w(px(250.0))
             .max_h(px(300.0))
             .bg(theme.surface)
@@ -728,6 +766,9 @@ impl PlayerView {
             .shadow_lg()
             .py_1()
             .overflow_y_scroll()
+            // Stop click propagation so overlay doesn't close popup
+            .on_mouse_down(MouseButton::Left, |_, _, _| {})
+            .on_mouse_up(MouseButton::Left, |_, _, _| {})
             // Header
             .child(
                 div()
@@ -777,6 +818,12 @@ impl PlayerView {
                                 state.app.selected_output_device_index = idx;
                                 state.app.current_output_device_name = Some(device_name.clone());
                                 state.app.show_device_popup = false;
+                                
+                                // Apply the device selection to the player
+                                let mut player = state.player.lock();
+                                if let Err(e) = player.set_output_device(device_name.clone()) {
+                                    log::error!("Failed to set output device: {}", e);
+                                }
                             });
                             cx.notify();
                         }),
@@ -797,9 +844,10 @@ impl PlayerView {
         let show_popup = self.state.read(cx).app.show_device_popup;
 
         div().absolute().inset_0().when(show_popup, |el| {
-            el.on_mouse_down(
+            // Use mouse_up so popup items can handle mouse_down first
+            el.on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
+                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
                         state.app.show_device_popup = false;
                     });

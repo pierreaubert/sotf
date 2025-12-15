@@ -6,15 +6,14 @@
 //! 3. Listen - Preview and apply EQ to playback
 //! 4. Save - Export format selection and save
 
-use crate::app::types::{AutoEqField, HeadphoneEqStep, RoomEqAlgorithm};
+use crate::app::types::HeadphoneEqStep;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Accordion, AccordionItem, AccordionMode, AccordionTheme, AutoEqAlgorithm as UiAutoEqAlgorithm,
-    AutoEqConfig, AutoEqField as UiAutoEqField, AutoEqForm, AutoEqFormUiState, Button, ButtonSize,
-    ButtonTheme, ButtonVariant, Card, HStack, Progress, ProgressSize, StackAlign, StackSpacing,
-    Text, TextSize, TextWeight, VStack,
+    Accordion, AccordionItem, AccordionMode, AccordionTheme, AutoEqConfig, AutoEqForm,
+    AutoEqFormUiState, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Progress,
+    ProgressSize, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 /// Target curve options for headphone EQ
@@ -439,58 +438,62 @@ impl PlayerView {
         let headphone_eq = &state.app.headphone_eq_state;
 
         // Build AutoEqConfig from our HeadphoneEqOptimizerConfig
+        let config = &headphone_eq.optimizer_config;
         let autoeq_config = AutoEqConfig {
-            algorithm: match headphone_eq.optimizer_config.algorithm {
-                RoomEqAlgorithm::Cobyla => UiAutoEqAlgorithm::Cobyla,
-                RoomEqAlgorithm::DifferentialEvolution => UiAutoEqAlgorithm::DifferentialEvolution,
-                RoomEqAlgorithm::NelderMead => UiAutoEqAlgorithm::NelderMead,
-            },
-            num_filters: headphone_eq.optimizer_config.num_filters,
-            min_q: headphone_eq.optimizer_config.min_q,
-            max_q: headphone_eq.optimizer_config.max_q,
-            min_db: headphone_eq.optimizer_config.min_db,
-            max_db: headphone_eq.optimizer_config.max_db,
-            min_freq: headphone_eq.optimizer_config.min_freq,
-            max_freq: headphone_eq.optimizer_config.max_freq,
-            max_iter: headphone_eq.optimizer_config.max_iter,
+            num_filters: config.num_filters,
+            sample_rate: 48000,
+            min_db: config.min_db,
+            max_db: config.max_db,
+            min_q: config.min_q,
+            max_q: config.max_q,
+            min_freq: config.min_freq,
+            max_freq: config.max_freq,
+            peq_model: "pk".to_string(),
+            algo: match config.algorithm {
+                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
+                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
+                crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
+            }
+            .to_string(),
+            population: 100,
+            maxeval: config.max_iter,
+            de_f: 0.8,
+            de_cr: 0.9,
+            strategy: "currenttobest1bin".to_string(),
+            refine: false,
+            local_algo: "cobyla".to_string(),
+            smooth: false,
         };
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            algorithm_open: headphone_eq.dropdowns.algorithm_open,
-            editing_field: headphone_eq.dropdowns.autoeq_editing_field.map(|f| match f {
-                AutoEqField::NumFilters => UiAutoEqField::NumFilters,
-                AutoEqField::MinQ => UiAutoEqField::MinQ,
-                AutoEqField::MaxQ => UiAutoEqField::MaxQ,
-                AutoEqField::MinDb => UiAutoEqField::MinDb,
-                AutoEqField::MaxDb => UiAutoEqField::MaxDb,
-                AutoEqField::MinFreq => UiAutoEqField::MinFreq,
-                AutoEqField::MaxFreq => UiAutoEqField::MaxFreq,
-                AutoEqField::MaxIter => UiAutoEqField::MaxIter,
-            }),
-            edit_text: headphone_eq.dropdowns.autoeq_edit_text.clone(),
+            algo_open: headphone_eq.dropdowns.algorithm_open,
+            peq_model_open: false,
+            strategy_open: false,
+            local_algo_open: false,
         };
 
         // Build the AutoEQ form with handlers
         let autoeq_form = AutoEqForm::new("headphone-eq-optimizer-form")
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
-            .on_algorithm_change({
+            .show_optimization_tuning(false) // Only show EQ Design section
+            .on_algo_change({
                 let state = self.state.clone();
-                move |alg, _window, cx| {
+                move |algo, _window, cx| {
+                    use crate::app::types::RoomEqAlgorithm;
                     state.update(cx, |state, _cx| {
-                        state.app.headphone_eq_state.optimizer_config.algorithm = match alg {
-                            UiAutoEqAlgorithm::Cobyla => RoomEqAlgorithm::Cobyla,
-                            UiAutoEqAlgorithm::DifferentialEvolution => {
-                                RoomEqAlgorithm::DifferentialEvolution
-                            }
-                            UiAutoEqAlgorithm::NelderMead => RoomEqAlgorithm::NelderMead,
+                        state.app.headphone_eq_state.optimizer_config.algorithm = match algo {
+                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
+                            "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
+                            "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
+                            _ => RoomEqAlgorithm::Cobyla,
                         };
                         state.app.headphone_eq_state.dropdowns.algorithm_open = false;
                     });
                 }
             })
-            .on_algorithm_toggle({
+            .on_algo_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
@@ -554,64 +557,11 @@ impl PlayerView {
                     });
                 }
             })
-            .on_max_iter_change({
+            .on_maxeval_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
                         state.app.headphone_eq_state.optimizer_config.max_iter = value;
-                    });
-                }
-            })
-            .on_field_edit_start({
-                let state = self.state.clone();
-                move |field, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        let local_field = match field {
-                            UiAutoEqField::NumFilters => AutoEqField::NumFilters,
-                            UiAutoEqField::MinQ => AutoEqField::MinQ,
-                            UiAutoEqField::MaxQ => AutoEqField::MaxQ,
-                            UiAutoEqField::MinDb => AutoEqField::MinDb,
-                            UiAutoEqField::MaxDb => AutoEqField::MaxDb,
-                            UiAutoEqField::MinFreq => AutoEqField::MinFreq,
-                            UiAutoEqField::MaxFreq => AutoEqField::MaxFreq,
-                            UiAutoEqField::MaxIter => AutoEqField::MaxIter,
-                        };
-                        state.app.headphone_eq_state.dropdowns.autoeq_editing_field =
-                            Some(local_field);
-                        // Initialize edit text with current value
-                        let config = &state.app.headphone_eq_state.optimizer_config;
-                        state.app.headphone_eq_state.dropdowns.autoeq_edit_text = match field {
-                            UiAutoEqField::NumFilters => config.num_filters.to_string(),
-                            UiAutoEqField::MinQ => format!("{:.1}", config.min_q),
-                            UiAutoEqField::MaxQ => format!("{:.1}", config.max_q),
-                            UiAutoEqField::MinDb => format!("{:.1}", config.min_db),
-                            UiAutoEqField::MaxDb => format!("{:.1}", config.max_db),
-                            UiAutoEqField::MinFreq => format!("{:.0}", config.min_freq),
-                            UiAutoEqField::MaxFreq => format!("{:.0}", config.max_freq),
-                            UiAutoEqField::MaxIter => config.max_iter.to_string(),
-                        };
-                    });
-                }
-            })
-            .on_field_edit_end({
-                let state = self.state.clone();
-                move |_window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.headphone_eq_state.dropdowns.autoeq_editing_field = None;
-                        state
-                            .app
-                            .headphone_eq_state
-                            .dropdowns
-                            .autoeq_edit_text
-                            .clear();
-                    });
-                }
-            })
-            .on_edit_text_change({
-                let state = self.state.clone();
-                move |text, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.headphone_eq_state.dropdowns.autoeq_edit_text = text;
                     });
                 }
             });
@@ -1247,22 +1197,20 @@ impl PlayerView {
                             )
                             .item(
                                 AccordionItem::new("eq-design", "EQ Design Parameters").content(
-                                    self.render_eq_design_params(
+                                    self.render_autoeq_form_eq_design(
                                         &headphone_params,
                                         &headphone_opt_ui,
                                         "headphone",
-                                        &theme,
                                         cx,
                                     ),
                                 ),
                             )
                             .item(
                                 AccordionItem::new("tuning", "Optimization Fine Tuning").content(
-                                    self.render_optimization_tuning_params(
+                                    self.render_autoeq_form_optimization(
                                         &headphone_params,
                                         &headphone_opt_ui,
                                         "headphone",
-                                        &theme,
                                         cx,
                                     ),
                                 ),
@@ -2064,5 +2012,283 @@ impl PlayerView {
                     .bg(grid_color),
             )
             .child(curve)
+    }
+
+    // ========================================================================
+    // AutoEQ Form Helpers
+    // ========================================================================
+
+    /// Render the EQ Design section of the AutoEQ form
+    fn render_autoeq_form_eq_design(
+        &self,
+        params: &crate::optimization_params::OptimizationParams,
+        ui_state: &crate::app::types::OptimizationUiState,
+        prefix: &str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let autoeq_config = AutoEqConfig {
+            num_filters: params.num_filters,
+            sample_rate: params.sample_rate,
+            min_db: params.min_db,
+            max_db: params.max_db,
+            min_q: params.min_q,
+            max_q: params.max_q,
+            min_freq: params.min_freq,
+            max_freq: params.max_freq,
+            peq_model: params.peq_model.clone(),
+            algo: params.algo.clone(),
+            population: params.population,
+            maxeval: params.maxeval,
+            de_f: params.de_f,
+            de_cr: params.de_cr,
+            strategy: params.strategy.clone(),
+            refine: params.refine,
+            local_algo: params.local_algo.clone(),
+            smooth: params.smooth,
+        };
+
+        let autoeq_ui_state = AutoEqFormUiState {
+            algo_open: ui_state.algo_open,
+            peq_model_open: ui_state.peq_model_open,
+            strategy_open: ui_state.strategy_open,
+            local_algo_open: ui_state.local_algo_open,
+        };
+
+        let form_id = SharedString::from(format!("{}-eq-design-form", prefix));
+        let is_headphone = prefix == "headphone";
+
+        let mut form = AutoEqForm::new(form_id)
+            .config(autoeq_config)
+            .ui_state(autoeq_ui_state)
+            .show_eq_design(true)
+            .show_optimization_tuning(false);
+
+        // Wire up basic callbacks
+        if is_headphone {
+            form = form
+                .on_num_filters_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.num_filters = value;
+                        });
+                    }
+                })
+                .on_min_db_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.min_db = value;
+                        });
+                    }
+                })
+                .on_max_db_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.max_db = value;
+                        });
+                    }
+                })
+                .on_min_q_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.min_q = value;
+                        });
+                    }
+                })
+                .on_max_q_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.max_q = value;
+                        });
+                    }
+                })
+                .on_min_freq_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.min_freq = value;
+                        });
+                    }
+                })
+                .on_max_freq_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.max_freq = value;
+                        });
+                    }
+                })
+                .on_peq_model_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.peq_model = value.to_string();
+                        });
+                    }
+                })
+                .on_peq_model_toggle({
+                    let state = self.state.clone();
+                    move |open, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_opt_ui.peq_model_open = open;
+                        });
+                    }
+                });
+        }
+
+        form
+    }
+
+    /// Render the Optimization Fine Tuning section of the AutoEQ form
+    fn render_autoeq_form_optimization(
+        &self,
+        params: &crate::optimization_params::OptimizationParams,
+        ui_state: &crate::app::types::OptimizationUiState,
+        prefix: &str,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let autoeq_config = AutoEqConfig {
+            num_filters: params.num_filters,
+            sample_rate: params.sample_rate,
+            min_db: params.min_db,
+            max_db: params.max_db,
+            min_q: params.min_q,
+            max_q: params.max_q,
+            min_freq: params.min_freq,
+            max_freq: params.max_freq,
+            peq_model: params.peq_model.clone(),
+            algo: params.algo.clone(),
+            population: params.population,
+            maxeval: params.maxeval,
+            de_f: params.de_f,
+            de_cr: params.de_cr,
+            strategy: params.strategy.clone(),
+            refine: params.refine,
+            local_algo: params.local_algo.clone(),
+            smooth: params.smooth,
+        };
+
+        let autoeq_ui_state = AutoEqFormUiState {
+            algo_open: ui_state.algo_open,
+            peq_model_open: ui_state.peq_model_open,
+            strategy_open: ui_state.strategy_open,
+            local_algo_open: ui_state.local_algo_open,
+        };
+
+        let form_id = SharedString::from(format!("{}-optimization-form", prefix));
+        let is_headphone = prefix == "headphone";
+
+        let mut form = AutoEqForm::new(form_id)
+            .config(autoeq_config)
+            .ui_state(autoeq_ui_state)
+            .show_eq_design(false)
+            .show_optimization_tuning(true);
+
+        // Wire up basic callbacks
+        if is_headphone {
+            form = form
+                .on_algo_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.algo = value.to_string();
+                        });
+                    }
+                })
+                .on_algo_toggle({
+                    let state = self.state.clone();
+                    move |open, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_opt_ui.algo_open = open;
+                        });
+                    }
+                })
+                .on_population_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.population = value;
+                        });
+                    }
+                })
+                .on_maxeval_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.maxeval = value;
+                        });
+                    }
+                })
+                .on_de_f_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.de_f = value;
+                        });
+                    }
+                })
+                .on_de_cr_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.de_cr = value;
+                        });
+                    }
+                })
+                .on_strategy_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.strategy = value.to_string();
+                        });
+                    }
+                })
+                .on_strategy_toggle({
+                    let state = self.state.clone();
+                    move |open, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_opt_ui.strategy_open = open;
+                        });
+                    }
+                })
+                .on_refine_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.refine = value;
+                        });
+                    }
+                })
+                .on_local_algo_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.local_algo = value.to_string();
+                        });
+                    }
+                })
+                .on_local_algo_toggle({
+                    let state = self.state.clone();
+                    move |open, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_opt_ui.local_algo_open = open;
+                        });
+                    }
+                })
+                .on_smooth_change({
+                    let state = self.state.clone();
+                    move |value, _window, cx| {
+                        state.update(cx, |state, _cx| {
+                            state.app.headphone_params.smooth = value;
+                        });
+                    }
+                });
+        }
+
+        form
     }
 }

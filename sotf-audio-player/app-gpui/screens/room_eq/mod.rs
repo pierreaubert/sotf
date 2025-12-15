@@ -7,14 +7,14 @@
 //! 4. Review - Review results and visualizations
 //! 5. Export - Export DSP chain and apply
 
-use crate::app::types::{AutoEqField, MeasureState, RoomEqAlgorithm, RoomEqStep};
+use crate::app::types::{RoomEqAlgorithm, RoomEqStep};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    AutoEqAlgorithm as UiAutoEqAlgorithm, AutoEqConfig, AutoEqField as UiAutoEqField, AutoEqForm,
-    AutoEqFormUiState, Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing,
-    Text, TextSize, TextWeight, VStack,
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Button, ButtonSize, ButtonVariant, Card, HStack,
+    StackAlign, StackSpacing, StepStatus, Text, TextSize, TextWeight, VStack, WizardHeader,
+    WizardStep,
 };
 
 impl PlayerView {
@@ -49,72 +49,40 @@ impl PlayerView {
             )
     }
 
-    /// Render the room EQ screen header with step indicators
+    /// Render the room EQ screen header with step indicators using WizardHeader
     fn render_room_eq_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let current_step = state.app.room_eq_state.step;
 
-        // Helper function to build step indicator
-        let build_step_indicator =
-            |step: RoomEqStep, label: &'static str, number: u8, theme: &crate::theme::Theme| {
-                let is_active = current_step == step;
-                let is_past = current_step.index() > step.index();
+        // Build wizard steps
+        let steps = vec![
+            WizardStep::new("load-data", "Load Data"),
+            WizardStep::new("configure", "Configure"),
+            WizardStep::new("optimize", "Optimize"),
+            WizardStep::new("review", "Review"),
+            WizardStep::new("export", "Export"),
+        ];
 
-                let (bg_color, text_color, border_color) = if is_active {
-                    (theme.accent, theme.text_on_accent, theme.accent)
-                } else if is_past {
-                    (theme.success, theme.text_on_accent, theme.success)
+        // Build step statuses based on current step
+        let step_statuses: Vec<StepStatus> = RoomEqStep::all()
+            .iter()
+            .map(|step| {
+                if step.index() < current_step.index() {
+                    StepStatus::Completed
+                } else if step.index() == current_step.index() {
+                    StepStatus::Active
                 } else {
-                    (theme.surface, theme.text_muted, theme.border)
-                };
-
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .align(StackAlign::Center)
-                    .child(
-                        div()
-                            .w(px(28.0))
-                            .h(px(28.0))
-                            .rounded_full()
-                            .bg(bg_color)
-                            .border_2()
-                            .border_color(border_color)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                Text::new(number.to_string())
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Bold)
-                                    .color(text_color),
-                            ),
-                    )
-                    .child(
-                        Text::new(label)
-                            .size(TextSize::Sm)
-                            .weight(if is_active {
-                                TextWeight::Bold
-                            } else {
-                                TextWeight::Normal
-                            })
-                            .color(if is_active {
-                                theme.text_primary
-                            } else {
-                                theme.text_muted
-                            }),
-                    )
-            };
-
-        // Build step connector
-        let connector = |from: RoomEqStep, theme: &crate::theme::Theme| {
-            let is_completed = current_step.index() > from.index();
-            div().w(px(32.0)).h(px(2.0)).bg(if is_completed {
-                theme.success
-            } else {
-                theme.border
+                    StepStatus::NotVisited
+                }
             })
-        };
+            .collect();
+
+        let wizard_header = WizardHeader::new()
+            .title("Room EQ")
+            .steps(steps)
+            .step_statuses(step_statuses)
+            .current_step(current_step.index());
 
         div()
             .flex()
@@ -125,52 +93,7 @@ impl PlayerView {
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Lg)
-                    .align(StackAlign::Center)
-                    .child(
-                        Text::new("Room EQ")
-                            .size(TextSize::Xl)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
-                    .child(div().w(px(1.0)).h(px(24.0)).bg(theme.border))
-                    .child(build_step_indicator(
-                        RoomEqStep::LoadData,
-                        "Load Data",
-                        1,
-                        &theme,
-                    ))
-                    .child(connector(RoomEqStep::LoadData, &theme))
-                    .child(build_step_indicator(
-                        RoomEqStep::Configure,
-                        "Configure",
-                        2,
-                        &theme,
-                    ))
-                    .child(connector(RoomEqStep::Configure, &theme))
-                    .child(build_step_indicator(
-                        RoomEqStep::Optimize,
-                        "Optimize",
-                        3,
-                        &theme,
-                    ))
-                    .child(connector(RoomEqStep::Optimize, &theme))
-                    .child(build_step_indicator(
-                        RoomEqStep::Review,
-                        "Review",
-                        4,
-                        &theme,
-                    ))
-                    .child(connector(RoomEqStep::Review, &theme))
-                    .child(build_step_indicator(
-                        RoomEqStep::Export,
-                        "Export",
-                        5,
-                        &theme,
-                    )),
-            )
+            .child(wizard_header)
             .child(self.render_room_eq_nav_buttons(cx))
     }
 
@@ -198,60 +121,54 @@ impl PlayerView {
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(is_busy)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    match state.app.room_eq_state.step {
-                                        RoomEqStep::LoadData => {
-                                            // Go back to previous screen
-                                            state.app.current_screen = state.app.last_screen;
-                                        }
-                                        _ => {
-                                            // Go back to previous step
-                                            if let Some(prev) =
-                                                state.app.room_eq_state.step.previous()
-                                            {
-                                                state.app.room_eq_state.step = prev;
-                                            }
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _window, cx| {
+                            this.state.update(cx, |state, _| {
+                                match state.app.room_eq_state.step {
+                                    RoomEqStep::LoadData => {
+                                        // Go back to previous screen
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        // Go back to previous step
+                                        if let Some(prev) = state.app.room_eq_state.step.previous() {
+                                            state.app.room_eq_state.step = prev;
                                         }
                                     }
-                                });
-                                cx.notify();
+                                }
                             });
-                        }
-                    }),
+                            cx.notify();
+                        }),
+                    ),
             )
             .child(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Md)
                     .disabled(!can_go_next || is_busy)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    match state.app.room_eq_state.step {
-                                        RoomEqStep::Export => {
-                                            // Finish - apply and go back
-                                            // TODO: Apply DSP chain
-                                            state.app.current_screen = state.app.last_screen;
-                                        }
-                                        _ => {
-                                            // Go to next step
-                                            if let Some(next) = state.app.room_eq_state.step.next()
-                                            {
-                                                state.app.room_eq_state.step = next;
-                                            }
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _window, cx| {
+                            this.state.update(cx, |state, _| {
+                                match state.app.room_eq_state.step {
+                                    RoomEqStep::Export => {
+                                        // Finish - apply and go back
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        // Go to next step
+                                        if let Some(next) = state.app.room_eq_state.step.next() {
+                                            state.app.room_eq_state.step = next;
                                         }
                                     }
-                                });
-                                cx.notify();
+                                }
                             });
-                        }
-                    }),
+                            cx.notify();
+                        }),
+                    ),
             )
     }
 
@@ -446,58 +363,60 @@ impl PlayerView {
         let room_eq = &state.app.room_eq_state;
 
         // Build AutoEqConfig from our RoomEqOptimizerConfig
+        let config = &room_eq.optimizer_config;
         let autoeq_config = AutoEqConfig {
-            algorithm: match room_eq.optimizer_config.algorithm {
-                RoomEqAlgorithm::Cobyla => UiAutoEqAlgorithm::Cobyla,
-                RoomEqAlgorithm::DifferentialEvolution => UiAutoEqAlgorithm::DifferentialEvolution,
-                RoomEqAlgorithm::NelderMead => UiAutoEqAlgorithm::NelderMead,
-            },
-            num_filters: room_eq.optimizer_config.num_filters,
-            min_q: room_eq.optimizer_config.min_q,
-            max_q: room_eq.optimizer_config.max_q,
-            min_db: room_eq.optimizer_config.min_db,
-            max_db: room_eq.optimizer_config.max_db,
-            min_freq: room_eq.optimizer_config.min_freq,
-            max_freq: room_eq.optimizer_config.max_freq,
-            max_iter: room_eq.optimizer_config.max_iter,
+            num_filters: config.num_filters,
+            sample_rate: 48000,
+            min_db: config.min_db,
+            max_db: config.max_db,
+            min_q: config.min_q,
+            max_q: config.max_q,
+            min_freq: config.min_freq,
+            max_freq: config.max_freq,
+            peq_model: "pk".to_string(),
+            algo: match config.algorithm {
+                RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
+                RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
+                RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
+            }
+            .to_string(),
+            population: 100,
+            maxeval: config.max_iter,
+            de_f: 0.8,
+            de_cr: 0.9,
+            strategy: "currenttobest1bin".to_string(),
+            refine: false,
+            local_algo: "cobyla".to_string(),
+            smooth: false,
         };
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
-            algorithm_open: room_eq.dropdowns.algorithm_open,
-            editing_field: room_eq.dropdowns.autoeq_editing_field.map(|f| match f {
-                AutoEqField::NumFilters => UiAutoEqField::NumFilters,
-                AutoEqField::MinQ => UiAutoEqField::MinQ,
-                AutoEqField::MaxQ => UiAutoEqField::MaxQ,
-                AutoEqField::MinDb => UiAutoEqField::MinDb,
-                AutoEqField::MaxDb => UiAutoEqField::MaxDb,
-                AutoEqField::MinFreq => UiAutoEqField::MinFreq,
-                AutoEqField::MaxFreq => UiAutoEqField::MaxFreq,
-                AutoEqField::MaxIter => UiAutoEqField::MaxIter,
-            }),
-            edit_text: room_eq.dropdowns.autoeq_edit_text.clone(),
+            algo_open: room_eq.dropdowns.algorithm_open,
+            peq_model_open: false,
+            strategy_open: false,
+            local_algo_open: false,
         };
 
         // Build the AutoEQ form with handlers
         let autoeq_form = AutoEqForm::new("room-eq-optimizer-form")
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
-            .on_algorithm_change({
+            .on_algo_change({
                 let state = self.state.clone();
-                move |alg, _window, cx| {
+                move |algo, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.room_eq_state.optimizer_config.algorithm = match alg {
-                            UiAutoEqAlgorithm::Cobyla => RoomEqAlgorithm::Cobyla,
-                            UiAutoEqAlgorithm::DifferentialEvolution => {
-                                RoomEqAlgorithm::DifferentialEvolution
-                            }
-                            UiAutoEqAlgorithm::NelderMead => RoomEqAlgorithm::NelderMead,
+                        state.app.room_eq_state.optimizer_config.algorithm = match algo {
+                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
+                            "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
+                            "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
+                            _ => RoomEqAlgorithm::Cobyla,
                         };
                         state.app.room_eq_state.dropdowns.algorithm_open = false;
                     });
                 }
             })
-            .on_algorithm_toggle({
+            .on_algo_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
@@ -561,58 +480,11 @@ impl PlayerView {
                     });
                 }
             })
-            .on_max_iter_change({
+            .on_maxeval_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
                         state.app.room_eq_state.optimizer_config.max_iter = value;
-                    });
-                }
-            })
-            .on_field_edit_start({
-                let state = self.state.clone();
-                move |field, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        let local_field = match field {
-                            UiAutoEqField::NumFilters => AutoEqField::NumFilters,
-                            UiAutoEqField::MinQ => AutoEqField::MinQ,
-                            UiAutoEqField::MaxQ => AutoEqField::MaxQ,
-                            UiAutoEqField::MinDb => AutoEqField::MinDb,
-                            UiAutoEqField::MaxDb => AutoEqField::MaxDb,
-                            UiAutoEqField::MinFreq => AutoEqField::MinFreq,
-                            UiAutoEqField::MaxFreq => AutoEqField::MaxFreq,
-                            UiAutoEqField::MaxIter => AutoEqField::MaxIter,
-                        };
-                        state.app.room_eq_state.dropdowns.autoeq_editing_field = Some(local_field);
-                        // Initialize edit text with current value
-                        let config = &state.app.room_eq_state.optimizer_config;
-                        state.app.room_eq_state.dropdowns.autoeq_edit_text = match field {
-                            UiAutoEqField::NumFilters => config.num_filters.to_string(),
-                            UiAutoEqField::MinQ => format!("{:.1}", config.min_q),
-                            UiAutoEqField::MaxQ => format!("{:.1}", config.max_q),
-                            UiAutoEqField::MinDb => format!("{:.1}", config.min_db),
-                            UiAutoEqField::MaxDb => format!("{:.1}", config.max_db),
-                            UiAutoEqField::MinFreq => format!("{:.0}", config.min_freq),
-                            UiAutoEqField::MaxFreq => format!("{:.0}", config.max_freq),
-                            UiAutoEqField::MaxIter => config.max_iter.to_string(),
-                        };
-                    });
-                }
-            })
-            .on_field_edit_end({
-                let state = self.state.clone();
-                move |_window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.room_eq_state.dropdowns.autoeq_editing_field = None;
-                        state.app.room_eq_state.dropdowns.autoeq_edit_text.clear();
-                    });
-                }
-            })
-            .on_edit_text_change({
-                let state = self.state.clone();
-                move |text, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.room_eq_state.dropdowns.autoeq_edit_text = text;
                     });
                 }
             });
@@ -1486,60 +1358,6 @@ impl PlayerView {
         });
     }
 
-    // Settings content (legacy, kept for compatibility)
-    pub(crate) fn render_roomeq_settings_content(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-
-        VStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(
-                Card::new()
-                    .header(Text::new("Data Acquisition").weight(TextWeight::Semibold))
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new(
-                                    "Measure your room impulse response to calculate correction filters.",
-                                )
-                                .size(TextSize::Sm)
-                                .color(theme.text_secondary),
-                            )
-                            .child(
-                                Button::new("meas_btn", "Measure Room Response")
-                                    .variant(ButtonVariant::Primary)
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.measure_state =
-                                                    Some(MeasureState::default());
-                                            });
-                                        }),
-                                    ),
-                            ),
-                    ),
-            )
-            .child(
-                Card::new()
-                    .header(
-                        Text::new("Room Correction (Coming Soon)").weight(TextWeight::Semibold),
-                    )
-                    .content(
-                        Text::new(
-                            "Optimization logic will be integrated after measurements are available.",
-                        )
-                        .size(TextSize::Sm)
-                        .color(theme.text_secondary),
-                    ),
-            )
-            .into_any_element()
-    }
 }
 
 // === Free functions for channel configuration UI ===

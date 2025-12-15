@@ -1,5 +1,5 @@
 [package]
-name = "sotf_head_scanner"
+name = "sotf-head-scanner"
 version = { workspace = true }
 authors = { workspace = true }
 description = "3D head scanner using computer vision for HRTF optimization"

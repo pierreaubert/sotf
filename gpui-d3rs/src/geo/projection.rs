@@ -1069,7 +1069,7 @@ mod tests {
     #[test]
     fn test_conic_equal_area_project() {
         let proj = ConicEqualArea::new().scale(100.0).translate(0.0, 0.0);
-        let (x, y) = proj.project(0.0, 33.6442); // At center
+        let (x, _y) = proj.project(0.0, 33.6442); // At center
         assert!(x.abs() < EPSILON);
         // y should be near 0 at center latitude
     }

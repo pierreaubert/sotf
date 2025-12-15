@@ -43,7 +43,6 @@ default-members = [
     "sotf-audio-plugins",
     "sotf-audio-player",
     "sotf-audio-player/app-tui",
-    "sotf-audio-player/app-gpui",
     "sotf-audio-midi",
     "gpui-d3rs",
     "gpui-px",

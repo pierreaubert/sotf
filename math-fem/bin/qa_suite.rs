@@ -196,10 +196,12 @@ fn run_sphere_scattering_test(
             let prefactor = 2.0 * n_f64 + 1.0;
             let i_pow = Complex64::new((n_f64 * PI / 2.0).cos(), (n_f64 * PI / 2.0).sin());
             
-            let jn = math_wave::special::spherical_bessel_j(n, kr);
-            let yn = math_wave::special::spherical_bessel_y(n, kr);
+            let j_vals = math_wave::special::spherical_bessel_j(n as usize + 1, kr);
+            let y_vals = math_wave::special::spherical_bessel_y(n as usize + 1, kr);
+            let jn = j_vals[n as usize];
+            let yn = y_vals[n as usize];
             let hn = Complex64::new(jn, yn);
-            let pn = math_wave::special::legendre_p(n, cos_theta);
+            let pn = math_wave::special::legendre_p(n as usize, cos_theta);
             
             total += prefactor * i_pow * (jn - coeff * hn) * pn;
         }
@@ -264,13 +266,28 @@ fn compute_rigid_sphere_coefficients(ka: f64, num_terms: usize) -> Vec<Complex64
     let mut coefficients = Vec::with_capacity(num_terms);
     for n in 0..num_terms {
         let n_f64 = n as f64;
-        let jn = math_wave::special::spherical_bessel_j(n, ka);
-        let yn = math_wave::special::spherical_bessel_y(n, ka);
         
-        let jn_minus_1 = if n > 0 { math_wave::special::spherical_bessel_j(n - 1, ka) } else { ka.cos() / ka };
+        // Compute jn(ka) and yn(ka)
+        let j_n_vals = math_wave::special::spherical_bessel_j(n as usize + 1, ka);
+        let y_n_vals = math_wave::special::spherical_bessel_y(n as usize + 1, ka);
+        let jn = j_n_vals[n as usize];
+        let yn = y_n_vals[n as usize];
+
+        // Compute j_{n-1}(ka) and y_{n-1}(ka)
+        let jn_minus_1 = if n > 0 { 
+            math_wave::special::spherical_bessel_j(n as usize, ka)[(n - 1) as usize] 
+        } else { 
+            ka.cos() / ka 
+        };
+        let yn_minus_1 = if n > 0 { 
+            math_wave::special::spherical_bessel_y(n as usize, ka)[(n - 1) as usize] 
+        } else { 
+            -ka.sin() / ka 
+        };
+        
+        // j_n'(x) = j_{n-1}(x) - (n+1)/x * j_n(x)
         let jn_prime = jn_minus_1 - (n_f64 + 1.0) / ka * jn;
-        
-        let yn_minus_1 = if n > 0 { math_wave::special::spherical_bessel_y(n - 1, ka) } else { -ka.sin() / ka };
+        // y_n'(x) = y_{n-1}(x) - (n+1)/x * y_n(x)
         let yn_prime = yn_minus_1 - (n_f64 + 1.0) / ka * yn;
         
         let hn_prime = Complex64::new(jn_prime, yn_prime);

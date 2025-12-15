@@ -3705,10 +3705,11 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "gpui",
  "gpui_macros",
+ "serde",
 ]
 
 [[package]]
@@ -8773,6 +8774,7 @@ dependencies = [
  "autoeq-de",
  "autoeq-iir",
  "autoeq-roomsim",
+ "chrono",
  "clap",
  "cpal",
  "env_logger 0.11.8",
@@ -8808,6 +8810,44 @@ dependencies = [
  "tempfile",
  "tokio",
  "walkdir",
+]
+
+[[package]]
+name = "sotf-head-scanner"
+version = "0.5.4"
+dependencies = [
+ "anyhow",
+ "approx",
+ "bytemuck",
+ "byteorder",
+ "chrono",
+ "clap",
+ "convexhull3d",
+ "delaunator",
+ "env_logger 0.11.8",
+ "futures",
+ "hdf5-metno",
+ "image",
+ "imageproc",
+ "indicatif",
+ "kiddo",
+ "log",
+ "nalgebra 0.33.2",
+ "nalgebra-sparse",
+ "ndarray 0.16.1",
+ "netcdf",
+ "num-complex",
+ "opencv",
+ "ort",
+ "parking_lot",
+ "parry3d",
+ "rayon",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
@@ -8861,44 +8901,6 @@ dependencies = [
  "rb",
  "tempfile",
  "thiserror 1.0.69",
-]
-
-[[package]]
-name = "sotf_head_scanner"
-version = "0.5.4"
-dependencies = [
- "anyhow",
- "approx",
- "bytemuck",
- "byteorder",
- "chrono",
- "clap",
- "convexhull3d",
- "delaunator",
- "env_logger 0.11.8",
- "futures",
- "hdf5-metno",
- "image",
- "imageproc",
- "indicatif",
- "kiddo",
- "log",
- "nalgebra 0.33.2",
- "nalgebra-sparse",
- "ndarray 0.16.1",
- "netcdf",
- "num-complex",
- "opencv",
- "ort",
- "parking_lot",
- "parry3d",
- "rayon",
- "rustfft",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
 ]
 
 [[package]]

@@ -4,18 +4,12 @@
 
 use crate::app::types::{ChannelRecordingState, RecordingResult, RecordingSignalType};
 use crate::ui::PlayerView;
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
-use d3rs::color::D3Color;
-use d3rs::grid::{render_grid, GridConfig};
-use d3rs::prelude::LogScale;
-use d3rs::scale::LinearScale;
-use d3rs::shape::{render_line, LineConfig, LinePoint};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput,
-    NumberInputSize, Progress, ProgressSize, ProgressVariant, Select, SelectOption, StackAlign,
-    StackJustify, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, NumberInputSize, Progress,
+    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify, StackSpacing,
+    Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -44,8 +38,7 @@ impl PlayerView {
             )
             .child(self.render_signal_config_section(cx))
             .child(self.render_channel_status_section(cx))
-            .child(self.render_frequency_response_plot(cx))
-            .child(self.render_capture_actions(cx))
+            .child(self.render_capture_redo_actions(cx))
     }
 
     /// Render signal configuration section
@@ -383,342 +376,11 @@ impl PlayerView {
             .into_any_element()
     }
 
-    /// Render frequency response plot with d3rs
-    fn render_frequency_response_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let recording_state = &state.app.recording_state;
-
-        // Collect results from all channels that have recordings
-        let results: Vec<(String, RecordingResult)> = recording_state
-            .channel_recordings
-            .iter()
-            .filter_map(|r| r.result.as_ref().map(|res| (r.channel_name.clone(), res.clone())))
-            .collect();
-
-        let has_results = !results.is_empty();
-
-        // Debug: Log what we found
-        if has_results {
-            log::info!("[render_frequency_response_plot] Found {} channel results", results.len());
-            for (name, result) in &results {
-                log::info!(
-                    "[render_frequency_response_plot]   {}: {} frequency points, {} magnitude points",
-                    name,
-                    result.frequencies.len(),
-                    result.magnitude_db.len()
-                );
-            }
-        } else {
-            log::info!("[render_frequency_response_plot] No results to display");
-        }
-
-        Card::new().content(
-            VStack::new()
-                .spacing(StackSpacing::Md)
-                .child(
-                    Text::new("FREQUENCY RESPONSE (20 Hz - 20 kHz)")
-                        .size(TextSize::Sm)
-                        .weight(TextWeight::Bold)
-                        .color(theme.accent),
-                )
-                .child(if has_results {
-                    self.render_frequency_response_chart(&results, &theme)
-                        .into_any_element()
-                } else {
-                    div()
-                        .h(px(300.0))
-                        .w_full()
-                        .rounded_md()
-                        .bg(theme.surface)
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .justify_center()
-                        .gap_2()
-                        .child(
-                            Text::new("Frequency Response Plot")
-                                .size(TextSize::Md)
-                                .weight(TextWeight::Semibold)
-                                .color(theme.text_secondary),
-                        )
-                        .child(
-                            Text::new(
-                                "Start recording to see frequency and phase response for all channels",
-                            )
-                            .size(TextSize::Sm)
-                            .color(theme.text_muted),
-                        )
-                        .into_any_element()
-                }),
-        )
-    }
-
-    /// Render the actual frequency response chart using d3rs
-    fn render_frequency_response_chart(
-        &self,
-        results: &[(String, RecordingResult)],
-        theme: &crate::theme::Theme,
-    ) -> impl IntoElement {
-        let chart_width: f32 = 800.0;
-        let chart_height: f32 = 300.0;
-        let margin_left: f32 = 60.0;
-        let margin_right: f32 = 20.0;
-        let margin_top: f32 = 20.0;
-        let margin_bottom: f32 = 40.0;
-
-        let plot_width = chart_width - margin_left - margin_right;
-        let plot_height = chart_height - margin_top - margin_bottom;
-
-        let axis_theme = DefaultAxisTheme;
-
-        // Create log scale for frequency (20Hz - 20kHz)
-        let x_scale = LogScale::new()
-            .domain(20.0, 20000.0)
-            .range(0.0, plot_width as f64);
-
-        // Compute normalization offset from first curve (100 Hz - 10 kHz mean)
-        let normalization_offset = if let Some((_, first_result)) = results.first() {
-            let mut sum = 0.0_f32;
-            let mut count = 0;
-
-            for (&freq, &mag) in first_result.frequencies.iter().zip(first_result.magnitude_db.iter()) {
-                if freq >= 100.0 && freq <= 10000.0 {
-                    sum += mag;
-                    count += 1;
-                }
-            }
-
-            if count > 0 {
-                let mean = sum / count as f32;
-                log::info!(
-                    "[render_frequency_response_chart] Normalization: mean of first curve (100Hz-10kHz) = {:.2} dB",
-                    mean
-                );
-                mean
-            } else {
-                log::warn!("[render_frequency_response_chart] No data in 100Hz-10kHz range for normalization");
-                0.0
-            }
-        } else {
-            0.0
-        };
-
-        // Normalize all results by subtracting the offset, then invert
-        // Inversion: positive dB = room is quiet (needs boost), negative dB = room is loud (needs cut)
-        let normalized_results: Vec<(String, RecordingResult)> = results
-            .iter()
-            .map(|(name, result)| {
-                let normalized_magnitude: Vec<f32> = result
-                    .magnitude_db
-                    .iter()
-                    .map(|&mag| -(mag - normalization_offset))
-                    .collect();
-
-                (
-                    name.clone(),
-                    RecordingResult {
-                        magnitude_db: normalized_magnitude,
-                        ..result.clone()
-                    }
-                )
-            })
-            .collect();
-
-        // Find magnitude range from normalized results
-        let (min_db, max_db) = normalized_results
-            .iter()
-            .flat_map(|(_, r)| r.magnitude_db.iter())
-            .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), &v| {
-                (min.min(v), max.max(v))
-            });
-
-        // Add some padding to the range, with sensible defaults if no data
-        let y_min = if min_db.is_finite() {
-            min_db - 5.0
-        } else {
-            -60.0
-        };
-        let y_max = if max_db.is_finite() {
-            max_db + 5.0
-        } else {
-            20.0
-        };
-
-        log::info!(
-            "[render_frequency_response_chart] Y-axis range: {:.2} dB to {:.2} dB (raw: {:.2} to {:.2})",
-            y_min,
-            y_max,
-            min_db,
-            max_db
-        );
-
-        let y_scale = LinearScale::new()
-            .domain(y_min as f64, y_max as f64)
-            .range(plot_height as f64, 0.0);
-
-        // Frequency tick values (log spaced)
-        let freq_ticks: Vec<f64> = vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
-
-        // Magnitude tick values
-        let mag_range = (y_max - y_min) as i32;
-        let mag_step = if mag_range > 40 { 10 } else if mag_range > 20 { 5 } else { 2 };
-        let mag_ticks: Vec<f64> = ((y_min as i32 / mag_step * mag_step)..=(y_max as i32 / mag_step * mag_step + mag_step))
-            .step_by(mag_step as usize)
-            .map(|v| v as f64)
-            .collect();
-
-        // Colors for different channels
-        let colors = [
-            D3Color::from_hex(0x4285f4), // Blue
-            D3Color::from_hex(0xea4335), // Red
-            D3Color::from_hex(0x34a853), // Green
-            D3Color::from_hex(0xfbbc04), // Yellow
-            D3Color::from_hex(0x9c27b0), // Purple
-            D3Color::from_hex(0x00bcd4), // Cyan
-        ];
-
-        // Build line elements for each channel (using normalized data)
-        let line_elements: Vec<_> = normalized_results
-            .iter()
-            .enumerate()
-            .map(|(idx, (name, result))| {
-                let color = colors[idx % colors.len()];
-
-                // Convert frequency/magnitude data to LinePoint
-                let points: Vec<LinePoint> = result
-                    .frequencies
-                    .iter()
-                    .zip(result.magnitude_db.iter())
-                    .filter(|&(&f, _)| f >= 20.0 && f <= 20000.0)
-                    .map(|(&f, &m)| LinePoint { x: f as f64, y: m as f64 })
-                    .collect();
-
-                log::info!(
-                    "[render_frequency_response_chart] Channel '{}': {} plot points",
-                    name,
-                    points.len()
-                );
-
-                let line_config = LineConfig::new()
-                    .stroke_color(color)
-                    .stroke_width(2.0);
-
-                render_line(&x_scale, &y_scale, &points, &line_config)
-                    .into_any_element()
-            })
-            .collect();
-
-        // Build legend
-        let legend_items: Vec<_> = normalized_results
-            .iter()
-            .enumerate()
-            .map(|(idx, (name, _))| {
-                let color = colors[idx % colors.len()];
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .child(div().w(px(12.0)).h(px(3.0)).bg(color.to_rgba()))
-                    .child(
-                        Text::new(name.clone())
-                            .size(TextSize::Xs)
-                            .color(theme.text_secondary),
-                    )
-                    .into_any_element()
-            })
-            .collect();
-
-        div()
-            .flex()
-            .flex_col()
-            .gap_2()
-            // Legend
-            .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap_4()
-                    .children(legend_items),
-            )
-            // Chart container
-            .child(
-                div()
-                    .w(px(chart_width as f32))
-                    .h(px(chart_height as f32))
-                    .bg(theme.surface)
-                    .rounded_md()
-                    .relative()
-                    // Y-axis (magnitude in dB)
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(0.0))
-                            .top(px(margin_top))
-                            .w(px(margin_left))
-                            .h(px(plot_height))
-                            .child(render_axis(
-                                &y_scale,
-                                &AxisConfig::left()
-                                    .with_tick_values(mag_ticks.clone())
-                                    .with_formatter(|v| format!("{:.0} dB", v)),
-                                plot_height,
-                                &axis_theme,
-                            )),
-                    )
-                    // Plot area
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(margin_left))
-                            .top(px(margin_top))
-                            .w(px(plot_width))
-                            .h(px(plot_height))
-                            .overflow_hidden()
-                            // Grid
-                            .child(render_grid(
-                                &x_scale,
-                                &y_scale,
-                                &GridConfig::with_lines()
-                                    .with_vertical_values(freq_ticks.clone())
-                                    .with_horizontal_values(mag_ticks),
-                                plot_width,
-                                plot_height,
-                                &axis_theme,
-                            ))
-                            // Lines
-                            .children(line_elements),
-                    )
-                    // X-axis (frequency)
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(margin_left))
-                            .top(px(margin_top + plot_height))
-                            .w(px(plot_width))
-                            .h(px(margin_bottom))
-                            .child(render_axis(
-                                &x_scale,
-                                &AxisConfig::bottom()
-                                    .with_tick_values(freq_ticks)
-                                    .with_formatter(|f| {
-                                        if f >= 1000.0 {
-                                            format!("{:.0}k", f / 1000.0)
-                                        } else {
-                                            format!("{:.0}", f)
-                                        }
-                                    }),
-                                plot_width,
-                                &axis_theme,
-                            )),
-                    ),
-            )
-    }
-
-    /// Render capture action buttons (Load/Save/Redo)
-    fn render_capture_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Render capture action buttons (redo and load from file)
+    fn render_capture_redo_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let recording_state = &state.app.recording_state;
+        let is_recording = recording_state.is_recording();
         let view = cx.entity().clone();
 
         let has_recordings = recording_state
@@ -729,42 +391,29 @@ impl PlayerView {
         HStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Button::new("load_recordings", "Load")
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Md)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.load_recordings(cx);
-                            });
-                        }
-                    }),
-            )
-            .child(
-                Button::new("save_recordings", "Save")
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Md)
-                    .disabled(!has_recordings)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.save_recordings(cx);
-                            });
-                        }
-                    }),
-            )
-            .child(
                 Button::new("redo_recordings", "Redo All")
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
-                    .disabled(!has_recordings)
+                    .disabled(!has_recordings || is_recording)
                     .on_click({
                         let view = view.clone();
                         move |_, cx| {
                             view.update(cx, |this, cx| {
                                 this.reset_all_recordings(cx);
+                            });
+                        }
+                    }),
+            )
+            .child(
+                Button::new("load_from_file", "Load from File")
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Md)
+                    .disabled(is_recording)
+                    .on_click({
+                        let view = view.clone();
+                        move |_, cx| {
+                            view.update(cx, |this, cx| {
+                                this.load_recordings_from_file(cx);
                             });
                         }
                     }),
@@ -806,6 +455,7 @@ impl PlayerView {
             sample_rate,
             mic_calibration,
             channel_name,
+            recording_directory,
         ) = {
             let state = self.state.read(cx);
             let rec_state = &state.app.recording_state;
@@ -817,6 +467,7 @@ impl PlayerView {
                 return;
             }
             let channel_name = channel_info.unwrap().channel_name.clone();
+            let recording_directory = rec_state.recording_directory.clone();
 
             // Map signal type
             let signal_type = match rec_state.signal_type {
@@ -852,7 +503,22 @@ impl PlayerView {
                 rec_state.playback_config.sample_rate,
                 rec_state.mic_calibration_path.clone(),
                 channel_name,
+                recording_directory,
             )
+        };
+
+        // Check if recording directory is set
+        let recording_dir = match recording_directory {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => {
+                log::error!("No recording directory selected");
+                self.state.update(cx, |state, _| {
+                    state.app.recording_state.status_message =
+                        "Please select a recording directory in the Configuration step".to_string();
+                });
+                cx.notify();
+                return;
+            }
         };
 
         // Update UI to show recording state
@@ -937,14 +603,14 @@ impl PlayerView {
             }
         };
 
-        // Create output paths
-        let temp_dir = std::env::temp_dir();
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let recorded_wav_path = temp_dir.join(format!("recording_ch{}_{}.wav", channel_idx, timestamp));
-        let csv_path = temp_dir.join(format!("recording_ch{}_{}.csv", channel_idx, timestamp));
+        // Create output paths in the recording directory
+        // Use channel name for descriptive filenames (sanitize for filesystem)
+        let safe_channel_name: String = channel_name
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+            .collect();
+        let recorded_wav_path = recording_dir.join(format!("{}.wav", safe_channel_name));
+        let csv_path = recording_dir.join(format!("{}.csv", safe_channel_name));
 
         // Spawn background task for recording
         let state_entity = self.state.clone();
@@ -988,51 +654,57 @@ impl PlayerView {
             let (should_auto_continue, next_channel_idx) = state_entity.update(&mut cx.clone(), |state, _| {
                 let should_continue = match result {
                     Ok(()) => {
-                        // Parse the CSV file to get frequency response data
-                        if let Ok(csv_data) = std::fs::read_to_string(&csv_path) {
-                            let mut frequencies = Vec::new();
-                            let mut magnitude_db = Vec::new();
-                            let mut phase_deg = Vec::new();
+                        // Analyze the recorded WAV file using the new library function
+                        use sotf_audio::signal_analysis::{
+                            analyze_wav_file, write_wav_analysis_csv, WavAnalysisConfig,
+                        };
 
-                            for line in csv_data.lines().skip(1) {
-                                // Skip header
-                                let parts: Vec<&str> = line.split(',').collect();
-                                if parts.len() >= 3 {
-                                    if let (Ok(f), Ok(m), Ok(p)) = (
-                                        parts[0].parse::<f32>(),
-                                        parts[1].parse::<f32>(),
-                                        parts[2].parse::<f32>(),
-                                    ) {
-                                        frequencies.push(f);
-                                        magnitude_db.push(m);
-                                        phase_deg.push(p);
-                                    }
+                        // Use log sweep config since we're recording sweep measurements
+                        let config = WavAnalysisConfig::for_log_sweep();
+
+                        match analyze_wav_file(&recorded_wav_path, &config) {
+                            Ok(analysis_result) => {
+                                // Write the CSV file
+                                if let Err(e) = write_wav_analysis_csv(&analysis_result, &csv_path) {
+                                    log::error!("Failed to write CSV: {}", e);
                                 }
-                            }
 
-                            if let Some(recording) = state
-                                .app
-                                .recording_state
-                                .channel_recordings
-                                .get_mut(channel_idx)
-                            {
-                                recording.state = ChannelRecordingState::Done;
-                                recording.result = Some(RecordingResult {
-                                    channel: channel_idx,
-                                    wav_path: Some(recorded_wav_path.to_string_lossy().to_string()),
-                                    csv_path: Some(csv_path.to_string_lossy().to_string()),
-                                    frequencies,
-                                    magnitude_db,
-                                    phase_deg,
-                                });
-                            }
-                            state.app.recording_state.status_message =
-                                format!("Channel {} recording complete", channel_name);
+                                if let Some(recording) = state
+                                    .app
+                                    .recording_state
+                                    .channel_recordings
+                                    .get_mut(channel_idx)
+                                {
+                                    recording.state = ChannelRecordingState::Done;
+                                    recording.result = Some(RecordingResult {
+                                        channel: channel_idx,
+                                        wav_path: Some(recorded_wav_path.to_string_lossy().to_string()),
+                                        csv_path: Some(csv_path.to_string_lossy().to_string()),
+                                        frequencies: analysis_result.frequencies,
+                                        magnitude_db: analysis_result.magnitude_db,
+                                        phase_deg: analysis_result.phase_deg,
+                                    });
+                                }
+                                state.app.recording_state.status_message =
+                                    format!("Channel {} recording complete", channel_name);
 
-                            // Check if we should auto-record the next channel
-                            state.app.recording_state.auto_record_remaining
-                        } else {
-                            false
+                                // Check if we should auto-record the next channel
+                                state.app.recording_state.auto_record_remaining
+                            }
+                            Err(e) => {
+                                log::error!("Failed to analyze recording: {}", e);
+                                if let Some(recording) = state
+                                    .app
+                                    .recording_state
+                                    .channel_recordings
+                                    .get_mut(channel_idx)
+                                {
+                                    recording.state = ChannelRecordingState::Error;
+                                }
+                                state.app.recording_state.status_message =
+                                    format!("Analysis error: {}", e);
+                                false
+                            }
                         }
                     }
                     Err(e) => {
@@ -1140,24 +812,85 @@ impl PlayerView {
         log::info!("All recordings reset");
     }
 
-    /// Save recordings to a JSON file
-    fn save_recordings(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{ChannelMeasurement, RoomEqMeasurementsFile};
+    /// Save recordings to a JSON file in the recording directory
+    pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
+        use crate::app::types::{
+            ChannelMeasurement, RecordingConfiguration, RecordingResult, RoomEqMeasurementsFile,
+        };
 
-        // Get recordings and convert to RoomEqMeasurementsFile format
-        let measurements_file = {
+        // Get recordings, recording directory, configuration, and convert to RoomEqMeasurementsFile format
+        let (measurements_file, recording_dir) = {
             let state = self.state.read(cx);
-            let recordings = &state.app.recording_state.channel_recordings;
+            let rec_state = &state.app.recording_state;
+            let recordings = &rec_state.channel_recordings;
+            let recording_dir = rec_state.recording_directory.clone();
 
-            // Convert ChannelRecording to ChannelMeasurement
+            // Check if recording directory is set
+            let recording_dir = match recording_dir {
+                Some(dir) => dir,
+                None => {
+                    log::error!("No recording directory set");
+                    return;
+                }
+            };
+
+            // Build configuration from current state
+            let configuration = RecordingConfiguration {
+                playback_device_name: rec_state.playback_config.device_name.clone(),
+                playback_device_id: rec_state.playback_config.device_id.clone(),
+                playback_sample_rate: rec_state.playback_config.sample_rate,
+                playback_channels: rec_state.playback_config.num_channels,
+                speaker_configuration: rec_state.playback_config.speaker_configuration.as_str().to_string(),
+                channel_names: rec_state
+                    .playback_config
+                    .channel_mappings
+                    .iter()
+                    .map(|m| m.group_name.clone())
+                    .collect(),
+
+                recording_device_name: rec_state.recording_config.device_name.clone(),
+                recording_device_id: rec_state.recording_config.device_id.clone(),
+                recording_sample_rate: rec_state.recording_config.sample_rate,
+                recording_channels: rec_state.recording_config.num_channels,
+
+                mic_calibration_path: rec_state.mic_calibration_path.clone(),
+                recording_directory: Some(recording_dir.clone()),
+
+                signal_type: rec_state.signal_type.as_str().to_string(),
+                signal_duration_secs: rec_state.signal_duration_secs,
+                signal_level_db: rec_state.signal_level_db,
+            };
+
+            // Convert ChannelRecording to ChannelMeasurement with relative paths
             let channels: Vec<ChannelMeasurement> = recordings
                 .iter()
                 .filter_map(|rec| {
-                    rec.result.as_ref().map(|result| ChannelMeasurement {
-                        channel_name: rec.channel_name.clone(),
-                        measurement: result.clone(),
-                        is_group: false,
-                        group_drivers: Vec::new(),
+                    rec.result.as_ref().map(|result| {
+                        // Convert absolute paths to relative (just filename)
+                        let relative_wav = result
+                            .wav_path
+                            .as_ref()
+                            .and_then(|p| std::path::Path::new(p).file_name())
+                            .map(|f| f.to_string_lossy().to_string());
+                        let relative_csv = result
+                            .csv_path
+                            .as_ref()
+                            .and_then(|p| std::path::Path::new(p).file_name())
+                            .map(|f| f.to_string_lossy().to_string());
+
+                        ChannelMeasurement {
+                            channel_name: rec.channel_name.clone(),
+                            measurement: RecordingResult {
+                                channel: result.channel,
+                                wav_path: relative_wav,
+                                csv_path: relative_csv,
+                                frequencies: result.frequencies.clone(),
+                                magnitude_db: result.magnitude_db.clone(),
+                                phase_deg: result.phase_deg.clone(),
+                            },
+                            is_group: false,
+                            group_drivers: Vec::new(),
+                        }
                     })
                 })
                 .collect();
@@ -1167,56 +900,47 @@ impl PlayerView {
                 return;
             }
 
-            RoomEqMeasurementsFile::new(channels)
+            (
+                RoomEqMeasurementsFile::with_configuration(channels, configuration),
+                recording_dir,
+            )
         };
 
-        let state_entity = self.state.clone();
+        // Save to recording directory (no dialog needed)
+        let json_path = std::path::Path::new(&recording_dir).join("recordings.json");
 
-        cx.spawn(async move |_, cx| {
-            // Open save dialog
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("JSON", &["json"])
-                .set_file_name("recordings.json")
-                .save_file()
-                .await;
-
-            if let Some(file) = file {
-                // Serialize to RoomEqMeasurementsFile format
-                match serde_json::to_string_pretty(&measurements_file) {
-                    Ok(json) => {
-                        // Write to file
-                        if let Err(e) = std::fs::write(file.path(), json) {
-                            log::error!("Failed to write recordings file: {}", e);
-                            let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                                state.app.recording_state.status_message =
-                                    format!("Failed to save: {}", e);
-                            });
-                        } else {
-                            log::info!("Recordings saved to {:?}", file.path());
-                            let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                                state.app.recording_state.status_message =
-                                    format!("Saved to {}", file.path().display());
-                            });
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to serialize recordings: {}", e);
-                        let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                            state.app.recording_state.status_message =
-                                format!("Failed to serialize: {}", e);
-                        });
-                    }
+        match serde_json::to_string_pretty(&measurements_file) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&json_path, json) {
+                    log::error!("Failed to write recordings file: {}", e);
+                    self.state.update(cx, |state, _| {
+                        state.app.recording_state.status_message =
+                            format!("Failed to save: {}", e);
+                    });
+                } else {
+                    log::info!("Recordings saved to {:?}", json_path);
+                    self.state.update(cx, |state, _| {
+                        state.app.recording_state.status_message =
+                            format!("Saved to {}", json_path.display());
+                    });
                 }
             }
-        })
-        .detach();
+            Err(e) => {
+                log::error!("Failed to serialize recordings: {}", e);
+                self.state.update(cx, |state, _| {
+                    state.app.recording_state.status_message =
+                        format!("Failed to serialize: {}", e);
+                });
+            }
+        }
+        cx.notify();
 
-        log::info!("Save recordings initiated");
+        log::info!("Save recordings completed");
     }
 
-    /// Load recordings from a JSON file
-    fn load_recordings(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::ChannelRecording;
+    /// Load recordings from a JSON file (RoomEqMeasurementsFile format)
+    pub(crate) fn load_recordings_from_file(&mut self, cx: &mut Context<Self>) {
+        use crate::app::types::{ChannelRecording, RoomEqMeasurementsFile};
 
         let state_entity = self.state.clone();
 
@@ -1228,17 +952,64 @@ impl PlayerView {
                 .await;
 
             if let Some(file) = file {
+                let file_path = file.path().to_path_buf();
+                let file_dir = file_path.parent().map(|p| p.to_path_buf());
+
                 // Read file content
-                match std::fs::read_to_string(file.path()) {
+                match std::fs::read_to_string(&file_path) {
                     Ok(json) => {
-                        // Deserialize recordings
-                        match serde_json::from_str::<Vec<ChannelRecording>>(&json) {
-                            Ok(recordings) => {
-                                log::info!("Loaded {} recordings from {:?}", recordings.len(), file.path());
+                        // Deserialize as RoomEqMeasurementsFile
+                        match serde_json::from_str::<RoomEqMeasurementsFile>(&json) {
+                            Ok(measurements_file) => {
+                                log::info!(
+                                    "Loaded {} channel measurements from {:?}",
+                                    measurements_file.channels.len(),
+                                    file_path
+                                );
+
                                 let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                                    // Convert ChannelMeasurement to ChannelRecording
+                                    let recordings: Vec<ChannelRecording> = measurements_file
+                                        .channels
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(idx, cm)| {
+                                            // Convert relative paths in result to absolute paths
+                                            let mut result = cm.measurement;
+                                            if let (Some(dir), Some(wav)) = (&file_dir, &result.wav_path) {
+                                                let abs_path = dir.join(wav);
+                                                if abs_path.exists() {
+                                                    result.wav_path = Some(abs_path.to_string_lossy().to_string());
+                                                }
+                                            }
+                                            if let (Some(dir), Some(csv)) = (&file_dir, &result.csv_path) {
+                                                let abs_path = dir.join(csv);
+                                                if abs_path.exists() {
+                                                    result.csv_path = Some(abs_path.to_string_lossy().to_string());
+                                                }
+                                            }
+
+                                            ChannelRecording {
+                                                channel_index: idx,
+                                                channel_name: cm.channel_name,
+                                                state: ChannelRecordingState::Done,
+                                                result: Some(result),
+                                            }
+                                        })
+                                        .collect();
+
                                     state.app.recording_state.channel_recordings = recordings;
+
+                                    // Also set the recording directory to the file's directory
+                                    if let Some(dir) = file_dir {
+                                        state.app.recording_state.recording_directory =
+                                            Some(dir.to_string_lossy().to_string());
+                                    }
+
                                     state.app.recording_state.status_message =
-                                        format!("Loaded from {}", file.path().display());
+                                        format!("Loaded {} channels from {}",
+                                            state.app.recording_state.channel_recordings.len(),
+                                            file_path.display());
                                 });
                             }
                             Err(e) => {
@@ -1262,6 +1033,6 @@ impl PlayerView {
         })
         .detach();
 
-        log::info!("Load recordings initiated");
+        log::info!("Load recordings from file initiated");
     }
 }

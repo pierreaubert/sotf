@@ -287,6 +287,49 @@ pub enum RecordingStep {
     Config,
     /// Step 2: Record frequency response for each channel
     Capture,
+    /// Step 3: Evaluate recordings and view frequency response
+    Evaluating,
+    /// Step 4: Save recordings to disk
+    Saving,
+}
+
+/// Smoothing options for frequency response plots (1/N octave)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlotSmoothing {
+    /// No smoothing (raw data)
+    #[default]
+    None,
+    /// 1/1 octave smoothing
+    Octave1,
+    /// 1/3 octave smoothing
+    Octave3,
+    /// 1/6 octave smoothing
+    Octave6,
+    /// 1/24 octave smoothing
+    Octave24,
+}
+
+impl PlotSmoothing {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PlotSmoothing::None => "None",
+            PlotSmoothing::Octave1 => "1/1 octave",
+            PlotSmoothing::Octave3 => "1/3 octave",
+            PlotSmoothing::Octave6 => "1/6 octave",
+            PlotSmoothing::Octave24 => "1/24 octave",
+        }
+    }
+
+    /// Get the smoothing factor (fraction of octave)
+    pub fn octave_fraction(&self) -> Option<f32> {
+        match self {
+            PlotSmoothing::None => None,
+            PlotSmoothing::Octave1 => Some(1.0),
+            PlotSmoothing::Octave3 => Some(1.0 / 3.0),
+            PlotSmoothing::Octave6 => Some(1.0 / 6.0),
+            PlotSmoothing::Octave24 => Some(1.0 / 24.0),
+        }
+    }
 }
 
 /// State of a single channel's recording
@@ -318,6 +361,8 @@ pub struct PlaybackDeviceConfig {
     pub device_name: String,
     pub num_channels: usize,
     pub sample_rate: u32,
+    pub available_sample_rates: Vec<u32>,
+    pub speaker_configuration: SpeakerConfiguration,
     pub channel_mappings: Vec<ChannelMapping>,
 }
 
@@ -328,6 +373,8 @@ impl Default for PlaybackDeviceConfig {
             device_name: String::new(),
             num_channels: 2,
             sample_rate: 48000,
+            available_sample_rates: vec![44100, 48000, 88200, 96000, 176400, 192000],
+            speaker_configuration: SpeakerConfiguration::Stereo,
             channel_mappings: vec![
                 ChannelMapping {
                     interface_channel: 0,
@@ -349,6 +396,7 @@ pub struct RecordingDeviceConfig {
     pub device_name: String,
     pub num_channels: usize,
     pub sample_rate: u32,
+    pub available_sample_rates: Vec<u32>,
     /// Mapping from physical input channels to recording channels
     pub channel_mappings: Vec<usize>,
 }
@@ -360,6 +408,7 @@ impl Default for RecordingDeviceConfig {
             device_name: String::new(),
             num_channels: 1,
             sample_rate: 48000,
+            available_sample_rates: vec![44100, 48000, 88200, 96000, 176400, 192000],
             channel_mappings: vec![0],
         }
     }
@@ -411,6 +460,175 @@ impl RecordingSignalType {
     }
 }
 
+/// Speaker configuration presets
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeakerConfiguration {
+    Stereo,         // 2.0
+    Stereo21,       // 2.1
+    Surround50,     // 5.0
+    Surround51,     // 5.1
+    Surround71,     // 7.1
+    Surround91,     // 9.1
+    Atmos512,       // 5.1.2
+    Atmos514,       // 5.1.4
+    Atmos712,       // 7.1.2
+    Atmos714,       // 7.1.4
+    Atmos912,       // 9.1.2
+    Atmos914,       // 9.1.4
+    Atmos916,       // 9.1.6
+    Custom,         // User-defined
+}
+
+impl SpeakerConfiguration {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SpeakerConfiguration::Stereo => "2.0",
+            SpeakerConfiguration::Stereo21 => "2.1",
+            SpeakerConfiguration::Surround50 => "5.0",
+            SpeakerConfiguration::Surround51 => "5.1",
+            SpeakerConfiguration::Surround71 => "7.1",
+            SpeakerConfiguration::Surround91 => "9.1",
+            SpeakerConfiguration::Atmos512 => "5.1.2",
+            SpeakerConfiguration::Atmos514 => "5.1.4",
+            SpeakerConfiguration::Atmos712 => "7.1.2",
+            SpeakerConfiguration::Atmos714 => "7.1.4",
+            SpeakerConfiguration::Atmos912 => "9.1.2",
+            SpeakerConfiguration::Atmos914 => "9.1.4",
+            SpeakerConfiguration::Atmos916 => "9.1.6",
+            SpeakerConfiguration::Custom => "Custom",
+        }
+    }
+
+    pub fn all() -> &'static [SpeakerConfiguration] {
+        &[
+            SpeakerConfiguration::Stereo,
+            SpeakerConfiguration::Stereo21,
+            SpeakerConfiguration::Surround50,
+            SpeakerConfiguration::Surround51,
+            SpeakerConfiguration::Surround71,
+            SpeakerConfiguration::Surround91,
+            SpeakerConfiguration::Atmos512,
+            SpeakerConfiguration::Atmos514,
+            SpeakerConfiguration::Atmos712,
+            SpeakerConfiguration::Atmos714,
+            SpeakerConfiguration::Atmos912,
+            SpeakerConfiguration::Atmos914,
+            SpeakerConfiguration::Atmos916,
+            SpeakerConfiguration::Custom,
+        ]
+    }
+
+    /// Get the number of channels for this configuration
+    pub fn channel_count(&self) -> usize {
+        match self {
+            SpeakerConfiguration::Stereo => 2,
+            SpeakerConfiguration::Stereo21 => 3,
+            SpeakerConfiguration::Surround50 => 5,
+            SpeakerConfiguration::Surround51 => 6,
+            SpeakerConfiguration::Surround71 => 8,
+            SpeakerConfiguration::Surround91 => 10,
+            SpeakerConfiguration::Atmos512 => 8,
+            SpeakerConfiguration::Atmos514 => 10,
+            SpeakerConfiguration::Atmos712 => 10,
+            SpeakerConfiguration::Atmos714 => 12,
+            SpeakerConfiguration::Atmos912 => 12,
+            SpeakerConfiguration::Atmos914 => 14,
+            SpeakerConfiguration::Atmos916 => 16,
+            SpeakerConfiguration::Custom => 2, // Default for custom
+        }
+    }
+
+    /// Get the default channel names for this configuration
+    pub fn default_channel_names(&self) -> Vec<&'static str> {
+        match self {
+            SpeakerConfiguration::Stereo => vec!["L", "R"],
+            SpeakerConfiguration::Stereo21 => vec!["L", "R", "LFE"],
+            SpeakerConfiguration::Surround50 => vec!["L", "R", "C", "SL", "SR"],
+            SpeakerConfiguration::Surround51 => vec!["L", "R", "C", "LFE", "SL", "SR"],
+            SpeakerConfiguration::Surround71 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR"],
+            SpeakerConfiguration::Surround91 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR"],
+            SpeakerConfiguration::Atmos512 => vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR"],
+            SpeakerConfiguration::Atmos514 => vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR", "TBL", "TBR"],
+            SpeakerConfiguration::Atmos712 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR"],
+            SpeakerConfiguration::Atmos714 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR"],
+            SpeakerConfiguration::Atmos912 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR"],
+            SpeakerConfiguration::Atmos914 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TBL", "TBR"],
+            SpeakerConfiguration::Atmos916 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TML", "TMR", "TBL", "TBR"],
+            SpeakerConfiguration::Custom => vec!["L", "R"],
+        }
+    }
+
+    /// Try to detect configuration from channel count
+    pub fn from_channel_count(count: usize) -> Self {
+        match count {
+            2 => SpeakerConfiguration::Stereo,
+            3 => SpeakerConfiguration::Stereo21,
+            5 => SpeakerConfiguration::Surround50,
+            6 => SpeakerConfiguration::Surround51,
+            8 => SpeakerConfiguration::Surround71,
+            10 => SpeakerConfiguration::Surround91,
+            _ => SpeakerConfiguration::Custom,
+        }
+    }
+}
+
+/// Parsed microphone calibration data
+#[derive(Debug, Clone, Default)]
+pub struct CalibrationData {
+    /// Frequency points in Hz
+    pub frequencies: Vec<f64>,
+    /// SPL deviation in dB (positive = mic reads louder)
+    pub spl_db: Vec<f64>,
+}
+
+impl CalibrationData {
+    /// Parse a calibration file from its contents
+    pub fn parse(content: &str) -> Option<Self> {
+        let mut frequencies = Vec::new();
+        let mut spl_db = Vec::new();
+
+        for line in content.lines() {
+            let line = line.trim();
+            // Skip empty lines, comments, and headers
+            if line.is_empty() || line.starts_with('#') || line.starts_with("//") {
+                continue;
+            }
+            // Skip header lines containing text like "frequency" or "hz"
+            let lower = line.to_lowercase();
+            if lower.contains("frequency") || lower.contains("spl") || lower.contains("hz") {
+                continue;
+            }
+
+            // Split by comma, tab, or whitespace
+            let parts: Vec<&str> = line
+                .split(|c| c == ',' || c == '\t' || c == ' ')
+                .filter(|s| !s.is_empty())
+                .collect();
+
+            if parts.len() >= 2 {
+                if let (Ok(freq), Ok(spl)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
+                    // Validate reasonable frequency range (1 Hz to 100 kHz)
+                    if freq > 0.0 && freq <= 100000.0 && spl.is_finite() {
+                        frequencies.push(freq);
+                        spl_db.push(spl);
+                    }
+                }
+            }
+        }
+
+        if frequencies.is_empty() {
+            None
+        } else {
+            Some(Self { frequencies, spl_db })
+        }
+    }
+
+    /// Check if calibration data is valid
+    pub fn is_valid(&self) -> bool {
+        !self.frequencies.is_empty() && self.frequencies.len() == self.spl_db.len()
+    }
+}
+
 /// Complete recording screen state
 #[derive(Debug, Clone)]
 pub struct RecordingState {
@@ -421,6 +639,8 @@ pub struct RecordingState {
     pub playback_config: PlaybackDeviceConfig,
     pub recording_config: RecordingDeviceConfig,
     pub mic_calibration_path: Option<String>,
+    /// Parsed calibration data for display
+    pub mic_calibration_data: Option<CalibrationData>,
 
     // === Capture Step State ===
     pub signal_type: RecordingSignalType,
@@ -432,11 +652,38 @@ pub struct RecordingState {
     pub status_message: String,
     pub auto_record_remaining: bool, // Whether to automatically record all remaining channels
 
+    /// Directory where recordings will be stored
+    /// Format: user_selected_dir/recording-YYYYMMDD-HHMMSS/
+    pub recording_directory: Option<String>,
+    /// Base directory selected by user (before adding timestamp subdirectory)
+    pub recording_base_directory: Option<String>,
+
     // === UI State ===
     pub playback_device_dropdown_open: bool,
     pub recording_device_dropdown_open: bool,
+    pub playback_sample_rate_dropdown_open: bool,
+    pub recording_sample_rate_dropdown_open: bool,
+    pub speaker_config_dropdown_open: bool,
     pub signal_type_dropdown_open: bool,
     pub duration_dropdown_open: bool,
+    /// Track which channel name dropdown is open (by channel index)
+    pub channel_name_dropdown_open: Option<usize>,
+    /// Expanded accordion sections in config step
+    pub config_accordion_expanded: Vec<gpui::SharedString>,
+
+    // === Evaluating Step State ===
+    /// Selected channel filter for plots (None = all channels)
+    pub plot_selected_channel: Option<usize>,
+    /// Smoothing option for frequency response plots
+    pub plot_smoothing: PlotSmoothing,
+    /// Channel selector dropdown open
+    pub plot_channel_dropdown_open: bool,
+    /// Smoothing selector dropdown open
+    pub plot_smoothing_dropdown_open: bool,
+
+    // === Saving Step State ===
+    /// Name for the recording session (used as subdirectory name)
+    pub save_name: String,
 }
 
 impl Default for RecordingState {
@@ -446,6 +693,7 @@ impl Default for RecordingState {
             playback_config: PlaybackDeviceConfig::default(),
             recording_config: RecordingDeviceConfig::default(),
             mic_calibration_path: None,
+            mic_calibration_data: None,
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
             signal_level_db: -20.0,
@@ -454,10 +702,22 @@ impl Default for RecordingState {
             recording_progress: 0.0,
             status_message: String::new(),
             auto_record_remaining: false,
+            recording_directory: None,
+            recording_base_directory: None,
             playback_device_dropdown_open: false,
             recording_device_dropdown_open: false,
+            playback_sample_rate_dropdown_open: false,
+            recording_sample_rate_dropdown_open: false,
+            speaker_config_dropdown_open: false,
             signal_type_dropdown_open: false,
             duration_dropdown_open: false,
+            channel_name_dropdown_open: None,
+            config_accordion_expanded: vec!["playback".into()], // Playback section open by default
+            plot_selected_channel: None, // All channels
+            plot_smoothing: PlotSmoothing::None,
+            plot_channel_dropdown_open: false,
+            plot_smoothing_dropdown_open: false,
+            save_name: "recording".to_string(),
         }
     }
 }
@@ -586,6 +846,44 @@ impl Default for RoomEqDataSource {
     }
 }
 
+/// Recording configuration stored with measurements
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingConfiguration {
+    /// Playback device name
+    pub playback_device_name: String,
+    /// Playback device ID
+    pub playback_device_id: String,
+    /// Playback sample rate
+    pub playback_sample_rate: u32,
+    /// Playback channel count
+    pub playback_channels: usize,
+    /// Speaker configuration (e.g., "5.1", "7.1.4")
+    pub speaker_configuration: String,
+    /// Channel names in order
+    pub channel_names: Vec<String>,
+
+    /// Recording device name
+    pub recording_device_name: String,
+    /// Recording device ID
+    pub recording_device_id: String,
+    /// Recording sample rate
+    pub recording_sample_rate: u32,
+    /// Recording channel count
+    pub recording_channels: usize,
+
+    /// Microphone calibration file path (if used)
+    pub mic_calibration_path: Option<String>,
+    /// Recording output directory
+    pub recording_directory: Option<String>,
+
+    /// Signal type used for measurements
+    pub signal_type: String,
+    /// Signal duration in seconds
+    pub signal_duration_secs: f32,
+    /// Signal level in dB
+    pub signal_level_db: f32,
+}
+
 /// File format for saving/loading room EQ measurements
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqMeasurementsFile {
@@ -593,15 +891,30 @@ pub struct RoomEqMeasurementsFile {
     pub version: u32,
     /// Channel measurements
     pub channels: Vec<ChannelMeasurement>,
+    /// Recording configuration (devices, settings used)
+    #[serde(default)]
+    pub configuration: Option<RecordingConfiguration>,
 }
 
 impl RoomEqMeasurementsFile {
-    pub const CURRENT_VERSION: u32 = 1;
+    pub const CURRENT_VERSION: u32 = 2;
 
     pub fn new(channels: Vec<ChannelMeasurement>) -> Self {
         Self {
             version: Self::CURRENT_VERSION,
             channels,
+            configuration: None,
+        }
+    }
+
+    pub fn with_configuration(
+        channels: Vec<ChannelMeasurement>,
+        configuration: RecordingConfiguration,
+    ) -> Self {
+        Self {
+            version: Self::CURRENT_VERSION,
+            channels,
+            configuration: Some(configuration),
         }
     }
 }
@@ -931,8 +1244,18 @@ pub struct RoomEqDropdowns {
     pub autoeq_edit_text: String,
 }
 
-/// Re-export AutoEqField from gpui-ui-kit for use in types
-pub use gpui_ui_kit::AutoEqField;
+/// Field identifiers for AutoEQ form editing (legacy compatibility)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoEqField {
+    NumFilters,
+    MinQ,
+    MaxQ,
+    MinDb,
+    MaxDb,
+    MinFreq,
+    MaxFreq,
+    MaxIter,
+}
 
 /// Complete Room EQ screen state
 #[derive(Debug, Clone)]

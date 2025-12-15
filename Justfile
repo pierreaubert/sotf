@@ -14,10 +14,10 @@ default:
 	just --list
 
 # ----------------------------------------------------------------------
-# TEST
+# Downloads
 # ----------------------------------------------------------------------
 
-download-once: download-spinorama download-sofa
+download-once: download-spinorama download-sofa generate-audio-tests
 
 download-spinorama:
 	cargo run --bin autoeq-download-speakers --release
@@ -27,22 +27,21 @@ download-sofa:
 	wget -O data_cached/org.sofacoustics/mit/kemar_normal_pinna.sofa https://sofacoustics.org/data/database/mit/mit_kemar_normal_pinna.sofa
 	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
 
-test-generate-audio-tests: prod-generate-audio-tests
+generate-audio-tests: prod-generate-audio-tests
 	cargo run --bin generate-audio-tests --release
 
-test-rust:
+# ----------------------------------------------------------------------
+# TEST
+# ----------------------------------------------------------------------
+
+test:
 	# Exclude packages that crash due to gpui_macros stack overflow during compilation
 	# Also exclude sotf_head_scanner (opencv dependency issues)
-	cargo check --workspace --all-targets ---exclude sotf_head_scanner
+	cargo check --workspace --all-targets ---exclude sotf-head-scanner
 	cargo test --workspace --lib --exclude sotf_head_scanner
 
-#test-ts:
-#	npm run test
-
-test: test-rust # test-ts
-
 ntest:
-	cargo nextest run --no-fail-fast --workspace --lib --exclude sotf_head_scanner
+	cargo nextest run --release --no-fail-fast --workspace --lib --exclude sotf-head-scanner --exclude sotf-gpui
 
 # ----------------------------------------------------------------------
 # FORMAT
@@ -50,13 +49,8 @@ ntest:
 
 alias format := fmt
 
-fmt: fmt-rust fmt-ts
-
-fmt-rust:
+fmt:
 	cargo fmt --all
-
-fmt-ts:
-	npm run fmt
 
 # ----------------------------------------------------------------------
 # PROD
@@ -106,7 +100,7 @@ prod-configbar:
 prod-macos: prod-hal prod-configbar
 
 prod-head-scanner:
-	cargo build --release -p head-scanner
+	cargo build --release -p sotf-head-scanner
 
 # shortcuts
 tui:
@@ -497,11 +491,6 @@ install-ubuntu-arm64-driver :
 		sudo apt install -y firefox
 		# where is the geckodriver ?
 
-#install-ubuntu-node:
-#		# use nvm
-#		curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-#		$HOME/.nvm/bin/nvm install stable
-
 install-ubuntu-x86: install-ubuntu-common install-ubuntu-x86-driver
 
 install-ubuntu-arm64: install-ubuntu-common install-ubuntu-arm64-driver
@@ -535,7 +524,9 @@ qa: prod-autoeq \
 	qa-ascilab-6b \
 	qa-jbl-m2-flat qa-jbl-m2-score \
 	qa-beyerdynamic-dt1990pro \
-	qa-edifierw830nb
+	qa-edifierw830nb \
+	qa-fem \
+	qa-bem
 
 qa-ascilab-6b:
 	./target/release/autoeq --speaker="AsciLab F6B" --version asr --measurement CEA2034 \
@@ -602,6 +593,12 @@ qa-edifierw830nb-mhfirefly:
 	--loss headphone-score \
 	--min-spacing-oct 0.08 --atolerance 0.000001 --tolerance 0.0000001 --algo mh:rga --population 80 --maxeval 3000 \
 	--qa 4.0
+
+qa-fem:
+	cargo run --release --bin qa-suite -p math-fem --features="cli native"
+
+qa-bem:
+	cargo run --release --bin qa-suite -p math-bem --features="native cli parallel"
 
 # ----------------------------------------------------------------------
 # POST

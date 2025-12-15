@@ -818,7 +818,7 @@ mod tests {
     fn test_compute_shape_and_jacobian() {
         let coords = make_test_triangle();
 
-        let (shape, _, _, jac, normal, pos) =
+        let (shape, _, _, jac, normal, _pos) =
             compute_shape_and_jacobian(&coords, ElementType::Tri3, 0.5, 0.25);
 
         // Shape functions should sum to 1

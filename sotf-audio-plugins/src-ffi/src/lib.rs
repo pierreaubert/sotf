@@ -67,7 +67,6 @@ impl From<PluginError> for c_int {
     }
 }
 
-/// Get last error message (thread-local)
 thread_local! {
     static LAST_ERROR: std::cell::RefCell<Option<CString>> = std::cell::RefCell::new(None);
 }

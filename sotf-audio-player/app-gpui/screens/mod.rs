@@ -35,7 +35,7 @@ impl PlayerView {
                 .into_any_element(),
             crate::app::SettingsTab::Plugins => self.render_plugins_screen(cx).into_any_element(),
             crate::app::SettingsTab::RoomEQ => {
-                self.render_roomeq_settings_content(cx).into_any_element()
+                self.render_room_eq_screen(cx).into_any_element()
             }
             crate::app::SettingsTab::Headphone => self
                 .render_headphone_settings_content(cx)

@@ -1988,15 +1988,17 @@ impl Render for PlayerView {
                 div.child(self.render_about_dialog(cx))
             })
             .child(self.render_toast(cx))
-            .when(self.state.read(cx).app.measure_state.is_some(), |div| {
-                div.child(self.render_measure_dialog(cx))
-            })
             .when(self.state.read(cx).app.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))
             })
             // Device popup overlay (click outside to close)
             .when(self.state.read(cx).app.show_device_popup, |div| {
                 div.child(self.render_device_popup_overlay(cx))
+            })
+            // Device popup (rendered here to be above overlay)
+            .when(self.state.read(cx).app.show_device_popup, |div| {
+                let translations = &self.state.read(cx).app.translations;
+                div.child(self.render_device_popup(translations.playback_output_devices, cx))
             })
             // Menu dropdowns rendered last for z-ordering
             .when(active_menu != crate::app::ActiveMenu::None, |div| {
