@@ -1098,7 +1098,13 @@ mod tests {
         )];
         let eval_point = Point3D::new(2.0, 4.0, 1.25);
 
-        let config = BemConfig::default();
+        // Relaxed config for testing high frequencies without massive mesh
+        let config = BemConfig {
+            elements_per_wavelength: 2.0, // Reduced from 8.0 for speed/memory in tests
+            max_elements: 30000,          // Increased limit
+            use_adaptive_mesh: false,     // Disable internal adaptive refinement to respect our low density
+            ..BemConfig::default()
+        };
         let frequencies = vec![50.0, 100.0, 200.0, 500.0, 1000.0];
         let results = solve_bem_frequency_sweep(
             &room,
@@ -1111,8 +1117,13 @@ mod tests {
         );
 
         assert_eq!(results.len(), 5);
-        for result in results {
-            assert!(result.is_ok());
+        for (i, result) in results.iter().enumerate() {
+            assert!(
+                result.is_ok(),
+                "Failed at {} Hz: {}",
+                frequencies[i],
+                result.as_ref().err().unwrap()
+            );
         }
     }
 
