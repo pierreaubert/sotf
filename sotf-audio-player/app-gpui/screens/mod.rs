@@ -38,7 +38,7 @@ impl PlayerView {
                 self.render_room_eq_screen(cx).into_any_element()
             }
             crate::app::SettingsTab::Headphone => self
-                .render_headphone_settings_content(cx)
+                .render_headphone_eq_screen(cx)
                 .into_any_element(),
             crate::app::SettingsTab::Spinorama => self
                 .render_spinorama_settings_content(cx)

@@ -37,17 +37,6 @@ pub struct App {
     pub plugin_file_input: String,    // For save/load plugin chain
     pub apo_file_input: String,       // For loading APO EQ files
     pub sofa_file_input: String,      // For loading SOFA HRTF files
-    pub headphone_curve_path: String, // Headphone measurement file
-    pub headphone_target: String, // Selected target curve (e.g. "harman-over-ear-2018" or "custom")
-    pub headphone_target_custom_path: String, // Path to custom target curve CSV file
-    pub headphone_params: crate::optimization_params::OptimizationParams, // All optimization parameters
-    pub headphone_optimization_running: bool, // Is optimization in progress
-    pub headphone_optimization_progress: Vec<(usize, f64)>, // (iteration, fitness)
-    pub headphone_optimization_result: Option<crate::autoeq::HeadphoneOptimizationResult>, // Results
-    pub headphone_export_format: String, // Selected export format (json, apo, rme-channel, etc.)
-    pub headphone_eq_save_name: String,  // Custom name for saved EQ file
-    pub headphone_expanded_sections: Vec<gpui::SharedString>, // Accordion expanded sections
-    pub headphone_opt_ui: OptimizationUiState, // UI state (dropdowns)
 
     // Speaker Optimization State
     pub speaker_model: String, // Selected speaker model name (e.g. "KEF LS50 Meta")
@@ -262,20 +251,6 @@ impl App {
             plugin_file_input: String::new(),
             apo_file_input: String::new(),
             sofa_file_input: String::new(),
-            headphone_curve_path: String::new(),
-            headphone_target: String::from("harman-over-ear-2018"),
-            headphone_target_custom_path: String::new(),
-            headphone_params: crate::optimization_params::OptimizationParams::headphone_defaults(),
-            headphone_optimization_running: false,
-            headphone_optimization_progress: Vec::new(),
-            headphone_optimization_result: None,
-            headphone_export_format: String::from("json"),
-            headphone_eq_save_name: String::new(),
-            headphone_expanded_sections: vec![
-                gpui::SharedString::from("measurement"),
-                gpui::SharedString::from("target"),
-            ],
-            headphone_opt_ui: OptimizationUiState::default(),
 
             // Speaker State Init
             speaker_model: String::new(),
@@ -414,6 +389,23 @@ impl App {
                 // Find the default device
                 if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
                     self.selected_output_device_index = default_idx;
+                    // Initialize recording state playback device if not already set
+                    if self.recording_state.playback_config.device_name.is_empty() {
+                        let device = &output_devices[default_idx];
+                        self.recording_state.playback_config.device_name = device.name.clone();
+                        self.recording_state.playback_config.device_id = device.name.clone(); // Use name as ID
+                        // Get num_channels from default_config
+                        if let Some(ref config) = device.default_config {
+                            self.recording_state.playback_config.num_channels =
+                                config.channels as usize;
+                        }
+                        // Set sample rates
+                        self.recording_state.playback_config.available_sample_rates =
+                            device.available_sample_rates.clone();
+                        if let Some(rate) = device.available_sample_rates.first() {
+                            self.recording_state.playback_config.sample_rate = *rate;
+                        }
+                    }
                 }
             }
             if let Some(input_devices) = devices_map.get("input") {
@@ -421,6 +413,23 @@ impl App {
                 // Find the default device
                 if let Some(default_idx) = input_devices.iter().position(|d| d.is_default) {
                     self.selected_input_device_index = default_idx;
+                    // Initialize recording state recording device if not already set
+                    if self.recording_state.recording_config.device_name.is_empty() {
+                        let device = &input_devices[default_idx];
+                        self.recording_state.recording_config.device_name = device.name.clone();
+                        self.recording_state.recording_config.device_id = device.name.clone(); // Use name as ID
+                        // Get num_channels from default_config
+                        if let Some(ref config) = device.default_config {
+                            self.recording_state.recording_config.num_channels =
+                                config.channels as usize;
+                        }
+                        // Set sample rates
+                        self.recording_state.recording_config.available_sample_rates =
+                            device.available_sample_rates.clone();
+                        if let Some(rate) = device.available_sample_rates.first() {
+                            self.recording_state.recording_config.sample_rate = *rate;
+                        }
+                    }
                 }
             }
         }

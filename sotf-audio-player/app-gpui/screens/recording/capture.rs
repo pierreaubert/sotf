@@ -476,20 +476,20 @@ impl PlayerView {
                 RecordingSignalType::PinkNoise => SignalType::PinkNoise,
             };
 
-            // Get output channel from playback config
+            // Get output channel from playback config (1-indexed in UI, convert to 0-indexed for cpal)
             let output_ch = rec_state
                 .playback_config
                 .channel_mappings
                 .get(channel_idx)
-                .map(|m| m.interface_channel)
+                .map(|m| m.interface_channel.saturating_sub(1))
                 .unwrap_or(0);
 
-            // Get input channel from recording config (use first one for now)
+            // Get input channel from recording config (1-indexed in UI, convert to 0-indexed for cpal)
             let input_ch = rec_state
                 .recording_config
                 .channel_mappings
                 .first()
-                .copied()
+                .map(|ch| ch.saturating_sub(1))
                 .unwrap_or(0);
 
             (
@@ -579,7 +579,7 @@ impl PlayerView {
         };
 
         // Prepare signal with fades and padding
-        let prepared_signal = prepare_signal(signal.clone(), sample_rate);
+        let prepared_signal = signal.clone(); // prepare_signal(signal.clone(), sample_rate);
 
         // Write to temp file
         let temp_wav = match write_temp_wav(&prepared_signal, sample_rate, 1) {

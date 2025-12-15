@@ -45,6 +45,7 @@ impl PlayerView {
         let playback_content = self.render_playback_device_content(cx).into_any_element();
         let recording_content = self.render_recording_device_content(cx).into_any_element();
         let calibration_content = self.render_mic_calibration_content(cx).into_any_element();
+        let output_dir_content = self.render_output_directory_content(cx).into_any_element();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -80,6 +81,10 @@ impl PlayerView {
                     .item(
                         AccordionItem::new("calibration", "Microphone Calibration")
                             .content(calibration_content),
+                    )
+                    .item(
+                        AccordionItem::new("output_dir", "Output Directory")
+                            .content(output_dir_content),
                     )
                     .on_change({
                         let view = view.clone();
@@ -335,6 +340,106 @@ impl PlayerView {
             // Add calibration graph when data is available
             .when_some(calibration_data, |stack, data| {
                 stack.child(Self::render_calibration_graph(&data, &theme))
+            })
+    }
+
+    /// Render output directory content for accordion
+    fn render_output_directory_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+        let recording_state = &state.app.recording_state;
+        let view = cx.entity().clone();
+
+        let base_dir = recording_state.recording_base_directory.clone();
+        let recording_dir = recording_state.recording_directory.clone();
+        let has_directory = recording_dir.is_some();
+
+        let display_path = recording_dir
+            .clone()
+            .unwrap_or_else(|| "No directory selected".to_string());
+
+        VStack::new()
+            .spacing(StackSpacing::Md)
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .align(StackAlign::Center)
+                    .child(
+                        Text::new("Recording files will be saved to:")
+                            .size(TextSize::Sm)
+                            .color(theme.text_secondary),
+                    )
+                    .child(
+                        Text::new(display_path)
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Semibold)
+                            .color(if has_directory {
+                                theme.text_primary
+                            } else {
+                                theme.warning
+                            }),
+                    ),
+            )
+            .child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Button::new("browse_output_dir", "Browse...")
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Md)
+                            .on_click({
+                                let view = view.clone();
+                                move |_, cx| {
+                                    view.update(cx, |this, cx| {
+                                        this.browse_recording_directory(cx);
+                                    });
+                                }
+                            }),
+                    )
+                    .when(base_dir.is_some(), |stack| {
+                        let view = view.clone();
+                        stack.child(
+                            Button::new("clear_output_dir", "Clear")
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .on_click({
+                                    move |_, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                state.app.recording_state.recording_base_directory =
+                                                    None;
+                                                state.app.recording_state.recording_directory = None;
+                                            });
+                                            cx.notify();
+                                        });
+                                    }
+                                }),
+                        )
+                    }),
+            )
+            .child(
+                Text::new(
+                    "A timestamped subdirectory will be created for each recording session.",
+                )
+                .size(TextSize::Xs)
+                .color(theme.text_muted),
+            )
+            .when(!has_directory, |stack| {
+                stack.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new("⚠")
+                                .size(TextSize::Sm)
+                                .color(theme.warning),
+                        )
+                        .child(
+                            Text::new("You must select an output directory before recording.")
+                                .size(TextSize::Sm)
+                                .color(theme.warning),
+                        ),
+                )
             })
     }
 
@@ -687,7 +792,7 @@ impl PlayerView {
                                                     .iter()
                                                     .enumerate()
                                                     .map(|(i, name)| ChannelMapping {
-                                                        interface_channel: i,
+                                                        interface_channel: i + 1, // 1-indexed for display
                                                         group_name: name.to_string(),
                                                     })
                                                     .collect();
@@ -1358,7 +1463,7 @@ fn update_playback_channel_mappings(state: &mut RecordingState) {
                 .map(|(id, _)| id.to_string())
                 .unwrap_or_default();
             state.playback_config.channel_mappings.push(ChannelMapping {
-                interface_channel: i,
+                interface_channel: i + 1, // 1-indexed for display
                 group_name: group,
             });
         }
@@ -1377,9 +1482,9 @@ fn update_recording_channel_mappings(state: &mut RecordingState) {
     let current_count = state.recording_config.channel_mappings.len();
 
     if target_count > current_count {
-        // Add new mappings
+        // Add new mappings (1-indexed for display)
         for i in current_count..target_count {
-            state.recording_config.channel_mappings.push(i);
+            state.recording_config.channel_mappings.push(i + 1);
         }
     } else if target_count < current_count {
         // Remove extra mappings

@@ -375,13 +375,14 @@ impl Default for PlaybackDeviceConfig {
             sample_rate: 48000,
             available_sample_rates: vec![44100, 48000, 88200, 96000, 176400, 192000],
             speaker_configuration: SpeakerConfiguration::Stereo,
+            // Channel numbers are 1-indexed for display (Channel 1, Channel 2, etc.)
             channel_mappings: vec![
                 ChannelMapping {
-                    interface_channel: 0,
+                    interface_channel: 1,
                     group_name: "L".to_string(),
                 },
                 ChannelMapping {
-                    interface_channel: 1,
+                    interface_channel: 2,
                     group_name: "R".to_string(),
                 },
             ],
@@ -409,7 +410,8 @@ impl Default for RecordingDeviceConfig {
             num_channels: 1,
             sample_rate: 48000,
             available_sample_rates: vec![44100, 48000, 88200, 96000, 176400, 192000],
-            channel_mappings: vec![0],
+            // Channel numbers are 1-indexed for display (Channel 1)
+            channel_mappings: vec![1],
         }
     }
 }
@@ -712,7 +714,7 @@ impl Default for RecordingState {
             signal_type_dropdown_open: false,
             duration_dropdown_open: false,
             channel_name_dropdown_open: None,
-            config_accordion_expanded: vec!["playback".into()], // Playback section open by default
+            config_accordion_expanded: vec!["playback".into(), "output_dir".into()], // Playback and output directory sections open by default
             plot_selected_channel: None, // All channels
             plot_smoothing: PlotSmoothing::None,
             plot_channel_dropdown_open: false,

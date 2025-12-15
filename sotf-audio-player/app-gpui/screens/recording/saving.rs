@@ -79,14 +79,16 @@ impl PlayerView {
                                 .w(px(300.0))
                                 .child(
                                     Input::new("save_name_input")
-                                        .value(save_name)
+                                        .value(save_name.clone())
+                                        .edit_text(save_name)
                                         .placeholder("Enter recording name")
-                                        .on_change({
+                                        .editing(true)
+                                        .on_text_change({
                                             let view = view.clone();
                                             move |value, _, cx| {
                                                 view.update(cx, |this, cx| {
                                                     this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.save_name = value.to_string();
+                                                        state.app.recording_state.save_name = value;
                                                     });
                                                     cx.notify();
                                                 });
