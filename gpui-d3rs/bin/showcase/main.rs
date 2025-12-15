@@ -24,21 +24,19 @@ pub enum DemoSection {
     Transitions,
     Geo,
     Colors,
+    Hierarchy,
+    Force,
+    Chord,
     // D3 Observable Examples
     D3VolcanoContours,
     D3KDE,
     D3Treemap,
     D3StackedBars,
-    // New D3 Demos
     D3Versor,
     D3Histogram,
     D3Revenue,
     D3Horizon,
     D3Choropleth,
-    // New Modules
-    Hierarchy,
-    Force,
-    Chord,
 }
 
 impl DemoSection {
